@@ -156,7 +156,7 @@ export class PayrollRunsService implements OnModuleInit {
         ...run,
         items,
         adjustments,
-        warnings: [...runWarnings, ...warnings.map((x) => `${x.name}: ${x.w}`)],
+        warnings: [...runWarnings, ...groupWarnings(warnings)],
         can: {
           compute: mayRun && (r.status === 'draft' || r.status === 'computed'),
           submit: mayRun && r.status === 'computed' && items.length > 0,
@@ -292,7 +292,7 @@ export class PayrollRunsService implements OnModuleInit {
         ? []
         : await many<{ id: string; amount: string; label: string }>(
             tx,
-            `select c.id, c.amount::text, cat.name || ': ' || left(c.description, 40) as label from expense_claims c join expense_categories cat on cat.id = c.category_id
+            `select c.id, c.amount::text, cat.name || ': ' || case when length(c.description) > 60 then left(c.description, 59) || '…' else c.description end as label from expense_claims c join expense_categories cat on cat.id = c.category_id
               where c.employee_id = $1 and c.status = 'approved' and c.payroll_run_id is null and c.currency = $2 and c.spent_on <= $3 order by c.spent_on`,
             [p.id, r.currency, period.end],
           );
@@ -563,3 +563,10 @@ export class PayrollRunsService implements OnModuleInit {
 }
 
 export type { StatutoryRow };
+
+/** The same warning for many people reads as one line with their names. */
+function groupWarnings(rows: { name: string; w: string }[]) {
+  const by = new Map<string, string[]>();
+  for (const r of rows) by.set(r.w, [...(by.get(r.w) ?? []), r.name]);
+  return [...by.entries()].map(([w, names]) => (names.length === 1 ? `${names[0]}: ${w}` : `${names.length} people (${names.slice(0, 5).join(', ')}${names.length > 5 ? ` and ${names.length - 5} more` : ''}): ${w}`));
+}

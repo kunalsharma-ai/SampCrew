@@ -6,7 +6,7 @@ CREW is an AI-native workforce platform: HRMS, recruitment CRM and ATS, attendan
 
 This repository is being built phase by phase. See [docs/architecture](docs/architecture/README.md) for the Phase 0 architecture pack and [docs/phases](docs/phases) for what each phase delivered.
 
-## What works today (Phases 1 and 2: foundation and Core HR)
+## What works today (Phases 1 to 5)
 
 - Multi-tenant API with PostgreSQL Row-Level Security underneath every query
 - Sign-up, sign-in, TOTP MFA, refresh-token rotation, workspace switching, invitations
@@ -19,6 +19,7 @@ This repository is being built phase by phase. See [docs/architecture](docs/arch
 - **Core HR (Phase 2)**: employee records with effective-dated job history, transfers, probation and exits; onboarding checklists; leave types, policies, holiday calendars, ledger-based balances with idempotent accrual, requests with live preview and year-end close; a multi-step approvals engine; documents with signed download links; in-app notifications and SMTP email. See [docs/phases/phase-2.md](docs/phases/phase-2.md)
 - **Attendance and Workforce (Phase 3)**: immutable raw punches with an explainable attendance engine; web punching with geofences; rotating QR kiosks; corrections and overtime through approvals; shifts, rosters and same-day swaps; payroll period locks; ZKTeco and eSSL push devices (Preview) with enrolment mapping, live status and a device simulator. See [docs/phases/phase-3.md](docs/phases/phase-3.md)
 - **Recruitment (Phase 4)**: requisitions with approval; a public career site with consented, rate-limited applications and CV checks; a configurable pipeline board with an append-only history; interviews with independent scorecards; offers with an above-budget flag and two-step-verified approval; hiring straight into Core HR; candidate erasure and automatic retention. See [docs/phases/phase-4.md](docs/phases/phase-4.md)
+- **Payroll and finance (Phase 5)**: exact-decimal India payroll engine with an explanation for every amount; pay components, salary structures and effective-dated salaries; statutory settings each workspace reviews and saves per legal entity (starting values are not certified); monthly runs with loss of pay from attendance and unpaid leave, adjustments, overrides, approval by someone other than the preparer, and a database-level freeze on finalise; payslips; payroll register and audited bank file; expense claims with receipts, manager approval and reimbursement through payroll. See [docs/phases/phase-5.md](docs/phases/phase-5.md)
 - OpenAPI 3.1 spec at `/api/v1/openapi.json` and in [docs/api/openapi.json](docs/api/openapi.json)
 
 Not connected yet, and labelled as such in the product: payment collection (invoices are issued manually by SAMPLEDGE finance), Redis, and S3-compatible object storage (files use local disk). Email is sent only when `SMTP_URL` is set; otherwise it is recorded as skipped, and invitation links are shown on screen in local environments.
@@ -40,7 +41,7 @@ pnpm dev:console                                                   # Super Admin
 
 Sign in to the Web Portal with a demo user (below). Sign in to the console with `CREW_BOOTSTRAP_ADMIN_EMAIL` / `CREW_BOOTSTRAP_ADMIN_PASSWORD` from your `.env`; you will be asked to set up an authenticator app before anything else.
 
-The demo tenant `demo-northwind` ("Northwind Manufacturing (Demo)") is fictional and flagged as demo data. All its users share `CREW_DEMO_PASSWORD`, for example `owner@demo.crew.local`, `hr.admin@demo.crew.local`, `supervisor@demo.crew.local`, `operator1@demo.crew.local`.
+The demo tenant `demo-northwind` ("Northwind Manufacturing (Demo)") is fictional and flagged as demo data. All its users share `CREW_DEMO_PASSWORD`, for example `owner@demo.crew.local`, `hr.admin@demo.crew.local`, `supervisor@demo.crew.local`, `operator1@demo.crew.local`, `payroll@demo.crew.local`, `finance@demo.crew.local`.
 
 ## Tests
 
@@ -50,6 +51,7 @@ pnpm e2e:web        # browser test of the Web Portal (needs a fresh `pnpm db:res
 pnpm e2e:hr         # Core HR flow: hire, onboard, apply for leave, approve (run after e2e:web, API + web)
 pnpm e2e:attendance # Attendance flow: punch, correct, approve, simulated device, QR kiosk (API + web)
 pnpm e2e:recruitment # Recruitment flow: apply on the career site, pipeline, scorecard, offer approval, hire (fresh db, API + web)
+pnpm e2e:payroll    # Payroll flow: settings, salaries, expenses, run, approval, payslip (fresh db, API + web)
 pnpm e2e:console    # browser test of the console, including support access across both apps (fresh db, API + web + console)
 ```
 

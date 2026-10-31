@@ -96,6 +96,7 @@ jobs:
           pnpm e2e:hr
           pnpm e2e:attendance
           pnpm e2e:recruitment
+          pnpm e2e:payroll
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true

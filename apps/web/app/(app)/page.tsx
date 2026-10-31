@@ -11,7 +11,7 @@ interface Overview { legalEntities: number; businessUnits: number; locations: nu
 const SCOPE_LABEL: Record<string, string> = { own: 'Yourself', team: 'Your team', department: 'Your department', entity: 'Your legal entity', tenant: 'Whole organization' };
 
 const ROADMAP = [
-  { phase: 5, title: 'Payroll & finance', items: 'Salary structures, India payroll, payslips, expenses' },
+  { phase: 6, title: 'Performance & talent', items: 'Goals, reviews, learning and succession' },
   { phase: 8, title: 'AI & automation', items: 'Copilots, workflow studio, predictive insights' },
 ];
 
@@ -37,7 +37,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const myAccess = Object.entries(me.permissions)
     .map(([key, scope]) => ({ def: PERMISSIONS.find((p) => p.key === key), scope }))
-    .filter((x) => x.def && x.def.phase <= 2);
+    .filter((x) => x.def && x.def.phase <= 5);
 
   return (
     <>
@@ -91,7 +91,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                   ))}
                 </ul>
               ) : (
-                <p className="text-[13px] text-fg-muted">Your self-service features appear here once your administrator gives you access. Payslips arrive with the Payroll release.</p>
+                <p className="text-[13px] text-fg-muted">Your self-service features appear here once your administrator gives you access.</p>
               )}
             </CardBody>
           </Card>

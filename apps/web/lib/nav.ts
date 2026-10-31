@@ -24,6 +24,8 @@ export const NAV: NavGroup[] = [
       { href: '/attendance', label: 'Attendance', icon: 'clock', permission: 'attendance:punch', feature: 'attendance_basic' },
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
       { href: '/leave', label: 'Leave', icon: 'calendar', permission: 'leave:request' },
+      { href: '/payslips', label: 'Payslips', icon: 'file-text', permission: 'payslips:read', feature: 'payroll' },
+      { href: '/expenses', label: 'Expenses', icon: 'receipt', permission: 'expenses:submit', feature: 'expenses' },
       { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'interviews:feedback', feature: 'recruitment' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
     ],
@@ -33,6 +35,13 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/recruitment', label: 'Jobs', icon: 'briefcase', permission: 'requisitions:read', feature: 'recruitment' },
       { href: '/recruitment/candidates', label: 'Candidates', icon: 'user-search', permission: 'candidates:read', feature: 'recruitment' },
+    ],
+  },
+  {
+    label: 'Payroll',
+    items: [
+      { href: '/payroll', label: 'Payroll runs', icon: 'wallet', permission: 'payroll:read', feature: 'payroll' },
+      { href: '/payroll/salaries', label: 'Salaries', icon: 'banknote', permission: 'payroll:read', feature: 'payroll' },
     ],
   },
   {
@@ -50,6 +59,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
       { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
       { href: '/settings/recruitment', label: 'Recruitment settings', icon: 'briefcase', permission: 'recruitment:configure', feature: 'recruitment' },
+      { href: '/settings/payroll', label: 'Payroll settings', icon: 'landmark', permission: 'payroll:configure', feature: 'payroll' },
       { href: '/settings/leave', label: 'Leave settings', icon: 'sliders', permission: 'leave:configure' },
       { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create' },
       { href: '/settings/roles', label: 'Roles & permissions', icon: 'shield', permission: 'roles:read' },
