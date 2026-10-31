@@ -537,3 +537,6 @@ grant insert on email_messages to crew_app;
 grant execute on function employees_apply_current(date) to crew_app;
 grant select, insert, update, delete on all tables in schema public to crew_platform;
 grant usage on all sequences in schema public to crew_app, crew_platform;
+
+-- The owner role is shown as "Workspace Owner" (the internal key stays tenant_owner).
+update roles set name = 'Workspace Owner' where key = 'tenant_owner' and is_system and name = 'Tenant Owner';
