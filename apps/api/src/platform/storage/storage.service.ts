@@ -7,7 +7,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { safeEqual } from '../auth/crypto';
 
-export type FileLinkKind = 'files' | 'resumes';
+export type FileLinkKind = 'files' | 'resumes' | 'receipts';
 
 /**
  * File storage. The local driver writes under STORAGE_DIR and is meant for development and single-node
@@ -58,7 +58,7 @@ export class StorageService {
   sign(fileId: string, ttlSeconds = 300, kind: FileLinkKind = 'files') {
     const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
     const sig = this.signature(fileId, exp, kind);
-    const path = `/api/v1/${kind === 'files' ? 'files' : 'files/resumes'}/${fileId}?exp=${exp}&sig=${sig}`;
+    const path = `/api/v1/${kind === 'files' ? 'files' : `files/${kind}`}/${fileId}?exp=${exp}&sig=${sig}`;
     return { url: `${this.config.API_PUBLIC_URL}${path}`, path, expiresAt: new Date(exp * 1000).toISOString() };
   }
 

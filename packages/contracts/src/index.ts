@@ -17,3 +17,8 @@ export type { DayInput, DayResult, DayStatus, DayFlag, ShiftRule, EnginePunch } 
 export { DAY_STATUSES, DAY_FLAGS } from './attendance-engine';
 export * as zonedTime from './zoned-time';
 export * from './schemas/recruitment';
+export * from './schemas/payroll';
+export * as money from './money';
+export * as payrollEngine from './payroll-engine';
+export type { StatutorySettings, StructureLine, SalaryComponent, PayrollInput, PayrollResult, PayLine, CalcMethod } from './payroll-engine';
+export { DEFAULT_IN_STATUTORY } from './payroll-engine';
