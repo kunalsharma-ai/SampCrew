@@ -110,7 +110,7 @@ export class PlatformService {
            from tenants t left join subscriptions s on s.tenant_id = t.id left join plans p on p.id = s.plan_id where t.id = $1`,
         [id],
       );
-      if (!t) throw Errors.notFound('Tenant');
+      if (!t) throw Errors.notFound('Workspace');
       const grants = await many(
         tx,
         `select g.id, g.reason, g.status, g.duration_minutes as "durationMinutes", g.created_at as "createdAt", g.expires_at as "expiresAt", a.email::text as "requestedBy"
@@ -159,7 +159,7 @@ export class PlatformService {
   async setStatus(id: string, status: 'active' | 'suspended', reason: string) {
     return this.db.platform(async (tx) => {
       const r = await tx.query('update tenants set status = $2, status_reason = $3 where id = $1 returning id', [id, status, reason]);
-      if (!r.rowCount) throw Errors.notFound('Tenant');
+      if (!r.rowCount) throw Errors.notFound('Workspace');
       if (status === 'suspended') await tx.query(`update sessions set revoked_at = now(), revoked_reason = 'tenant_suspended' where tenant_id = $1 and revoked_at is null`, [id]);
       await this.audit.record(tx, { tenantId: id, action: `tenant.${status === 'active' ? 'reactivated' : 'suspended'}`, resourceType: 'tenant', resourceId: id, metadata: { reason, by: 'SAMPLEDGE' } });
       await this.audit.record(tx, { tenantId: null, action: `platform.tenant_${status === 'active' ? 'reactivated' : 'suspended'}`, resourceType: 'tenant', resourceId: id, metadata: { reason } });
@@ -268,7 +268,7 @@ export class PlatformService {
   async requestSupportAccess(tenantId: string, reason: string, durationMinutes: number) {
     const a = requestContext.platformActor();
     return this.db.platform(async (tx) => {
-      if (!(await one(tx, 'select 1 from tenants where id = $1', [tenantId]))) throw Errors.notFound('Tenant');
+      if (!(await one(tx, 'select 1 from tenants where id = $1', [tenantId]))) throw Errors.notFound('Workspace');
       const g = (await one<{ id: string }>(
         tx,
         `insert into support_access_grants (tenant_id, platform_admin_id, reason, duration_minutes) values ($1, $2, $3, $4) returning id`,

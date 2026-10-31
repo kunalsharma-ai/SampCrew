@@ -23,7 +23,7 @@ export default async function PlatformAuditPage() {
                   <TD>{r.actorLabel ?? 'System'} <Badge className="ml-1">{r.actorType}</Badge></TD>
                   <TD><code className="text-xs">{r.action}</code></TD>
                   <TD className="text-fg-muted">
-                    {r.resourceType === 'tenant' && r.resourceId ? <Link className="hover:underline" href={`/tenants/${r.resourceId}`}>tenant</Link> : r.resourceType}
+                    {r.resourceType === 'tenant' && r.resourceId ? <Link className="hover:underline" href={`/tenants/${r.resourceId}`}>workspace</Link> : r.resourceType}
                   </TD>
                   <TD className="max-w-md truncate font-mono text-[11px] text-fg-subtle">{JSON.stringify(r.changes ?? r.metadata ?? {})}</TD>
                 </TR>

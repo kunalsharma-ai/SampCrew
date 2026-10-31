@@ -6,7 +6,7 @@ import { Shell, type NavItem } from './shell';
 
 const NAV: (NavItem & { cap?: string })[] = [
   { href: '/', label: 'Overview', icon: 'gauge', cap: 'tenants:read' },
-  { href: '/tenants', label: 'Tenants', icon: 'building', cap: 'tenants:read' },
+  { href: '/tenants', label: 'Workspaces', icon: 'building', cap: 'tenants:read' },
   { href: '/plans', label: 'Plans & pricing', icon: 'tag', cap: 'billing:read' },
   { href: '/health', label: 'System health', icon: 'activity', cap: 'health:read' },
   { href: '/audit', label: 'Platform audit', icon: 'scroll', cap: 'audit:read' },

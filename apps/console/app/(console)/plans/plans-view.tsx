@@ -22,7 +22,7 @@ export function PlansView({ plans, canEdit }: { plans: PlatformPlan[]; canEdit: 
         <Card key={p.key}>
           <CardHeader
             title={<span className="flex items-center gap-2">{p.name}{p.quoteOnly && <Badge>Quote only</Badge>}{!p.isPublic && <Badge tone="warning">Hidden</Badge>}</span>}
-            description={`${p.tagline} · minimum ${p.minimumSeats} seats · ${p.tenants} tenant(s)`}
+            description={`${p.tagline} · minimum ${p.minimumSeats} seats · ${p.tenants} workspace(s)`}
           />
           <CardBody className="grid gap-4 lg:grid-cols-[1fr_1fr]">
             <Table>

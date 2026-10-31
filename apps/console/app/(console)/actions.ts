@@ -9,7 +9,7 @@ export async function createTenantAction(body: Record<string, unknown>) {
 }
 
 export async function setTenantStatusAction(id: string, status: 'active' | 'suspended', reason: string) {
-  const r = await act(() => api(`/platform/tenants/${id}/status`, { method: 'PATCH', body: { status, reason } }), status === 'suspended' ? 'Tenant suspended. Everyone was signed out.' : 'Tenant reactivated.');
+  const r = await act(() => api(`/platform/tenants/${id}/status`, { method: 'PATCH', body: { status, reason } }), status === 'suspended' ? 'Workspace suspended. Everyone was signed out.' : 'Workspace reactivated.');
   revalidatePath(`/tenants/${id}`);
   return r;
 }
