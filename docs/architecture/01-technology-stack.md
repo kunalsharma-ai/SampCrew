@@ -6,7 +6,7 @@
 | Monorepo | **pnpm workspaces** | Fast, disk-efficient, strict dependency isolation. Turborepo can be layered on when build times demand it. |
 | Web frontend | **Next.js 15 (App Router) + React 19** | Server components for fast first paint on data-heavy dashboards, route-level code splitting, mature ecosystem, works behind any CDN. |
 | Styling | **Tailwind CSS 4** + CSS-variable design tokens | Tokens live in one place (`packages/ui`) and drive light/dark themes and per-tenant brand colours without rebuilds. |
-| Component library | **`@crew/ui`** (own package) on top of **Radix UI primitives** | Radix gives accessible behaviour (focus, ARIA, keyboard) so we own the visual identity without re-solving accessibility. |
+| Component library | **`@crew/ui`** (own package), on native accessible elements first; **Radix UI primitives** added where native HTML falls short (menus, comboboxes, popovers) | Phase 1 uses the native `<dialog>` element for modals (built-in focus trap, Escape, inert background) and plain form controls. Radix comes in when a component needs behaviour the platform does not provide, so we own the visual identity without re-solving accessibility. |
 | Charts | **Recharts** now, **Apache ECharts** for heavy heatmaps/large series | Recharts is React-native and themeable; ECharts handles 100k-point attendance heatmaps. |
 | Backend | **NestJS 11** | Opinionated modules, dependency injection, guards/interceptors map cleanly onto tenant context, RBAC/ABAC, entitlements and auditing. |
 | API style | **REST, versioned `/api/v1`**, OpenAPI 3.1 generated from code; **WebSockets** (Socket.IO gateway) for live dashboards and device status | REST is easiest for partners, mobile and integrators; OpenAPI gives SDK generation for free. |

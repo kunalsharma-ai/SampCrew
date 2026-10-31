@@ -48,7 +48,7 @@ The home route chooses a dashboard layout from the user's highest-level role (ex
 - **Notifications** drawer with realtime updates over WebSocket.
 - **Contextual AI** side panel per page (Phase 8).
 - **i18n**: `next-intl`, locale per user, right-to-left support, dates and currency via `Intl`.
-- **Accessibility**: WCAG 2.2 AA target, keyboard-first, Radix primitives, axe checks in Playwright.
+- **Accessibility**: WCAG 2.2 AA target, keyboard-first, native `<dialog>` and form controls (Radix primitives where native HTML falls short), axe checks in Playwright.
 
 ## 6.5 Security headers
 

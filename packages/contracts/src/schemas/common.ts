@@ -44,3 +44,18 @@ export const name = z.string().trim().min(1).max(160);
 
 /** Trims and lower-cases before validating, so ' Asha@Acme.com ' is accepted as 'asha@acme.com'. */
 export const email = z.string().trim().toLowerCase().pipe(z.email().max(254));
+
+/**
+ * Schema for a PATCH body: every field optional, unknown keys rejected, and defaults removed so a field the
+ * client leaves out is never silently reset to its default. Object-level refinements are dropped (cross-field
+ * rules are enforced again by database constraints).
+ */
+export function patchOf(schema: z.ZodType): z.ZodObject {
+  const def = (schema as unknown as { _zod: { def: { type: string; in?: z.ZodType } } })._zod.def;
+  const base = schema instanceof z.ZodObject ? schema : def.type === 'pipe' && def.in instanceof z.ZodObject ? def.in : null;
+  if (!base) throw new Error('patchOf() needs an object schema');
+  const shape = Object.fromEntries(
+    Object.entries(base.shape).map(([k, v]) => [k, v instanceof z.ZodDefault ? (v.unwrap() as z.ZodType) : (v as z.ZodType)]),
+  );
+  return z.object(shape).partial().strict();
+}

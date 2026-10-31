@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
-import { businessUnitInput, departmentInput, legalEntityInput, locationInput } from '@crew/contracts';
+import { businessUnitInput, departmentInput, legalEntityInput, locationInput, patchOf } from '@crew/contracts';
 import { z } from 'zod';
 import { RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
@@ -8,14 +8,8 @@ import { OrganizationService, type OrgTable } from './organization.service';
 
 const listQuery = z.object({ includeArchived: z.enum(['true', 'false']).optional() });
 
-const partial = <T extends z.ZodType>(schema: T) => {
-  // Location input has refinements; for PATCH we validate the plain object shape partially and rely on DB checks for cross-field rules.
-  const base = schema instanceof z.ZodObject ? schema : ((schema as unknown as { _zod: { def: { in?: z.ZodObject } } })._zod.def.in ?? z.object({}));
-  return (base as z.ZodObject).partial().strict();
-};
-
 function makeController(path: string, table: OrgTable, schema: z.ZodType, label: string) {
-  const patchSchema = partial(schema);
+  const patchSchema = patchOf(schema);
 
   @Controller(`org/${path}`)
   class OrgResourceController {

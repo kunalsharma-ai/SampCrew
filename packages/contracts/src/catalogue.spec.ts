@@ -73,3 +73,12 @@ describe('schemas', () => {
     expect(r.success).toBe(false);
   });
 });
+
+describe('patchOf', () => {
+  it('makes fields optional without injecting defaults', async () => {
+    const { patchOf, legalEntityInput } = await import('./index');
+    expect(patchOf(locationInput).parse({ name: 'Renamed' })).toEqual({ name: 'Renamed' });
+    expect(patchOf(legalEntityInput).parse({ name: 'Renamed' })).toEqual({ name: 'Renamed' });
+    expect(patchOf(locationInput).safeParse({ unknownField: 1 }).success).toBe(false);
+  });
+});

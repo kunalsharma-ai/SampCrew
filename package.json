@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "description": "CREW by SAMPLEDGE: one intelligent platform for your entire workforce",
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build:packages": "pnpm --filter @crew/contracts --filter @crew/db --filter @crew/ui run build",
     "build": "pnpm build:packages && pnpm --filter @crew/api --filter @crew/web --filter @crew/console run build",
@@ -17,10 +19,14 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
-    "docs:permissions": "pnpm --filter @crew/contracts run docs:permissions"
+    "docs:permissions": "pnpm --filter @crew/contracts run docs:permissions",
+    "e2e:web": "node e2e/web-smoke.cjs",
+    "e2e:console": "node e2e/console-smoke.cjs"
   },
   "devDependencies": {
     "typescript": "5.9.3",
-    "@types/node": "22.20.5"
+    "@types/node": "22.20.5",
+    "otplib": "12.0.1",
+    "playwright": "1.63.0"
   }
 }
