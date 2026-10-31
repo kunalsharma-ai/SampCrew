@@ -1,19 +1,25 @@
 'use client';
 import { Avatar, Badge, CrewLogo, Dialog, Kbd, cn } from '@crew/ui';
 import {
-  Building2, Check, ChevronsUpDown, CreditCard, Home, KeyRound, LifeBuoy, LogOut, Menu, Monitor, Moon, ScrollText, Search, Settings, Shield, Sun, Users, X,
+  Bell, Building2, CalendarDays, Check, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
+  Settings, Shield, SlidersHorizontal, Sun, Users, X,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import type { NavGroup } from '@/lib/nav';
-import type { Me } from '@/lib/types';
-import { logoutAction, switchTenantAction } from './shell-actions';
+import type { Me, Notification } from '@/lib/types';
+import { logoutAction, markAllNotificationsReadAction, markNotificationReadAction, switchTenantAction } from './shell-actions';
 
-const ICONS: Record<string, LucideIcon> = { home: Home, users: Users, building: Building2, shield: Shield, scroll: ScrollText, 'credit-card': CreditCard, settings: Settings, 'life-buoy': LifeBuoy, key: KeyRound };
+const ICONS: Record<string, LucideIcon> = {
+  home: Home, users: Users, building: Building2, shield: Shield, scroll: ScrollText, 'credit-card': CreditCard, settings: Settings, 'life-buoy': LifeBuoy, key: KeyRound,
+  inbox: Inbox, calendar: CalendarDays, 'list-checks': ListChecks, contact: Contact, sliders: SlidersHorizontal,
+};
 
-export function Shell({ me, nav, children }: { me: Me; nav: NavGroup[]; children: React.ReactNode }) {
+export interface Notifications { unread: number; items: Notification[] }
+
+export function Shell({ me, nav, notifications, children }: { me: Me; nav: NavGroup[]; notifications: Notifications | null; children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -93,6 +99,7 @@ export function Shell({ me, nav, children }: { me: Me; nav: NavGroup[]; children
             {me.subscription?.status === 'trialing' && me.subscription.trialEndsOn && (
               <Badge tone="info" className="hidden sm:inline-flex">Trial until {new Date(me.subscription.trialEndsOn).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Badge>
             )}
+            {notifications && <NotificationBell data={notifications} />}
             <ThemeToggle />
           </div>
         </header>
@@ -158,6 +165,70 @@ function UserMenu({ me }: { me: Me }) {
       <button onClick={() => start(() => logoutAction())} disabled={pending} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Sign out" title="Sign out">
         <LogOut className="size-4" />
       </button>
+    </div>
+  );
+}
+
+function NotificationBell({ data }: { data: Notifications }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  useEffect(() => {
+    // Keep the count fresh while the tab is open.
+    const t = setInterval(() => router.refresh(), 60_000);
+    return () => clearInterval(t);
+  }, [router]);
+  const go = (n: Notification) => {
+    setOpen(false);
+    start(async () => {
+      if (!n.readAt) await markNotificationReadAction(n.id);
+      if (n.link) router.push(n.link);
+      else router.refresh();
+    });
+  };
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="relative rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg"
+        aria-label={data.unread ? `Notifications, ${data.unread} unread` : 'Notifications'}
+        aria-expanded={open}
+      >
+        <Bell className="size-4" />
+        {data.unread > 0 && (
+          <span className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold leading-4 text-white">{data.unread > 99 ? '99+' : data.unread}</span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-border bg-surface-raised shadow-pop animate-fade-in">
+            <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+              <span className="text-[13px] font-semibold">Notifications</span>
+              {data.unread > 0 && (
+                <button className="text-xs font-medium text-accent hover:underline" disabled={pending} onClick={() => start(async () => { await markAllNotificationsReadAction(); router.refresh(); })}>
+                  Mark all read
+                </button>
+              )}
+            </div>
+            <ul className="max-h-96 overflow-y-auto">
+              {data.items.length === 0 && <li className="px-4 py-6 text-center text-[13px] text-fg-subtle">Nothing yet</li>}
+              {data.items.map((n) => (
+                <li key={n.id}>
+                  <button onClick={() => go(n)} className={cn('flex w-full gap-3 px-4 py-2.5 text-left hover:bg-bg-subtle', !n.readAt && 'bg-accent-subtle/40')}>
+                    <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', n.readAt ? 'bg-transparent' : 'bg-accent')} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-medium text-fg">{n.title}</span>
+                      {n.body && <span className="line-clamp-2 block text-xs text-fg-muted">{n.body}</span>}
+                      <span className="block text-[11px] text-fg-subtle">{new Date(n.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
     </div>
   );
 }

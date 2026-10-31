@@ -41,6 +41,28 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   return json as T;
 }
 
+/** Multipart upload (documents). The browser never talks to the API directly; this runs on the server. */
+export async function apiForm<T = unknown>(path: string, form: FormData): Promise<T> {
+  const token = await accessToken();
+  const res = await fetch(`${API_URL}/api/v1${path}`, {
+    method: 'POST',
+    headers: { 'x-crew-client': 'web', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: form,
+    cache: 'no-store',
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const e = (json as { error?: { code: string; message: string; details?: unknown } }).error;
+    throw new ApiError(res.status, e?.code ?? 'error', e?.message ?? `Upload failed (${res.status})`, e?.details, Boolean(token));
+  }
+  return json as T;
+}
+
+/** Fetches an API path without auth and returns the raw response (used to stream signed file downloads). */
+export function apiRaw(path: string) {
+  return fetch(`${API_URL}${path}`, { cache: 'no-store' });
+}
+
 /**
  * For server components: an ended session sends the user to sign in, and a missing permission, plan feature or
  * MFA step shows the "no access" page with the reason instead of an error.

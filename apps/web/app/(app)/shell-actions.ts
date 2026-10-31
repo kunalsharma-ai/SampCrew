@@ -1,6 +1,6 @@
 'use server';
 import { redirect } from 'next/navigation';
-import { api, ApiError } from '@/lib/api';
+import { act, api, ApiError } from '@/lib/api';
 import { clearSession, setSession, type TokenPair } from '@/lib/session';
 
 export async function logoutAction() {
@@ -18,4 +18,12 @@ export async function switchTenantAction(tenantId: string) {
     throw e;
   }
   redirect('/');
+}
+
+export async function markNotificationReadAction(id: string) {
+  return act(() => api(`/notifications/${id}/read`, { method: 'POST' }));
+}
+
+export async function markAllNotificationsReadAction() {
+  return act(() => api('/notifications/read-all', { method: 'POST' }));
 }

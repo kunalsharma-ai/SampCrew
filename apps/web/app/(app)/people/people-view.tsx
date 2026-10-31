@@ -39,7 +39,7 @@ export function PeopleView(props: Props) {
     <>
       {inviteLink && (
         <Alert tone="info" title="Invitation created" className="mb-4">
-          Email delivery is switched on with the notifications module (Phase 2). For now, share this one-time link with the person:
+          An invitation email has been queued. If email delivery is not configured in this environment, share this one-time link instead:
           <div className="mt-2 flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[11px] text-fg">{inviteLink}</code>
             <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(inviteLink)}><Copy className="size-3.5" /> Copy</Button>
