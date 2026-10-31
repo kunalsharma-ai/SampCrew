@@ -11,6 +11,8 @@ import { EntitlementsService } from '../../platform/entitlements/entitlements.se
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
 import { decodeCursor, page } from '../../platform/http/pagination';
+import { MailerService } from '../../platform/notify/mailer.service';
+import { NotificationService } from '../../platform/notify/notification.service';
 
 const INVITE_TTL_DAYS = 7;
 
@@ -41,6 +43,8 @@ export class MembersService {
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     private readonly entitlements: EntitlementsService,
+    private readonly notifications: NotificationService,
+    private readonly mailer: MailerService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -85,47 +89,73 @@ export class MembersService {
   }
 
   async invite(input: z.infer<typeof inviteMemberRequest>) {
+    const result = await this.db.tenant(async (tx) => {
+      const { membershipId, token } = await this.createInvitation(tx, input);
+      return { member: await this.load(tx, membershipId), token };
+    });
+    return { member: result.member, ...this.inviteResult(result.token) };
+  }
+
+  /**
+   * Creates the user (if new), an invited membership with the Employee baseline plus the chosen roles, and an
+   * invitation whose email is queued in the same transaction. Used by member invites and by hiring.
+   */
+  async createInvitation(tx: Tx, input: z.infer<typeof inviteMemberRequest>): Promise<{ membershipId: string; token: string }> {
     const actor = requestContext.tenantActor();
     const token = randomToken(32);
-    const result = await this.db.tenant(async (tx) => {
-      const { count } = (await one<{ count: number }>(tx, `select count(*)::int as count from memberships where status <> 'suspended'`))!;
-      await this.entitlements.requireWithinLimit('max_employees', count, tx);
-      // Everyone gets the Employee self-service baseline in addition to the roles chosen.
-      const roles = await this.resolveRoles(tx, [...new Set(['employee', ...input.roleKeys])]);
-      await this.assertCanGrant(tx, roles.map((r) => r.key));
+    const { count } = (await one<{ count: number }>(tx, `select count(*)::int as count from memberships where status <> 'suspended'`))!;
+    await this.entitlements.requireWithinLimit('max_employees', count, tx);
+    // Everyone gets the Employee self-service baseline in addition to the roles chosen.
+    const roles = await this.resolveRoles(tx, [...new Set(['employee', ...input.roleKeys])]);
+    await this.assertCanGrant(tx, roles.map((r) => r.key));
 
-      const legalEntityId = input.legalEntityId ?? (await one<{ id: string }>(tx, 'select id from legal_entities where archived_at is null order by created_at limit 1'))?.id ?? null;
-      // Identities are global; creating or finding the user row needs the platform role.
-      const userId = await this.db.platform(async (ptx) => {
-        const existing = await one<{ id: string }>(ptx, 'select id from users where email = $1', [input.email]);
-        if (existing) return existing.id;
-        return (await one<{ id: string }>(ptx, `insert into users (email, full_name) values ($1, $2) returning id`, [input.email, input.fullName]))!.id;
-      });
-      const already = await one(tx, 'select 1 from memberships where user_id = $1', [userId]);
-      if (already) throw Errors.conflict('already_member', 'This person is already a member of the workspace');
-
-      const membership = (await one<{ id: string }>(
-        tx,
-        `insert into memberships (tenant_id, user_id, status, legal_entity_id, department_id, location_id, manager_membership_id, title, invited_by)
-         values ($1, $2, 'invited', $3, $4, $5, $6, null, $7) returning id`,
-        [actor.tenantId, userId, legalEntityId, input.departmentId ?? null, input.locationId ?? null, input.managerMembershipId ?? null, actor.membershipId],
-      ))!;
-      for (const r of roles) {
-        await tx.query('insert into role_assignments (tenant_id, membership_id, role_id, granted_by) values ($1, $2, $3, $4)', [actor.tenantId, membership.id, r.id, actor.membershipId]);
-      }
-      await tx.query(
-        `insert into invitations (tenant_id, membership_id, email, token_hash, expires_at, invited_by) values ($1, $2, $3, $4, now() + make_interval(days => $5), $6)`,
-        [actor.tenantId, membership.id, input.email, sha256(token), INVITE_TTL_DAYS, actor.membershipId],
-      );
-      await this.audit.record(tx, { action: 'membership.invited', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, roles: input.roleKeys } });
-      await this.outbox.publish(tx, actor.tenantId, 'membership.invited', { membershipId: membership.id, email: input.email });
-      return { member: await this.load(tx, membership.id) };
+    const legalEntityId = input.legalEntityId ?? (await one<{ id: string }>(tx, 'select id from legal_entities where archived_at is null order by created_at limit 1'))?.id ?? null;
+    // Identities are global; creating or finding the user row needs the platform role.
+    const userId = await this.db.platform(async (ptx) => {
+      const existing = await one<{ id: string }>(ptx, 'select id from users where email = $1', [input.email]);
+      if (existing) return existing.id;
+      return (await one<{ id: string }>(ptx, `insert into users (email, full_name) values ($1, $2) returning id`, [input.email, input.fullName]))!.id;
     });
+    const already = await one(tx, 'select 1 from memberships where user_id = $1', [userId]);
+    if (already) throw Errors.conflict('already_member', 'This person is already a member of the workspace');
+
+    const membership = (await one<{ id: string }>(
+      tx,
+      `insert into memberships (tenant_id, user_id, status, legal_entity_id, department_id, location_id, manager_membership_id, title, invited_by)
+       values ($1, $2, 'invited', $3, $4, $5, $6, null, $7) returning id`,
+      [actor.tenantId, userId, legalEntityId, input.departmentId ?? null, input.locationId ?? null, input.managerMembershipId ?? null, actor.membershipId],
+    ))!;
+    for (const r of roles) {
+      await tx.query('insert into role_assignments (tenant_id, membership_id, role_id, granted_by) values ($1, $2, $3, $4)', [actor.tenantId, membership.id, r.id, actor.membershipId]);
+    }
+    await tx.query(
+      `insert into invitations (tenant_id, membership_id, email, token_hash, expires_at, invited_by) values ($1, $2, $3, $4, now() + make_interval(days => $5), $6)`,
+      [actor.tenantId, membership.id, input.email, sha256(token), INVITE_TTL_DAYS, actor.membershipId],
+    );
+    await this.queueInviteEmail(tx, input.email, token);
+    await this.audit.record(tx, { action: 'membership.invited', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, roles: input.roleKeys } });
+    await this.outbox.publish(tx, actor.tenantId, 'membership.invited', { membershipId: membership.id, email: input.email });
+    return { membershipId: membership.id, token };
+  }
+
+  private async queueInviteEmail(tx: Tx, email: string, token: string) {
+    const actor = requestContext.tenantActor();
+    const workspace = (await one<{ name: string }>(tx, 'select name from tenants where id = app_tenant_id()'))!;
+    await this.notifications.queueEmail(
+      tx,
+      actor.tenantId,
+      email,
+      `You're invited to ${workspace.name} on CREW`,
+      `${actor.label} invited you to join ${workspace.name} on CREW.\n\nAccept the invitation and set your password: ${this.config.WEB_PUBLIC_URL}/accept-invite?token=${token}\n\nThe link expires in ${INVITE_TTL_DAYS} days.`,
+      'invitation',
+    );
+  }
+
+  /** Outside staging/production the link is also returned so the flow can be tested without a mail server. */
+  private inviteResult(token: string) {
     const inviteUrl = `${this.config.WEB_PUBLIC_URL}/accept-invite?token=${token}`;
-    // Email delivery is wired in Phase 2 (notifications module). Until then the link is logged locally and
-    // returned to the inviter only outside staging/production so the flow can be tested end to end.
-    if (!this.config.isProductionLike) this.logger.log(`Invitation link for ${input.email}: ${inviteUrl}`);
-    return { ...result, inviteUrl: this.config.isProductionLike ? undefined : inviteUrl, delivery: 'email_pending_phase_2' as const };
+    if (!this.config.isProductionLike) this.logger.log(`Invitation link: ${inviteUrl}`);
+    return { inviteUrl: this.config.isProductionLike ? undefined : inviteUrl, delivery: this.mailer.configured ? ('email_queued' as const) : ('email_not_configured' as const) };
   }
 
   async update(id: string, input: z.infer<typeof updateMemberRequest>) {
@@ -137,6 +167,10 @@ export class MembersService {
       if (input.status === 'suspended') await this.assertNotLastOwner(tx, id);
       const map: Record<string, string> = { departmentId: 'department_id', legalEntityId: 'legal_entity_id', locationId: 'location_id', managerMembershipId: 'manager_membership_id', status: 'status' };
       const entries = Object.entries(input).filter(([k, v]) => map[k] && v !== undefined);
+      const linked = await one(tx, 'select 1 from employees where membership_id = $1', [id]);
+      if (linked && ['departmentId', 'legalEntityId', 'locationId', 'managerMembershipId'].some((k) => input[k as keyof typeof input] !== undefined)) {
+        throw Errors.conflict('placement_on_employee', 'This member has an employee record. Change their placement there so the job history is kept.');
+      }
       if (input.status && before.status === 'invited') throw Errors.badRequest('invite_pending', 'This person has not accepted their invitation yet');
       if (entries.length) await tx.query(`update memberships set ${entries.map(([k], i) => `${map[k]} = $${i + 2}`).join(', ')} where id = $1`, [id, ...entries.map(([, v]) => v)]);
       const after = await this.load(tx, id);
@@ -192,11 +226,10 @@ export class MembersService {
         `insert into invitations (tenant_id, membership_id, email, token_hash, expires_at, invited_by) values ($1, $2, $3, $4, now() + make_interval(days => $5), $6)`,
         [actor.tenantId, id, m.email, sha256(token), INVITE_TTL_DAYS, actor.membershipId],
       );
+      await this.queueInviteEmail(tx, m.email, token);
       await this.audit.record(tx, { action: 'membership.invite_resent', resourceType: 'membership', resourceId: id });
     });
-    const inviteUrl = `${this.config.WEB_PUBLIC_URL}/accept-invite?token=${token}`;
-    if (!this.config.isProductionLike) this.logger.log(`Invitation link: ${inviteUrl}`);
-    return { inviteUrl: this.config.isProductionLike ? undefined : inviteUrl, delivery: 'email_pending_phase_2' as const };
+    return this.inviteResult(token);
   }
 
   private async load(tx: Tx, id: string) {

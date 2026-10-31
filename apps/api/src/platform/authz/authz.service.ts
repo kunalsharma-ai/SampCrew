@@ -38,9 +38,9 @@ export class AuthzService {
 }
 
 export async function loadSubject(tx: Tx, membershipId: string, userId: string, mfa: boolean): Promise<Subject> {
-  const m = await one<{ legal_entity_id: string | null; department_id: string | null; location_id: string | null }>(
+  const m = await one<{ legal_entity_id: string | null; department_id: string | null; location_id: string | null; employee_id: string | null }>(
     tx,
-    `select legal_entity_id, department_id, location_id from memberships where id = $1 and status = 'active'`,
+    `select legal_entity_id, department_id, location_id, employee_id from memberships where id = $1 and status = 'active'`,
     [membershipId],
   );
   if (!m) throw Errors.forbidden('Your membership in this workspace is not active');
@@ -64,6 +64,18 @@ export async function loadSubject(tx: Tx, membershipId: string, userId: string, 
      ) select distinct id from team`,
     [membershipId],
   );
+
+  const reportEmployees = m.employee_id
+    ? await many<{ id: string }>(
+        tx,
+        `with recursive team(id, depth) as (
+           select id, 1 from employees where current_manager_employee_id = $1
+           union all
+           select e.id, t.depth + 1 from employees e join team t on e.current_manager_employee_id = t.id where t.depth < 50
+         ) select distinct id from team`,
+        [m.employee_id],
+      )
+    : [];
 
   const departments = await many<{ id: string; parent_id: string | null }>(tx, 'select id, parent_id from departments');
   const children = new Map<string, string[]>();
@@ -89,6 +101,8 @@ export async function loadSubject(tx: Tx, membershipId: string, userId: string, 
     departmentId: m.department_id,
     locationId: m.location_id,
     reportIds: new Set(reports.map((r) => r.id)),
+    employeeId: m.employee_id,
+    reportEmployeeIds: new Set(reportEmployees.map((r) => r.id)),
     ownDepartmentSubtree: m.department_id ? departmentSubtree([m.department_id]) : new Set(),
     departmentSubtree,
     grants: grants.map((g) => ({ permission: g.permission, scope: g.scope, roleKey: g.role_key, constraints: g.constraints ?? {} })),

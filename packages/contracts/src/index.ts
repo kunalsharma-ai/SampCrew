@@ -7,3 +7,5 @@ export * from './schemas/organization';
 export * from './schemas/access';
 export * from './schemas/billing';
 export * from './schemas/platform';
+export * from './schemas/people';
+export * from './schemas/leave';

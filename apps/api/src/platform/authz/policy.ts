@@ -26,6 +26,10 @@ export interface Subject {
   locationId: string | null;
   /** Everyone reporting to the subject, directly or indirectly (not including the subject). */
   reportIds: ReadonlySet<string>;
+  /** The subject's own employee record, if they have one. */
+  employeeId?: string | null;
+  /** Employees reporting to the subject's employee record, directly or indirectly (includes people without a login). */
+  reportEmployeeIds?: ReadonlySet<string>;
   /** Department subtree rooted at the subject's own department. */
   ownDepartmentSubtree: ReadonlySet<string>;
   /** Expands a set of department ids to include all descendants. */
@@ -37,6 +41,8 @@ export interface Subject {
 /** Attributes of the record being accessed. */
 export interface ResourceAttributes {
   membershipId?: string | null;
+  /** For employee-owned records (profile, leave, documents): the employee the record belongs to. */
+  employeeId?: string | null;
   legalEntityId?: string | null;
   departmentId?: string | null;
   locationId?: string | null;
@@ -62,9 +68,12 @@ export function grantCovers(subject: Subject, grant: Grant, r: ResourceAttribute
     case 'department':
       return grant.constraints.departmentIds?.length ? true : !!r.departmentId && subject.ownDepartmentSubtree.has(r.departmentId);
     case 'team':
-      return !!r.membershipId && (r.membershipId === subject.membershipId || subject.reportIds.has(r.membershipId));
+      return (
+        (!!r.membershipId && (r.membershipId === subject.membershipId || subject.reportIds.has(r.membershipId))) ||
+        (!!r.employeeId && (r.employeeId === subject.employeeId || !!subject.reportEmployeeIds?.has(r.employeeId)))
+      );
     case 'own':
-      return !!r.membershipId && r.membershipId === subject.membershipId;
+      return (!!r.membershipId && r.membershipId === subject.membershipId) || (!!r.employeeId && !!subject.employeeId && r.employeeId === subject.employeeId);
   }
 }
 
@@ -107,7 +116,7 @@ export function effectivePermissions(subject: Subject): Record<string, Scope> {
 export function scopePredicate(
   subject: Subject,
   permission: string,
-  cols: { membershipId: string; legalEntityId: string; departmentId: string; locationId: string },
+  cols: { membershipId: string; legalEntityId: string; departmentId: string; locationId: string; employeeId?: string },
   params: unknown[],
 ): string | null {
   const grants = grantsFor(subject, permission);
@@ -131,12 +140,17 @@ export function scopePredicate(
       case 'department':
         if (!c.departmentIds?.length) parts.push(`${cols.departmentId} = any(${p([...subject.ownDepartmentSubtree])}::uuid[])`);
         break;
-      case 'team':
-        parts.push(`${cols.membershipId} = any(${p([subject.membershipId, ...subject.reportIds])}::uuid[])`);
+      case 'team': {
+        const byMembership = `${cols.membershipId} = any(${p([subject.membershipId, ...subject.reportIds])}::uuid[])`;
+        const team = [...(subject.employeeId ? [subject.employeeId] : []), ...(subject.reportEmployeeIds ?? [])];
+        parts.push(cols.employeeId && team.length ? `(${byMembership} or ${cols.employeeId} = any(${p(team)}::uuid[]))` : byMembership);
         break;
-      case 'own':
-        parts.push(`${cols.membershipId} = ${p(subject.membershipId)}::uuid`);
+      }
+      case 'own': {
+        const byMembership = `${cols.membershipId} = ${p(subject.membershipId)}::uuid`;
+        parts.push(cols.employeeId && subject.employeeId ? `(${byMembership} or ${cols.employeeId} = ${p(subject.employeeId)}::uuid)` : byMembership);
         break;
+      }
     }
     return parts.length ? `(${parts.join(' and ')})` : 'true';
   });

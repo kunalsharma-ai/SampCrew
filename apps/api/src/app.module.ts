@@ -1,14 +1,26 @@
 import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ApprovalsController } from './modules/approvals/approvals.controller';
+import { ApprovalsService } from './modules/approvals/approvals.service';
 import { AuditController } from './modules/audit/audit.controller';
 import { AuthController, MeController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { BillingController } from './modules/billing/billing.controller';
 import { BillingService } from './modules/billing/billing.service';
+import { DocumentsController } from './modules/documents/documents.controller';
+import { DocumentsService } from './modules/documents/documents.service';
+import { DesignationsController, EmployeesController } from './modules/employees/employees.controller';
+import { EmployeesService } from './modules/employees/employees.service';
 import { HealthController } from './modules/health/health.controller';
+import { HrJobsService } from './modules/hr-jobs/hr-jobs.service';
+import { LeaveController } from './modules/leave/leave.controller';
+import { LeaveService } from './modules/leave/leave.service';
 import { MembersController } from './modules/members/members.controller';
 import { MembersService } from './modules/members/members.service';
+import { NotificationsController } from './modules/notifications/notifications.controller';
+import { OnboardingController } from './modules/onboarding/onboarding.controller';
+import { OnboardingService } from './modules/onboarding/onboarding.service';
 import {
   BusinessUnitsController,
   DepartmentsController,
@@ -34,6 +46,9 @@ import { OutboxService } from './platform/events/outbox.service';
 import { contextMiddleware } from './platform/http/context.middleware';
 import { ErrorEnvelopeFilter } from './platform/http/exception.filter';
 import { IdempotencyInterceptor } from './platform/http/idempotency.interceptor';
+import { MailerService } from './platform/notify/mailer.service';
+import { NotificationService } from './platform/notify/notification.service';
+import { StorageService } from './platform/storage/storage.service';
 
 export const CONTROLLERS = [
   HealthController,
@@ -50,6 +65,13 @@ export const CONTROLLERS = [
   RolesController,
   AuditController,
   BillingController,
+  DesignationsController,
+  EmployeesController,
+  OnboardingController,
+  DocumentsController,
+  LeaveController,
+  ApprovalsController,
+  NotificationsController,
   PlatformAuthController,
   PlatformController,
 ];
@@ -78,6 +100,15 @@ export const CONTROLLERS = [
     BillingService,
     PlatformAuthService,
     PlatformService,
+    NotificationService,
+    MailerService,
+    StorageService,
+    ApprovalsService,
+    OnboardingService,
+    LeaveService,
+    EmployeesService,
+    DocumentsService,
+    HrJobsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
