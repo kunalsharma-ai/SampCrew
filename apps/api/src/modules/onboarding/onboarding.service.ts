@@ -155,7 +155,10 @@ export class OnboardingService {
     const attrs = { employeeId: e.id, membershipId: e.membership_id, legalEntityId: e.le, departmentId: e.d, locationId: e.l };
     if (broadOnly) {
       const s = await this.authz.subject(tx);
-      if (!grantsFor(s, permission).some((g) => g.scope !== 'own' && grantCovers(s, g, attrs))) throw Errors.forbidden();
+      if (!grantsFor(s, permission).some((g) => g.scope !== 'own' && grantCovers(s, g, attrs))) {
+        await this.authz.require('employees:read', attrs, tx); // not found when they cannot see the employee at all
+        throw Errors.forbidden();
+      }
       return;
     }
     await this.authz.require(permission, attrs, tx);

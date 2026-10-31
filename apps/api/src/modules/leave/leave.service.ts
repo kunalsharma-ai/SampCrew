@@ -1,5 +1,6 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { z } from 'zod';
+import { leaveMath, type WorkCalendar } from '@crew/contracts';
 import type {
   holidayCalendarInput,
   holidayInput,
@@ -18,7 +19,7 @@ import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService, type ApprovalRequestRow } from '../approvals/approvals.service';
 import { employeeAttrs } from '../employees/employee-attrs';
-import { accrualsDue, addDays, countLeaveDays, fromH, toH, yearEnd, yearOf, type WorkCalendar } from './leave-math';
+
 
 interface PolicyRow {
   id: string;
@@ -72,6 +73,7 @@ const REQUEST_FROM = `from leave_requests r join employees e on e.id = r.employe
   left join memberships rm on rm.id = r.requested_by_membership_id left join users ru on ru.id = rm.user_id`;
 const REQUEST_SCOPE = { membershipId: 'e.membership_id', legalEntityId: 'e.current_legal_entity_id', departmentId: 'e.current_department_id', locationId: 'e.current_location_id', employeeId: 'e.id' };
 
+const { accrualsDue, addDays, countLeaveDays, fromH, toH, yearEnd, yearOf } = leaveMath;
 const today = () => new Date().toISOString().slice(0, 10);
 const LEAVE_TYPE_COLUMNS = { code: 'code', name: 'name', description: 'description', paid: 'paid', allowHalfDay: 'allow_half_day', color: 'color' } as const;
 

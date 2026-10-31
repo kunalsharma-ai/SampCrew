@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+/** Treats an empty variable (e.g. `SMTP_URL=` in .env) as unset. */
+const optional = <T extends z.ZodType>(t: T) => z.preprocess((v) => (v === '' ? undefined : v), t.optional());
+
 const schema = z.object({
   CREW_ENV: z.enum(['local', 'test', 'staging', 'production']).default('local'),
   DATABASE_URL: z.string().min(1),
@@ -12,12 +15,12 @@ const schema = z.object({
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   /** SMTP connection URL, e.g. smtp://localhost:1025 for Mailpit. Unset means email is not configured: messages are kept and marked skipped. */
-  SMTP_URL: z.string().regex(/^smtps?:\/\//, 'SMTP_URL must start with smtp:// or smtps://').optional(),
+  SMTP_URL: optional(z.string().regex(/^smtps?:\/\//, 'SMTP_URL must start with smtp:// or smtps://')),
   MAIL_FROM: z.string().default('CREW <no-reply@crew.local>'),
   /** Directory for uploaded files when using the local storage driver. */
   STORAGE_DIR: z.string().default('./.data/files'),
   /** Secret for signing short-lived download links. Defaults to a key derived from FIELD_ENCRYPTION_KEY. */
-  FILE_URL_SECRET: z.string().min(32).optional(),
+  FILE_URL_SECRET: optional(z.string().min(32)),
   API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
   /** Set to true to stop background loops (outbox, email, daily HR jobs), e.g. in tests. */
   CREW_DISABLE_DISPATCHER: z.enum(['true', 'false']).default('false'),

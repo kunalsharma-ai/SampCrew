@@ -641,7 +641,7 @@ export class EmployeesService {
       return { action: 'employee.exit_scheduled', changes: { status: { from: e.status, to: 'notice' }, lastWorkingDay: input.lastWorkingDay, exitType: input.exitType } };
     }).then(async (r) => {
       // A last working day in the past takes effect straight away.
-      if (input.lastWorkingDay < today()) await this.db.tenant((tx) => this.finaliseExits(tx, today()));
+      if (input.lastWorkingDay < today()) return this.db.tenant(async (tx) => (await this.finaliseExits(tx, today()), this.load(tx, id)));
       return r;
     });
   }

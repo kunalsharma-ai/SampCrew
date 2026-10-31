@@ -129,6 +129,17 @@ export async function provisionTenant(db: PoolClient, input: ProvisionTenantInpu
     ],
   );
 
+  // Starting points every workspace can edit: a default calendar (no public holidays until HR adds them)
+  // and a default onboarding checklist.
+  await db.query(
+    `insert into holiday_calendars (tenant_id, name, is_default, weekly_offs) values ($1, 'Default calendar', true, '{0,6}')`,
+    [tenantId],
+  );
+  await db.query(
+    `insert into onboarding_templates (tenant_id, name, description, tasks, is_default) values ($1, 'Standard onboarding', 'Default checklist for new joiners', $2, true)`,
+    [tenantId, JSON.stringify(DEFAULT_ONBOARDING_TASKS)],
+  );
+
   return { tenantId, ownerUserId: userId, ownerMembershipId, legalEntityId, existingUser };
 }
 
@@ -147,3 +158,14 @@ export function regionFor(countryCode: string): string {
   if (['AU', 'NZ'].includes(countryCode)) return 'au';
   return 'eu';
 }
+
+export const DEFAULT_ONBOARDING_TASKS = [
+  { title: 'Send offer letter and collect signed copy', owner: 'hr', dueOffsetDays: -14 },
+  { title: 'Collect identity and address proof', owner: 'employee', dueOffsetDays: -3 },
+  { title: 'Add bank and tax details', owner: 'employee', dueOffsetDays: 0 },
+  { title: 'Prepare laptop, email and system access', owner: 'it', dueOffsetDays: -2 },
+  { title: 'Plan the first week and assign a buddy', owner: 'manager', dueOffsetDays: -1 },
+  { title: 'Welcome meeting and workplace tour', owner: 'manager', dueOffsetDays: 0 },
+  { title: 'Read and acknowledge company policies', owner: 'employee', dueOffsetDays: 7 },
+  { title: '30-day check-in', owner: 'manager', dueOffsetDays: 30 },
+];

@@ -131,21 +131,26 @@ export class ApprovalsService {
     if (step.approver_membership_id) return [step.approver_membership_id];
     const h = this.handler(req.resource_type);
     const attrs = await h.attributes(tx, req.resource_id);
-    const holders = await many<{ membership_id: string; user_id: string }>(
-      tx,
-      `select distinct ra.membership_id, m.user_id from role_assignments ra join roles r on r.id = ra.role_id
-         join memberships m on m.id = ra.membership_id where r.key = $1 and m.status = 'active'`,
-      [step.approver_role_key],
-    );
-    const out: string[] = [];
-    for (const holder of holders) {
-      if (holder.membership_id === req.requested_by_membership_id) continue;
-      // MFA is checked when they decide; here we only need to know whether the record is in their scope.
-      const s = await loadSubject(tx, holder.membership_id, holder.user_id, true);
-      if (s.employeeId && s.employeeId === req.subject_employee_id) continue;
-      if (can(s, h.permission, attrs).allowed) out.push(holder.membership_id);
-    }
-    return out;
+    const eligible = async (role: string) => {
+      const holders = await many<{ membership_id: string; user_id: string }>(
+        tx,
+        `select distinct ra.membership_id, m.user_id from role_assignments ra join roles r on r.id = ra.role_id
+           join memberships m on m.id = ra.membership_id where r.key = $1 and m.status = 'active'`,
+        [role],
+      );
+      const out: string[] = [];
+      for (const holder of holders) {
+        if (holder.membership_id === req.requested_by_membership_id) continue;
+        // MFA is checked when they decide; here we only need to know whether the record is in their scope.
+        const s = await loadSubject(tx, holder.membership_id, holder.user_id, true);
+        if (s.employeeId && s.employeeId === req.subject_employee_id) continue;
+        if (can(s, h.permission, attrs).allowed) out.push(holder.membership_id);
+      }
+      return out;
+    };
+    const out = await eligible(step.approver_role_key!);
+    // When nobody in the role can act (e.g. the only HR admin is the requester), workspace owners decide.
+    return out.length || step.approver_role_key === 'tenant_owner' ? out : eligible('tenant_owner');
   }
 
   private async notifyApprovers(tx: Tx, requestId: string) {
@@ -230,7 +235,6 @@ export class ApprovalsService {
   async inbox() {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const myRoles = (await many<{ key: string }>(tx, `select r.key from role_assignments ra join roles r on r.id = ra.role_id where ra.membership_id = $1`, [actor.membershipId])).map((r) => r.key);
       const candidates = await many<{ id: string; resourceType: string; resourceId: string; summary: string; createdAt: string; stepSeq: number; stepCount: number; requestedBy: string | null; subjectName: string | null; viaRole: string | null }>(
         tx,
         `select r.id, r.resource_type as "resourceType", r.resource_id as "resourceId", r.summary, r.created_at as "createdAt",
@@ -240,9 +244,9 @@ export class ApprovalsService {
            join approval_steps s on s.request_id = r.id and s.status = 'pending'
            left join memberships rm on rm.id = r.requested_by_membership_id left join users ru on ru.id = rm.user_id
            left join employees e on e.id = r.subject_employee_id
-          where r.status = 'pending' and (s.approver_membership_id = $1 or s.approver_role_key = any($2::text[]))
+          where r.status = 'pending' and (s.approver_membership_id = $1 or s.approver_role_key is not null)
           order by r.created_at desc limit 200`,
-        [actor.membershipId, myRoles],
+        [actor.membershipId],
       );
       const out = [];
       for (const c of candidates) {
