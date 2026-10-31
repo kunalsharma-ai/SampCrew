@@ -352,7 +352,7 @@ export class EmployeesService {
           membershipIds: [mgr?.membership_id],
           kind: 'employee.joining',
           title: `${e.displayName} joins your team on ${e.dateOfJoining}`,
-          link: `/people/${row.id}`,
+          link: `/employees/${row.id}`,
           email: true,
         });
       }
@@ -508,7 +508,7 @@ export class EmployeesService {
             kind: 'employee.sensitive_changed',
             title: 'Your bank or tax details were changed',
             body: `${actor.label} updated: ${changed.join(', ')}. If you did not expect this, contact HR.`,
-            link: `/people/${id}`,
+            link: `/employees/${id}`,
             email: true,
           });
         }
@@ -592,7 +592,7 @@ export class EmployeesService {
         kind: 'employee.job_changed',
         title: `Job change for ${e.displayName} from ${input.effectiveFrom}`,
         body: `Reason: ${input.reason.replace('_', ' ')}.`,
-        link: `/people/${id}`,
+        link: `/employees/${id}`,
       });
       return after;
     });
@@ -604,7 +604,7 @@ export class EmployeesService {
       if (input.effectiveOn < e.dateOfJoining) throw Errors.badRequest('before_joining', 'Confirmation cannot be before the joining date');
       await tx.query(`update employees set status = 'active', confirmation_date = $2 where id = $1`, [id, input.effectiveOn]);
       await this.event(tx, id, 'confirmed', input.effectiveOn, { note: input.note ?? null });
-      await this.notifications.notify(tx, { membershipIds: [e.membershipId], kind: 'employee.confirmed', title: 'Your employment has been confirmed', link: `/people/${id}`, email: true });
+      await this.notifications.notify(tx, { membershipIds: [e.membershipId], kind: 'employee.confirmed', title: 'Your employment has been confirmed', link: `/employees/${id}`, email: true });
       return { action: 'employee.confirmed', changes: { status: { from: 'probation', to: 'active' }, confirmationDate: input.effectiveOn } };
     });
   }
@@ -636,7 +636,7 @@ export class EmployeesService {
       await this.event(tx, id, 'exit_scheduled', input.lastWorkingDay, { exitType: input.exitType });
       const mgr = e.managerEmployeeId ? await one<{ membership_id: string | null }>(tx, 'select membership_id from employees where id = $1', [e.managerEmployeeId]) : undefined;
       await this.notifications.notify(tx, {
-        membershipIds: [mgr?.membership_id], kind: 'employee.exit_scheduled', title: `${e.displayName}'s last working day is ${input.lastWorkingDay}`, link: `/people/${id}`,
+        membershipIds: [mgr?.membership_id], kind: 'employee.exit_scheduled', title: `${e.displayName}'s last working day is ${input.lastWorkingDay}`, link: `/employees/${id}`,
       });
       return { action: 'employee.exit_scheduled', changes: { status: { from: e.status, to: 'notice' }, lastWorkingDay: input.lastWorkingDay, exitType: input.exitType } };
     }).then(async (r) => {

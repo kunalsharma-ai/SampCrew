@@ -89,7 +89,7 @@ export class DocumentsService {
       ))!;
       await this.audit.record(tx, { action: 'document.uploaded', resourceType: 'employee', resourceId: employeeId, metadata: { documentId: row.id, category: meta.category, title: meta.title, sha256: sha } });
       if (!a.isSelf && meta.visibility === 'employee') {
-        await this.notifications.notify(tx, { membershipIds: [a.e.membership_id], kind: 'document.added', title: `New document: ${meta.title}`, link: `/people/${employeeId}?tab=documents` });
+        await this.notifications.notify(tx, { membershipIds: [a.e.membership_id], kind: 'document.added', title: `New document: ${meta.title}`, link: `/employees/${employeeId}?tab=documents` });
       }
       return one(tx, `select ${DOC_COLUMNS} from employee_documents d left join memberships m on m.id = d.uploaded_by_membership_id left join users u on u.id = m.user_id where d.id = $1`, [row.id]);
     });

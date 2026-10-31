@@ -138,9 +138,9 @@ function HireDialog({ open, onClose, onInvite, entities, departments, locations,
           start(async () => {
             const r = await hireAction(body);
             if (r.ok) {
-              onInvite(r.data?.inviteUrl ?? null);
               onClose();
-              router.push(`/employees/${r.data!.employee.id}`);
+              // With an invitation link to share, stay here so it can be copied; otherwise open the new profile.
+              if (r.data?.inviteUrl) { onInvite(r.data.inviteUrl); router.refresh(); } else router.push(`/employees/${r.data!.employee.id}`);
             } else {
               setError(r.message);
               setFe(r.fieldErrors ?? {});
