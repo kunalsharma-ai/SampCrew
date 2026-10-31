@@ -299,6 +299,13 @@ export class RecruitmentController {
 
   // Offers ------------------------------------------------------------------------------------------------
 
+  @Get('offers/:id')
+  @RequirePermission('candidates:read')
+  @Doc({ summary: 'Find the candidate and application an offer belongs to' })
+  offer(@Param('id', UuidPipe) id: string) {
+    return this.offers.locate(id);
+  }
+
   @Put('offers/:id')
   @RequirePermission('offers:manage')
   @Doc({ summary: 'Change a draft or rejected offer', body: offerInput })

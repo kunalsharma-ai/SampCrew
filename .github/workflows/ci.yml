@@ -86,7 +86,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm build
-      - name: Web Portal smoke test, Core HR and attendance flows
+      - name: Web Portal smoke test, Core HR, attendance and recruitment flows
         run: |
           pnpm db:reset
           node apps/api/dist/main.js > api.log 2>&1 &
@@ -95,6 +95,7 @@ jobs:
           pnpm e2e:web
           pnpm e2e:hr
           pnpm e2e:attendance
+          pnpm e2e:recruitment
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true

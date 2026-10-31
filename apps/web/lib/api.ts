@@ -1,4 +1,5 @@
 import 'server-only';
+import { headers as requestHeaders } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { accessToken } from './session';
 
@@ -21,9 +22,24 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The visitor's address, so the API's per-address rate limits apply to each visitor rather than to this web
+ * server. Takes the right-most X-Forwarded-For entry, which is the one added by the proxy in front of the web
+ * app (entries further left come from the client and can be forged).
+ */
+async function clientIp(): Promise<Record<string, string>> {
+  try {
+    const h = await requestHeaders();
+    const ip = h.get('x-forwarded-for')?.split(',').pop()?.trim() || h.get('x-real-ip')?.trim();
+    return ip && /^[0-9a-fA-F:.]{3,45}$/.test(ip) ? { 'x-forwarded-for': ip } : {};
+  } catch {
+    return {}; // outside a request (build time)
+  }
+}
+
 /** Server-side call to the CREW API with the signed-in user's bearer token. */
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; auth?: boolean; idempotencyKey?: string } = {}): Promise<T> {
-  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-crew-client': 'web' };
+  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-crew-client': 'web', ...(await clientIp()) };
   let sessionRequest = false;
   if (init.auth !== false) {
     const token = await accessToken();
@@ -42,11 +58,11 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
 }
 
 /** Multipart upload (documents). The browser never talks to the API directly; this runs on the server. */
-export async function apiForm<T = unknown>(path: string, form: FormData): Promise<T> {
-  const token = await accessToken();
+export async function apiForm<T = unknown>(path: string, form: FormData, opts: { auth?: boolean } = {}): Promise<T> {
+  const token = opts.auth === false ? undefined : await accessToken();
   const res = await fetch(`${API_URL}/api/v1${path}`, {
     method: 'POST',
-    headers: { 'x-crew-client': 'web', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    headers: { 'x-crew-client': 'web', ...(await clientIp()), ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: form,
     cache: 'no-store',
   });

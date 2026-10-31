@@ -52,7 +52,7 @@ export class OffersService implements OnModuleInit {
       defaultSteps: [{ type: 'role', role: 'hr_admin' }],
       fallbackRole: 'tenant_owner',
       label: 'Offer',
-      link: () => '/recruitment',
+      link: (id) => `/recruitment/offers/${id}`,
       attributes: async (tx, id) => reqAttrs((await loadApplication(tx, (await this.load(tx, id)).application_id)).req),
       onApproved: async (tx, req) => {
         const o = await one<{ application_id: string; created_by_membership_id: string | null }>(
@@ -88,17 +88,28 @@ export class OffersService implements OnModuleInit {
   }
 
   /** Is the offer above the requisition's approved range? Only comparable for annual pay in the same currency. */
-  private aboveRange(input: Pick<OfferInput, 'baseSalary' | 'currency' | 'payPeriod'>, req: { salary_max: string | null; currency: string }) {
+  private async aboveRange(tx: Tx, input: Pick<OfferInput, 'baseSalary' | 'currency' | 'payPeriod'>, req: { salary_max: string | null; currency: string }) {
     if (req.salary_max === null) return false;
-    if (input.currency !== req.currency) return true;
-    const annual = input.payPeriod === 'annual' ? Number(input.baseSalary) : input.payPeriod === 'monthly' ? Number(input.baseSalary) * 12 : null;
-    return annual === null ? true : annual > Number(req.salary_max);
+    if (input.currency !== req.currency || input.payPeriod === 'hourly') return true; // not comparable, so an approver should look
+    // Exact decimal comparison in the database, never floating point.
+    const r = await one<{ above: boolean }>(tx, `select ($1::numeric * $2) > $3::numeric as above`, [input.baseSalary, input.payPeriod === 'monthly' ? 12 : 1, req.salary_max]);
+    return r!.above;
   }
 
   private checkDates(input: Pick<OfferInput, 'joiningDate' | 'expiresOn'>) {
     const today = new Date().toISOString().slice(0, 10);
     if (input.expiresOn < today) throw Errors.badRequest('expires_in_past', 'The offer must be open until today or later');
     if (input.joiningDate < today) throw Errors.badRequest('joining_in_past', 'The joining date is in the past');
+  }
+
+  /** Where an offer lives: its candidate and application. Used by approval links. */
+  async locate(id: string) {
+    return this.db.tenant(async (tx) => {
+      const o = await this.load(tx, id);
+      const a = await loadApplication(tx, o.application_id);
+      await this.authz.require('candidates:read', reqAttrs(a.req), tx);
+      return { id, status: o.status, applicationId: o.application_id, candidateId: a.candidate_id };
+    });
   }
 
   async create(applicationId: string, input: OfferInput) {
@@ -115,7 +126,7 @@ export class OffersService implements OnModuleInit {
         `insert into offers (tenant_id, application_id, job_title, designation_id, base_salary, currency, pay_period, variable_pay, joining_date, expires_on, notes, above_range, created_by_membership_id)
          values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`,
         [applicationId, input.jobTitle, input.designationId ?? a.req.designation_id, input.baseSalary, input.currency, input.payPeriod, input.variablePay ?? null,
-          input.joiningDate, input.expiresOn, input.notes ?? null, this.aboveRange(input, a.req), actor.membershipId],
+          input.joiningDate, input.expiresOn, input.notes ?? null, await this.aboveRange(tx, input, a.req), actor.membershipId],
       ))!;
       // Moving to the offer stage is what a recruiter does next anyway.
       if (a.stage_kind !== 'offer') {
@@ -142,7 +153,7 @@ export class OffersService implements OnModuleInit {
         `update offers set job_title = $2, designation_id = $3, base_salary = $4, currency = $5, pay_period = $6, variable_pay = $7, joining_date = $8, expires_on = $9,
                 notes = $10, above_range = $11, status = 'draft' where id = $1`,
         [id, input.jobTitle, input.designationId ?? a.req.designation_id, input.baseSalary, input.currency, input.payPeriod, input.variablePay ?? null, input.joiningDate,
-          input.expiresOn, input.notes ?? null, this.aboveRange(input, a.req)],
+          input.expiresOn, input.notes ?? null, await this.aboveRange(tx, input, a.req)],
       );
       await this.audit.record(tx, { action: 'offer.updated', resourceType: 'offer', resourceId: id, changes: { ...input, notes: undefined } });
       return { id };

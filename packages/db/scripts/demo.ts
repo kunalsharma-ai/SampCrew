@@ -106,6 +106,7 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
       membershipByEmail,
     });
     await seedAttendance(client, { tid, puneId: pune.id, membershipByEmail });
+    await seedRecruitment(client, { tid, indiaId: t.legalEntityId, puneId: pune.id, manufacturingId: manufacturing.id, membershipByEmail });
 
     await client.query(
       `insert into audit_events (tenant_id, actor_type, actor_label, action, resource_type, resource_id, metadata)
@@ -357,4 +358,89 @@ async function seedAttendance(client: PoolClient, c: { tid: string; puneId: stri
     `insert into device_ingest_log (tenant_id, device_id, kind, records, accepted, duplicates, rejected, detail) values ($1, $2, 'attlog', $3, $3, 0, 0, 'Demo data: a week of punches')`,
     [tid, device.id, accepted],
   );
+}
+
+/**
+ * Phase 4 demo data: a career site, an open job with a published posting and three candidates at different
+ * stages (one with a past interview awaiting a scorecard), and a draft requisition. Every candidate is tagged
+ * "demo" and uses a .local address, so no real person is contacted.
+ */
+async function seedRecruitment(client: PoolClient, c: { tid: string; indiaId: string; puneId: string; manufacturingId: string; membershipByEmail: Map<string, string> }) {
+  const { tid } = c;
+  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
+  const m = (email: string) => c.membershipByEmail.get(email)!;
+  const recruiter = m('recruiter@demo.crew.local');
+  const plantHead = m('plant.head@demo.crew.local');
+  const qaLead = m('qa.lead@demo.crew.local');
+
+  await client.query(
+    `insert into career_sites (tenant_id, enabled, slug, headline, intro, privacy_notice, retention_days) values ($1, true, 'northwind-demo', $2, $3, $4, 365)`,
+    [
+      tid,
+      'Build what moves India (demo career site)',
+      'This is a demo career site for the Northwind sample workspace. Applications here are stored in the demo workspace only.',
+      'Northwind (a demo organisation) uses the details and CV you send only to consider you for this job and similar roles. Our hiring team and the interviewers for the role can see them. We keep them for one year after your last contact with us, then delete them. You can ask us to delete them sooner at any time.',
+    ],
+  );
+  await client.query(`insert into requisition_number_series (tenant_id, next_value) values ($1, 3)`, [tid]);
+  const stage = async (kind: string) => (await q(`select id from recruitment_stages where tenant_id = $1 and kind = $2 order by position limit 1`, [tid, kind])).id;
+
+  const open = await q(
+    `insert into job_requisitions (tenant_id, code, title, legal_entity_id, department_id, location_id, hiring_manager_membership_id, employment_type, work_mode, headcount,
+                                   reason, salary_min, salary_max, currency, justification, description, scorecard, status, created_by_membership_id, approved_at, opened_at)
+     values ($1, 'REQ-0001', 'Quality Engineer', $2, $3, $4, $5, 'full_time', 'onsite', 2, 'new_role', 600000, 900000, 'INR',
+             'Demo data: second shift line needs in-process inspection cover.', 'Own in-process quality checks on the assembly line and lead root-cause analysis for defects.',
+             $6, 'open', $7, now() - interval '20 days', now() - interval '18 days') returning id`,
+    [tid, c.indiaId, c.manufacturingId, c.puneId, plantHead, ['Quality systems', 'Problem solving', 'Communication', 'Shop-floor safety'], recruiter],
+  );
+  await client.query(
+    `insert into job_postings (tenant_id, requisition_id, public_title, slug, summary, description, location_text, show_salary, published_at)
+     values ($1, $2, 'Quality Engineer (demo)', 'quality-engineer', 'Keep our Pune assembly line right first time',
+             $3, 'Pune Plant', true, now() - interval '17 days')`,
+    [tid, open.id, 'This is a demo job posting.\n\nYou will run in-process inspections on our assembly line, lead root-cause analysis when defects appear, and work with supervisors to keep quality high on every shift.\n\nYou have 2 or more years in manufacturing quality, know 8D or a similar method, and communicate clearly with operators and engineers.'],
+  );
+  await client.query(
+    `insert into job_requisitions (tenant_id, code, title, legal_entity_id, department_id, location_id, hiring_manager_membership_id, employment_type, work_mode, headcount,
+                                   reason, salary_min, salary_max, currency, justification, scorecard, status, created_by_membership_id)
+     values ($1, 'REQ-0002', 'CNC Machine Operator', $2, $3, $4, $5, 'full_time', 'onsite', 3, 'new_role', 300000, 420000, 'INR',
+             'Demo data: new CNC cell starting next quarter.', $6, 'draft', $5)`,
+    [tid, c.indiaId, c.manufacturingId, c.puneId, plantHead, ['Machine skills', 'Safety', 'Reliability']],
+  );
+
+  const candidates: { first: string; last: string; email: string; title: string; company: string; source: string; basis: string; kind: string; daysAgo: number; cover?: string }[] = [
+    { first: 'Ananya', last: 'Joshi', email: 'ananya.joshi@candidates.demo.crew.local', title: 'Quality Inspector', company: 'Demo Auto Parts', source: 'career_site', basis: 'candidate_consent', kind: 'interview', daysAgo: 12, cover: 'I have led 8D investigations on a press line for three years.' },
+    { first: 'Rahul', last: 'Verma', email: 'rahul.verma@candidates.demo.crew.local', title: 'QA Engineer', company: 'Demo Castings', source: 'referral', basis: 'recruiter_confirmed', kind: 'screen', daysAgo: 6 },
+    { first: 'Sneha', last: 'Kulkarni', email: 'sneha.kulkarni@candidates.demo.crew.local', title: 'Graduate Engineer Trainee', company: 'Demo Forgings', source: 'career_site', basis: 'candidate_consent', kind: 'new', daysAgo: 2, cover: 'Looking to grow into a quality role on the shop floor.' },
+  ];
+  const applied = await stage('new');
+  for (const cd of candidates) {
+    const cand = await q(
+      `insert into candidates (tenant_id, first_name, last_name, email, current_title, current_company, location_text, source, source_detail, tags, consent_basis, privacy_notice_version, consent_at, last_activity_at, created_at)
+       values ($1, $2, $3, $4, $5, $6, 'Pune', $7, 'Demo data', '{demo}', $8, case when $8 = 'candidate_consent' then 1 end, now() - make_interval(days => $9), now() - make_interval(days => $9), now() - make_interval(days => $9)) returning id`,
+      [tid, cd.first, cd.last, cd.email, cd.title, cd.company, cd.source, cd.basis, cd.daysAgo],
+    );
+    const to = await stage(cd.kind);
+    const app = await q(
+      `insert into applications (tenant_id, candidate_id, requisition_id, stage_id, source, cover_note, created_by_membership_id, applied_at, stage_entered_at)
+       values ($1, $2, $3, $4, $5, $6, $7, now() - make_interval(days => $8), now() - make_interval(days => greatest($8 - 2, 0))) returning id`,
+      [tid, cand.id, open.id, to, cd.source, cd.cover ?? null, cd.source === 'career_site' ? null : recruiter, cd.daysAgo],
+    );
+    await client.query(`insert into application_events (tenant_id, application_id, kind, to_stage_id, detail, created_at) values ($1, $2, 'applied', $3, $4, now() - make_interval(days => $5))`, [tid, app.id, applied, { source: cd.source }, cd.daysAgo]);
+    if (to !== applied) {
+      await client.query(
+        `insert into application_events (tenant_id, application_id, kind, from_stage_id, to_stage_id, actor_membership_id, created_at) values ($1, $2, 'stage_changed', $3, $4, $5, now() - make_interval(days => greatest($6 - 2, 0)))`,
+        [tid, app.id, applied, to, recruiter, cd.daysAgo],
+      );
+    }
+    if (cd.kind === 'interview') {
+      // Yesterday's interview: the QA lead's scorecard is still due, so the demo can show the scorecard flow.
+      const iv = await q(
+        `insert into interviews (tenant_id, application_id, title, starts_at, duration_minutes, mode, meeting_url, created_by_membership_id)
+         values ($1, $2, 'Technical interview', date_trunc('hour', now()) - interval '1 day', 60, 'video', 'https://meet.example.com/demo-quality-engineer', $3) returning id`,
+        [tid, app.id, recruiter],
+      );
+      await client.query(`insert into interview_panelists (tenant_id, interview_id, membership_id) values ($1, $2, $3), ($1, $2, $4)`, [tid, iv.id, qaLead, plantHead]);
+      await client.query(`insert into application_events (tenant_id, application_id, kind, detail, actor_membership_id, created_at) values ($1, $2, 'interview_scheduled', $3, $4, now() - interval '3 days')`, [tid, app.id, { interviewId: iv.id, title: 'Technical interview' }, recruiter]);
+    }
+  }
 }

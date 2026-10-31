@@ -115,8 +115,14 @@ export async function employeeOfMember(tx: Tx, membershipId: string | null) {
 
 export const CANDIDATE_FOOTER = 'Sent by CREW by SAMPLEDGE on behalf of the hiring organisation named above. You received this because you applied for a role or were put forward for one.';
 
-export const moneyText = (amount: string | null, currency: string) =>
-  amount === null ? null : `${currency} ${Number(amount).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+/** Formats a decimal string exactly (no floating point), with Indian digit grouping for INR. */
+export function moneyText(amount: string | null, currency: string) {
+  if (amount === null) return null;
+  const [whole = '0', frac = ''] = amount.split('.');
+  const grouped = currency === 'INR' ? whole.replace(/(\d)(?=(\d\d)+\d$)/g, '$1,') : whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const cents = /[1-9]/.test(frac) ? `.${frac.padEnd(2, '0').slice(0, 2)}` : '';
+  return `${currency} ${grouped}${cents}`;
+}
 
 /**
  * Withdraws an application's open offers when the application closes, cancelling any approval still waiting

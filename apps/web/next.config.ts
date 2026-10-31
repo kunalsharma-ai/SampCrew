@@ -4,6 +4,9 @@ const config: NextConfig = {
   transpilePackages: ['@crew/ui'],
   poweredByHeader: false,
   reactStrictMode: true,
+  // Uploads go through server actions: employee documents up to 10 MB and CVs up to 5 MB, plus form overhead.
+  // The API enforces the real per-file limits.
+  experimental: { serverActions: { bodySizeLimit: '11mb' } },
   async headers() {
     return [
       {
