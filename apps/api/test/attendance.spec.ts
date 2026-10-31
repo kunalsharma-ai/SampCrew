@@ -164,6 +164,8 @@ describe('attendance', () => {
       const d2 = pastWeekday(4);
       const op = await token('operator');
       const before = await pool.query(`select count(*)::int as n from attendance_events where employee_id = $1`, [people.operator!.employeeId]);
+      const twice = await api(app, op).post('/attendance/corrections').send({ workDate: d2, punches: [{ time: '18:05', direction: 'out' }, { time: '18:05', direction: 'out' }], reason: 'Twice' });
+      expect(twice.status).toBe(422);
       const res = await api(app, op).post('/attendance/corrections').send({ workDate: d2, punches: [{ time: '18:05', direction: 'out' }], reason: 'Forgot to punch out' });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
       expect((await api(app, op).post('/attendance/corrections').send({ workDate: d2, punches: [{ time: '18:10', direction: 'out' }], reason: 'Again' })).body.error.code).toBe('correction_pending');

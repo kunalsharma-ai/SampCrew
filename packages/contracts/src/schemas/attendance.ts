@@ -60,7 +60,11 @@ const correctionPunch = z.object({ time, direction: z.enum(['in', 'out']), nextD
 export const correctionInput = z.object({
   employeeId: z.uuid().optional(),
   workDate: isoDate,
-  punches: z.array(correctionPunch).min(1).max(6),
+  punches: z
+    .array(correctionPunch)
+    .min(1)
+    .max(6)
+    .refine((ps) => new Set(ps.map((p) => `${p.time}|${p.direction}|${p.nextDay}`)).size === ps.length, { message: 'The same punch is listed twice' }),
   reason: z.string().trim().min(3).max(500),
 });
 export type CorrectionInput = z.infer<typeof correctionInput>;

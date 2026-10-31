@@ -17,6 +17,7 @@ This repository is being built phase by phase. See [docs/architecture](docs/arch
 - **Web Portal** (Next.js, port 3000): sign-up, sign-in with MFA, people and invitations, organisation structure, roles and permissions, audit trail with integrity check, plan and billing, workspace settings, support-access approvals, personal security
 - **Super Admin Console** (Next.js, port 3001) for SAMPLEDGE staff: mandatory MFA, metrics, tenants (create, suspend, subscription overrides), plans and prices, system health, platform audit, console admins, and read-only support view only after the customer approves
 - **Core HR (Phase 2)**: employee records with effective-dated job history, transfers, probation and exits; onboarding checklists; leave types, policies, holiday calendars, ledger-based balances with idempotent accrual, requests with live preview and year-end close; a multi-step approvals engine; documents with signed download links; in-app notifications and SMTP email. See [docs/phases/phase-2.md](docs/phases/phase-2.md)
+- **Attendance and Workforce (Phase 3)**: immutable raw punches with an explainable attendance engine; web punching with geofences; rotating QR kiosks; corrections and overtime through approvals; shifts, rosters and same-day swaps; payroll period locks; ZKTeco and eSSL push devices (Preview) with enrolment mapping, live status and a device simulator. See [docs/phases/phase-3.md](docs/phases/phase-3.md)
 - OpenAPI 3.1 spec at `/api/v1/openapi.json` and in [docs/api/openapi.json](docs/api/openapi.json)
 
 Not connected yet, and labelled as such in the product: payment collection (invoices are issued manually by SAMPLEDGE finance), Redis, and S3-compatible object storage (files use local disk). Email is sent only when `SMTP_URL` is set; otherwise it is recorded as skipped, and invitation links are shown on screen in local environments.
@@ -46,6 +47,7 @@ The demo tenant `demo-northwind` ("Northwind Manufacturing (Demo)") is fictional
 pnpm test           # unit + integration; integration tests create and use a separate crew_test database
 pnpm e2e:web        # browser test of the Web Portal (needs a fresh `pnpm db:reset` and running API + web)
 pnpm e2e:hr         # Core HR flow: hire, onboard, apply for leave, approve (run after e2e:web, API + web)
+pnpm e2e:attendance # Attendance flow: punch, correct, approve, simulated device, QR kiosk (API + web)
 pnpm e2e:console    # browser test of the console, including support access across both apps (fresh db, API + web + console)
 ```
 

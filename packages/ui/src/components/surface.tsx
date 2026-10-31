@@ -57,6 +57,9 @@ export function Badge({ tone = 'neutral', className, children, dot }: { tone?: T
 const STATUS_TONE: Record<string, Tone> = {
   active: 'success', trialing: 'info', invited: 'warning', pending: 'warning', suspended: 'danger', past_due: 'danger', cancelled: 'neutral',
   approved: 'success', rejected: 'danger', revoked: 'neutral', expired: 'neutral', closed: 'neutral', paid: 'success', open: 'info', draft: 'neutral',
+  present: 'success', half_day: 'warning', absent: 'danger', missing_punch: 'warning', on_leave: 'info', half_day_leave: 'info', holiday: 'neutral',
+  weekly_off: 'neutral', in_progress: 'info', not_joined: 'neutral', awaiting_colleague: 'warning', declined: 'neutral', published: 'success',
+  online: 'success', delayed: 'warning', offline: 'danger', waiting: 'neutral', error: 'danger', simulated: 'ember',
 };
 
 export function StatusPill({ status }: { status: string }) {

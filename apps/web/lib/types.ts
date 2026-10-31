@@ -82,3 +82,87 @@ export interface OnboardingTask { id: string; employeeId: string; title: string;
 export interface OnboardingTemplate { id: string; name: string; description: string | null; isDefault: boolean; tasks: { title: string; description?: string; owner: string; dueOffsetDays: number }[] }
 export interface EmployeeDocument { id: string; employeeId: string; category: string; title: string; fileName: string; contentType: string; sizeBytes: number; sha256: string; visibility: string; uploadedBy: string | null; createdAt: string }
 export interface Notification { id: string; kind: string; title: string; body: string | null; link: string | null; readAt: string | null; createdAt: string }
+
+// Phase 3: attendance and workforce
+export interface AttendanceDay {
+  employeeId: string;
+  workDate: string;
+  status: string;
+  dayType: string;
+  leavePart: string | null;
+  firstIn: string | null;
+  lastOut: string | null;
+  workedMinutes: number;
+  breakMinutes: number;
+  lateMinutes: number;
+  earlyLeaveMinutes: number;
+  overtimeMinutes: number;
+  approvedOvertimeMinutes: number;
+  flags: string[];
+  explanation: string[];
+  punchCount: number;
+  shiftCode: string | null;
+  shiftName: string | null;
+  shiftStart: string | null;
+  shiftEnd: string | null;
+  employeeName?: string;
+  employeeCode?: string;
+  department?: string | null;
+  location?: string | null;
+}
+export interface Punch { id: string; at: string; direction: 'in' | 'out' | 'unknown'; source: string; geofence: string | null; device: string | null; viaCorrection: boolean; verifyMethod?: string | null; note?: string | null }
+export interface AttendanceToday {
+  employeeId: string;
+  date: string;
+  timeZone: string;
+  shift: { code: string; name: string; start: string; end: string } | null;
+  dayType: string;
+  holidayName: string | null;
+  nextDirection: 'in' | 'out';
+  punches: Punch[];
+  day: AttendanceDay | null;
+  allowed: { web: boolean; mobile: boolean; qr: boolean };
+  geofence: { mode: 'off' | 'warn' | 'enforce'; configured: boolean; radiusM: number | null };
+  locked: boolean;
+}
+export interface AttendanceCorrection { id: string; employeeId: string; workDate: string; punches: { time: string; direction: string; nextDay?: boolean }[]; reason: string; status: string; createdAt: string; employeeName?: string }
+export interface OvertimeClaim { id: string; workDate: string; status: string; minutes: number; reason: string | null }
+export interface AttendanceMonth {
+  employee: { id: string; name: string; code: string; timeZone: string };
+  from: string;
+  to: string;
+  summary: { present: number; halfDay: number; absent: number; missingPunch: number; onLeave: number; late: number; workedMinutes: number; overtimeMinutes: number; approvedOvertimeMinutes: number };
+  days: AttendanceDay[];
+  corrections: AttendanceCorrection[];
+  overtimeClaims: OvertimeClaim[];
+}
+export interface ShiftTemplate {
+  id: string; code: string; name: string; startTime: string; endTime: string; breakMinutes: number; graceLateMinutes: number; graceEarlyMinutes: number;
+  halfDayMinutes: number; fullDayMinutes: number; overtimeEnabled: boolean; overtimeMinMinutes: number; color: string; archivedAt: string | null;
+}
+export interface AttendancePolicy {
+  id: string; locationId: string | null; locationName: string | null; webPunch: boolean; mobilePunch: boolean; qrPunch: boolean; geofenceMode: 'off' | 'warn' | 'enforce';
+  defaultShiftId: string | null; defaultShiftName: string | null; overtimeRequiresApproval: boolean; earlyWindowMinutes: number; correctionWindowDays: number;
+}
+export interface PeriodLock { id: string; legalEntityId: string | null; legalEntityName: string | null; periodStart: string; periodEnd: string; note: string | null; lockedAt: string; lockedBy: string | null; unlockedAt: string | null; unlockedBy: string | null; unlockReason: string | null }
+export interface Kiosk { id: string; name: string; locationId: string; locationName: string; lastSeenAt: string | null; revokedAt: string | null; createdAt: string }
+export interface Roster { id: string; name: string; startDate: string; endDate: string; status: string; publishedAt: string | null; departmentId: string | null; departmentName: string | null; locationId: string | null; locationName: string | null; assignments: number }
+export interface RosterGrid {
+  id: string; name: string; startDate: string; endDate: string; status: string; publishedAt: string | null; canEdit: boolean;
+  rows: { employeeId: string; name: string; code: string; cells: { date: string; shiftId: string | null; inRoster: boolean; dayType: string; holidayName: string | null }[] }[];
+}
+export interface ScheduleDay { date: string; dayType: string; holidayName: string | null; source: string; shift: { id: string; code: string; name: string; start: string; end: string; color: string } | null }
+export interface SwapRequest { id: string; workDate: string; status: string; reason: string | null; createdAt: string; requesterId: string; requesterName: string; counterpartId: string; counterpartName: string; requesterShift: string | null; counterpartShift: string | null }
+export interface Device {
+  id: string; name: string; vendor: string; model: string | null; serialNumber: string; protocol: string; locationId: string; locationName: string; timeZone: string;
+  directionFromDevice: boolean; allowedIps: string[]; simulated: boolean; expectedIntervalSeconds: number; firmware: string | null; reportedUserCount: number | null;
+  reportedPunchCount: number | null; lastSeenAt: string | null; lastPunchAt: string | null; lastError: string | null; lastErrorAt: string | null;
+  recordsAccepted: number; recordsDuplicate: number; recordsRejected: number; status: string; unmappedUsers?: number;
+}
+export interface DeviceDetail extends Device {
+  users: { deviceUserId: string; punches: number; lastPunchAt: string; employeeId: string | null; employeeName: string | null }[];
+  coverage: { seen: number; mapped: number };
+  log: { id: number; kind: string; records: number; accepted: number; duplicates: number; rejected: number; detail: string | null; remoteIp: string | null; createdAt: string }[];
+  setup: { serverAddress: string; serverPort: number; https: boolean; path: string; serialNumber: string };
+}
+export interface DeviceMapping { id: string; deviceId: string | null; deviceName: string | null; deviceUserId: string; employeeId: string; employeeName: string; employeeCode: string; createdAt: string }
