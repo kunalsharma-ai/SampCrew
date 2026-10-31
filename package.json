@@ -1,0 +1,26 @@
+{
+  "name": "crew",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CREW by SAMPLEDGE: one intelligent platform for your entire workforce",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build:packages": "pnpm --filter @crew/contracts --filter @crew/db --filter @crew/ui run build",
+    "build": "pnpm build:packages && pnpm --filter @crew/api --filter @crew/web --filter @crew/console run build",
+    "dev:api": "pnpm --filter @crew/api dev",
+    "dev:web": "pnpm --filter @crew/web dev",
+    "dev:console": "pnpm --filter @crew/console dev",
+    "db:migrate": "pnpm --filter @crew/db migrate",
+    "db:seed": "pnpm --filter @crew/db seed",
+    "db:reset": "pnpm --filter @crew/db reset",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "test": "pnpm -r run test",
+    "docs:permissions": "pnpm --filter @crew/contracts run docs:permissions"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.20.5"
+  }
+}

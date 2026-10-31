@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/crew_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Build apps
+        run: pnpm --filter @crew/api --filter @crew/web --filter @crew/console run build
+        env:
+          CREW_API_URL: http://localhost:4000
+      - name: OpenAPI spec is up to date
+        run: |
+          cd apps/api && node dist/openapi-export.js > /tmp/openapi.json
+          diff -q /tmp/openapi.json ../../docs/api/openapi.json || (echo "Run: pnpm --filter @crew/api build && pnpm --filter @crew/api openapi" && exit 1)
+        env:
+          DATABASE_URL: postgres://unused
+          JWT_ACCESS_SECRET: ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-access
+          JWT_PLATFORM_SECRET: ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-platform
+          FIELD_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=

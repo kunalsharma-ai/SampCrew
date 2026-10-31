@@ -1,0 +1,25 @@
+{
+  "name": "@crew/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CREW database: SQL migrations (with Row-Level Security), migration runner, catalogue sync, tenant provisioning, demo seed",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "tsx scripts/migrate.ts",
+    "seed": "tsx scripts/seed.ts",
+    "reset": "tsx scripts/reset.ts && tsx scripts/migrate.ts && tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "@crew/contracts": "workspace:*",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "@node-rs/argon2": "2.2.2"
+  }
+}
