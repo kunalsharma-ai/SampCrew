@@ -31,16 +31,16 @@ export function TenantsView({ page, query, canCreate }: { page: Page<TenantRow>;
       )}
       <div className="flex flex-wrap items-center gap-2">
         <form className="flex flex-1 flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); router.push(href({ q: String(f.get('q') ?? ''), status: String(f.get('status') ?? ''), cursor: '' })); }}>
-          <Input name="q" defaultValue={query.q} placeholder="Search name or address" className="w-64" aria-label="Search tenants" />
+          <Input name="q" defaultValue={query.q} placeholder="Search name or address" className="w-64" aria-label="Search workspaces" />
           <Select name="status" defaultValue={query.status} className="w-40" aria-label="Status">
             <option value="">All statuses</option><option value="active">Active</option><option value="suspended">Suspended</option><option value="closed">Closed</option>
           </Select>
           <Button type="submit" variant="secondary">Filter</Button>
         </form>
-        {canCreate && <Button onClick={() => setCreating(true)}><Plus className="size-4" /> New tenant</Button>}
+        {canCreate && <Button onClick={() => setCreating(true)}><Plus className="size-4" /> New workspace</Button>}
       </div>
       <Card>
-        {page.items.length === 0 ? <EmptyState icon={<Building2 className="size-6" />} title="No tenants match" /> : (
+        {page.items.length === 0 ? <EmptyState icon={<Building2 className="size-6" />} title="No workspaces match" /> : (
           <Table>
             <THead><TR><TH>Workspace</TH><TH>Status</TH><TH>Plan</TH><TH className="text-right">Members</TH><TH>Region</TH><TH>Created</TH></TR></THead>
             <TBody>
@@ -92,8 +92,8 @@ function CreateTenantDialog({ onClose, onCreated }: { onClose: () => void; onCre
   };
 
   return (
-    <Dialog open onClose={onClose} title="New tenant" description="For sales-assisted onboarding. The owner gets an invitation to set a password." size="lg"
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" form="create-tenant" loading={pending}>Create tenant</Button></>}>
+    <Dialog open onClose={onClose} title="New workspace" description="For sales-assisted onboarding. The owner gets an invitation to set a password." size="lg"
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" form="create-tenant" loading={pending}>Create workspace</Button></>}>
       <form id="create-tenant" onSubmit={submit} className="grid grid-cols-2 gap-4">
         {error && <Alert tone="danger" className="col-span-2">{error}</Alert>}
         <Field label="Company name" error={errors.companyName} required className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="companyName" required />}</Field>

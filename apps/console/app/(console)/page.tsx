@@ -21,7 +21,7 @@ export default async function Overview() {
     <>
       <PageHeader title="Overview" description="CREW across all customers. Demo workspaces are counted separately and excluded from revenue." />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Tenants" value={m.tenants.total} hint={`${m.tenants.active} active · ${m.tenants.suspended} suspended · ${m.tenants.demo} demo`} />
+        <Stat label="Workspaces" value={m.tenants.total} hint={`${m.tenants.active} active · ${m.tenants.suspended} suspended · ${m.tenants.demo} demo`} />
         <Stat label="New in 30 days" value={m.tenants.newLast30Days} />
         <Stat label="Active members" value={m.members.active.toLocaleString()} hint={`${m.members.total.toLocaleString()} memberships in total`} />
         <Stat label="MRR (list price)" value={m.mrrByCurrency.length ? m.mrrByCurrency.map((x) => money(x.mrr, x.currency)).join(' + ') : '—'} hint={m.note} />
@@ -57,7 +57,7 @@ export default async function Overview() {
       <Card className="mt-6">
         <CardHeader title="Subscriptions by plan" description="Excludes demo workspaces." />
         <Table>
-          <THead><TR><TH>Plan</TH><TH>Status</TH><TH className="text-right">Tenants</TH><TH className="text-right">Seats</TH></TR></THead>
+          <THead><TR><TH>Plan</TH><TH>Status</TH><TH className="text-right">Workspaces</TH><TH className="text-right">Seats</TH></TR></THead>
           <TBody>
             {m.subscriptions.length === 0 && <TR><TD colSpan={4} className="text-fg-muted">No customer subscriptions yet.</TD></TR>}
             {m.subscriptions.map((s) => (

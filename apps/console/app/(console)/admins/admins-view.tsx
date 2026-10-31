@@ -57,7 +57,7 @@ export function AdminsView({ rows }: { rows: AdminRow[] }) {
           <Field label="Email" error={errors.email} required>{(p) => <Input {...p} name="email" type="email" />}</Field>
           <Field label="Role" error={errors.role} required>{(p) => (
             <Select {...p} name="role" defaultValue="support">
-              <option value="support">Support: view tenants, request support access, health, audit</option>
+              <option value="support">Support: view workspaces, request support access, health, audit</option>
               <option value="billing_ops">Billing operations: subscriptions and prices</option>
               <option value="viewer">Viewer: read-only</option>
               <option value="super_admin">Super admin: everything</option>

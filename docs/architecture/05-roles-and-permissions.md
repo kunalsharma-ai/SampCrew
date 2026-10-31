@@ -20,7 +20,7 @@ CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carr
 
 ## 5.2 Tenant roles × permissions
 
-| Permission | Phase | MFA | Tenant Owner | Organization Admin | HR Admin | HR Manager | Recruiter | Hiring Manager | Payroll Admin | Finance Manager | Attendance Admin | Department Manager | Employee | Auditor |
+| Permission | Phase | MFA | Workspace Owner | Organization Admin | HR Admin | HR Manager | Recruiter | Hiring Manager | Payroll Admin | Finance Manager | Attendance Admin | Department Manager | Employee | Auditor |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **Administration** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `tenant:read` View workspace settings | 1 |  | A | A | A | · | · | · | · | · | · | · | · | A |
@@ -105,7 +105,7 @@ Legend: O own, T team, D department, E legal entity, A all (tenant), · not gran
 
 ## 5.3 Role descriptions
 
-- **Tenant Owner** (`tenant_owner`): Owns the CREW workspace, its subscription and every setting. Cannot be removed while they are the last owner.
+- **Workspace Owner** (`tenant_owner`): Owns the CREW workspace, its subscription and every setting. Cannot be removed while they are the last owner.
 - **Organization Admin** (`org_admin`): Administers organisation structure, members, roles and settings. No payroll data by default.
 - **HR Admin** (`hr_admin`): Runs day-to-day HR operations across the organisation.
 - **HR Manager** (`hr_manager`): HR business partner for one legal entity: people, leave, attendance and talent within that entity.

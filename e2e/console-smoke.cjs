@@ -60,14 +60,14 @@ const watch = (p) => {
   // Create a tenant (sales-assisted onboarding).
   const slug = `smoke-${Date.now().toString(36)}`;
   await admin.goto(`${CONSOLE}/tenants`);
-  await admin.click('text=New tenant');
+  await admin.click('text=New workspace');
   await admin.fill('input[name=companyName]', 'Smoke Test Industries');
   await admin.fill('input[name=slug]', slug);
   await admin.fill('input[name=ownerName]', 'Smoke Owner');
   await admin.fill('input[name=ownerEmail]', `owner@${slug}.example`);
-  await admin.click('text=Create tenant');
+  await admin.click('text=Create workspace');
   await admin.waitForSelector('text=Smoke Test Industries created');
-  ok('tenant created with an owner invitation link');
+  ok('workspace created with an owner invitation link');
 
   // Subscription override, suspend and reactivate on the new tenant.
   await admin.click('a:has-text("Smoke Test Industries")'); // the table link, not the success banner
@@ -86,7 +86,7 @@ const watch = (p) => {
   await admin.click('button:has-text("Reactivate")');
   await admin.fill('dialog textarea', 'Smoke test: restoring access');
   await admin.click('dialog >> button:has-text("Reactivate")');
-  await admin.waitForSelector('text=Tenant reactivated.');
+  await admin.waitForSelector('text=Workspace reactivated.');
   ok('suspend (reason required) and reactivate');
 
   // Price change.

@@ -5,7 +5,7 @@ import { hasCap } from '@/lib/caps';
 import type { Admin, Page, TenantRow } from '@/lib/types';
 import { TenantsView } from './tenants-view';
 
-export const metadata: Metadata = { title: 'Tenants' };
+export const metadata: Metadata = { title: 'Workspaces' };
 
 export default async function TenantsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; cursor?: string }> }) {
   const sp = await searchParams;
@@ -16,7 +16,7 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
   const [me, page] = await Promise.all([load<Admin>('/platform/auth/me'), load<Page<TenantRow>>(`/platform/tenants?${qs}`)]);
   return (
     <>
-      <PageHeader title="Tenants" description="Customer workspaces. Opening a tenant shows account details only; its HR data needs an approved support request." />
+      <PageHeader title="Workspaces" description="Customer workspaces. Opening a workspace shows account details only; its HR data needs an approved support request." />
       <TenantsView page={page} query={{ q: sp.q ?? '', status: sp.status ?? '' }} canCreate={hasCap(me, 'tenants:manage')} />
     </>
   );
