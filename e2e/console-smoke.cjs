@@ -70,7 +70,7 @@ const watch = (p) => {
   ok('tenant created with an owner invitation link');
 
   // Subscription override, suspend and reactivate on the new tenant.
-  await admin.click('text=Smoke Test Industries >> nth=-1');
+  await admin.click('a:has-text("Smoke Test Industries")'); // the table link, not the success banner
   await admin.waitForURL(/\/tenants\/[0-9a-f-]{36}$/);
   await admin.click('text=Adjust subscription');
   await admin.fill('dialog input[type=number]', '40');
@@ -102,7 +102,7 @@ const watch = (p) => {
 
   // Support access: request, locked until approved.
   await admin.goto(`${CONSOLE}/tenants?q=demo-northwind`);
-  await admin.click('text=Northwind Manufacturing (Demo)');
+  await admin.click('a:has-text("Northwind Manufacturing (Demo)")');
   await admin.waitForURL(/\/tenants\/[0-9a-f-]{36}$/);
   const tenantUrl = admin.url();
   await admin.click('text=Request support access');
