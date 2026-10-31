@@ -1,7 +1,7 @@
 import { RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { z, type ZodType } from 'zod';
-import { FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY } from '../authz/decorators';
+import { FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY, ROOT_PATH_KEY } from '../authz/decorators';
 
 interface DocMeta {
   summary: string;
@@ -36,17 +36,18 @@ export function buildOpenApi(controllers: (new (...args: never[]) => unknown)[],
     const tag = ctrl.name.replace(/Controller$/, '');
     const classPublic = Reflect.getMetadata(PUBLIC_KEY, ctrl) === true;
     const classRealm = Reflect.getMetadata(REALM_KEY, ctrl) as { realm: string } | undefined;
+    const prefix = Reflect.getMetadata(ROOT_PATH_KEY, ctrl) === true ? '' : globalPrefix;
     for (const name of Object.getOwnPropertyNames(ctrl.prototype)) {
       const handler = (ctrl.prototype as Record<string, unknown>)[name];
       if (typeof handler !== 'function' || name === 'constructor') continue;
       const method = Reflect.getMetadata(METHOD_METADATA, handler) as number | undefined;
       if (method === undefined) continue;
       const sub = (Reflect.getMetadata(PATH_METADATA, handler) as string) ?? '';
-      const full = '/' + [globalPrefix, base, sub].map((p) => p.replace(/^\/|\/$/g, '')).filter(Boolean).join('/');
+      const full = '/' + [prefix, base, sub].map((p) => p.replace(/^\/|\/$/g, '')).filter(Boolean).join('/');
       const oaPath = full.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
       const doc = Reflect.getMetadata(DOC_KEY, handler) as DocMeta | undefined;
       const permission = Reflect.getMetadata(PERMISSION_KEY, handler) as string | undefined;
-      const feature = Reflect.getMetadata(FEATURE_KEY, handler) as string | undefined;
+      const feature = (Reflect.getMetadata(FEATURE_KEY, handler) ?? Reflect.getMetadata(FEATURE_KEY, ctrl)) as string | undefined;
       const isPublic = classPublic || Reflect.getMetadata(PUBLIC_KEY, handler) === true;
       const realm = (Reflect.getMetadata(REALM_KEY, handler) as { realm: string } | undefined) ?? classRealm;
       const params = [...full.matchAll(/:([A-Za-z0-9_]+)/g)].map((m) => ({ name: m[1], in: 'path', required: true, schema: { type: 'string' } }));

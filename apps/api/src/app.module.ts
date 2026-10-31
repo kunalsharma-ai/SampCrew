@@ -35,6 +35,11 @@ import { PlatformService } from './modules/platform-admin/platform.service';
 import { RolesController } from './modules/roles/roles.controller';
 import { RolesService } from './modules/roles/roles.service';
 import { SupportAccessController, TenancyController } from './modules/tenancy/tenancy.controller';
+import { AttendanceController, DevicesController, KioskController, ShiftsController, ZkPushController } from './modules/attendance/attendance.controller';
+import { AttendanceDaysService } from './modules/attendance/attendance-days.service';
+import { AttendanceService } from './modules/attendance/attendance.service';
+import { DevicesService } from './modules/attendance/devices.service';
+import { ShiftsService } from './modules/attendance/shifts.service';
 import { AuditService } from './platform/audit/audit.service';
 import { AuthGuard } from './platform/auth/auth.guard';
 import { TokenService } from './platform/auth/token.service';
@@ -72,6 +77,11 @@ export const CONTROLLERS = [
   LeaveController,
   ApprovalsController,
   NotificationsController,
+  AttendanceController,
+  KioskController,
+  ShiftsController,
+  DevicesController,
+  ZkPushController,
   PlatformAuthController,
   PlatformController,
 ];
@@ -108,6 +118,10 @@ export const CONTROLLERS = [
     LeaveService,
     EmployeesService,
     DocumentsService,
+    AttendanceDaysService,
+    AttendanceService,
+    ShiftsService,
+    DevicesService,
     HrJobsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },

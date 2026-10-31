@@ -11,3 +11,8 @@ export * from './schemas/people';
 export * from './schemas/leave';
 export * as leaveMath from './leave-math';
 export type { WorkCalendar, Hundredths } from './leave-math';
+export * from './schemas/attendance';
+export * as attendanceEngine from './attendance-engine';
+export type { DayInput, DayResult, DayStatus, DayFlag, ShiftRule, EnginePunch } from './attendance-engine';
+export { DAY_STATUSES, DAY_FLAGS } from './attendance-engine';
+export * as zonedTime from './zoned-time';

@@ -6,6 +6,7 @@ export const PERMISSION_KEY = 'crew:permission';
 export const FEATURE_KEY = 'crew:feature';
 export const REALM_KEY = 'crew:realm';
 export const ALLOW_WITHOUT_MFA_KEY = 'crew:allow-without-mfa';
+export const ROOT_PATH_KEY = 'crew:root-path';
 
 /** No authentication required (login, signup, health, public career pages). */
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
@@ -21,3 +22,6 @@ export const PlatformRealm = (capability?: string) => SetMetadata(REALM_KEY, { r
 
 /** Reachable even when the workspace or platform policy requires MFA and the session has not completed it (for enrolment). */
 export const AllowWithoutMfa = () => SetMetadata(ALLOW_WITHOUT_MFA_KEY, true);
+
+/** Served at the server root instead of under /api/v1 (device protocols with fixed paths). */
+export const RootPath = () => SetMetadata(ROOT_PATH_KEY, true);

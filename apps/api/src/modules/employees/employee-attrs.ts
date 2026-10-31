@@ -4,3 +4,12 @@ import type { ResourceAttributes } from '../../platform/authz/policy';
 export function employeeAttrs(e: { id: string; membershipId: string | null; legalEntityId: string | null; departmentId: string | null; locationId: string | null }): ResourceAttributes {
   return { employeeId: e.id, membershipId: e.membershipId, legalEntityId: e.legalEntityId, departmentId: e.departmentId, locationId: e.locationId };
 }
+
+/** SQL columns of an employee row aliased `e`, for pushing ABAC scopes into list queries. */
+export const EMPLOYEE_SCOPE = {
+  membershipId: 'e.membership_id',
+  legalEntityId: 'e.current_legal_entity_id',
+  departmentId: 'e.current_department_id',
+  locationId: 'e.current_location_id',
+  employeeId: 'e.id',
+};
