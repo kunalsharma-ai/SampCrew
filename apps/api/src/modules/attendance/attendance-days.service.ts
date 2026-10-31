@@ -241,6 +241,16 @@ export class AttendanceDaysService {
   }
 
   /** The work dates a punch at this instant could belong to (its local date, and the day before for night shifts). */
+  /**
+   * The work day an instant belongs to. Just after midnight this is usually still yesterday, because a day's
+   * window runs until the next day's window opens (by default 4 hours before its shift starts).
+   */
+  async workDateAt(tx: Tx, e: EmployeeCtx, atMs: number): Promise<string> {
+    const local = zonedTime.toLocal(atMs, e.tz).date;
+    const win = await this.window(tx, e, local);
+    return atMs < win.from ? addDays(local, -1) : local;
+  }
+
   datesFor(e: EmployeeCtx, atMs: number): [string, string] {
     const local = zonedTime.toLocal(atMs, e.tz).date;
     return [addDays(local, -1), local];

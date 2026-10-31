@@ -187,7 +187,7 @@ export class AttendanceService implements OnModuleInit {
   ) {
     const actor = requestContext.tenantActor();
     const now = Date.now();
-    const today = localToday(e.tz, now);
+    const today = await this.days.workDateAt(tx, e, now);
     if ((await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, today]))!.locked) {
       throw Errors.conflict('period_locked', 'Attendance for today is locked for payroll. Ask HR to unlock it.');
     }
@@ -196,7 +196,7 @@ export class AttendanceService implements OnModuleInit {
     let direction = p.direction;
     if (!existing) {
       if (!direction) {
-        // The next punch alternates with the last one in today's window.
+        // The next punch alternates with the last one in the current work day's window.
         const win = await this.days.window(tx, e, today);
         const last = (await this.days.punches(tx, e.id, win.from, Math.min(win.to, now + 1))).at(-1);
         direction = last && last.direction !== 'out' ? 'out' : 'in';
@@ -307,7 +307,7 @@ export class AttendanceService implements OnModuleInit {
   async today() {
     return this.db.tenant(async (tx) => {
       const e = await this.me(tx);
-      const date = localToday(e.tz);
+      const date = await this.days.workDateAt(tx, e, Date.now());
       const policy = await this.days.policy(tx, e.location_id);
       const plan = (await this.days.plan(tx, e, date, addDays(date, 1))).get(date)!;
       const win = await this.days.window(tx, e, date);

@@ -2,7 +2,9 @@ import type { INestApplication } from '@nestjs/common';
 import type { Pool } from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AttendanceDaysService } from '../src/modules/attendance/attendance-days.service';
 import { attlogLines } from '../src/modules/attendance/zk-push';
+import { DatabaseService } from '../src/platform/database/database.service';
 import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestTenant } from './helpers';
 
 const IST_OFFSET = '+05:30';
@@ -120,6 +122,21 @@ describe('attendance', () => {
       expect(audit.rowCount).toBe(1);
       // Back to the workspace default for the rest of the tests.
       expect((await api(app, hrAdmin).delete(`/attendance/policies/${pune}`)).status).toBe(204);
+    });
+
+    it('just after midnight a punch still belongs to the previous work day, until the next window opens', async () => {
+      const days = app.get(AttendanceDaysService);
+      const db = app.get(DatabaseService);
+      const date = futureWeekday(1);
+      const at = (d: string, hm: string) => Date.parse(`${d}T${hm}:00${IST_OFFSET}`);
+      await db.tenant(async (tx) => {
+        const e = (await days.employee(tx, people.operator!.employeeId))!;
+        // General shift 09:00 with the default 240-minute early window: the day opens at 05:00.
+        expect(await days.workDateAt(tx, e, at(date, '00:03'))).toBe(plus(date, -1));
+        expect(await days.workDateAt(tx, e, at(date, '04:59'))).toBe(plus(date, -1));
+        expect(await days.workDateAt(tx, e, at(date, '05:00'))).toBe(date);
+        expect(await days.workDateAt(tx, e, at(date, '23:59'))).toBe(date);
+      }, { tenantId: t.id });
     });
 
     it('raw punches cannot be edited or deleted, even directly in the database', async () => {

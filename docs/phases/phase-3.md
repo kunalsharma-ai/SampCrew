@@ -81,7 +81,7 @@ All of it is labelled as demo data. Attendance days are not seeded; the API calc
 | Suite | Count | Covers |
 |---|---|---|
 | Contracts unit tests | 46 | Earlier tests plus 20 golden tests for the attendance engine (windows, night shifts, grace, half days, breaks, overtime, leave, holidays, DST, geofence maths) |
-| API integration tests | 109 | Earlier tests plus 18 attendance tests |
+| API integration tests | 110 | Earlier tests plus 19 attendance tests |
 | Attendance browser test (`e2e/attendance-flow.cjs`) | 1 flow | Operator punches in inside the geofence, asks for a correction on the day with a missing punch-out; supervisor approves from the inbox; the day is recalculated; HR opens every settings screen, registers a simulated device, maps an enrolment number and sends test punches; HR creates a kiosk and the kiosk screen shows a rotating code without signing in; a wrong kiosk link is refused |
 | Web Portal, Core HR and console browser tests | 3 flows | As before, still passing |
 
@@ -104,6 +104,7 @@ CI now also runs the attendance browser flow.
 
 ### Defects found and fixed during this phase
 - The Web Portal's security headers set `Permissions-Policy: geolocation=()`, which silently stopped browsers from sharing location, so every web punch would have been recorded without a location. It is now `geolocation=(self)`. The browser test found this.
+- Just after midnight, a punch looked for earlier punches in the new calendar day instead of the work day still running, so a punch-out at 00:03 was recorded as a punch-in. Punching and the Today card now use the work day whose window contains the current time. CI found this when it ran after midnight India time.
 - A correction could list the same punch twice, adding two identical punches on approval. The request is now refused.
 - The audit entry for a punch refused by the geofence was rolled back together with the refusal. It is now written separately.
 - A circular module import made the API fail to start once attendance depended on leave. Fixed by moving the shared employee scope.
