@@ -30,6 +30,8 @@ export class AutomationService {
       ops: automation.CONDITION_OPS.map((key) => ({ key, label: automation.OP_LABEL[key] })),
       roles: await many<{ key: string; name: string }>(tx, 'select key, name from roles order by is_system desc, name'),
       courses: await many<{ id: string; title: string }>(tx, 'select id, title from courses where archived_at is null order by title'),
+      slackConnections: await many<{ id: string; name: string; status: string }>(tx, `select id, name, status from integration_connections where provider = 'slack' and status <> 'disconnected' order by name`),
+      webhookEndpoints: await many<{ id: string; name: string; status: string }>(tx, 'select id, name, status from webhook_endpoints order by name'),
     }));
   }
 
@@ -41,6 +43,8 @@ export class AutomationService {
     const issues: { path: string; message: string }[] = [];
     for (const [i, s] of v.definition.steps.entries()) {
       if (s.type === 'assign_course' && !(await one(tx, 'select 1 from courses where id = $1 and archived_at is null', [s.courseId]))) issues.push({ path: `definition.steps.${i}.courseId`, message: 'Choose a current course' });
+      if (s.type === 'slack' && !(await one(tx, `select 1 from integration_connections where id = $1 and provider = 'slack' and status <> 'disconnected'`, [s.connectionId]))) issues.push({ path: `definition.steps.${i}.connectionId`, message: 'Choose a connected Slack channel' });
+      if (s.type === 'webhook' && !(await one(tx, 'select 1 from webhook_endpoints where id = $1', [s.endpointId]))) issues.push({ path: `definition.steps.${i}.endpointId`, message: 'Choose a webhook endpoint' });
       if (s.type === 'notify' && s.to === 'member' && !(await one(tx, `select 1 from memberships where id = $1 and status = 'active'`, [s.membershipId]))) issues.push({ path: `definition.steps.${i}.membershipId`, message: 'Choose an active member' });
     }
     if (issues.length) throw Errors.validation(issues);
@@ -205,6 +209,16 @@ export class AutomationService {
         const c = await one<{ title: string }>(tx, 'select title from courses where id = $1 and archived_at is null', [step.courseId]);
         if (!c) return { status: 'failed', detail: 'Assign a course', error: 'The course no longer exists or is archived' };
         return { status: 'simulated', detail: `Would assign "${c.title}"${step.dueInDays ? `, due in ${step.dueInDays} days` : ''}` };
+      }
+      case 'slack': {
+        const c = await one<{ name: string; status: string }>(tx, `select name, status from integration_connections where id = $1 and status <> 'disconnected'`, [step.connectionId]);
+        if (!c) return { status: 'failed', detail: 'Post to Slack', error: 'The Slack connection no longer exists' };
+        return { status: 'simulated', detail: `Would post to Slack (${c.name}${c.status === 'error' ? ', which last failed' : ''}): "${automation.render(step.text, ctx)}"` };
+      }
+      case 'webhook': {
+        const w = await one<{ name: string; status: string }>(tx, 'select name, status from webhook_endpoints where id = $1', [step.endpointId]);
+        if (!w) return { status: 'failed', detail: 'Send to a webhook', error: 'The webhook endpoint no longer exists' };
+        return { status: 'simulated', detail: `Would send to "${w.name}"${w.status === 'active' ? '' : ` (now ${w.status})`}: "${automation.render(step.message, ctx)}"` };
       }
     }
   }

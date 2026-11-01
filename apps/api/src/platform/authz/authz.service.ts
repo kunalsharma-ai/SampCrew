@@ -17,7 +17,10 @@ export class AuthzService {
     if (ctx?.[SUBJECT_KEY]) return ctx[SUBJECT_KEY];
     const actor = requestContext.tenantActor();
     const load = (t: Tx) => loadSubject(t, actor.membershipId, actor.userId, actor.mfa);
-    const subject = tx ? await load(tx) : await this.db.tenant(load);
+    const loaded = tx ? await load(tx) : await this.db.tenant(load);
+    // An API key can never do more than its scopes allow, whatever its creator can do.
+    const scopes = actor.apiKey ? new Set(actor.apiKey.scopes) : null;
+    const subject = scopes ? { ...loaded, grants: loaded.grants.filter((g) => scopes.has(g.permission)) } : loaded;
     if (ctx) ctx[SUBJECT_KEY] = subject;
     return subject;
   }

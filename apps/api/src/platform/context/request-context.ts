@@ -8,6 +8,8 @@ export interface TenantActor {
   sessionId: string;
   mfa: boolean;
   label: string;
+  /** Set when the request was made with a workspace API key: it acts as its creator, limited to these permissions. */
+  apiKey?: { id: string; scopes: readonly string[] };
 }
 
 export interface PlatformActor {

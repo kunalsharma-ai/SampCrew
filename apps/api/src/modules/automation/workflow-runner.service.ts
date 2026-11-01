@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { automation, TRIGGER_EVENTS, type TriggerEvent, type WorkflowDefinition, type WorkflowStep } from '@crew/contracts';
+import { automation, TRIGGER_EVENTS, webhookBody, type TriggerEvent, type WorkflowDefinition, type WorkflowStep } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { loadSubject } from '../../platform/authz/authz.service';
 import { hasPermission } from '../../platform/authz/policy';
@@ -12,6 +12,8 @@ import { NotificationService } from '../../platform/notify/notification.service'
 import { type ApprovalRequestRow, ApprovalsService } from '../approvals/approvals.service';
 import { attrsOf, talentEmployee } from '../talent/talent-common';
 import { LearningService } from '../talent/learning.service';
+import { ConnectionsService, ConnectorError } from '../integrations/connections.service';
+import { WebhooksService } from '../integrations/webhooks.service';
 import { contextForEvent, type RunContext } from './workflow-context';
 
 interface RunRow {
@@ -61,6 +63,8 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
     private readonly notifications: NotificationService,
     private readonly learning: LearningService,
     private readonly audit: AuditService,
+    private readonly connections: ConnectionsService,
+    private readonly webhooks: WebhooksService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -325,6 +329,30 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
           throw new StepError((err as Error).message, !(status && status >= 400 && status < 500));
         }
       }
+      case 'slack': {
+        const conn = await this.db.tenant((tx) => one<{ name: string; status: string }>(tx, 'select name, status from integration_connections where id = $1', [step.connectionId]));
+        if (!conn || conn.status === 'disconnected') throw new StepError('The Slack connection no longer exists', false);
+        try {
+          await this.connections.post(step.connectionId, automation.render(step.text, ctx), 'workflow');
+        } catch (err) {
+          throw new StepError((err as Error).message, err instanceof ConnectorError ? err.retryable : true);
+        }
+        return { kind: 'next', status: 'succeeded', detail: `Posted to Slack (${conn.name})` };
+      }
+      case 'webhook':
+        return this.db.tenant(async (tx) => {
+          const w = await one<{ name: string; status: string }>(tx, 'select name, status from webhook_endpoints where id = $1', [step.endpointId]);
+          if (!w) throw new StepError('The webhook endpoint no longer exists', false);
+          if (w.status !== 'active') throw new StepError(`The webhook endpoint "${w.name}" is ${w.status}`, true);
+          // One delivery per run and step, however often the step is retried.
+          const eventId = (await one<{ id: string }>(tx, 'select md5($1)::uuid as id', [`${run.id}:${step.id}`]))!.id;
+          const body = webhookBody({
+            id: eventId, type: 'workflow.webhook', occurredAt: new Date().toISOString(), tenantId: run.tenant_id,
+            payload: { workflowId: wf.id, workflowName: wf.name, runId: run.id, message: automation.render(step.message, ctx), values: ctx },
+          });
+          const queued = await this.webhooks.enqueue(tx, step.endpointId, eventId, 'workflow.webhook', body);
+          return { kind: 'next', status: 'succeeded', detail: queued ? `Queued for the webhook endpoint "${w.name}"` : `Already queued for "${w.name}"` };
+        });
     }
   }
 

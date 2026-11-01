@@ -9,6 +9,7 @@ import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
 import { Errors } from '../../platform/http/errors';
+import { OutboxService } from '../../platform/events/outbox.service';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AttendanceDaysService } from '../attendance/attendance-days.service';
@@ -44,6 +45,7 @@ export class PayrollRunsService implements OnModuleInit {
     private readonly authz: AuthzService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationService,
+    private readonly outbox: OutboxService,
     private readonly approvals: ApprovalsService,
     private readonly days: AttendanceDaysService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -460,6 +462,8 @@ export class PayrollRunsService implements OnModuleInit {
     if (claimIds.length) await tx.query(`update expense_claims set status = 'paid', paid_at = now() where id = any($1::uuid[])`, [claimIds]);
     await tx.query(`update payroll_runs set status = 'finalised', finalised_at = now(), status_note = null where id = $1`, [id]);
     await this.audit.record(tx, { action: 'payroll_run.finalised', resourceType: 'payroll_run', resourceId: id, metadata: { attendanceLockId: lockId, expenseClaimsPaid: claimIds.length } });
+    const tenant = (await one<{ id: string }>(tx, 'select app_tenant_id() as id'))!.id;
+    await this.outbox.publish(tx, tenant, 'payroll.run_finalised', { runId: id, legalEntityId: r.legal_entity_id, periodStart: String(r.period_start).slice(0, 10), periodEnd: String(r.period_end).slice(0, 10) });
     const people = await many<{ id: string; membership_id: string | null }>(
       tx, `select i.id, e.membership_id from payroll_items i join employees e on e.id = i.employee_id where i.run_id = $1 and i.status = 'included'`, [id],
     );

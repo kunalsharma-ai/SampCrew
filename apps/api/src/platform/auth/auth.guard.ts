@@ -1,6 +1,6 @@
 import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PLATFORM_ROLE_CAPABILITIES, type PlatformRole } from '@crew/contracts';
+import { API_KEY_PREFIX, PLATFORM_ROLE_CAPABILITIES, type PlatformRole } from '@crew/contracts';
 import type { Request } from 'express';
 import { AuthzService } from '../authz/authz.service';
 import { ALLOW_WITHOUT_MFA_KEY, FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY } from '../authz/decorators';
@@ -8,6 +8,7 @@ import { requestContext } from '../context/request-context';
 import { DatabaseService, one } from '../database/database.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
 import { Errors } from '../http/errors';
+import { ApiKeysService } from '../../modules/integrations/api-keys.service';
 import { TokenService } from './token.service';
 
 /**
@@ -27,6 +28,7 @@ export class AuthGuard implements CanActivate {
     private readonly db: DatabaseService,
     private readonly authz: AuthzService,
     private readonly entitlements: EntitlementsService,
+    private readonly apiKeys: ApiKeysService,
   ) {}
 
   private meta<T>(key: string, ctx: ExecutionContext): T | undefined {
@@ -44,6 +46,7 @@ export class AuthGuard implements CanActivate {
 
     const realm = this.meta<{ realm: 'platform'; capability?: string }>(REALM_KEY, ctx);
     if (realm?.realm === 'platform') return this.platform(token, realm.capability, allowWithoutMfa);
+    if (token.startsWith(API_KEY_PREFIX)) return this.apiKey(token, req, ctx);
 
     const claims = await this.tokens.verifyAccess(token).catch(() => {
       throw Errors.unauthorized('Your session has expired. Sign in again.');
@@ -73,6 +76,26 @@ export class AuthGuard implements CanActivate {
 
     const permission = this.meta<string>(PERMISSION_KEY, ctx);
     if (permission) await this.authz.require(permission);
+    return true;
+  }
+
+  /**
+   * Workspace API keys. A key may only call routes that declare a permission, and only when that permission is
+   * one of its scopes; everything else (your profile, sessions, settings) is closed to keys. It then acts as its
+   * creator, so their current access and the workspace's plan still apply.
+   */
+  private async apiKey(token: string, req: Request, ctx: ExecutionContext): Promise<boolean> {
+    const key = await this.apiKeys.authenticate(token, req.ip);
+    if (!key) throw Errors.unauthorized('This API key is not valid. It may have been revoked or have expired.');
+    if (key.tenantStatus !== 'active') throw Errors.tenantSuspended();
+    const permission = this.meta<string>(PERMISSION_KEY, ctx);
+    if (!permission || !key.scopes.includes(permission)) {
+      throw Errors.forbidden(permission ? `This API key does not have the ${permission} scope` : 'This route cannot be used with an API key');
+    }
+    requestContext.setActor({ kind: 'user', userId: key.userId, tenantId: key.tenantId, membershipId: key.membershipId, sessionId: `api_key:${key.id}`, mfa: false, label: key.label, apiKey: { id: key.id, scopes: key.scopes } });
+    const feature = this.meta<string>(FEATURE_KEY, ctx);
+    if (feature) await this.entitlements.requireFeature(feature);
+    await this.authz.require(permission);
     return true;
   }
 
