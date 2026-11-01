@@ -114,6 +114,14 @@ jobs:
           AI_PROVIDER=anthropic ANTHROPIC_API_KEY=ci-test-key-not-a-real-key ANTHROPIC_BASE_URL=http://localhost:4010 node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:4010/__requests
           pnpm e2e:ai
+      - name: Integrations end-to-end flow (local Slack test stub and webhook receiver)
+        # The flow runs its own receivers on 4020 (stands in for hooks.slack.com) and 4021; no real Slack is called.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          INTEGRATIONS_ALLOW_PRIVATE_URLS=true SLACK_WEBHOOK_BASE_URL=http://localhost:4020 node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:integrations
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true

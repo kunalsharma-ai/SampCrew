@@ -29,7 +29,8 @@
     "e2e:talent": "node e2e/talent-flow.cjs",
     "e2e:mobile": "node e2e/mobile-flow.cjs",
     "e2e:helpdesk": "node e2e/helpdesk-flow.cjs",
-    "e2e:ai": "node e2e/ai-flow.cjs"
+    "e2e:ai": "node e2e/ai-flow.cjs",
+    "e2e:integrations": "node e2e/integrations-flow.cjs"
   },
   "devDependencies": {
     "typescript": "5.9.3",

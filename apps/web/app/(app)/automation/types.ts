@@ -6,6 +6,8 @@ export interface Catalogue {
   ops: { key: string; label: string }[];
   roles: { key: string; name: string }[];
   courses: { id: string; title: string }[];
+  slackConnections: { id: string; name: string; status: string }[];
+  webhookEndpoints: { id: string; name: string; status: string }[];
 }
 
 export type WorkflowStatus = 'draft' | 'active' | 'paused' | 'archived';

@@ -60,6 +60,7 @@ const STATUS_TONE: Record<string, Tone> = {
   present: 'success', half_day: 'warning', absent: 'danger', missing_punch: 'warning', on_leave: 'info', half_day_leave: 'info', holiday: 'neutral',
   weekly_off: 'neutral', in_progress: 'info', not_joined: 'neutral', awaiting_colleague: 'warning', declined: 'neutral', published: 'success',
   online: 'success', delayed: 'warning', offline: 'danger', waiting: 'neutral', error: 'danger', simulated: 'ember',
+  succeeded: 'success', failed: 'danger', sending: 'info', paused: 'warning', disabled: 'danger', owner_inactive: 'warning',
 };
 
 export function StatusPill({ status }: { status: string }) {
