@@ -132,7 +132,10 @@ jobs:
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:enterprise
       - name: Backup and restore drill
-        run: pnpm --filter @crew/db dr-drill
+        # The client tools must match the server's major version (postgres:16 above).
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-client-16 > /dev/null
+          pnpm --filter @crew/db dr-drill
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true

@@ -17,7 +17,7 @@
  * database's own point-in-time recovery in production, which must be run there.
  */
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -30,6 +30,29 @@ const reportPath = args.includes('--report') ? args[args.indexOf('--report') + 1
 const keep = args.includes('--keep');
 
 type Counts = Map<string, number>;
+
+/**
+ * pg_dump and pg_restore must be the same major version as the server: a newer pg_dump writes settings an older
+ * server rejects. Uses PG_BIN when set, else /usr/lib/postgresql/<major>/bin when it exists, else the PATH, and
+ * refuses to run with a different major version.
+ */
+async function pgTools(serverMajor: number) {
+  const dirs = [process.env.PG_BIN, `/usr/lib/postgresql/${serverMajor}/bin`].filter(Boolean) as string[];
+  let dir = '';
+  for (const d of dirs) {
+    if (await access(join(d, 'pg_dump')).then(() => true, () => false)) {
+      dir = d;
+      break;
+    }
+  }
+  const tool = (name: string) => (dir ? join(dir, name) : name);
+  for (const name of ['pg_dump', 'pg_restore']) {
+    const { stdout } = await run(tool(name), ['--version']);
+    const major = Number(/(\d+)(?:\.\d+)?/.exec(stdout)?.[1]);
+    if (major !== serverMajor) throw new Error(`${tool(name)} is version ${major} but the server is ${serverMajor}. Install the matching client tools (for example postgresql-client-${serverMajor}) or set PG_BIN.`);
+  }
+  return { dump: tool('pg_dump'), restore: tool('pg_restore') };
+}
 
 async function tableCounts(c: Client): Promise<Counts> {
   const tables = await c.query<{ t: string }>(`select tablename as t from pg_tables where schemaname = 'public' order by 1`);
@@ -81,10 +104,12 @@ async function main() {
     say('');
     say(`- Run at: ${new Date().toISOString()}`);
     say(`- Source database: ${source.pathname.slice(1)} on ${source.hostname}`);
-    say(`- PostgreSQL: ${(await src.query('show server_version')).rows[0].server_version}`);
+    const version = (await src.query('show server_version')).rows[0].server_version as string;
+    say(`- PostgreSQL: ${version}`);
+    const tools = await pgTools(Number(version.split('.')[0]));
 
     let t0 = Date.now();
-    await run('pg_dump', ['--format=custom', '--no-owner', '--no-privileges', `--file=${file}`, source.toString()], { maxBuffer: 64 * 1024 * 1024 });
+    await run(tools.dump, ['--format=custom', '--no-owner', '--no-privileges', `--file=${file}`, source.toString()], { maxBuffer: 64 * 1024 * 1024 });
     const backupMs = Date.now() - t0;
     const size = (await stat(file)).size;
     say(`- Backup: ${(size / 1024 / 1024).toFixed(2)} MB in ${(backupMs / 1000).toFixed(1)} s (pg_dump custom format)`);
@@ -92,7 +117,7 @@ async function main() {
     await src.query(`create database "${drillDb}"`);
     t0 = Date.now();
     // Roles are cluster-wide and already exist; ownership and grants are re-applied by the migrations' grant statements below.
-    await run('pg_restore', ['--no-owner', '--no-privileges', '--exit-on-error', `--dbname=${target.toString()}`, file], { maxBuffer: 64 * 1024 * 1024 });
+    await run(tools.restore, ['--no-owner', '--no-privileges', '--exit-on-error', `--dbname=${target.toString()}`, file], { maxBuffer: 64 * 1024 * 1024 });
     const restoreMs = Date.now() - t0;
     say(`- Restore into a new database: ${(restoreMs / 1000).toFixed(1)} s`);
 
