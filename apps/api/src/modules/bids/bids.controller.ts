@@ -1,11 +1,16 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res } from '@nestjs/common';
-import { bidInput, type BidInput, bidListQuery, bidOutcomeInput, bidSendInput, type BidSendInput, bidTemplateInput, type BidTemplateInput, clientInput, type ClientInput } from '@crew/contracts';
+import {
+  bidInput, type BidInput, bidListQuery, bidOutcomeInput, bidSendInput, type BidSendInput, bidTemplateInput, type BidTemplateInput, clientInput, type ClientInput,
+  proposalAcceptInput, type ProposalAcceptInput, proposalDeclineInput, type ProposalDeclineInput,
+} from '@crew/contracts';
 import type { Response } from 'express';
 import { z } from 'zod';
-import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
+import { Public, RequireFeature, RequirePermission } from '../../platform/authz/decorators';
+import { Throttle } from '@nestjs/throttler';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { BidsService } from './bids.service';
+import { ProposalsPublicService } from './proposals-public.service';
 
 const clientQuery = z.object({ archived: z.enum(['true', 'false']).optional() });
 const pdfQuery = z.object({ version: z.uuid().optional() });
@@ -150,10 +155,58 @@ export class BidsController {
   @RequirePermission('bids:read')
   @Doc({ summary: 'The client proposal as PDF: a version as sent, or a preview of the bid now (no costs or margins)', query: pdfQuery })
   async pdf(@Param('id', UuidPipe) id: string, @Query(new ZodPipe(pdfQuery)) q: z.infer<typeof pdfQuery>, @Res() res: Response) {
-    const f = await this.bids.pdf(id, q.version);
-    res.setHeader('content-type', 'application/pdf');
-    res.setHeader('content-disposition', `inline; filename="${f.fileName}"`);
-    res.setHeader('cache-control', 'private, no-store');
-    res.send(f.content);
+    sendPdf(res, await this.bids.pdf(id, q.version));
+  }
+
+  @Get('bids/:id/signed.pdf')
+  @RequirePermission('bids:read')
+  @Doc({ summary: 'The signed copy of a proposal accepted online: the PDF as sent plus the acceptance record' })
+  async signed(@Param('id', UuidPipe) id: string, @Res() res: Response) {
+    const f = await this.bids.signedPdf(id);
+    sendPdf(res, f);
+  }
+}
+
+function sendPdf(res: Response, f: { fileName: string; content: Buffer }) {
+  res.setHeader('content-type', 'application/pdf');
+  res.setHeader('content-disposition', `inline; filename="${f.fileName}"`);
+  res.setHeader('cache-control', 'private, no-store');
+  res.send(f.content);
+}
+
+/** The client's side: the private link in a proposal email. No sign-in; the link is the credential. */
+@Controller('public/proposals')
+@Public()
+export class ProposalsPublicController {
+  constructor(private readonly proposals: ProposalsPublicService) {}
+
+  @Get(':token')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Doc({ summary: 'A proposal as the client sees it: roles, rates and totals, and whether it is still open' })
+  get(@Param('token') token: string) {
+    return this.proposals.get(String(token));
+  }
+
+  @Get(':token/proposal.pdf')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Doc({ summary: 'The proposal PDF the link was sent with, or the signed copy once accepted' })
+  async pdf(@Param('token') token: string, @Res() res: Response) {
+    sendPdf(res, await this.proposals.pdf(String(token)));
+  }
+
+  @Post(':token/accept')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Doc({ summary: 'Accept the proposal with a typed signature; the bid is marked won and a signed copy is kept', body: proposalAcceptInput })
+  accept(@Param('token') token: string, @Body(new ZodPipe(proposalAcceptInput)) body: ProposalAcceptInput) {
+    return this.proposals.accept(String(token), body);
+  }
+
+  @Post(':token/decline')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Doc({ summary: 'Decline the proposal with a reason; the bid is marked lost', body: proposalDeclineInput })
+  decline(@Param('token') token: string, @Body(new ZodPipe(proposalDeclineInput)) body: ProposalDeclineInput) {
+    return this.proposals.decline(String(token), body);
   }
 }

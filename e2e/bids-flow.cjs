@@ -9,9 +9,14 @@
  * 3. Finance opens the bid, sees the margin in the approval summary and approves it on the bid page.
  * 4. The recruiter schedules the proposal email for tomorrow, cancels it, then sends it now: the bid is Sent,
  *    version 1 is in the history with its PDF.
- * 5. The recruiter marks it won; the list shows it as won with a 100% win rate, after a reload.
+ * 5. The client opens their private link from the email (no sign-in), sees roles, rates and totals but no costs,
+ *    signs with their typed name and accepts. The cc recipient's link then says it has been answered. The bid is
+ *    Won with the signer on it and a signed copy of the PDF; the list shows a 100% win rate, after a reload.
+ *    (The email is read from the mail queue in the database, so DATABASE_ADMIN_URL must be set.)
  */
+const path = require('node:path');
 const { chromium } = require('playwright');
+const { Client } = require(require.resolve('pg', { paths: [path.join(__dirname, '../apps/api')] }));
 
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 const PASSWORD = process.env.CREW_DEMO_PASSWORD;
@@ -150,17 +155,72 @@ const watch = (page) => {
     expect(sent.ok() && (await sent.body()).subarray(0, 5).toString() === '%PDF-', 'sent version PDF missing');
     ok('proposal sent now; version 1 and its PDF are in the history');
 
-    // 5. Won.
-    await rec.getByRole('button', { name: 'Mark won' }).click();
-    await rec.getByRole('dialog').getByLabel('Notes').fill('Signed for 12 months.');
-    await rec.getByRole('dialog').getByRole('button', { name: 'Confirm' }).click();
-    await rec.getByText('Marked as won').waitFor();
+    // 5. The client accepts online. The link is read from the email in the mail queue (as the client would open it
+    //    from their inbox); the browser that opens it has no CREW session.
+    const link = async (to) => {
+      const db = new Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+      await db.connect();
+      try {
+        const r = await db.query(`select text_body from email_messages where to_email = $1 and template = 'bid.proposal' and status <> 'cancelled' order by created_at desc limit 1`, [to]);
+        const m = r.rows[0]?.text_body.match(/https?:\/\/\S+\/proposal\/[A-Za-z0-9_-]{32}/);
+        expect(m, `no acceptance link in the email to ${to}`);
+        return m[0].replace(/^https?:\/\/[^/]+/, BASE);
+      } finally {
+        await db.end();
+      }
+    };
+    const clientCtx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+    const cl = await clientCtx.newPage();
+    watch(cl);
+    current = cl;
+    await cl.goto(await link('meera.iyer@northwind.example'));
+    await cl.getByRole('heading', { name: '10 Warehouse associates for Northwind Logistics' }).waitFor();
+    const rates = await cl.getByRole('table', { name: 'Team and rates' }).innerText();
+    expect(/Warehouse associate/.test(rates) && /\b10\b/.test(rates), 'roles missing on the client page');
+    expect(!/margin|loaded cost|on-cost/i.test(await cl.locator('main').innerText()), 'client page shows internal costs');
+    const clientPdf = await cl.request.get(`${cl.url()}/pdf`);
+    expect(clientPdf.ok() && (await clientPdf.body()).subarray(0, 5).toString() === "%PDF-", "proposal PDF missing behind the link");
+    ok('the client opens the private link without signing in: roles, rates and totals, no costs');
+
+    await cl.getByLabel(/^Your full name/).fill('Meera Iyer');
+    await cl.getByLabel(/^Work email/).fill('meera.iyer@northwind.example');
+    await cl.getByLabel(/^Job title/).fill('Head of Operations');
+    await cl.getByLabel(/^Signature/).fill('M Iyer');
+    await cl.getByLabel(/I am authorised to accept/).check();
+    await cl.getByRole('button', { name: 'Accept and sign' }).click();
+    await cl.getByText('Type your full name exactly as above to sign').waitFor();
+    await cl.getByLabel(/^Signature/).fill('Meera Iyer');
+    await cl.getByRole('button', { name: 'Accept and sign' }).click();
+    await cl.getByText('Proposal accepted').waitFor();
+    await cl.reload();
+    await cl.getByText(/Accepted by Meera Iyer, Head of Operations/).waitFor();
+    const signedByLink = await cl.request.get(`${cl.url()}/pdf`);
+    expect(/signed\.pdf/.test(signedByLink.headers()['content-disposition'] ?? ''), 'the link does not serve the signed copy');
+    ok('a wrong signature is refused; the client signs and accepts; after a reload the page says so');
+
+    // The cc recipient's own link now shows the proposal as answered.
+    await cl.goto(await link('procurement@northwind.example'));
+    await cl.getByText('This proposal has already been answered').waitFor();
+    expect(await cl.getByRole('button', { name: 'Accept and sign' }).count() === 0, 'answered proposal still offers to sign');
+    ok('the cc recipient sees it has already been answered');
+
+    current = rec;
+    await rec.reload();
+    const decision = rec.getByRole('region', { name: 'Client decision' }).or(rec.locator('[aria-label="Client decision"]'));
+    await decision.getByText('Accepted online by the client').waitFor();
+    expect(/Meera Iyer, Head of Operations/.test(await decision.innerText()), 'signer missing on the bid');
+    await rec.getByText('Won', { exact: true }).first().waitFor();
+    await rec.getByText(/meera\.iyer@northwind\.example: accepted/).waitFor();
+    const signed = await rec.request.get(`${BASE}${await decision.getByRole('link', { name: 'Signed copy' }).getAttribute('href')}`);
+    expect(signed.ok() && (await signed.body()).subarray(0, 5).toString() === '%PDF-', 'signed copy missing');
+    ok('the bid is won, shows who accepted and when, and the signed copy downloads');
+
     await rec.goto(BASE + '/staffing/bids');
     await rec.reload();
     const row = rec.getByRole('row', { name: /10 Warehouse associates for Northwind Logistics/ });
     await row.getByText('Won').waitFor();
     await rec.getByText('100%').waitFor();
-    ok('bid won; the list shows it after a reload with a 100% win rate');
+    ok('the list shows it won after a reload with a 100% win rate');
 
     const real = errs.filter((e) => !/favicon|DevTools/.test(e));
     expect(!real.length, `browser errors:\n${real.join('\n')}`);

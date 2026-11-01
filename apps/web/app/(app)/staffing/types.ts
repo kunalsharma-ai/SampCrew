@@ -20,7 +20,8 @@ export interface Bid {
   submittedAt: string | null; approvedAt: string | null; sentAt: string | null; decidedAt: string | null; outcomeReason: string | null; createdAt: string; updatedAt: string;
   lines: BidLine[]; pricing: BidPricing;
   versions: { id: string; version: number; event: 'submitted' | 'sent'; createdAt: string; createdBy: string | null; hasPdf: boolean; pricing: BidPricing }[];
-  emails: { id: string; versionId: string; to: string; cc: string[]; subject: string; sendAt: string; cancelledAt: string | null; createdAt: string; delivery: { status: string; sentAt: string | null; error: string | null }[] }[];
+  emails: { id: string; versionId: string; to: string; cc: string[]; subject: string; sendAt: string; cancelledAt: string | null; createdAt: string; delivery: { status: string; sentAt: string | null; error: string | null }[]; links: { to: string; firstViewedAt: string | null; viewCount: number; decision: 'accepted' | 'declined' | null; decidedAt: string | null; expiresAt: string; revoked: boolean }[] }[];
+  acceptance: { decision: 'accepted' | 'declined'; sentTo: string; decidedAt: string; signerName: string; signerTitle: string | null; signerEmail: string; reason: string | null; ip: string | null; version: number; hasSignedPdf: boolean } | null;
   approval: { id: string; status: string; steps: { seq: number; status: string; role: string | null; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null }[] } | null;
   can: { edit: boolean; submit: boolean; send: boolean; decide: boolean; withdraw: boolean; delete: boolean };
 }

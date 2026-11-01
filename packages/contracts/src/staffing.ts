@@ -228,3 +228,49 @@ export function formatAmount(amount: string, currency = 'INR'): string {
   }
   return `${neg ? '-' : ''}${int}.${f.padEnd(2, '0')}`;
 }
+
+// Online acceptance ------------------------------------------------------------------------------------
+
+/** Accepting a proposal: who signs, and a typed signature that must match their name. */
+export const proposalAcceptInput = z.object({
+  signerName: z.string().trim().min(2).max(120),
+  signerTitle: z.string().trim().min(2).max(120),
+  signerEmail: email,
+  signature: z.string().trim().min(2).max(120),
+  authorised: z.literal(true, { error: 'Confirm that you may accept on behalf of the client' }),
+}).strict().refine((v) => v.signature.toLowerCase().replace(/\s+/g, ' ') === v.signerName.toLowerCase().replace(/\s+/g, ' '), {
+  message: 'Type your full name exactly as above to sign', path: ['signature'],
+});
+export type ProposalAcceptInput = z.infer<typeof proposalAcceptInput>;
+
+export const proposalDeclineInput = z.object({
+  signerName: z.string().trim().min(2).max(120),
+  signerEmail: email,
+  reason: z.string().trim().min(3, 'Tell us briefly why').max(1000),
+}).strict();
+export type ProposalDeclineInput = z.infer<typeof proposalDeclineInput>;
+
+/** What the client sees on the acceptance page: roles, rates and totals, never costs or margins. */
+export interface PublicProposal {
+  /** open: can be accepted; closed: decided another way (marked won or lost by the team, or answered on another link). */
+  status: 'open' | 'accepted' | 'declined' | 'expired' | 'replaced' | 'withdrawn' | 'closed';
+  organisation: string;
+  code: string;
+  version: number;
+  title: string;
+  clientName: string;
+  issuedOn: string;
+  validUntil: string | null;
+  expiresAt: string;
+  currency: string;
+  startDate: string;
+  durationMonths: number;
+  coverNote: string;
+  terms: string;
+  preparedBy: string;
+  lines: { roleTitle: string; location: string | null; headcount: number; billMonthly: string; monthlyRevenue: string }[];
+  headcount: number;
+  monthlyRevenue: string;
+  contractRevenue: string;
+  decision: { kind: 'accepted' | 'declined'; by: string; title: string | null; at: string; reason: string | null } | null;
+}

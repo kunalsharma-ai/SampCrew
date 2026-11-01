@@ -1,7 +1,7 @@
 'use client';
 import { formatAmount } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardHeader, Dialog, Field, Input, PageHeader, Table, TBody, TD, TH, THead, TR, Textarea, buttonClass, cn } from '@crew/ui';
-import { AlertTriangle, Check, Clock, Download, Mail, Pencil, Send, Trash2, Trophy, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Check, Clock, Download, Eye, FileSignature, Mail, Pencil, Send, Trash2, Trophy, Undo2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -21,6 +21,13 @@ function emailState(e: Bid['emails'][number]): { label: string; tone: 'neutral' 
   const queued = st.every((s) => s === 'queued');
   if (queued && new Date(e.sendAt) > new Date()) return { label: `Scheduled for ${dt(e.sendAt)}`, tone: 'warning', cancellable: true };
   return { label: 'Sending', tone: 'info', cancellable: queued };
+}
+
+function linkState(l: Bid['emails'][number]['links'][number]) {
+  if (l.decision) return `${l.to}: ${l.decision} ${l.decidedAt ? dt(l.decidedAt) : ''}`.trim();
+  if (l.firstViewedAt) return `${l.to}: opened ${l.viewCount === 1 ? 'once' : `${l.viewCount} times`}, first ${dt(l.firstViewedAt)}`;
+  if (new Date(l.expiresAt) < new Date()) return `${l.to}: link expired`;
+  return `${l.to}: not opened yet`;
 }
 
 export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { bid: Bid; myApproval: InboxItem | null; notice: string | null; senderName: string; workspace: string }) {
@@ -61,7 +68,22 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
       {msg && <Alert tone={msg.tone} className="mb-4">{msg.text}</Alert>}
       {bid.status === 'rejected' && <Alert tone="danger" className="mb-4" title="Finance asked for changes">{bid.approval?.steps.find((s) => s.status === 'rejected')?.comment ?? 'Edit the bid and submit it again.'}</Alert>}
       {bid.status === 'pending_approval' && !myApproval && <Alert tone="info" className="mb-4">Waiting for Finance to approve. The proposal can be sent once it is approved.</Alert>}
-      {(bid.status === 'won' || bid.status === 'lost' || bid.status === 'withdrawn') && bid.outcomeReason && <Alert tone={bid.status === 'won' ? 'success' : 'info'} className="mb-4">{BID_STATUS_LABEL[bid.status]}: {bid.outcomeReason}</Alert>}
+      {bid.acceptance && (
+        <Card className={cn('mb-5 p-5', bid.acceptance.decision === 'accepted' ? 'border-success/40' : 'border-danger/30')} aria-label="Client decision">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <FileSignature className={cn('size-5 shrink-0', bid.acceptance.decision === 'accepted' ? 'text-success' : 'text-danger')} />
+            <div className="min-w-0 flex-1 text-sm">
+              <h2 className="font-semibold">{bid.acceptance.decision === 'accepted' ? 'Accepted online by the client' : 'Declined online by the client'}</h2>
+              <p className="mt-1 text-fg-muted">
+                {bid.acceptance.signerName}{bid.acceptance.signerTitle ? `, ${bid.acceptance.signerTitle}` : ''} ({bid.acceptance.signerEmail}) on {dt(bid.acceptance.decidedAt)}, version {bid.acceptance.version}, from the link sent to {bid.acceptance.sentTo}{bid.acceptance.ip ? ` · IP ${bid.acceptance.ip}` : ''}
+              </p>
+              {bid.acceptance.reason && <p className="mt-1">“{bid.acceptance.reason}”</p>}
+            </div>
+            {bid.acceptance.hasSignedPdf && <a href={`/staffing-pdf/${bid.id}?signed=1`} target="_blank" rel="noreferrer" className={buttonClass('secondary', 'sm')}><Download className="size-3.5" /> Signed copy</a>}
+          </div>
+        </Card>
+      )}
+      {(bid.status === 'won' || bid.status === 'lost' || bid.status === 'withdrawn') && bid.outcomeReason && !bid.acceptance && <Alert tone={bid.status === 'won' ? 'success' : 'info'} className="mb-4">{BID_STATUS_LABEL[bid.status]}: {bid.outcomeReason}</Alert>}
 
       {myApproval && (
         <Card className="mb-5 border-warning/40 p-5" aria-label="Your approval">
@@ -122,6 +144,11 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{e.subject}</p>
                         <p className="truncate text-xs text-fg-subtle">To {e.to}{e.cc.length ? `, cc ${e.cc.join(', ')}` : ''} · version {bid.versions.find((v) => v.id === e.versionId)?.version ?? '?'}</p>
+                        {!e.cancelledAt && e.links.length > 0 && (
+                          <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-fg-muted" aria-label="Acceptance links">
+                            {e.links.map((l) => <li key={l.to} className="inline-flex items-center gap-1"><Eye className="size-3" />{linkState(l)}</li>)}
+                          </ul>
+                        )}
                       </div>
                       <Badge tone={s.tone}>{s.label}</Badge>
                       {s.cancellable && bid.can.send && <Button size="sm" variant="secondary" loading={pending} onClick={() => run(() => cancelBidEmailAction(bid.id, e.id))}>Cancel email</Button>}

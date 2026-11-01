@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import {
   BID_EDITABLE,
   type BidInput,
@@ -14,6 +14,7 @@ import {
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { can, type ResourceAttributes } from '../../platform/authz/policy';
+import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
 import { Errors } from '../../platform/http/errors';
@@ -81,6 +82,7 @@ export class BidsService implements OnModuleInit {
     private readonly notifications: NotificationService,
     private readonly approvals: ApprovalsService,
     private readonly storage: StorageService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   onModuleInit() {
@@ -288,6 +290,19 @@ export class BidsService implements OnModuleInit {
         [id],
       );
       const delivery = await this.delivery(emails.flatMap((e) => e.ids));
+      const links = await many<{ emailId: string; to: string; firstViewedAt: string | null; viewCount: number; decision: string | null; decidedAt: string | null; expiresAt: string; revokedAt: string | null }>(
+        tx,
+        `select bid_email_id as "emailId", sent_to::text as "to", first_viewed_at as "firstViewedAt", view_count as "viewCount", decision, decided_at as "decidedAt", expires_at as "expiresAt", revoked_at as "revokedAt"
+           from bid_acceptance_links where bid_id = $1 order by created_at, sent_to`,
+        [id],
+      );
+      const acceptance = await one<{ decision: 'accepted' | 'declined'; sentTo: string; decidedAt: string; signerName: string; signerTitle: string | null; signerEmail: string; reason: string | null; ip: string | null; version: number; hasSignedPdf: boolean }>(
+        tx,
+        `select l.decision, l.sent_to::text as "sentTo", l.decided_at as "decidedAt", l.signer_name as "signerName", l.signer_title as "signerTitle", l.signer_email as "signerEmail",
+                l.decline_reason as reason, l.decided_ip as ip, v.version, l.signed_pdf_storage_key is not null as "hasSignedPdf"
+           from bid_acceptance_links l join bid_versions v on v.id = l.version_id where l.bid_id = $1 and l.decision is not null`,
+        [id],
+      );
       const approval = b.approval_request_id
         ? { id: b.approval_request_id, status: (await one<{ status: string }>(tx, 'select status from approval_requests where id = $1', [b.approval_request_id]))?.status, steps: await this.approvals.trail(tx, b.approval_request_id) }
         : null;
@@ -298,7 +313,11 @@ export class BidsService implements OnModuleInit {
         targetMarginPct: pctText(b.target_margin_pct), templateId: b.template_id, coverNote: b.cover_note, terms: b.terms, validUntil: b.valid_until,
         version: b.version, ownerMembershipId: b.owner_membership_id, ...meta,
         lines, pricing: this.price(b, lines), versions,
-        emails: emails.map(({ ids, ...e }) => ({ ...e, delivery: ids.map((i) => delivery.get(i) ?? { status: 'unknown', sentAt: null, error: null }) })),
+        emails: emails.map(({ ids, ...e }) => {
+          const mine = links.filter((x) => x.emailId === e.id).map(({ emailId: _e, revokedAt, ...l }) => ({ ...l, revoked: !!revokedAt }));
+          return { ...e, delivery: ids.map((i) => delivery.get(i) ?? { status: 'unknown', sentAt: null, error: null }), links: mine };
+        }),
+        acceptance: acceptance ?? null,
         approval,
         can: {
           edit: manage && BID_EDITABLE.includes(b.status),
@@ -495,6 +514,7 @@ export class BidsService implements OnModuleInit {
       );
       if (n > 0) {
         await tx.query('update bid_emails set cancelled_at = now() where id = $1', [r.id]);
+        await tx.query('update bid_acceptance_links set revoked_at = now() where bid_email_id = $1 and decision is null', [r.id]);
         stopped++;
       }
     }
@@ -548,10 +568,19 @@ export class BidsService implements OnModuleInit {
       }
       const attachment: EmailAttachment = { filename: `${b.code}-v${b.version}.pdf`, contentType: 'application/pdf', storageKey: version.pdf_storage_key };
       const p = this.price(b, lines);
-      const body = `${input.message}\n\n${b.code}: ${b.title}\n${p.headcount} people for ${b.duration_months} months from ${b.start_date}\nMonthly total: ${b.currency} ${formatAmount(p.monthlyRevenue, b.currency)}\nContract value: ${b.currency} ${formatAmount(p.contractRevenue, b.currency)}\n\nThe full proposal is attached as a PDF.`;
+      const summary = `${input.message}\n\n${b.code}: ${b.title}\n${p.headcount} people for ${b.duration_months} months from ${b.start_date}\nMonthly total: ${b.currency} ${formatAmount(p.monthlyRevenue, b.currency)}\nContract value: ${b.currency} ${formatAmount(p.contractRevenue, b.currency)}\n\nThe full proposal is attached as a PDF.`;
+      // Each recipient gets a private link to review and accept or decline online, live from when the email goes
+      // until the proposal's validity ends (at least a week). Only its hash is stored.
+      const until = (await one<{ v: string }>(tx, `select to_char(valid_until, 'YYYY-MM-DD') as v from staffing_bids where id = $1`, [id]))!.v;
+      const expiresAt = new Date(Math.max(Date.parse(`${until}T23:59:59Z`), sendAt.getTime() + 7 * 86_400_000));
+      const web = this.config.WEB_PUBLIC_URL.replace(/\/$/, '');
+      const links: { to: string; hash: string }[] = [];
       const ids: string[] = [];
       for (const to of [input.to, ...input.cc]) {
         const mid = randomUUID();
+        const token = randomBytes(24).toString('base64url');
+        links.push({ to, hash: createHash('sha256').update(token).digest('hex') });
+        const body = `${summary}\n\nReview it and accept or decline online: ${web}/proposal/${token}\nThis link is for ${to} and works until ${expiresAt.toISOString().slice(0, 10)}.`;
         await tx.query(
           `insert into email_messages (id, tenant_id, to_email, subject, text_body, template, attachments, next_attempt_at) values ($1, app_tenant_id(), $2, $3, $4, 'bid.proposal', $5, $6)`,
           [mid, to, input.subject, body, JSON.stringify([attachment]), sendAt.toISOString()],
@@ -564,6 +593,12 @@ export class BidsService implements OnModuleInit {
          values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
         [id, version.id, input.to, input.cc, input.subject, input.message, sendAt.toISOString(), ids, actor.membershipId],
       ))!;
+      for (const l of links) {
+        await tx.query(
+          `insert into bid_acceptance_links (tenant_id, bid_id, version_id, bid_email_id, sent_to, token_hash, active_from, expires_at) values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7)`,
+          [id, version.id, e.id, l.to, l.hash, sendAt.toISOString(), expiresAt.toISOString()],
+        );
+      }
       await tx.query(`update staffing_bids set status = 'sent', sent_at = coalesce(sent_at, now()) where id = $1`, [id]);
       await this.audit.record(tx, { action: 'bid.proposal_scheduled', resourceType: 'staffing_bid', resourceId: id, changes: { to: input.to, cc: input.cc, sendAt: sendAt.toISOString(), version: b.version } });
       return { id: e.id, sendAt: sendAt.toISOString(), recipients: ids.length };
@@ -586,6 +621,22 @@ export class BidsService implements OnModuleInit {
       const today = new Date().toISOString().slice(0, 10);
       const content = await renderProposal(await this.proposal(tx, b, await this.lines(tx, id), today, b.valid_until));
       return { fileName: `${b.code}-v${b.version}-preview.pdf`, content };
+    });
+  }
+
+  /** The signed copy of an accepted proposal: the PDF as sent plus the acceptance record. */
+  async signedPdf(id: string): Promise<{ fileName: string; content: Buffer }> {
+    return this.db.tenant(async (tx) => {
+      const b = await this.load(tx, id);
+      await this.authz.require('bids:read', attrs(b), tx);
+      const l = await one<{ key: string; version: number }>(
+        tx,
+        `select l.signed_pdf_storage_key as key, v.version from bid_acceptance_links l join bid_versions v on v.id = l.version_id
+          where l.bid_id = $1 and l.decision = 'accepted' and l.signed_pdf_storage_key is not null`,
+        [id],
+      );
+      if (!l) throw Errors.notFound('Signed proposal');
+      return { fileName: `${b.code}-v${l.version}-signed.pdf`, content: await this.read(l.key) };
     });
   }
 

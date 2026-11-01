@@ -5,6 +5,8 @@ import { SMTPServer } from 'smtp-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { resetConfigForTests } from '../src/platform/config/config';
 import { MailerService } from '../src/platform/notify/mailer.service';
+import { PDFDocument } from 'pdf-lib';
+import { createHash } from 'node:crypto';
 import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, type TestTenant } from './helpers';
 
 /** Staffing bids: clients, templates, exact pricing, approval before sending, the proposal PDF and scheduled email. */
@@ -22,6 +24,18 @@ describe('staffing bids', () => {
     return res.body as Record<string, any>;
   };
   let clientId = '';
+  let firstLink = '';
+  /** The acceptance link in a raw (possibly quoted-printable) email. */
+  const linkIn = (raw: string) => {
+    const m = raw.replace(/=\r?\n/g, '').match(/\/proposal\/([A-Za-z0-9_-]{32})/);
+    expect(m, 'no acceptance link in the email').toBeTruthy();
+    return m![1]!;
+  };
+  const binary = (r: { buffer: (b: boolean) => any }) => r.buffer(true).parse((res: NodeJS.ReadableStream, cb: (e: null, b: Buffer) => void) => {
+    const chunks: Buffer[] = [];
+    res.on('data', (c: Buffer) => chunks.push(c));
+    res.on('end', () => cb(null, Buffer.concat(chunks)));
+  });
   let bidId = '';
   const startDate = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
   const bid = (over: Record<string, unknown> = {}) => ({
@@ -162,6 +176,7 @@ describe('staffing bids', () => {
     await app.get(MailerService).sendBatch(500);
     const mail = received.find((m) => m.to === 'divya@acme.test');
     expect(mail?.body).toContain('Dear Divya');
+    firstLink = linkIn(mail!.body);
     expect(mail?.body).toContain('Contract value: INR');
     expect(mail?.body).toMatch(/Content-Type: application\/pdf; name=BID-0001-v1\.pdf/);
     b = ok(await as('recruiter').get(`/staffing/bids/${bidId}`));
@@ -199,5 +214,108 @@ describe('staffing bids', () => {
     expect((await as('recruiter').delete(`/staffing/bids/${draft.id}`)).status).toBe(204);
     const audit = await pool.query(`select action from audit_events where tenant_id = $1 and resource_type = 'staffing_bid' order by created_at`, [t.id]);
     expect(audit.rows.map((r) => r.action)).toEqual(expect.arrayContaining(['bid.created', 'bid.submitted', 'bid.approved', 'bid.proposal_scheduled', 'bid.email_cancelled', 'bid.withdrawn', 'bid.deleted']));
+  });
+
+  /** Submits, approves and emails a fresh bid; returns its id and the links sent to each recipient. */
+  const sendFresh = async (title: string, to: string, cc: string[] = []) => {
+    const d = ok(await as('recruiter').post('/staffing/bids').send(bid({ title })), 201);
+    ok(await as('recruiter').post(`/staffing/bids/${d.id}/submit`));
+    const inbox = ok(await as('finance').get('/approvals/inbox')) as unknown as { id: string; summary: string }[];
+    ok(await as('finance').post(`/approvals/${inbox.find((i) => i.summary.includes(title))!.id}/approve`).send({}));
+    ok(await as('recruiter').post(`/staffing/bids/${d.id}/send`).send({ to, cc, subject: `Proposal ${d.code}`, message: 'Please review.' }), 201);
+    await app.get(MailerService).sendBatch(500);
+    const links: Record<string, string> = {};
+    for (const r of [to, ...cc]) links[r] = linkIn(received.filter((m) => m.to === r).at(-1)!.body);
+    return { id: d.id as string, code: d.code as string, links };
+  };
+  const pub = api as unknown as (a: INestApplication) => ReturnType<typeof api>;
+  const signer = { signerName: 'Meera Nair', signerTitle: 'Head of Operations', signerEmail: 'meera@acme.test', signature: 'meera  nair', authorised: true };
+
+  it('lets the client accept online with a typed signature, keeping a signed copy and marking the bid won', async () => {
+    // The first link went out with version 1 of a bid that was since changed and withdrawn.
+    expect(ok(await pub(app).get(`/public/proposals/${firstLink}`)).status).toBe('withdrawn');
+    expect((await pub(app).post(`/public/proposals/${firstLink}/accept`).send(signer)).status).toBe(409);
+    expect((await pub(app).get('/public/proposals/not-a-token')).status).toBe(404);
+    expect((await pub(app).get(`/public/proposals/${'x'.repeat(32)}`)).status).toBe(404);
+
+    const f = await sendFresh('Forklift operators', 'meera@acme.test', ['ops2@acme.test']);
+    const view = ok(await pub(app).get(`/public/proposals/${f.links['meera@acme.test']}`));
+    expect(view).toMatchObject({ status: 'open', code: f.code, version: 1, clientName: 'Acme Logistics', headcount: 5, decision: null });
+    expect(view.lines).toEqual([{ roleTitle: 'Recruiter', location: 'Bengaluru', headcount: 5, billMonthly: expect.any(String), monthlyRevenue: expect.any(String) }]);
+    // Never pay, costs or margins.
+    expect(JSON.stringify(view)).not.toMatch(/"(payMonthly|loadedCostMonthly|monthlyCost|monthlyMargin|marginPct|markupPct|contractCost)"/);
+    ok(await pub(app).get(`/public/proposals/${f.links['meera@acme.test']}`));
+    let b = ok(await as('recruiter').get(`/staffing/bids/${f.id}`));
+    expect(b.emails[0].links).toEqual([
+      expect.objectContaining({ to: 'meera@acme.test', viewCount: 2, decision: null, revoked: false, firstViewedAt: expect.any(String) }),
+      expect.objectContaining({ to: 'ops2@acme.test', viewCount: 0, firstViewedAt: null }),
+    ]);
+    const seen = await pool.query(`select title from notifications where tenant_id = $1 and kind = 'bid.viewed'`, [t.id]);
+    expect(seen.rows.map((r) => r.title)).toEqual([`Acme Logistics opened proposal ${f.code}`]);
+
+    const original = await binary(pub(app).get(`/public/proposals/${f.links['meera@acme.test']}/proposal.pdf`));
+    expect(original.status).toBe(200);
+    const accept = (body: unknown) => pub(app).post(`/public/proposals/${f.links['meera@acme.test']}/accept`).send(body);
+    expect((await accept({ ...signer, signature: 'M Nair' })).status).toBe(422);
+    expect((await accept({ ...signer, authorised: false })).status).toBe(422);
+    const done = ok(await accept(signer));
+    expect(done).toMatchObject({ status: 'accepted', decision: { kind: 'accepted', by: 'Meera Nair', title: 'Head of Operations' } });
+    expect((await accept(signer)).status).toBe(409);
+
+    b = ok(await as('recruiter').get(`/staffing/bids/${f.id}`));
+    expect(b.status).toBe('won');
+    expect(b.outcomeReason).toBe('Accepted online by Meera Nair, Head of Operations');
+    expect(b.acceptance).toMatchObject({ decision: 'accepted', sentTo: 'meera@acme.test', signerName: 'Meera Nair', signerEmail: 'meera@acme.test', version: 1, hasSignedPdf: true });
+    // The cc recipient's link now shows the proposal as answered.
+    expect(ok(await pub(app).get(`/public/proposals/${f.links['ops2@acme.test']}`)).status).toBe('closed');
+    expect((await pub(app).post(`/public/proposals/${f.links['ops2@acme.test']}/decline`).send({ signerName: 'Ops', signerEmail: 'ops2@acme.test', reason: 'Too late' })).status).toBe(409);
+
+    // The signed copy is the PDF as sent plus an acceptance page, for the team and through the link.
+    const signed = await binary(as('recruiter').get(`/staffing/bids/${f.id}/signed.pdf`));
+    expect(signed.status).toBe(200);
+    expect(signed.headers['content-disposition']).toContain(`${f.code}-v1-signed.pdf`);
+    const pages = async (x: Buffer) => (await PDFDocument.load(x)).getPageCount();
+    expect(await pages(signed.body)).toBe((await pages(original.body)) + 1);
+    const viaLink = await binary(pub(app).get(`/public/proposals/${f.links['meera@acme.test']}/proposal.pdf`));
+    expect(Buffer.compare(viaLink.body, signed.body)).toBe(0);
+    const stored = await pool.query(`select pdf_sha256, decided_ip from bid_acceptance_links where bid_id = $1 and decision = 'accepted'`, [f.id]);
+    expect(stored.rows[0].pdf_sha256).toBe(createHash('sha256').update(original.body).digest('hex'));
+    expect((await as('stranger').get(`/staffing/bids/${f.id}/signed.pdf`)).status).toBe(404);
+    expect((await as('recruiter').get(`/staffing/bids/${bidId}/signed.pdf`)).status).toBe(404);
+
+    const notes = await pool.query(`select kind from notifications where tenant_id = $1 and kind like 'bid.%'`, [t.id]);
+    expect(notes.rows.map((r) => r.kind)).toContain('bid.accepted');
+    const audit = await pool.query(`select action, actor_type, metadata from audit_events where tenant_id = $1 and resource_id = $2 order by created_at`, [t.id, f.id]);
+    const acc = audit.rows.find((r) => r.action === 'bid.accepted_online');
+    expect(acc).toMatchObject({ actor_type: 'system', metadata: expect.objectContaining({ signerEmail: 'meera@acme.test', sentTo: 'meera@acme.test' }) });
+    expect(audit.rows.map((r) => r.action)).toContain('bid.proposal_viewed');
+  });
+
+  it('lets the client decline with a reason, and stops links for replaced or expired proposals', async () => {
+    const f = await sendFresh('Packers for the festive season', 'lata@acme.test');
+    const link = f.links['lata@acme.test']!;
+    expect((await pub(app).post(`/public/proposals/${link}/decline`).send({ signerName: 'Lata', signerEmail: 'lata@acme.test', reason: '' })).status).toBe(422);
+    const d = ok(await pub(app).post(`/public/proposals/${link}/decline`).send({ signerName: 'Lata Rao', signerEmail: 'lata@acme.test', reason: 'We chose a vendor closer to the site' }));
+    expect(d).toMatchObject({ status: 'declined', decision: { kind: 'declined', by: 'Lata Rao', reason: 'We chose a vendor closer to the site' } });
+    const b = ok(await as('recruiter').get(`/staffing/bids/${f.id}`));
+    expect(b.status).toBe('lost');
+    expect(b.acceptance).toMatchObject({ decision: 'declined', reason: 'We chose a vendor closer to the site', hasSignedPdf: false });
+
+    // Changing a sent bid replaces its link; an expired link can no longer be used.
+    const g = await sendFresh('Loaders for the new depot', 'sam@acme.test');
+    const old = g.links['sam@acme.test']!;
+    ok(await as('recruiter').put(`/staffing/bids/${g.id}`).send(bid({ title: 'Loaders for the new depot', durationMonths: 9 })));
+    expect(ok(await pub(app).get(`/public/proposals/${old}`)).status).toBe('replaced');
+    const h = await sendFresh('Pickers for the night shift', 'ria@acme.test');
+    await pool.query(`update bid_acceptance_links set expires_at = now() - interval '1 minute' where bid_id = $1`, [h.id]);
+    expect(ok(await pub(app).get(`/public/proposals/${h.links['ria@acme.test']}`)).status).toBe('expired');
+    expect((await pub(app).post(`/public/proposals/${h.links['ria@acme.test']}/accept`).send({ ...signer, signerEmail: 'ria@acme.test' })).status).toBe(409);
+    // A scheduled email that is cancelled takes its link with it.
+    const i = await sendFresh('Drivers for the airport run', 'raj@acme.test');
+    const later = ok(await as('recruiter').post(`/staffing/bids/${i.id}/send`).send({ to: 'raj2@acme.test', subject: 'Later', message: 'Later', sendAt: new Date(Date.now() + 86_400_000).toISOString() }), 201);
+    const queued = await pool.query(`select token_hash, active_from > now() as future from bid_acceptance_links where bid_email_id = $1`, [later.id]);
+    expect(queued.rows[0].future).toBe(true);
+    ok(await as('recruiter').post(`/staffing/bids/${i.id}/emails/${later.id}/cancel`));
+    expect((await pool.query(`select revoked_at from bid_acceptance_links where bid_email_id = $1`, [later.id])).rows[0].revoked_at).toBeTruthy();
   });
 });

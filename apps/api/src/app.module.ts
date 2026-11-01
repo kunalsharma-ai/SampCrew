@@ -21,7 +21,8 @@ import { MembersService } from './modules/members/members.service';
 import { DashboardController, DashboardService } from './modules/experience/dashboard.controller';
 import { PreferencesController } from './modules/experience/preferences.controller';
 import { ViewsController } from './modules/experience/views.controller';
-import { BidsController } from './modules/bids/bids.controller';
+import { BidsController, ProposalsPublicController } from './modules/bids/bids.controller';
+import { ProposalsPublicService } from './modules/bids/proposals-public.service';
 import { BidsService } from './modules/bids/bids.service';
 import { UniverseController } from './modules/universe/universe.controller';
 import { UniverseService } from './modules/universe/universe.service';
@@ -129,6 +130,7 @@ export const CONTROLLERS = [
   PreferencesController,
   ViewsController,
   BidsController,
+  ProposalsPublicController,
   UniverseController,
   DashboardController,
   AttendanceController,
@@ -191,6 +193,7 @@ export const CONTROLLERS = [
     ApprovalsService,
     DashboardService,
     BidsService,
+    ProposalsPublicService,
     UniverseService,
     OnboardingService,
     LeaveService,

@@ -247,3 +247,57 @@ export async function renderProposal(d: ProposalData): Promise<Buffer> {
   });
   return Buffer.from(await pdf.save());
 }
+
+export interface AcceptanceRecord {
+  code: string; version: number; clientName: string; workspace: string;
+  signerName: string; signerTitle: string; signerEmail: string; signature: string;
+  acceptedAt: string; ip: string | null; userAgent: string | null; pdfSha256: string; linkSentTo: string;
+}
+
+/**
+ * The signed copy: the proposal exactly as sent, with a final page recording the acceptance (the typed
+ * signature, the signer, when and from where, and the SHA-256 of the proposal PDF they accepted).
+ */
+export async function appendAcceptance(original: Buffer, a: AcceptanceRecord): Promise<Buffer> {
+  const pdf = await PDFDocument.load(original);
+  pdf.registerFontkit(fontkit);
+  const fonts = new Fonts(pdf);
+  const rows: [string, string][] = [
+    ['Proposal', `${a.code}, version ${a.version}`],
+    ['Client', a.clientName],
+    ['Accepted by', `${a.signerName}, ${a.signerTitle}`],
+    ['Email', a.signerEmail],
+    ['Accepted at', a.acceptedAt],
+    ['Link sent to', a.linkSentTo],
+    ['IP address', a.ip ?? 'Not recorded'],
+    ['Browser', (a.userAgent ?? 'Not recorded').slice(0, 90)],
+    ['Proposal SHA-256', a.pdfSha256],
+  ];
+  const intro = `${a.signerName} accepted this proposal online on behalf of ${a.clientName}, confirming they are authorised to do so, by typing their name as their signature.`;
+  await fonts.prepare(['Acceptance record', intro, a.signature, 'Signature', 'Recorded by CREW for', a.workspace, ...rows.flat()], [400, 700]);
+  const page = pdf.addPage(A4);
+  let y = A4[1] - M;
+  const width = A4[0] - 2 * M;
+  fonts.draw(page, 'Acceptance record', M, y, 16, 700, INK);
+  y -= 28;
+  // Wrap the introduction.
+  let line = '';
+  for (const word of intro.split(' ')) {
+    const next = line ? `${line} ${word}` : word;
+    if (fonts.width(next, 10, 400) > width && line) { fonts.draw(page, line, M, y, 10, 400, INK); y -= 14; line = word; } else line = next;
+  }
+  if (line) { fonts.draw(page, line, M, y, 10, 400, INK); y -= 24; }
+  for (const [k, v] of rows) {
+    fonts.draw(page, k, M, y, 9, 700, MUTED);
+    fonts.draw(page, v, M + 120, y, k === 'Proposal SHA-256' ? 7.5 : 10, 400, INK);
+    y -= 18;
+  }
+  y -= 16;
+  fonts.draw(page, 'Signature', M, y, 9, 700, MUTED);
+  y -= 30;
+  fonts.draw(page, a.signature, M, y, 22, 400, ACCENT);
+  y -= 8;
+  page.drawLine({ start: { x: M, y }, end: { x: M + 260, y }, thickness: 0.75, color: RULE });
+  fonts.draw(page, `Recorded by CREW for ${a.workspace}`, M, 28, 8, 400, MUTED);
+  return Buffer.from(await pdf.save());
+}
