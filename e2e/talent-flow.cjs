@@ -1,7 +1,7 @@
 /**
  * Performance, learning and engagement end-to-end flow in a real browser, against the demo workspace.
  *
- *   pnpm db:reset            # fresh demo workspace
+ *   pnpm db:reset            # fresh demo workspace (HR admin must not have MFA enrolled yet)
  *   pnpm dev:api & pnpm dev:web &
  *   node e2e/talent-flow.cjs
  *
@@ -117,6 +117,7 @@ async function writeReview(p, rating, label) {
   ok('the manager review stays hidden from the employee until release');
 
   // 4. HR calibrates and releases.
+  // The HR admin must not have two-step verification on yet, so CI runs this flow before the recruitment flow.
   const hr = await signIn(b, 'hr.admin@demo.crew.local');
   await hr.goto(BASE + '/reviews/cycles');
   await hr.click(`a:has-text("${CYCLE}")`);

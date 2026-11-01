@@ -145,7 +145,7 @@ Everything below is labelled as demo data.
   7. The operator answers the pulse survey, and HR opens the results.
   8. The operator recognises a colleague.
 
-  CI runs it after the payroll flow.
+  CI runs it after the Core HR flow and before the recruitment flow, which turns on two-step verification for the HR admin.
 
 ### Defects found and fixed during this phase
 - HR and other viewers could read a manager's draft review before it was submitted. Only its author sees a draft now.
@@ -167,6 +167,7 @@ Everything below is labelled as demo data.
 - **Survey anonymity limits:** the department, legal entity and date stored with each answer can still narrow down who answered in a very small group. The threshold reduces this risk but cannot remove it. Free-text comments can identify someone by their content, and the answer form warns about this. Surveys have no scheduling, reminders or templates.
 - **Review cycles:** one rating scale per cycle, with no goal-weighted score in the rating. There is no rating guidance per level, and the 360 feedback questions are fixed.
 - **No reports or exports** for talent data yet.
+- **The talent browser test needs a fresh database,** because it runs the demo review cycle through to release.
 
 ## Next: Phase 7 (Mobile and HR helpdesk)
 - A mobile app for self-service, punching and approvals.
