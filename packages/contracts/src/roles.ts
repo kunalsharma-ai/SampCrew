@@ -93,6 +93,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'learning:read': 'tenant', 'learning:manage': 'tenant', 'learning:configure': 'tenant',
       'engagement:manage': 'tenant', 'helpdesk:manage': 'tenant', 'helpdesk:configure': 'tenant', 'announcements:manage': 'tenant', 'reports:read': 'tenant', 'automation:manage': 'tenant', 'insights:attrition': 'tenant',
       'requisitions:read': 'tenant', 'requisitions:approve': 'tenant', 'candidates:read': 'tenant', 'offers:approve': 'tenant', 'recruitment:configure': 'tenant',
+      'privacy:manage': 'tenant',
     },
   },
   {

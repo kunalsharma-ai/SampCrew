@@ -67,6 +67,12 @@ import { AiService } from './modules/ai/ai.service';
 import { AssistantService } from './modules/ai/assistant.service';
 import { AutomationController } from './modules/automation/automation.controller';
 import { IntegrationsController } from './modules/integrations/integrations.controller';
+import { IdentityController } from './modules/identity/identity.controller';
+import { ScimController } from './modules/identity/scim.controller';
+import { ScimService } from './modules/identity/scim.service';
+import { SsoService } from './modules/identity/sso.service';
+import { PrivacyController } from './modules/privacy/privacy.controller';
+import { PrivacyService } from './modules/privacy/privacy.service';
 import { ApiKeysService } from './modules/integrations/api-keys.service';
 import { WebhooksService } from './modules/integrations/webhooks.service';
 import { ConnectionsService } from './modules/integrations/connections.service';
@@ -135,6 +141,9 @@ export const CONTROLLERS = [
   AiController,
   AutomationController,
   IntegrationsController,
+  IdentityController,
+  ScimController,
+  PrivacyController,
   InsightsController,
   PlatformAuthController,
   PlatformController,
@@ -199,6 +208,9 @@ export const CONTROLLERS = [
     AutomationService,
     WorkflowRunnerService,
     ApiKeysService,
+    SsoService,
+    ScimService,
+    PrivacyService,
     WebhooksService,
     ConnectionsService,
     InsightsService,
