@@ -7,6 +7,7 @@ import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
+import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
 import { attrsOf, nameOf, needEmployee, pickAnswers, talentEmployee } from './talent-common';
 
 interface CycleRow {
@@ -148,10 +149,10 @@ export class ReviewsService {
 
   /** Everyone a cycle would include: current employees in its entity and department (with sub-departments) who joined by the end of the period. */
   private participants(tx: Tx, c: CycleRow) {
-    return many<{ id: string; name: string; manager_employee_id: string | null; membership_id: string | null; manager_membership_id: string | null }>(
+    return many<{ id: string; name: string; manager_employee_id: string | null; manager_name: string | null; membership_id: string | null; manager_membership_id: string | null }>(
       tx,
       `with recursive deps(id) as (select $3::uuid where $3::uuid is not null union select d.id from departments d join deps on d.parent_id = deps.id)
-       select e.id, ${nameOf('e')} as name, e.current_manager_employee_id as manager_employee_id, e.membership_id, m.membership_id as manager_membership_id
+       select e.id, ${nameOf('e')} as name, e.current_manager_employee_id as manager_employee_id, ${nameOf('m')} as manager_name, e.membership_id, m.membership_id as manager_membership_id
          from employees e left join employees m on m.id = e.current_manager_employee_id
         where e.status in ('probation', 'active', 'notice') and e.date_of_joining <= $1::date
           and ($2::uuid is null or e.current_legal_entity_id = $2) and ($3::uuid is null or e.current_department_id in (select id from deps))
@@ -588,6 +589,21 @@ export class ReviewsService {
         `select e.id, ${nameOf('e')} as name, d.name as "departmentName" from employees e left join departments d on d.id = e.current_department_id
           where e.status <> 'exited' and ($1::text is null or ${nameOf('e')} ilike $1) order by 2 limit 20`,
         [q ? `%${q}%` : null],
+      );
+    });
+  }
+
+  /** People the caller manages for performance or learning (their `:manage` scope), to pick goal owners or learners. */
+  async managed(kind: 'performance' | 'learning') {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      const params: unknown[] = [s.employeeId ?? null];
+      const pred = await this.authz.predicate(`${kind}:manage`, EMPLOYEE_SCOPE, params, tx);
+      return many(
+        tx,
+        `select e.id, ${nameOf('e')} as name, d.name as "departmentName" from employees e left join departments d on d.id = e.current_department_id
+          where ${pred} and e.status <> 'exited' and e.id is distinct from $1 order by 2 limit 1000`,
+        params,
       );
     });
   }

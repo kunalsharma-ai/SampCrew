@@ -44,6 +44,7 @@ const alignQuery = z.object({ employeeId: z.uuid().optional() });
 const reviewQuery = z.object({ view: z.enum(['mine', 'team', 'feedback']).default('mine') });
 const reviewerInput = z.object({ managerEmployeeId: z.uuid().nullable() });
 const colleagueQuery = z.object({ q: z.string().trim().max(80).default('') });
+const managedQuery = z.object({ for: z.enum(['performance', 'learning']) });
 const archivedQuery = z.object({ includeArchived: z.enum(['true', 'false']).optional() });
 const assignmentQuery = z.object({
   view: z.enum(['mine', 'team']).default('mine'),
@@ -279,6 +280,13 @@ export class ReviewsController {
   @Doc({ summary: 'Find current colleagues by name (name and department only), to ask for feedback or recognise them', query: colleagueQuery })
   colleagues(@Query(new ZodPipe(colleagueQuery)) q: z.infer<typeof colleagueQuery>) {
     return this.reviews.colleagues(q.q);
+  }
+
+  @Get('talent/people')
+  @RequirePermission('performance:read')
+  @Doc({ summary: 'People the caller manages for performance or learning (empty without that permission)', query: managedQuery })
+  managed(@Query(new ZodPipe(managedQuery)) q: z.infer<typeof managedQuery>) {
+    return this.reviews.managed(q.for);
   }
 }
 

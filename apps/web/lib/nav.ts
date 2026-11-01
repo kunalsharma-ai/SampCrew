@@ -31,6 +31,19 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    label: 'Talent',
+    items: [
+      { href: '/goals', label: 'Goals', icon: 'target', permission: 'performance:read', feature: 'talent' },
+      { href: '/reviews', label: 'Reviews', icon: 'messages-square', permission: 'performance:read', feature: 'talent' },
+      { href: '/learning', label: 'Learning', icon: 'graduation-cap', permission: 'learning:read', feature: 'talent' },
+      { href: '/surveys', label: 'Surveys', icon: 'clipboard-list', permission: 'surveys:respond', feature: 'talent' },
+      { href: '/recognition', label: 'Recognition', icon: 'heart', permission: 'recognition:give', feature: 'talent' },
+      { href: '/reviews/cycles', label: 'Review cycles', icon: 'calendar-range', permission: 'performance:configure', feature: 'talent' },
+      { href: '/learning/catalogue', label: 'Course catalogue', icon: 'book-open', permission: 'learning:configure', feature: 'talent' },
+      { href: '/surveys/manage', label: 'Survey results', icon: 'chart', permission: 'engagement:manage', feature: 'talent' },
+    ],
+  },
+  {
     label: 'Hiring',
     items: [
       { href: '/recruitment', label: 'Jobs', icon: 'briefcase', permission: 'requisitions:read', feature: 'recruitment' },

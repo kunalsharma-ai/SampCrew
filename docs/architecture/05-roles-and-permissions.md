@@ -83,15 +83,19 @@ CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carr
 | `expenses:approve` Approve expense claims | 5 |  | A | · | · | · | · | · | A | A | · | T | · | · |
 | **Performance** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `performance:read` View goals and reviews | 6 |  | A | · | A | E | O | O | O | O | O | T | O | · |
-| `performance:manage` Run review cycles and write reviews | 6 |  | A | · | A | E | · | · | · | · | · | T | · | · |
+| `performance:manage` Set goals for, write manager reviews of and request feedback on people in scope | 6 |  | A | · | A | E | · | · | · | · | · | T | · | · |
+| `performance:configure` Run review cycles, calibrate and release ratings | 6 |  | A | · | A | · | · | · | · | · | · | · | · | · |
 | **Learning** | | |  |  |  |  |  |  |  |  |  |  |  |  |
-| `learning:read` View courses and assignments | 6 |  | A | · | A | E | O | O | O | O | O | T | O | · |
-| `learning:manage` Manage catalogue and assign courses | 6 |  | A | · | A | E | · | · | · | · | · | T | · | · |
+| `learning:read` View courses and learning assignments | 6 |  | A | · | A | E | O | O | O | O | O | T | O | · |
+| `learning:manage` Assign courses and track completion for people in scope | 6 |  | A | · | A | E | · | · | · | · | · | T | · | · |
+| `learning:configure` Manage the course catalogue and learning paths | 6 |  | A | · | A | · | · | · | · | · | · | · | · | · |
 | **Engagement** | | |  |  |  |  |  |  |  |  |  |  |  |  |
-| `engagement:manage` Run surveys, announcements and recognition programmes | 6 |  | A | · | A | · | · | · | · | · | · | · | · | · |
+| `engagement:manage` Run surveys, see anonymous results, manage company values and moderate recognition | 6 |  | A | · | A | · | · | · | · | · | · | · | · | · |
+| `surveys:respond` Answer anonymous surveys | 6 |  | O | · | O | O | O | O | O | O | O | O | O | · |
+| `recognition:give` Recognise colleagues on the recognition wall | 6 |  | O | · | O | O | O | O | O | O | O | O | O | · |
 | **Helpdesk** | | |  |  |  |  |  |  |  |  |  |  |  |  |
-| `helpdesk:use` Raise HR tickets and ask the HR assistant | 6 |  | O | · | O | O | O | O | O | O | O | O | O | · |
-| `helpdesk:manage` Handle HR tickets and the knowledge base | 6 |  | A | · | A | · | · | · | · | · | · | · | · | · |
+| `helpdesk:use` Raise HR tickets and ask the HR assistant | 7 |  | O | · | O | O | O | O | O | O | O | O | O | · |
+| `helpdesk:manage` Handle HR tickets and the knowledge base | 7 |  | A | · | A | · | · | · | · | · | · | · | · | · |
 | **Analytics** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `reports:read` View workforce analytics and reports | 8 |  | A | A | A | E | O | · | A | A | · | T | · | A |
 | **Automation** | | |  |  |  |  |  |  |  |  |  |  |  |  |
