@@ -4,19 +4,25 @@ import { Building2, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { loginAction, selectTenantAction, verifyMfaAction } from '../actions';
+import { loginAction, selectTenantAction, ssoStartAction, verifyMfaAction } from '../actions';
 
-type Step = { kind: 'password' } | { kind: 'mfa'; mfaToken: string } | { kind: 'tenant'; selectToken: string; tenants: { id: string; name: string; slug: string }[] };
+type Step = { kind: 'password' } | { kind: 'sso'; email: string; notice?: string } | { kind: 'mfa'; mfaToken: string } | { kind: 'tenant'; selectToken: string; tenants: { id: string; name: string; slug: string }[] };
 
-export function LoginForm({ next, expired, workspace }: { next: string; expired: boolean; workspace?: string }) {
+export function LoginForm({ next, expired, workspace, ssoFailure }: { next: string; expired: boolean; workspace?: string; ssoFailure?: string | null }) {
   const router = useRouter();
-  const [step, setStep] = useState<Step>({ kind: 'password' });
-  const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState<Step>(ssoFailure ? { kind: 'sso', email: '' } : { kind: 'password' });
+  const [error, setError] = useState<string | null>(ssoFailure ?? null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
+  const [lastEmail, setLastEmail] = useState('');
 
   const handle = (r: Awaited<ReturnType<typeof loginAction>>) => {
     if (!r.ok) {
+      // The workspace signs its members in through its identity provider: offer that instead of the password.
+      if (r.code === 'sso_required') {
+        setStep({ kind: 'sso', email: lastEmail, notice: r.message });
+        return;
+      }
       setError(r.message);
       setFieldErrors(r.fieldErrors ?? {});
       return;
@@ -32,6 +38,36 @@ export function LoginForm({ next, expired, workspace }: { next: string; expired:
     setFieldErrors({});
     start(async () => handle(await fn()));
   };
+
+  if (step.kind === 'sso') {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const email = String(new FormData(e.currentTarget).get('email') ?? '');
+          setError(null);
+          start(async () => {
+            const r = await ssoStartAction(email);
+            if (!r.ok) setError(r.code === 'not_found' ? 'Single sign-on is not set up for that email domain. Sign in with your password, or check the address.' : r.message);
+            else window.location.assign(r.data!.authorizationUrl);
+          });
+        }}
+        className="flex flex-col gap-5"
+      >
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Sign in with single sign-on</h2>
+          <p className="mt-1 text-sm text-fg-muted">Enter your work email. CREW sends you to your company's sign-in page and brings you back.</p>
+        </div>
+        {step.notice && !error && <Alert tone="info">{step.notice}</Alert>}
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Field label="Work email" required>
+          {(p) => <Input {...p} name="email" type="email" autoComplete="username" defaultValue={step.email} required autoFocus />}
+        </Field>
+        <Button type="submit" size="lg" loading={pending}>Continue</Button>
+        <button type="button" className="text-[13px] text-fg-muted hover:text-fg" onClick={() => { setError(null); setStep({ kind: 'password' }); }}>Use a password instead</button>
+      </form>
+    );
+  }
 
   if (step.kind === 'mfa') {
     return (
@@ -93,6 +129,7 @@ export function LoginForm({ next, expired, workspace }: { next: string; expired:
       onSubmit={(e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);
+        setLastEmail(String(f.get('email')));
         submit(() => loginAction({ email: String(f.get('email')), password: String(f.get('password')), tenantSlug: String(f.get('tenantSlug') ?? '') }));
       }}
       className="flex flex-col gap-5"
@@ -111,6 +148,7 @@ export function LoginForm({ next, expired, workspace }: { next: string; expired:
       </Field>
       {workspace && <input type="hidden" name="tenantSlug" value={workspace} />}
       <Button type="submit" size="lg" loading={pending}>Sign in</Button>
+      <Button type="button" variant="secondary" size="lg" disabled={pending} onClick={() => { setError(null); setStep({ kind: 'sso', email: '' }); }}>Sign in with single sign-on</Button>
       <p className="text-center text-[13px] text-fg-muted">
         New to CREW? <Link href="/signup" className="font-medium text-accent hover:underline">Create a workspace</Link>
       </p>

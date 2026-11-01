@@ -129,28 +129,7 @@ export class AuthController {
 
 @Controller('me')
 export class MeController {
-  constructor(
-    private readonly auth: AuthService,
-    private readonly sso: SsoService,
-  ) {}
-
-  @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Post('sso/start')
-  @HttpCode(200)
-  @Doc({ summary: 'Start single sign-on for a work email: returns the identity provider address to send the browser to', body: ssoStartInput })
-  ssoStart(@Body(new ZodPipe(ssoStartInput)) body: z.infer<typeof ssoStartInput>, @Req() req: Request) {
-    return this.sso.startByEmail(body.email, clientOf(req) === 'mobile' ? 'mobile' : 'web');
-  }
-
-  @Public()
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  @Post('sso/callback')
-  @HttpCode(200)
-  @Doc({ summary: 'Finish single sign-on with the code and state the identity provider returned', body: ssoCallbackInput })
-  ssoCallback(@Body(new ZodPipe(ssoCallbackInput)) body: z.infer<typeof ssoCallbackInput>) {
-    return this.auth.ssoCallback(body.code, body.state);
-  }
+  constructor(private readonly auth: AuthService) {}
 
   @Get()
   @AllowWithoutMfa()

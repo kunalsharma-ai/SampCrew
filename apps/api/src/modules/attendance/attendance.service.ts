@@ -43,6 +43,12 @@ const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
  * Punching, attendance views, corrections, overtime claims, policies, period locks and QR kiosks.
  * Raw punches are append-only; everything shown as a "day" is computed by the attendance engine.
  */
+/** How long a computed day for today or yesterday is reused by read views before it is refreshed. */
+const TEAM_REFRESH_SECONDS = 30;
+/** SQL that is true when employee `e`'s computed day `d` for date $1 can be reused (see TEAM_REFRESH_SECONDS). */
+const freshDay = (secondsParam: string) => `d.computed_at > now() - make_interval(secs => ${secondsParam}::int)
+          and not exists (select 1 from leave_requests lr where lr.employee_id = e.id and lr.updated_at > d.computed_at and lr.start_date <= $1 and lr.end_date >= $1)`;
+
 @Injectable()
 export class AttendanceService implements OnModuleInit {
   private readonly qrKey: Buffer;
@@ -446,7 +452,14 @@ export class AttendanceService implements OnModuleInit {
       const plan = (await this.days.plan(tx, e, date, addDays(date, 1))).get(date)!;
       const win = await this.days.window(tx, e, date);
       const punches = await this.days.punches(tx, e.id, win.from, win.to);
-      if (date >= e.date_of_joining) await this.days.recompute(tx, e.id, date, date);
+      if (date >= e.date_of_joining) {
+        // Punching recomputes the day itself; a view only refreshes a day that is missing or stale.
+        const reuse = await one<{ ok: boolean }>(
+          tx, `select coalesce((select ${freshDay('$3')} from employees e join attendance_days d on d.employee_id = e.id and d.work_date = $1 where e.id = $2), false) as ok`,
+          [date, e.id, TEAM_REFRESH_SECONDS],
+        );
+        if (!reuse!.ok) await this.days.recompute(tx, e.id, date, date);
+      }
       const last = punches.at(-1);
       return {
         employeeId: e.id,
@@ -525,9 +538,15 @@ export class AttendanceService implements OnModuleInit {
       const where = [await this.authz.predicate('attendance:read', EMPLOYEE_SCOPE, params, tx), `e.date_of_joining <= $1`, `(e.last_working_day is null or e.last_working_day >= $1)`];
       if (q.departmentId) { params.push(q.departmentId); where.push(`e.current_department_id = $${params.length}`); }
       if (q.locationId) { params.push(q.locationId); where.push(`e.current_location_id = $${params.length}`); }
-      const people = await many<{ id: string; computed: string | null; tz: string }>(
+      // A day is refreshed when it was never computed, or (for today and yesterday, which change as time passes) when
+      // it is older than TEAM_REFRESH_SECONDS or a leave request changed after it. Punches, corrections, devices and
+      // shift changes recompute their days when they are written, so a busy team view no longer rewrites every
+      // person's day on every request (the load test showed those writes queueing behind each other).
+      params.push(TEAM_REFRESH_SECONDS);
+      const fresh = freshDay(`$${params.length}`);
+      const people = await many<{ id: string; computed: string | null; fresh: boolean; tz: string }>(
         tx,
-        `select e.id, d.computed_at as computed, coalesce(l.timezone, le.timezone, t.timezone) as tz from employees e join tenants t on t.id = e.tenant_id
+        `select e.id, d.computed_at as computed, coalesce(${fresh}, false) as fresh, coalesce(l.timezone, le.timezone, t.timezone) as tz from employees e join tenants t on t.id = e.tenant_id
            left join locations l on l.id = e.current_location_id left join legal_entities le on le.id = e.current_legal_entity_id
            left join attendance_days d on d.employee_id = e.id and d.work_date = $1
           where ${where.join(' and ')} limit 1000`,
@@ -536,7 +555,7 @@ export class AttendanceService implements OnModuleInit {
       for (const p of people) {
         const today = localToday(p.tz);
         if (q.date > today) continue;
-        if (!p.computed || q.date >= addDays(today, -1)) await this.days.recompute(tx, p.id, q.date, q.date);
+        if (!p.computed || (q.date >= addDays(today, -1) && !p.fresh)) await this.days.recompute(tx, p.id, q.date, q.date);
       }
       if (!people.length) return { date: q.date, summary: {}, rows: [] };
       const rows = await many<{ status: string; lateMinutes: number; firstIn: string | null; lastOut: string | null }>(

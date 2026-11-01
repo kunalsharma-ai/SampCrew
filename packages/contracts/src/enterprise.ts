@@ -131,10 +131,10 @@ export const privacyDecisionInput = z.object({ note: z.string().trim().min(3).ma
 
 /** What erasure does to each kind of record, shown to HR before they confirm and stored with the result. */
 export const ERASURE_RULES = [
-  { area: 'Identity and contact', action: 'erased', detail: 'Name replaced with "Erased person" and the employee code, personal email, phone, date of birth and gender removed. The work email is replaced.' },
+  { area: 'Identity and contact', action: 'erased', detail: 'Name replaced with "Erased person", the employee code replaced with a pseudonymous one, and personal email, phone, date of birth and gender removed. The work email is replaced.' },
   { area: 'Bank, tax and national ID', action: 'erased', detail: 'Removed.' },
   { area: 'Documents', action: 'erased', detail: 'Files deleted from storage and their records removed.' },
-  { area: 'Sign-in account', action: 'erased', detail: 'Removed from this workspace; the login itself is deleted if it belongs to no other workspace.' },
+  { area: 'Sign-in account', action: 'erased', detail: 'Removed from this workspace and signed out everywhere; if the login belongs to no other workspace, its name and email are replaced and it is disabled.' },
   { area: 'Helpdesk cases they raised', action: 'erased', detail: 'Subject and messages they wrote replaced with "[erased]".' },
   { area: 'Payroll and payslips', action: 'kept', detail: 'Amounts kept, now linked to the pseudonymous record, because tax and labour law require payroll records to be kept for several years.' },
   { area: 'Attendance and leave', action: 'kept', detail: 'Kept against the pseudonymous record for wage and working-time records.' },

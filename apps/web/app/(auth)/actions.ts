@@ -28,6 +28,11 @@ export async function selectTenantAction(input: { selectToken: string; tenantId:
   return r.ok ? finish(r.data!) : r;
 }
 
+/** Asks the API where to send the browser for single sign-on. The browser then leaves CREW for the identity provider. */
+export async function ssoStartAction(email: string) {
+  return act(() => api<{ authorizationUrl: string }>('/auth/sso/start', { method: 'POST', body: { email }, auth: false }));
+}
+
 export async function signupAction(input: Record<string, unknown>) {
   const r = await act(() => api<TokenPair>('/auth/signup', { method: 'POST', body: input, auth: false }));
   if (!r.ok) return r;

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import {
   applyScimPatch, parseScimFilter, parseScimToken, SCIM_LIST_SCHEMA, SCIM_TOKEN_PREFIX, SCIM_USER_SCHEMA, type ScimPatchInput, scimEmail, scimFullName,
   type ScimUserInput,
@@ -11,6 +11,7 @@ import { DatabaseService, many, one, type Tx } from '../../platform/database/dat
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { AppError, Errors } from '../../platform/http/errors';
+import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 
 /** A SCIM error (RFC 7644 section 3.12). Rendered by ScimExceptionFilter. */
 export class ScimError extends AppError {
@@ -47,12 +48,14 @@ export class ScimService {
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
     private readonly outbox: OutboxService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   // Tokens (managed by owners in Settings) ------------------------------------------------------------------------
 
   async status() {
     return this.db.tenant(async (tx) => ({
+      baseUrl: `${this.config.API_PUBLIC_URL.replace(/\/$/, '')}/api/v1/scim/v2`,
       token: await one(
         tx,
         `select t.id, t.prefix, t.last_used_at as "lastUsedAt", t.use_count::int as "useCount", t.created_at as "createdAt", u.full_name as "createdBy"

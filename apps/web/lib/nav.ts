@@ -68,6 +68,7 @@ export const NAV: NavGroup[] = [
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
       { href: '/helpdesk/queue', label: 'HR helpdesk queue', icon: 'headset', permission: 'helpdesk:manage', feature: 'self_service' },
       { href: '/announcements/manage', label: 'Manage announcements', icon: 'megaphone', permission: 'announcements:manage', feature: 'self_service' },
+      { href: '/privacy', label: 'Privacy requests', icon: 'user-x', permission: 'privacy:manage' },
     ],
   },
   {
@@ -91,6 +92,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/roles', label: 'Roles & permissions', icon: 'shield', permission: 'roles:read' },
       { href: '/settings/ai', label: 'AI settings', icon: 'sparkles', permission: 'ai:configure', feature: 'ai_copilot' },
       { href: '/settings/ai/activity', label: 'AI activity', icon: 'bot', permission: 'audit:read', feature: 'ai_copilot' },
+      { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },
       { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
       { href: '/settings/audit', label: 'Audit trail', icon: 'scroll', permission: 'audit:read' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },

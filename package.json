@@ -30,7 +30,9 @@
     "e2e:mobile": "node e2e/mobile-flow.cjs",
     "e2e:helpdesk": "node e2e/helpdesk-flow.cjs",
     "e2e:ai": "node e2e/ai-flow.cjs",
-    "e2e:integrations": "node e2e/integrations-flow.cjs"
+    "e2e:integrations": "node e2e/integrations-flow.cjs",
+    "e2e:enterprise": "node e2e/enterprise-flow.cjs",
+    "load-test": "node e2e/load.cjs"
   },
   "devDependencies": {
     "typescript": "5.9.3",

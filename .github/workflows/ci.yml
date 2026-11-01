@@ -122,6 +122,17 @@ jobs:
           INTEGRATIONS_ALLOW_PRIVATE_URLS=true SLACK_WEBHOOK_BASE_URL=http://localhost:4020 node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:integrations
+      - name: Enterprise end-to-end flow (local OIDC test stub, no real identity provider)
+        # e2e/oidc-stub.cjs runs inside the flow on 4030 and stands in for an identity provider; its issuer is a
+        # loopback http address, which the API only accepts with INTEGRATIONS_ALLOW_PRIVATE_URLS (refused outside local and test).
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          INTEGRATIONS_ALLOW_PRIVATE_URLS=true node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:enterprise
+      - name: Backup and restore drill
+        run: pnpm --filter @crew/db dr-drill
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true

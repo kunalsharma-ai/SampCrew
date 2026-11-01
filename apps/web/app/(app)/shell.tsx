@@ -8,6 +8,7 @@ import {
   BarChart3, BookOpen, CalendarRange, ClipboardList, GraduationCap, Heart, MessagesSquare, Target,
   Headset, Megaphone,
   Activity, Bot, Plug, Sparkles, TrendingDown, Workflow,
+  LockKeyhole, UserX,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -26,6 +27,7 @@ const ICONS: Record<string, LucideIcon> = {
   'calendar-range': CalendarRange, 'book-open': BookOpen, chart: BarChart3,
   headset: Headset, megaphone: Megaphone,
   activity: Activity, bot: Bot, plug: Plug, sparkles: Sparkles, 'trending-down': TrendingDown, workflow: Workflow,
+  'lock-keyhole': LockKeyhole, 'user-x': UserX,
 };
 
 export interface Notifications { unread: number; items: Notification[] }
