@@ -71,6 +71,14 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    label: 'Intelligence',
+    items: [
+      { href: '/automation', label: 'Automation Studio', icon: 'workflow', permission: 'automation:manage', feature: 'automation' },
+      { href: '/automation/runs', label: 'Workflow runs', icon: 'activity', permission: 'automation:manage', feature: 'automation' },
+      { href: '/insights/attrition', label: 'Attrition risk', icon: 'trending-down', permission: 'insights:attrition', feature: 'workforce_analytics' },
+    ],
+  },
+  {
     label: 'Administration',
     items: [
       { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
@@ -81,6 +89,8 @@ export const NAV: NavGroup[] = [
       { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'self_service' },
       { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create' },
       { href: '/settings/roles', label: 'Roles & permissions', icon: 'shield', permission: 'roles:read' },
+      { href: '/settings/ai', label: 'AI settings', icon: 'sparkles', permission: 'ai:configure', feature: 'ai_copilot' },
+      { href: '/settings/ai/activity', label: 'AI activity', icon: 'bot', permission: 'audit:read', feature: 'ai_copilot' },
       { href: '/settings/audit', label: 'Audit trail', icon: 'scroll', permission: 'audit:read' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },

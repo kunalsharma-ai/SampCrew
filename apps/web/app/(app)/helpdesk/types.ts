@@ -46,7 +46,7 @@ export interface CaseRow {
 export interface CaseDetail extends CaseRow {
   description: string;
   role: 'handler' | 'requester';
-  messages: { id: string; body: string; internal: boolean; createdAt: string; authorName: string; mine: boolean; fromHr: boolean }[];
+  messages: { id: string; body: string; internal: boolean; createdAt: string; authorName: string; mine: boolean; fromHr: boolean; aiDrafted?: boolean }[];
   history: { action: string; from: string | null; to: string | null; createdAt: string; byName: string; toName: string | null }[];
   moves: string[];
   can: { reply: boolean; internalNote: boolean; assign: boolean; rate: boolean };

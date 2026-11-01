@@ -16,8 +16,8 @@ export async function createCaseAction(body: Body, idempotencyKey: string) {
   return r;
 }
 
-export async function replyAction(id: string, body: string, internal: boolean) {
-  const r = await act(() => api(`/helpdesk/cases/${id}/messages`, { method: 'POST', body: { body, internal } }), internal ? 'Internal note added.' : 'Reply sent.');
+export async function replyAction(id: string, body: string, internal: boolean, aiInteractionId?: string) {
+  const r = await act(() => api(`/helpdesk/cases/${id}/messages`, { method: 'POST', body: { body, internal, ...(aiInteractionId ? { aiInteractionId } : {}) } }), internal ? 'Internal note added.' : 'Reply sent.');
   refresh(`/helpdesk/${id}`, '/helpdesk', '/helpdesk/queue');
   return r;
 }
