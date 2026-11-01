@@ -110,7 +110,7 @@ export interface AttendanceDay {
   department?: string | null;
   location?: string | null;
 }
-export interface Punch { id: string; at: string; direction: 'in' | 'out' | 'unknown'; source: string; geofence: string | null; device: string | null; viaCorrection: boolean; verifyMethod?: string | null; note?: string | null }
+export interface Punch { id: string; at: string; direction: 'in' | 'out' | 'unknown'; source: string; geofence: string | null; device: string | null; viaCorrection: boolean; verifyMethod?: string | null; note?: string | null; flags?: string[] }
 export interface AttendanceToday {
   employeeId: string;
   date: string;

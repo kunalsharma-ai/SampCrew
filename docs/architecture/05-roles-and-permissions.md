@@ -94,8 +94,12 @@ CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carr
 | `surveys:respond` Answer anonymous surveys | 6 |  | O | · | O | O | O | O | O | O | O | O | O | · |
 | `recognition:give` Recognise colleagues on the recognition wall | 6 |  | O | · | O | O | O | O | O | O | O | O | O | · |
 | **Helpdesk** | | |  |  |  |  |  |  |  |  |  |  |  |  |
-| `helpdesk:use` Raise HR tickets and ask the HR assistant | 7 |  | O | · | O | O | O | O | O | O | O | O | O | · |
-| `helpdesk:manage` Handle HR tickets and the knowledge base | 7 |  | A | · | A | · | · | · | · | · | · | · | · | · |
+| `helpdesk:use` Raise HR helpdesk cases and read help articles | 7 |  | O | · | O | O | O | O | O | O | O | O | O | · |
+| `helpdesk:manage` Handle HR helpdesk cases for people in scope | 7 |  | A | · | A | E | · | · | · | · | · | · | · | · |
+| `helpdesk:configure` Manage helpdesk categories, handlers, response targets and help articles | 7 |  | A | · | A | · | · | · | · | · | · | · | · | · |
+| **Announcements** | | |  |  |  |  |  |  |  |  |  |  |  |  |
+| `announcements:read` Read announcements addressed to you | 7 |  | O | · | O | O | O | O | O | O | O | O | O | · |
+| `announcements:manage` Publish announcements and see who has read them | 7 |  | A | · | A | · | · | · | · | · | · | · | · | · |
 | **Analytics** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `reports:read` View workforce analytics and reports | 8 |  | A | A | A | E | O | · | A | A | · | T | · | A |
 | **Automation** | | |  |  |  |  |  |  |  |  |  |  |  |  |

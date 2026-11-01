@@ -28,3 +28,11 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 
 export const SOURCE_LABEL: Record<string, string> = { web: 'Web', mobile: 'Mobile app', qr: 'QR kiosk', device: 'Device', import: 'Import', correction: 'Approved correction' };
+
+/** Checks the server records on punches sent from the mobile app, so a reviewer can see why a punch may need a look. */
+export const RISK_FLAG_LABEL: Record<string, string> = {
+  offline: 'Sent after being offline',
+  clock_changed: "Phone clock didn't match",
+  clock_unverified: 'Time from the phone clock',
+  mock_location: 'Mock location reported',
+};

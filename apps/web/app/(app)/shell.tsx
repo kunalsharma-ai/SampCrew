@@ -6,6 +6,7 @@ import {
   type LucideIcon,
   Banknote, FileText, Landmark, Receipt, Wallet,
   BarChart3, BookOpen, CalendarRange, ClipboardList, GraduationCap, Heart, MessagesSquare, Target,
+  Headset, Megaphone,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -22,6 +23,7 @@ const ICONS: Record<string, LucideIcon> = {
   'file-text': FileText, receipt: Receipt, wallet: Wallet, banknote: Banknote, landmark: Landmark,
   target: Target, 'messages-square': MessagesSquare, 'graduation-cap': GraduationCap, 'clipboard-list': ClipboardList, heart: Heart,
   'calendar-range': CalendarRange, 'book-open': BookOpen, chart: BarChart3,
+  headset: Headset, megaphone: Megaphone,
 };
 
 export interface Notifications { unread: number; items: Notification[] }

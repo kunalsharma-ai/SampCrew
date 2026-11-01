@@ -30,12 +30,20 @@ async function signIn(b, email, extra = {}) {
   const ctx = await b.newContext({ viewport: { width: 1360, height: 900 }, ...extra });
   const p = await ctx.newPage();
   watch(p, email);
-  await p.goto(BASE + '/login');
-  await p.fill('input[name=email]', email);
-  await p.fill('input[name=password]', PASSWORD);
-  await p.click('button[type=submit]');
-  await p.waitForURL((u) => u.pathname === '/', { timeout: 15000 });
-  return p;
+  // Sign-in is rate limited (10 a minute). After the other flows in CI, wait for the window instead of failing.
+  for (let attempt = 0; ; attempt++) {
+    await p.goto(BASE + '/login');
+    await p.fill('input[name=email]', email);
+    await p.fill('input[name=password]', PASSWORD);
+    await p.click('button[type=submit]');
+    const r = await Promise.race([
+      p.waitForURL((u) => u.pathname === '/', { timeout: 15000 }).then(() => 'in'),
+      p.locator('text=Too many requests').waitFor({ timeout: 15000 }).then(() => 'limited'),
+    ]);
+    if (r === 'in') return p;
+    if (attempt >= 4) throw new Error(`sign-in for ${email} stayed rate limited`);
+    await p.waitForTimeout(20000);
+  }
 }
 
 const shot = async (p, e) => {

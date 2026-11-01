@@ -1,17 +1,18 @@
 import { FEATURES, PERMISSIONS } from '@crew/contracts';
 import { Badge, Card, CardBody, CardHeader, PageHeader, Stat, buttonClass } from '@crew/ui';
-import { Building2, CheckCircle2, Circle, Globe2, MapPin, Network, ShieldCheck, Sparkles, Users } from 'lucide-react';
+import { Building2, CheckCircle2, Circle, Globe2, LifeBuoy, MapPin, Network, ShieldCheck, Sparkles, Users } from 'lucide-react';
 import Link from 'next/link';
 import { load, loadOptional } from '@/lib/api';
 import { can } from '@/lib/nav';
 import type { Me } from '@/lib/types';
+import { dateTime } from './helpdesk/labels';
+import type { Announcement, Summary } from './helpdesk/types';
 
 interface Overview { legalEntities: number; businessUnits: number; locations: number; departments: number; activeMembers: number; pendingInvites: number; countries: number }
 
 const SCOPE_LABEL: Record<string, string> = { own: 'Yourself', team: 'Your team', department: 'Your department', entity: 'Your legal entity', tenant: 'Whole organization' };
 
 const ROADMAP = [
-  { phase: 7, title: 'Mobile & HR helpdesk', items: 'Employee and manager app, offline attendance, HR tickets' },
   { phase: 8, title: 'AI & automation', items: 'Copilots, workflow studio, predictive insights' },
 ];
 
@@ -20,6 +21,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const me = await load<Me>('/me');
   const overview = can(me, 'org:read') ? await loadOptional<Overview>('/org/overview') : null;
   const isAdmin = can(me, 'org:manage') || can(me, 'users:invite');
+  const selfService = me.features.includes('self_service');
+  const [news, helpdesk] = selfService
+    ? await Promise.all([can(me, 'announcements:read') ? loadOptional<Announcement[]>('/announcements') : null, can(me, 'helpdesk:use') ? loadOptional<Summary>('/helpdesk/summary') : null])
+    : [null, null];
+  const unreadNews = (news ?? []).filter((a) => !a.readAt || (a.requiresAck && !a.acknowledgedAt));
   const firstName = me.user.fullName.split(' ')[0];
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -37,7 +43,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const myAccess = Object.entries(me.permissions)
     .map(([key, scope]) => ({ def: PERMISSIONS.find((p) => p.key === key), scope }))
-    .filter((x) => x.def && x.def.phase <= 6);
+    .filter((x) => x.def && x.def.phase <= 7);
 
   return (
     <>
@@ -58,6 +64,20 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="flex flex-col gap-6 lg:col-span-2">
+          {news && news.length > 0 && (
+            <Card>
+              <CardHeader title="Announcements" description={unreadNews.length ? `${unreadNews.length} need your attention` : 'You are up to date'} action={<Link href="/announcements" className={buttonClass('secondary', 'sm')}>All</Link>} />
+              <ul className="divide-y divide-border">
+                {news.slice(0, 4).map((a) => (
+                  <li key={a.id} className="flex items-center gap-2 px-5 py-2.5 text-[13px]">
+                    <Link href={`/announcements/${a.id}`} className="min-w-0 flex-1 truncate font-medium hover:text-accent hover:underline">{a.title}</Link>
+                    {a.requiresAck && !a.acknowledgedAt ? <Badge tone="warning">Please acknowledge</Badge> : !a.readAt ? <Badge tone="info">New</Badge> : null}
+                    <span className="shrink-0 text-xs text-fg-subtle">{a.publishedAt && dateTime(a.publishedAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
           {isAdmin && steps.length > 0 && (
             <Card>
               <CardHeader title="Set up your workspace" description={`${doneCount} of ${steps.length} done`} action={<div className="h-2 w-28 overflow-hidden rounded-full bg-bg-subtle"><div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(doneCount / steps.length) * 100}%` }} /></div>} />
@@ -98,6 +118,21 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </div>
 
         <div className="flex flex-col gap-6">
+          {helpdesk && (
+            <Card>
+              <CardHeader title="Ask HR" action={<LifeBuoy className="size-5 text-accent" />} />
+              <CardBody className="grid gap-2 text-[13px]">
+                <div className="flex justify-between"><span className="text-fg-muted">Your open questions</span><span className="font-medium tabular-nums">{helpdesk.mine.open + helpdesk.mine.waiting}</span></div>
+                {helpdesk.mine.waiting > 0 && <div className="flex justify-between"><span className="text-warning">Waiting for your reply</span><span className="font-medium tabular-nums">{helpdesk.mine.waiting}</span></div>}
+                {helpdesk.mine.resolved > 0 && <div className="flex justify-between"><span className="text-fg-muted">Resolved, please confirm</span><span className="font-medium tabular-nums">{helpdesk.mine.resolved}</span></div>}
+                {helpdesk.assignedToMe !== null && <div className="flex justify-between"><span className="text-fg-muted">Cases assigned to you</span><span className="font-medium tabular-nums">{helpdesk.assignedToMe}</span></div>}
+                <div className="mt-2 flex gap-2">
+                  <Link href="/helpdesk" className={buttonClass('secondary', 'sm')}>Ask a question</Link>
+                  {helpdesk.assignedToMe !== null && <Link href="/helpdesk/queue" className={buttonClass('secondary', 'sm')}>Open queue</Link>}
+                </div>
+              </CardBody>
+            </Card>
+          )}
           <Card>
             <CardHeader title="Your plan" action={me.subscription && <Badge tone={me.subscription.status === 'trialing' ? 'info' : 'success'}>{me.subscription.status === 'trialing' ? 'Trial' : 'Active'}</Badge>} />
             <CardBody>

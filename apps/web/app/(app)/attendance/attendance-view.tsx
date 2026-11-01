@@ -4,7 +4,7 @@ import { CalendarCheck, ChevronLeft, ChevronRight, LogIn, LogOut, MapPin, Plus, 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { clock, dayLabel, hm, SOURCE_LABEL } from '@/lib/time';
+import { clock, dayLabel, hm, SOURCE_LABEL, RISK_FLAG_LABEL } from '@/lib/time';
 import type { AttendanceDay, AttendanceMonth, AttendanceToday } from '@/lib/types';
 import { cancelCorrectionAction, correctionAction, overtimeAction, punchAction } from './actions';
 
@@ -82,6 +82,7 @@ export function TodayCard({ today }: { today: AttendanceToday }) {
                 <Badge tone={p.direction === 'in' ? 'success' : p.direction === 'out' ? 'neutral' : 'info'}>
                   {p.direction === 'unknown' ? 'Punch' : p.direction === 'in' ? 'In' : 'Out'} {clock(p.at, tz)} · {p.device ?? SOURCE_LABEL[p.source] ?? p.source}
                   {p.geofence === 'outside' ? ' · outside area' : ''}
+                  {p.flags?.length ? ` · ${p.flags.map((f) => RISK_FLAG_LABEL[f] ?? f).join(', ')}` : ''}
                 </Badge>
               </li>
             ))}

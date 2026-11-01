@@ -48,7 +48,7 @@ jobs:
           FIELD_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
 
   e2e:
-    # Drives the real Web Portal and Super Admin Console in Chromium against a seeded database.
+    # Drives the real Web Portal, the mobile app's browser build and the Super Admin Console in Chromium against a seeded database.
     runs-on: ubuntu-latest
     needs: test
     services:
@@ -76,6 +76,9 @@ jobs:
       CREW_BOOTSTRAP_ADMIN_PASSWORD: Ci-Only-Console-Admin-1!
       CREW_SEED_DEMO: "true"
       CREW_DEMO_PASSWORD: Ci-Only-Demo-Users-1!
+      # The mobile app's browser build is served on 8081 by e2e/mobile-flow.cjs.
+      CORS_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:8081
+      EXPO_PUBLIC_CREW_API_URL: http://localhost:4000
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -86,7 +89,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm build
-      - name: Web Portal smoke test and end-to-end flows
+      - name: Build the mobile app for the browser
+        run: pnpm --filter @crew/mobile export:web
+      - name: Web Portal and mobile app end-to-end flows
         run: |
           pnpm db:reset
           node apps/api/dist/main.js > api.log 2>&1 &
@@ -95,9 +100,11 @@ jobs:
           pnpm e2e:web
           pnpm e2e:hr
           pnpm e2e:talent
+          pnpm e2e:helpdesk
           pnpm e2e:attendance
-          pnpm e2e:recruitment
           pnpm e2e:payroll
+          pnpm e2e:mobile
+          pnpm e2e:recruitment
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true
