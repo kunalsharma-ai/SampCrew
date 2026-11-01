@@ -14,7 +14,7 @@ function Bars({ title, d }: { title: string; d: Distribution }) {
   const max = Math.max(1, ...d.levels.map((l) => l.count));
   return (
     <div className="grid gap-2">
-      <div className="text-[13px] font-medium">{title}</div>
+      <div className="text-[0.8125rem] font-medium">{title}</div>
       {d.levels.map((l) => (
         <div key={l.value} className="grid grid-cols-[minmax(0,10rem)_1fr_3rem] items-center gap-2 text-xs">
           <span className="truncate text-fg-muted">{l.value} · {l.label}</span>
@@ -111,7 +111,7 @@ export function CycleView({ cycle, entities, departments }: { cycle: CycleDetail
                     <TD className="text-right tabular-nums">{label(r.managerRating)}</TD>
                     <TD className="text-right tabular-nums font-medium">{label(r.finalRating)}{r.calibrationChanges > 0 && <span className="ml-1 text-xs text-warning" title="Changed in calibration">●</span>}</TD>
                     <TD className="text-right tabular-nums">{cycle.peerFeedback ? `${r.peerSubmitted}/${r.peerRequested}` : '–'}</TD>
-                    <TD className="text-right"><Link className="text-[13px] font-medium text-accent hover:underline" href={`/reviews/${r.id}`}>Open</Link></TD>
+                    <TD className="text-right"><Link className="text-[0.8125rem] font-medium text-accent hover:underline" href={`/reviews/${r.id}`}>Open</Link></TD>
                   </TR>
                 ))}
               </TBody>

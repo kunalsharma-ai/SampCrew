@@ -74,7 +74,7 @@ export function SignupForm() {
       <Checkbox name="acceptTerms" required label="I agree to the SAMPLEDGE terms of service and privacy notice" />
       {fe.acceptTerms && <p className="-mt-2 text-xs text-danger">{fe.acceptTerms}</p>}
       <Button type="submit" size="lg" loading={pending}>Create workspace</Button>
-      <p className="text-center text-[13px] text-fg-muted">
+      <p className="text-center text-[0.8125rem] text-fg-muted">
         Already have an account? <Link href="/login" className="font-medium text-accent hover:underline">Sign in</Link>
       </p>
     </form>

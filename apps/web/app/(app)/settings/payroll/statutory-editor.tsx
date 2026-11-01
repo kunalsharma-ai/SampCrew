@@ -73,7 +73,7 @@ export function StatutoryEditor({ statutory, entities }: { statutory: StatutoryR
         </div>
 
         <section className="grid gap-3">
-          <h3 className="text-[13px] font-semibold">Provident Fund</h3>
+          <h3 className="text-[0.8125rem] font-semibold">Provident Fund</h3>
           <div className="grid gap-3 sm:grid-cols-4">
             {num('Employee %', s.pf.employeeRatePercent, (v) => up((d) => { d.pf.employeeRatePercent = v; }))}
             {num('Employer %', s.pf.employerRatePercent, (v) => up((d) => { d.pf.employerRatePercent = v; }))}
@@ -84,7 +84,7 @@ export function StatutoryEditor({ statutory, entities }: { statutory: StatutoryR
         </section>
 
         <section className="grid gap-3">
-          <h3 className="text-[13px] font-semibold">ESI</h3>
+          <h3 className="text-[0.8125rem] font-semibold">ESI</h3>
           <div className="grid gap-3 sm:grid-cols-3">
             {num('Employee %', s.esi.employeeRatePercent, (v) => up((d) => { d.esi.employeeRatePercent = v; }))}
             {num('Employer %', s.esi.employerRatePercent, (v) => up((d) => { d.esi.employerRatePercent = v; }))}
@@ -93,11 +93,11 @@ export function StatutoryEditor({ statutory, entities }: { statutory: StatutoryR
         </section>
 
         <section className="grid gap-3">
-          <h3 className="text-[13px] font-semibold">Professional tax</h3>
+          <h3 className="text-[0.8125rem] font-semibold">Professional tax</h3>
           <p className="text-xs text-fg-muted">Slabs on monthly gross for each state. The state is matched to the region written on the employee’s work location.</p>
           {Object.entries(s.pt.states).map(([state, slabs]) => (
             <div key={state} className="rounded-md border border-border p-3">
-              <div className="mb-2 flex items-center justify-between"><span className="text-[13px] font-medium">{state}</span><Button size="sm" variant="ghost" onClick={() => up((d) => { delete d.pt.states[state]; })}><Trash2 className="size-3.5" /> Remove state</Button></div>
+              <div className="mb-2 flex items-center justify-between"><span className="text-[0.8125rem] font-medium">{state}</span><Button size="sm" variant="ghost" onClick={() => up((d) => { delete d.pt.states[state]; })}><Trash2 className="size-3.5" /> Remove state</Button></div>
               <div className="grid gap-2">
                 {slabs.map((sl, i) => (
                   <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2">
@@ -118,7 +118,7 @@ export function StatutoryEditor({ statutory, entities }: { statutory: StatutoryR
         </section>
 
         <section className="grid gap-3">
-          <h3 className="text-[13px] font-semibold">Income tax (TDS), new regime</h3>
+          <h3 className="text-[0.8125rem] font-semibold">Income tax (TDS), new regime</h3>
           <div className="grid gap-3 sm:grid-cols-4">
             {num('Standard deduction', s.tds.standardDeduction, (v) => up((d) => { d.tds.standardDeduction = v; }), 'Per year')}
             {num('Full rebate up to', s.tds.rebateLimit, (v) => up((d) => { d.tds.rebateLimit = v; }), 'Taxable income per year')}

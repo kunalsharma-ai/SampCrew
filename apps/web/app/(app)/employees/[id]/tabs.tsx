@@ -347,12 +347,12 @@ export function BalanceCards({ balances }: { balances: LeaveBalance[] }) {
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {balances.map((b) => (
         <Card key={b.leaveTypeId} className="p-4">
-          <div className="flex items-center gap-2 text-[13px] font-medium"><span className="size-2.5 rounded-full" style={{ background: b.color }} />{b.name}</div>
+          <div className="flex items-center gap-2 text-[0.8125rem] font-medium"><span className="size-2.5 rounded-full" style={{ background: b.color }} />{b.name}</div>
           {b.tracked ? (
             <>
               <div className="mt-2 text-2xl font-semibold tabular-nums">{b.available}</div>
               <div className="text-xs text-fg-subtle">days available</div>
-              <div className="mt-2 text-[11px] text-fg-muted tabular-nums">
+              <div className="mt-2 text-[0.6875rem] text-fg-muted tabular-nums">
                 {b.accrued} accrued{Number(b.carriedForward) ? ` · ${b.carriedForward} carried` : ''}{Number(b.adjusted) ? ` · ${b.adjusted} adjusted` : ''} · {b.taken} taken{Number(b.pending) ? ` · ${b.pending} pending` : ''}
               </div>
             </>
@@ -443,9 +443,9 @@ export function DocumentsTab({ e, documents }: { e: EmployeeProfile; documents: 
                 <TD className="text-fg-muted">{new Date(d.createdAt).toLocaleDateString()}{d.uploadedBy && <span className="block text-xs">{d.uploadedBy}</span>}</TD>
                 <TD>{d.visibility === 'hr_only' ? <Badge tone="warning">HR only</Badge> : <Badge>Employee can see</Badge>}</TD>
                 <TD className="whitespace-nowrap text-right">
-                  <a className="inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline" href={`/files/${d.id}`}><Download className="size-3.5" /> Download</a>
+                  <a className="inline-flex items-center gap-1 text-[0.8125rem] font-medium text-accent hover:underline" href={`/files/${d.id}`}><Download className="size-3.5" /> Download</a>
                   {e.can.manageDocuments && (
-                    <button className="ml-3 text-[13px] text-fg-subtle hover:text-danger" disabled={pending} onClick={() => {
+                    <button className="ml-3 text-[0.8125rem] text-fg-subtle hover:text-danger" disabled={pending} onClick={() => {
                       if (!confirm(`Archive "${d.title}"? The file is kept for records but hidden from the profile.`)) return;
                       start(async () => { const r = await archiveDocumentAction(e.id, d.id); if (r.ok) router.refresh(); else setError(r.message); });
                     }}>Archive</button>

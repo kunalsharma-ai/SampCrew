@@ -1,4 +1,5 @@
 'use client';
+import { useCreateParam } from '@/lib/use-create-param';
 import { Alert, Button, Card, CardHeader, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
 import { CalendarPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -9,7 +10,7 @@ import { cancelLeaveAction, type Preview, previewLeaveAction, requestLeaveAction
 
 export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useCreateParam('leave');
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({ leaveTypeId: balances[0]?.leaveTypeId ?? '', startDate: today, endDate: today, startHalf: 'full', endHalf: 'full', reason: '' });
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -87,7 +88,7 @@ export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
           <Field label="Reason" className="sm:col-span-2">{(p) => <Textarea {...p} name="reason" maxLength={1000} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />}</Field>
           <div className="sm:col-span-2" aria-live="polite">
             {previewError ? <Alert tone="warning">{previewError}</Alert> : preview && (
-              <div className="rounded-lg border border-border bg-bg-subtle/60 px-4 py-3 text-[13px]">
+              <div className="rounded-lg border border-border bg-bg-subtle/60 px-4 py-3 text-[0.8125rem]">
                 <strong className="tabular-nums">{preview.days} working day{preview.days === '1.00' ? '' : 's'}</strong>
                 {preview.tracked && <> · balance after approval <strong className="tabular-nums">{preview.balanceAfter}</strong></>}
                 {preview.holidaysInRange.length > 0 && <span className="block text-xs text-fg-subtle">Holidays in range are not counted: {preview.holidaysInRange.join(', ')}</span>}

@@ -33,7 +33,7 @@ export function CandidatesView({ candidates, q, canAdd }: { candidates: Candidat
                     <div className="text-xs text-fg-muted">{[c.currentTitle, c.currentCompany].filter(Boolean).join(' at ') || c.email}</div>
                     {c.tags.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{c.tags.map((t) => <Badge key={t} tone="neutral">{t}</Badge>)}</div>}
                   </TD>
-                  <TD className="text-[13px]">
+                  <TD className="text-[0.8125rem]">
                     {(c.applications ?? []).map((a, i) => <div key={i}>{a.requisitionTitle} <span className="text-fg-muted">· {a.status === 'active' ? a.stage : a.status}</span></div>)}
                     {!c.applications?.length && <span className="text-fg-muted">Not in a job yet</span>}
                   </TD>

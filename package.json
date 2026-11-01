@@ -32,6 +32,7 @@
     "e2e:ai": "node e2e/ai-flow.cjs",
     "e2e:integrations": "node e2e/integrations-flow.cjs",
     "e2e:enterprise": "node e2e/enterprise-flow.cjs",
+    "e2e:experience": "node e2e/experience-flow.cjs",
     "load-test": "node e2e/load.cjs"
   },
   "devDependencies": {

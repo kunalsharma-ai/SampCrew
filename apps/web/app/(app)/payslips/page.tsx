@@ -21,7 +21,7 @@ export default async function PayslipsPage({ searchParams }: { searchParams: Pro
       {broad && (
         <div className="mb-4 flex gap-2">
           {[{ v: '', l: 'Mine' }, { v: 'all', l: 'Everyone I can see' }].map((f) => (
-            <Link key={f.v} href={f.v ? '/payslips?view=all' : '/payslips'} className={`rounded-full px-3 py-1 text-[13px] font-medium ${(all ? 'all' : '') === f.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{f.l}</Link>
+            <Link key={f.v} href={f.v ? '/payslips?view=all' : '/payslips'} className={`rounded-full px-3 py-1 text-[0.8125rem] font-medium ${(all ? 'all' : '') === f.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{f.l}</Link>
           ))}
         </div>
       )}

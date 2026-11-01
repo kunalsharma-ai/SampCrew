@@ -19,7 +19,7 @@ export function SecurityView({ mfaEnabled, sessionMfa, sessions }: { mfaEnabled:
         <CardBody className="flex flex-col gap-4">
           {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
           {mfaEnabled ? (
-            <div className="flex items-start gap-3 rounded-md bg-success-subtle p-3 text-[13px] text-success">
+            <div className="flex items-start gap-3 rounded-md bg-success-subtle p-3 text-[0.8125rem] text-success">
               <ShieldCheck className="size-5 shrink-0" />
               <div>Your account asks for a code at every sign-in.{sessionMfa ? ' This session is verified, so admin actions that need MFA are unlocked.' : ''}</div>
             </div>
@@ -39,7 +39,7 @@ export function SecurityView({ mfaEnabled, sessionMfa, sessions }: { mfaEnabled:
                 });
               }}
             >
-              <ol className="list-decimal space-y-1 pl-5 text-[13px] text-fg-muted">
+              <ol className="list-decimal space-y-1 pl-5 text-[0.8125rem] text-fg-muted">
                 <li>Scan this QR code with your authenticator app.</li>
                 <li>Enter the 6-digit code it shows.</li>
               </ol>
@@ -48,7 +48,7 @@ export function SecurityView({ mfaEnabled, sessionMfa, sessions }: { mfaEnabled:
                 <img src={setup.qr} alt="QR code for your authenticator app" className="size-40 rounded-md border border-border bg-white p-1" />
                 <div className="min-w-0 text-xs text-fg-subtle">
                   Can&apos;t scan? Enter this key manually:
-                  <code className="mt-1 block break-all rounded bg-bg-subtle px-2 py-1 font-mono text-[11px] text-fg">{setup.secret}</code>
+                  <code className="mt-1 block break-all rounded bg-bg-subtle px-2 py-1 font-mono text-[0.6875rem] text-fg">{setup.secret}</code>
                 </div>
               </div>
               <Field label="Code from your app" required>
@@ -106,7 +106,7 @@ export function SecurityView({ mfaEnabled, sessionMfa, sessions }: { mfaEnabled:
             <li key={s.id} className="flex items-center gap-3 px-5 py-3">
               {s.client === 'mobile' ? <Smartphone className="size-4 text-fg-subtle" /> : <Laptop className="size-4 text-fg-subtle" />}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px]">{s.userAgent?.slice(0, 90) ?? 'Unknown device'}</div>
+                <div className="truncate text-[0.8125rem]">{s.userAgent?.slice(0, 90) ?? 'Unknown device'}</div>
                 <div className="text-xs text-fg-subtle">{s.ip ?? 'Unknown IP'} · since {new Date(s.createdAt).toLocaleString()}</div>
               </div>
               {s.current ? <Badge tone="accent">This device</Badge> : <Button size="sm" variant="ghost" disabled={pending} onClick={() => start(async () => void (await revokeSessionAction(s.id)))}>Sign out</Button>}

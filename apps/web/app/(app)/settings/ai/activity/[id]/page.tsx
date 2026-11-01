@@ -26,13 +26,13 @@ export default async function AiCallPage({ params }: { params: Promise<{ id: str
           {i.request?.user !== undefined && (
             <Card>
               <CardHeader title="Question or request sent" description="As sent to the AI provider, after personal identifiers were removed." />
-              <CardBody><pre className="whitespace-pre-wrap text-[13px]">{i.request.user}</pre></CardBody>
+              <CardBody><pre className="whitespace-pre-wrap text-[0.8125rem]">{i.request.user}</pre></CardBody>
             </Card>
           )}
           {i.response && (
             <Card>
               <CardHeader title="Answer" />
-              <CardBody><pre className="whitespace-pre-wrap text-[13px]" data-testid="ai-response">{i.response}</pre></CardBody>
+              <CardBody><pre className="whitespace-pre-wrap text-[0.8125rem]" data-testid="ai-response">{i.response}</pre></CardBody>
             </Card>
           )}
           {i.request?.system && (
@@ -44,7 +44,7 @@ export default async function AiCallPage({ params }: { params: Promise<{ id: str
         </div>
         <Card className="content-start">
           <CardHeader title="Details" />
-          <CardBody className="grid gap-2 text-[13px]">
+          <CardBody className="grid gap-2 text-[0.8125rem]">
             <div className="flex justify-between"><span className="text-fg-muted">Result</span><Badge tone={STATUS[i.status]?.tone ?? 'neutral'}>{STATUS[i.status]?.label ?? i.status}</Badge></div>
             <div className="flex justify-between"><span className="text-fg-muted">Provider</span><span>{i.provider}</span></div>
             <div className="flex justify-between"><span className="text-fg-muted">Tokens in / out</span><span className="tabular-nums">{i.inputTokens} / {i.outputTokens}</span></div>

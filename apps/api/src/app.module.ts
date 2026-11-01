@@ -18,6 +18,8 @@ import { LeaveController } from './modules/leave/leave.controller';
 import { LeaveService } from './modules/leave/leave.service';
 import { MembersController } from './modules/members/members.controller';
 import { MembersService } from './modules/members/members.service';
+import { DashboardController, DashboardService } from './modules/experience/dashboard.controller';
+import { PreferencesController } from './modules/experience/preferences.controller';
 import { NotificationsController } from './modules/notifications/notifications.controller';
 import { OnboardingController } from './modules/onboarding/onboarding.controller';
 import { OnboardingService } from './modules/onboarding/onboarding.service';
@@ -119,6 +121,8 @@ export const CONTROLLERS = [
   LeaveController,
   ApprovalsController,
   NotificationsController,
+  PreferencesController,
+  DashboardController,
   AttendanceController,
   KioskController,
   ShiftsController,
@@ -177,6 +181,7 @@ export const CONTROLLERS = [
     MailerService,
     StorageService,
     ApprovalsService,
+    DashboardService,
     OnboardingService,
     LeaveService,
     EmployeesService,

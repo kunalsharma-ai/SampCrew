@@ -54,7 +54,7 @@ export function ApplyForm({ site, job, privacyNotice, organisation }: { site: st
           <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
             <label>Website<input name="website" type="text" tabIndex={-1} autoComplete="off" /></label>
           </div>
-          <div className="col-span-2 grid gap-2 rounded-md border border-border bg-bg-subtle p-3 text-[13px]">
+          <div className="col-span-2 grid gap-2 rounded-md border border-border bg-bg-subtle p-3 text-[0.8125rem]">
             <div className="font-medium">How {organisation} uses your details</div>
             <p className="whitespace-pre-wrap text-fg-muted">{privacyNotice}</p>
             <Checkbox name="consent" value="true" required label="I have read this and agree to my details being used to consider my application" />

@@ -67,7 +67,7 @@ export function SlackView({ connections }: { connections: Connection[] }) {
       <Card>
         <CardHeader title="Connect a channel" description="CREW posts a confirmation message to the channel first and only saves the connection if Slack accepts it." />
         <CardBody>
-          <ol className="mb-4 list-decimal space-y-1 pl-5 text-[13px] text-fg-muted">
+          <ol className="mb-4 list-decimal space-y-1 pl-5 text-[0.8125rem] text-fg-muted">
             <li>In Slack, create an app for your workspace (api.slack.com/apps) and turn on Incoming Webhooks.</li>
             <li>Choose “Add New Webhook to Workspace” and pick the channel.</li>
             <li>Copy the webhook URL and paste it here. Treat it like a password: anyone with it can post to that channel.</li>

@@ -17,7 +17,7 @@ export function WorkflowControls({ workflow, recentRuns }: { workflow: WorkflowD
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
       <Card>
         <CardHeader title="Status" />
-        <CardBody className="grid gap-3 text-[13px]">
+        <CardBody className="grid gap-3 text-[0.8125rem]">
           {workflow.statusReason && <Alert tone="danger" title="Paused automatically">{workflow.statusReason}</Alert>}
           <p>
             {workflow.status === 'active' ? <>Version {live?.version} is live and runs with the permissions of {workflow.ownerName}.</> : workflow.status === 'paused' ? 'Paused. Nothing new starts; runs under way stop at their next step.' : workflow.status === 'archived' ? 'Archived. Its runs and versions are kept.' : 'Not active yet.'}
@@ -41,7 +41,7 @@ export function WorkflowControls({ workflow, recentRuns }: { workflow: WorkflowD
       {workflow.status !== 'archived' && <TestPanel workflow={workflow} />}
       <Card>
         <CardHeader title="Versions" description="Saved versions never change." />
-        <CardBody className="grid gap-2 text-[13px]">
+        <CardBody className="grid gap-2 text-[0.8125rem]">
           {workflow.versions.map((v) => (
             <div key={v.id} className="flex flex-wrap items-center gap-2">
               <span className="font-medium tabular-nums">v{v.version}</span>
@@ -54,8 +54,8 @@ export function WorkflowControls({ workflow, recentRuns }: { workflow: WorkflowD
         </CardBody>
       </Card>
       <Card>
-        <CardHeader title="Recent runs" action={<Link className="text-[13px] text-accent hover:underline" href={`/automation/runs?workflowId=${workflow.id}`}>All runs</Link>} />
-        <CardBody className="grid gap-2 text-[13px]">
+        <CardHeader title="Recent runs" action={<Link className="text-[0.8125rem] text-accent hover:underline" href={`/automation/runs?workflowId=${workflow.id}`}>All runs</Link>} />
+        <CardBody className="grid gap-2 text-[0.8125rem]">
           {recentRuns.length === 0 && <p className="text-fg-muted">No runs yet.</p>}
           {recentRuns.map((r) => (
             <Link key={r.id} href={`/automation/runs/${r.id}`} className="flex items-center gap-2 hover:underline">
@@ -109,7 +109,7 @@ function TestPanel({ workflow }: { workflow: WorkflowDetail }) {
         <div><Button variant="secondary" loading={pending} onClick={test}>Run test</Button></div>
         {error && <Alert tone="danger">{error}</Alert>}
         {result && (
-          <div className="grid gap-2 rounded-lg border border-border p-3 text-[13px]">
+          <div className="grid gap-2 rounded-lg border border-border p-3 text-[0.8125rem]">
             <Alert tone={result.passed ? 'success' : 'danger'} title={result.passed ? 'Test passed' : 'Test failed'}>
               {result.outcome}{result.passed && ' This version can now be activated.'}
             </Alert>

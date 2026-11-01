@@ -7464,6 +7464,514 @@
         }
       }
     },
+    "/api/v1/me/preferences": {
+      "get": {
+        "tags": [
+          "Preferences"
+        ],
+        "summary": "Your appearance, favourite and recent pages, Home layout and notes",
+        "operationId": "Preferences_get",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/preferences/appearance": {
+      "put": {
+        "tags": [
+          "Preferences"
+        ],
+        "summary": "Change any of your appearance settings (theme preset, mode, colours, density, motion, focus mode)",
+        "operationId": "Preferences_appearance",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "preset": {
+                    "type": "string",
+                    "enum": [
+                      "midnight",
+                      "aurora",
+                      "pearl",
+                      "graphite",
+                      "oceanic",
+                      "emerald",
+                      "amethyst",
+                      "sunset",
+                      "arctic",
+                      "copper",
+                      "rose",
+                      "monochrome"
+                    ]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "system",
+                      "light",
+                      "dark"
+                    ]
+                  },
+                  "primary": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "secondary": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "accent": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contrast": {
+                    "type": "string",
+                    "enum": [
+                      "standard",
+                      "high"
+                    ]
+                  },
+                  "density": {
+                    "type": "string",
+                    "enum": [
+                      "compact",
+                      "comfortable",
+                      "spacious"
+                    ]
+                  },
+                  "motion": {
+                    "type": "string",
+                    "enum": [
+                      "cinematic",
+                      "balanced",
+                      "focus"
+                    ]
+                  },
+                  "radius": {
+                    "type": "string",
+                    "enum": [
+                      "sharp",
+                      "default",
+                      "round"
+                    ]
+                  },
+                  "fontSize": {
+                    "type": "string",
+                    "enum": [
+                      "small",
+                      "default",
+                      "large"
+                    ]
+                  },
+                  "sidebar": {
+                    "type": "string",
+                    "enum": [
+                      "expanded",
+                      "collapsed"
+                    ]
+                  },
+                  "sidebarStyle": {
+                    "type": "string",
+                    "enum": [
+                      "solid",
+                      "glass"
+                    ]
+                  },
+                  "tableDensity": {
+                    "type": "string",
+                    "enum": [
+                      "compact",
+                      "comfortable"
+                    ]
+                  },
+                  "chartPalette": {
+                    "type": "string",
+                    "enum": [
+                      "theme",
+                      "colorblind",
+                      "monochrome"
+                    ]
+                  },
+                  "focusMode": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/preferences/appearance/reset": {
+      "post": {
+        "tags": [
+          "Preferences"
+        ],
+        "summary": "Go back to the default appearance",
+        "operationId": "Preferences_reset",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/preferences/favourites": {
+      "put": {
+        "tags": [
+          "Preferences"
+        ],
+        "summary": "Replace your favourite pages (up to 12, in order)",
+        "operationId": "Preferences_favourites",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "hrefs": {
+                    "maxItems": 12,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "pattern": "^\\/(?!\\/)[A-Za-z0-9\\-._~/?=&%]*$"
+                    }
+                  }
+                },
+                "required": [
+                  "hrefs"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/preferences/recents": {
+      "post": {
+        "tags": [
+          "Preferences"
+        ],
+        "summary": "Record a page you opened; keeps your last 8 distinct pages",
+        "operationId": "Preferences_recent",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^\\/(?!\\/)[A-Za-z0-9\\-._~/?=&%]*$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "href",
+                  "label"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/preferences/dashboard": {
+      "put": {
+        "tags": [
+          "Preferences"
+        ],
+        "summary": "Save your Home widget order and hidden widgets",
+        "operationId": "Preferences_dashboard",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "order": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "attention",
+                        "announcements",
+                        "headcount",
+                        "tasks",
+                        "recent",
+                        "quick-actions",
+                        "notes",
+                        "helpdesk",
+                        "setup",
+                        "access"
+                      ]
+                    }
+                  },
+                  "hidden": {
+                    "default": [],
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "attention",
+                        "announcements",
+                        "headcount",
+                        "tasks",
+                        "recent",
+                        "quick-actions",
+                        "notes",
+                        "helpdesk",
+                        "setup",
+                        "access"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "order"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/preferences/notes": {
+      "put": {
+        "tags": [
+          "Preferences"
+        ],
+        "summary": "Save your personal notes (only you can see them)",
+        "operationId": "Preferences_notes",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "notes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Your Home dashboard: KPIs and items that need your attention, limited to what your roles let you see",
+        "operationId": "Dashboard_get",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/attendance/punch": {
       "post": {
         "tags": [

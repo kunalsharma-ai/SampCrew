@@ -70,7 +70,7 @@ export function WorkspaceView({ tenant, canManage, myMfa }: { tenant: TenantSett
       <Card className="h-fit">
         <CardHeader title="Workspace" />
         <CardBody>
-          <dl className="grid gap-3 text-[13px]">
+          <dl className="grid gap-3 text-[0.8125rem]">
             <div><dt className="text-fg-subtle">Address</dt><dd className="font-mono">{tenant.slug}</dd></div>
             <div><dt className="text-fg-subtle">Status</dt><dd><Badge tone={tenant.status === 'active' ? 'success' : 'warning'}>{tenant.status}</Badge>{tenant.isDemo && <Badge tone="ember" className="ml-2">Demo data</Badge>}</dd></div>
             <div><dt className="text-fg-subtle">Data region</dt><dd>{tenant.region}</dd><dd className="text-xs text-fg-subtle">Set at sign-up. Moving regions is handled by SAMPLEDGE support.</dd></div>

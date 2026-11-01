@@ -9,7 +9,7 @@ export function Redeliver({ id }: { id: string }) {
   const { pending, notice, run } = useRunner();
   return (
     <div className="flex items-center gap-3">
-      {notice && <span role="status" className={notice.tone === 'danger' ? 'text-[13px] text-danger' : 'text-[13px] text-fg-muted'}>{notice.text}</span>}
+      {notice && <span role="status" className={notice.tone === 'danger' ? 'text-[0.8125rem] text-danger' : 'text-[0.8125rem] text-fg-muted'}>{notice.text}</span>}
       <Button loading={pending} onClick={() => run(() => redeliverAction(id), () => setTimeout(() => router.refresh(), 3000))}>Send again</Button>
     </div>
   );

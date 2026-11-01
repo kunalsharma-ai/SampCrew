@@ -5,7 +5,7 @@ import { cn } from '../cn';
 export function Table({ className, children }: { className?: string; children: ReactNode }) {
   return (
     <div className="overflow-x-auto">
-      <table className={cn('w-full text-left text-[13px]', className)}>{children}</table>
+      <table className={cn('w-full text-left text-[0.8125rem]', className)}>{children}</table>
     </div>
   );
 }

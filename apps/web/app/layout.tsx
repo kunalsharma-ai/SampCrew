@@ -1,4 +1,6 @@
+import { appearanceAttributes, themeStylesheet } from '@crew/contracts';
 import type { Metadata, Viewport } from 'next';
+import { appearanceFromCookie } from '@/lib/appearance-cookie';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -7,20 +9,22 @@ export const metadata: Metadata = {
   icons: { icon: '/icon.svg' },
 };
 
-export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: [{ media: '(prefers-color-scheme: dark)', color: '#0b0b12' }, { color: '#f7f7fb' }] };
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: [{ media: '(prefers-color-scheme: dark)', color: '#070b1a' }, { color: '#f5f6fc' }] };
 
-// Applies the saved theme before paint to avoid a flash.
-const themeScript = `try{var t=localStorage.getItem('crew-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}`;
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // The member's saved theme is rendered on the server, so there is no flash of the default theme.
+  const appearance = await appearanceFromCookie();
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning {...appearanceAttributes(appearance)}>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <style id="crew-theme" dangerouslySetInnerHTML={{ __html: themeStylesheet(appearance) }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
       </head>
-      <body>{children}</body>
+      <body>
+        <div className="crew-ambient" aria-hidden />
+        {children}
+      </body>
     </html>
   );
 }

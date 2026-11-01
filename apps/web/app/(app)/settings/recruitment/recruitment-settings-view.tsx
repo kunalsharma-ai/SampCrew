@@ -55,7 +55,7 @@ export function RecruitmentSettingsView({ stages, site }: { stages: Stage[]; sit
           description="A public page listing your published jobs, where people apply with their CV. Applicants must agree to your privacy notice; the version they agreed to is kept with their application."
           action={<Button size="sm" variant="secondary" onClick={() => setDialog('site')}>{site.configured === false ? 'Set up' : 'Edit'}</Button>}
         />
-        <CardBody className="grid gap-2 text-[13px]">
+        <CardBody className="grid gap-2 text-[0.8125rem]">
           {site.configured === false ? <p className="text-fg-muted">Not set up yet.</p> : (
             <>
               <div><span className="text-fg-muted">Address: </span>{site.enabled ? <a className="inline-flex items-center gap-1 text-accent hover:underline" href={`/careers/${site.slug}`} target="_blank" rel="noreferrer">/careers/{site.slug} <ExternalLink className="size-3" /></a> : <span>/careers/{site.slug}</span>}</div>

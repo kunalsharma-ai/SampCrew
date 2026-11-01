@@ -48,7 +48,7 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
           )}
         />
         <CardBody>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-[13px] sm:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-[0.8125rem] sm:grid-cols-4">
             <div><dt className="text-fg-muted">Openings</dt><dd className="font-medium tabular-nums">{req.hiredCount} of {req.headcount} filled</dd></div>
             <div><dt className="text-fg-muted">Type</dt><dd className="font-medium">{EMPLOYMENT[req.employmentType] ?? req.employmentType}, {WORK_MODE[req.workMode]}</dd></div>
             <div><dt className="text-fg-muted">Budget per year</dt><dd className="font-medium">{range(req.salaryMin, req.salaryMax, req.currency)}</dd></div>
@@ -75,7 +75,7 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
             }
           />
           {req.posting && (
-            <CardBody className="grid gap-2 text-[13px]">
+            <CardBody className="grid gap-2 text-[0.8125rem]">
               <div className="font-medium">{req.posting.publicTitle}{req.posting.locationText ? <span className="text-fg-muted"> · {req.posting.locationText}</span> : null}</div>
               {req.posting.summary && <div className="text-fg-muted">{req.posting.summary}</div>}
               {careerUrl && req.posting.published && req.careerSite?.enabled && (
@@ -93,7 +93,7 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
             description={`${pipeline.counts.active} in process · ${pipeline.counts.hired} hired · ${pipeline.counts.rejected} rejected · ${pipeline.counts.withdrawn} withdrew`}
             action={
               <div className="flex flex-wrap items-center gap-3">
-                <Link className="text-[13px] font-medium text-accent hover:underline" href={show ? path : `${path}?show=rejected`}>{show ? 'Show active candidates' : 'Show rejected'}</Link>
+                <Link className="text-[0.8125rem] font-medium text-accent hover:underline" href={show ? path : `${path}?show=rejected`}>{show ? 'Show active candidates' : 'Show rejected'}</Link>
                 {req.can.manageCandidates && ['approved', 'open', 'on_hold'].includes(s) && <Button size="sm" onClick={() => setDialog('candidate')}><Plus className="size-3.5" /> Add candidate</Button>}
               </div>
             }
@@ -109,7 +109,7 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
                   const apps = pipeline.applications.filter((a) => a.stageId === st.id);
                   return (
                     <section key={st.id} aria-label={st.name} className="flex w-64 shrink-0 flex-col gap-2 rounded-lg bg-bg-subtle p-2">
-                      <h3 className="flex items-center justify-between px-1 text-[13px] font-semibold">{st.name}<span className="text-xs font-normal text-fg-muted">{apps.length}</span></h3>
+                      <h3 className="flex items-center justify-between px-1 text-[0.8125rem] font-semibold">{st.name}<span className="text-xs font-normal text-fg-muted">{apps.length}</span></h3>
                       {apps.map((a) => (
                         <AppCard key={a.id} a={a}>
                           {req.can.manageCandidates && a.status === 'active' && (
@@ -191,7 +191,7 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
 
 function AppCard({ a, children }: { a: Application; children?: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border bg-surface p-2.5 text-[13px] shadow-card">
+    <div className="rounded-md border border-border bg-surface p-2.5 text-[0.8125rem] shadow-card">
       <Link className="font-medium text-accent hover:underline" href={`/recruitment/candidates/${a.candidateId}`}>{a.candidateName}</Link>
       {(a.currentTitle || a.currentCompany) && <div className="truncate text-xs text-fg-muted">{[a.currentTitle, a.currentCompany].filter(Boolean).join(' at ')}</div>}
       <div className="mt-1.5 flex flex-wrap gap-1">

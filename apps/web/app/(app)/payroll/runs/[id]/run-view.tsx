@@ -61,7 +61,7 @@ export function RunView({ run, people }: { run: PayrollRunDetail; people: { id: 
       {run.warnings.length > 0 && (
         <Alert tone="warning" title={`${run.warnings.length} thing(s) to check`}>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">{warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-          {run.warnings.length > 6 && <button className="mt-1 text-[13px] font-medium underline" onClick={() => setAllWarnings((v) => !v)}>{allWarnings ? 'Show fewer' : `Show all ${run.warnings.length}`}</button>}
+          {run.warnings.length > 6 && <button className="mt-1 text-[0.8125rem] font-medium underline" onClick={() => setAllWarnings((v) => !v)}>{allWarnings ? 'Show fewer' : `Show all ${run.warnings.length}`}</button>}
         </Alert>
       )}
 
@@ -120,7 +120,7 @@ export function RunView({ run, people }: { run: PayrollRunDetail; people: { id: 
             </TBody>
           </Table>
         ) : (
-          <CardBody className="text-[13px] text-fg-muted">No adjustments.</CardBody>
+          <CardBody className="text-[0.8125rem] text-fg-muted">No adjustments.</CardBody>
         )}
       </Card>
 

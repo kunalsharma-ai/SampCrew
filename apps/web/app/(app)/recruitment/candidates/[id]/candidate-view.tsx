@@ -66,7 +66,7 @@ export function CandidateView({ detail, stages, people, openJobs, designations }
                   </div>
                 )}
               />
-              <CardBody className="grid gap-4 text-[13px]">
+              <CardBody className="grid gap-4 text-[0.8125rem]">
                 {a.status === 'hired' && a.employeeId && <Alert tone="success">Hired. <Link className="font-medium underline" href={`/employees/${a.employeeId}`}>Open their employee record</Link></Alert>}
                 {a.coverNote && <div><div className="text-fg-muted">Cover note</div><p className="whitespace-pre-wrap">{a.coverNote}</p></div>}
                 {a.rejectionNote && <div><div className="text-fg-muted">Rejection note (internal)</div><p className="whitespace-pre-wrap">{a.rejectionNote}</p></div>}
@@ -131,19 +131,19 @@ export function CandidateView({ detail, stages, people, openJobs, designations }
           <CardBody className="grid gap-3">
             {!erased && detail.can.edit && <NoteForm onSubmit={(body) => run(() => noteAction(c.id, body))} pending={pending} />}
             {detail.notes.map((n) => (
-              <div key={n.id} className="border-l-2 border-border pl-3 text-[13px]">
+              <div key={n.id} className="border-l-2 border-border pl-3 text-[0.8125rem]">
                 <p className="whitespace-pre-wrap">{n.body}</p>
                 <div className="text-xs text-fg-muted">{n.authorName ?? 'Someone'} · {when(n.createdAt)}</div>
               </div>
             ))}
-            {!detail.notes.length && <div className="text-[13px] text-fg-muted">No notes yet.</div>}
+            {!detail.notes.length && <div className="text-[0.8125rem] text-fg-muted">No notes yet.</div>}
           </CardBody>
         </Card>
 
         <Card>
           <CardHeader title="History" />
           <CardBody>
-            <ol className="grid gap-1.5 text-[13px]">
+            <ol className="grid gap-1.5 text-[0.8125rem]">
               {detail.timeline.map((e) => (
                 <li key={e.id} className="flex flex-wrap gap-x-2">
                   <span className="text-fg-muted tabular-nums">{when(e.createdAt)}</span>
@@ -162,7 +162,7 @@ export function CandidateView({ detail, stages, people, openJobs, designations }
         <Card>
           <CardHeader title="Details" action={!erased && detail.can.edit && <Button size="sm" variant="secondary" onClick={() => setDialog({ kind: 'edit' })}>Edit</Button>} />
           <CardBody>
-            <dl className="grid gap-2 text-[13px]">
+            <dl className="grid gap-2 text-[0.8125rem]">
               {[
                 ['Email', c.email], ['Phone', c.phone], ['Location', c.locationText], ['Profile', c.profileUrl],
                 ['Source', `${SOURCE[c.source] ?? c.source}${c.sourceDetail ? ` (${c.sourceDetail})` : ''}`], ['Referred by', c.referredByName],
@@ -177,7 +177,7 @@ export function CandidateView({ detail, stages, people, openJobs, designations }
 
         <Card>
           <CardHeader title="CV and files" />
-          <CardBody className="grid gap-2 text-[13px]">
+          <CardBody className="grid gap-2 text-[0.8125rem]">
             {detail.files.map((f) => (
               <a key={f.id} className="flex items-center gap-2 text-accent hover:underline" href={`/recruitment-files/${f.id}`}>
                 <FileText className="size-4 shrink-0" /> <span className="truncate">{f.fileName}</span> <span className="ml-auto text-xs text-fg-muted">{Math.ceil(f.sizeBytes / 1024)} KB</span> <Download className="size-3.5" />

@@ -33,7 +33,7 @@ export function RolesView({ roles, canManage, customRolesInPlan }: { roles: Role
               <button
                 onClick={() => setSelectedId(r.id)}
                 aria-current={selected?.id === r.id}
-                className={cn('flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px]', selected?.id === r.id ? 'bg-accent-subtle text-accent' : 'hover:bg-bg-subtle')}
+                className={cn('flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[0.8125rem]', selected?.id === r.id ? 'bg-accent-subtle text-accent' : 'hover:bg-bg-subtle')}
               >
                 {r.isSystem ? <Lock className="size-3.5 text-fg-subtle" aria-label="System role" /> : <ShieldCheck className="size-3.5" />}
                 <span className="flex-1 font-medium">{r.name}</span>
@@ -73,7 +73,7 @@ export function RolesView({ roles, canManage, customRolesInPlan }: { roles: Role
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle">{m}</div>
                   <ul className="grid gap-1.5">
                     {granted.map((p) => (
-                      <li key={p.key} className="flex items-center justify-between gap-3 text-[13px]">
+                      <li key={p.key} className="flex items-center justify-between gap-3 text-[0.8125rem]">
                         <span>{p.description}{'requiresMfa' in p && p.requiresMfa && <Badge tone="warning" className="ml-2">MFA</Badge>}</span>
                         <Badge tone="accent">{SCOPE_LABEL[selected.grants[p.key]!]}</Badge>
                       </li>
@@ -82,7 +82,7 @@ export function RolesView({ roles, canManage, customRolesInPlan }: { roles: Role
                 </div>
               );
             })}
-            {!Object.keys(selected.grants).length && <p className="px-5 py-6 text-[13px] text-fg-muted">This role grants no permissions.</p>}
+            {!Object.keys(selected.grants).length && <p className="px-5 py-6 text-[0.8125rem] text-fg-muted">This role grants no permissions.</p>}
           </div>
         </Card>
       )}
@@ -154,9 +154,9 @@ function RoleEditor({ role, onClose }: { role: Role | null; onClose: () => void 
                       return n;
                     })}
                   />
-                  <label htmlFor={`perm-${p.key}`} className="flex-1 text-[13px]">
+                  <label htmlFor={`perm-${p.key}`} className="flex-1 text-[0.8125rem]">
                     {p.description}
-                    {p.phase > 1 && <span className="ml-2 text-[11px] text-fg-subtle">Phase {p.phase}</span>}
+                    {p.phase > 1 && <span className="ml-2 text-[0.6875rem] text-fg-subtle">Phase {p.phase}</span>}
                   </label>
                   {grants[p.key] && (
                     <Select aria-label={`Scope for ${p.key}`} className="h-8 w-32 text-xs" value={grants[p.key]} onChange={(e) => setGrants((g) => ({ ...g, [p.key]: e.target.value as Scope }))}>

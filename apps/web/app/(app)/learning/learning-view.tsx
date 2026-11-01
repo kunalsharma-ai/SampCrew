@@ -51,14 +51,14 @@ function AssignDialog({ open, onClose, people, courses, paths }: { open: boolean
         </Field>
         <Field label="Due date" hint="Optional">{(p) => <Input {...p} type="date" name="dueOn" value={due} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setDue(e.target.value)} />}</Field>
         <div className="grid gap-1">
-          <div className="flex items-center justify-between text-[13px] font-medium">
+          <div className="flex items-center justify-between text-[0.8125rem] font-medium">
             <span>People</span>
             <Button size="sm" variant="ghost" type="button" onClick={() => setPicked(picked.length === people.length ? [] : people.map((p) => p.id))}>{picked.length === people.length ? 'Clear' : 'Select all'}</Button>
           </div>
           <ul className="grid max-h-56 gap-0.5 overflow-auto rounded-lg border border-border p-1">
             {people.map((p) => (
               <li key={p.id}>
-                <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-[13px] hover:bg-bg-subtle">
+                <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-[0.8125rem] hover:bg-bg-subtle">
                   <input type="checkbox" checked={picked.includes(p.id)} onChange={() => setPicked(picked.includes(p.id) ? picked.filter((x) => x !== p.id) : [...picked, p.id])} />
                   <span>{p.name}</span><span className="text-xs text-fg-muted">{p.departmentName}</span>
                 </label>
@@ -87,7 +87,7 @@ export function LearningView({ view, filter, assignments, courses, paths, people
     <div className="grid gap-4">
       <div className="flex flex-wrap gap-2">
         {tabs.map((t) => (
-          <Link key={t.v} href={t.v === 'mine' ? '/learning' : `/learning?view=${t.v}`} className={`rounded-full px-3 py-1 text-[13px] font-medium ${view === t.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{t.l}</Link>
+          <Link key={t.v} href={t.v === 'mine' ? '/learning' : `/learning?view=${t.v}`} className={`rounded-full px-3 py-1 text-[0.8125rem] font-medium ${view === t.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{t.l}</Link>
         ))}
       </div>
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
@@ -107,7 +107,7 @@ export function LearningView({ view, filter, assignments, courses, paths, people
                     </TD>
                     <TD><StatusCell a={a} /></TD>
                     <TD className="whitespace-nowrap text-right">
-                      {a.contentUrl && a.status !== 'completed' && <a className="mr-2 inline-flex items-center gap-1 text-[13px] text-accent hover:underline" href={a.contentUrl} target="_blank" rel="noopener noreferrer">Open <ExternalLink className="size-3" /></a>}
+                      {a.contentUrl && a.status !== 'completed' && <a className="mr-2 inline-flex items-center gap-1 text-[0.8125rem] text-accent hover:underline" href={a.contentUrl} target="_blank" rel="noopener noreferrer">Open <ExternalLink className="size-3" /></a>}
                       {a.status === 'assigned' && <Button size="sm" variant="secondary" loading={pending} onClick={() => run(() => assignmentStepAction(a.id, 'start'))}>Start</Button>}
                       {(a.status === 'assigned' || a.status === 'in_progress') && a.format !== 'classroom' && <Button size="sm" className="ml-1" loading={pending} onClick={() => complete(a)}>Mark complete</Button>}
                       {(a.status === 'assigned' || a.status === 'in_progress') && a.format === 'classroom' && <span className="text-xs text-fg-muted">Your manager records attendance</span>}
@@ -134,7 +134,7 @@ export function LearningView({ view, filter, assignments, courses, paths, people
                     <div className="min-w-0 flex-1">
                       <div className="font-medium">{c.title}</div>
                       <div className="text-xs text-fg-muted">{[c.category, FORMAT[c.format], minutes(c.durationMinutes), c.validityMonths ? `renew every ${c.validityMonths} months` : null].filter(Boolean).join(' · ')}</div>
-                      {c.description && <p className="mt-1 text-[13px] text-fg-muted">{c.description}</p>}
+                      {c.description && <p className="mt-1 text-[0.8125rem] text-fg-muted">{c.description}</p>}
                     </div>
                     {c.myStatus === 'assigned' || c.myStatus === 'in_progress' ? <Badge tone="info">In your learning</Badge>
                       : c.selfEnrol ? <Button size="sm" variant="secondary" loading={pending} onClick={() => run(() => enrolAction(c.id))}>Enrol</Button>
@@ -146,7 +146,7 @@ export function LearningView({ view, filter, assignments, courses, paths, people
           </Card>
           <Card className="h-fit">
             <CardHeader title="Learning paths" />
-            <CardBody className="grid gap-4 text-[13px]">
+            <CardBody className="grid gap-4 text-[0.8125rem]">
               {paths.length ? paths.map((p) => (
                 <div key={p.id}>
                   <div className="font-medium">{p.title}</div>
@@ -165,7 +165,7 @@ export function LearningView({ view, filter, assignments, courses, paths, people
             title="My team's learning"
             action={
               <div className="flex gap-2">
-                <Link className="rounded-full bg-bg-subtle px-3 py-1 text-[13px] text-fg-muted hover:text-fg" href={filter ? '/learning?view=team' : '/learning?view=team&status=overdue'}>{filter ? 'Show all' : 'Only overdue'}</Link>
+                <Link className="rounded-full bg-bg-subtle px-3 py-1 text-[0.8125rem] text-fg-muted hover:text-fg" href={filter ? '/learning?view=team' : '/learning?view=team&status=overdue'}>{filter ? 'Show all' : 'Only overdue'}</Link>
                 <Button size="sm" disabled={!people.length || (!courses.length && !paths.length)} onClick={() => setAssignOpen(true)}><Plus className="size-3.5" /> Assign learning</Button>
               </div>
             }

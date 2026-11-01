@@ -53,7 +53,7 @@ export function BillingView({ plans, info, invoices, canManage }: { plans: Plan[
                     )}
                     {p.minimumSeats > 1 && <div className="mt-1 text-xs text-fg-subtle">Minimum {p.minimumSeats} seats</div>}
                   </div>
-                  <ul className="grid gap-1.5 text-[13px]">
+                  <ul className="grid gap-1.5 text-[0.8125rem]">
                     <li className="text-fg-muted">{capacity(p.limits.max_employees, 'person', 'people')}, {capacity(p.limits.max_legal_entities, 'legal entity', 'legal entities')}</li>
                     {p.features.slice(0, 8).map((f) => <li key={f} className="flex gap-2"><Check className="mt-0.5 size-3.5 shrink-0 text-success" />{featureName(f)}</li>)}
                     {p.features.length > 8 && <li className="text-xs text-fg-subtle">and {p.features.length - 8} more</li>}
@@ -131,7 +131,7 @@ function ChangePlanDialog({ plan, sub, members, onClose }: { plan: Plan; sub: No
         </div>
         <Field label="Seats" error={seatsError ?? undefined} required>{(p) => <Input {...p} type="number" min={1} value={seats} onChange={(e) => setSeats(e.target.value)} />}</Field>
         {!seatsError && price && (
-          <div className="rounded-md bg-bg-subtle p-3 text-[13px]">
+          <div className="rounded-md bg-bg-subtle p-3 text-[0.8125rem]">
             {n} seats × {money(unit, currency)} per month = <strong className="tabular">{money(n * unit * (cycle === 'annual' ? 12 : 1), currency)}</strong> per {cycle === 'annual' ? 'year' : 'month'}, before tax. No card is charged here; SAMPLEDGE finance issues the invoice.
           </div>
         )}

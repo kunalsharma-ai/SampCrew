@@ -55,9 +55,9 @@ export function AssistantPanel() {
               <Badge tone="info">{answer.answered ? 'AI answer' : 'No answer found'}</Badge>
               <span>{answer.answered ? 'Written by AI from the articles below. Check them; HR has the final word.' : 'No AI was used.'}</span>
             </div>
-            <div className="whitespace-pre-wrap text-[13px]">{answer.answer}</div>
+            <div className="whitespace-pre-wrap text-[0.8125rem]">{answer.answer}</div>
             {answer.sources.length > 0 && (
-              <div className="text-[13px]">
+              <div className="text-[0.8125rem]">
                 <div className="mb-1 font-medium">Sources</div>
                 <ol className="list-decimal space-y-0.5 pl-5">
                   {answer.sources.map((s) => (
@@ -70,7 +70,7 @@ export function AssistantPanel() {
               </div>
             )}
             {answer.answered && (
-              <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              <div className="flex flex-wrap items-center gap-2 text-[0.8125rem]">
                 {feedback === null ? (
                   <>
                     <span className="text-fg-muted">Was this helpful?</span>
@@ -84,7 +84,7 @@ export function AssistantPanel() {
         )}
       </CardBody>
       <Dialog open={reading !== null} onClose={() => setReading(null)} title={reading?.title ?? ''} description={reading?.categoryName ?? undefined} size="lg">
-        <div className="whitespace-pre-wrap text-[13px] leading-relaxed">{reading?.body}</div>
+        <div className="whitespace-pre-wrap text-[0.8125rem] leading-relaxed">{reading?.body}</div>
       </Dialog>
     </Card>
   );

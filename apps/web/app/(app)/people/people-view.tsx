@@ -1,4 +1,5 @@
 'use client';
+import { useCreateParam } from '@/lib/use-create-param';
 import { Alert, Avatar, Badge, Button, Card, Checkbox, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Copy, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import Link from 'next/link';
@@ -23,7 +24,7 @@ interface Props {
 export function PeopleView(props: Props) {
   const { page, query, canInvite } = props;
   const router = useRouter();
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useCreateParam('invite');
   const [selected, setSelected] = useState<Member | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
 
@@ -41,7 +42,7 @@ export function PeopleView(props: Props) {
         <Alert tone="info" title="Invitation created" className="mb-4">
           An invitation email has been queued. If email delivery is not configured in this environment, share this one-time link instead:
           <div className="mt-2 flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[11px] text-fg">{inviteLink}</code>
+            <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[0.6875rem] text-fg">{inviteLink}</code>
             <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(inviteLink)}><Copy className="size-3.5" /> Copy</Button>
           </div>
         </Alert>
@@ -100,7 +101,7 @@ export function PeopleView(props: Props) {
         )}
         {page.nextCursor && (
           <div className="flex justify-center border-t border-border p-3">
-            <Link className="text-[13px] font-medium text-accent hover:underline" href={`/people?${new URLSearchParams({ ...(query.q && { q: query.q }), ...(query.status && { status: query.status }), cursor: page.nextCursor })}`}>Next page</Link>
+            <Link className="text-[0.8125rem] font-medium text-accent hover:underline" href={`/people?${new URLSearchParams({ ...(query.q && { q: query.q }), ...(query.status && { status: query.status }), cursor: page.nextCursor })}`}>Next page</Link>
           </div>
         )}
       </Card>
@@ -155,7 +156,7 @@ function InviteDialog({ open, onClose, onInvited, roles, departments, entities, 
         <Field label="Department" className="col-span-2 sm:col-span-1">{(p) => <Select {...p} name="departmentId"><option value="">None</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}</Field>
         <Field label="Location" className="col-span-2">{(p) => <Select {...p} name="locationId"><option value="">None</option>{locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>}</Field>
         <fieldset className="col-span-2">
-          <legend className="mb-2 text-[13px] font-medium">Roles <span className="font-normal text-fg-subtle">(everyone also gets Employee self-service)</span></legend>
+          <legend className="mb-2 text-[0.8125rem] font-medium">Roles <span className="font-normal text-fg-subtle">(everyone also gets Employee self-service)</span></legend>
           {canAssignRoles ? (
             <div className="grid gap-2.5 sm:grid-cols-2">
               {assignable.map((r) => <Checkbox key={r.key} name="roles" value={r.key} label={r.name} />)}
@@ -187,7 +188,7 @@ function MemberDialog({ member, onClose, onLink, roles, departments, entities, l
     <Dialog open onClose={onClose} title={member.fullName} description={`${member.email}${member.title ? ` · ${member.title}` : ''}`} size="lg">
       <div className="flex flex-col gap-6">
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
-        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+        <div className="flex flex-wrap items-center gap-2 text-[0.8125rem]">
           <StatusPill status={member.status} />
           {member.mfaEnabled ? <Badge tone="success"><ShieldCheck className="size-3" /> MFA on</Badge> : <Badge>MFA off</Badge>}
           {member.lastLoginAt && <span className="text-fg-subtle">Last sign-in {new Date(member.lastLoginAt).toLocaleString()}</span>}
@@ -203,7 +204,7 @@ function MemberDialog({ member, onClose, onLink, roles, departments, entities, l
               run(() => updateMemberAction(member.id, { legalEntityId: v('legalEntityId'), departmentId: v('departmentId'), locationId: v('locationId'), managerMembershipId: v('managerMembershipId') }), 'Placement saved.');
             }}
           >
-            <h3 className="col-span-2 text-[13px] font-semibold">Placement</h3>
+            <h3 className="col-span-2 text-[0.8125rem] font-semibold">Placement</h3>
             <Field label="Legal entity" className="col-span-2 sm:col-span-1">{(p) => <Select {...p} name="legalEntityId" defaultValue={member.legalEntityId ?? ''}><option value="">None</option>{entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</Select>}</Field>
             <Field label="Department" className="col-span-2 sm:col-span-1">{(p) => <Select {...p} name="departmentId" defaultValue={member.departmentId ?? ''}><option value="">None</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}</Field>
             <Field label="Location" className="col-span-2 sm:col-span-1">{(p) => <Select {...p} name="locationId" defaultValue={member.locationId ?? ''}><option value="">None</option>{locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>}</Field>
@@ -221,7 +222,7 @@ function MemberDialog({ member, onClose, onLink, roles, departments, entities, l
 
         {canAssignRoles && (
           <div className="flex flex-col gap-3">
-            <h3 className="text-[13px] font-semibold">Roles</h3>
+            <h3 className="text-[0.8125rem] font-semibold">Roles</h3>
             <div className="grid gap-2.5 sm:grid-cols-2">
               {roles.map((r) => (
                 <Checkbox

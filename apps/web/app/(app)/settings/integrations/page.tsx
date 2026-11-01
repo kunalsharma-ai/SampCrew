@@ -27,27 +27,27 @@ export default async function IntegrationsPage() {
             <Card className="h-full transition group-hover:border-border-strong">
               <CardBody className="pt-5">
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-[15px] font-semibold text-fg">{c.name}</h3>
+                  <h3 className="text-[0.9375rem] font-semibold text-fg">{c.name}</h3>
                   <Badge tone={c.count ? 'success' : 'neutral'}>{COUNT[c.key]?.(c.count) ?? c.count}</Badge>
                 </div>
-                <p className="mt-1 text-[13px] text-fg-muted">{c.description}</p>
-                <p className="mt-3 text-[13px] font-medium text-accent group-hover:underline">Manage</p>
+                <p className="mt-1 text-[0.8125rem] text-fg-muted">{c.description}</p>
+                <p className="mt-3 text-[0.8125rem] font-medium text-accent group-hover:underline">Manage</p>
               </CardBody>
             </Card>
           </Link>
         ))}
       </div>
       <h2 className="mb-1 text-sm font-semibold text-fg">Planned</h2>
-      <p className="mb-3 text-[13px] text-fg-muted">Not built yet, so they cannot be connected. Until then, outgoing webhooks and API keys let your developers link these systems themselves.</p>
+      <p className="mb-3 text-[0.8125rem] text-fg-muted">Not built yet, so they cannot be connected. Until then, outgoing webhooks and API keys let your developers link these systems themselves.</p>
       <div className="grid gap-4 md:grid-cols-3">
         {planned.map((c) => (
           <Card key={c.key} className="opacity-80">
             <CardBody className="pt-5">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-[15px] font-semibold text-fg">{c.name}</h3>
+                <h3 className="text-[0.9375rem] font-semibold text-fg">{c.name}</h3>
                 <Badge tone="neutral">Planned</Badge>
               </div>
-              <p className="mt-1 text-[13px] text-fg-muted">{c.description}</p>
+              <p className="mt-1 text-[0.8125rem] text-fg-muted">{c.description}</p>
               <p className="mt-2 text-xs text-fg-subtle">{c.category}</p>
             </CardBody>
           </Card>

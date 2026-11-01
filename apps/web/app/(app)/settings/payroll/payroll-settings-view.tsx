@@ -35,7 +35,7 @@ export function PayrollSettingsView({ statutory, components, structures, categor
           <TBody>
             {active.map((c) => (
               <TR key={c.id}>
-                <TD className="font-mono text-[13px]">{c.code}</TD>
+                <TD className="font-mono text-[0.8125rem]">{c.code}</TD>
                 <TD>{c.name}{c.isBasic && <Badge tone="accent" className="ml-2">Basic</Badge>}</TD>
                 <TD>{c.kind === 'earning' ? 'Earning' : 'Deduction'}</TD>
                 <TD>{c.kind === 'earning' ? (c.taxable ? 'Yes' : 'No') : '–'}</TD>
@@ -59,7 +59,7 @@ export function PayrollSettingsView({ statutory, components, structures, categor
             {structures.filter((s) => !s.archivedAt).map((s) => (
               <TR key={s.id}>
                 <TD><div className="font-medium">{s.name}</div><div className="text-xs text-fg-muted">{s.description}</div></TD>
-                <TD className="text-[13px]">{s.lines.map((l) => `${l.name}: ${l.calc === 'balance' ? 'balance' : l.calc === 'fixed' ? `${amount(l.value.replace(/(\.\d\d)\d+$/, '$1'))} a year` : `${Number(l.value)}${l.calc === 'percent_of_ctc' ? '% of CTC' : '% of Basic'}`}`).join(' · ')}</TD>
+                <TD className="text-[0.8125rem]">{s.lines.map((l) => `${l.name}: ${l.calc === 'balance' ? 'balance' : l.calc === 'fixed' ? `${amount(l.value.replace(/(\.\d\d)\d+$/, '$1'))} a year` : `${Number(l.value)}${l.calc === 'percent_of_ctc' ? '% of CTC' : '% of Basic'}`}`).join(' · ')}</TD>
                 <TD className="text-right tabular-nums">{s.employeeCount}</TD>
                 <TD className="whitespace-nowrap text-right">
                   <Button size="sm" variant="ghost" onClick={() => setStructure(s)}>Edit</Button>

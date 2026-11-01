@@ -21,7 +21,7 @@ export default async function AttritionPage({ searchParams }: { searchParams: Pr
       />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="grid content-start gap-4">
-          <div className="flex flex-wrap gap-3 text-[13px]">
+          <div className="flex flex-wrap gap-3 text-[0.8125rem]">
             {(['', 'high', 'medium', 'low'] as const).map((k) => (
               <Link key={k} href={k ? `/insights/attrition?band=${k}` : '/insights/attrition'} className={(b ?? '') === k ? 'font-semibold text-accent' : 'text-fg-muted hover:text-fg'}>{k ? BAND[k].label : 'All'}</Link>
             ))}
@@ -37,11 +37,11 @@ export default async function AttritionPage({ searchParams }: { searchParams: Pr
                   {data.people.map((p) => (
                     <TR key={p.employeeId}>
                       <TD><Link className="font-medium text-accent hover:underline" href={`/insights/attrition/${p.employeeId}`}>{p.name}</Link></TD>
-                      <TD className="text-[13px]">{p.department ?? '–'}</TD>
+                      <TD className="text-[0.8125rem]">{p.department ?? '–'}</TD>
                       <TD className="text-right tabular-nums">{p.score}</TD>
                       <TD><Badge tone={BAND[p.band].tone} dot>{BAND[p.band].label}</Badge></TD>
-                      <TD className="max-w-[22rem] text-[13px]">{p.factors.length ? p.factors.slice(0, 3).map((f) => f.label).join('; ') : <span className="text-fg-subtle">None</span>}</TD>
-                      <TD className="text-[13px]">{p.reviewOutcome ? OUTCOME[p.reviewOutcome] : <span className="text-fg-subtle">Not reviewed</span>}</TD>
+                      <TD className="max-w-[22rem] text-[0.8125rem]">{p.factors.length ? p.factors.slice(0, 3).map((f) => f.label).join('; ') : <span className="text-fg-subtle">None</span>}</TD>
+                      <TD className="text-[0.8125rem]">{p.reviewOutcome ? OUTCOME[p.reviewOutcome] : <span className="text-fg-subtle">Not reviewed</span>}</TD>
                     </TR>
                   ))}
                 </TBody>
@@ -51,7 +51,7 @@ export default async function AttritionPage({ searchParams }: { searchParams: Pr
         </div>
         <Card>
           <CardHeader title="How scores work" description={`Rules ${data.rulesVersion}. Each signal adds the points shown; the total is capped at 100.`} />
-          <CardBody className="grid gap-2 text-[13px]">
+          <CardBody className="grid gap-2 text-[0.8125rem]">
             {Object.entries(data.rules).map(([k, pts]) => (
               <div key={k} className="flex justify-between gap-3"><span>{RULE_TEXT[k] ?? k}</span><span className="tabular-nums font-medium">+{pts}</span></div>
             ))}

@@ -35,7 +35,7 @@ function PathDialog({ open, onClose, courses, path }: { open: boolean; onClose: 
             const pos = ids.indexOf(c.id);
             return (
               <li key={c.id}>
-                <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-[13px] hover:bg-bg-subtle">
+                <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-[0.8125rem] hover:bg-bg-subtle">
                   <input type="checkbox" checked={pos >= 0} onChange={() => setIds(pos >= 0 ? ids.filter((x) => x !== c.id) : [...ids, c.id])} />
                   {pos >= 0 && <span className="w-4 text-xs tabular-nums text-fg-muted">{pos + 1}</span>}
                   <span>{c.title}</span>
@@ -94,7 +94,7 @@ export function CatalogueView({ courses, paths }: { courses: Course[]; paths: Le
         {paths.length ? (
           <ul className="divide-y divide-border">
             {paths.map((p) => (
-              <li key={p.id} className="flex flex-wrap items-start gap-3 px-5 py-3 text-[13px]">
+              <li key={p.id} className="flex flex-wrap items-start gap-3 px-5 py-3 text-[0.8125rem]">
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{p.title}</div>
                   <div className="text-xs text-fg-muted">{p.courses.map((c) => c.title).join(' → ')}</div>

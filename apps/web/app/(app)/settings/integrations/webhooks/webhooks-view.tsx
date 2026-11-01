@@ -46,7 +46,7 @@ export function WebhooksView({ endpoints, catalogue }: { endpoints: WebhookEndpo
       </Card>
       <Card>
         <CardHeader title="How delivery works" />
-        <CardBody className="grid gap-2 text-[13px] text-fg-muted">
+        <CardBody className="grid gap-2 text-[0.8125rem] text-fg-muted">
           <p>Each message is a JSON POST with <code className="font-mono">id</code>, <code className="font-mono">type</code>, <code className="font-mono">createdAt</code>, <code className="font-mono">workspaceId</code> and <code className="font-mono">data</code>. The <code className="font-mono">crew-signature</code> header is <code className="font-mono">t=&lt;unix time&gt;,v1=&lt;HMAC-SHA256 of "t.body" with your secret&gt;</code>. Reject messages older than {Math.round(r.toleranceSeconds / 60)} minutes.</p>
           <p>Answer with any 2xx status within 10 seconds. Otherwise CREW tries again after {r.delaysSeconds.map(seconds).join(', ')}, {r.maxAttempts} attempts in all. Use the event id to ignore repeats. An endpoint that fails 15 times in a row is switched off and its creator is told.</p>
         </CardBody>

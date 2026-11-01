@@ -70,7 +70,7 @@ export function TodayCard({ today }: { today: AttendanceToday }) {
             <Alert tone="info">Web punching is turned off for your location. Use the mobile app{today.allowed.qr ? ' or scan the QR code on a site kiosk' : ''}.</Alert>
           )}
           {today.geofence.mode !== 'off' && today.geofence.configured && (
-            <span className="inline-flex items-center gap-1 text-[13px] text-fg-muted">
+            <span className="inline-flex items-center gap-1 text-[0.8125rem] text-fg-muted">
               <MapPin className="size-3.5" /> {today.geofence.mode === 'enforce' ? 'Must be' : 'Checked to be'} within {today.geofence.radiusM} m of your workplace
             </span>
           )}
@@ -239,7 +239,7 @@ function CorrectionDialog({ day, employeeId, onClose }: { day: AttendanceDay; em
           <div key={i} className="grid grid-cols-[1fr_1fr_auto_auto] items-end gap-2">
             <Field label="Time">{(f) => <Input {...f} type="time" name={`time-${i}`} value={p.time} onChange={(e) => set(i, { time: e.target.value })} required />}</Field>
             <Field label="Type">{(f) => <Select {...f} name={`direction-${i}`} value={p.direction} onChange={(e) => set(i, { direction: e.target.value as 'in' | 'out' })}><option value="in">Punch in</option><option value="out">Punch out</option></Select>}</Field>
-            <label className="mb-2 flex items-center gap-1.5 text-[13px]"><input type="checkbox" checked={p.nextDay} onChange={(e) => set(i, { nextDay: e.target.checked })} /> Next day</label>
+            <label className="mb-2 flex items-center gap-1.5 text-[0.8125rem]"><input type="checkbox" checked={p.nextDay} onChange={(e) => set(i, { nextDay: e.target.checked })} /> Next day</label>
             <Button type="button" variant="ghost" size="sm" aria-label="Remove punch" disabled={punches.length === 1} onClick={() => setPunches(punches.filter((_, j) => j !== i))}><Trash2 className="size-4" /></Button>
           </div>
         ))}

@@ -23,7 +23,7 @@ export function PrivacyDetail({ r }: { r: PrivacyRequest }) {
       <Card>
         <CardHeader title="Request" />
         <CardBody>
-          <dl className="grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-[12rem_1fr]">
+          <dl className="grid gap-x-6 gap-y-2 text-[0.8125rem] sm:grid-cols-[12rem_1fr]">
             <dt className="text-fg-muted">How it arrived</dt><dd>{r.source}</dd>
             <dt className="text-fg-muted">Employment</dt><dd>{label(r.employeeStatus)}{r.lastWorkingDay ? `, last working day ${r.lastWorkingDay}` : ''}</dd>
             {r.decidedBy && <><dt className="text-fg-muted">Closed by</dt><dd>{r.decidedBy}{r.completedAt ? ` on ${new Date(r.completedAt).toLocaleString()}` : ''}</dd></>}
@@ -43,7 +43,7 @@ export function PrivacyDetail({ r }: { r: PrivacyRequest }) {
                   <span className="text-xs text-fg-muted">Every download is recorded in the audit trail. SHA-256 <span className="font-mono">{r.exportSha256?.slice(0, 16)}…</span></span>
                 </div>
                 {r.result?.records && (
-                  <p className="text-[13px] text-fg-muted" data-testid="export-summary">
+                  <p className="text-[0.8125rem] text-fg-muted" data-testid="export-summary">
                     {Object.entries(r.result.records).filter(([, n]) => n > 0).map(([k, n]) => `${label(k)}: ${n}`).join(' · ')}
                   </p>
                 )}
@@ -71,7 +71,7 @@ export function PrivacyDetail({ r }: { r: PrivacyRequest }) {
                 <TR key={x.area}>
                   <TD className="font-medium">{x.area}</TD>
                   <TD><Badge tone={x.action === 'erased' ? 'danger' : 'neutral'}>{x.action === 'erased' ? 'Erased' : 'Kept'}</Badge></TD>
-                  <TD className="text-[13px] text-fg-muted">{x.detail}</TD>
+                  <TD className="text-[0.8125rem] text-fg-muted">{x.detail}</TD>
                 </TR>
               ))}
             </TBody>
@@ -79,7 +79,7 @@ export function PrivacyDetail({ r }: { r: PrivacyRequest }) {
           <CardBody className="grid gap-4 pt-4">
             <Alert tone="warning">Free text that colleagues wrote elsewhere (expense descriptions, goals, review comments) is not erased automatically. Check those by hand.</Alert>
             {r.result?.removed && (
-              <p className="text-[13px] text-fg-muted" data-testid="erasure-summary">Removed: {Object.entries(r.result.removed).map(([k, n]) => `${label(k)} ${n}`).join(' · ')}</p>
+              <p className="text-[0.8125rem] text-fg-muted" data-testid="erasure-summary">Removed: {Object.entries(r.result.removed).map(([k, n]) => `${label(k)} ${n}`).join(' · ')}</p>
             )}
             {isOpen && !left && <Alert tone="info">This person has not left yet, so they cannot be erased. Erasure is possible after their last working day; until then you can reject the request with a reason.</Alert>}
             {isOpen && left && (

@@ -63,7 +63,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
 
   return (
     <>
-      <div className="mb-2 text-[13px]"><Link href="/employees" className="text-fg-subtle hover:text-fg">Employees</Link></div>
+      <div className="mb-2 text-[0.8125rem]"><Link href="/employees" className="text-fg-subtle hover:text-fg">Employees</Link></div>
       <PageHeader
         title={
           <span className="flex items-center gap-3">
@@ -82,7 +82,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
             key={t.key}
             href={`/employees/${id}?tab=${t.key}`}
             aria-current={t.key === tab ? 'page' : undefined}
-            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-[13.5px] ${t.key === tab ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg'}`}
+            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-[0.8438rem] ${t.key === tab ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg'}`}
           >
             {t.label}
           </Link>

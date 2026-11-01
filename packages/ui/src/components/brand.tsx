@@ -13,8 +13,8 @@ export function CrewLogo({ className, withWordmark = true, subtitle }: { classNa
       </svg>
       {withWordmark && (
         <span className="flex flex-col leading-none">
-          <span className="text-[15px] font-bold tracking-[0.12em] text-fg">CREW</span>
-          {subtitle && <span className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-fg-subtle">{subtitle}</span>}
+          <span className="text-[0.9375rem] font-bold tracking-[0.12em] text-fg">CREW</span>
+          {subtitle && <span className="mt-0.5 text-[0.625rem] font-medium uppercase tracking-[0.14em] text-fg-subtle">{subtitle}</span>}
         </span>
       )}
     </span>

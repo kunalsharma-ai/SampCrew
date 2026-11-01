@@ -12,7 +12,7 @@ export function ReviewsView({ view, items }: { view: 'mine' | 'team' | 'feedback
     <div className="grid gap-4">
       <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (
-          <Link key={t.v} href={t.v === 'mine' ? '/reviews' : `/reviews?view=${t.v}`} className={`rounded-full px-3 py-1 text-[13px] font-medium ${view === t.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{t.l}</Link>
+          <Link key={t.v} href={t.v === 'mine' ? '/reviews' : `/reviews?view=${t.v}`} className={`rounded-full px-3 py-1 text-[0.8125rem] font-medium ${view === t.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{t.l}</Link>
         ))}
       </div>
       <Card>
@@ -28,7 +28,7 @@ export function ReviewsView({ view, items }: { view: 'mine' | 'team' | 'feedback
                   <TD className="font-medium">{f.employeeName}</TD>
                   <TD className="text-fg-muted">{f.cycleName}</TD>
                   <TD><Badge tone={FEEDBACK_TONE[f.status] ?? 'neutral'} dot>{FEEDBACK_STATUS[f.status] ?? f.status}</Badge></TD>
-                  <TD className="text-right"><Link className="text-[13px] font-medium text-accent hover:underline" href={`/reviews/feedback/${f.id}`}>{f.status === 'requested' && f.cycleStatus === 'active' ? 'Give feedback' : 'Open'}</Link></TD>
+                  <TD className="text-right"><Link className="text-[0.8125rem] font-medium text-accent hover:underline" href={`/reviews/feedback/${f.id}`}>{f.status === 'requested' && f.cycleStatus === 'active' ? 'Give feedback' : 'Open'}</Link></TD>
                 </TR>
               ))}
             </TBody>
@@ -45,7 +45,7 @@ export function ReviewsView({ view, items }: { view: 'mine' | 'team' | 'feedback
                   <TD className="text-fg-muted">{r.selfReview ? PART_STATUS[r.selfStatus] : 'Not needed'}{r.selfStatus === 'pending' && r.selfDue ? ` · due ${r.selfDue}` : ''}</TD>
                   <TD className="text-fg-muted">{PART_STATUS[r.managerStatus]}{r.managerStatus === 'pending' && r.managerDue ? ` · due ${r.managerDue}` : ''}</TD>
                   <TD className="text-right">
-                    <Link className="text-[13px] font-medium text-accent hover:underline" href={`/reviews/${r.id}`}>
+                    <Link className="text-[0.8125rem] font-medium text-accent hover:underline" href={`/reviews/${r.id}`}>
                       {view === 'mine' && r.releasedAt && !r.acknowledgedAt ? 'Read your results' : view === 'mine' && r.selfStatus === 'pending' && r.cycleStatus === 'active' ? 'Write self review' : view === 'team' && r.managerStatus === 'pending' && r.cycleStatus === 'active' ? 'Write review' : 'Open'}
                     </Link>
                   </TD>

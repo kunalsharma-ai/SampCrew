@@ -1,4 +1,5 @@
 'use client';
+import { useCreateParam } from '@/lib/use-create-param';
 import { Badge, Button, Card, CardHeader, EmptyState, Stat, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Plus, Target } from 'lucide-react';
 import Link from 'next/link';
@@ -11,7 +12,7 @@ import { GoalDialog } from './goal-form';
 export function GoalsView({ view, goals, overall, alignable, people, manages }: {
   view: 'mine' | 'team'; goals: Goal[]; overall: number | null; alignable: Alignable[]; people: { id: string; name: string }[]; manages: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useCreateParam('goal');
   const active = goals.filter((g) => g.status === 'active');
   const risky = active.filter((g) => g.confidence && g.confidence !== 'on_track').length;
   const tabs = [{ v: 'mine', l: 'My goals' }, ...(manages ? [{ v: 'team', l: 'My team' }] : [])];
@@ -20,7 +21,7 @@ export function GoalsView({ view, goals, overall, alignable, people, manages }: 
       {tabs.length > 1 && (
         <div className="flex flex-wrap gap-2">
           {tabs.map((t) => (
-            <Link key={t.v} href={t.v === 'mine' ? '/goals' : '/goals?view=team'} className={`rounded-full px-3 py-1 text-[13px] font-medium ${view === t.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{t.l}</Link>
+            <Link key={t.v} href={t.v === 'mine' ? '/goals' : '/goals?view=team'} className={`rounded-full px-3 py-1 text-[0.8125rem] font-medium ${view === t.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{t.l}</Link>
           ))}
         </div>
       )}

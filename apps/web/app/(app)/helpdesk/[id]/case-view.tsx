@@ -97,7 +97,7 @@ export function CaseView({ c, handlers, categories, aiDrafts }: { c: CaseDetail;
 
       <div className="grid content-start gap-6">
         <Card>
-          <CardBody className="grid gap-3 text-[13px]">
+          <CardBody className="grid gap-3 text-[0.8125rem]">
             <Row label="Status"><Badge tone={STATUS_TONE[c.status]}>{labels[c.status]}</Badge></Row>
             <Row label="Priority"><Badge tone={PRIORITY_TONE[c.priority]}>{PRIORITY[c.priority]}</Badge></Row>
             <Row label="Handled by">{c.assigneeName ?? 'Not assigned yet'}</Row>
@@ -168,7 +168,7 @@ function Message({ author, at, body, internal, hr, ai }: { author: string; at: s
         {ai && <Badge tone="info">Drafted with AI</Badge>}
         <span>{dateTime(at)}</span>
       </div>
-      <div className="whitespace-pre-wrap text-[13px]">{body}</div>
+      <div className="whitespace-pre-wrap text-[0.8125rem]">{body}</div>
     </div>
   );
 }

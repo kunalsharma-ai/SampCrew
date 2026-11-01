@@ -13,7 +13,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
         <div className="relative max-w-lg">
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">One intelligent platform.<br />Your entire workforce.</h1>
-          <p className="mt-4 text-[15px] leading-relaxed text-white/70">
+          <p className="mt-4 text-[0.9375rem] leading-relaxed text-white/70">
             Recruitment, people, attendance, payroll and workforce intelligence on one connected foundation. Let CREW handle the repetitive work, so your people can focus on people.
           </p>
           <ul className="mt-8 grid gap-3 text-sm text-white/80">

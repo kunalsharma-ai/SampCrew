@@ -20,13 +20,13 @@ export default async function AttritionPersonPage({ params }: { params: Promise<
         eyebrow={<Link href="/insights/attrition" className="hover:underline">Attrition risk</Link>}
         title={<span className="inline-flex flex-wrap items-center gap-3">{p.name}{latest && <Badge tone={BAND[latest.band].tone} dot>{BAND[latest.band].label} risk, {latest.score}</Badge>}</span>}
         description={latest ? `Calculated ${latest.computedOn} with rules ${latest.rulesVersion}. Advisory only.` : 'No score yet.'}
-        actions={<Link className="text-[13px] text-accent hover:underline" href={`/employees/${employeeId}`}>Employee record</Link>}
+        actions={<Link className="text-[0.8125rem] text-accent hover:underline" href={`/employees/${employeeId}`}>Employee record</Link>}
       />
       {latest && (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader title="Why this score" description="Each signal, its points and the evidence behind it." />
-            <CardBody className="grid gap-3 text-[13px]">
+            <CardBody className="grid gap-3 text-[0.8125rem]">
               {latest.factors.length === 0 && <p className="text-fg-muted">No signals. A score of 0 means none of the rules applied.</p>}
               {latest.factors.map((f) => (
                 <div key={f.key} className="flex gap-3">
@@ -38,7 +38,7 @@ export default async function AttritionPersonPage({ params }: { params: Promise<
           </Card>
           <Card>
             <CardHeader title="Inputs used" description="Taken from CREW records on the day of calculation." />
-            <CardBody className="grid gap-1 text-[13px]">
+            <CardBody className="grid gap-1 text-[0.8125rem]">
               {Object.entries(latest.inputs).map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-3"><span className="text-fg-muted">{INPUT_TEXT[k] ?? k}</span><span className="tabular-nums">{v === null ? 'None' : v}</span></div>
               ))}
@@ -50,7 +50,7 @@ export default async function AttritionPersonPage({ params }: { params: Promise<
           </Card>
           <Card>
             <CardHeader title="Reviews" />
-            <CardBody className="grid gap-3 text-[13px]">
+            <CardBody className="grid gap-3 text-[0.8125rem]">
               {p.reviews.length === 0 && <p className="text-fg-muted">Not reviewed yet.</p>}
               {p.reviews.map((r) => (
                 <div key={r.id}>
@@ -70,7 +70,7 @@ export default async function AttritionPersonPage({ params }: { params: Promise<
                     <TD className="tabular-nums">{h.computedOn}</TD>
                     <TD className="text-right tabular-nums">{h.score}</TD>
                     <TD><Badge tone={BAND[h.band].tone}>{BAND[h.band].label}</Badge></TD>
-                    <TD className="text-[13px]">{h.factors.map((f) => f.label).join('; ') || '–'}</TD>
+                    <TD className="text-[0.8125rem]">{h.factors.map((f) => f.label).join('; ') || '–'}</TD>
                   </TR>
                 ))}
               </TBody>

@@ -79,7 +79,7 @@ export function SalaryView({ employeeId, revisions, structures, canEdit }: { emp
             </div>
             <Field label="Note">{(p) => <Input {...p} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder="Annual increment" />}</Field>
             {preview && (
-              <div className="rounded-md border border-border p-3 text-[13px]">
+              <div className="rounded-md border border-border p-3 text-[0.8125rem]">
                 <div className="mb-2 font-medium">Monthly split</div>
                 <ul className="grid gap-1">
                   {preview.components.map((c) => <li key={c.code} className="flex justify-between"><span>{c.name}</span><span className="tabular-nums">{amount(c.monthly, preview.currency)}</span></li>)}

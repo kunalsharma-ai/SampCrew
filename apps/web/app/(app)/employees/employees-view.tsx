@@ -1,4 +1,5 @@
 'use client';
+import { useCreateParam } from '@/lib/use-create-param';
 import { Alert, Avatar, Button, Card, Checkbox, Dialog, EmptyState, Field, Input, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Contact, Copy, Search, UserPlus } from 'lucide-react';
 import Link from 'next/link';
@@ -23,7 +24,7 @@ interface Props {
 export function EmployeesView(props: Props) {
   const { page, query, departments, canHire } = props;
   const router = useRouter();
-  const [hireOpen, setHireOpen] = useState(false);
+  const [hireOpen, setHireOpen] = useCreateParam('employee');
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const filter = (patch: Partial<Props['query']>) => {
     const next = { ...query, ...patch };
@@ -36,7 +37,7 @@ export function EmployeesView(props: Props) {
         <Alert tone="info" title="Invitation queued" className="mb-4">
           An invitation email has been queued. If email delivery is not configured in this environment, share this one-time link instead:
           <div className="mt-2 flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[11px] text-fg">{inviteLink}</code>
+            <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[0.6875rem] text-fg">{inviteLink}</code>
             <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(inviteLink)}><Copy className="size-3.5" /> Copy</Button>
           </div>
         </Alert>
@@ -93,7 +94,7 @@ export function EmployeesView(props: Props) {
         )}
         {page.nextCursor && (
           <div className="flex justify-center border-t border-border p-3">
-            <Link className="text-[13px] font-medium text-accent hover:underline" href={`/employees?${new URLSearchParams({ ...Object.fromEntries(Object.entries(query).filter(([, v]) => v)), cursor: page.nextCursor })}`}>Next page</Link>
+            <Link className="text-[0.8125rem] font-medium text-accent hover:underline" href={`/employees?${new URLSearchParams({ ...Object.fromEntries(Object.entries(query).filter(([, v]) => v)), cursor: page.nextCursor })}`}>Next page</Link>
           </div>
         )}
       </Card>

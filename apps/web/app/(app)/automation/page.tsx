@@ -27,10 +27,10 @@ export default async function AutomationPage() {
               {rows.map((w) => (
                 <TR key={w.id}>
                   <TD><Link className="font-medium text-accent hover:underline" href={`/automation/${w.id}`}>{w.name}</Link>{w.description && <div className="text-xs text-fg-muted line-clamp-1">{w.description}</div>}</TD>
-                  <TD className="text-[13px]">{automation.TRIGGERS[w.trigger]?.label ?? w.trigger}</TD>
+                  <TD className="text-[0.8125rem]">{automation.TRIGGERS[w.trigger]?.label ?? w.trigger}</TD>
                   <TD><Badge tone={WORKFLOW_STATUS[w.status].tone} dot>{WORKFLOW_STATUS[w.status].label}</Badge>{w.statusReason && <div className="mt-1 text-xs text-danger">{w.statusReason}</div>}</TD>
-                  <TD className="text-[13px] tabular-nums">v{w.latestVersion}{w.activeVersion && w.activeVersion !== w.latestVersion ? ` (v${w.activeVersion} live)` : ''}</TD>
-                  <TD className="text-[13px]">{w.ownerName}</TD>
+                  <TD className="text-[0.8125rem] tabular-nums">v{w.latestVersion}{w.activeVersion && w.activeVersion !== w.latestVersion ? ` (v${w.activeVersion} live)` : ''}</TD>
+                  <TD className="text-[0.8125rem]">{w.ownerName}</TD>
                   <TD className="text-right tabular-nums">{w.runs30d}</TD>
                   <TD className="text-right tabular-nums">{w.openRuns}</TD>
                   <TD className="text-right tabular-nums">{w.failedRuns ? <Link className="text-danger hover:underline" href={`/automation/runs?workflowId=${w.id}&status=failed`}>{w.failedRuns}</Link> : 0}</TD>

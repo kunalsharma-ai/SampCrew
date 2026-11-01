@@ -116,7 +116,7 @@ export function OrgView(props: Props) {
         <TBody>
           {locations.map((l) => (
             <TR key={l.id}>
-              <TD><div className="font-medium">{l.name}</div>{l.code && <div className="font-mono text-[11px] text-fg-subtle">{l.code}</div>}</TD>
+              <TD><div className="font-medium">{l.name}</div>{l.code && <div className="font-mono text-[0.6875rem] text-fg-subtle">{l.code}</div>}</TD>
               <TD><Badge>{l.kind.replace('_', ' ')}</Badge></TD>
               <TD className="text-fg-muted">{entityName(l.legalEntityId)}</TD>
               <TD className="text-fg-muted">{[l.city, l.region, l.countryCode].filter(Boolean).join(', ')}</TD>
@@ -146,7 +146,7 @@ export function OrgView(props: Props) {
 
   return (
     <>
-      {message && <div className="mb-4 rounded-md bg-bg-subtle px-4 py-2 text-[13px] text-fg-muted" role="status">{message}</div>}
+      {message && <div className="mb-4 rounded-md bg-bg-subtle px-4 py-2 text-[0.8125rem] text-fg-muted" role="status">{message}</div>}
       <Card>
         {canManage && (
           <div className="flex justify-end border-b border-border px-5 py-3">
@@ -181,7 +181,7 @@ function DeptNode({ d, depth, entityName, actions }: { d: Department; depth: num
         {depth > 0 ? <ChevronRight className="size-3.5 text-fg-subtle" /> : <Network className="size-4 text-accent" />}
         <div className="min-w-0 flex-1">
           <span className="font-medium">{d.name}</span>
-          {d.code && <span className="ml-2 font-mono text-[11px] text-fg-subtle">{d.code}</span>}
+          {d.code && <span className="ml-2 font-mono text-[0.6875rem] text-fg-subtle">{d.code}</span>}
         </div>
         <span className="hidden text-xs text-fg-subtle sm:inline">{entityName(d.legalEntityId)}</span>
         <Badge>{d.memberCount} {d.memberCount === 1 ? 'member' : 'members'}</Badge>

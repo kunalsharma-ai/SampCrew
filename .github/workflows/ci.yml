@@ -104,6 +104,7 @@ jobs:
           pnpm e2e:attendance
           pnpm e2e:payroll
           pnpm e2e:mobile
+          pnpm e2e:experience
           pnpm e2e:recruitment
       - name: AI features end-to-end flow (local AI test stub, no real model)
         # e2e/ai-stub.cjs stands in for the Claude Messages API with fixed answers; the key is a dummy value.
