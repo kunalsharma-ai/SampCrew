@@ -11,3 +11,5 @@ coverage/
 .turbo/
 next-env.d.ts
 .data/
+dist-web/
+.expo/
