@@ -27,13 +27,21 @@ async function signIn(b, email) {
   const p = await ctx.newPage();
   p.on('pageerror', (e) => errs.push(`${email} PAGEERROR ${e.message}`));
   p.on('console', (m) => m.type() === 'error' && errs.push(`${email} ${m.text()}`));
-  await p.goto(BASE + '/login');
-  await p.fill('input[name=email]', email);
-  await p.fill('input[name=password]', PASSWORD);
-  await p.click('button[type=submit]');
-  await p.waitForURL((u) => u.pathname === '/', { timeout: 15000 });
   current = p;
-  return p;
+  // Sign-in is rate limited per address (10 a minute); earlier flows in the same run can use that up.
+  for (let attempt = 1; ; attempt++) {
+    await p.goto(BASE + '/login');
+    await p.fill('input[name=email]', email);
+    await p.fill('input[name=password]', PASSWORD);
+    await p.click('button[type=submit]');
+    const r = await Promise.race([
+      p.waitForURL((u) => u.pathname === '/', { timeout: 15000 }).then(() => 'in'),
+      p.locator('text=Too many requests').waitFor({ timeout: 15000 }).then(() => 'limited'),
+    ]);
+    if (r === 'in') return p;
+    if (attempt >= 4) throw new Error(`sign-in for ${email} stayed rate limited`);
+    await p.waitForTimeout(20000);
+  }
 }
 
 const html = (p, attr) => p.evaluate((a) => document.documentElement.getAttribute(a), attr);

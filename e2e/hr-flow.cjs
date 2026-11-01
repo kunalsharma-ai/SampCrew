@@ -62,12 +62,20 @@ function leaveDay() {
   await hr.fill('dialog input[name=firstName]', 'Riya');
   await hr.fill('dialog input[name=lastName]', `Tester ${stamp % 10000}`);
   await hr.fill('dialog input[name=workEmail]', email);
+  // The guided hire: personal details, employment, then department and reporting.
+  const next = async (label) => { await hr.click(`dialog button:has-text("Next: ${label}")`); await hr.waitForSelector(`dialog h3:has-text("${label}")`); };
+  await next('Employment');
+  await next('Department & reporting');
   const sunita = await hr.$eval('dialog select[name=managerEmployeeId]', (s) => [...s.options].find((o) => o.text.startsWith('Sunita Patil'))?.value);
   await hr.selectOption('dialog select[name=managerEmployeeId]', sunita);
   await hr.locator('dialog select[name=departmentId]').selectOption({ label: 'Assembly Line' });
   await hr.locator('dialog select[name=locationId]').selectOption({ label: 'Pune Plant' });
+  await next('Compensation');
+  await next('Documents');
+  await next('Access & onboarding');
   await hr.click('dialog label:has-text("Invite them to CREW")');
   if (!(await hr.isChecked('dialog input[type=checkbox]'))) throw new Error('clicking the invite label did not tick the box');
+  await next('Review');
   await hr.click('dialog button[type=submit]');
   const link = (await hr.locator('code', { hasText: 'accept-invite' }).textContent({ timeout: 10000 }).catch(async (e) => { await hr.screenshot({ path: process.env.SHOT ?? '/tmp/hr-fail.png' }); throw e; })).trim();
   ok('employee added and invitation queued');

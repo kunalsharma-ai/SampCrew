@@ -33,6 +33,7 @@
     "e2e:integrations": "node e2e/integrations-flow.cjs",
     "e2e:enterprise": "node e2e/enterprise-flow.cjs",
     "e2e:experience": "node e2e/experience-flow.cjs",
+    "e2e:directory": "node e2e/directory-flow.cjs",
     "load-test": "node e2e/load.cjs"
   },
   "devDependencies": {

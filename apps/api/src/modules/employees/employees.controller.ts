@@ -1,9 +1,13 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   confirmInput,
   createEmployeeInput,
   type CreateEmployeeInput,
   designationInput,
+  duplicateCheckInput,
+  employeeDraftInput,
+  employeeExportQuery,
   employeeListQuery,
   exitInput,
   extendProbationInput,
@@ -63,6 +67,54 @@ export class EmployeesController {
   @Doc({ summary: 'Employee directory, limited to the records your roles cover', query: employeeListQuery })
   list(@Query(new ZodPipe(employeeListQuery)) q: z.infer<typeof employeeListQuery>) {
     return this.employees.list(q);
+  }
+
+  @Get('export.csv')
+  @RequirePermission('employees:read')
+  @Doc({ summary: 'The directory as CSV with chosen columns (same scope and filters as the list; audited)', query: employeeExportQuery })
+  async exportCsv(@Query(new ZodPipe(employeeExportQuery)) q: z.infer<typeof employeeExportQuery>, @Res() res: Response) {
+    const f = await this.employees.exportCsv(q);
+    res.setHeader('content-type', 'text/csv; charset=utf-8');
+    res.setHeader('content-disposition', `attachment; filename="${f.fileName}"`);
+    res.setHeader('cache-control', 'private, no-store');
+    res.send(f.content);
+  }
+
+  @Post('duplicate-check')
+  @HttpCode(200)
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Existing records that may be the same person (by email, phone, or name and date of birth)', body: duplicateCheckInput })
+  duplicateCheck(@Body(new ZodPipe(duplicateCheckInput)) body: z.infer<typeof duplicateCheckInput>) {
+    return this.employees.duplicates(body);
+  }
+
+  @Get('drafts')
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Your unfinished hires' })
+  drafts() {
+    return this.employees.drafts();
+  }
+
+  @Post('drafts')
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Save an unfinished hire to resume later', body: employeeDraftInput })
+  createDraft(@Body(new ZodPipe(employeeDraftInput)) body: z.infer<typeof employeeDraftInput>) {
+    return this.employees.saveDraft(null, body);
+  }
+
+  @Put('drafts/:id')
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Update an unfinished hire', body: employeeDraftInput })
+  updateDraft(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(employeeDraftInput)) body: z.infer<typeof employeeDraftInput>) {
+    return this.employees.saveDraft(id, body);
+  }
+
+  @Delete('drafts/:id')
+  @HttpCode(204)
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Discard an unfinished hire' })
+  async deleteDraft(@Param('id', UuidPipe) id: string) {
+    await this.employees.deleteDraft(id);
   }
 
   @Get('me')

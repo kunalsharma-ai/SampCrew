@@ -4,6 +4,10 @@ import type {
   confirmInput,
   CreateEmployeeInput,
   designationInput,
+  duplicateCheckInput,
+  EmployeeColumn,
+  employeeDraftInput,
+  employeeExportQuery,
   employeeListQuery,
   exitInput,
   extendProbationInput,
@@ -40,6 +44,35 @@ export const EMPLOYEE_COLUMNS = `e.id, e.employee_code as "employeeCode", e.firs
   e.current_location_id as "locationId", l.name as "locationName", e.current_designation_id as "designationId", ds.name as "designationName",
   e.current_manager_employee_id as "managerEmployeeId", trim(coalesce(mgr.preferred_name, mgr.first_name) || ' ' || mgr.last_name) as "managerName",
   e.current_grade as "grade", e.membership_id as "membershipId", m.status as "loginStatus", e.created_at as "createdAt"`;
+
+const SORT_KEYS: Record<z.infer<typeof employeeListQuery>['sort'], string> = {
+  name: `lower(e.first_name || ' ' || e.last_name)`,
+  code: 'lower(e.employee_code)',
+  joined: `to_char(e.date_of_joining, 'YYYY-MM-DD')`,
+  department: `lower(coalesce(d.name, ''))`,
+  location: `lower(coalesce(l.name, ''))`,
+  status: 'e.status',
+};
+
+const EXPORT_HEADERS: Record<EmployeeColumn, string> = {
+  name: 'Name', code: 'Employee code', designation: 'Designation', department: 'Department', location: 'Location', entity: 'Legal entity',
+  manager: 'Manager', workEmail: 'Work email', type: 'Employment type', joined: 'Date of joining', status: 'Status',
+};
+function exportValue(r: EmployeeRow, c: EmployeeColumn): unknown {
+  switch (c) {
+    case 'name': return r.displayName;
+    case 'code': return r.employeeCode;
+    case 'designation': return r.designationName;
+    case 'department': return r.departmentName;
+    case 'location': return r.locationName;
+    case 'entity': return r.legalEntityName;
+    case 'manager': return r.managerName;
+    case 'workEmail': return r.workEmail;
+    case 'type': return r.employmentType;
+    case 'joined': return r.dateOfJoining;
+    case 'status': return r.status;
+  }
+}
 
 export const EMPLOYEE_FROM = `from employees e
   left join legal_entities le on le.id = e.current_legal_entity_id
@@ -155,44 +188,144 @@ export class EmployeesService {
   // Directory and profile
   // ---------------------------------------------------------------------------------------------------------
 
+  /** Directory filters shared by the list and the CSV export. */
+  private async directoryWhere(tx: Tx, q: Omit<z.infer<typeof employeeListQuery>, 'cursor' | 'limit'>, params: unknown[]) {
+    const where = [await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx)];
+    if (q.q) {
+      params.push(`%${q.q.toLowerCase()}%`);
+      const p = `$${params.length}`;
+      where.push(`(lower(e.first_name || ' ' || e.last_name) like ${p} or lower(coalesce(e.preferred_name, '')) like ${p} or lower(e.employee_code) like ${p} or lower(coalesce(e.work_email::text, '')) like ${p})`);
+    }
+    if (q.status) {
+      params.push(q.status);
+      where.push(`e.status = $${params.length}`);
+    } else if (q.includeExited !== 'true') {
+      where.push(`e.status <> 'exited'`);
+    }
+    if (q.departmentId) {
+      params.push(q.departmentId);
+      where.push(`e.current_department_id = $${params.length}`);
+    }
+    if (q.legalEntityId) {
+      params.push(q.legalEntityId);
+      where.push(`e.current_legal_entity_id = $${params.length}`);
+    }
+    return where;
+  }
+
   async list(q: z.infer<typeof employeeListQuery>) {
     return this.db.tenant(async (tx) => {
       const params: unknown[] = [];
-      const where = [await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx)];
-      if (q.q) {
-        params.push(`%${q.q.toLowerCase()}%`);
-        const p = `$${params.length}`;
-        where.push(`(lower(e.first_name || ' ' || e.last_name) like ${p} or lower(coalesce(e.preferred_name, '')) like ${p} or lower(e.employee_code) like ${p} or lower(coalesce(e.work_email::text, '')) like ${p})`);
-      }
-      if (q.status) {
-        params.push(q.status);
-        where.push(`e.status = $${params.length}`);
-      } else if (q.includeExited !== 'true') {
-        where.push(`e.status <> 'exited'`);
-      }
-      if (q.departmentId) {
-        params.push(q.departmentId);
-        where.push(`e.current_department_id = $${params.length}`);
-      }
-      if (q.legalEntityId) {
-        params.push(q.legalEntityId);
-        where.push(`e.current_legal_entity_id = $${params.length}`);
-      }
+      const where = await this.directoryWhere(tx, q, params);
+      const total = (await one<{ n: number }>(tx, `select count(*)::int as n from employees e where ${where.join(' and ')}`, params))!.n;
+      // Keyset pagination on (sort key as text, id), in either direction.
+      const key = SORT_KEYS[q.sort];
+      const cmp = q.dir === 'desc' ? '<' : '>';
       const cursor = decodeCursor(q.cursor);
       if (cursor) {
-        params.push(cursor[0], cursor[1]);
-        where.push(`(lower(e.first_name || ' ' || e.last_name), e.id) > ($${params.length - 1}, $${params.length}::uuid)`);
+        params.push(String(cursor[0]), cursor[1]);
+        where.push(`(${key}, e.id) ${cmp} ($${params.length - 1}, $${params.length}::uuid)`);
       }
       params.push(q.limit + 1);
-      const rows = await many<EmployeeRow>(
+      const rows = await many<EmployeeRow & { sortKey: string }>(
         tx,
-        `select ${EMPLOYEE_COLUMNS} ${EMPLOYEE_FROM} where ${where.join(' and ')} order by lower(e.first_name || ' ' || e.last_name), e.id limit $${params.length}`,
+        `select ${EMPLOYEE_COLUMNS}, ${key} as "sortKey" ${EMPLOYEE_FROM} where ${where.join(' and ')} order by ${key} ${q.dir}, e.id ${q.dir} limit $${params.length}`,
         params,
       );
       // Personal contact details are not part of the directory listing.
       const items = rows.map(({ personalEmail: _p, phone: _ph, dateOfBirth: _d, gender: _g, exitReason: _x, ...rest }) => rest);
-      return page(items as EmployeeRow[], q.limit, (r) => `${r.firstName} ${r.lastName}`.toLowerCase());
+      const out = page(items as (EmployeeRow & { sortKey: string })[], q.limit, (r) => r.sortKey);
+      return { ...out, items: out.items.map(({ sortKey: _k, ...r }) => r), total };
     });
+  }
+
+  /** The directory as CSV with the chosen columns, same scope and filters as the list. Audited. */
+  async exportCsv(q: z.infer<typeof employeeExportQuery>) {
+    return this.db.tenant(async (tx) => {
+      const params: unknown[] = [];
+      const where = await this.directoryWhere(tx, q, params);
+      const key = SORT_KEYS[q.sort];
+      const rows = await many<EmployeeRow>(tx, `select ${EMPLOYEE_COLUMNS} ${EMPLOYEE_FROM} where ${where.join(' and ')} order by ${key} ${q.dir}, e.id ${q.dir} limit 20001`, params);
+      if (rows.length > 20000) throw Errors.badRequest('export_too_large', 'More than 20,000 people match. Narrow the filters and export again.');
+      const cell = (v: unknown) => {
+        let t = v === null || v === undefined ? '' : String(v);
+        // Neutralise spreadsheet formulas (CSV injection).
+        if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+        return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+      };
+      const lines = [q.columns.map((c) => EXPORT_HEADERS[c]).join(',')];
+      for (const r of rows) lines.push(q.columns.map((c) => cell(exportValue(r, c))).join(','));
+      await this.audit.record(tx, { action: 'employee.directory_exported', resourceType: 'employee', resourceId: null, changes: { rows: rows.length, columns: q.columns, filters: { q: q.q ?? null, status: q.status ?? null, departmentId: q.departmentId ?? null } } });
+      return { fileName: `employees-${new Date().toISOString().slice(0, 10)}.csv`, content: `\ufeff${lines.join('\r\n')}\r\n` };
+    });
+  }
+
+  /** People who may already have a record, so a hire is not entered twice. */
+  async duplicates(input: z.infer<typeof duplicateCheckInput>) {
+    return this.db.tenant(async (tx) => {
+      const params: unknown[] = [];
+      const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
+      const conds: string[] = [];
+      const reasons: string[] = [];
+      const add = (sql: string, value: unknown, reason: string) => {
+        params.push(value);
+        conds.push(sql.replace('$x', `$${params.length}`));
+        reasons.push(`case when ${sql.replace('$x', `$${params.length}`)} then '${reason}' end`);
+      };
+      if (input.workEmail?.includes('@')) add('lower(e.work_email::text) = lower($x)', input.workEmail, 'Same work email');
+      if (input.personalEmail?.includes('@')) add('lower(e.personal_email::text) = lower($x)', input.personalEmail, 'Same personal email');
+      const digits = (input.phone ?? '').replace(/\D/g, '');
+      if (digits.length >= 7) add(`right(regexp_replace(coalesce(e.phone, ''), '\\D', '', 'g'), 10) = right($x, 10)`, digits, 'Same phone number');
+      if (input.firstName && input.lastName) {
+        params.push(input.firstName.toLowerCase(), input.lastName.toLowerCase());
+        const nameSql = `(lower(e.first_name) = $${params.length - 1} and lower(e.last_name) = $${params.length})`;
+        if (input.dateOfBirth && /^\d{4}-\d{2}-\d{2}$/.test(input.dateOfBirth)) {
+          params.push(input.dateOfBirth);
+          const both = `(${nameSql} and e.date_of_birth = $${params.length}::date)`;
+          conds.push(both);
+          reasons.push(`case when ${both} then 'Same name and date of birth' end`);
+        }
+        conds.push(nameSql);
+        reasons.push(`case when ${nameSql} then 'Same name' end`);
+      }
+      if (!conds.length) return { matches: [] };
+      const matches = await many<{ id: string; displayName: string; employeeCode: string; status: string; departmentName: string | null; reasons: string[] }>(
+        tx,
+        `select e.id, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "displayName", e.employee_code as "employeeCode", e.status,
+                d.name as "departmentName", array_remove(array[${reasons.join(', ')}], null) as reasons
+           from employees e left join departments d on d.id = e.current_department_id
+          where ${scope} and (${conds.join(' or ')}) order by e.status = 'exited', e.date_of_joining desc limit 5`,
+        params,
+      );
+      return { matches };
+    });
+  }
+
+  // Hire drafts -----------------------------------------------------------------------------------------------
+
+  async drafts() {
+    const me = requestContext.tenantActor().membershipId;
+    return this.db.tenant((tx) => many(tx, `select id, step, data, updated_at as "updatedAt" from employee_drafts where membership_id = $1 order by updated_at desc limit 20`, [me]));
+  }
+
+  async saveDraft(id: string | null, input: z.infer<typeof employeeDraftInput>) {
+    const me = requestContext.tenantActor().membershipId;
+    return this.db.tenant(async (tx) => {
+      if (id) {
+        const r = await one(tx, `update employee_drafts set step = $3, data = $4 where id = $1 and membership_id = $2 returning id, step, data, updated_at as "updatedAt"`, [id, me, input.step, input.data]);
+        if (!r) throw Errors.notFound('Draft');
+        return r;
+      }
+      const n = (await one<{ n: number }>(tx, 'select count(*)::int as n from employee_drafts where membership_id = $1', [me]))!.n;
+      if (n >= 20) throw Errors.conflict('too_many_drafts', 'You have 20 unfinished hires. Finish or discard one first.');
+      return one(tx, `insert into employee_drafts (tenant_id, membership_id, step, data) values (app_tenant_id(), $1, $2, $3) returning id, step, data, updated_at as "updatedAt"`, [me, input.step, input.data]);
+    });
+  }
+
+  async deleteDraft(id: string) {
+    const me = requestContext.tenantActor().membershipId;
+    const r = await this.db.tenant((tx) => tx.query('delete from employee_drafts where id = $1 and membership_id = $2', [id, me]));
+    if (!r.rowCount) throw Errors.notFound('Draft');
   }
 
   async load(tx: Tx, id: string): Promise<EmployeeRow> {

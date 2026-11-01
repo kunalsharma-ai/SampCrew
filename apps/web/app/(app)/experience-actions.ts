@@ -1,5 +1,5 @@
 'use server';
-import type { AppearancePatch, DashboardLayout, MemberPreferences } from '@crew/contracts';
+import type { AppearancePatch, DashboardLayout, MemberPreferences, SavedView, ViewPage, ViewState } from '@crew/contracts';
 import { act, api } from '@/lib/api';
 import { writeAppearanceCookie } from '@/lib/appearance-cookie';
 
@@ -56,4 +56,18 @@ export async function paletteSearchAction(q: string, sources: { employees: boole
   const candList = cands ?? [];
   for (const c of candList.slice(0, 6)) hits.push({ kind: 'candidate', id: c.id, title: `${c.firstName} ${c.lastName}`, detail: 'Candidate', href: `/recruitment/candidates/${c.id}` });
   return hits;
+}
+
+// Saved table views ---------------------------------------------------------------------------------------
+
+export async function createViewAction(page: ViewPage, name: string, state: ViewState, isDefault: boolean) {
+  return act(() => api<SavedView>('/me/views', { method: 'POST', body: { page, name, state, isDefault } }), 'View saved');
+}
+
+export async function updateViewAction(id: string, patch: { name?: string; state?: ViewState; isDefault?: boolean }) {
+  return act(() => api<SavedView>(`/me/views/${id}`, { method: 'PATCH', body: patch }), 'View updated');
+}
+
+export async function deleteViewAction(id: string) {
+  return act(() => api(`/me/views/${id}`, { method: 'DELETE' }), 'View deleted');
 }

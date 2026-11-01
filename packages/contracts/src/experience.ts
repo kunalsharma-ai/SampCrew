@@ -283,3 +283,30 @@ export function appearanceAttributes(a: Appearance): Record<string, string> {
     ...(a.focusMode ? { 'data-focus': 'on' } : {}),
   };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Saved table views
+// ---------------------------------------------------------------------------------------------------------------
+
+export const VIEW_PAGES = ['employees', 'candidates'] as const;
+export type ViewPage = (typeof VIEW_PAGES)[number];
+export const MAX_VIEWS_PER_PAGE = 20;
+
+/** What a saved view remembers: filters, sort, visible columns (in order) and row density. */
+export const viewState = z.object({
+  filters: z.record(z.string().max(40), z.string().max(200)).refine((f) => Object.keys(f).length <= 12, 'Too many filters').default({}),
+  sort: z.string().max(40).optional(),
+  dir: z.enum(['asc', 'desc']).optional(),
+  columns: z.array(z.string().max(40)).max(30).optional(),
+  density: z.enum(['compact', 'comfortable']).optional(),
+}).strict();
+export type ViewState = z.infer<typeof viewState>;
+
+export const savedViewInput = z.object({
+  page: z.enum(VIEW_PAGES),
+  name: z.string().trim().min(1).max(60),
+  state: viewState,
+  isDefault: z.boolean().default(false),
+}).strict();
+export const savedViewPatch = savedViewInput.omit({ page: true }).partial().strict();
+export interface SavedView { id: string; page: ViewPage; name: string; state: ViewState; isDefault: boolean; updatedAt: string }

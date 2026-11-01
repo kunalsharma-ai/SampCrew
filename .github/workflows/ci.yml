@@ -99,6 +99,7 @@ jobs:
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:web
           pnpm e2e:hr
+          pnpm e2e:directory
           pnpm e2e:talent
           pnpm e2e:helpdesk
           pnpm e2e:attendance

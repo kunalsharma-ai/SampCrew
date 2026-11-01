@@ -20,6 +20,7 @@ import { MembersController } from './modules/members/members.controller';
 import { MembersService } from './modules/members/members.service';
 import { DashboardController, DashboardService } from './modules/experience/dashboard.controller';
 import { PreferencesController } from './modules/experience/preferences.controller';
+import { ViewsController } from './modules/experience/views.controller';
 import { NotificationsController } from './modules/notifications/notifications.controller';
 import { OnboardingController } from './modules/onboarding/onboarding.controller';
 import { OnboardingService } from './modules/onboarding/onboarding.service';
@@ -122,6 +123,7 @@ export const CONTROLLERS = [
   ApprovalsController,
   NotificationsController,
   PreferencesController,
+  ViewsController,
   DashboardController,
   AttendanceController,
   KioskController,

@@ -144,4 +144,87 @@ describe('workspace experience', () => {
       expect(kpi(d, 'headcount')?.value).toBe(0);
     });
   });
+
+  describe('saved views', () => {
+    const state = { filters: { status: 'active' }, sort: 'joined', dir: 'desc', columns: ['name', 'department'], density: 'compact' };
+    it('saves, renames, defaults and deletes views, one default per list', async () => {
+      const a = ok(await as('hr').post('/me/views').send({ page: 'employees', name: 'Confirmed staff', state, isDefault: true }), 201);
+      const b = ok(await as('hr').post('/me/views').send({ page: 'employees', name: 'Newest', state: { filters: {}, sort: 'joined', dir: 'desc' }, isDefault: true }), 201);
+      const list = ok(await as('hr').get('/me/views?page=employees')) as unknown as { id: string; isDefault: boolean; name: string }[];
+      expect(list.filter((v) => v.isDefault).map((v) => v.id)).toEqual([b.id]);
+      expect((await as('hr').post('/me/views').send({ page: 'employees', name: 'newest', state })).status).toBe(409);
+      expect(ok(await as('hr').patch(`/me/views/${a.id}`).send({ name: 'Confirmed', isDefault: true })).isDefault).toBe(true);
+      expect((ok(await as('hr').get('/me/views?page=employees')) as unknown as { id: string; isDefault: boolean }[]).filter((v) => v.isDefault).map((v) => v.id)).toEqual([a.id]);
+      expect((await as('hr').delete(`/me/views/${b.id}`)).status).toBe(204);
+    });
+
+    it('keeps views private to their owner', async () => {
+      const mine = ok(await as('hr').get('/me/views?page=employees')) as unknown as { id: string }[];
+      expect(ok(await as('manager').get('/me/views?page=employees'))).toEqual([]);
+      expect((await as('manager').delete(`/me/views/${mine[0]!.id}`)).status).toBe(404);
+      expect((await as('stranger').patch(`/me/views/${mine[0]!.id}`).send({ name: 'x' })).status).toBe(404);
+    });
+
+    it('refuses bad view state', async () => {
+      expect((await as('hr').post('/me/views').send({ page: 'payroll', name: 'x', state: {} })).status).toBe(422);
+      expect((await as('hr').post('/me/views').send({ page: 'employees', name: 'x', state: { hack: 1 } })).status).toBe(422);
+    });
+  });
+
+  describe('employee directory', () => {
+    it('sorts on the server in both directions and pages without gaps', async () => {
+      const byName = ok(await as('hr').get('/employees?sort=name&dir=asc&limit=2'));
+      expect(byName.total).toBe(3);
+      expect(byName.items.map((e: { firstName: string }) => e.firstName)).toEqual(['Asha', 'Manu']);
+      const next = ok(await as('hr').get(`/employees?sort=name&dir=asc&limit=2&cursor=${encodeURIComponent(byName.nextCursor)}`));
+      expect(next.items.map((e: { firstName: string }) => e.firstName)).toEqual(['Sam']);
+      const newest = ok(await as('hr').get('/employees?sort=joined&dir=desc'));
+      expect(newest.items[0].firstName).toBe('Sam');
+      const byDept = ok(await as('hr').get('/employees?sort=department&dir=desc&limit=1'));
+      expect(byDept.items[0].departmentName).toBe('Sales');
+    });
+
+    it('exports the chosen columns as CSV, within scope, neutralising formulas, and audits it', async () => {
+      const samLast = (await pool.query(`select last_name from employees where tenant_id = $1 and first_name = 'Sam'`, [t.id])).rows[0].last_name;
+      await pool.query(`update employees set preferred_name = '=HYPERLINK("x")' where tenant_id = $1 and first_name = 'Sam'`, [t.id]);
+      const r = await as('hr').get('/employees/export.csv?columns=name,department,status&sort=name');
+      expect(r.status).toBe(200);
+      expect(r.headers['content-type']).toContain('text/csv');
+      const lines = r.text.replace(/^\ufeff/, '').trim().split('\r\n');
+      expect(lines[0]).toBe('Name,Department,Status');
+      expect(lines).toHaveLength(4);
+      expect(lines).toContain(`"'=HYPERLINK(""x"") Patel",Sales,active`.replace(' Patel', ` ${samLast}`));
+      expect(r.text).not.toMatch(/(^|,|")=HYPERLINK/m);
+      await pool.query(`update employees set preferred_name = null where tenant_id = $1 and first_name = 'Sam'`, [t.id]);
+      const m = await as('manager').get('/employees/export.csv?columns=name');
+      expect(m.text.replace(/^\ufeff/, '').trim().split('\r\n')).toHaveLength(3);
+      expect((await as('hr').get('/employees/export.csv?columns=salary')).status).toBe(422);
+      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'employee.directory_exported'`, [t.id]);
+      expect(audit.rows[0].n).toBe(2);
+    });
+  });
+
+  describe('hiring helpers', () => {
+    it('flags likely duplicates by email, phone or name', async () => {
+      const r = ok(await as('hr').post('/employees/duplicate-check').send({ firstName: 'asha', lastName: 'RAO' }));
+      expect(r.matches).toEqual([expect.objectContaining({ displayName: 'Asha Rao', reasons: ['Same name'] })]);
+      expect(ok(await as('hr').post('/employees/duplicate-check').send({ firstName: 'Nobody', lastName: 'Here' })).matches).toEqual([]);
+      expect((await as('sam').post('/employees/duplicate-check').send({ firstName: 'Asha', lastName: 'Rao' })).status).toBe(403);
+      expect(ok(await as('stranger').post('/employees/duplicate-check').send({ firstName: 'Asha', lastName: 'Rao' })).matches).toEqual([]);
+    });
+
+    it('saves, resumes and discards an unfinished hire, privately', async () => {
+      const d = ok(await as('hr').post('/employees/drafts').send({ step: 2, data: { firstName: 'Priya', lastName: 'Nair', probationMonths: 6, inviteToCrew: false } }), 201);
+      const u = ok(await as('hr').put(`/employees/drafts/${d.id}`).send({ step: 3, data: { firstName: 'Priya', lastName: 'Nair', departmentId: null } }));
+      expect(u.step).toBe(3);
+      expect((ok(await as('hr').get('/employees/drafts')) as unknown as { id: string }[]).map((x) => x.id)).toEqual([d.id]);
+      const hr2 = await addMember(pool, t, { roles: ['hr_admin'], name: 'Second HR' });
+      const tok = (await loginWithMfa(app, pool, hr2.email, t.slug)).accessToken;
+      expect(ok(await api(app, tok).get('/employees/drafts'))).toEqual([]);
+      expect((await api(app, tok).put(`/employees/drafts/${d.id}`).send({ step: 1, data: {} })).status).toBe(404);
+      expect((await as('hr').post('/employees/drafts').send({ step: 1, data: { nested: { a: 1 } } })).status).toBe(422);
+      expect((await as('hr').delete(`/employees/drafts/${d.id}`)).status).toBe(204);
+      expect(ok(await as('hr').get('/employees/drafts'))).toEqual([]);
+    });
+  });
 });
