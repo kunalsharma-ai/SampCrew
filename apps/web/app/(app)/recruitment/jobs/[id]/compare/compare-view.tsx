@@ -86,7 +86,7 @@ export function CompareView({ data, stages, canMove, path }: { data: Comparison;
                 <TH scope="row" className="text-left font-medium text-fg-muted">Source</TH>
                 {apps.map((a) => <TD key={a.id}>{SOURCE[a.source] ?? a.source}{a.locationText ? <span className="block text-xs text-fg-subtle">{a.locationText}</span> : null}</TD>)}
               </TR>
-              {scoreRow('Average score', avg, (v, i) => <div>{bar(v)}<span className="text-xs text-fg-subtle">{apps[i]!.scorecards} {apps[i]!.scorecards === 1 ? 'scorecard' : 'scorecards'}</span></div>)}
+              {scoreRow('Average score', avg, (v, i) => <div>{bar(v)}<span className="block text-xs text-fg-subtle">{apps[i]!.scorecards} {apps[i]!.scorecards === 1 ? 'scorecard' : 'scorecards'}</span></div>)}
               {data.criteria.map((c) => (
                 <ScoreRowFor key={c} label={c} apps={apps} render={(a) => bar(a.criteria[c] ? Number(a.criteria[c]!.average) : null, a.criteria[c]?.ratings)} scoreRow={scoreRow} />
               ))}
