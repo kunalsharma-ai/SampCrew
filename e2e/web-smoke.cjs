@@ -52,7 +52,7 @@ async function adminFlow() {
   await p.click('text=Change seats or cycle');
   await p.fill('dialog input[type=number]', '130');
   await p.click('text=Confirm change');
-  await p.waitForSelector('text=14 / 130', { timeout: 8000 });
+  await p.waitForSelector('text=15 / 130', { timeout: 8000 });
   console.log('billing seats 120 -> 130: OK');
   // downgrade blocked: Starter allows 1 entity, demo has 2
   await p.locator('text=Switch to this plan').first().click();

@@ -77,6 +77,7 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
       { email: 'attendance@demo.crew.local', name: 'Lakshmi Menon', title: 'Time Office Executive', dept: hr.id, loc: pune.id, entity: t.legalEntityId, manager: 'hr.admin@demo.crew.local', roles: ['attendance_admin'] },
       { email: 'uk.hr@demo.crew.local', name: 'Emma Clarke', title: 'HR Manager UK', dept: sales.id, loc: lon.id, entity: uk.id, roles: ['hr_manager'] },
       { email: 'uk.sales@demo.crew.local', name: 'Oliver Bennett', title: 'Account Executive', dept: sales.id, loc: lon.id, entity: uk.id, manager: 'uk.hr@demo.crew.local', roles: [] },
+      { email: 'hr.ops@demo.crew.local', name: 'Anjali Rao', title: 'HR Operations Manager', dept: hr.id, loc: blr.id, entity: t.legalEntityId, manager: 'hr.admin@demo.crew.local', roles: ['hr_admin'] },
       { email: 'auditor@demo.crew.local', name: 'Ishaan Verma', title: 'Internal Auditor', dept: finance.id, loc: blr.id, entity: t.legalEntityId, roles: ['auditor'] },
     ];
 
@@ -110,6 +111,7 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
     await seedPayroll(client, { tid, indiaId: t.legalEntityId, membershipByEmail });
     await seedTalent(client, { tid, assemblyId: assembly.id, manufacturingId: manufacturing.id, membershipByEmail });
     await seedHelpdesk(client, { tid, manufacturingId: manufacturing.id, membershipByEmail });
+    await seedAiAutomation(client, { tid, membershipByEmail });
 
     await client.query(
       `insert into audit_events (tenant_id, actor_type, actor_label, action, resource_type, resource_id, metadata)
@@ -473,7 +475,7 @@ async function seedPayroll(client: PoolClient, c: { tid: string; indiaId: string
   const ctc: Record<string, string> = {
     'owner@demo.crew.local': '4800000', 'hr.admin@demo.crew.local': '2400000', 'recruiter@demo.crew.local': '1200000', 'payroll@demo.crew.local': '1500000',
     'finance@demo.crew.local': '1800000', 'plant.head@demo.crew.local': '3000000', 'supervisor@demo.crew.local': '720000', 'operator1@demo.crew.local': '300000',
-    'operator2@demo.crew.local': '280000', 'qa.lead@demo.crew.local': '900000', 'attendance@demo.crew.local': '420000', 'auditor@demo.crew.local': '1400000',
+    'operator2@demo.crew.local': '280000', 'qa.lead@demo.crew.local': '900000', 'attendance@demo.crew.local': '420000', 'auditor@demo.crew.local': '1400000', 'hr.ops@demo.crew.local': '1600000',
     Ganesh: '216000', Rekha: '264000', Sameer: '240000',
   };
   const employees = (await client.query<{ id: string; work_email: string | null; first_name: string; date_of_joining: string }>(
@@ -726,4 +728,52 @@ async function seedHelpdesk(client: PoolClient, c: { tid: string; manufacturingI
     `insert into announcements (tenant_id, title, body, department_id, requires_ack, status, published_at, published_by_membership_id, created_by_membership_id) values ($1, $2, $3, $4, true, 'published', now() - interval '1 day', $5, $5)`,
     [tid, 'Safety shoes required on the shop floor', 'From Monday, safety shoes are required everywhere on the shop floor, including the canteen corridor. Please acknowledge that you have read this. (Demo data)', c.manufacturingId, m('plant.head@demo.crew.local')],
   );
+}
+
+/**
+ * Phase 8 demo data: AI features switched on for the workspace (they still do nothing until the installation
+ * sets an AI provider) and one tested, active workflow. Attrition scores are calculated by the daily HR job,
+ * which runs shortly after the API starts.
+ */
+async function seedAiAutomation(client: PoolClient, c: { tid: string; membershipByEmail: Map<string, string> }) {
+  const { tid } = c;
+  const hr = c.membershipByEmail.get('hr.admin@demo.crew.local')!;
+  await client.query(
+    `insert into ai_settings (tenant_id, features, prompt_log_days, updated_by_membership_id) values ($1, $2, 90, $3)`,
+    [tid, JSON.stringify({ assistant: true, helpdesk_draft: true, workflow_draft: true }), hr],
+  );
+  const definition = {
+    trigger: { event: 'leave.requested' },
+    steps: [
+      { id: 'condition_1', type: 'condition', field: 'leave.type', op: 'eq', value: 'Sick leave' },
+      { id: 'condition_2', type: 'condition', field: 'leave.days', op: 'gte', value: 3 },
+      { id: 'notify_1', type: 'notify', to: 'role', role: 'hr_admin', title: '{{employee.name}} asked for {{leave.days}} days of sick leave', body: 'Consider checking in with {{employee.name}} ({{employee.department}}) to see whether they need any support.', email: false },
+    ],
+  };
+  const w = (await client.query<{ id: string }>(
+    `insert into workflows (tenant_id, name, description, trigger_event, owner_membership_id) values ($1, $2, $3, 'leave.requested', $4) returning id`,
+    [tid, 'Check in after long sick leave', 'Lets HR know when someone asks for three or more days of sick leave. (Demo data)', hr],
+  )).rows[0]!;
+  const v = (await client.query<{ id: string }>(
+    `insert into workflow_versions (tenant_id, workflow_id, version, definition, created_by_membership_id, tested_at) values ($1, $2, 1, $3, $4, now()) returning id`,
+    [tid, w.id, JSON.stringify(definition), hr],
+  )).rows[0]!;
+  // The test run that let version 1 be activated.
+  const run = (await client.query<{ id: string }>(
+    `insert into workflow_runs (tenant_id, workflow_id, version_id, mode, context, status, step_index, outcome, started_by_membership_id, finished_at)
+     values ($1, $2, $3, 'test', $4, 'succeeded', 3, 'Reached the end', $5, now()) returning id`,
+    [tid, w.id, v.id, JSON.stringify({ 'employee.name': 'Sample Employee', 'employee.department': 'Assembly Line', 'leave.type': 'Sick leave', 'leave.days': 4 }), hr],
+  )).rows[0]!;
+  const trace = [
+    ['condition_1', 'condition', 'Met: leave.type is "Sick leave"'],
+    ['condition_2', 'condition', 'Met: leave.days is "4"'],
+    ['notify_1', 'notify', 'Would notify 2 people with the hr_admin role: "Sample Employee asked for 4 days of sick leave"'],
+  ];
+  for (const [i, [id, type, detail]] of trace.entries()) {
+    await client.query(
+      `insert into workflow_step_runs (tenant_id, run_id, step_index, step_id, type, status, detail) values ($1, $2, $3, $4, $5, $6, $7)`,
+      [tid, run.id, i, id, type, type === 'condition' ? 'succeeded' : 'simulated', detail],
+    );
+  }
+  await client.query(`update workflows set status = 'active', active_version_id = $2 where id = $1`, [w.id, v.id]);
 }

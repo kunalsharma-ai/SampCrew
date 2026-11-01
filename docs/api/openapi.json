@@ -20533,6 +20533,11 @@
                   "internal": {
                     "default": false,
                     "type": "boolean"
+                  },
+                  "aiInteractionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                   }
                 },
                 "required": [
@@ -21751,6 +21756,1828 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/status": {
+      "get": {
+        "tags": [
+          "Ai"
+        ],
+        "summary": "Whether AI is set up, and which AI features the signed-in person can use right now (with the reason when not)",
+        "description": "Requires permission `ai:use`.",
+        "operationId": "Ai_status",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant": {
+      "post": {
+        "tags": [
+          "Ai"
+        ],
+        "summary": "Ask the HR assistant. Answers come only from published help articles, with citations; with no matching article, no model is called.",
+        "description": "Requires permission `ai:use`.\n\nRequires plan feature `ai_copilot`.",
+        "operationId": "Ai_ask",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "question"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/helpdesk/cases/{id}/draft": {
+      "post": {
+        "tags": [
+          "Ai"
+        ],
+        "summary": "Draft a reply to a helpdesk case for the handler to edit and send. Not available for confidential cases; nothing is sent.",
+        "description": "Requires permission `helpdesk:manage`.\n\nRequires plan feature `ai_copilot`.",
+        "operationId": "Ai_draft",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/interactions/{id}/feedback": {
+      "post": {
+        "tags": [
+          "Ai"
+        ],
+        "summary": "Say whether an AI answer you received was helpful",
+        "description": "Requires permission `ai:use`.",
+        "operationId": "Ai_feedback",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "helpful": {
+                    "type": "boolean"
+                  },
+                  "comment": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "helpful"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/settings": {
+      "get": {
+        "tags": [
+          "Ai"
+        ],
+        "summary": "AI provider status, the workspace's AI feature switches, prompt retention and this month's credits",
+        "description": "Requires permission `ai:configure`.",
+        "operationId": "Ai_settings",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Ai"
+        ],
+        "summary": "Switch AI features on or off and set how long prompts are kept",
+        "description": "Requires permission `ai:configure`.",
+        "operationId": "Ai_updateSettings",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "features": {
+                    "type": "object",
+                    "properties": {
+                      "assistant": {
+                        "type": "boolean"
+                      },
+                      "helpdesk_draft": {
+                        "type": "boolean"
+                      },
+                      "workflow_draft": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "assistant",
+                      "helpdesk_draft",
+                      "workflow_draft"
+                    ]
+                  },
+                  "promptLogDays": {
+                    "default": 90,
+                    "type": "integer",
+                    "minimum": 7,
+                    "maximum": 730
+                  }
+                },
+                "required": [
+                  "features"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/usage": {
+      "get": {
+        "tags": [
+          "Ai"
+        ],
+        "summary": "AI calls, credits, tokens, response time and feedback this month, by feature",
+        "description": "Requires permission `ai:configure`.",
+        "operationId": "Ai_usage",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/interactions": {
+      "get": {
+        "tags": [
+          "Ai"
+        ],
+        "summary": "Log of AI calls (auditors)",
+        "description": "Requires permission `audit:read`.",
+        "operationId": "Ai_interactions",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "feature",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assistant",
+                "helpdesk_draft",
+                "workflow_draft"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "no_sources",
+                "refused",
+                "error",
+                "over_limit"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/interactions/{id}": {
+      "get": {
+        "tags": [
+          "Ai"
+        ],
+        "summary": "One AI call in full: what was sent after redaction, the answer, its sources and usage (auditors; the view is audited)",
+        "description": "Requires permission `audit:read`.",
+        "operationId": "Ai_interaction",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/catalogue": {
+      "get": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Triggers with their fields, step types, condition operators, roles and courses for the workflow editor",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_catalogue",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/workflows": {
+      "get": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Workflows with their status, versions and run counts",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_list",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Create a workflow (saved as version 1, inactive until tested and activated)",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_create",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 120
+                  },
+                  "description": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "definition": {
+                    "type": "object",
+                    "properties": {
+                      "trigger": {
+                        "type": "object",
+                        "properties": {
+                          "event": {
+                            "type": "string",
+                            "enum": [
+                              "employee.created",
+                              "employee.job_changed",
+                              "leave.requested",
+                              "leave.approved",
+                              "helpdesk.case_created"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "event"
+                        ]
+                      },
+                      "steps": {
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "condition"
+                                },
+                                "field": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 60
+                                },
+                                "op": {
+                                  "type": "string",
+                                  "enum": [
+                                    "eq",
+                                    "neq",
+                                    "gt",
+                                    "gte",
+                                    "lt",
+                                    "lte",
+                                    "contains",
+                                    "in"
+                                  ]
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 200
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "minItems": 1,
+                                      "maxItems": 30,
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "maxLength": 100
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "field",
+                                "op",
+                                "value"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "notify"
+                                },
+                                "to": {
+                                  "type": "string",
+                                  "enum": [
+                                    "employee",
+                                    "manager",
+                                    "role",
+                                    "member"
+                                  ]
+                                },
+                                "role": {
+                                  "type": "string",
+                                  "maxLength": 60
+                                },
+                                "membershipId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "title": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "body": {
+                                  "default": "",
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                "email": {
+                                  "default": false,
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "to",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "delay"
+                                },
+                                "amount": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 365
+                                },
+                                "unit": {
+                                  "type": "string",
+                                  "enum": [
+                                    "minutes",
+                                    "hours",
+                                    "days"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "amount",
+                                "unit"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "approval"
+                                },
+                                "approver": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manager",
+                                    "role"
+                                  ]
+                                },
+                                "role": {
+                                  "type": "string",
+                                  "maxLength": 60
+                                },
+                                "summary": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 300
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "approver",
+                                "summary"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "assign_course"
+                                },
+                                "courseId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "dueInDays": {
+                                  "default": 30,
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 365
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "courseId"
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "trigger",
+                      "steps"
+                    ]
+                  },
+                  "aiInteractionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "name",
+                  "definition"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/workflows/{id}": {
+      "get": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "A workflow with its latest version, version history and whether it can be activated",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_get",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Save a new version. An active workflow keeps running its active version until the new one is tested and activated.",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_update",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 120
+                  },
+                  "description": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "definition": {
+                    "type": "object",
+                    "properties": {
+                      "trigger": {
+                        "type": "object",
+                        "properties": {
+                          "event": {
+                            "type": "string",
+                            "enum": [
+                              "employee.created",
+                              "employee.job_changed",
+                              "leave.requested",
+                              "leave.approved",
+                              "helpdesk.case_created"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "event"
+                        ]
+                      },
+                      "steps": {
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "condition"
+                                },
+                                "field": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 60
+                                },
+                                "op": {
+                                  "type": "string",
+                                  "enum": [
+                                    "eq",
+                                    "neq",
+                                    "gt",
+                                    "gte",
+                                    "lt",
+                                    "lte",
+                                    "contains",
+                                    "in"
+                                  ]
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 200
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "minItems": 1,
+                                      "maxItems": 30,
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "maxLength": 100
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "field",
+                                "op",
+                                "value"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "notify"
+                                },
+                                "to": {
+                                  "type": "string",
+                                  "enum": [
+                                    "employee",
+                                    "manager",
+                                    "role",
+                                    "member"
+                                  ]
+                                },
+                                "role": {
+                                  "type": "string",
+                                  "maxLength": 60
+                                },
+                                "membershipId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "title": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "body": {
+                                  "default": "",
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                "email": {
+                                  "default": false,
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "to",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "delay"
+                                },
+                                "amount": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 365
+                                },
+                                "unit": {
+                                  "type": "string",
+                                  "enum": [
+                                    "minutes",
+                                    "hours",
+                                    "days"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "amount",
+                                "unit"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "approval"
+                                },
+                                "approver": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manager",
+                                    "role"
+                                  ]
+                                },
+                                "role": {
+                                  "type": "string",
+                                  "maxLength": 60
+                                },
+                                "summary": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 300
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "approver",
+                                "summary"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "assign_course"
+                                },
+                                "courseId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "dueInDays": {
+                                  "default": 30,
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 365
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "courseId"
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "trigger",
+                      "steps"
+                    ]
+                  },
+                  "aiInteractionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "name",
+                  "definition"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/workflows/{id}/test": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Test-run the latest version with sample values. Notifications, approvals and assignments are described, not done; delays are skipped.",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_test",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "sample": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "maxLength": 60
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "approvals": {
+                    "default": "approve",
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/workflows/{id}/activate": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Activate the latest version (it must have passed a test run). The workflow then acts with your permissions.",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_activate",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/workflows/{id}/pause": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Pause a workflow. Runs under way stop at their next step.",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_pause",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/workflows/{id}/archive": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Archive a workflow. Its runs and versions are kept.",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_archive",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/runs": {
+      "get": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Workflow runs, newest first; filter by workflow, status (status=failed is the failed-runs view) or mode",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_runs",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflowId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "running",
+                "waiting",
+                "succeeded",
+                "stopped",
+                "failed",
+                "cancelled"
+              ]
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "live",
+                "test"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/runs/{id}": {
+      "get": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "A run with its plan and the step-by-step trace",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_run",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/runs/{id}/retry": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Retry a failed run from the step that failed",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_retry",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/runs/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Cancel a run that is under way (and its pending approval)",
+        "description": "Requires plan feature `automation`.",
+        "operationId": "Automation_cancel",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/drafts": {
+      "post": {
+        "tags": [
+          "Automation"
+        ],
+        "summary": "Draft a workflow from a plain-English description with AI. Nothing is saved; the result is checked and must still be tested.",
+        "description": "Requires plan feature `ai_copilot`.",
+        "operationId": "Automation_draft",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 1500
+                  }
+                },
+                "required": [
+                  "description"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/insights/attrition": {
+      "get": {
+        "tags": [
+          "Insights"
+        ],
+        "summary": "Latest attrition risk score per person in scope, with the factors behind it. Advisory; viewing is audited.",
+        "description": "Requires permission `insights:attrition`.\n\nRequires plan feature `workforce_analytics`.",
+        "operationId": "Insights_attrition",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "band",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/insights/attrition/recalculate": {
+      "post": {
+        "tags": [
+          "Insights"
+        ],
+        "summary": "Recalculate today's attrition scores (they are also recalculated daily)",
+        "description": "Requires permission `insights:attrition`.\n\nRequires plan feature `workforce_analytics`.",
+        "operationId": "Insights_recalculate",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/insights/attrition/{employeeId}": {
+      "get": {
+        "tags": [
+          "Insights"
+        ],
+        "summary": "One person's score history, inputs and HR reviews",
+        "description": "Requires permission `insights:attrition`.\n\nRequires plan feature `workforce_analytics`.",
+        "operationId": "Insights_attritionFor",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "employeeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/insights/attrition/{employeeId}/reviews": {
+      "post": {
+        "tags": [
+          "Insights"
+        ],
+        "summary": "Record what HR decided about the latest score (action planned, no action, not accurate)",
+        "description": "Requires permission `insights:attrition`.\n\nRequires plan feature `workforce_analytics`.",
+        "operationId": "Insights_review",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "employeeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "action_planned",
+                      "no_action",
+                      "not_accurate"
+                    ]
+                  },
+                  "note": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "outcome"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/insights/payroll-runs/{id}": {
+      "get": {
+        "tags": [
+          "Insights"
+        ],
+        "summary": "Checks before approving a payroll run: each person's pay against their own recent finalised months, and rule checks. Advisory.",
+        "description": "Requires permission `payroll:read`.\n\nRequires plan feature `payroll`.",
+        "operationId": "Insights_payrollChecks",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
