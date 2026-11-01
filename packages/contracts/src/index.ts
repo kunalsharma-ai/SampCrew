@@ -44,3 +44,4 @@ export type { AttritionInput, AttritionResult, RiskFactor, PayAnomaly } from './
 export * from './integrations';
 export * from './enterprise';
 export * from './experience';
+export * from './staffing';

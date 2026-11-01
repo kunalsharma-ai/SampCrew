@@ -21,6 +21,8 @@ import { MembersService } from './modules/members/members.service';
 import { DashboardController, DashboardService } from './modules/experience/dashboard.controller';
 import { PreferencesController } from './modules/experience/preferences.controller';
 import { ViewsController } from './modules/experience/views.controller';
+import { BidsController } from './modules/bids/bids.controller';
+import { BidsService } from './modules/bids/bids.service';
 import { NotificationsController } from './modules/notifications/notifications.controller';
 import { OnboardingController } from './modules/onboarding/onboarding.controller';
 import { OnboardingService } from './modules/onboarding/onboarding.service';
@@ -124,6 +126,7 @@ export const CONTROLLERS = [
   NotificationsController,
   PreferencesController,
   ViewsController,
+  BidsController,
   DashboardController,
   AttendanceController,
   KioskController,
@@ -184,6 +187,7 @@ export const CONTROLLERS = [
     StorageService,
     ApprovalsService,
     DashboardService,
+    BidsService,
     OnboardingService,
     LeaveService,
     EmployeesService,

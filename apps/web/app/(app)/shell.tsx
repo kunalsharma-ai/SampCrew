@@ -11,6 +11,7 @@ import {
   Activity, Bot, Plug, Sparkles, TrendingDown, Workflow,
   LockKeyhole, UserX,
   Palette, PanelLeftClose, PanelLeftOpen, Plus, Star, UserPlus, Focus, History, ArrowRight, CornerDownLeft,
+  Handshake, Building, FileStack, Orbit,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -32,6 +33,7 @@ export const ICONS: Record<string, LucideIcon> = {
   headset: Headset, megaphone: Megaphone,
   activity: Activity, bot: Bot, plug: Plug, sparkles: Sparkles, 'trending-down': TrendingDown, workflow: Workflow,
   'lock-keyhole': LockKeyhole, 'user-x': UserX, palette: Palette, 'user-plus': UserPlus,
+  handshake: Handshake, 'building-office': Building, 'file-stack': FileStack, orbit: Orbit,
 };
 
 export interface Notifications { unread: number; items: Notification[] }

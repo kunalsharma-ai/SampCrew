@@ -58,6 +58,14 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    label: 'Staffing & bids',
+    items: [
+      { href: '/staffing/bids', label: 'Staffing bids', icon: 'handshake', permission: 'bids:read', feature: 'recruitment' },
+      { href: '/staffing/clients', label: 'Clients', icon: 'building-office', permission: 'bids:read', feature: 'recruitment' },
+      { href: '/staffing/templates', label: 'Proposal templates', icon: 'file-stack', permission: 'bids:manage', feature: 'recruitment' },
+    ],
+  },
+  {
     label: 'Attendance & time',
     items: [
       { href: '/attendance/team', label: 'Team attendance', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },
@@ -142,6 +150,7 @@ export function quickActions(me: Me): QuickAction[] {
   if (has('employees:create')) out.push({ key: 'employee', label: 'Create employee', href: '/employees?create=employee', icon: 'user-plus', keywords: 'add hire new joiner' });
   if (has('users:invite')) out.push({ key: 'invite', label: 'Invite a colleague', href: '/people?create=invite', icon: 'users', keywords: 'login access' });
   if (has('requisitions:create', 'recruitment')) out.push({ key: 'requisition', label: 'Create job requisition', href: '/recruitment?create=requisition', icon: 'briefcase', keywords: 'job opening hiring position' });
+  if (has('bids:manage', 'recruitment')) out.push({ key: 'bid', label: 'Create staffing bid', href: '/staffing/bids/new?mode=quick', icon: 'handshake', keywords: 'proposal quote client staffing rate margin' });
   if (has('leave:request')) out.push({ key: 'leave', label: 'Request time off', href: '/leave?create=leave', icon: 'calendar', keywords: 'leave holiday vacation apply' });
   if (has('performance:read', 'talent')) out.push({ key: 'goal', label: 'Set a goal', href: '/goals?create=goal', icon: 'target', keywords: 'okr objective' });
   if (has('expenses:submit', 'expenses')) out.push({ key: 'expense', label: 'Claim an expense', href: '/expenses', icon: 'receipt', keywords: 'reimbursement receipt' });

@@ -2,6 +2,10 @@ import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleD
 import { createTransport, type Transporter } from 'nodemailer';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { DatabaseService } from '../database/database.service';
+import { StorageService } from '../storage/storage.service';
+
+/** A stored file sent with an email (for example a proposal PDF). */
+export interface EmailAttachment { filename: string; contentType: string; storageKey: string }
 
 const MAX_ATTEMPTS = 5;
 
@@ -19,6 +23,7 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
   constructor(
     private readonly db: DatabaseService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly storage: StorageService,
   ) {
     if (config.SMTP_URL) this.transport = createTransport(config.SMTP_URL);
   }
@@ -38,6 +43,13 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
     this.transport?.close();
   }
 
+  private async read(key: string): Promise<Buffer> {
+    const { stream } = await this.storage.open(key);
+    const chunks: Buffer[] = [];
+    for await (const c of stream) chunks.push(c as Buffer);
+    return Buffer.concat(chunks);
+  }
+
   /** Sends one batch of due messages. Exposed for tests and for a dedicated worker process. */
   async sendBatch(batch = 25): Promise<{ sent: number; failed: number; skipped: number }> {
     const out = { sent: 0, failed: 0, skipped: 0 };
@@ -45,8 +57,8 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
     this.running = true;
     try {
       await this.db.platform(async (tx) => {
-        const { rows } = await tx.query<{ id: string; to_email: string; subject: string; text_body: string; attempts: number }>(
-          `select id, to_email::text, subject, text_body, attempts from email_messages
+        const { rows } = await tx.query<{ id: string; to_email: string; subject: string; text_body: string; attempts: number; attachments: EmailAttachment[] }>(
+          `select id, to_email::text, subject, text_body, attempts, attachments from email_messages
             where status = 'queued' and next_attempt_at <= now() order by created_at limit $1 for update skip locked`,
           [batch],
         );
@@ -57,7 +69,8 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
             continue;
           }
           try {
-            await this.transport.sendMail({ from: this.config.MAIL_FROM, to: m.to_email, subject: m.subject, text: m.text_body });
+            const attachments = await Promise.all((m.attachments ?? []).map(async (a) => ({ filename: a.filename, contentType: a.contentType, content: await this.read(a.storageKey) })));
+            await this.transport.sendMail({ from: this.config.MAIL_FROM, to: m.to_email, subject: m.subject, text: m.text_body, attachments });
             await tx.query(`update email_messages set status = 'sent', sent_at = now(), attempts = attempts + 1, last_error = null where id = $1`, [m.id]);
             out.sent++;
           } catch (err) {

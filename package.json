@@ -34,6 +34,7 @@
     "e2e:enterprise": "node e2e/enterprise-flow.cjs",
     "e2e:experience": "node e2e/experience-flow.cjs",
     "e2e:directory": "node e2e/directory-flow.cjs",
+    "e2e:bids": "node e2e/bids-flow.cjs",
     "load-test": "node e2e/load.cjs"
   },
   "devDependencies": {
