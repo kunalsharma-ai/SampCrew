@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
 import type { Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, OnboardingTask, Page } from '@/lib/types';
 import { EmployeeStatus } from '../status';
+import { ActivityTab, AtAGlance, type Summary360 } from './at-a-glance';
 import { DocumentsTab, JobTab, LeaveTab, OnboardingTab, OverviewTab } from './tabs';
 
 export const metadata: Metadata = { title: 'Employee' };
@@ -15,6 +16,7 @@ const TABS = [
   { key: 'leave', label: 'Leave' },
   { key: 'documents', label: 'Documents' },
   { key: 'onboarding', label: 'Onboarding' },
+  { key: 'activity', label: 'Activity' },
 ] as const;
 
 export default async function EmployeePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
@@ -32,7 +34,10 @@ export default async function EmployeePage({ params, searchParams }: { params: P
 
   let content: React.ReactNode;
   if (tab === 'overview') {
-    content = <OverviewTab e={e} />;
+    const summary = await loadOptional<Summary360>(`/employees/${id}/360`);
+    content = <>{summary && <AtAGlance s={summary} />}<OverviewTab e={e} /></>;
+  } else if (tab === 'activity') {
+    content = <ActivityTab s={await load<Summary360>(`/employees/${id}/360`)} />;
   } else if (tab === 'job') {
     const [history, reports, departments, entities, locations, designations, managers] = await Promise.all([
       load<{ records: JobRecord[]; events: LifecycleEvent[] }>(`/employees/${id}/history`),

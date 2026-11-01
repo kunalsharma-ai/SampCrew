@@ -4681,6 +4681,46 @@
         }
       }
     },
+    "/api/v1/employees/{id}/360": {
+      "get": {
+        "tags": [
+          "Employees"
+        ],
+        "summary": "Employee 360: attendance, leave, pay, performance, learning, recognition, requests and documents at a glance, each only when your access covers it, with an activity timeline",
+        "description": "Requires permission `employees:read`.",
+        "operationId": "Employees_summary360",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/employees/{id}/history": {
       "get": {
         "tags": [

@@ -366,6 +366,172 @@ export class EmployeesService {
     return { employee: await this.get(row.id) };
   }
 
+  /**
+   * The Employee 360 summary: one figure or short list per area (attendance, leave, pay, performance, learning,
+   * recognition, requests, documents) and a merged activity timeline. Each area is included only when the plan has
+   * the module and the caller's own permissions cover this employee for it, exactly as the area's own pages check;
+   * an area left out is null, so the page can say it is hidden rather than empty.
+   */
+  async summary360(id: string) {
+    return this.db.tenant(async (tx) => {
+      const e = await this.load(tx, id);
+      await this.authz.require('employees:read', employeeAttrs(e), tx);
+      const s = await this.authz.subject(tx);
+      const a = employeeAttrs(e);
+      const covers = (perm: string, broadOnly = false) => grantsFor(s, perm).some((g) => (!broadOnly || g.scope !== 'own') && grantCovers(s, g, a));
+      const isSelf = !!s.employeeId && s.employeeId === e.id;
+      const f = (await this.entitlements.current(tx)).features;
+      const today = new Date().toISOString().slice(0, 10);
+      const timeline: { at: string; kind: string; title: string; detail: string | null; link: string | null }[] = [];
+
+      const tenure = await one<{ joined: string | null; days: number | null }>(
+        tx, `select to_char(min(effective_from), 'YYYY-MM-DD') as joined, (current_date - min(effective_from))::int as days from employment_records where employee_id = $1`, [id],
+      );
+
+      let attendance = null;
+      if (f.has('attendance_basic') && covers('attendance:read')) {
+        const r = (await one<Record<string, number>>(
+          tx,
+          `select count(*) filter (where status in ('present', 'half_day'))::int as present, count(*) filter (where status = 'absent')::int as absent,
+                  count(*) filter (where status = 'missing_punch')::int as "missingPunch", count(*) filter (where status in ('on_leave', 'half_day_leave'))::int as "onLeave",
+                  count(*) filter (where late_minutes > 0)::int as late, count(*) filter (where day_type = 'working' and status not in ('in_progress', 'not_joined'))::int as "workingDays",
+                  coalesce(round(avg(worked_minutes) filter (where status in ('present', 'half_day'))), 0)::int as "avgWorkedMinutes",
+                  coalesce(sum(approved_overtime_minutes), 0)::int as "overtimeMinutes"
+             from attendance_days where employee_id = $1 and work_date between current_date - 29 and current_date`,
+          [id],
+        ))!;
+        attendance = { from: new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10), to: today, ...r };
+      }
+
+      let leave = null;
+      if (f.has('leave') && covers('leave:read')) {
+        const reqs = await many<{ id: string; type: string; startDate: string; endDate: string; days: string; status: string; createdAt: string }>(
+          tx,
+          `select r.id, t.name as type, to_char(r.start_date, 'YYYY-MM-DD') as "startDate", to_char(r.end_date, 'YYYY-MM-DD') as "endDate", r.days::text, r.status, r.created_at as "createdAt"
+             from leave_requests r join leave_types t on t.id = r.leave_type_id where r.employee_id = $1 order by r.created_at desc limit 20`,
+          [id],
+        );
+        const taken = (await one<{ d: string }>(tx, `select coalesce(sum(days), 0)::text as d from leave_requests where employee_id = $1 and status = 'approved' and date_part('year', start_date) = date_part('year', current_date)`, [id]))!.d;
+        leave = {
+          pending: reqs.filter((r) => r.status === 'pending').length,
+          takenThisYear: taken,
+          next: reqs.filter((r) => r.status === 'approved' && r.startDate >= today).sort((x, y) => x.startDate.localeCompare(y.startDate))[0] ?? null,
+        };
+        for (const r of reqs.slice(0, 8)) timeline.push({ at: r.createdAt, kind: 'leave', title: `${r.type}: ${r.days} day${r.days === '1.00' ? '' : 's'} from ${r.startDate}`, detail: r.status, link: null });
+      }
+
+      // Pay is sensitive: only people whose payroll access covers this employee see salary; the employee sees their own payslips.
+      let pay = null;
+      if (f.has('payroll') && (covers('payroll:read') || (isSelf && covers('payslips:read')))) {
+        const salary = covers('payroll:read')
+          ? await one<{ annualCtc: string; currency: string; effectiveFrom: string }>(
+            tx, `select annual_ctc::text as "annualCtc", currency, to_char(effective_from, 'YYYY-MM-DD') as "effectiveFrom" from employee_salaries where employee_id = $1 and effective_from <= current_date order by effective_from desc limit 1`, [id],
+          )
+          : null;
+        const payslip = await one<{ periodEnd: string; net: string; currency: string; payDate: string }>(
+          tx,
+          `select to_char(r.period_end, 'YYYY-MM-DD') as "periodEnd", i.net::text as net, r.currency, to_char(r.pay_date, 'YYYY-MM-DD') as "payDate"
+             from payroll_items i join payroll_runs r on r.id = i.run_id where i.employee_id = $1 and r.status = 'finalised' order by r.period_end desc limit 1`,
+          [id],
+        );
+        pay = { salary: salary ?? null, lastPayslip: payslip ?? null };
+      }
+
+      let performance = null;
+      if (f.has('talent') && covers('performance:read')) {
+        const goals = await many<{ title: string; status: string; progress: string; confidence: string | null; periodEnd: string; updatedAt: string }>(
+          tx,
+          `select title, status, progress::text, confidence, to_char(period_end, 'YYYY-MM-DD') as "periodEnd", updated_at as "updatedAt" from goals
+            where employee_id = $1 and status <> 'cancelled' order by (status = 'active') desc, period_end desc limit 20`,
+          [id],
+        );
+        // Ratings: managers and HR see the latest finalised rating; the employee only once it is released to them.
+        const broad = covers('performance:read', true) && !isSelf;
+        const review = await one<{ cycle: string; rating: number | null; releasedAt: string | null }>(
+          tx,
+          `select c.name as cycle, r.final_rating as rating, r.released_at as "releasedAt" from reviews r join review_cycles c on c.id = r.cycle_id
+            where r.employee_id = $1 and not r.excluded and r.final_rating is not null ${broad ? '' : 'and r.released_at is not null'} order by c.created_at desc limit 1`,
+          [id],
+        );
+        const active = goals.filter((g) => g.status === 'active');
+        performance = {
+          activeGoals: active.length,
+          completedGoals: goals.filter((g) => g.status === 'completed').length,
+          atRisk: active.filter((g) => g.confidence === 'at_risk' || g.confidence === 'off_track').length,
+          averageProgress: active.length ? (active.reduce((t, g) => t + Number(g.progress), 0) / active.length).toFixed(0) : null,
+          goals: active.slice(0, 5).map(({ updatedAt: _u, ...g }) => g),
+          latestReview: review ?? null,
+        };
+        for (const g of goals.slice(0, 5)) timeline.push({ at: g.updatedAt, kind: 'goal', title: `Goal: ${g.title}`, detail: g.status === 'completed' ? 'completed' : `${Number(g.progress).toFixed(0)}%`, link: null });
+      }
+
+      let learning = null;
+      if (f.has('talent') && covers('learning:read')) {
+        const r = (await one<Record<string, number>>(
+          tx,
+          `select count(*) filter (where status in ('assigned', 'in_progress'))::int as open, count(*) filter (where status = 'completed')::int as completed,
+                  count(*) filter (where status in ('assigned', 'in_progress') and due_on < current_date)::int as overdue,
+                  count(*) filter (where status = 'completed' and expires_on < current_date)::int as expired
+             from course_assignments where employee_id = $1`,
+          [id],
+        ))!;
+        const done = await many<{ title: string; completedOn: string }>(
+          tx, `select c.title, to_char(a.completed_on, 'YYYY-MM-DD') as "completedOn" from course_assignments a join courses c on c.id = a.course_id where a.employee_id = $1 and a.status = 'completed' order by a.completed_on desc limit 5`, [id],
+        );
+        learning = { ...r, recent: done };
+        for (const d of done) timeline.push({ at: `${d.completedOn}T12:00:00Z`, kind: 'learning', title: `Completed ${d.title}`, detail: null, link: null });
+      }
+
+      // Recognition is posted to the whole workspace, so anyone who may see the employee may see what they received.
+      let recognition = null;
+      if (f.has('talent')) {
+        const recent = await many<{ from: string; value: string | null; message: string; createdAt: string }>(
+          tx,
+          `select coalesce(f.preferred_name, f.first_name) || ' ' || f.last_name as "from", v.name as value, r.message, r.created_at as "createdAt"
+             from recognitions r join employees f on f.id = r.from_employee_id left join company_values v on v.id = r.value_id
+            where r.to_employee_id = $1 and r.hidden_at is null order by r.created_at desc limit 5`,
+          [id],
+        );
+        const n = (await one<{ n: number }>(tx, `select count(*)::int as n from recognitions where to_employee_id = $1 and hidden_at is null and created_at > now() - interval '90 days'`, [id]))!.n;
+        recognition = { last90Days: n, recent };
+        for (const r of recent) timeline.push({ at: r.createdAt, kind: 'recognition', title: `Recognised by ${r.from}${r.value ? ` for ${r.value}` : ''}`, detail: r.message, link: null });
+      }
+
+      // Requests: helpdesk handlers see non-confidential cases; the employee sees all of their own.
+      let requests = null;
+      if (isSelf || covers('helpdesk:manage')) {
+        const cases = await many<{ id: string; number: number; subject: string; status: string; createdAt: string }>(
+          tx,
+          `select id, number, subject, status, created_at as "createdAt" from helpdesk_cases where employee_id = $1 ${isSelf ? '' : 'and not confidential'} order by created_at desc limit 10`,
+          [id],
+        );
+        requests = { open: cases.filter((c) => !['resolved', 'closed'].includes(c.status)).length, recent: cases.slice(0, 5) };
+        for (const c of cases.slice(0, 5)) timeline.push({ at: c.createdAt, kind: 'request', title: `Request #${c.number}: ${c.subject}`, detail: c.status.replace(/_/g, ' '), link: `/helpdesk/${c.id}` });
+      }
+
+      let documents = null;
+      if (f.has('documents') && covers('documents:read')) {
+        const docs = await many<{ title: string; category: string; createdAt: string }>(
+          tx, `select title, category, created_at as "createdAt" from employee_documents where employee_id = $1 and archived_at is null order by created_at desc limit 20`, [id],
+        );
+        documents = { count: docs.length, categories: [...new Set(docs.map((d) => d.category))] };
+        for (const d of docs.slice(0, 5)) timeline.push({ at: d.createdAt, kind: 'document', title: `Document added: ${d.title}`, detail: d.category.replace(/_/g, ' '), link: null });
+      }
+
+      const events = await many<{ kind: string; effectiveOn: string; createdAt: string; details: Record<string, unknown> }>(
+        tx, `select kind, to_char(effective_on, 'YYYY-MM-DD') as "effectiveOn", created_at as "createdAt", details from lifecycle_events where employee_id = $1 order by created_at desc limit 10`, [id],
+      );
+      for (const ev of events) timeline.push({ at: `${ev.effectiveOn}T09:00:00Z`, kind: 'job', title: ev.kind.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()), detail: `effective ${ev.effectiveOn}`, link: null });
+
+      timeline.sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime());
+      return {
+        employeeId: id, isSelf, joinedOn: tenure?.joined ?? null, tenureDays: tenure?.days ?? null,
+        attendance, leave, pay, performance, learning, recognition, requests, documents,
+        timeline: timeline.slice(0, 30),
+      };
+    });
+  }
+
   /** Job history and lifecycle events, newest first. */
   async history(id: string) {
     return this.db.tenant(async (tx) => {

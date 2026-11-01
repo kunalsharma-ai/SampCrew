@@ -144,6 +144,13 @@ export class EmployeesController {
     return this.employees.update(id, body);
   }
 
+  @Get(':id/360')
+  @RequirePermission('employees:read')
+  @Doc({ summary: 'Employee 360: attendance, leave, pay, performance, learning, recognition, requests and documents at a glance, each only when your access covers it, with an activity timeline' })
+  summary360(@Param('id', UuidPipe) id: string) {
+    return this.employees.summary360(id);
+  }
+
   @Get(':id/history')
   @RequirePermission('employees:read')
   @Doc({ summary: 'Effective-dated job history and lifecycle events' })

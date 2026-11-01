@@ -9,6 +9,8 @@
  * 4. They start a hire, get a duplicate warning for an existing person, correct the name, save the hire as a draft
  *    and close it. The draft survives a reload, resumes at the right step and is completed with a document.
  * 5. The new profile has the document; the draft is gone.
+ * 6. Employee 360: the at-a-glance strip on a profile shows only the areas HR may see (no pay for an HR admin), and
+ *    the Activity tab lists the person's transfer.
  */
 const fs = require('node:fs');
 const os = require('node:os');
@@ -146,6 +148,23 @@ let current;
     await hr.getByRole('table', { name: 'Employees' }).waitFor();
     expect((await drafts.count()) === 0, 'the draft should be removed once the hire is complete');
     ok('resumed the draft, attached an offer letter and completed the hire; the document is on the profile');
+
+    // 6. Employee 360: HR opens Rekha Jadhav. The figures come from her records; pay is not shown to HR admins, who
+    //    have no payroll access; the Activity tab has her transfer.
+    await hr.goto(BASE + '/employees?view=all');
+    await hr.getByRole('link', { name: 'Rekha Jadhav' }).first().click();
+    await hr.waitForURL(/\/employees\/[0-9a-f-]{36}$/);
+    const glance = hr.getByRole('region', { name: 'At a glance' }).or(hr.locator('section[aria-label="At a glance"]'));
+    await glance.waitFor();
+    for (const label of ['Tenure', 'Attendance, 30 days', 'Leave this year', 'Goals', 'Documents']) await glance.getByLabel(label, { exact: true }).waitFor();
+    expect(await glance.getByLabel('Pay', { exact: true }).count() === 0, 'pay shown to an HR admin without payroll access');
+    await glance.getByText(/Not shown, because your access or the plan does not cover them: .*Pay/).waitFor();
+    expect(/Since 1 Jun 2023/.test(await glance.getByLabel('Tenure', { exact: true }).innerText()), 'tenure not from the hire record');
+    await hr.getByRole('link', { name: 'Activity' }).click();
+    const timeline = hr.getByRole('list', { name: 'Activity timeline' });
+    await timeline.getByText('Transferred').waitFor();
+    await timeline.getByText('effective 2024-04-01').waitFor();
+    ok('Employee 360: the at-a-glance strip shows her areas, hides pay from HR, and the activity timeline has her transfer');
 
     if (errs.length) throw new Error('browser errors:\n' + errs.join('\n'));
     console.log('directory flow: all checks passed');
