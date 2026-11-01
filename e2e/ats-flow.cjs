@@ -7,6 +7,8 @@
  * 2. They tick two candidates and compare them: stage, days in process, average and per-criterion scores for the
  *    job's scorecard, recommendations and offer, one column per candidate.
  * 3. From the comparison they move a candidate on, and the board shows it.
+ * 4. Bulk actions: they email everyone in Interview at once ({firstName} filled in), move two candidates to Offer
+ *    together, and reject one with a neutral email; the board and the candidate's history agree after a reload.
  */
 const { chromium } = require('playwright');
 
@@ -55,10 +57,11 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     ok('dragged Sneha Kulkarni to Screening; saved after a reload');
 
     // 2. Compare.
-    await card('Ananya Joshi').getByRole('checkbox', { name: 'Compare Ananya Joshi' }).check();
-    const bar = p.getByRole('region', { name: 'Compare candidates' });
-    await bar.getByText('1 selected, pick at least one more').waitFor();
-    await card('Rahul Verma').getByRole('checkbox', { name: 'Compare Rahul Verma' }).check();
+    await card('Ananya Joshi').getByRole('checkbox', { name: 'Select Ananya Joshi' }).check();
+    const bar = p.getByRole('region', { name: 'Selected candidates' });
+    await bar.getByText('1 selected').waitFor();
+    expect(await bar.getByRole('button', { name: 'Compare' }).isDisabled(), 'compare offered for one candidate');
+    await card('Rahul Verma').getByRole('checkbox', { name: 'Select Rahul Verma' }).check();
     await bar.getByRole('link', { name: 'Compare 2' }).click();
     await p.waitForURL(/\/compare\?applications=/);
     const table = p.getByRole('table', { name: /Candidates compared for/ });
@@ -78,6 +81,49 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await p.goto(jobUrl);
     await column('Interview').getByRole('link', { name: 'Rahul Verma' }).waitFor();
     ok('moved Rahul Verma to Interview from the comparison; the board agrees');
+
+    // 4. Bulk actions: email everyone in Interview, move two on together, reject one with a candidate email.
+    await column('Interview').getByRole('checkbox', { name: 'Select everyone in Interview' }).check();
+    await bar.getByText('2 selected').waitFor();
+    await bar.getByRole('button', { name: 'Email 2' }).click();
+    let d = p.getByRole('dialog');
+    expect((await d.getByLabel(/^Subject/).inputValue()) === 'Your application for {jobTitle}', 'subject not prefilled');
+    await d.getByLabel(/^Message/).fill('Dear {firstName},\n\nCould you share your availability for a final round next week?');
+    await d.getByRole('button', { name: 'Send emails' }).click();
+    await p.getByText('Emailed 2 candidates.').waitFor();
+    expect(await bar.count() === 0, 'selection not cleared after the bulk email');
+    ok('emailed both candidates in Interview at once');
+
+    await card('Sneha Kulkarni').getByRole('checkbox', { name: 'Select Sneha Kulkarni' }).check();
+    await card('Rahul Verma').getByRole('checkbox', { name: 'Select Rahul Verma' }).check();
+    const moveTo = bar.getByRole('combobox', { name: 'Move selected to' });
+    expect(!(await moveTo.locator('option').allInnerTexts()).includes('Hired'), 'bulk move offers Hired');
+    await moveTo.selectOption({ label: 'Offer' });
+    await p.getByText('Moved 2 candidates.').waitFor();
+    await p.reload();
+    for (const n of ['Sneha Kulkarni', 'Rahul Verma']) await column('Offer').getByRole('link', { name: n }).waitFor();
+    ok('moved Sneha Kulkarni and Rahul Verma to Offer together; saved after a reload');
+
+    await card('Sneha Kulkarni').getByRole('checkbox', { name: 'Select Sneha Kulkarni' }).check();
+    await bar.getByRole('button', { name: 'Reject 1' }).click();
+    d = p.getByRole('dialog');
+    await d.getByLabel(/^Reason/).selectOption({ label: 'Position closed' });
+    await d.getByLabel(/^Tell the candidates/).selectOption({ value: 'true' });
+    await d.getByRole('button', { name: 'Reject' }).click();
+    await p.getByText('Rejected 1 candidate.').waitFor();
+    await p.reload();
+    expect(await card('Sneha Kulkarni').count() === 0, 'rejected candidate still on the board');
+    await p.goto(jobUrl + '?show=rejected');
+    await card('Sneha Kulkarni').getByText('Rejected').waitFor();
+    await card('Sneha Kulkarni').getByRole('link', { name: 'Sneha Kulkarni' }).click();
+    await p.waitForURL(/\/recruitment\/candidates\//);
+    await p.locator('li', { hasText: 'Rejected' }).first().waitFor();
+    await p.locator('li', { hasText: 'Email queued' }).filter({ hasText: 'rejected' }).first().waitFor();
+    await p.goto(jobUrl);
+    await card('Rahul Verma').getByRole('link', { name: 'Rahul Verma' }).click();
+    await p.waitForURL(/\/recruitment\/candidates\//);
+    await p.locator('li', { hasText: 'Email queued' }).filter({ hasText: '“Your application for Quality Engineer”' }).first().waitFor();
+    ok('rejected Sneha Kulkarni with a neutral email; the histories show the rejection and the bulk email');
 
     const real = errs.filter((e) => !/favicon|DevTools/.test(e));
     expect(!real.length, `browser errors:\n${real.join('\n')}`);

@@ -109,6 +109,22 @@ export const rejectInput = z.object({
   notifyCandidate: z.boolean().default(false),
 });
 
+/**
+ * One action on several applications for the same job: move them to a stage, reject them (optionally telling each
+ * candidate), or email them. In emails, {firstName} and {jobTitle} are filled in per candidate.
+ */
+export const bulkApplicationsInput = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('move'), applicationIds: z.array(z.uuid()).min(1).max(100), stageId: z.uuid(), note: optionalText(2000) }).strict(),
+  z.object({ action: z.literal('reject'), applicationIds: z.array(z.uuid()).min(1).max(100), reason: z.enum(REJECTION_REASONS), note: optionalText(2000), notifyCandidate: z.boolean().default(false) }).strict(),
+  z.object({ action: z.literal('email'), applicationIds: z.array(z.uuid()).min(1).max(100), subject: z.string().trim().min(3).max(200), message: z.string().trim().min(10).max(5000) }).strict(),
+]);
+export type BulkApplicationsInput = z.infer<typeof bulkApplicationsInput>;
+
+/** Fills {firstName} and {jobTitle} in a bulk email. Unknown placeholders are left as typed. */
+export function fillCandidateEmail(text: string, v: { firstName: string; jobTitle: string }) {
+  return text.replace(/\{(firstName|jobTitle)\}/g, (_m, k: 'firstName' | 'jobTitle') => v[k]);
+}
+
 export const noteInput = z.object({ body: z.string().trim().min(1).max(5000) });
 
 export const applicationListQuery = z.object({

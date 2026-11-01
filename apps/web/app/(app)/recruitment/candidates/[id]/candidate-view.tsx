@@ -149,7 +149,7 @@ export function CandidateView({ detail, stages, people, openJobs, designations }
                   <span className="text-fg-muted tabular-nums">{when(e.createdAt)}</span>
                   <span className="font-medium">{EVENT[e.kind] ?? e.kind}</span>
                   {e.kind === 'stage_changed' && <span>{e.fromStage} → {e.toStage}</span>}
-                  {e.kind === 'email_queued' && <span className="text-fg-muted">{String(e.detail.template ?? '').replace('candidate.', '')}</span>}
+                  {e.kind === 'email_queued' && <span className="text-fg-muted">{e.detail.subject ? `“${String(e.detail.subject)}”` : String(e.detail.template ?? '').replace('candidate.', '')}</span>}
                   {e.actorName && <span className="text-fg-muted">by {e.actorName}</span>}
                 </li>
               ))}

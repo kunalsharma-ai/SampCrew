@@ -109,6 +109,18 @@ export async function rejectAction(applicationId: string, values: Record<string,
   return r;
 }
 
+type BulkResult = { done: number; skipped: number; results: { id: string; ok: boolean; code?: string; message?: string }[] };
+
+/** One action on several candidates for a job. The message says how many were done and why any were skipped. */
+export async function bulkApplicationsAction(requisitionId: string, body: Record<string, unknown>, names: Record<string, string>) {
+  const r = await act(() => api<BulkResult>(`/recruitment/requisitions/${requisitionId}/applications/bulk`, { method: 'POST', body }));
+  refresh(job(requisitionId));
+  if (!r.ok || !r.data) return r;
+  const verb = body.action === 'move' ? 'Moved' : body.action === 'reject' ? 'Rejected' : 'Emailed';
+  const skipped = r.data.results.filter((x) => !x.ok).map((x) => `${names[x.id] ?? 'A candidate'}: ${x.message}`);
+  return { ...r, message: `${verb} ${r.data.done} candidate${r.data.done === 1 ? '' : 's'}.${skipped.length ? ` Skipped ${skipped.length}: ${skipped.join('; ')}` : ''}` };
+}
+
 export async function withdrawAction(applicationId: string, paths: string[] = []) {
   const r = await act(() => api(`/recruitment/applications/${applicationId}/withdraw`, { method: 'POST' }), 'Marked as withdrawn.');
   refresh(...paths);

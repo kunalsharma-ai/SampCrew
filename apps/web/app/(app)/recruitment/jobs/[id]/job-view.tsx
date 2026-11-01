@@ -1,27 +1,43 @@
 'use client';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, EmptyState, Select, buttonClass, cn } from '@crew/ui';
-import { Columns3, ExternalLink, GripVertical, Plus } from 'lucide-react';
+import { Columns3, ExternalLink, GripVertical, Mail, Plus, UserX } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState, useTransition } from 'react';
 import { ResourceDialog } from '@/components/resource-form';
 import type { Application, Pipeline, RequisitionDetail } from '@/lib/types';
 import {
   addCandidateAction, moveAction, publishPostingAction, requisitionStatusAction, savePostingAction, saveRequisitionAction, submitRequisitionAction,
+  bulkApplicationsAction,
 } from '../../actions';
-import { EMPLOYMENT, OFFER_STATUS, opts, range, REQ_STATUS, REQ_TONE, SOURCE, WORK_MODE } from '../../labels';
+import { EMPLOYMENT, OFFER_STATUS, opts, range, REJECTION, REQ_STATUS, REQ_TONE, SOURCE, WORK_MODE } from '../../labels';
 import { requisitionFields, requisitionInitial, type RequisitionRefs } from '../../requisition-form';
 import { useRunner } from '../../use-runner';
 
+/** Up to 100 candidates can be selected for a bulk action; 2 to 4 of them can be compared. */
+const MAX_PICK = 100;
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 const SOURCES = Object.fromEntries(Object.entries(SOURCE).filter(([k]) => k !== 'career_site'));
 
 export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail; pipeline: Pipeline | null; show: string | null; refs: RequisitionRefs }) {
   const { pending, notice, run } = useRunner();
-  const [dialog, setDialog] = useState<null | 'edit' | 'posting' | 'candidate'>(null);
+  const router = useRouter();
+  const [bulkPending, startBulk] = useTransition();
+  const [bulkNote, setBulkNote] = useState<{ tone: 'success' | 'warning' | 'danger'; text: string } | null>(null);
+  const [dialog, setDialog] = useState<null | 'edit' | 'posting' | 'candidate' | 'bulk-reject' | 'bulk-email'>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [dragging, setDragging] = useState<Application | null>(null);
   const [over, setOver] = useState<string | null>(null);
-  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 4 ? p : [...p, id]));
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= MAX_PICK ? p : [...p, id]));
+  const toggleStage = (ids: string[], on: boolean) => setPicked((p) => (on ? [...new Set([...p, ...ids])].slice(0, MAX_PICK) : p.filter((x) => !ids.includes(x))));
+  const names = Object.fromEntries((pipeline?.applications ?? []).map((a) => [a.id, a.candidateName]));
+  const pickedActive = picked.filter((id) => pipeline?.applications.find((a) => a.id === id)?.status === 'active');
+  const bulk = async (body: Record<string, unknown>) => {
+    const r = await bulkApplicationsAction(req.id, { ...body, applicationIds: pickedActive }, names);
+    setBulkNote(r.ok ? { tone: r.message?.includes('Skipped') ? 'warning' : 'success', text: r.message ?? 'Done.' } : { tone: 'danger', text: r.message });
+    if (r.ok) { setPicked([]); router.refresh(); }
+    return r;
+  };
   const canDrag = (a: Application) => req.can.manageCandidates && a.status === 'active';
   const drop = (stageId: string) => {
     const a = dragging;
@@ -117,7 +133,8 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
               </CardBody>
             ) : (
               <>
-                <p className="px-5 pt-3 text-xs text-fg-subtle">{req.can.manageCandidates ? 'Drag a card to another stage, or use Move to. ' : ''}Tick up to four candidates to compare them side by side.</p>
+                {bulkNote && <Alert tone={bulkNote.tone} className="mx-4 mt-3">{bulkNote.text}</Alert>}
+                <p className="px-5 pt-3 text-xs text-fg-subtle">{req.can.manageCandidates ? 'Drag a card to another stage, or use Move to. Tick candidates to move, email or reject them together, or ' : 'Tick '}two to four candidates to compare them side by side.</p>
                 <div className="flex gap-3 overflow-x-auto p-4">
                   {pipeline.stages.map((st) => {
                     const apps = pipeline.applications.filter((a) => a.stageId === st.id);
@@ -131,14 +148,25 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
                         onDrop={(e) => { e.preventDefault(); if (droppable) drop(st.id); }}
                         className={cn('flex w-64 shrink-0 flex-col gap-2 rounded-lg bg-bg-subtle p-2 transition-colors', droppable && 'ring-1 ring-dashed ring-accent/40', over === st.id && 'bg-accent/10 ring-2 ring-accent')}
                       >
-                        <h3 className="flex items-center justify-between px-1 text-[0.8125rem] font-semibold">{st.name}<span className="text-xs font-normal text-fg-muted">{apps.length}</span></h3>
+                        <h3 className="flex items-center gap-1.5 px-1 text-[0.8125rem] font-semibold">
+                          {req.can.manageCandidates && apps.length > 0 && (
+                            <input
+                              type="checkbox"
+                              aria-label={`Select everyone in ${st.name}`}
+                              checked={apps.every((a) => picked.includes(a.id))}
+                              onChange={(e) => toggleStage(apps.map((a) => a.id), e.target.checked)}
+                              className="size-3.5 accent-[var(--color-accent)]"
+                            />
+                          )}
+                          <span className="flex-1">{st.name}</span><span className="text-xs font-normal text-fg-muted">{apps.length}</span>
+                        </h3>
                         {apps.map((a) => (
                           <AppCard
                             key={a.id}
                             a={a}
                             picked={picked.includes(a.id)}
                             onPick={() => toggle(a.id)}
-                            pickDisabled={!picked.includes(a.id) && picked.length >= 4}
+                            pickDisabled={!picked.includes(a.id) && picked.length >= MAX_PICK}
                             draggable={canDrag(a) && !pending}
                             onDragStart={() => setDragging(a)}
                             onDragEnd={() => { setDragging(null); setOver(null); }}
@@ -163,13 +191,29 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
                   })}
                 </div>
                 {picked.length > 0 && (
-                  <div className="sticky bottom-3 mx-4 mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2.5 shadow-card" role="region" aria-label="Compare candidates">
-                    <span className="text-[0.8125rem]">{picked.length} selected{picked.length < 2 ? ', pick at least one more' : ''}</span>
-                    <span className="flex-1" />
+                  <div className="sticky bottom-3 mx-4 mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 shadow-card" role="region" aria-label="Selected candidates">
+                    <span className="text-[0.8125rem] font-medium">{picked.length} selected</span>
                     <Button size="sm" variant="ghost" onClick={() => setPicked([])}>Clear</Button>
-                    {picked.length >= 2
+                    <span className="flex-1" />
+                    {req.can.manageCandidates && pickedActive.length > 0 && (
+                      <>
+                        <Select
+                          aria-label="Move selected to"
+                          className="h-8 w-auto text-xs"
+                          value=""
+                          disabled={bulkPending}
+                          onChange={(e) => { const stageId = e.target.value; if (stageId) startBulk(async () => { await bulk({ action: 'move', stageId }); }); }}
+                        >
+                          <option value="">Move {pickedActive.length} to…</option>
+                          {pipeline.stages.filter((x) => x.kind !== 'hired').map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                        </Select>
+                        <Button size="sm" variant="secondary" onClick={() => setDialog('bulk-email')}><Mail className="size-3.5" /> Email {pickedActive.length}</Button>
+                        <Button size="sm" variant="secondary" onClick={() => setDialog('bulk-reject')}><UserX className="size-3.5" /> Reject {pickedActive.length}</Button>
+                      </>
+                    )}
+                    {picked.length >= 2 && picked.length <= 4
                       ? <Link href={`${path}/compare?applications=${picked.join(',')}`} className={buttonClass('primary', 'sm')}><Columns3 className="size-3.5" /> Compare {picked.length}</Link>
-                      : <Button size="sm" disabled><Columns3 className="size-3.5" /> Compare</Button>}
+                      : <Button size="sm" disabled title="Compare two to four candidates"><Columns3 className="size-3.5" /> Compare</Button>}
                   </div>
                 )}
               </>
@@ -180,6 +224,33 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
         </Card>
       )}
 
+      <ResourceDialog
+        open={dialog === 'bulk-reject'}
+        onClose={() => setDialog(null)}
+        title={`Reject ${pickedActive.length} candidate${pickedActive.length === 1 ? '' : 's'}`}
+        description="Each application is closed with this reason and future interviews are cancelled. Candidates with an accepted offer are skipped."
+        fields={[
+          { name: 'reason', label: 'Reason', type: 'select', required: true, options: opts(REJECTION) },
+          { name: 'note', label: 'Internal note', type: 'textarea', hint: 'Never shown to candidates' },
+          { name: 'notifyCandidate', label: 'Tell the candidates', type: 'select', required: true, options: [{ value: 'false', label: 'No' }, { value: 'true', label: 'Yes, send each a short, neutral email' }] },
+        ]}
+        initial={{ notifyCandidate: 'false' }}
+        submitLabel="Reject"
+        onSubmit={(v) => bulk({ action: 'reject', reason: v.reason, note: v.note || undefined, notifyCandidate: v.notifyCandidate === 'true' })}
+      />
+      <ResourceDialog
+        open={dialog === 'bulk-email'}
+        onClose={() => setDialog(null)}
+        title={`Email ${pickedActive.length} candidate${pickedActive.length === 1 ? '' : 's'}`}
+        description="Each candidate gets their own email from your organisation, and it is recorded on their timeline."
+        fields={[
+          { name: 'subject', label: 'Subject', required: true },
+          { name: 'message', label: 'Message', type: 'textarea', required: true, hint: '{firstName} and {jobTitle} are filled in for each candidate' },
+        ]}
+        initial={{ subject: `Your application for {jobTitle}`, message: 'Dear {firstName},\n\n' }}
+        submitLabel="Send emails"
+        onSubmit={(v) => bulk({ action: 'email', subject: v.subject, message: v.message })}
+      />
       <ResourceDialog
         open={dialog === 'edit'}
         onClose={() => setDialog(null)}
@@ -249,7 +320,7 @@ function AppCard({ a, children, picked, onPick, pickDisabled, draggable, onDragS
       <div className="flex items-start gap-1.5">
         {draggable && <GripVertical className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" aria-hidden />}
         <Link className="min-w-0 flex-1 truncate font-medium text-accent hover:underline" href={`/recruitment/candidates/${a.candidateId}`}>{a.candidateName}</Link>
-        {onPick && <input type="checkbox" checked={!!picked} disabled={pickDisabled} onChange={onPick} aria-label={`Compare ${a.candidateName}`} className="mt-0.5 size-3.5 accent-[var(--color-accent)]" />}
+        {onPick && <input type="checkbox" checked={!!picked} disabled={pickDisabled} onChange={onPick} aria-label={`Select ${a.candidateName}`} className="mt-0.5 size-3.5 accent-[var(--color-accent)]" />}
       </div>
       {(a.currentTitle || a.currentCompany) && <div className="truncate text-xs text-fg-muted">{[a.currentTitle, a.currentCompany].filter(Boolean).join(' at ')}</div>}
       <div className="mt-1.5 flex flex-wrap gap-1">

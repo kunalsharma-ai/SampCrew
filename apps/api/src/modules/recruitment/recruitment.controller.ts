@@ -23,6 +23,8 @@ import {
   type PostingInput,
   publicApplyInput,
   type PublicApplyInput,
+  bulkApplicationsInput,
+  type BulkApplicationsInput,
   rejectInput,
   REQUISITION_STATUSES,
   requisitionInput,
@@ -144,6 +146,14 @@ export class RecruitmentController {
   @Doc({ summary: 'Stages and the applications in them', query: applicationListQuery })
   pipeline(@Param('id', UuidPipe) id: string, @Query(new ZodPipe(applicationListQuery)) q: z.infer<typeof applicationListQuery>) {
     return this.candidates.pipeline(id, q);
+  }
+
+  @Post('requisitions/:id/applications/bulk')
+  @HttpCode(200)
+  @RequirePermission('candidates:manage')
+  @Doc({ summary: 'Move, reject or email up to 100 candidates for a job at once; each is checked on its own and the result lists any skipped', body: bulkApplicationsInput })
+  bulk(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(bulkApplicationsInput)) body: BulkApplicationsInput) {
+    return this.candidates.bulk(id, body);
   }
 
   @Get('requisitions/:id/compare')

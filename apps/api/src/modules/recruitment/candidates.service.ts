@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
+  type BulkApplicationsInput,
+  fillCandidateEmail,
   RESUME_MAX_BYTES,
   RESUME_TYPES,
   type applicationListQuery,
@@ -15,7 +17,7 @@ import { AuthzService } from '../../platform/authz/authz.service';
 import { can } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
-import { Errors } from '../../platform/http/errors';
+import { AppError, Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
 import type { UploadedFile } from '../documents/documents.service';
@@ -348,6 +350,54 @@ export class CandidatesService {
         await recordEvent(tx, applicationId, 'email_queued', { detail: { template: 'candidate.rejected' } });
       }
       return { status: 'rejected' };
+    });
+  }
+
+  /**
+   * One action on several applications for a job. Each application is handled on its own, with the same checks as
+   * doing it one by one, so one that cannot be moved (closed, erased, hired stage) does not stop the rest; the
+   * result says which ones were skipped and why.
+   */
+  async bulk(requisitionId: string, input: BulkApplicationsInput) {
+    const ids = [...new Set(input.applicationIds)];
+    await this.db.tenant(async (tx) => {
+      const r = await loadRequisition(tx, requisitionId);
+      await this.authz.require('candidates:manage', reqAttrs(r), tx);
+      const found = await many<{ id: string }>(tx, 'select id from applications where requisition_id = $1 and id = any($2::uuid[])', [requisitionId, ids]);
+      if (found.length !== ids.length) throw Errors.badRequest('not_in_job', 'Choose candidates who applied to this job');
+    });
+    const results: { id: string; ok: boolean; code?: string; message?: string }[] = [];
+    for (const id of ids) {
+      try {
+        if (input.action === 'move') await this.move(id, { stageId: input.stageId, note: input.note });
+        else if (input.action === 'reject') await this.reject(id, { reason: input.reason, note: input.note, notifyCandidate: input.notifyCandidate });
+        else await this.emailOne(id, input.subject, input.message);
+        results.push({ id, ok: true });
+      } catch (e) {
+        if (!(e instanceof AppError) || e.getStatus() >= 500) throw e;
+        results.push({ id, ok: false, code: e.code, message: (e.getResponse() as { message: string }).message });
+      }
+    }
+    const done = results.filter((x) => x.ok).length;
+    await this.db.tenant((tx) => this.audit.record(tx, {
+      action: `applications.bulk_${input.action}`, resourceType: 'requisition', resourceId: requisitionId,
+      changes: { done, skipped: results.length - done, ...(input.action === 'move' ? { stageId: input.stageId } : input.action === 'reject' ? { reason: input.reason, notifyCandidate: input.notifyCandidate } : { subject: input.subject }) },
+    }));
+    return { done, skipped: results.length - done, results };
+  }
+
+  /** Emails one candidate about their application, from the hiring organisation. */
+  private async emailOne(applicationId: string, subject: string, message: string) {
+    return this.db.tenant(async (tx) => {
+      const a = await loadApplication(tx, applicationId, true);
+      await this.authz.require('candidates:manage', reqAttrs(a.req), tx);
+      if (a.anonymized) throw Errors.conflict('candidate_erased', 'This candidate’s details were erased');
+      if (!a.candidate_email) throw Errors.conflict('no_email', 'This candidate has no email address');
+      const first = (await one<{ f: string }>(tx, 'select first_name as f from candidates where id = $1', [a.candidate_id]))!.f;
+      const v = { firstName: first, jobTitle: a.req.title };
+      const org = await this.orgName(tx);
+      await this.notifications.queueEmail(tx, requestContext.tenantActor().tenantId, a.candidate_email, fillCandidateEmail(subject, v), `${fillCandidateEmail(message, v)}\n\n${org}`, 'candidate.message', CANDIDATE_FOOTER);
+      await recordEvent(tx, applicationId, 'email_queued', { detail: { template: 'candidate.message', subject: fillCandidateEmail(subject, v) } });
     });
   }
 

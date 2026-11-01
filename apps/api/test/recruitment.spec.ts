@@ -480,6 +480,58 @@ describe('recruitment', () => {
     });
   });
 
+  describe('bulk actions', () => {
+    it('moves, emails and rejects several candidates at once, skipping the ones that cannot be changed', async () => {
+      const job = await openReq(requisition({ title: 'QA Engineer' }));
+      const add = async (firstName: string, email: string) => {
+        const c = await as('recruiter').post('/recruitment/candidates').send({ firstName, lastName: 'Bulk', email, source: 'sourced', requisitionId: job, lawfulBasisConfirmed: true });
+        expect(c.status, JSON.stringify(c.body)).toBe(201);
+        return (await applicationOf(c.body.id, job)).id;
+      };
+      const neha = await add('Neha', 'neha.bulk@example.com');
+      const karan = await add('Karan', 'karan.bulk@example.com');
+      const omar = await add('Omar', 'omar.bulk@example.com');
+      expect((await as('recruiter').post(`/recruitment/applications/${omar}/reject`).send({ reason: 'not_qualified' })).status).toBe(200);
+      const stages = (await as('recruiter').get(`/recruitment/requisitions/${job}/pipeline`)).body.stages as { id: string; kind: string }[];
+      const stage = (kind: string) => stages.find((x) => x.kind === kind)!.id;
+      const bulk = (who: string, body: unknown, id = job) => as(who).post(`/recruitment/requisitions/${id}/applications/bulk`).send(body);
+
+      const moved = await bulk('manager', { action: 'move', applicationIds: [neha, karan, omar, neha], stageId: stage('screen'), note: 'Batch screen' });
+      expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+      expect(moved.body).toMatchObject({ done: 2, skipped: 1 });
+      expect(moved.body.results.find((r: { id: string }) => r.id === omar)).toMatchObject({ ok: false, code: 'application_closed' });
+      const board = (await as('recruiter').get(`/recruitment/requisitions/${job}/pipeline`)).body.applications as { id: string; stageId: string }[];
+      expect(board.filter((a) => [neha, karan].includes(a.id)).map((a) => a.stageId)).toEqual([stage('screen'), stage('screen')]);
+      // Hired is never a bulk move; the same rule as one by one.
+      expect((await bulk('recruiter', { action: 'move', applicationIds: [neha], stageId: stage('hired') })).body).toMatchObject({ done: 0, skipped: 1, results: [{ code: 'use_hire' }] });
+
+      const mailed = await bulk('recruiter', { action: 'email', applicationIds: [neha, karan], subject: 'Next steps for {jobTitle}', message: 'Dear {firstName},\n\nThank you for applying. We will call you this week.' });
+      expect(mailed.body).toMatchObject({ done: 2, skipped: 0 });
+      const nehaMail = await emails('neha.bulk@example.com', 'candidate.message');
+      expect(nehaMail).toEqual([expect.objectContaining({ subject: 'Next steps for QA Engineer' })]);
+      expect(nehaMail[0]!.text_body).toMatch(/^Dear Neha,/);
+      expect((await emails('karan.bulk@example.com', 'candidate.message'))[0]!.text_body).toMatch(/^Dear Karan,/);
+      const events = await pool.query(`select kind from application_events where application_id = $1 order by id`, [karan]);
+      expect(events.rows.map((r) => r.kind)).toEqual(expect.arrayContaining(['stage_changed', 'email_queued']));
+
+      const rejected = await bulk('recruiter', { action: 'reject', applicationIds: [neha, karan], reason: 'position_closed', notifyCandidate: true });
+      expect(rejected.body).toMatchObject({ done: 2, skipped: 0 });
+      expect(await emails('neha.bulk@example.com', 'candidate.rejected')).toHaveLength(1);
+      expect((await applicationOf((await candidateByEmail('karan.bulk@example.com'))!, job)).status).toBe('rejected');
+
+      // Candidates from another job, people outside the job's scope, and bad input are refused before anything changes.
+      const otherApp = (await pool.query<{ id: string }>(`select id from applications where requisition_id <> $1 and tenant_id = $2 limit 1`, [job, t.id])).rows[0]!.id;
+      expect((await bulk('recruiter', { action: 'move', applicationIds: [omar, otherApp], stageId: stage('screen') })).status).toBe(400);
+      expect((await bulk('salesManager', { action: 'move', applicationIds: [neha], stageId: stage('screen') })).status).toBe(404);
+      expect((await bulk('employee', { action: 'move', applicationIds: [neha], stageId: stage('screen') })).status).toBe(403);
+      expect((await bulk('recruiter', { action: 'email', applicationIds: [neha], subject: 'Hi', message: 'short' })).status).toBe(422);
+      expect((await bulk('recruiter', { action: 'move', applicationIds: [] , stageId: stage('screen') })).status).toBe(422);
+      const audit = await pool.query(`select action, changes from audit_events where tenant_id = $1 and resource_id = $2 and action like 'applications.bulk_%' order by created_at`, [t.id, job]);
+      expect(audit.rows.map((r) => r.action)).toEqual(['applications.bulk_move', 'applications.bulk_move', 'applications.bulk_email', 'applications.bulk_reject']);
+      expect(audit.rows[0].changes).toMatchObject({ done: 2, skipped: 1 });
+    });
+  });
+
   describe('isolation', () => {
     it('keeps every Phase 4 record inside its workspace', async () => {
       const tables = ['recruitment_stages', 'job_requisitions', 'job_postings', 'career_sites', 'candidates', 'candidate_files', 'candidate_notes', 'applications',
