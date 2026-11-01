@@ -132,10 +132,15 @@ jobs:
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:enterprise
       - name: Backup and restore drill
-        # The client tools must match the server's major version (postgres:16 above).
+        # The client tools must match the server's major version, and the runner's own are newer. Run them from the
+        # same postgres:16 image as the service (already pulled), sharing /tmp where the drill keeps its dump file.
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-client-16 > /dev/null
-          pnpm --filter @crew/db dr-drill
+          mkdir -p "$RUNNER_TEMP/pg16"
+          for t in pg_dump pg_restore; do
+            printf '#!/bin/sh\nexec docker run --rm --network host -v /tmp:/tmp postgres:16 %s "$@"\n' "$t" > "$RUNNER_TEMP/pg16/$t"
+          done
+          chmod +x "$RUNNER_TEMP/pg16/"*
+          PG_BIN="$RUNNER_TEMP/pg16" pnpm --filter @crew/db dr-drill
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true
