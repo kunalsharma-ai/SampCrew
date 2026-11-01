@@ -326,6 +326,25 @@ describe('recruitment', () => {
       expect(board.body.applications.find((a: { id: string }) => a.id === ashaApp)).toMatchObject({ scorecards: 2, averageScore: '3.17' });
     });
 
+    it('compares candidates side by side with scores per criterion, for people who can see the board', async () => {
+      const vApp = (await applicationOf(vikramId, reqId)).id;
+      const res = await as('manager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.criteria).toEqual(['Coding', 'System design', 'Communication']);
+      const [asha, vikram] = res.body.applications;
+      expect(asha).toMatchObject({ id: ashaApp, candidateName: 'Asha Rao', stageName: 'Interview', scorecards: 2, averageScore: '3.17', recommendations: { strong_yes: 1, yes: 1 } });
+      // (4 + 3) / 2, (3 + 2) / 2, (4 + 3) / 2
+      expect(asha.criteria).toEqual({ Coding: { average: '3.50', ratings: 2 }, 'System design': { average: '2.50', ratings: 2 }, Communication: { average: '3.50', ratings: 2 } });
+      expect(vikram).toMatchObject({ candidateName: 'Vikram Shah', currentTitle: 'SDE II', criteria: {}, recommendations: {}, scorecards: 0 });
+      expect(vikram.daysInProcess).toBeGreaterThanOrEqual(0);
+      // One candidate, five, or someone from another job are refused; people outside the job's scope cannot compare.
+      expect((await as('manager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp}`)).status).toBe(422);
+      const salesApp = (await pool.query<{ id: string }>(`select id from applications where requisition_id = $1 limit 1`, [salesReqId])).rows[0]?.id ?? '00000000-0000-4000-8000-000000000000';
+      expect((await as('manager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${salesApp}`)).status).toBe(400);
+      expect((await as('salesManager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`)).status).toBe(404);
+      expect((await as('employee').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`)).status).toBe(403);
+    });
+
     it('does not open scorecards before the interview starts', async () => {
       const vApp = (await applicationOf(vikramId, reqId)).id;
       const res = await as('recruiter').post(`/recruitment/applications/${vApp}/interviews`).send({

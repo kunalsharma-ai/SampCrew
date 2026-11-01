@@ -265,6 +265,55 @@ export class CandidatesService {
     });
   }
 
+  /**
+   * Side-by-side comparison of 2 to 4 applications for the same job: where each candidate is, how long they have
+   * been in process, and their interview scores per scorecard criterion and recommendations, averaged across
+   * submitted scorecards. Visible to whoever can see the pipeline, like the average score on the board.
+   */
+  async compare(requisitionId: string, ids: string[]) {
+    return this.db.tenant(async (tx) => {
+      const r = await loadRequisition(tx, requisitionId);
+      await this.authz.require('candidates:read', reqAttrs(r), tx);
+      const apps = await many<Record<string, unknown> & { id: string; appliedAt: Date; stageEnteredAt: Date }>(
+        tx,
+        `select ${APPLICATION_COLUMNS}, c.location_text as "locationText", c.anonymized_at is not null as anonymized
+           from ${APPLICATION_FROM} where a.requisition_id = $1 and a.id = any($2::uuid[])`,
+        [requisitionId, ids],
+      );
+      if (apps.length !== ids.length) throw Errors.badRequest('not_in_job', 'Compare candidates who applied to this job');
+      const criteria = await many<{ applicationId: string; criterion: string; average: string; ratings: number }>(
+        tx,
+        `select i.application_id as "applicationId", x->>'criterion' as criterion, round(avg((x->>'score')::numeric), 2)::text as average, count(*)::int as ratings
+           from interviews i join interview_feedback f on f.interview_id = i.id, jsonb_array_elements(f.ratings) x
+          where i.application_id = any($1::uuid[]) group by 1, 2`,
+        [ids],
+      );
+      const recs = await many<{ applicationId: string; recommendation: string; n: number }>(
+        tx,
+        `select i.application_id as "applicationId", f.recommendation, count(*)::int as n
+           from interviews i join interview_feedback f on f.interview_id = i.id where i.application_id = any($1::uuid[]) group by 1, 2`,
+        [ids],
+      );
+      const days = (d: Date) => Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000));
+      // Criteria from the job's scorecard first, then any others interviewers rated.
+      const extra = [...new Set(criteria.map((c) => c.criterion))].filter((c) => !r.scorecard.includes(c)).sort();
+      return {
+        requisition: { id: r.id, code: r.code, title: r.title },
+        criteria: [...r.scorecard, ...extra],
+        applications: ids.map((id) => {
+          const a = apps.find((x) => x.id === id)!;
+          return {
+            ...a,
+            daysInProcess: days(a.appliedAt),
+            daysInStage: days(a.stageEnteredAt),
+            criteria: Object.fromEntries(criteria.filter((c) => c.applicationId === id).map((c) => [c.criterion, { average: c.average, ratings: c.ratings }])),
+            recommendations: Object.fromEntries(recs.filter((x) => x.applicationId === id).map((x) => [x.recommendation, x.n])),
+          };
+        }),
+      };
+    });
+  }
+
   async move(applicationId: string, input: z.infer<typeof moveStageInput>) {
     return this.db.tenant(async (tx) => {
       const a = await loadApplication(tx, applicationId, true);

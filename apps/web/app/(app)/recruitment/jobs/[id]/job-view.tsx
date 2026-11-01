@@ -1,6 +1,6 @@
 'use client';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, EmptyState, Select } from '@crew/ui';
-import { ExternalLink, Plus } from 'lucide-react';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, EmptyState, Select, buttonClass, cn } from '@crew/ui';
+import { Columns3, ExternalLink, GripVertical, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { ResourceDialog } from '@/components/resource-form';
@@ -18,6 +18,18 @@ const SOURCES = Object.fromEntries(Object.entries(SOURCE).filter(([k]) => k !== 
 export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail; pipeline: Pipeline | null; show: string | null; refs: RequisitionRefs }) {
   const { pending, notice, run } = useRunner();
   const [dialog, setDialog] = useState<null | 'edit' | 'posting' | 'candidate'>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [dragging, setDragging] = useState<Application | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 4 ? p : [...p, id]));
+  const canDrag = (a: Application) => req.can.manageCandidates && a.status === 'active';
+  const drop = (stageId: string) => {
+    const a = dragging;
+    setDragging(null);
+    setOver(null);
+    if (!a || a.stageId === stageId) return;
+    run(() => moveAction(a.id, stageId, [path]));
+  };
   const s = req.status;
   const path = `/recruitment/jobs/${req.id}`;
   const careerUrl = req.careerSite && req.posting ? `/careers/${req.careerSite.slug}/${req.posting.slug}` : null;
@@ -104,32 +116,63 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
                 {pipeline.applications.map((a) => <AppCard key={a.id} a={a} />)}
               </CardBody>
             ) : (
-              <div className="flex gap-3 overflow-x-auto p-4">
-                {pipeline.stages.map((st) => {
-                  const apps = pipeline.applications.filter((a) => a.stageId === st.id);
-                  return (
-                    <section key={st.id} aria-label={st.name} className="flex w-64 shrink-0 flex-col gap-2 rounded-lg bg-bg-subtle p-2">
-                      <h3 className="flex items-center justify-between px-1 text-[0.8125rem] font-semibold">{st.name}<span className="text-xs font-normal text-fg-muted">{apps.length}</span></h3>
-                      {apps.map((a) => (
-                        <AppCard key={a.id} a={a}>
-                          {req.can.manageCandidates && a.status === 'active' && (
-                            <Select
-                              aria-label={`Move ${a.candidateName}`}
-                              className="mt-2 h-8 text-xs"
-                              value=""
-                              disabled={pending}
-                              onChange={(e) => e.target.value && run(() => moveAction(a.id, e.target.value, [path]))}
-                            >
-                              <option value="">Move to…</option>
-                              {pipeline.stages.filter((x) => x.id !== st.id && x.kind !== 'hired').map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                            </Select>
-                          )}
-                        </AppCard>
-                      ))}
-                    </section>
-                  );
-                })}
-              </div>
+              <>
+                <p className="px-5 pt-3 text-xs text-fg-subtle">{req.can.manageCandidates ? 'Drag a card to another stage, or use Move to. ' : ''}Tick up to four candidates to compare them side by side.</p>
+                <div className="flex gap-3 overflow-x-auto p-4">
+                  {pipeline.stages.map((st) => {
+                    const apps = pipeline.applications.filter((a) => a.stageId === st.id);
+                    const droppable = !!dragging && st.kind !== 'hired' && dragging.stageId !== st.id;
+                    return (
+                      <section
+                        key={st.id}
+                        aria-label={st.name}
+                        onDragOver={(e) => { if (droppable) { e.preventDefault(); setOver(st.id); } }}
+                        onDragLeave={() => setOver((o) => (o === st.id ? null : o))}
+                        onDrop={(e) => { e.preventDefault(); if (droppable) drop(st.id); }}
+                        className={cn('flex w-64 shrink-0 flex-col gap-2 rounded-lg bg-bg-subtle p-2 transition-colors', droppable && 'ring-1 ring-dashed ring-accent/40', over === st.id && 'bg-accent/10 ring-2 ring-accent')}
+                      >
+                        <h3 className="flex items-center justify-between px-1 text-[0.8125rem] font-semibold">{st.name}<span className="text-xs font-normal text-fg-muted">{apps.length}</span></h3>
+                        {apps.map((a) => (
+                          <AppCard
+                            key={a.id}
+                            a={a}
+                            picked={picked.includes(a.id)}
+                            onPick={() => toggle(a.id)}
+                            pickDisabled={!picked.includes(a.id) && picked.length >= 4}
+                            draggable={canDrag(a) && !pending}
+                            onDragStart={() => setDragging(a)}
+                            onDragEnd={() => { setDragging(null); setOver(null); }}
+                          >
+                            {canDrag(a) && (
+                              <Select
+                                aria-label={`Move ${a.candidateName}`}
+                                className="mt-2 h-8 text-xs"
+                                value=""
+                                disabled={pending}
+                                onChange={(e) => e.target.value && run(() => moveAction(a.id, e.target.value, [path]))}
+                              >
+                                <option value="">Move to…</option>
+                                {pipeline.stages.filter((x) => x.id !== st.id && x.kind !== 'hired').map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                              </Select>
+                            )}
+                          </AppCard>
+                        ))}
+                        {droppable && !apps.length && <p className="rounded-md border border-dashed border-accent/40 p-3 text-center text-xs text-fg-subtle">Drop here</p>}
+                      </section>
+                    );
+                  })}
+                </div>
+                {picked.length > 0 && (
+                  <div className="sticky bottom-3 mx-4 mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2.5 shadow-card" role="region" aria-label="Compare candidates">
+                    <span className="text-[0.8125rem]">{picked.length} selected{picked.length < 2 ? ', pick at least one more' : ''}</span>
+                    <span className="flex-1" />
+                    <Button size="sm" variant="ghost" onClick={() => setPicked([])}>Clear</Button>
+                    {picked.length >= 2
+                      ? <Link href={`${path}/compare?applications=${picked.join(',')}`} className={buttonClass('primary', 'sm')}><Columns3 className="size-3.5" /> Compare {picked.length}</Link>
+                      : <Button size="sm" disabled><Columns3 className="size-3.5" /> Compare</Button>}
+                  </div>
+                )}
+              </>
             )
           ) : (
             <EmptyState title={show ? 'Nobody here' : 'No candidates yet'} description={req.posting?.published ? 'Applications from your career site appear here.' : 'Add candidates by hand, or publish the posting to take applications.'} />
@@ -189,13 +232,29 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
   );
 }
 
-function AppCard({ a, children }: { a: Application; children?: React.ReactNode }) {
+const daysSince = (d: string) => Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000));
+
+function AppCard({ a, children, picked, onPick, pickDisabled, draggable, onDragStart, onDragEnd }: {
+  a: Application; children?: React.ReactNode; picked?: boolean; onPick?: () => void; pickDisabled?: boolean; draggable?: boolean; onDragStart?: () => void; onDragEnd?: () => void;
+}) {
+  const days = a.status === 'active' ? daysSince(a.stageEnteredAt) : null;
   return (
-    <div className="rounded-md border border-border bg-surface p-2.5 text-[0.8125rem] shadow-card">
-      <Link className="font-medium text-accent hover:underline" href={`/recruitment/candidates/${a.candidateId}`}>{a.candidateName}</Link>
+    <div
+      draggable={draggable}
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', a.id); onDragStart?.(); }}
+      onDragEnd={onDragEnd}
+      data-application={a.id}
+      className={cn('rounded-md border bg-surface p-2.5 text-[0.8125rem] shadow-card', picked ? 'border-accent ring-1 ring-accent' : 'border-border', draggable && 'cursor-grab active:cursor-grabbing')}
+    >
+      <div className="flex items-start gap-1.5">
+        {draggable && <GripVertical className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" aria-hidden />}
+        <Link className="min-w-0 flex-1 truncate font-medium text-accent hover:underline" href={`/recruitment/candidates/${a.candidateId}`}>{a.candidateName}</Link>
+        {onPick && <input type="checkbox" checked={!!picked} disabled={pickDisabled} onChange={onPick} aria-label={`Compare ${a.candidateName}`} className="mt-0.5 size-3.5 accent-[var(--color-accent)]" />}
+      </div>
       {(a.currentTitle || a.currentCompany) && <div className="truncate text-xs text-fg-muted">{[a.currentTitle, a.currentCompany].filter(Boolean).join(' at ')}</div>}
       <div className="mt-1.5 flex flex-wrap gap-1">
         <Badge tone="neutral">{SOURCE[a.source] ?? a.source}</Badge>
+        {days !== null && <Badge tone={days > 14 ? 'warning' : 'neutral'}>{days === 0 ? 'New in stage' : `${days}d in stage`}</Badge>}
         {a.status !== 'active' && <Badge tone={a.status === 'hired' ? 'success' : 'neutral'}>{a.status === 'hired' ? 'Hired' : a.status === 'rejected' ? 'Rejected' : 'Withdrew'}</Badge>}
         {a.interviews > 0 && <Badge tone="info">{a.interviews} interview{a.interviews > 1 ? 's' : ''}</Badge>}
         {a.scorecards > 0 && <Badge tone="accent">{a.averageScore} / 4 from {a.scorecards}</Badge>}
@@ -205,4 +264,3 @@ function AppCard({ a, children }: { a: Application; children?: React.ReactNode }
     </div>
   );
 }
-

@@ -54,6 +54,11 @@ const renameInput = z.object({ name: z.string().trim().min(2).max(40) });
 const fileQuery = z.object({ exp: z.coerce.number().int(), sig: z.string().min(10).max(200) });
 const noteBody = noteInput.extend({ applicationId: z.uuid().optional() });
 
+const compareQuery = z.object({
+  /** Two to four application ids, separated by commas. */
+  applications: z.string().regex(/^[0-9a-f-]{36}(,[0-9a-f-]{36}){1,3}$/i, 'Choose two to four candidates to compare'),
+});
+
 @Controller('recruitment')
 @RequireFeature('recruitment')
 export class RecruitmentController {
@@ -139,6 +144,13 @@ export class RecruitmentController {
   @Doc({ summary: 'Stages and the applications in them', query: applicationListQuery })
   pipeline(@Param('id', UuidPipe) id: string, @Query(new ZodPipe(applicationListQuery)) q: z.infer<typeof applicationListQuery>) {
     return this.candidates.pipeline(id, q);
+  }
+
+  @Get('requisitions/:id/compare')
+  @RequirePermission('candidates:read')
+  @Doc({ summary: 'Compare 2 to 4 candidates for a job side by side: stage, time in process, scores per criterion and recommendations', query: compareQuery })
+  compare(@Param('id', UuidPipe) id: string, @Query(new ZodPipe(compareQuery)) q: z.infer<typeof compareQuery>) {
+    return this.candidates.compare(id, [...new Set(q.applications.toLowerCase().split(','))]);
   }
 
   @Get('people')
