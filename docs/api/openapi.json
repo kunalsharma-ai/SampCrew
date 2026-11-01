@@ -10015,6 +10015,261 @@
         }
       }
     },
+    "/api/v1/staffing/bids/{id}/signed.pdf": {
+      "get": {
+        "tags": [
+          "Bids"
+        ],
+        "summary": "The signed copy of a proposal accepted online: the PDF as sent plus the acceptance record",
+        "description": "Requires permission `bids:read`.\n\nRequires plan feature `recruitment`.",
+        "operationId": "Bids_signed",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/proposals/{token}": {
+      "get": {
+        "tags": [
+          "ProposalsPublic"
+        ],
+        "summary": "A proposal as the client sees it: roles, rates and totals, and whether it is still open",
+        "operationId": "ProposalsPublic_get",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/proposals/{token}/proposal.pdf": {
+      "get": {
+        "tags": [
+          "ProposalsPublic"
+        ],
+        "summary": "The proposal PDF the link was sent with, or the signed copy once accepted",
+        "operationId": "ProposalsPublic_pdf",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/proposals/{token}/accept": {
+      "post": {
+        "tags": [
+          "ProposalsPublic"
+        ],
+        "summary": "Accept the proposal with a typed signature; the bid is marked won and a signed copy is kept",
+        "operationId": "ProposalsPublic_accept",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "signerName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 120
+                  },
+                  "signerTitle": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 120
+                  },
+                  "signerEmail": {
+                    "type": "string"
+                  },
+                  "signature": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 120
+                  },
+                  "authorised": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "required": [
+                  "signerName",
+                  "signerTitle",
+                  "signerEmail",
+                  "signature",
+                  "authorised"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/proposals/{token}/decline": {
+      "post": {
+        "tags": [
+          "ProposalsPublic"
+        ],
+        "summary": "Decline the proposal with a reason; the bid is marked lost",
+        "operationId": "ProposalsPublic_decline",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "signerName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 120
+                  },
+                  "signerEmail": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "signerName",
+                  "signerEmail",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/insights/universe": {
       "get": {
         "tags": [
