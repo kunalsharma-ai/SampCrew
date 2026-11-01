@@ -55,7 +55,7 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
   };
 
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
       {s === 'pending_approval' && <Alert tone="warning" title="Waiting for approval">HR approves new requisitions. You will get a notification when it is decided.</Alert>}
       {s === 'rejected' && <Alert tone="danger" title="Not approved">{req.statusReason ?? 'Change the requisition and submit it again, or cancel it.'}</Alert>}
@@ -199,7 +199,7 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
                       <>
                         <Select
                           aria-label="Move selected to"
-                          className="h-8 w-auto text-xs"
+                          className="h-8 !w-44 text-xs"
                           value=""
                           disabled={bulkPending}
                           onChange={(e) => { const stageId = e.target.value; if (stageId) startBulk(async () => { await bulk({ action: 'move', stageId }); }); }}

@@ -26,6 +26,8 @@ const ok = (m) => console.log(`ok - ${m}`);
 const errs = [];
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 let current;
+/** Set SHOTS to a folder to save screenshots of the key screens on the way. */
+const shot = (page, name) => (process.env.SHOTS ? page.screenshot({ path: `${process.env.SHOTS}/${name}.png`, fullPage: true }) : Promise.resolve());
 
 async function signIn(page, email) {
   // Sign-in is rate limited per address (10 a minute); earlier flows in the same run can use that up.
@@ -187,6 +189,7 @@ const watch = (page) => {
     await cl.getByLabel(/^Job title/).fill('Head of Operations');
     await cl.getByLabel(/^Signature/).fill('M Iyer');
     await cl.getByLabel(/I am authorised to accept/).check();
+    await shot(cl, 'design4-client-proposal');
     await cl.getByRole('button', { name: 'Accept and sign' }).click();
     await cl.getByText('Type your full name exactly as above to sign').waitFor();
     await cl.getByLabel(/^Signature/).fill('Meera Iyer');
@@ -194,6 +197,7 @@ const watch = (page) => {
     await cl.getByText('Proposal accepted').waitFor();
     await cl.reload();
     await cl.getByText(/Accepted by Meera Iyer, Head of Operations/).waitFor();
+    await shot(cl, 'design4-client-accepted');
     const signedByLink = await cl.request.get(`${cl.url()}/pdf`);
     expect(/signed\.pdf/.test(signedByLink.headers()['content-disposition'] ?? ''), 'the link does not serve the signed copy');
     ok('a wrong signature is refused; the client signs and accepts; after a reload the page says so');
@@ -208,6 +212,7 @@ const watch = (page) => {
     await rec.reload();
     const decision = rec.getByRole('region', { name: 'Client decision' }).or(rec.locator('[aria-label="Client decision"]'));
     await decision.getByText('Accepted online by the client').waitFor();
+    await shot(rec, 'design4-bid-accepted');
     expect(/Meera Iyer, Head of Operations/.test(await decision.innerText()), 'signer missing on the bid');
     await rec.getByText('Won', { exact: true }).first().waitFor();
     await rec.getByText(/meera\.iyer@northwind\.example: accepted/).waitFor();

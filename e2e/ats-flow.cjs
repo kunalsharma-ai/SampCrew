@@ -18,6 +18,7 @@ if (!PASSWORD) throw new Error('Set CREW_DEMO_PASSWORD');
 
 const ok = (m) => console.log(`ok - ${m}`);
 const errs = [];
+const shot = (p, name) => (process.env.SHOTS ? p.screenshot({ path: `${process.env.SHOTS}/${name}.png` }) : Promise.resolve());
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 (async () => {
@@ -85,10 +86,12 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     // 4. Bulk actions: email everyone in Interview, move two on together, reject one with a candidate email.
     await column('Interview').getByRole('checkbox', { name: 'Select everyone in Interview' }).check();
     await bar.getByText('2 selected').waitFor();
+    await shot(p, 'design4-ats-bulk-bar');
     await bar.getByRole('button', { name: 'Email 2' }).click();
     let d = p.getByRole('dialog');
     expect((await d.getByLabel(/^Subject/).inputValue()) === 'Your application for {jobTitle}', 'subject not prefilled');
     await d.getByLabel(/^Message/).fill('Dear {firstName},\n\nCould you share your availability for a final round next week?');
+    await shot(p, 'design4-ats-bulk-email');
     await d.getByRole('button', { name: 'Send emails' }).click();
     await p.getByText('Emailed 2 candidates.').waitFor();
     expect(await bar.count() === 0, 'selection not cleared after the bulk email');

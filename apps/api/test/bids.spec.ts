@@ -184,6 +184,9 @@ describe('staffing bids', () => {
     expect(b.emails.find((e: { id: string }) => e.id === now.id).delivery[0].status).toBe('sent');
     // The same PDF version is reused; no second "sent" version.
     expect(b.versions.filter((v: { event: string }) => v.event === 'sent')).toHaveLength(1);
+    // The PDF made for the cancelled schedule (dated tomorrow) was never seen, so it was made again for today.
+    const issued = await pool.query(`select snapshot->>'issuedOn' as d from bid_versions where bid_id = $1 and event = 'sent'`, [bidId]);
+    expect(issued.rows[0].d).toBe(new Date().toISOString().slice(0, 10));
     expect((await as('recruiter').post(`/staffing/bids/${bidId}/emails/${now.id}/cancel`)).status).toBe(409);
   });
 

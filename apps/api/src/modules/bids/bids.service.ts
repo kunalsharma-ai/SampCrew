@@ -547,7 +547,10 @@ export class BidsService implements OnModuleInit {
       const lines = await this.lines(tx, id);
       // The PDF for this version is made once, when it is first sent, and reused for every later email.
       let version = await one<{ id: string; pdf_storage_key: string }>(tx, `select id, pdf_storage_key from bid_versions where bid_id = $1 and version = $2 and event = 'sent'`, [id, b.version]);
-      if (!version) {
+      // If every email for that PDF was cancelled before it went, nobody has seen it: make it again so the issue
+      // date is the day this email goes, not the day of the cancelled schedule.
+      const unseen = version && !(await one(tx, 'select 1 from bid_emails where version_id = $1 and cancelled_at is null', [version.id]));
+      if (!version || unseen) {
         const issued = sendAt.toISOString().slice(0, 10);
         let validUntil = b.valid_until;
         if (!validUntil) {
@@ -559,12 +562,19 @@ export class BidsService implements OnModuleInit {
         const pdf = await renderProposal(proposal);
         const key = this.storage.newKey(actor.tenantId);
         await this.storage.put(key, pdf);
-        version = (await one<{ id: string; pdf_storage_key: string }>(
-          tx,
-          `insert into bid_versions (tenant_id, bid_id, version, event, snapshot, pricing, pdf_storage_key, created_by_membership_id)
-           values (app_tenant_id(), $1, $2, 'sent', $3, $4, $5, $6) returning id, pdf_storage_key`,
-          [id, b.version, JSON.stringify(this.snapshot({ ...b, valid_until: validUntil }, lines, proposal)), JSON.stringify(proposal.pricing), key, actor.membershipId],
-        ))!;
+        const snap = JSON.stringify(this.snapshot({ ...b, valid_until: validUntil }, lines, proposal));
+        version = unseen
+          ? (await one<{ id: string; pdf_storage_key: string }>(
+            tx,
+            `update bid_versions set snapshot = $2, pricing = $3, pdf_storage_key = $4, created_at = now(), created_by_membership_id = $5 where id = $1 returning id, pdf_storage_key`,
+            [version!.id, snap, JSON.stringify(proposal.pricing), key, actor.membershipId],
+          ))!
+          : (await one<{ id: string; pdf_storage_key: string }>(
+            tx,
+            `insert into bid_versions (tenant_id, bid_id, version, event, snapshot, pricing, pdf_storage_key, created_by_membership_id)
+             values (app_tenant_id(), $1, $2, 'sent', $3, $4, $5, $6) returning id, pdf_storage_key`,
+            [id, b.version, snap, JSON.stringify(proposal.pricing), key, actor.membershipId],
+          ))!;
       }
       const attachment: EmailAttachment = { filename: `${b.code}-v${b.version}.pdf`, contentType: 'application/pdf', storageKey: version.pdf_storage_key };
       const p = this.price(b, lines);
