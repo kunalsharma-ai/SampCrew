@@ -289,13 +289,14 @@ export function FlowLens({ flow }: { flow: RecruitmentFlow }) {
                 const next = rows[k + 1];
                 const nh = next ? bar(next.reached) : 0;
                 const ny = 30 + (H - 70 - nh) / 2;
-                // A funnel: the band into the next stage is as wide as the number who reached it.
-                const band = next ? Math.min(h, nh) : 0;
+                // The band carries the applications that moved on from this stage (to the next or a later one).
+                const band = next && r.onward ? Math.min(h, bar(r.onward)) : 0;
+                const bandIn = Math.min(nh, band);
                 const nx = (k + 1) * colW + colW * 0.3;
                 return (
                   <g key={r.id} data-stage={r.name}>
-                    {next && next.reached > 0 && (
-                      <path d={`M${x + 18},${y} C${(x + nx) / 2},${y} ${(x + nx) / 2},${ny} ${nx},${ny} L${nx},${ny + nh} C${(x + nx) / 2},${ny + nh} ${(x + nx) / 2},${y + band} ${x + 18},${y + band} Z`} fill="#6366f1" fillOpacity={0.35} />
+                    {next && band > 0 && (
+                      <path d={`M${x + 18},${y} C${(x + nx) / 2},${y} ${(x + nx) / 2},${ny} ${nx},${ny} L${nx},${ny + bandIn} C${(x + nx) / 2},${ny + bandIn} ${(x + nx) / 2},${y + band} ${x + 18},${y + band} Z`} fill="#6366f1" fillOpacity={0.35} />
                     )}
                     {r.rejected + r.withdrawn > 0 && (
                       <path d={`M${x + 18},${y + h - ((r.rejected + r.withdrawn) / Math.max(1, r.reached)) * h} q30,0 40,30 l0,${H - 40 - y - h + 10} l-8,0 l0,-${H - 40 - y - h + 10} q-6,-20 -32,-22 Z`} fill="#f43f5e" fillOpacity={0.3} />
