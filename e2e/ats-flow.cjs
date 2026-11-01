@@ -7,7 +7,7 @@
  * 2. They tick two candidates and compare them: stage, days in process, average and per-criterion scores for the
  *    job's scorecard, recommendations and offer, one column per candidate.
  * 3. From the comparison they move a candidate on, and the board shows it.
- * 4. Bulk actions: they email everyone in Interview at once ({firstName} filled in), move two candidates to Offer
+ * 4. Bulk actions: they email everyone in Screening at once ({firstName} filled in), move two candidates to Offer
  *    together, and reject one with a neutral email; the board and the candidate's history agree after a reload.
  */
 const { chromium } = require('playwright');
@@ -83,19 +83,21 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await column('Interview').getByRole('link', { name: 'Rahul Verma' }).waitFor();
     ok('moved Rahul Verma to Interview from the comparison; the board agrees');
 
-    // 4. Bulk actions: email everyone in Interview, move two on together, reject one with a candidate email.
-    await column('Interview').getByRole('checkbox', { name: 'Select everyone in Interview' }).check();
-    await bar.getByText('2 selected').waitFor();
+    // 4. Bulk actions: email everyone in Screening, move two on together, reject one with a candidate email.
+    //    How many are in Screening depends on whether e2e:recruitment ran first, so the counts are read from the board.
+    await column('Screening').getByRole('checkbox', { name: 'Select everyone in Screening' }).check();
+    const picked = Number((await bar.getByText(/^\d+ selected$/).innerText()).split(' ')[0]);
+    expect(picked >= 1 && picked === await column('Screening').locator('[data-application]').count(), `select-all picked ${picked}`);
     await shot(p, 'design4-ats-bulk-bar');
-    await bar.getByRole('button', { name: 'Email 2' }).click();
+    await bar.getByRole('button', { name: `Email ${picked}` }).click();
     let d = p.getByRole('dialog');
     expect((await d.getByLabel(/^Subject/).inputValue()) === 'Your application for {jobTitle}', 'subject not prefilled');
-    await d.getByLabel(/^Message/).fill('Dear {firstName},\n\nCould you share your availability for a final round next week?');
+    await d.getByLabel(/^Message/).fill('Dear {firstName},\n\nCould you share your availability for a call next week?');
     await shot(p, 'design4-ats-bulk-email');
     await d.getByRole('button', { name: 'Send emails' }).click();
-    await p.getByText('Emailed 2 candidates.').waitFor();
+    await p.getByText(`Emailed ${picked} candidate${picked === 1 ? '' : 's'}.`).waitFor();
     expect(await bar.count() === 0, 'selection not cleared after the bulk email');
-    ok('emailed both candidates in Interview at once');
+    ok(`emailed everyone in Screening (${picked}) at once`);
 
     await card('Sneha Kulkarni').getByRole('checkbox', { name: 'Select Sneha Kulkarni' }).check();
     await card('Rahul Verma').getByRole('checkbox', { name: 'Select Rahul Verma' }).check();
@@ -122,9 +124,6 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await p.waitForURL(/\/recruitment\/candidates\//);
     await p.locator('li', { hasText: 'Rejected' }).first().waitFor();
     await p.locator('li', { hasText: 'Email queued' }).filter({ hasText: 'rejected' }).first().waitFor();
-    await p.goto(jobUrl);
-    await card('Rahul Verma').getByRole('link', { name: 'Rahul Verma' }).click();
-    await p.waitForURL(/\/recruitment\/candidates\//);
     await p.locator('li', { hasText: 'Email queued' }).filter({ hasText: '“Your application for Quality Engineer”' }).first().waitFor();
     ok('rejected Sneha Kulkarni with a neutral email; the histories show the rejection and the bulk email');
 

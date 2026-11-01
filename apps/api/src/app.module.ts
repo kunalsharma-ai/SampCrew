@@ -22,6 +22,8 @@ import { DashboardController, DashboardService } from './modules/experience/dash
 import { PreferencesController } from './modules/experience/preferences.controller';
 import { ViewsController } from './modules/experience/views.controller';
 import { BidsController, ProposalsPublicController } from './modules/bids/bids.controller';
+import { IqController } from './modules/iq/iq.controller';
+import { IqService } from './modules/iq/iq.service';
 import { ProposalsPublicService } from './modules/bids/proposals-public.service';
 import { BidsService } from './modules/bids/bids.service';
 import { UniverseController } from './modules/universe/universe.controller';
@@ -131,6 +133,7 @@ export const CONTROLLERS = [
   ViewsController,
   BidsController,
   ProposalsPublicController,
+  IqController,
   UniverseController,
   DashboardController,
   AttendanceController,
@@ -194,6 +197,7 @@ export const CONTROLLERS = [
     DashboardService,
     BidsService,
     ProposalsPublicService,
+    IqService,
     UniverseService,
     OnboardingService,
     LeaveService,

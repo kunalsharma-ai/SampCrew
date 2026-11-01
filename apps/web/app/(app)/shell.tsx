@@ -20,6 +20,7 @@ import { applyAppearance } from '@/lib/appearance-client';
 import type { NavGroup, NavItem, QuickAction } from '@/lib/nav';
 import type { Me, Notification } from '@/lib/types';
 import { paletteSearchAction, recordVisitAction, resetAppearanceAction, saveAppearanceAction, saveFavouritesAction, syncAppearanceCookieAction } from './experience-actions';
+import { IqPanel } from './iq-panel';
 import { logoutAction, markAllNotificationsReadAction, markNotificationReadAction, switchTenantAction } from './shell-actions';
 
 export const ICONS: Record<string, LucideIcon> = {
@@ -136,6 +137,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   const { appearance, update } = experience;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [iqOpen, setIqOpen] = useState(false);
   const collapsed = appearance.sidebar === 'collapsed';
   const allItems = useMemo(() => nav.flatMap((g) => g.items), [nav]);
   const allHrefs = allItems.map((i) => i.href);
@@ -146,6 +148,11 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+      }
+      // Ctrl/Cmd + J opens CREW IQ.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        setIqOpen((v) => !v);
       }
       // Ctrl/Cmd + . toggles focus mode; Ctrl/Cmd + B toggles the sidebar.
       if ((e.metaKey || e.ctrlKey) && e.key === '.') {
@@ -208,6 +215,9 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               {me.subscription?.status === 'trialing' && me.subscription.trialEndsOn && (
                 <Badge tone="info" className="mr-1 hidden xl:inline-flex">Trial until {new Date(me.subscription.trialEndsOn).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Badge>
               )}
+              <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} className="mr-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-2.5 text-[0.8125rem] font-medium shadow-card hover:border-accent/50" title="CREW IQ (Ctrl+J)">
+                <Sparkles className="size-4 text-accent" aria-hidden /><span className="hidden sm:inline">CREW IQ</span><span className="sr-only sm:hidden">CREW IQ</span>
+              </button>
               {quick.length > 0 && <QuickCreate actions={quick} />}
               <Link href="/approvals" className="relative hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg sm:block" aria-label={counts['/approvals'] ? `Approval inbox, ${counts['/approvals']} waiting` : 'Approval inbox'} title="Approval inbox">
                 <Inbox className="size-4" />
@@ -221,6 +231,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
           </header>
           <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
         </div>
+        <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} nav={nav} me={me} quick={quick} workflows={workflows} />
       </div>
     </ExperienceContext.Provider>

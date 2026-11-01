@@ -63,10 +63,12 @@ function toInput(v: Values): { input: BidInput | null; problem: string | null } 
  * Advanced Bid adds several roles, bill rates per role, pricing assumptions and the proposal text. Pricing is
  * shown live with the same exact maths the server uses.
  */
-export function BidEditor({ bid, initialMode, initialClientId, clients: initialClients, templates, entities, designations }: {
+export function BidEditor({ bid, initialMode, initialClientId, initialLine, clients: initialClients, templates, entities, designations }: {
   bid: Bid | null;
   initialMode: 'quick' | 'advanced';
   initialClientId?: string;
+  /** A first role to start from, for example from CREW IQ. Nothing is saved until the person saves the bid. */
+  initialLine?: { roleTitle?: string; headcount?: number };
   clients: Client[];
   templates: BidTemplate[];
   entities: LegalEntity[];
@@ -85,7 +87,7 @@ export function BidEditor({ bid, initialMode, initialClientId, clients: initialC
     : {
       clientId: initialClients.some((c) => c.id === initialClientId) ? initialClientId! : '', legalEntityId: entities[0]?.id ?? '', title: '', titleTouched: false, mode: initialMode, currency: initialClients.find((c) => c.id === initialClientId)?.currency ?? 'INR', startDate: nextMonthStart(), durationMonths: '12',
       onCostPct: def?.onCostPct ?? '13', overheadPct: def?.overheadPct ?? '5', targetMarginPct: def?.targetMarginPct ?? '18', templateId: def?.id ?? '',
-      coverNote: def?.coverNote ?? '', terms: def?.terms ?? '', validUntil: '', lines: [blankLine()],
+      coverNote: def?.coverNote ?? '', terms: def?.terms ?? '', validUntil: '', lines: [{ ...blankLine(), roleTitle: initialLine?.roleTitle?.slice(0, 120) ?? '', headcount: initialLine?.headcount ? String(initialLine.headcount) : '1' }],
     });
   const [error, setError] = useState<string | null>(null);
   const [showProblem, setShowProblem] = useState(false);

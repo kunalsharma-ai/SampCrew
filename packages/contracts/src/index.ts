@@ -46,3 +46,4 @@ export * from './enterprise';
 export * from './experience';
 export * from './staffing';
 export * from './universe';
+export * from './iq';

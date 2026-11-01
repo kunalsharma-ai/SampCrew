@@ -138,7 +138,11 @@ function leaveDay() {
 
     // 5. Command palette: a person on the team, then a theme by name.
     const search = sup.getByRole('combobox', { name: 'Search pages' });
-    await sup.keyboard.press('Control+k');
+    // Right after a reload the shortcut can land before the page is hydrated, so press again until it opens.
+    for (let i = 0; i < 10 && !(await search.isVisible()); i++) {
+      await sup.keyboard.press('Control+k');
+      await search.waitFor({ timeout: 1000 }).catch(() => {});
+    }
     await search.fill('Arjun');
     const person = sup.getByRole('option', { name: /Arjun/ }).first();
     await person.waitFor({ timeout: 10000 });

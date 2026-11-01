@@ -9,7 +9,7 @@ import type { BidTemplate, Client } from '../../types';
 
 export const metadata: Metadata = { title: 'New staffing bid' };
 
-export default async function NewBidPage({ searchParams }: { searchParams: Promise<{ mode?: string; clientId?: string }> }) {
+export default async function NewBidPage({ searchParams }: { searchParams: Promise<{ mode?: string; clientId?: string; people?: string; role?: string }> }) {
   const sp = await searchParams;
   const me = await load<Me>('/me');
   if (!can(me, 'bids:manage')) redirect('/staffing/bids');
@@ -19,11 +19,13 @@ export default async function NewBidPage({ searchParams }: { searchParams: Promi
     loadOptional<LegalEntity[]>('/org/legal-entities'),
     loadOptional<Designation[]>('/designations'),
   ]);
+  const people = /^\d{1,4}$/.test(sp.people ?? '') && Number(sp.people) > 0 ? Number(sp.people) : undefined;
+  const initialLine = sp.role || people ? { roleTitle: sp.role?.trim() || undefined, headcount: people } : undefined;
   const mode = sp.mode === 'advanced' ? 'advanced' : 'quick';
   return (
     <>
       <PageHeader eyebrow="Staffing bids" title={mode === 'quick' ? 'Quick Bid' : 'New bid'} description="The price updates as you type. Finance approves every bid before the proposal can go to the client." />
-      <BidEditor bid={null} initialMode={mode} initialClientId={sp.clientId} clients={clients} templates={templates} entities={entities ?? []} designations={designations ?? []} />
+      <BidEditor bid={null} initialMode={mode} initialClientId={sp.clientId} initialLine={initialLine} clients={clients} templates={templates} entities={entities ?? []} designations={designations ?? []} />
     </>
   );
 }

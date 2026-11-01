@@ -37,6 +37,7 @@
     "e2e:bids": "node e2e/bids-flow.cjs",
     "e2e:universe": "node e2e/universe-flow.cjs",
     "e2e:ats": "node e2e/ats-flow.cjs",
+    "e2e:iq": "node e2e/iq-flow.cjs",
     "load-test": "node e2e/load.cjs"
   },
   "devDependencies": {

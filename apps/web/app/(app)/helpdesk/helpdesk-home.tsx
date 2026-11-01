@@ -35,6 +35,12 @@ export function HelpdeskHome({ categories, cases, articles, showAll }: { categor
     const r = await articleAction(id);
     if (r.ok && r.data) setReading(r.data);
   };
+  // A link to /helpdesk?article=<id> (from CREW IQ, for example) opens that article.
+  useEffect(() => {
+    const id = new URL(window.location.href).searchParams.get('article');
+    if (id && /^[0-9a-f-]{36}$/.test(id)) void open(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
