@@ -101,6 +101,7 @@ jobs:
           pnpm e2e:hr
           pnpm e2e:directory
           pnpm e2e:bids
+          pnpm e2e:universe
           pnpm e2e:talent
           pnpm e2e:helpdesk
           pnpm e2e:attendance

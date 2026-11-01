@@ -6,6 +6,8 @@ export interface NavItem {
   icon: string;
   /** Visible when the user holds this permission (any scope). */
   permission?: string;
+  /** Hidden when the permission covers only the person's own record (an organization view of one person is empty). */
+  beyondOwn?: boolean;
   /** Visible when the plan includes this feature. */
   feature?: string;
 }
@@ -107,6 +109,7 @@ export const NAV: NavGroup[] = [
   {
     label: 'Analytics & AI',
     items: [
+      { href: '/insights/universe', label: 'Workforce Universe', icon: 'orbit', permission: 'employees:read', beyondOwn: true },
       { href: '/insights/attrition', label: 'Attrition risk', icon: 'trending-down', permission: 'insights:attrition', feature: 'workforce_analytics' },
       { href: '/automation', label: 'Automation Studio', icon: 'workflow', permission: 'automation:manage', feature: 'automation' },
       { href: '/automation/runs', label: 'Workflow runs', icon: 'activity', permission: 'automation:manage', feature: 'automation' },
@@ -171,7 +174,7 @@ export function workflowActions(me: Me): QuickAction[] {
 }
 
 export function visibleNav(me: Me): NavGroup[] {
-  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => (!i.permission || me.permissions[i.permission]) && (!i.feature || me.features.includes(i.feature))) })).filter((g) => g.items.length);
+  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && (!i.feature || me.features.includes(i.feature))) })).filter((g) => g.items.length);
 }
 
 export const can = (me: Me, permission: string) => Boolean(me.permissions[permission]);

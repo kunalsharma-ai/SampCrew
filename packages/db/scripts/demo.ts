@@ -179,9 +179,24 @@ async function seedCoreHr(
     employeeByEmail.set(p.email, id);
   }
   const supervisor = employeeByEmail.get('supervisor@demo.crew.local')!;
+  const shopFloor = new Map<string, string>();
   for (const [name, title, dept] of [['Ganesh Pawar', 'Helper', c.assemblyId], ['Rekha Jadhav', 'Machine Operator', c.assemblyId], ['Sameer Khan', 'Quality Inspector', c.qualityId]] as const) {
-    await addEmployee({ name, title, dept, loc: c.puneId, entity: c.indiaId, managerId: dept === c.qualityId ? employeeByEmail.get('qa.lead@demo.crew.local')! : supervisor, joined: '2023-06-01' });
+    shopFloor.set(name, await addEmployee({ name, title, dept, loc: c.puneId, entity: c.indiaId, managerId: dept === c.qualityId ? employeeByEmail.get('qa.lead@demo.crew.local')! : supervisor, joined: '2023-06-01' }));
   }
+  // Some history for the Workforce Universe timeline: Rekha started as a quality inspector and moved to the
+  // assembly line as a machine operator the next spring.
+  const rekha = shopFloor.get('Rekha Jadhav')!;
+  const moveOn = '2024-04-01';
+  await client.query(
+    `update employment_records set department_id = $2, designation_id = $3, manager_employee_id = $4, effective_to = date '${moveOn}' - 1 where employee_id = $1`,
+    [rekha, c.qualityId, designation.get('Quality Inspector'), employeeByEmail.get('qa.lead@demo.crew.local')],
+  );
+  await client.query(
+    `insert into employment_records (tenant_id, employee_id, effective_from, legal_entity_id, department_id, location_id, designation_id, manager_employee_id, employment_type, change_reason)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, 'full_time', 'transfer')`,
+    [tid, rekha, moveOn, c.indiaId, c.assemblyId, c.puneId, designation.get('Machine Operator'), supervisor],
+  );
+  await client.query(`insert into lifecycle_events (tenant_id, employee_id, kind, effective_on, details) values ($1, $2, 'transferred', $3, '{"demo": true}')`, [tid, rekha, moveOn]);
   await client.query(`insert into employee_number_series (tenant_id, prefix, padding, next_value) values ($1, 'NW', 4, $2)`, [tid, n]);
   // Memberships follow employee placement through a trigger; this reconciles managers set before their reports existed.
   await client.query(`select employees_apply_current(current_date)`);

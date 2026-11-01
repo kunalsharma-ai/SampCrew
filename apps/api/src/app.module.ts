@@ -23,6 +23,8 @@ import { PreferencesController } from './modules/experience/preferences.controll
 import { ViewsController } from './modules/experience/views.controller';
 import { BidsController } from './modules/bids/bids.controller';
 import { BidsService } from './modules/bids/bids.service';
+import { UniverseController } from './modules/universe/universe.controller';
+import { UniverseService } from './modules/universe/universe.service';
 import { NotificationsController } from './modules/notifications/notifications.controller';
 import { OnboardingController } from './modules/onboarding/onboarding.controller';
 import { OnboardingService } from './modules/onboarding/onboarding.service';
@@ -127,6 +129,7 @@ export const CONTROLLERS = [
   PreferencesController,
   ViewsController,
   BidsController,
+  UniverseController,
   DashboardController,
   AttendanceController,
   KioskController,
@@ -188,6 +191,7 @@ export const CONTROLLERS = [
     ApprovalsService,
     DashboardService,
     BidsService,
+    UniverseService,
     OnboardingService,
     LeaveService,
     EmployeesService,
