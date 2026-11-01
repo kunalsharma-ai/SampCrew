@@ -145,7 +145,7 @@ const until = async (what, fn, ms = 30000) => {
     current = arjun;
     await arjun.reload();
     await arjun.getByText('Ask the HR assistant').waitFor();
-    await arjun.getByLabel('Your question', { exact: true }).fill('How do I read my payslip? You can reply to arjun.k@example.com');
+    await arjun.getByLabel('Question for the assistant', { exact: true }).fill('How do I read my payslip? You can reply to arjun.k@example.com');
     await arjun.click('text=Ask the assistant');
     const answer = arjun.getByTestId('assistant-answer');
     await answer.getByText('AI answer').waitFor({ timeout: 20000 });
@@ -158,7 +158,7 @@ const until = async (what, fn, ms = 30000) => {
     await answer.getByRole('button', { name: 'Yes' }).click();
     await answer.getByText('Thanks for the feedback.').waitFor();
     const before = sent.length;
-    await arjun.getByLabel('Your question', { exact: true }).fill('When does the canteen serve dinner on Sundays?');
+    await arjun.getByLabel('Question for the assistant', { exact: true }).fill('When does the canteen serve dinner on Sundays?');
     await arjun.click('text=Ask the assistant');
     await answer.getByText('No answer found').waitFor({ timeout: 15000 });
     if ((await (await fetch(STUB + '/__requests')).json()).length !== before) throw new Error('the AI was called although no article matched');

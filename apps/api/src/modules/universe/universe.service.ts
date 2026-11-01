@@ -48,7 +48,7 @@ export class UniverseService {
       );
       const locations = await many<Universe['locations'][number]>(
         tx,
-        `select id, name, city, country_code as "countryCode" from locations order by name`,
+        `select id, name, city, country_code as "countryCode", latitude::float8 as latitude, longitude::float8 as longitude from locations order by name`,
       );
       const asOf = new Date().toISOString().slice(0, 10);
       const start = people.reduce((m, p) => (p.joined < m ? p.joined : m), asOf);

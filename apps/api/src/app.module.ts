@@ -26,6 +26,8 @@ import { IqController } from './modules/iq/iq.controller';
 import { IqService } from './modules/iq/iq.service';
 import { ProposalsPublicService } from './modules/bids/proposals-public.service';
 import { BidsService } from './modules/bids/bids.service';
+import { LensesController } from './modules/universe/lenses.controller';
+import { LensesService } from './modules/universe/lenses.service';
 import { UniverseController } from './modules/universe/universe.controller';
 import { UniverseService } from './modules/universe/universe.service';
 import { NotificationsController } from './modules/notifications/notifications.controller';
@@ -135,6 +137,7 @@ export const CONTROLLERS = [
   ProposalsPublicController,
   IqController,
   UniverseController,
+  LensesController,
   DashboardController,
   AttendanceController,
   KioskController,
@@ -199,6 +202,7 @@ export const CONTROLLERS = [
     ProposalsPublicService,
     IqService,
     UniverseService,
+    LensesService,
     OnboardingService,
     LeaveService,
     EmployeesService,

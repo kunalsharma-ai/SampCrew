@@ -532,6 +532,28 @@ describe('recruitment', () => {
     });
   });
 
+  describe('recruitment flow (Workforce Universe)', () => {
+    it('counts how applications moved between stages and where they stopped, within the viewer’s jobs', async () => {
+      const r = await as('recruiter').get('/insights/recruitment-flow?period=all');
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      const f = r.body as { applications: number; stages: { id: string; kind: string; reached: number; now: number }[]; moves: { from: string; to: string; count: number }[] };
+      const total = (await pool.query(`select count(*)::int as n from applications where tenant_id = $1`, [t.id])).rows[0].n;
+      expect(f.applications).toBe(total);
+      const id = (kind: string) => f.stages.find((s) => s.kind === kind)!.id;
+      // Every application reached the first stage; the bulk test moved two on to screening and rejected them there.
+      expect(f.stages.find((s) => s.kind === 'new')!.reached).toBe(total);
+      expect(f.moves.find((m) => m.from === id('new') && m.to === id('screen'))!.count).toBeGreaterThanOrEqual(2);
+      expect(f.moves.find((m) => m.from === id('screen') && m.to === 'rejected')!.count).toBeGreaterThanOrEqual(2);
+      const live = (await pool.query(`select count(*)::int as n from applications where tenant_id = $1 and status in ('active', 'hired')`, [t.id])).rows[0].n;
+      expect(f.stages.reduce((a, s) => a + s.now, 0)).toBe(live);
+      // A department-scoped manager sees only their department's jobs; an employee none.
+      const dept = (await as('salesManager').get('/insights/recruitment-flow?period=all')).body;
+      expect(dept.applications).toBeLessThan(total);
+      expect((await as('employee').get('/insights/recruitment-flow')).status).toBe(403);
+      expect((await as('recruiter').get('/insights/recruitment-flow?period=decade')).status).toBe(422);
+    });
+  });
+
   describe('isolation', () => {
     it('keeps every Phase 4 record inside its workspace', async () => {
       const tables = ['recruitment_stages', 'job_requisitions', 'job_postings', 'career_sites', 'candidates', 'candidate_files', 'candidate_notes', 'applications',

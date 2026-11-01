@@ -15,7 +15,7 @@ export interface UniverseData {
   asOf: string;
   start: string;
   departments: { id: string; name: string; parentId: string | null; archived: boolean }[];
-  locations: { id: string; name: string; city: string | null; countryCode: string | null }[];
+  locations: { id: string; name: string; city: string | null; countryCode: string | null; latitude: number | null; longitude: number | null }[];
   people: UniversePerson[];
   records: UniverseRecord[];
 }

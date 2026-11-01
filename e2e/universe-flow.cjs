@@ -7,6 +7,10 @@
  *    on the Assembly Line, and the change list shows the move. Both views read the employment records in the database.
  * 3. The 3D map draws (WebGL), a department picked in the 2D table stays selected there, and Play moves the timeline.
  * 4. The 3D code (three.js) is a separate download, fetched only when the 3D view is opened.
+ * 5. Locations: a globe with a dot per location, which turns; the table adds up.
+ * 6. Skills: HR adds a skill on a profile and the skills network shows who holds it.
+ * 7. Recruitment flow: stage by stage, drawn and tabled.
+ * 8. Scenarios: a what-if plan is saved, reopened after a reload, and deleted.
  */
 const { chromium } = require('playwright');
 
@@ -95,6 +99,75 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     expect(Number(after) > Number(start), `timeline did not move (${start} -> ${after})`);
     await p.getByRole('button', { name: 'Pause timeline' }).click();
     ok(`play moved the timeline from stop ${start} to ${after}`);
+
+    // 5. Locations: the globe draws each location with people, and the table adds up to the headcount.
+    const lens = (name) => p.getByRole('tablist', { name: 'Lens' }).getByRole('tab', { name, exact: true });
+    await lens('Locations').click();
+    await p.waitForURL(/lens=locations/);
+    const locTable = p.getByRole('table', { name: 'Headcount by location' });
+    await locTable.waitFor();
+    const locCounts = (await locTable.locator('tbody tr td:nth-child(2)').allInnerTexts()).map(Number);
+    const pune = p.locator('[data-location="Pune Plant"] circle').last();
+    await pune.waitFor();
+    const x0 = await pune.getAttribute('cx');
+    await p.getByRole('button', { name: 'Turn the globe east' }).click();
+    expect((await pune.getAttribute('cx')) !== x0 || (await p.locator('[data-location="Pune Plant"]').count()) === 0, 'globe did not turn');
+    expect(locCounts.reduce((a, b) => a + b, 0) > 0, 'no one placed on the globe');
+    ok(`globe and table show ${locCounts.length} locations, ${locCounts.reduce((a, b) => a + b, 0)} people`);
+
+    // 6. Skills: HR records a skill on a profile; the network and its table pick it up.
+    await p.goto(BASE + '/employees?q=Rekha');
+    await p.getByRole('link', { name: /Rekha Jadhav/ }).first().click();
+    await p.waitForURL(/\/employees\/[0-9a-f-]{36}/);
+    const skillsCard = p.locator('[aria-label="Skills"]');
+    await skillsCard.getByRole('button', { name: 'Edit skills' }).click();
+    const dlg = p.locator('dialog[open]').filter({ hasText: 'Edit skills' });
+    await dlg.getByRole('button', { name: 'Add a skill' }).click();
+    const n = await dlg.getByRole('textbox').count();
+    await dlg.getByLabel(`Skill ${n}`, { exact: true }).fill('Robot welding');
+    await dlg.getByLabel(`Level of skill ${n}`).selectOption({ label: 'Expert' });
+    await dlg.getByRole('button', { name: 'Save skills' }).click();
+    await skillsCard.getByText('Robot welding').waitFor();
+    await p.reload();
+    await skillsCard.getByText('Robot welding').waitFor();
+    await p.goto(BASE + '/insights/universe?lens=skills');
+    const skillRow = p.getByRole('table', { name: 'Skills summary' }).getByRole('row').filter({ hasText: 'Robot welding' });
+    await skillRow.getByText('1 strong').waitFor();
+    await skillRow.click();
+    await p.locator('[aria-label="Who holds Robot welding"]').getByRole('link', { name: 'Rekha Jadhav' }).waitFor();
+    expect(await p.locator('[data-skill="Robot welding"]').count() === 1, 'skill not drawn in the network');
+    ok('added Robot welding (Expert) to Rekha; the skills network shows her as its only strong holder');
+
+    // 7. Recruitment flow over all time: the first stage is reached by every application.
+    await lens('Recruitment flow').click();
+    await p.getByRole('tab', { name: 'All time' }).click();
+    await p.waitForURL(/period=all/);
+    const flowTable = p.getByRole('table', { name: 'Recruitment flow by stage' });
+    const applied = Number(await flowTable.locator('tbody tr').first().locator('td').nth(1).innerText());
+    expect(applied > 0, 'no applications in the flow');
+    expect(await p.locator('[data-stage]').count() === await flowTable.locator('tbody tr').count(), 'flow chart and table disagree');
+    ok(`recruitment flow drawn: ${applied} applications reached the first stage`);
+
+    // 8. Scenarios: plan two more people in Finance, save, find it after a reload, then delete it.
+    await lens('Scenarios').click();
+    await p.locator('[aria-label="Saved scenarios"]').getByRole('button', { name: 'New', exact: true }).click();
+    await p.getByLabel(/^Scenario name/).fill('E2E: Finance growth');
+    await p.getByRole('button', { name: 'One more in Finance' }).click();
+    await p.getByRole('button', { name: 'One more in Finance' }).click();
+    const finRow = p.getByRole('table', { name: 'Scenario by department' }).getByRole('row').filter({ hasText: 'Finance' });
+    const [finToday, finAfter] = [Number(await finRow.locator('td').nth(1).innerText()), Number(await finRow.locator('td').last().innerText())];
+    expect(finAfter === finToday + 2, `Finance went from ${finToday} to ${finAfter}`);
+    await p.getByRole('button', { name: 'Save scenario' }).click();
+    await p.getByText('Scenario saved.').waitFor();
+    await p.reload();
+    const saved = p.locator('[aria-label="Saved scenarios"]').getByRole('button', { name: /E2E: Finance growth/ });
+    await saved.click();
+    expect(await p.getByLabel('Change in Finance').inputValue() === '2', 'saved change not loaded');
+    p.once('dialog', (d) => d.accept());
+    await p.getByRole('button', { name: 'Delete' }).click();
+    await p.getByText('Scenario deleted.').waitFor();
+    await saved.waitFor({ state: 'detached' });
+    ok('saved a Finance +2 scenario, reopened it after a reload and deleted it');
 
     const real = errs.filter((e) => !/favicon|DevTools/.test(e));
     expect(!real.length, `browser errors:\n${real.join('\n')}`);

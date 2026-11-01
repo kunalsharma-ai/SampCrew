@@ -43,7 +43,7 @@ export function AssistantPanel() {
       />
       <CardBody className="grid gap-3">
         <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); if (q.length >= 5) ask(); }}>
-          <Field label="Your question">
+          <Field label="Question for the assistant">
             {(p) => <Textarea {...p} rows={2} maxLength={1000} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="For example: how is provident fund worked out?" />}
           </Field>
           <div><Button type="submit" loading={pending} disabled={q.length < 5}>Ask the assistant</Button></div>

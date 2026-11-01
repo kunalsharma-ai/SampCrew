@@ -5,7 +5,9 @@ import { notFound } from 'next/navigation';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
 import type { Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, OnboardingTask, Page } from '@/lib/types';
 import { EmployeeStatus } from '../status';
+import type { EmployeeSkill } from '@crew/contracts';
 import { ActivityTab, AtAGlance, type Summary360 } from './at-a-glance';
+import { SkillsCard } from './skills-card';
 import { DocumentsTab, JobTab, LeaveTab, OnboardingTab, OverviewTab } from './tabs';
 
 export const metadata: Metadata = { title: 'Employee' };
@@ -34,8 +36,11 @@ export default async function EmployeePage({ params, searchParams }: { params: P
 
   let content: React.ReactNode;
   if (tab === 'overview') {
-    const summary = await loadOptional<Summary360>(`/employees/${id}/360`);
-    content = <>{summary && <AtAGlance s={summary} />}<OverviewTab e={e} /></>;
+    const [summary, skills] = await Promise.all([
+      loadOptional<Summary360>(`/employees/${id}/360`),
+      loadOptional<{ skills: EmployeeSkill[]; canEdit: boolean }>(`/employees/${id}/skills`),
+    ]);
+    content = <>{summary && <AtAGlance s={summary} />}<OverviewTab e={e} />{skills && <SkillsCard employeeId={id} initial={skills.skills} canEdit={skills.canEdit} />}</>;
   } else if (tab === 'activity') {
     content = <ActivityTab s={await load<Summary360>(`/employees/${id}/360`)} />;
   } else if (tab === 'job') {
