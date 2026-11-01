@@ -6,6 +6,7 @@ import { monthLabel } from '../../labels';
 import type { PayrollRunDetail } from '../../types';
 import type { PayrollChecks } from '../../../insights/types';
 import { PayChecks } from './pay-checks';
+import { RunStepper } from './run-stepper';
 import { RunView } from './run-view';
 
 export const metadata: Metadata = { title: 'Payroll run' };
@@ -27,6 +28,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
         actions={<Link className="text-sm font-medium text-accent hover:underline" href="/payroll">All runs</Link>}
       />
       <div className="grid gap-6">
+        <RunStepper run={run} checks={checks} />
         {checks && <PayChecks runId={id} checks={checks} finalised={run.status === 'finalised'} />}
         <RunView run={run} people={people ?? []} />
       </div>
