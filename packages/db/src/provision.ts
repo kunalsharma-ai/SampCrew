@@ -185,6 +185,18 @@ export async function provisionTenant(db: PoolClient, input: ProvisionTenantInpu
     [tenantId],
   );
 
+  // Phase 7: starting helpdesk categories with response targets in hours. Each workspace edits them and adds handlers.
+  await db.query(
+    `insert into helpdesk_categories (tenant_id, name, description, first_response_hours, resolution_hours)
+     select $1, c.name, c.description, c.fr, c.res from (values
+       ('Pay and payslips', 'Questions about salary, deductions, payslips and reimbursements.', 24, 72),
+       ('Leave and attendance', 'Balances, holidays, punches and corrections.', 24, 72),
+       ('Documents and letters', 'Employment letters, address proofs and other documents.', 24, 120),
+       ('IT and access', 'Accounts, devices and access to systems.', 8, 48),
+       ('Something else', 'Anything that does not fit the other categories.', 48, 168)) as c(name, description, fr, res)`,
+    [tenantId],
+  );
+
   return { tenantId, ownerUserId: userId, ownerMembershipId, legalEntityId, existingUser };
 }
 

@@ -32,9 +32,15 @@ export class NotificationService {
     );
     const active = recipients.filter((r) => r.status === 'active');
     for (const r of active) {
-      await tx.query(
-        `insert into notifications (tenant_id, membership_id, kind, title, body, link) values ($1, $2, $3, $4, $5, $6)`,
+      const n = await tx.query<{ id: string }>(
+        `insert into notifications (tenant_id, membership_id, kind, title, body, link) values ($1, $2, $3, $4, $5, $6) returning id`,
         [r.tenant_id, r.id, notice.kind, notice.title, notice.body ?? null, notice.link ?? null],
+      );
+      // A push to each signed-in phone. It carries only the notification id; the app loads the text after sign-in.
+      await tx.query(
+        `insert into push_messages (tenant_id, mobile_device_id, notification_id)
+         select tenant_id, id, $2 from mobile_devices where membership_id = $1 and push_token is not null and revoked_at is null`,
+        [r.id, n.rows[0]!.id],
       );
       if (notice.email) {
         const url = notice.link ? `${this.config.WEB_PUBLIC_URL}${notice.link}` : this.config.WEB_PUBLIC_URL;

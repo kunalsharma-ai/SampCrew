@@ -5,6 +5,7 @@ import { AttendanceService } from '../attendance/attendance.service';
 import { DevicesService } from '../attendance/devices.service';
 import { EmployeesService } from '../employees/employees.service';
 import { LeaveService } from '../leave/leave.service';
+import { HelpdeskService } from '../helpdesk/helpdesk.service';
 import { CandidatesService } from '../recruitment/candidates.service';
 
 export interface HrJobResult {
@@ -16,6 +17,7 @@ export interface HrJobResult {
   attendanceDaysComputed: number;
   devicesAlerted: number;
   candidatesAnonymized: number;
+  helpdeskCasesClosed: number;
 }
 
 /**
@@ -36,6 +38,7 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly attendance: AttendanceService,
     private readonly devices: DevicesService,
     private readonly candidates: CandidatesService,
+    private readonly helpdesk: HelpdeskService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -84,6 +87,8 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     // Candidate data past the career site's retention period is anonymised (recruitment entitlement or not:
     // data a workspace already holds still has to age out after a downgrade).
     const candidatesAnonymized = await this.candidates.applyRetention(tenantId);
-    return { ...hr, attendanceDaysComputed, devicesAlerted, candidatesAnonymized };
+    // Resolved helpdesk cases the person neither confirmed nor reopened close after 7 days.
+    const helpdeskCasesClosed = await this.db.tenant((tx) => this.helpdesk.autoClose(tx), { tenantId });
+    return { ...hr, attendanceDaysComputed, devicesAlerted, candidatesAnonymized, helpdeskCasesClosed };
   }
 }

@@ -172,9 +172,9 @@ export class AttendanceDaysService {
 
   /** Raw punches for one employee between two instants, from every source. */
   async punches(tx: Tx, employeeId: string, fromMs: number, toMs: number) {
-    return many<{ id: string; captured_at: Date; direction: 'in' | 'out' | 'unknown'; source: string; geofence_result: string | null; device_name: string | null; correction_id: string | null; verify_method: string | null; note: string | null }>(
+    return many<{ id: string; captured_at: Date; direction: 'in' | 'out' | 'unknown'; source: string; geofence_result: string | null; device_name: string | null; correction_id: string | null; verify_method: string | null; note: string | null; risk_flags: string[] }>(
       tx,
-      `select ev.id, ev.captured_at, ev.direction, ev.source, ev.geofence_result, d.name as device_name, ev.correction_id, ev.verify_method, ev.note
+      `select ev.id, ev.captured_at, ev.direction, ev.source, ev.geofence_result, d.name as device_name, ev.correction_id, ev.verify_method, ev.note, ev.risk_flags
          from attendance_events ev left join attendance_devices d on d.id = ev.device_id
         where ev.captured_at >= $2 and ev.captured_at < $3 and ${EVENT_EMPLOYEE} = $1
         order by ev.captured_at`,
