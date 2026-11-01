@@ -9,6 +9,8 @@ const PG_ERRORS: Record<string, { status: number; code: string; message: string 
   '23514': { status: 422, code: 'constraint_violation', message: 'The change breaks a data rule' },
   '22P02': { status: 422, code: 'invalid_input', message: 'Invalid identifier or value' },
   '42501': { status: 403, code: 'forbidden', message: 'Not permitted' },
+  // Raised by the database's own guards on history that cannot change (finalised payroll, released reviews).
+  P0001: { status: 409, code: 'locked', message: 'This record is locked and cannot be changed' },
 };
 
 /** Renders every error as { error: { code, message, requestId, details? } } and never leaks internals. */

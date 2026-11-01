@@ -94,12 +94,18 @@ export const PERMISSIONS = [
 
   // Phase 6: talent and employee experience
   { key: 'performance:read', module: 'Performance', description: 'View goals and reviews', phase: 6, scopes: ALL },
-  { key: 'performance:manage', module: 'Performance', description: 'Run review cycles and write reviews', phase: 6, scopes: ['team', 'department', 'entity', 'tenant'] },
-  { key: 'learning:read', module: 'Learning', description: 'View courses and assignments', phase: 6, scopes: ALL },
-  { key: 'learning:manage', module: 'Learning', description: 'Manage catalogue and assign courses', phase: 6, scopes: ['team', 'department', 'entity', 'tenant'] },
-  { key: 'engagement:manage', module: 'Engagement', description: 'Run surveys, announcements and recognition programmes', phase: 6, scopes: TENANT_ONLY },
-  { key: 'helpdesk:use', module: 'Helpdesk', description: 'Raise HR tickets and ask the HR assistant', phase: 6, scopes: ['own'] },
-  { key: 'helpdesk:manage', module: 'Helpdesk', description: 'Handle HR tickets and the knowledge base', phase: 6, scopes: TENANT_ONLY },
+  { key: 'performance:manage', module: 'Performance', description: 'Set goals for, write manager reviews of and request feedback on people in scope', phase: 6, scopes: ['team', 'department', 'entity', 'tenant'] },
+  { key: 'performance:configure', module: 'Performance', description: 'Run review cycles, calibrate and release ratings', phase: 6, scopes: TENANT_ONLY },
+  { key: 'learning:read', module: 'Learning', description: 'View courses and learning assignments', phase: 6, scopes: ALL },
+  { key: 'learning:manage', module: 'Learning', description: 'Assign courses and track completion for people in scope', phase: 6, scopes: ['team', 'department', 'entity', 'tenant'] },
+  { key: 'learning:configure', module: 'Learning', description: 'Manage the course catalogue and learning paths', phase: 6, scopes: TENANT_ONLY },
+  { key: 'engagement:manage', module: 'Engagement', description: 'Run surveys, see anonymous results, manage company values and moderate recognition', phase: 6, scopes: TENANT_ONLY },
+  { key: 'surveys:respond', module: 'Engagement', description: 'Answer anonymous surveys', phase: 6, scopes: ['own'] },
+  { key: 'recognition:give', module: 'Engagement', description: 'Recognise colleagues on the recognition wall', phase: 6, scopes: ['own'] },
+
+  // Phase 7: employee experience
+  { key: 'helpdesk:use', module: 'Helpdesk', description: 'Raise HR tickets and ask the HR assistant', phase: 7, scopes: ['own'] },
+  { key: 'helpdesk:manage', module: 'Helpdesk', description: 'Handle HR tickets and the knowledge base', phase: 7, scopes: TENANT_ONLY },
 
   // Phase 8-9: intelligence, automation, integrations
   { key: 'reports:read', module: 'Analytics', description: 'View workforce analytics and reports', phase: 8, scopes: ALL },

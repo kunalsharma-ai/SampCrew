@@ -177,6 +177,13 @@ export async function provisionTenant(db: PoolClient, input: ProvisionTenantInpu
      select $1, c.name, true, c.max from (values ('Travel', null::numeric), ('Meals', 5000), ('Accommodation', null), ('Internet and phone', 3000), ('Other', null)) as c(name, max)`,
     [tenantId],
   );
+  // Phase 6: company values used to tag recognition. Each workspace edits them.
+  await db.query(
+    `insert into company_values (tenant_id, name, description)
+     select $1, v.name, v.description from (values ('Customer first', 'We start from what the customer needs.'), ('Ownership', 'We take responsibility and follow through.'),
+       ('Teamwork', 'We help each other succeed.'), ('Safety', 'Nobody gets hurt doing their job.')) as v(name, description)`,
+    [tenantId],
+  );
 
   return { tenantId, ownerUserId: userId, ownerMembershipId, legalEntityId, existingUser };
 }

@@ -52,6 +52,11 @@ import { PayrollRunsService } from './modules/payroll/payroll-runs.service';
 import { ExpensesController, PayrollController, PayslipsController, ReceiptFilesController } from './modules/payroll/payroll.controller';
 import { PayslipsService } from './modules/payroll/payslips.service';
 import { SalariesService } from './modules/payroll/salaries.service';
+import { EngagementService } from './modules/talent/engagement.service';
+import { GoalsService } from './modules/talent/goals.service';
+import { LearningService } from './modules/talent/learning.service';
+import { ReviewsService } from './modules/talent/reviews.service';
+import { EngagementController, GoalsController, LearningController, ReviewsController } from './modules/talent/talent.controller';
 import { AuditService } from './platform/audit/audit.service';
 import { AuthGuard } from './platform/auth/auth.guard';
 import { TokenService } from './platform/auth/token.service';
@@ -101,6 +106,10 @@ export const CONTROLLERS = [
   PayslipsController,
   ExpensesController,
   ReceiptFilesController,
+  GoalsController,
+  ReviewsController,
+  LearningController,
+  EngagementController,
   PlatformAuthController,
   PlatformController,
 ];
@@ -151,6 +160,10 @@ export const CONTROLLERS = [
     PayrollRunsService,
     PayslipsService,
     ExpensesService,
+    GoalsService,
+    ReviewsService,
+    LearningService,
+    EngagementService,
     HrJobsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
