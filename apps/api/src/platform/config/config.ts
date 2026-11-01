@@ -32,6 +32,20 @@ const schema = z.object({
   EXPO_PUSH_URL: z.string().url().default('https://exp.host/--/api/v2/push/send'),
   /** Optional Expo access token, needed when "enhanced push security" is on for the Expo project. */
   EXPO_ACCESS_TOKEN: optional(z.string().min(20)),
+  /**
+   * AI provider for the copilots. 'none' (the default) means AI is not set up: every AI feature says so and no
+   * data leaves CREW. 'anthropic' calls the Claude API with ANTHROPIC_API_KEY.
+   */
+  AI_PROVIDER: z.enum(['none', 'anthropic']).default('none'),
+  ANTHROPIC_API_KEY: optional(z.string().min(10)),
+  /** Optional override, e.g. a regional gateway or a local stub in tests. */
+  ANTHROPIC_BASE_URL: optional(z.string().url()),
+  AI_MODEL: z.string().min(3).max(100).default('claude-opus-5-5'),
+  /** How much the model reasons before answering. Short grounded answers do not need much. */
+  AI_EFFORT: z.enum(['low', 'medium', 'high']).default('low'),
+  /** Retry a refused request on the provider's fallback model (Claude API only). */
+  AI_REFUSAL_FALLBACK: z.enum(['true', 'false']).default('true'),
+  AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(30_000),
   FIELD_ENCRYPTION_KEY: z
     .string()
     .refine((v) => Buffer.from(v, 'base64').length === 32, 'FIELD_ENCRYPTION_KEY must be 32 bytes, base64 encoded'),
@@ -48,6 +62,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new Error(`Invalid configuration:\n${issues}`);
+  }
+  if (parsed.data.AI_PROVIDER === 'anthropic' && !parsed.data.ANTHROPIC_API_KEY) {
+    throw new Error('Invalid configuration: AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY');
   }
   if (parsed.data.JWT_ACCESS_SECRET === parsed.data.JWT_PLATFORM_SECRET) {
     throw new Error('Invalid configuration: JWT_ACCESS_SECRET and JWT_PLATFORM_SECRET must differ');

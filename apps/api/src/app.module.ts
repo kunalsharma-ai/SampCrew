@@ -61,6 +61,15 @@ import { AnnouncementsService } from './modules/helpdesk/announcements.service';
 import { AnnouncementsController, HelpdeskController } from './modules/helpdesk/helpdesk.controller';
 import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
 import { MobileController } from './modules/mobile/mobile.controller';
+import { AiController } from './modules/ai/ai.controller';
+import { AiGatewayService } from './modules/ai/ai-gateway.service';
+import { AiService } from './modules/ai/ai.service';
+import { AssistantService } from './modules/ai/assistant.service';
+import { AutomationController } from './modules/automation/automation.controller';
+import { AutomationService } from './modules/automation/automation.service';
+import { WorkflowRunnerService } from './modules/automation/workflow-runner.service';
+import { InsightsController } from './modules/insights/insights.controller';
+import { InsightsService } from './modules/insights/insights.service';
 import { MobileService } from './modules/mobile/mobile.service';
 import { AuditService } from './platform/audit/audit.service';
 import { AuthGuard } from './platform/auth/auth.guard';
@@ -119,6 +128,9 @@ export const CONTROLLERS = [
   HelpdeskController,
   AnnouncementsController,
   MobileController,
+  AiController,
+  AutomationController,
+  InsightsController,
   PlatformAuthController,
   PlatformController,
 ];
@@ -176,6 +188,12 @@ export const CONTROLLERS = [
     HelpdeskService,
     AnnouncementsService,
     MobileService,
+    AiGatewayService,
+    AiService,
+    AssistantService,
+    AutomationService,
+    WorkflowRunnerService,
+    InsightsService,
     PushService,
     HrJobsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },

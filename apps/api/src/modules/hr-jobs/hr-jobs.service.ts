@@ -7,6 +7,9 @@ import { EmployeesService } from '../employees/employees.service';
 import { LeaveService } from '../leave/leave.service';
 import { HelpdeskService } from '../helpdesk/helpdesk.service';
 import { CandidatesService } from '../recruitment/candidates.service';
+import { AiService } from '../ai/ai.service';
+import { InsightsService } from '../insights/insights.service';
+import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 
 export interface HrJobResult {
   tenantId: string;
@@ -18,6 +21,8 @@ export interface HrJobResult {
   devicesAlerted: number;
   candidatesAnonymized: number;
   helpdeskCasesClosed: number;
+  attritionScored: number;
+  aiPromptsPurged: number;
 }
 
 /**
@@ -39,6 +44,8 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly devices: DevicesService,
     private readonly candidates: CandidatesService,
     private readonly helpdesk: HelpdeskService,
+    private readonly ai: AiService,
+    private readonly insights: InsightsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -89,6 +96,14 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     const candidatesAnonymized = await this.candidates.applyRetention(tenantId);
     // Resolved helpdesk cases the person neither confirmed nor reopened close after 7 days.
     const helpdeskCasesClosed = await this.db.tenant((tx) => this.helpdesk.autoClose(tx), { tenantId });
-    return { ...hr, attendanceDaysComputed, devicesAlerted, candidatesAnonymized, helpdeskCasesClosed };
+    // Attrition scores, once a day (the job runs hourly; a second run on the same day only refreshes them).
+    const attritionScored = await this.db.tenant(async (tx) => {
+      if (!(await loadEntitlements(tx)).features.has('workforce_analytics')) return 0;
+      if (await one(tx, 'select 1 from attrition_scores where computed_on = $1 limit 1', [asOf])) return 0;
+      return this.insights.computeAttrition(tx, asOf);
+    }, { tenantId });
+    // AI prompt and answer text past the workspace's retention period is removed; usage numbers stay.
+    const aiPromptsPurged = await this.db.tenant((tx) => this.ai.purgeExpired(tx), { tenantId });
+    return { ...hr, attendanceDaysComputed, devicesAlerted, candidatesAnonymized, helpdeskCasesClosed, attritionScored, aiPromptsPurged };
   }
 }

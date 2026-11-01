@@ -23,5 +23,6 @@ export const Errors = {
   badRequest: (code: string, message: string) => new AppError(HttpStatus.BAD_REQUEST, code, message),
   limitReached: (limit: string, value: number) => new AppError(HttpStatus.PAYMENT_REQUIRED, 'plan_limit_reached', `Your plan allows ${value} ${limit}. Upgrade to add more.`, { limit, value }),
   tenantSuspended: () => new AppError(HttpStatus.FORBIDDEN, 'tenant_suspended', 'This workspace is suspended. Contact your administrator or SAMPLEDGE support.'),
+  unavailable: (code: string, message: string) => new AppError(HttpStatus.SERVICE_UNAVAILABLE, code, message),
   tooMany: (message = 'Too many attempts. Try again later.') => new AppError(HttpStatus.TOO_MANY_REQUESTS, 'rate_limited', message),
 };

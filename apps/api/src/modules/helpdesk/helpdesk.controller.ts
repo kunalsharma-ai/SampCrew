@@ -142,7 +142,7 @@ export class HelpdeskController {
   @RequirePermission('helpdesk:use')
   @Doc({ summary: 'Reply on a case; handlers can add internal notes', body: caseMessageInput })
   reply(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(caseMessageInput)) body: z.infer<typeof caseMessageInput>) {
-    return this.helpdesk.reply(id, body.body, body.internal);
+    return this.helpdesk.reply(id, body.body, body.internal, body.aiInteractionId);
   }
 
   @Post('cases/:id/status')

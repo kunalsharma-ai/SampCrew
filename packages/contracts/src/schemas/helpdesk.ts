@@ -44,6 +44,8 @@ export const caseMessageInput = z.object({
   body: text(1, 5000),
   /** Internal notes are visible to handlers only. */
   internal: z.boolean().default(false),
+  /** Set when HR started from an AI draft; the person sending is still the author. */
+  aiInteractionId: z.uuid().optional(),
 });
 
 export const caseStatusInput = z.object({

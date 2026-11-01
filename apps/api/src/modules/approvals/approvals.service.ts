@@ -77,10 +77,11 @@ export class ApprovalsService {
   }
 
   /** Starts an approval in the caller's transaction and notifies the first approver(s). */
-  async start(tx: Tx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string }): Promise<string> {
+  async start(tx: Tx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[] }): Promise<string> {
     const h = this.handler(input.resourceType);
     const actor = requestContext.tenantActor();
-    const defs = await this.steps(tx, input.resourceType);
+    // A caller can set the chain for one request (a workflow's approval step names its own approver).
+    const defs = input.steps ?? await this.steps(tx, input.resourceType);
 
     // Some requests (for example an offer to a candidate) are not about an employee; manager steps then resolve to
     // nobody and the role steps or the fallback role decide.

@@ -12,6 +12,7 @@
     "openapi": "node dist/openapi-export.js > ../../docs/api/openapi.json"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@crew/contracts": "workspace:*",
     "@crew/db": "workspace:*",
     "@nestjs/common": "11.2.8",

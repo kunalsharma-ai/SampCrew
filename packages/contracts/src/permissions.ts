@@ -112,6 +112,7 @@ export const PERMISSIONS = [
 
   // Phase 8-9: intelligence, automation, integrations
   { key: 'reports:read', module: 'Analytics', description: 'View workforce analytics and reports', phase: 8, scopes: ALL },
+  { key: 'insights:attrition', module: 'Analytics', description: 'See attrition risk scores, and the factors behind them, for people in scope (never shown to managers by default)', phase: 8, scopes: ['entity', 'tenant'], sensitive: true },
   { key: 'automation:manage', module: 'Automation', description: 'Build, test and activate workflows', phase: 8, scopes: TENANT_ONLY, requiresMfa: true },
   { key: 'ai:use', module: 'AI', description: 'Use CREW AI assistants (always limited to the user\'s own permissions)', phase: 8, scopes: ['own'] },
   { key: 'ai:configure', module: 'AI', description: 'Configure AI providers, features and limits', phase: 8, scopes: TENANT_ONLY, requiresMfa: true },
