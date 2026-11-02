@@ -67,6 +67,20 @@ export type PostingInput = z.infer<typeof postingInput>;
 
 export const CANDIDATE_SOURCES = ['career_site', 'referral', 'agency', 'sourced', 'manual'] as const;
 export const APPLICATION_STATUSES = ['active', 'rejected', 'withdrawn', 'hired'] as const;
+export const CANDIDATE_SORTS = ['activity', 'name', 'added'] as const;
+/** The candidate list: search, tag, job, source, where their applications stand, and the order. */
+export const candidateListQuery = z.object({
+  q: z.string().trim().max(120).optional(),
+  tag: z.string().trim().max(30).optional(),
+  requisitionId: z.uuid().optional(),
+  source: z.enum(CANDIDATE_SOURCES).optional(),
+  /** Candidates with an application in this state; "none" for people not in any job. */
+  status: z.enum([...APPLICATION_STATUSES, 'none']).optional(),
+  sort: z.enum(CANDIDATE_SORTS).default('activity'),
+  dir: z.enum(['asc', 'desc']).default('desc'),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+export type CandidateListQuery = z.infer<typeof candidateListQuery>;
 export const STAGE_KINDS = ['new', 'screen', 'interview', 'offer', 'hired'] as const;
 
 export const candidateInput = z.object({

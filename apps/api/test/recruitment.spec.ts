@@ -243,6 +243,35 @@ describe('recruitment', () => {
       expect(profile.body.timeline.map((e: { kind: string }) => e.kind)).toEqual(expect.arrayContaining(['applied', 'email_queued']));
     });
 
+    it('filters, sorts and exports the candidate list within the viewer\'s scope', async () => {
+      const referrals = await as('recruiter').get('/recruitment/candidates').query({ source: 'referral' });
+      expect(referrals.status).toBe(200);
+      expect(referrals.body.map((c: { id: string }) => c.id)).toEqual([vikramId]);
+      const byName = await as('recruiter').get('/recruitment/candidates').query({ sort: 'name', dir: 'asc' });
+      const names = byName.body.map((c: { lastName: string | null; firstName: string }) => `${c.firstName}`);
+      expect(names).toEqual([...names].sort((a: string, b: string) => a.localeCompare(b)));
+      const forJob = await as('recruiter').get('/recruitment/candidates').query({ requisitionId: reqId, status: 'active' });
+      expect(forJob.body.length).toBeGreaterThanOrEqual(2);
+      expect((await as('recruiter').get('/recruitment/candidates').query({ status: 'nonsense' })).status).toBe(422);
+      const csv = await as('recruiter').get('/recruitment/candidates/export.csv').query({ source: 'referral' });
+      expect(csv.status).toBe(200);
+      expect(csv.headers['content-type']).toContain('text/csv');
+      const lines = csv.text.trim().split(/\r?\n/);
+      expect(lines[0]).toContain('Name,Email');
+      expect(lines).toHaveLength(2);
+      expect(lines[1]).toContain('vikram@example.com');
+      const xlsx = await as('recruiter').get('/recruitment/candidates/export.xlsx').buffer(true).parse((res, cb) => {
+        const chunks: Buffer[] = []; res.on('data', (c: Buffer) => chunks.push(c)); res.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+      expect(xlsx.status).toBe(200);
+      expect(xlsx.headers['content-type']).toContain('spreadsheetml');
+      expect((xlsx.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+      // Out of scope people export nothing, and the export is audited.
+      const none = await as('salesManager').get('/recruitment/candidates/export.csv');
+      expect(none.text.trim().split(/\r?\n/)).toHaveLength(1);
+      expect((await pool.query("select count(*)::int as n from audit_events where action = 'candidate.list_exported'")).rows[0].n).toBeGreaterThanOrEqual(3);
+    });
+
     it('moves candidates between stages but never straight to Hired', async () => {
       const board = (await as('recruiter').get(`/recruitment/requisitions/${reqId}/pipeline`)).body as { stages: { id: string; kind: string }[] };
       const stage = (kind: string) => board.stages.find((s) => s.kind === kind)!.id;
@@ -337,6 +366,9 @@ describe('recruitment', () => {
       expect(asha.criteria).toEqual({ Coding: { average: '3.50', ratings: 2 }, 'System design': { average: '2.50', ratings: 2 }, Communication: { average: '3.50', ratings: 2 } });
       expect(vikram).toMatchObject({ candidateName: 'Vikram Shah', currentTitle: 'SDE II', criteria: {}, recommendations: {}, scorecards: 0 });
       expect(vikram.daysInProcess).toBeGreaterThanOrEqual(0);
+      // The hiring manager does not make offers here, so no pay is shown.
+      expect(res.body.pay).toBeNull();
+      expect(asha).not.toHaveProperty('offer');
       // One candidate, five, or someone from another job are refused; people outside the job's scope cannot compare.
       expect((await as('manager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp}`)).status).toBe(422);
       const salesApp = (await pool.query<{ id: string }>(`select id from applications where requisition_id = $1 limit 1`, [salesReqId])).rows[0]?.id ?? '00000000-0000-4000-8000-000000000000';
@@ -394,6 +426,13 @@ describe('recruitment', () => {
         expect((await api(app, noMfa).post(`/approvals/${item.id}/approve`).send({})).status).toBe(403);
         expect((await as('hr').post(`/approvals/${item.id}/approve`).send({})).status).toBe(200);
         expect((await pool.query('select status, above_range from offers where id = $1', [offerId])).rows[0]).toEqual({ status: 'approved', above_range: true });
+        // The recruiter, who makes offers on this job, sees the amount and the approved range when comparing.
+        const vApp = (await applicationOf(vikramId, reqId)).id;
+        const cmp = await as('recruiter').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`);
+        expect(cmp.status, JSON.stringify(cmp.body)).toBe(200);
+        expect(cmp.body.pay).toMatchObject({ currency: 'INR' });
+        expect(cmp.body.applications[0].offer).toMatchObject({ amount: '2600000.00', currency: 'INR', payPeriod: 'annual', status: 'approved', aboveRange: true });
+        expect(cmp.body.applications[1].offer).toBeNull();
       });
 
       it('sends the offer, records the answer, and refuses to hire before acceptance', async () => {

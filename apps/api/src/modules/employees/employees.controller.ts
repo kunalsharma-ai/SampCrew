@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { sendFile } from '../../platform/export/tabular';
 import { EmployeesService } from './employees.service';
 
 const linkInput = z.object({ membershipId: z.uuid() });
@@ -73,11 +74,14 @@ export class EmployeesController {
   @RequirePermission('employees:read')
   @Doc({ summary: 'The directory as CSV with chosen columns (same scope and filters as the list; audited)', query: employeeExportQuery })
   async exportCsv(@Query(new ZodPipe(employeeExportQuery)) q: z.infer<typeof employeeExportQuery>, @Res() res: Response) {
-    const f = await this.employees.exportCsv(q);
-    res.setHeader('content-type', 'text/csv; charset=utf-8');
-    res.setHeader('content-disposition', `attachment; filename="${f.fileName}"`);
-    res.setHeader('cache-control', 'private, no-store');
-    res.send(f.content);
+    sendFile(res, await this.employees.exportCsv(q, 'csv'), 'csv');
+  }
+
+  @Get('export.xlsx')
+  @RequirePermission('employees:read')
+  @Doc({ summary: 'The directory as an Excel workbook with chosen columns (same scope and filters as the list; audited)', query: employeeExportQuery })
+  async exportXlsx(@Query(new ZodPipe(employeeExportQuery)) q: z.infer<typeof employeeExportQuery>, @Res() res: Response) {
+    sendFile(res, await this.employees.exportCsv(q, 'xlsx'), 'xlsx', 'Employees');
   }
 
   @Post('duplicate-check')

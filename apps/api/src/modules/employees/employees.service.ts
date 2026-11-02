@@ -240,7 +240,7 @@ export class EmployeesService {
   }
 
   /** The directory as CSV with the chosen columns, same scope and filters as the list. Audited. */
-  async exportCsv(q: z.infer<typeof employeeExportQuery>) {
+  async exportCsv(q: z.infer<typeof employeeExportQuery>, format: 'csv' | 'xlsx' = 'csv') {
     return this.db.tenant(async (tx) => {
       const params: unknown[] = [];
       const where = await this.directoryWhere(tx, q, params);
@@ -255,7 +255,7 @@ export class EmployeesService {
       };
       const lines = [q.columns.map((c) => EXPORT_HEADERS[c]).join(',')];
       for (const r of rows) lines.push(q.columns.map((c) => cell(exportValue(r, c))).join(','));
-      await this.audit.record(tx, { action: 'employee.directory_exported', resourceType: 'employee', resourceId: null, changes: { rows: rows.length, columns: q.columns, filters: { q: q.q ?? null, status: q.status ?? null, departmentId: q.departmentId ?? null } } });
+      await this.audit.record(tx, { action: 'employee.directory_exported', resourceType: 'employee', resourceId: null, changes: { format, rows: rows.length, columns: q.columns, filters: { q: q.q ?? null, status: q.status ?? null, departmentId: q.departmentId ?? null } } });
       return { fileName: `employees-${new Date().toISOString().slice(0, 10)}.csv`, content: `\ufeff${lines.join('\r\n')}\r\n` };
     });
   }

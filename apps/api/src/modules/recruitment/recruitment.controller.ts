@@ -5,6 +5,7 @@ import {
   applicationListQuery,
   applyInput,
   candidateInput,
+  candidateListQuery,
   type CandidateInput,
   candidatePatch,
   careerSiteInput,
@@ -40,6 +41,7 @@ import { z } from 'zod';
 import { Public, RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { sendFile } from '../../platform/export/tabular';
 import type { UploadedFile } from '../documents/documents.service';
 import { CandidatesService } from './candidates.service';
 import { CareersService } from './careers.service';
@@ -49,7 +51,7 @@ import { RequisitionsService } from './requisitions.service';
 
 const requisitionPatch = patchOf(requisitionInput);
 const listQuery = z.object({ status: z.enum(REQUISITION_STATUSES).optional(), scope: z.enum(['all', 'mine']).default('all') });
-const candidateQuery = z.object({ q: z.string().trim().max(120).optional(), tag: z.string().trim().max(30).optional(), requisitionId: z.uuid().optional() });
+const candidateQuery = candidateListQuery;
 const peopleQuery = z.object({ q: z.string().trim().max(120).optional() });
 const reasonInput = z.object({ reason: z.string().trim().min(3).max(500) });
 const renameInput = z.object({ name: z.string().trim().min(2).max(40) });
@@ -176,6 +178,20 @@ export class RecruitmentController {
   @Doc({ summary: 'Candidates you can see', query: candidateQuery })
   candidatesList(@Query(new ZodPipe(candidateQuery)) q: z.infer<typeof candidateQuery>) {
     return this.candidates.list(q);
+  }
+
+  @Get('candidates/export.csv')
+  @RequirePermission('candidates:read')
+  @Doc({ summary: 'The candidate list as CSV (same scope and filters as the list; audited)', query: candidateQuery })
+  async candidatesCsv(@Query(new ZodPipe(candidateQuery)) q: z.infer<typeof candidateQuery>, @Res() res: Response) {
+    sendFile(res, await this.candidates.export(q, 'csv'), 'csv');
+  }
+
+  @Get('candidates/export.xlsx')
+  @RequirePermission('candidates:read')
+  @Doc({ summary: 'The candidate list as an Excel workbook (same scope and filters as the list; audited)', query: candidateQuery })
+  async candidatesXlsx(@Query(new ZodPipe(candidateQuery)) q: z.infer<typeof candidateQuery>, @Res() res: Response) {
+    sendFile(res, await this.candidates.export(q, 'xlsx'), 'xlsx', 'Candidates');
   }
 
   @Post('candidates')

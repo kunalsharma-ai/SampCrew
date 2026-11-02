@@ -12,6 +12,7 @@ import {
   type rejectInput,
 } from '@crew/contracts';
 import type { z } from 'zod';
+import type { CandidateListQuery } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { can } from '../../platform/authz/policy';
@@ -81,22 +82,42 @@ export class CandidatesService {
     return row;
   }
 
-  async list(q: { q?: string; tag?: string; requisitionId?: string; limit?: number }) {
+  private async listWhere(tx: Tx, q: Partial<CandidateListQuery>, params: unknown[]) {
+    const where = [await this.candidateScope(tx, 'candidates:read', params), 'c.anonymized_at is null'];
+    if (q.q) {
+      params.push(`%${q.q.toLowerCase()}%`);
+      where.push(`(lower(c.first_name || ' ' || c.last_name) like $${params.length} or c.email like $${params.length} or lower(coalesce(c.current_company, '')) like $${params.length})`);
+    }
+    if (q.tag) {
+      params.push(q.tag);
+      where.push(`$${params.length} = any(c.tags)`);
+    }
+    if (q.requisitionId) {
+      params.push(q.requisitionId);
+      where.push(`exists (select 1 from applications x where x.candidate_id = c.id and x.requisition_id = $${params.length})`);
+    }
+    if (q.source) {
+      params.push(q.source);
+      where.push(`c.source = $${params.length}`);
+    }
+    if (q.status === 'none') where.push(`not exists (select 1 from applications x where x.candidate_id = c.id)`);
+    else if (q.status) {
+      params.push(q.status);
+      where.push(`exists (select 1 from applications x where x.candidate_id = c.id and x.status = $${params.length})`);
+    }
+    return where;
+  }
+
+  private order(q: Partial<CandidateListQuery>) {
+    const dir = q.dir === 'asc' ? 'asc' : 'desc';
+    const key = q.sort === 'name' ? `lower(c.first_name || ' ' || c.last_name)` : q.sort === 'added' ? 'c.created_at' : 'c.last_activity_at';
+    return `${key} ${dir}, c.id ${dir}`;
+  }
+
+  async list(q: Partial<CandidateListQuery>) {
     return this.db.tenant(async (tx) => {
       const params: unknown[] = [];
-      const where = [await this.candidateScope(tx, 'candidates:read', params), 'c.anonymized_at is null'];
-      if (q.q) {
-        params.push(`%${q.q.toLowerCase()}%`);
-        where.push(`(lower(c.first_name || ' ' || c.last_name) like $${params.length} or c.email like $${params.length} or lower(coalesce(c.current_company, '')) like $${params.length})`);
-      }
-      if (q.tag) {
-        params.push(q.tag);
-        where.push(`$${params.length} = any(c.tags)`);
-      }
-      if (q.requisitionId) {
-        params.push(q.requisitionId);
-        where.push(`exists (select 1 from applications x where x.candidate_id = c.id and x.requisition_id = $${params.length})`);
-      }
+      const where = await this.listWhere(tx, q, params);
       params.push(Math.min(q.limit ?? 200, 500));
       return many(
         tx,
@@ -104,9 +125,35 @@ export class CandidatesService {
                 (select count(*)::int from applications x where x.candidate_id = c.id and x.status = 'active') as "activeApplications",
                 (select json_agg(json_build_object('requisitionCode', r2.code, 'requisitionTitle', r2.title, 'stage', s2.name, 'status', x.status) order by x.applied_at desc)
                    from applications x join job_requisitions r2 on r2.id = x.requisition_id join recruitment_stages s2 on s2.id = x.stage_id where x.candidate_id = c.id) as applications
-           from candidates c where ${where.join(' and ')} order by c.last_activity_at desc limit $${params.length}`,
+           from candidates c where ${where.join(' and ')} order by ${this.order(q)} limit $${params.length}`,
         params,
       );
+    });
+  }
+
+  /** The list as a file, with the same scope and filters (up to 5,000 people). Audited, as it carries contact details. */
+  async export(q: Partial<CandidateListQuery>, format: 'csv' | 'xlsx') {
+    return this.db.tenant(async (tx) => {
+      const params: unknown[] = [];
+      const where = await this.listWhere(tx, q, params);
+      const rows = await many<{ name: string; email: string; phone: string | null; currentTitle: string | null; currentCompany: string | null; locationText: string | null; source: string; tags: string[]; createdAt: Date; lastActivityAt: Date; jobs: string | null }>(
+        tx,
+        `select ${CANDIDATE_COLUMNS},
+                (select string_agg(r2.code || ' ' || r2.title || ' (' || case when x.status = 'active' then s2.name else x.status end || ')', '; ' order by x.applied_at desc)
+                   from applications x join job_requisitions r2 on r2.id = x.requisition_id join recruitment_stages s2 on s2.id = x.stage_id where x.candidate_id = c.id) as jobs
+           from candidates c where ${where.join(' and ')} order by ${this.order(q)} limit 5001`,
+        params,
+      );
+      if (rows.length > 5000) throw Errors.badRequest('export_too_large', 'More than 5,000 candidates match. Narrow the filters and export again.');
+      const cell = (v: unknown) => {
+        let t = v === null || v === undefined ? '' : v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
+        if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+        return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+      };
+      const lines = ['Name,Email,Phone,Current title,Current company,Location,Source,Tags,Jobs,Added,Last activity'];
+      for (const r of rows) lines.push([r.name, r.email, r.phone, r.currentTitle, r.currentCompany, r.locationText, r.source, r.tags.join('; '), r.jobs, r.createdAt, r.lastActivityAt].map(cell).join(','));
+      await this.audit.record(tx, { action: 'candidate.list_exported', resourceType: 'candidate', resourceId: null, changes: { format, rows: rows.length, filters: { q: q.q ?? null, tag: q.tag ?? null, requisitionId: q.requisitionId ?? null, source: q.source ?? null, status: q.status ?? null } } });
+      return { fileName: `candidates-${new Date().toISOString().slice(0, 10)}.csv`, content: `\ufeff${lines.join('\r\n')}\r\n` };
     });
   }
 
@@ -296,12 +343,24 @@ export class CandidatesService {
            from interviews i join interview_feedback f on f.interview_id = i.id where i.application_id = any($1::uuid[]) group by 1, 2`,
         [ids],
       );
+      // Offer amounts only for people who make offers on this job (pay is not shared with every interviewer).
+      const s = await this.authz.subject(tx);
+      const showPay = can(s, 'offers:manage', reqAttrs(r)).allowed;
+      const offers = showPay ? await many<{ applicationId: string; amount: string; currency: string; payPeriod: string; status: string; aboveRange: boolean; variablePay: string | null }>(
+        tx,
+        `select distinct on (o.application_id) o.application_id as "applicationId", o.base_salary::text as amount, o.currency, o.pay_period as "payPeriod", o.status,
+                o.above_range as "aboveRange", o.variable_pay as "variablePay"
+           from offers o where o.application_id = any($1::uuid[]) and o.status not in ('withdrawn', 'rejected') order by o.application_id, o.created_at desc`,
+        [ids],
+      ) : [];
       const days = (d: Date) => Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000));
       // Criteria from the job's scorecard first, then any others interviewers rated.
       const extra = [...new Set(criteria.map((c) => c.criterion))].filter((c) => !r.scorecard.includes(c)).sort();
       return {
         requisition: { id: r.id, code: r.code, title: r.title },
         criteria: [...r.scorecard, ...extra],
+        /** Whether offer amounts are shown; with them, the job's approved range. */
+        pay: showPay ? { salaryMin: r.salary_min, salaryMax: r.salary_max, currency: r.currency } : null,
         applications: ids.map((id) => {
           const a = apps.find((x) => x.id === id)!;
           return {
@@ -310,6 +369,7 @@ export class CandidatesService {
             daysInStage: days(a.stageEnteredAt),
             criteria: Object.fromEntries(criteria.filter((c) => c.applicationId === id).map((c) => [c.criterion, { average: c.average, ratings: c.ratings }])),
             recommendations: Object.fromEntries(recs.filter((x) => x.applicationId === id).map((x) => [x.recommendation, x.n])),
+            offer: showPay ? (offers.find((o) => o.applicationId === id) ?? null) : undefined,
           };
         }),
       };
