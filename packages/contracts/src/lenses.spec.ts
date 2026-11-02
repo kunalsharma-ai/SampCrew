@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMonths, applyScenario, projectScenario, flowByStage, globeCentre, orthographic, scenarioInput, skillsLayout, skillSummary, type RecruitmentFlow, type SkillsNetwork } from './lenses';
+import { addMonths, applyScenario, matchScore, requisitionSkillsInput, skillUpdateInput, projectScenario, flowByStage, globeCentre, orthographic, scenarioInput, skillsLayout, skillSummary, type RecruitmentFlow, type SkillsNetwork } from './lenses';
 
 const net: SkillsNetwork = {
   skills: [{ id: 's1', name: 'Forklift', category: null }, { id: 's2', name: 'Welding', category: null }],
@@ -95,5 +95,22 @@ describe('scenarios', () => {
     expect(scenarioInput.safeParse({ name: 'Plan', changes: [{ departmentId: d, delta: 1, startMonth: '2026-13' }] }).success).toBe(false);
     expect(scenarioInput.safeParse({ name: 'Plan', changes: [{ departmentId: d, delta: 1 }], assumptions: { horizonMonths: 48 } }).success).toBe(false);
     expect(scenarioInput.parse({ name: 'Plan', changes: [{ departmentId: d, delta: 1, role: 'Picker' }], assumptions: { attritionPctYear: 8 } }).assumptions).toEqual({ startMonth: null, horizonMonths: 12, attritionPctYear: 8, payRisePct: 0, payRiseMonth: null });
+  });
+});
+
+describe('skill matching', () => {
+  const req = [{ skillId: 'a', minLevel: 3 }, { skillId: 'b', minLevel: 2 }];
+  it('counts skills held at the level fully, below it by half and scaled, missing not at all', () => {
+    expect(matchScore(req, new Map([['a', 4], ['b', 2]]))).toEqual({ score: 100, met: 2 });
+    expect(matchScore(req, new Map([['a', 3]]))).toEqual({ score: 50, met: 1 });
+    expect(matchScore(req, new Map([['b', 1]]))).toEqual({ score: 13, met: 0 });
+    expect(matchScore([], new Map([['a', 4]]))).toEqual({ score: 0, met: 0 });
+  });
+  it('checks catalogue and job skill input', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    expect(skillUpdateInput.safeParse({}).success).toBe(false);
+    expect(skillUpdateInput.safeParse({ category: null }).success).toBe(true);
+    expect(requisitionSkillsInput.safeParse({ skills: [{ skillId: id, minLevel: 2 }, { skillId: id, minLevel: 3 }] }).success).toBe(false);
+    expect(requisitionSkillsInput.safeParse({ skills: [{ skillId: id, minLevel: 5 }] }).success).toBe(false);
   });
 });

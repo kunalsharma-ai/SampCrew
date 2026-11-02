@@ -1,10 +1,11 @@
-import type { RecruitmentFlow, Scenario, ScenarioBaseline, SkillsNetwork, UniverseData } from '@crew/contracts';
+import type { RecruitmentFlow, Scenario, ScenarioBaseline, SkillCatalogueEntry, SkillsNetwork, UniverseData } from '@crew/contracts';
 import { buttonClass, Card, EmptyState, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load, loadOptional } from '@/lib/api';
 import type { Me } from '@/lib/types';
 import { FlowLens, LocationsLens, ScenariosLens, SkillsLens } from './lenses';
+import { SkillCatalogue } from './skill-catalogue';
 import { UniverseView } from './universe-view';
 
 export const metadata: Metadata = { title: 'Workforce Universe' };
@@ -32,7 +33,8 @@ export default async function UniversePage({ searchParams }: { searchParams: Pro
       ? <UniverseView data={data} initialOn={sp.on && /^\d{4}-\d{2}-\d{2}$/.test(sp.on) ? sp.on : null} initialView={sp.view === '2d' ? '2d' : sp.view === '3d' ? '3d' : null} initialDept={sp.dept && /^[0-9a-f-]{36}$/.test(sp.dept) ? sp.dept : null} />
       : <LocationsLens data={data} />;
   } else if (lens === 'skills') {
-    body = <SkillsLens net={await load<SkillsNetwork>('/insights/skills')} />;
+    const [net, list] = await Promise.all([load<SkillsNetwork>('/insights/skills'), load<{ skills: SkillCatalogueEntry[]; canManage: boolean }>('/skills')]);
+    body = <div className="space-y-4"><SkillsLens net={net} /><SkillCatalogue skills={list.skills} canManage={list.canManage} /></div>;
   } else if (lens === 'flow') {
     const period = sp.period === 'year' || sp.period === 'all' ? sp.period : 'quarter';
     const flow = await loadOptional<RecruitmentFlow>(`/insights/recruitment-flow?period=${period}`);

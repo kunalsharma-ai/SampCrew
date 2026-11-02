@@ -51,6 +51,62 @@ export function skillSummary(n: SkillsNetwork): SkillSummary[] {
   }).sort((a, b) => b.people - a.people || a.name.localeCompare(b.name));
 }
 
+// The workspace's skill list: renamed, grouped, merged and removed by people who look after everyone's records.
+export const skillCreateInput = z.object({
+  name: z.string().trim().min(2, 'Name the skill').max(60),
+  category: z.string().trim().max(60).nullable().optional(),
+}).strict();
+export const skillUpdateInput = z.object({
+  name: z.string().trim().min(2, 'Name the skill').max(60).optional(),
+  category: z.string().trim().max(60).nullable().optional(),
+}).strict().refine((v) => v.name !== undefined || v.category !== undefined, { message: 'Change the name or the category' });
+export const skillMergeInput = z.object({ intoId: z.string().uuid() }).strict();
+export type SkillCreateInput = z.infer<typeof skillCreateInput>;
+export type SkillUpdateInput = z.infer<typeof skillUpdateInput>;
+
+export interface SkillCatalogueEntry {
+  id: string; name: string; category: string | null;
+  /** Holders among the people the viewer can see. */
+  people: number;
+  /** Jobs that ask for it. */
+  requisitions: number;
+}
+
+// Skills a job asks for, and the people inside the workspace who have them.
+export const requisitionSkillsInput = z.object({
+  skills: z.array(z.object({ skillId: z.string().uuid(), minLevel: z.number().int().min(1).max(4) }).strict()).max(15, 'Up to 15 skills'),
+}).strict().refine((v) => new Set(v.skills.map((s) => s.skillId)).size === v.skills.length, { message: 'Each skill once', path: ['skills'] });
+export type RequisitionSkillsInput = z.infer<typeof requisitionSkillsInput>;
+
+export interface SkillMatch {
+  employeeId: string; name: string; title: string | null; departmentName: string | null;
+  /** 0 to 100: how well the person's skills cover the job's. */
+  score: number;
+  /** Required skills held at or above the level asked. */
+  met: number;
+  skills: { skillId: string; name: string; minLevel: number; level: number | null }[];
+}
+
+export interface RequisitionSkills {
+  skills: { skillId: string; name: string; minLevel: number }[];
+  matches: SkillMatch[];
+  canEdit: boolean;
+}
+
+/**
+ * How well someone's skills cover what a job asks for. Each required skill counts fully when held at or above the
+ * level asked, half of the way there when held below it (scaled by level), and not at all when missing.
+ */
+export function matchScore(required: { skillId: string; minLevel: number }[], held: Map<string, number>) {
+  if (!required.length) return { score: 0, met: 0 };
+  let sum = 0; let met = 0;
+  for (const r of required) {
+    const l = held.get(r.skillId) ?? 0;
+    if (l >= r.minLevel) { sum += 1; met += 1; } else if (l) sum += (l / r.minLevel) * 0.5;
+  }
+  return { score: Math.round((sum / required.length) * 100), met };
+}
+
 /**
  * A fixed layout for the network: skills on a ring (most-held first), each person at the average position of their
  * skills pulled slightly inwards, so people who share skills sit together. Deterministic, so it does not jump.

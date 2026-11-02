@@ -9,9 +9,11 @@
  * 4. The 3D code (three.js) is a separate download, fetched only when the 3D view is opened.
  * 5. Locations: a globe with a dot per location, which turns; the table adds up.
  * 6. Skills: HR adds a skill on a profile and the skills network shows who holds it.
+ *    The skill list: HR adds a skill, merges the new one into it and gives it a category; all kept after a reload.
  * 7. Recruitment flow: stage by stage, drawn and tabled.
  * 8. Scenarios: a what-if plan with a month and attrition is projected, saved, reopened after a reload and deleted;
- *    the plant head raises draft requisitions from the demo scenario, once, and opens one.
+ *    the plant head raises draft requisitions from the demo scenario, once, opens one, names the skills it needs
+ *    and sees people already here who have them.
  */
 const { chromium } = require('playwright');
 
@@ -141,6 +143,26 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     expect(await p.locator('[data-skill="Robot welding"]').count() === 1, 'skill not drawn in the network');
     ok('added Robot welding (Expert) to Rekha; the skills network shows her as its only strong holder');
 
+    // The skill list: add "Welding", merge "Robot welding" into it, give it a category; kept after a reload.
+    const list = p.locator('[aria-label="Skill list"]');
+    await list.getByLabel('New skill name').fill('Welding');
+    await list.getByRole('button', { name: 'Add skill' }).click();
+    await p.getByText('Skill added.').waitFor();
+    await list.getByLabel('Merge Robot welding into').selectOption({ label: 'Welding' });
+    p.once('dialog', (d) => d.accept());
+    await list.getByRole('button', { name: 'Merge Robot welding' }).click();
+    await p.getByText('Skills merged.').waitFor();
+    await list.getByLabel('Name of Robot welding').waitFor({ state: 'detached' });
+    await list.getByLabel('Category of Welding').fill('Shop floor');
+    await list.getByRole('button', { name: 'Save Welding' }).click();
+    await p.getByText('Skill saved.').waitFor();
+    await p.reload();
+    const weld = p.locator('table[aria-label="Skills in this workspace"] tbody tr').filter({ has: p.getByLabel('Name of Welding') });
+    expect(await weld.getByLabel('Category of Welding').inputValue() === 'Shop floor', 'category not kept');
+    expect((await weld.locator('td').nth(2).innerText()).trim() === '1', 'Rekha should hold Welding after the merge');
+    expect(await p.locator('[data-skill="Robot welding"]').count() === 0, 'merged skill still drawn');
+    ok('added Welding, merged Robot welding into it (Rekha moved over) and filed it under Shop floor');
+
     // 7. Recruitment flow over all time: the first stage is reached by every application.
     await lens('Recruitment flow').click();
     await p.getByRole('tab', { name: 'All time' }).click();
@@ -220,8 +242,24 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await q.waitForURL(/\/recruitment\/jobs\//);
     await q.getByRole('heading', { name: /Machine Operator \(second shift\)/ }).first().waitFor();
     await q.getByText(/^Draft$/i).first().waitFor();
-    await ctx2.close();
     ok('the plant head raised 2 draft requisitions from the demo scenario, once, and opened one');
+
+    const js = q.locator('[aria-label="Skills for this job"]');
+    for (const [skill, level] of [['CNC operation', '3'], ['Forklift', '2']]) {
+      await js.getByLabel('Skill to ask for').selectOption({ label: `${skill} (Shop floor)` });
+      await js.getByLabel('Lowest level that counts').selectOption(level);
+      await js.getByRole('button', { name: 'Add', exact: true }).click();
+    }
+    await js.getByRole('button', { name: 'Save skills' }).click();
+    await q.getByText(/Skills saved\. \d+ people here/).waitFor();
+    await q.reload();
+    const matchRows = q.locator('table[aria-label="People here who match"] tbody tr');
+    await matchRows.first().waitFor();
+    const scores = await matchRows.evaluateAll((rs) => rs.map((r) => parseInt(r.children[2].textContent, 10)));
+    expect(scores.length > 0 && scores.every((v, i) => !i || scores[i - 1] >= v), `matches should be best first: ${scores}`);
+    expect(await js.getByText('CNC operation · Strong+').count() === 1, 'saved skills not shown after a reload');
+    await ctx2.close();
+    ok(`the job asks for CNC operation and Forklift; ${scores.length} people here match, best ${scores[0]}%`);
 
     const real = errs.filter((e) => !/favicon|DevTools/.test(e));
     expect(!real.length, `browser errors:\n${real.join('\n')}`);

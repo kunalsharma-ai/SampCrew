@@ -1,17 +1,21 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
-import { RECRUITMENT_FLOW_PERIODS, scenarioInput, type ScenarioInput, setEmployeeSkillsInput, type SetEmployeeSkillsInput } from '@crew/contracts';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  RECRUITMENT_FLOW_PERIODS, requisitionSkillsInput, type RequisitionSkillsInput, skillCreateInput, type SkillCreateInput, skillMergeInput, skillUpdateInput, type SkillUpdateInput,
+  scenarioInput, type ScenarioInput, setEmployeeSkillsInput, type SetEmployeeSkillsInput,
+} from '@crew/contracts';
 import { z } from 'zod';
 import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { LensesService } from './lenses.service';
+import { SkillCatalogueService } from './skill-catalogue.service';
 
 const scenarioRequisitionsInput = z.object({ departmentIds: z.array(z.string().uuid()).min(1).max(100).optional() }).strict();
 const flowQuery = z.object({ period: z.enum(RECRUITMENT_FLOW_PERIODS).default('quarter') }).strict();
 
 @Controller()
 export class LensesController {
-  constructor(private readonly lenses: LensesService) {}
+  constructor(private readonly lenses: LensesService, private readonly catalogue: SkillCatalogueService) {}
 
   @Get('insights/skills')
   @RequirePermission('employees:read')
@@ -76,5 +80,58 @@ export class LensesController {
   @Doc({ summary: 'Delete a headcount scenario' })
   remove(@Param('id', UuidPipe) id: string) {
     return this.lenses.deleteScenario(id);
+  }
+
+  // ---- Skill list and job skills ----
+
+  @Get('skills')
+  @RequirePermission('employees:read')
+  @Doc({ summary: 'The workspace’s skill list, with holders among the people you can see and the jobs that ask for each' })
+  catalogueList() {
+    return this.catalogue.catalogue();
+  }
+
+  @Post('skills')
+  @RequirePermission('employees:update')
+  @Doc({ summary: 'Add a skill to the list (people who may update every employee record)', body: skillCreateInput })
+  catalogueCreate(@Body(new ZodPipe(skillCreateInput)) body: SkillCreateInput) {
+    return this.catalogue.create(body);
+  }
+
+  @Patch('skills/:id')
+  @RequirePermission('employees:update')
+  @Doc({ summary: 'Rename a skill or change its category', body: skillUpdateInput })
+  catalogueUpdate(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(skillUpdateInput)) body: SkillUpdateInput) {
+    return this.catalogue.update(id, body);
+  }
+
+  @Post('skills/:id/merge')
+  @RequirePermission('employees:update')
+  @Doc({ summary: 'Merge a skill into another: holders and jobs move over at the higher level, then the skill is removed', body: skillMergeInput })
+  catalogueMerge(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(skillMergeInput)) body: { intoId: string }) {
+    return this.catalogue.merge(id, body.intoId);
+  }
+
+  @Delete('skills/:id')
+  @RequirePermission('employees:update')
+  @Doc({ summary: 'Remove a skill from the list and from everyone who holds it' })
+  catalogueDelete(@Param('id', UuidPipe) id: string) {
+    return this.catalogue.remove(id);
+  }
+
+  @Get('recruitment/requisitions/:id/skills')
+  @RequireFeature('recruitment')
+  @RequirePermission('requisitions:read')
+  @Doc({ summary: 'Skills a job asks for, and the people you can see who have them, best match first' })
+  jobSkills(@Param('id', UuidPipe) id: string) {
+    return this.catalogue.forRequisition(id);
+  }
+
+  @Put('recruitment/requisitions/:id/skills')
+  @RequireFeature('recruitment')
+  @RequirePermission('requisitions:create')
+  @Doc({ summary: 'Set the skills a job asks for, with the lowest level that counts', body: requisitionSkillsInput })
+  setJobSkills(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(requisitionSkillsInput)) body: RequisitionSkillsInput) {
+    return this.catalogue.setForRequisition(id, body);
   }
 }

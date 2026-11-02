@@ -28,6 +28,7 @@ import { ProposalsPublicService } from './modules/bids/proposals-public.service'
 import { BidsService } from './modules/bids/bids.service';
 import { LensesController } from './modules/universe/lenses.controller';
 import { LensesService } from './modules/universe/lenses.service';
+import { SkillCatalogueService } from './modules/universe/skill-catalogue.service';
 import { UniverseController } from './modules/universe/universe.controller';
 import { UniverseService } from './modules/universe/universe.service';
 import { NotificationsController } from './modules/notifications/notifications.controller';
@@ -203,6 +204,7 @@ export const CONTROLLERS = [
     IqService,
     UniverseService,
     LensesService,
+    SkillCatalogueService,
     OnboardingService,
     LeaveService,
     EmployeesService,

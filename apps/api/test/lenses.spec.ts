@@ -28,6 +28,7 @@ describe('universe lenses', () => {
       peer: await addMember(pool, t, { departmentId: ids.sales, name: 'Pia Peer' }),
       stranger: await addMember(pool, other, { roles: ['hr_admin'], name: 'Other HR' }),
     };
+    ids.talentM = people.talent.membershipId;
     for (const [k, p] of Object.entries(people)) tokens[k] = (await loginWithMfa(app, pool, p.email, k === 'stranger' ? other.slug : t.slug)).accessToken;
     const hire = async (body: Record<string, unknown>) => {
       const res = await as('hr').post('/employees').send({ legalEntityId: t.legalEntityId, probationMonths: 0, dateOfJoining: '2023-01-02', ...body });
@@ -139,6 +140,60 @@ describe('universe lenses', () => {
       const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'scenario.requisition_raised' and resource_id = $2`, [t.id, made.body.id]);
       expect(audit.rows[0].n).toBe(1);
       expect((await as('stranger').get('/insights/scenarios')).body.scenarios).toEqual([]);
+    });
+  });
+
+  describe('skill list and job skills', () => {
+    it('lets people who look after every record rename, group, merge and remove skills', async () => {
+      const hr = (await as('hr').get('/skills')).body;
+      expect(hr.canManage).toBe(true);
+      const id = (n: string) => hr.skills.find((s: { name: string }) => s.name === n)?.id as string;
+      expect(hr.skills.find((s: { name: string }) => s.name === 'Forklift')).toMatchObject({ people: 2, requisitions: 0 });
+      expect((await as('olu').get('/skills')).body).toMatchObject({ canManage: false });
+      expect((await as('olu').get('/skills')).body.skills.find((s: { name: string }) => s.name === 'Forklift').people).toBe(1);
+
+      const ren = await as('hr').patch(`/skills/${id('First aid')}`).send({ name: 'First aid at work', category: 'Safety' });
+      expect(ren.status, JSON.stringify(ren.body)).toBe(200);
+      expect(ren.body).toMatchObject({ name: 'First aid at work', category: 'Safety' });
+      expect((await as('hr').patch(`/skills/${id('First aid')}`).send({ name: 'forklift' })).status).toBe(422);
+      expect((await as('olu').patch(`/skills/${id('Forklift')}`).send({ category: 'X' })).status).toBe(403);
+
+      const dup = await as('hr').post('/skills').send({ name: 'Fork-lift truck', category: 'Warehouse' });
+      expect(dup.status, JSON.stringify(dup.body)).toBe(201);
+      expect((await as('hr').post('/skills').send({ name: 'FORKLIFT' })).status).toBe(422);
+      await as('hr').put(`/employees/${ids.ada}/skills`).send({ skills: [{ name: 'Forklift', level: 2 }, { name: 'Fork-lift truck', level: 3 }] });
+      const merged = await as('hr').post(`/skills/${dup.body.id}/merge`).send({ intoId: id('Forklift') });
+      expect(merged.status, JSON.stringify(merged.body)).toBe(201);
+      expect((await as('hr').get(`/employees/${ids.ada}/skills`)).body.skills).toEqual([expect.objectContaining({ name: 'Forklift', level: 3 })]);
+      expect((await pool.query(`select count(*)::int as n from skills where tenant_id = $1 and name = 'Fork-lift truck'`, [t.id])).rows[0].n).toBe(0);
+      const audit = await pool.query(`select action from audit_events where tenant_id = $1 and resource_type = 'skill' order by created_at`, [t.id]);
+      expect(audit.rows.map((r: { action: string }) => r.action)).toEqual(['skill.updated', 'skill.created', 'skill.merged']);
+      ids.forklift = id('Forklift');
+      ids.firstAid = id('First aid');
+    });
+
+    it('ranks the people a recruiter can see against the skills a job asks for', async () => {
+      const job = await as('talent').post('/recruitment/requisitions').send({
+        title: 'Warehouse lead', legalEntityId: t.legalEntityId, departmentId: ids.ops, hiringManagerMembershipId: ids.talentM, currency: 'INR',
+      });
+      expect(job.status, JSON.stringify(job.body)).toBe(201);
+      const url = `/recruitment/requisitions/${job.body.id}/skills`;
+      expect((await as('talent').get(url)).body).toEqual({ skills: [], matches: [], canEdit: true });
+      const set = await as('talent').put(url).send({ skills: [{ skillId: ids.forklift, minLevel: 4 }, { skillId: ids.firstAid, minLevel: 1 }] });
+      expect(set.status, JSON.stringify(set.body)).toBe(200);
+      expect(set.body.matches.map((m: { name: string; score: number; met: number }) => [m.name, m.score, m.met])).toEqual([['Olu Operator', 100, 2], ['Ada Ops', 19, 0]]);
+      expect(set.body.matches[1].skills).toEqual([
+        expect.objectContaining({ name: 'Forklift', minLevel: 4, level: 3 }), expect.objectContaining({ name: 'First aid at work', minLevel: 1, level: null }),
+      ]);
+      expect((await as('talent').put(url).send({ skills: [{ skillId: other.legalEntityId, minLevel: 2 }] })).status).toBe(422);
+      expect((await as('peer').get(url)).status).toBe(403);
+      expect((await as('stranger').get(url)).status).toBe(404);
+      expect((await as('hr').get('/skills')).body.skills.find((s: { id: string }) => s.id === ids.forklift).requisitions).toBe(1);
+      // Removing a skill takes it off people and jobs.
+      expect((await as('hr').delete(`/skills/${ids.firstAid}`)).status).toBe(200);
+      const after = (await as('talent').get(url)).body;
+      expect(after.skills.map((s: { name: string }) => s.name)).toEqual(['Forklift']);
+      expect(after.matches.map((m: { name: string; score: number }) => [m.name, m.score])).toEqual([['Olu Operator', 100], ['Ada Ops', 38]]);
     });
   });
 });

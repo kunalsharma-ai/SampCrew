@@ -132,6 +132,12 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
 /** Skills for the Workforce Universe skills network, by job title, and one saved headcount scenario. */
 async function seedLenses(client: PoolClient, c: { tid: string; membershipByEmail: Map<string, string> }) {
   const { tid } = c;
+  const SKILL_CATEGORY: Record<string, string> = {
+    'CNC operation': 'Shop floor', Forklift: 'Shop floor', '5S': 'Shop floor', 'Shift planning': 'Shop floor', 'Lean manufacturing': 'Shop floor', Metrology: 'Quality',
+    'First aid': 'Safety', 'Six Sigma': 'Quality', 'Root cause analysis': 'Quality', 'ISO 9001': 'Quality',
+    'Employment law': 'People', Interviewing: 'People', 'Payroll basics': 'People', Sourcing: 'People', 'Employer branding': 'People', Coaching: 'People',
+    'Statutory compliance': 'Finance', 'Excel modelling': 'Finance', Negotiation: 'Business', 'Key accounts': 'Business', Strategy: 'Business',
+  };
   // [skill, level] by words in the job title. Demo figures.
   const byTitle: [RegExp, [string, number][]][] = [
     [/operator|technician/i, [['CNC operation', 3], ['Forklift', 2], ['5S', 2], ['First aid', 1]]],
@@ -155,7 +161,7 @@ async function seedLenses(client: PoolClient, c: { tid: string; membershipByEmai
     for (const [i, [name, level]] of set.entries()) {
       if ((p.n + i) % 5 === 0) continue;
       if (!skillId.has(name)) {
-        skillId.set(name, (await client.query<{ id: string }>(`insert into skills (tenant_id, name) values ($1, $2) returning id`, [tid, name])).rows[0]!.id);
+        skillId.set(name, (await client.query<{ id: string }>(`insert into skills (tenant_id, name, category) values ($1, $2, $3) returning id`, [tid, name, SKILL_CATEGORY[name] ?? null])).rows[0]!.id);
       }
       const lv = Math.max(1, Math.min(4, level + ((p.n + i) % 3 === 0 ? 1 : (p.n + i) % 4 === 0 ? -1 : 0)));
       await client.query(`insert into employee_skills (tenant_id, employee_id, skill_id, level) values ($1, $2, $3, $4)`, [tid, p.id, skillId.get(name), lv]);
