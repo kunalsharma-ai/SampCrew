@@ -115,7 +115,11 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-    depends_on: [web, api, console]
+    # Start only once the apps answer their health checks, so the proxy's own first checks find them up.
+    depends_on:
+      web: { condition: service_healthy }
+      api: { condition: service_healthy }
+      console: { condition: service_healthy }
     networks: [edge]
 
   backup:

@@ -12,6 +12,16 @@
 	}
 }
 
+# Active health checks every 5 s; while an app restarts (an upgrade), requests wait up to 15 s for it instead of
+# failing at once with 503.
+(upstream) {
+	health_uri {args[0]}
+	health_interval 5s
+	health_timeout 3s
+	lb_try_duration 15s
+	lb_try_interval 500ms
+}
+
 (common) {
 	encode zstd gzip
 	header {
@@ -33,7 +43,7 @@
 		max_size 12MB
 	}
 	reverse_proxy web:3000 {
-		health_uri /healthz
+		import upstream /healthz
 	}
 }
 
@@ -44,7 +54,7 @@
 	}
 	# The machine-readable API description is for integrators; keep it, it lists no data.
 	reverse_proxy api:4000 {
-		health_uri /api/v1/health/live
+		import upstream /api/v1/health/live
 	}
 }
 
@@ -53,6 +63,6 @@
 	@blocked not remote_ip {$CONSOLE_ALLOWED_IPS:private_ranges}
 	respond @blocked "Not found" 404
 	reverse_proxy console:3001 {
-		health_uri /healthz
+		import upstream /healthz
 	}
 }
