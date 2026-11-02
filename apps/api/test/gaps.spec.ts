@@ -26,7 +26,7 @@ const EICAR = Buffer.from('X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS
 
 /**
  * TEST STUB of clamd, used when CLAMAV_TEST_URL is not set: it speaks clamd's INSTREAM protocol and reports the EICAR
- * test string, as ClamAV does. CI also runs this file against a real ClamAV (job "malware-scan", CLAMAV_TEST_URL).
+ * test string at the start of a file, as ClamAV does. CI also runs this file against a real ClamAV (job "malware-scan", CLAMAV_TEST_URL).
  */
 function clamdStub(): Promise<{ server: Server; url: string }> {
   const server = createServer((sock) => {
@@ -43,7 +43,8 @@ function clamdStub(): Promise<{ server: Server; url: string }> {
         const n = buf.readUInt32BE(off);
         if (n === 0) {
           const data = Buffer.concat(parts);
-          return void sock.end(data.includes(EICAR) ? 'stream: Eicar-Signature FOUND\0' : 'stream: OK\0');
+          // Like ClamAV, only a file that starts with the EICAR string is reported (the EICAR standard's own rule).
+          return void sock.end(data.subarray(0, EICAR.length).equals(EICAR) ? 'stream: Eicar-Signature FOUND\0' : 'stream: OK\0');
         }
         if (buf.length < off + 4 + n) return;
         parts.push(buf.subarray(off + 4, off + 4 + n));
@@ -179,7 +180,7 @@ describe('Phase 13: closing the remaining gaps', () => {
 
     it('answers clean and flagged files the way clamd does', async () => {
       expect(await scanWithClamd(scanner, pdf)).toEqual({ clean: true });
-      const r = await scanWithClamd(scanner, Buffer.concat([Buffer.from('notes\n'), EICAR]));
+      const r = await scanWithClamd(scanner, EICAR);
       expect(r.clean).toBe(false);
       expect(!r.clean && r.signature).toMatch(/eicar/i);
     });
