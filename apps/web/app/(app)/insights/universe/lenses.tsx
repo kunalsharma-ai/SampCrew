@@ -422,7 +422,7 @@ export function ScenariosLens({ baseline, scenarios, canSave, canRaise }: { base
           </ul>
         ) : <p className="px-4 pb-4 text-[0.8125rem] text-fg-subtle">None saved yet.</p>}
       </Card>
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Stat label={`Headcount today (${fmt(baseline.asOf)})`} value={result.before} />
