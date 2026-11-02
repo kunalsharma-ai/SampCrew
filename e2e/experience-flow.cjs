@@ -52,7 +52,8 @@ async function waitForHtml(p, attr, value) {
 /** A working day two weeks out, so it never collides with the Core HR flow's leave. */
 function leaveDay() {
   const d = new Date();
-  d.setUTCDate(d.getUTCDate() + 14);
+  // Three weeks out: the demo seeds a pending leave for Arjun 8 to 14 days ahead.
+  d.setUTCDate(d.getUTCDate() + 21);
   while ([0, 6].includes(d.getUTCDay())) d.setUTCDate(d.getUTCDate() + 1);
   if (d.getUTCFullYear() !== new Date().getUTCFullYear()) d.setUTCDate(d.getUTCDate() - 7);
   while ([0, 6].includes(d.getUTCDay())) d.setUTCDate(d.getUTCDate() - 1);

@@ -103,7 +103,16 @@ async function signIn(p, email, { code } = {}) {
     await p.getByLabel('Password').fill(PASSWORD);
     await p.getByRole('button', { name: 'Sign in' }).click();
     if (code) {
-      await p.getByText('Two-step sign-in').waitFor({ timeout: 15000 });
+      // The password step can be rate limited too (10 sign-ins a minute); wait and try again rather than time out.
+      const step = await Promise.race([
+        p.getByText('Two-step sign-in').waitFor({ timeout: 20000 }).then(() => 'code'),
+        p.getByText('Too many attempts').waitFor({ timeout: 20000 }).then(() => 'limited'),
+      ]);
+      if (step === 'limited') {
+        if (attempt >= 4) throw new Error(`sign-in for ${email} stayed rate limited`);
+        await p.waitForTimeout(20000);
+        continue;
+      }
       await p.getByLabel('Code').fill(code());
       await p.getByRole('button', { name: 'Verify' }).click();
     }
