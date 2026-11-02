@@ -67,7 +67,16 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
   async runAll(asOf = new Date().toISOString().slice(0, 10)): Promise<HrJobResult[]> {
     if (this.running) return [];
     this.running = true;
+    // With several API servers, only one runs the daily jobs at a time: a session lock held for the whole run.
+    // Another server that finds it taken skips this tick instead of doing the same work twice.
+    const lock = await this.db.pool.connect();
+    let held = false;
     try {
+      held = Boolean((await lock.query<{ ok: boolean }>(`select pg_try_advisory_lock(hashtext('crew.hr_jobs')) as ok`)).rows[0]?.ok);
+      if (!held) {
+        this.logger.log('HR jobs are already running on another server; skipping this run');
+        return [];
+      }
       const tenants = await this.db.platform((tx) => many<{ id: string }>(tx, `select id from tenants where status = 'active'`));
       const out: HrJobResult[] = [];
       for (const t of tenants) {
@@ -79,6 +88,8 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
       }
       return out;
     } finally {
+      if (held) await lock.query(`select pg_advisory_unlock(hashtext('crew.hr_jobs'))`).catch(() => undefined);
+      lock.release();
       this.running = false;
     }
   }

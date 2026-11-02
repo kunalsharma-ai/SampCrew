@@ -81,6 +81,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (productionLike && (parsed.data.INTEGRATIONS_ALLOW_PRIVATE_URLS === 'true' || parsed.data.SLACK_WEBHOOK_BASE_URL)) {
     throw new Error('Invalid configuration: INTEGRATIONS_ALLOW_PRIVATE_URLS and SLACK_WEBHOOK_BASE_URL are for local development and tests only');
   }
+  if (productionLike) {
+    const problems = productionProblems(parsed.data);
+    if (problems.length) throw new Error(`Invalid configuration for ${parsed.data.CREW_ENV}:\n${problems.map((p) => `  ${p}`).join('\n')}`);
+  }
   if (parsed.data.JWT_ACCESS_SECRET === parsed.data.JWT_PLATFORM_SECRET) {
     throw new Error('Invalid configuration: JWT_ACCESS_SECRET and JWT_PLATFORM_SECRET must differ');
   }
@@ -90,6 +94,58 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     corsOrigins: parsed.data.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
   };
   return cached;
+}
+
+/** Values copied from the templates that must never reach a real deployment. */
+const PLACEHOLDER = /change-?me|example|placeholder|not-secret|local-only|^(.)\1+$/i;
+
+/**
+ * Staging and production refuse settings that are fine on a laptop but unsafe on the internet: plain-http addresses
+ * (session cookies and tokens would cross the network unencrypted), localhost origins, wildcard CORS, http mobile
+ * sign-in return addresses, and secrets still holding a template value.
+ */
+export function productionProblems(c: z.infer<typeof schema>): string[] {
+  const out: string[] = [];
+  const https = (name: string, v: string) => {
+    let u: URL | undefined;
+    try {
+      u = new URL(v);
+    } catch {
+      /* reported below */
+    }
+    if (!u || u.protocol !== 'https:') out.push(`${name} must be an https:// address (got ${v})`);
+  };
+  https('WEB_PUBLIC_URL', c.WEB_PUBLIC_URL);
+  https('API_PUBLIC_URL', c.API_PUBLIC_URL);
+  for (const o of c.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)) {
+    if (o === '*') out.push('CORS_ORIGINS must list the exact origins, not *');
+    else https('CORS_ORIGINS entry', o);
+  }
+  for (const r of c.MOBILE_SSO_REDIRECTS.split(',').map((s) => s.trim()).filter(Boolean)) {
+    if (/^http:/i.test(r)) out.push(`MOBILE_SSO_REDIRECTS must not contain plain-http addresses (got ${r})`);
+  }
+  const secrets: Array<[string, string | undefined]> = [
+    ['JWT_ACCESS_SECRET', c.JWT_ACCESS_SECRET],
+    ['JWT_PLATFORM_SECRET', c.JWT_PLATFORM_SECRET],
+    ['FILE_URL_SECRET', c.FILE_URL_SECRET],
+  ];
+  for (const [name, v] of secrets) if (v && PLACEHOLDER.test(v)) out.push(`${name} still holds a template value; generate one (infra/deploy/gen-secrets.sh)`);
+  if (/^0+$|^A+=*$/.test(c.FIELD_ENCRYPTION_KEY)) out.push('FIELD_ENCRYPTION_KEY still holds a template value; generate one (infra/deploy/gen-secrets.sh)');
+  try {
+    const db = new URL(c.DATABASE_URL);
+    if (!db.password || PLACEHOLDER.test(decodeURIComponent(db.password))) out.push('DATABASE_URL needs a real password for the crew_api login');
+  } catch {
+    out.push('DATABASE_URL is not a valid connection URL');
+  }
+  if (c.REDIS_URL) {
+    try {
+      const r = new URL(c.REDIS_URL);
+      if (r.password && PLACEHOLDER.test(decodeURIComponent(r.password))) out.push('REDIS_URL still holds a template password');
+    } catch {
+      out.push('REDIS_URL is not a valid URL');
+    }
+  }
+  return out;
 }
 
 export function resetConfigForTests() {

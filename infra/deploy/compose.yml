@@ -1,0 +1,147 @@
+# CREW production stack on one host: PostgreSQL, Redis, the API, the Web Portal, the Super Admin Console, a TLS
+# reverse proxy, daily backups, and a one-shot migration job that runs before the API starts.
+#
+#   cp env.production.example .env && ./gen-secrets.sh >> .env    # then fill in the addresses and email settings
+#   docker compose up -d --build                                    # or pull images you built and pushed
+#
+# See docs/ops/runbook.md for the full procedure (first start, upgrades, backups, restore, rollback).
+# To use a managed PostgreSQL instead of the bundled one, point DATABASE_ADMIN_URL and DATABASE_URL at it and start
+# without it:  docker compose up -d --scale postgres=0   (and remove postgres from depends_on below).
+name: crew
+
+x-build: &build
+  context: ../..
+  dockerfile: infra/docker/Dockerfile
+
+x-app-env: &app-env
+  CREW_ENV: ${CREW_ENV:-production}
+  DATABASE_URL: postgres://crew_api:${DATABASE_API_PASSWORD:?run gen-secrets.sh}@${DATABASE_HOST:-postgres}:5432/${POSTGRES_DB:-crew}
+  REDIS_URL: redis://:${REDIS_PASSWORD:?run gen-secrets.sh}@redis:6379/0
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-crew}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run gen-secrets.sh}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-crew}"]
+      interval: 5s
+      retries: 20
+    networks: [data]
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    # Only rate-limit counters live here; nothing to keep across restarts.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?run gen-secrets.sh}", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [data]
+
+  migrate:
+    image: ${CREW_IMAGE_PREFIX:-crew}-tools:${CREW_VERSION:-local}
+    build: { <<: *build, target: tools }
+    restart: "no"
+    env_file: .env
+    environment:
+      <<: *app-env
+      DATABASE_ADMIN_URL: postgres://postgres:${POSTGRES_PASSWORD}@${DATABASE_HOST:-postgres}:5432/${POSTGRES_DB:-crew}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [data]
+
+  api:
+    image: ${CREW_IMAGE_PREFIX:-crew}-api:${CREW_VERSION:-local}
+    build: { <<: *build, target: api }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      <<: *app-env
+      API_PORT: "4000"
+      STORAGE_DIR: /data/files
+      # The API connects as the restricted crew_api login only; keep the owner password and backup key out of it.
+      POSTGRES_PASSWORD: ""
+      DATABASE_ADMIN_URL: ""
+      BACKUP_PASSPHRASE: ""
+    volumes: [files:/data/files]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    networks: [data, edge]
+    stop_grace_period: 30s
+
+  web:
+    image: ${CREW_IMAGE_PREFIX:-crew}-web:${CREW_VERSION:-local}
+    build: { <<: *build, target: web }
+    restart: unless-stopped
+    environment:
+      CREW_API_URL: http://api:4000
+      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL}
+      SESSION_COOKIE_SECURE: "true"
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [edge]
+
+  console:
+    image: ${CREW_IMAGE_PREFIX:-crew}-console:${CREW_VERSION:-local}
+    build: { <<: *build, target: console }
+    restart: unless-stopped
+    environment:
+      CREW_API_URL: http://api:4000
+      SESSION_COOKIE_SECURE: "true"
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [edge]
+
+  proxy:
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      CREW_WEB_ADDRESS: ${CREW_WEB_ADDRESS:?set CREW_WEB_ADDRESS}
+      CREW_API_ADDRESS: ${CREW_API_ADDRESS:?set CREW_API_ADDRESS}
+      CREW_CONSOLE_ADDRESS: ${CREW_CONSOLE_ADDRESS:?set CREW_CONSOLE_ADDRESS}
+      CONSOLE_ALLOWED_IPS: ${CONSOLE_ALLOWED_IPS:-private_ranges}
+      CREW_TLS_DIRECTIVE: ${CREW_TLS_DIRECTIVE:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [web, api, console]
+    networks: [edge]
+
+  backup:
+    image: ${CREW_IMAGE_PREFIX:-crew}-tools:${CREW_VERSION:-local}
+    restart: unless-stopped
+    command: ["/app/infra/deploy/scripts/backup.sh", "--loop"]
+    environment:
+      DATABASE_ADMIN_URL: postgres://postgres:${POSTGRES_PASSWORD}@${DATABASE_HOST:-postgres}:5432/${POSTGRES_DB:-crew}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
+    volumes:
+      - backups:/backups
+      - files:/data/files:ro
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [data]
+
+networks:
+  # The database and Redis are only on "data"; nothing on the internet-facing side can reach them directly.
+  data: {}
+  edge: {}
+
+volumes:
+  pgdata:
+  backups:
+  files:
+  caddy-data:
+  caddy-config:

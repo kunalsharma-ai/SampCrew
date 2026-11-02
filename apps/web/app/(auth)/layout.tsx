@@ -9,7 +9,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="relative flex items-center gap-2.5">
           <svg viewBox="0 0 32 32" className="size-8" aria-hidden><rect width="32" height="32" rx="9" fill="#6366f1" /><circle cx="11" cy="13" r="4" fill="#fff" /><circle cx="21" cy="13" r="4" fill="#fff" opacity=".7" /><path d="M5.5 25c1.4-4 4.6-6 8.5-6s7.1 2 8.5 6" stroke="#fff" strokeWidth="2.4" fill="none" strokeLinecap="round" /><circle cx="25" cy="23.5" r="2.5" fill="#fb923c" /></svg>
           <span className="text-lg font-bold tracking-[0.14em]">CREW</span>
-          <span className="ml-1 text-xs uppercase tracking-[0.18em] text-white/50">by Sampledge</span>
+          <span className="ml-1 text-xs uppercase tracking-[0.18em] text-white/65">by Sampledge</span>
         </div>
         <div className="relative max-w-lg">
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">One intelligent platform.<br />Your entire workforce.</h1>
@@ -22,7 +22,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             ))}
           </ul>
         </div>
-        <p className="relative text-xs text-white/40">© {new Date().getFullYear()} SAMPLEDGE</p>
+        <p className="relative text-xs text-white/65">© {new Date().getFullYear()} SAMPLEDGE</p>
       </aside>
       <main className="flex items-center justify-center px-4 py-10 sm:px-10">
         <div className="w-full max-w-sm animate-slide-up">

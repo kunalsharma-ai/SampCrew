@@ -1,6 +1,13 @@
 import { appearanceAttributes, themeStylesheet } from '@crew/contracts';
 import type { Metadata, Viewport } from 'next';
 import { appearanceFromCookie } from '@/lib/appearance-cookie';
+// Fonts are served from CREW itself (not Google Fonts), so no page view sends visitors' addresses to a third party.
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/500.css';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -18,8 +25,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" suppressHydrationWarning {...appearanceAttributes(appearance)}>
       <head>
         <style id="crew-theme" dangerouslySetInnerHTML={{ __html: themeStylesheet(appearance) }} />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
       </head>
       <body>
         <div className="crew-ambient" aria-hidden />

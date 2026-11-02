@@ -34,12 +34,20 @@ export class OutboxService implements OnApplicationBootstrap, OnModuleDestroy {
 
   onApplicationBootstrap() {
     if (process.env.CREW_DISABLE_DISPATCHER === 'true') return;
-    this.timer = setInterval(() => void this.dispatchOnce(), 1000);
+    this.timer = setInterval(() => void this.tick(), 1000);
     this.timer.unref();
   }
 
   onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
+  }
+
+  /**
+   * One timer tick. A database that is briefly unreachable (a restart, a failover) must not take the API down with
+   * an unhandled rejection: log it and try again on the next tick.
+   */
+  async tick(): Promise<void> {
+    await this.dispatchOnce().catch((err: Error) => this.logger.error(`Outbox tick failed: ${err.message}`));
   }
 
   /** Delivers one batch. Exposed for tests and for a dedicated worker process. */

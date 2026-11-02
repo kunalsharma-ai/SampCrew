@@ -1,0 +1,58 @@
+# Reverse proxy in front of CREW. Caddy gets and renews TLS certificates on its own for real domain names
+# (ports 80 and 443 must be reachable from the internet). Addresses come from .env:
+#   CREW_WEB_ADDRESS      e.g. crew.example.com        Web Portal (and the SAML / OpenID Connect return addresses)
+#   CREW_API_ADDRESS      e.g. api.crew.example.com    API: mobile app, SCIM, webhooks, attendance devices
+#   CREW_CONSOLE_ADDRESS  e.g. console.crew.example.com  SAMPLEDGE Super Admin Console
+#   CONSOLE_ALLOWED_IPS   who may reach the Console, e.g. "203.0.113.0/24 198.51.100.7" (default: private networks only)
+#   CREW_TLS              "internal" for a self-signed test certificate (local smoke test), else leave empty
+{
+	email {$ACME_EMAIL:}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+		-X-Powered-By
+	}
+	log {
+		output stdout
+		format json
+	}
+	{$CREW_TLS_DIRECTIVE:}
+}
+
+{$CREW_WEB_ADDRESS} {
+	import common
+	# Uploads (documents up to 10 MB) go through the portal's server actions.
+	request_body {
+		max_size 12MB
+	}
+	reverse_proxy web:3000 {
+		health_uri /healthz
+	}
+}
+
+{$CREW_API_ADDRESS} {
+	import common
+	request_body {
+		max_size 12MB
+	}
+	# The machine-readable API description is for integrators; keep it, it lists no data.
+	reverse_proxy api:4000 {
+		health_uri /api/v1/health/live
+	}
+}
+
+{$CREW_CONSOLE_ADDRESS} {
+	import common
+	@blocked not remote_ip {$CONSOLE_ALLOWED_IPS:private_ranges}
+	respond @blocked "Not found" 404
+	reverse_proxy console:3001 {
+		health_uri /healthz
+	}
+}

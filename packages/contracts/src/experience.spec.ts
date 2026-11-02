@@ -23,7 +23,10 @@ describe('theme presets', () => {
           expect(contrast(t.fg, t.surface)).toBeGreaterThanOrEqual(body);
           expect(contrast(t['fg-muted'], t.surface)).toBeGreaterThanOrEqual(4.5);
           expect(contrast(t['fg-muted'], t['bg-subtle'])).toBeGreaterThanOrEqual(4.5);
-          expect(contrast(t['fg-subtle'], t['bg-subtle'])).toBeGreaterThanOrEqual(3);
+          expect(contrast(t['fg-subtle'], t['bg-subtle'])).toBeGreaterThanOrEqual(4.5);
+          expect(contrast(t['fg-subtle'], t.surface)).toBeGreaterThanOrEqual(4.5);
+          expect(contrast(t.accent, t['accent-subtle'])).toBeGreaterThanOrEqual(4.5);
+          for (const k of ['success', 'warning', 'danger', 'info', 'ember'] as const) expect(contrast(t[k], t[`${k}-subtle`]), k).toBeGreaterThanOrEqual(4.5);
           expect(contrast(t.accent, t.surface)).toBeGreaterThanOrEqual(4.5);
           expect(contrast(t['accent-fg'], t.accent)).toBeGreaterThanOrEqual(4.5);
           expect(contrast(t.ember, t.surface)).toBeGreaterThanOrEqual(4.5);

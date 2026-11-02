@@ -11,6 +11,7 @@ import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { BidsService } from './bids.service';
 import { ProposalsPublicService } from './proposals-public.service';
+import { contentDisposition } from '../../platform/http/content-disposition';
 
 const clientQuery = z.object({ archived: z.enum(['true', 'false']).optional() });
 const pdfQuery = z.object({ version: z.uuid().optional() });
@@ -198,7 +199,7 @@ export class BidsController {
 
 function sendPdf(res: Response, f: { fileName: string; content: Buffer }) {
   res.setHeader('content-type', 'application/pdf');
-  res.setHeader('content-disposition', `inline; filename="${f.fileName}"`);
+  res.setHeader('content-disposition', contentDisposition('inline', f.fileName));
   res.setHeader('cache-control', 'private, no-store');
   res.send(f.content);
 }

@@ -235,7 +235,7 @@ export function ReviewView({ review }: { review: ReviewDetail }) {
               <div key={g.id}>
                 <Link className="font-medium text-accent hover:underline" href={`/goals/${g.id}`}>{g.title}</Link>
                 <div className="text-xs text-fg-muted">{GOAL_STATUS[g.status]}{g.weight ? ` · weight ${g.weight}%` : ''}</div>
-                <Progress value={g.progress} />
+                <Progress label={`${g.title} progress`} value={g.progress} />
               </div>
             )) : <p className="text-fg-muted">No goals overlap this period.</p>}
           </CardBody>

@@ -72,14 +72,14 @@
   --surface-raised: #ffffff;
   --fg: #12121a;
   --fg-muted: #4b4b5c;
-  --fg-subtle: #7a7a8c;
+  --fg-subtle: #666679; /* 4.9:1 on bg-subtle, WCAG AA for small text */
   --border: #e6e6ee;
   --border-strong: #d2d2de;
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-subtle: #eef0ff;
   --accent-fg: #ffffff;
-  --ember: #ea580c;
+  --ember: #c2410c; /* 4.8:1 on ember-subtle */
   --ember-subtle: #fff4ec;
   --success: #15803d;
   --success-subtle: #ecfdf3;

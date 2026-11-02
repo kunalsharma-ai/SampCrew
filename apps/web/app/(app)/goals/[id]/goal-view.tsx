@@ -37,7 +37,7 @@ export function GoalView({ goal, alignable }: { goal: GoalDetail; alignable: Ali
             }
           />
           <CardBody className="grid gap-4">
-            <Progress value={goal.progress} />
+            <Progress label="Goal progress" value={goal.progress} />
             {goal.keyResults.length > 0 && (
               <ul className="grid gap-3">
                 {goal.keyResults.map((k) => (
@@ -46,7 +46,7 @@ export function GoalView({ goal, alignable }: { goal: GoalDetail; alignable: Ali
                       <span className="font-medium">{k.title}</span>
                       <span className="whitespace-nowrap text-fg-muted">{num(k.currentValue)} of {num(k.targetValue)}{k.unit ? ` ${k.unit}` : ''} (from {num(k.startValue)})</span>
                     </div>
-                    <Progress value={k.progress} />
+                    <Progress label={`${k.title} progress`} value={k.progress} />
                   </li>
                 ))}
               </ul>
@@ -137,7 +137,7 @@ export function GoalView({ goal, alignable }: { goal: GoalDetail; alignable: Ali
                     <div key={c.id}>
                       <Link className="font-medium text-accent hover:underline" href={`/goals/${c.id}`}>{c.title}</Link>
                       <div className="text-xs text-fg-muted">{c.employeeName} · {GOAL_STATUS[c.status]}</div>
-                      <Progress value={c.progress} />
+                      <Progress label="Progress at this check-in" value={c.progress} />
                     </div>
                   ))}
                 </div>

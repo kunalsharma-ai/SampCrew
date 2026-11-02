@@ -1,5 +1,6 @@
 import { strToU8, zipSync } from 'fflate';
 import type { Response } from 'express';
+import { contentDisposition } from '../http/content-disposition';
 
 /**
  * Tables for download: CSV (as the lists already produce) and Excel (.xlsx). An .xlsx file is a zip of a few XML
@@ -90,13 +91,13 @@ export const csvToXlsx = (sheetName: string, csv: string) => toXlsx(sheetName, p
 export function sendFile(res: Response, f: { fileName: string; content: string | Buffer }, format: 'csv' | 'xlsx', sheetName = 'Export') {
   if (format === 'xlsx') {
     res.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('content-disposition', `attachment; filename="${f.fileName.replace(/\.csv$/, '.xlsx')}"`);
+    res.setHeader('content-disposition', contentDisposition('attachment', f.fileName.replace(/\.csv$/, '.xlsx')));
     res.setHeader('cache-control', 'private, no-store');
     res.send(typeof f.content === 'string' ? csvToXlsx(sheetName, f.content) : f.content);
     return;
   }
   res.setHeader('content-type', 'text/csv; charset=utf-8');
-  res.setHeader('content-disposition', `attachment; filename="${f.fileName}"`);
+  res.setHeader('content-disposition', contentDisposition('attachment', f.fileName));
   res.setHeader('cache-control', 'private, no-store');
   res.send(f.content);
 }

@@ -48,6 +48,7 @@ import { CareersService } from './careers.service';
 import { InterviewsService } from './interviews.service';
 import { OffersService } from './offers.service';
 import { RequisitionsService } from './requisitions.service';
+import { contentDisposition } from '../../platform/http/content-disposition';
 
 const requisitionPatch = patchOf(requisitionInput);
 const listQuery = z.object({ status: z.enum(REQUISITION_STATUSES).optional(), scope: z.enum(['all', 'mine']).default('all') });
@@ -476,7 +477,7 @@ export class ResumeFilesController {
     const f = await this.candidates.openFile(id, q.exp, q.sig);
     res.setHeader('content-type', f.contentType);
     res.setHeader('content-length', String(f.size));
-    res.setHeader('content-disposition', `attachment; filename="${f.fileName.replace(/"/g, '')}"`);
+    res.setHeader('content-disposition', contentDisposition('attachment', f.fileName));
     res.setHeader('cache-control', 'private, no-store');
     f.stream.pipe(res);
   }

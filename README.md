@@ -78,9 +78,20 @@ pnpm e2e:mobile     # Mobile app (browser build) against the API: offline punche
 pnpm e2e:integrations  # API keys, webhooks, Slack and workflow steps with local receivers (fresh db; start the API with INTEGRATIONS_ALLOW_PRIVATE_URLS=true SLACK_WEBHOOK_BASE_URL=http://localhost:4020)
 pnpm e2e:ai         # AI, Automation Studio and attrition flow against the local AI test stub (fresh db; start `node e2e/ai-stub.cjs` and the API with AI_PROVIDER=anthropic ANTHROPIC_API_KEY=<any test value> ANTHROPIC_BASE_URL=http://localhost:4010)
 pnpm e2e:console    # browser test of the console, including support access across both apps (fresh db, API + web + console)
+pnpm e2e:a11y       # accessibility (axe-core, WCAG 2.1 A and AA) on 25 web, console and mobile screens, light and dark
+pnpm load-test:workflows  # hiring, salaries and payroll at scale, then punches, leave and helpdesk concurrently (fresh db; API with API_RATE_LIMIT_PER_MINUTE=1000000)
+pnpm e2e:deploy     # builds the production images and tests infra/deploy/compose.yml from outside (needs Docker)
 ```
 
 CI runs all of these on every pull request.
+
+## Running in production
+
+`infra/deploy/` has everything to run CREW on a host with Docker: one Dockerfile for the API, Web Portal, Console and
+the tools image (migrations, backups, restore), a compose file with a TLS proxy, PostgreSQL, Redis and daily encrypted
+backups, an environment template and a secret generator. The steps, upgrades, rollback, restore and secret rotation
+are in [docs/ops/runbook.md](docs/ops/runbook.md); the security review is in
+[docs/security-review.md](docs/security-review.md).
 
 ## Repository layout
 

@@ -14,3 +14,6 @@ next-env.d.ts
 dist-web/
 .expo/
 *-failure.png
+infra/deploy/backups/
+infra/deploy/.env.smoke
+infra/deploy/smoke-logs.txt

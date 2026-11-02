@@ -217,21 +217,28 @@ export function buildTheme(a: Pick<Appearance, 'preset' | 'primary' | 'secondary
   const border = mix(surface, fg, high ? 0.32 : dark ? 0.13 : 0.1);
   const borderStrong = mix(surface, fg, high ? 0.5 : dark ? 0.22 : 0.18);
   const fgMuted = ensureContrast(mix(fg, bg, high ? 0.12 : 0.3), bgSubtle, high ? 7 : 4.6, fg);
-  const fgSubtle = ensureContrast(mix(fg, bg, high ? 0.25 : 0.46), bgSubtle, high ? 4.6 : 3.2, fg);
+  // Subtle text is used at small sizes (table headings, timestamps, hints), so it needs the full 4.5:1 too.
+  const fgSubtle = ensureContrast(mix(fg, bg, high ? 0.25 : 0.4), bgSubtle, high ? 7 : 4.6, fg);
 
   // Accent: used as text on surfaces and as a filled button. Keep it legible both ways.
   let accent = ensureContrast(a.primary ?? seed.primary, surface, high ? 6 : 4.5, toward);
   accent = ensureContrast(accent, bgSubtle, 3.2, toward);
+  // Badges and the selected menu item put accent text on accent-subtle: a lighter tint first, then a stronger accent.
+  let tint = dark ? 0.18 : 0.09;
+  while (tint > 0.05 && contrast(accent, mix(surface, accent, tint)) < 4.6) tint -= 0.01;
+  const accentSubtle = mix(surface, accent, tint);
+  accent = ensureContrast(accent, accentSubtle, 4.6, toward);
   const accentFg = readableOn(accent);
   // Filled buttons put accent-fg on accent: push the accent away from its text colour until that reads at AA.
   accent = ensureContrast(accent, accentFg, 4.5, accentFg === '#ffffff' ? '#000000' : '#ffffff');
   const accentHover = mix(accent, dark ? '#ffffff' : '#000000', 0.14);
-  const accentSubtle = mix(surface, accent, dark ? 0.18 : 0.09);
-  const secondary = ensureContrast(a.secondary ?? seed.secondary, surface, 4.5, toward);
+  const secondary = ensureContrast(ensureContrast(a.secondary ?? seed.secondary, surface, 4.5, toward), mix(surface, a.secondary ?? seed.secondary, dark ? 0.16 : 0.08), 4.6, toward);
   const tertiary = a.accent ?? seed.tertiary;
 
-  const status = STATUS[mode];
   const sub = (c: string) => mix(surface, c, dark ? 0.16 : 0.08);
+  // Status badges put the colour on its own tint: keep each pair at 4.5:1 or more.
+  const onTint = (c: string) => ensureContrast(c, sub(c), 4.6, toward);
+  const status = Object.fromEntries(Object.entries(STATUS[mode]).map(([k, c]) => [k, onTint(c)])) as (typeof STATUS)['light'];
   const charts =
     a.chartPalette === 'colorblind'
       ? COLORBLIND

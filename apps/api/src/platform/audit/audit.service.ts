@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { requestContext } from '../context/request-context';
-import type { Tx } from '../database/database.service';
+import { deferUntilCommit, type Tx } from '../database/database.service';
 
 export interface AuditInput {
   action: string;
@@ -36,7 +36,7 @@ export function diff(before: Record<string, unknown>, after: Record<string, unkn
 
 /**
  * Writes to the append-only, hash-chained audit_events table inside the caller's transaction, so the audit
- * record commits or rolls back together with the change it describes.
+ * record commits or rolls back together with the change it describes. The row is inserted just before commit.
  */
 @Injectable()
 export class AuditService {
@@ -46,7 +46,9 @@ export class AuditService {
     const tenantId = input.tenantId !== undefined ? input.tenantId : actor?.kind === 'user' ? actor.tenantId : null;
     const actorType = actor?.kind ?? 'system';
     const actorId = actor?.kind === 'user' ? actor.userId : actor?.kind === 'platform_admin' ? actor.adminId : null;
-    await tx.query(
+    // Everything about the event is captured now (who, from where); only the insert waits for the end of the
+    // transaction, so the audit-chain lock is the last lock it takes (see deferUntilCommit).
+    const insert = () => tx.query(
       `insert into audit_events (tenant_id, actor_type, actor_id, actor_label, action, resource_type, resource_id, changes, metadata, ip, user_agent, request_id)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
@@ -63,6 +65,7 @@ export class AuditService {
         ctx?.userAgent?.slice(0, 400) ?? null,
         ctx?.requestId ?? null,
       ],
-    );
+    ).then(() => undefined);
+    if (!deferUntilCommit(tx, insert)) await insert();
   }
 }

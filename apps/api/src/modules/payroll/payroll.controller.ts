@@ -30,6 +30,7 @@ import { PayrollConfigService } from './payroll-config.service';
 import { PayrollRunsService } from './payroll-runs.service';
 import { PayslipsService } from './payslips.service';
 import { SalariesService } from './salaries.service';
+import { contentDisposition } from '../../platform/http/content-disposition';
 
 const entityQuery = z.object({ legalEntityId: z.uuid().optional() });
 const salaryQuery = z.object({ legalEntityId: z.uuid().optional(), q: z.string().trim().max(120).optional() });
@@ -42,7 +43,7 @@ const fileQuery = z.object({ exp: z.coerce.number().int(), sig: z.string().min(1
 
 function sendCsv(res: Response, f: { fileName: string; content: string }) {
   res.setHeader('content-type', 'text/csv; charset=utf-8');
-  res.setHeader('content-disposition', `attachment; filename="${f.fileName}"`);
+  res.setHeader('content-disposition', contentDisposition('attachment', f.fileName));
   res.setHeader('cache-control', 'private, no-store');
   res.send(f.content);
 }
@@ -395,7 +396,7 @@ export class ReceiptFilesController {
     const f = await this.expenses.openReceipt(id, q.exp, q.sig);
     res.setHeader('content-type', f.contentType);
     res.setHeader('content-length', String(f.size));
-    res.setHeader('content-disposition', `attachment; filename="${f.fileName.replace(/"/g, '')}"`);
+    res.setHeader('content-disposition', contentDisposition('attachment', f.fileName));
     res.setHeader('cache-control', 'private, no-store');
     f.stream.pipe(res);
   }

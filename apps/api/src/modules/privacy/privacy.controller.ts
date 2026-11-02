@@ -7,6 +7,7 @@ import { requestContext } from '../../platform/context/request-context';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { PrivacyService } from './privacy.service';
+import { contentDisposition } from '../../platform/http/content-disposition';
 
 const listQuery = z.object({ status: z.enum(['open', 'completed', 'rejected']).optional() });
 
@@ -46,7 +47,7 @@ export class PrivacyController {
   async download(@Param('id', UuidPipe) id: string, @Res({ passthrough: true }) res: Response) {
     const f = await this.privacy.download(id);
     res.setHeader('content-type', 'application/json; charset=utf-8');
-    res.setHeader('content-disposition', `attachment; filename="${f.fileName}"`);
+    res.setHeader('content-disposition', contentDisposition('attachment', f.fileName));
     res.setHeader('cache-control', 'no-store');
     return new StreamableFile(f.stream, { length: f.size });
   }

@@ -24,6 +24,7 @@ import { sniffMatches, StorageService } from '../../platform/storage/storage.ser
 import type { UploadedFile } from '../documents/documents.service';
 import { uniqueAs } from '../employees/employees.service';
 import { CANDIDATE_FOOTER, loadApplication, loadRequisition, recordEvent, REQ_SCOPE, reqAttrs, stageOfKind, withdrawOpenOffers } from './recruitment-common';
+import { safeFileName } from '../../platform/http/content-disposition';
 
 const CANDIDATE_COLUMNS = `c.id, c.first_name as "firstName", c.last_name as "lastName", trim(c.first_name || ' ' || c.last_name) as name, c.email, c.phone,
   c.location_text as "locationText", c.current_title as "currentTitle", c.current_company as "currentCompany", c.profile_url as "profileUrl",
@@ -521,7 +522,7 @@ export class CandidatesService {
     CandidatesService.checkResume(file);
     const key = this.storage.newKey(tenantId);
     const sha = createHash('sha256').update(file.buffer).digest('hex');
-    const name = file.originalname.replace(/[^\w.\- ()]+/g, '_').slice(0, 200) || 'cv';
+    const name = safeFileName(file.originalname, 'cv');
     await this.storage.put(key, file.buffer);
     return (await one<{ id: string }>(
       tx,

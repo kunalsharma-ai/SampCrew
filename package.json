@@ -39,11 +39,15 @@
     "e2e:ats": "node e2e/ats-flow.cjs",
     "e2e:iq": "node e2e/iq-flow.cjs",
     "e2e:hardening": "node e2e/hardening-flow.cjs",
-    "load-test": "node e2e/load.cjs"
+    "e2e:a11y": "node e2e/a11y.cjs",
+    "e2e:deploy": "infra/deploy/smoke.sh",
+    "load-test": "node e2e/load.cjs",
+    "load-test:workflows": "node e2e/load-workflows.cjs"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
     "@xmldom/xmldom": "0.8.10",
+    "axe-core": "4.14.0",
     "otplib": "12.0.1",
     "playwright": "1.63.0",
     "typescript": "5.9.3",

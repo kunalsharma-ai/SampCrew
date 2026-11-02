@@ -481,12 +481,12 @@ function NotificationBell({ data }: { data: Notifications }) {
       <button
         onClick={() => setOpen((v) => !v)}
         className="relative rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg"
-        aria-label={data.unread ? `Notifications, ${data.unread} unread` : 'Notifications'}
+        aria-label={data.unread ? `Notifications, ${data.unread > 99 ? '99+' : data.unread} unread` : 'Notifications'}
         aria-expanded={open}
       >
         <Bell className="size-4" />
         {data.unread > 0 && (
-          <span className="absolute right-0.5 top-0.5 flex min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[0.625rem] font-semibold leading-4 text-white">{data.unread > 99 ? '99+' : data.unread}</span>
+          <span aria-hidden className="absolute right-0.5 top-0.5 flex min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[0.625rem] font-semibold leading-4 text-surface">{data.unread > 99 ? '99+' : data.unread}</span>
         )}
       </button>
       <Popover open={open} onClose={close} className="w-[min(22rem,calc(100vw-2rem))]">

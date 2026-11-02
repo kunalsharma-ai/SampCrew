@@ -231,7 +231,7 @@ function KpiCard({ k }: { k: Kpi }) {
     </>
   );
   const cls = 'group crew-edge block rounded-xl border border-border bg-surface px-4 py-3 shadow-card transition-colors hover:border-border-strong';
-  return k.href ? <Link href={k.href} className={cls} title={k.hint} aria-label={`${k.label}: ${formatKpi(k, k.value ?? 0)}${k.hint ? `. ${k.hint}` : ''}`}>{inner}</Link> : <div className={cls}>{inner}</div>;
+  return k.href ? <Link href={k.href} className={cls} title={k.hint}>{inner}</Link> : <div className={cls}>{inner}</div>;
 }
 
 function KpiStrip({ kpis }: { kpis: Kpi[] }) {
