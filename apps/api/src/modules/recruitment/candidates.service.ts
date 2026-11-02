@@ -92,19 +92,22 @@ export class CandidatesService {
       params.push(q.tag);
       where.push(`$${params.length} = any(c.tags)`);
     }
-    if (q.requisitionId) {
-      params.push(q.requisitionId);
-      where.push(`exists (select 1 from applications x where x.candidate_id = c.id and x.requisition_id = $${params.length})`);
-    }
     if (q.source) {
       params.push(q.source);
       where.push(`c.source = $${params.length}`);
     }
-    if (q.status === 'none') where.push(`not exists (select 1 from applications x where x.candidate_id = c.id)`);
-    else if (q.status) {
-      params.push(q.status);
-      where.push(`exists (select 1 from applications x where x.candidate_id = c.id and x.status = $${params.length})`);
+    // Job and status together mean "their application for this job is in this state".
+    const app: string[] = [];
+    if (q.requisitionId) {
+      params.push(q.requisitionId);
+      app.push(`x.requisition_id = $${params.length}`);
     }
+    if (q.status && q.status !== 'none') {
+      params.push(q.status);
+      app.push(`x.status = $${params.length}`);
+    }
+    if (app.length) where.push(`exists (select 1 from applications x where x.candidate_id = c.id and ${app.join(' and ')})`);
+    if (q.status === 'none') where.push(`not exists (select 1 from applications x where x.candidate_id = c.id)`);
     return where;
   }
 

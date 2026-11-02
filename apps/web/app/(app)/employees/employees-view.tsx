@@ -160,6 +160,9 @@ export function EmployeesView(props: Props) {
               <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}`} download>
                 <Download className="size-3.5" /> Export CSV
               </a>
+              <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}&format=xlsx`} download>
+                <Download className="size-3.5" /> Export Excel
+              </a>
               {canHire && <Button size="sm" onClick={() => { setDraft(null); setHireOpen(true); }}><UserPlus className="size-4" /> Add employee</Button>}
             </>
           }

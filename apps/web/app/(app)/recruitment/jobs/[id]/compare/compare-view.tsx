@@ -11,8 +11,19 @@ export interface ComparedApplication extends Application {
   locationText: string | null; anonymized: boolean; daysInProcess: number; daysInStage: number;
   criteria: Record<string, { average: string; ratings: number }>;
   recommendations: Partial<Record<'strong_yes' | 'yes' | 'no' | 'strong_no', number>>;
+  /** Present only for people who make offers on this job: the latest live offer, or null. */
+  offer?: { amount: string; currency: string; payPeriod: string; status: string; aboveRange: boolean; variablePay: string | null } | null;
 }
-export interface Comparison { requisition: { id: string; code: string; title: string }; criteria: string[]; applications: ComparedApplication[] }
+export interface Comparison {
+  requisition: { id: string; code: string; title: string }; criteria: string[]; applications: ComparedApplication[];
+  pay?: { salaryMin: string | null; salaryMax: string | null; currency: string } | null;
+}
+
+const PERIOD: Record<string, string> = { annual: 'a year', monthly: 'a month', hourly: 'an hour' };
+const money = (amount: string | number, currency: string) => {
+  try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(amount)); }
+  catch { return `${currency} ${Number(amount).toLocaleString('en-IN')}`; }
+};
 
 const REC: [keyof ComparedApplication['recommendations'], string, 'success' | 'info' | 'warning' | 'danger'][] = [
   ['strong_yes', 'Strong yes', 'success'], ['yes', 'Yes', 'info'], ['no', 'No', 'warning'], ['strong_no', 'Strong no', 'danger'],
@@ -105,6 +116,25 @@ export function CompareView({ data, stages, canMove, path }: { data: Comparison;
                 <TH scope="row" className="text-left font-medium text-fg-muted">Interviews scheduled</TH>
                 {apps.map((a) => <TD key={a.id} className="tabular-nums">{a.interviews}</TD>)}
               </TR>
+              {data.pay && (
+                <TR>
+                  <TH scope="row" className="text-left align-top font-medium text-fg-muted">
+                    Offer amount
+                    {data.pay.salaryMin && data.pay.salaryMax && <span className="block text-xs font-normal text-fg-subtle">Range {money(data.pay.salaryMin, data.pay.currency)} to {money(data.pay.salaryMax, data.pay.currency)}</span>}
+                  </TH>
+                  {apps.map((a) => (
+                    <TD key={a.id} className="align-top">
+                      {a.offer ? (
+                        <>
+                          <span className="font-medium tabular-nums">{money(a.offer.amount, a.offer.currency)}</span> <span className="text-xs text-fg-subtle">{PERIOD[a.offer.payPeriod] ?? a.offer.payPeriod}</span>
+                          {a.offer.variablePay && <span className="block text-xs text-fg-subtle">Variable: {a.offer.variablePay}</span>}
+                          {a.offer.aboveRange && <Badge tone="warning" className="mt-1">Above range</Badge>}
+                        </>
+                      ) : <span className="text-fg-subtle">No amount yet</span>}
+                    </TD>
+                  ))}
+                </TR>
+              )}
               <TR>
                 <TH scope="row" className="text-left font-medium text-fg-muted">Offer</TH>
                 {apps.map((a) => <TD key={a.id}>{a.offerStatus ? <Badge tone={a.offerStatus === 'accepted' ? 'success' : 'warning'}>{OFFER_STATUS[a.offerStatus] ?? a.offerStatus}</Badge> : <span className="text-fg-subtle">No offer</span>}</TD>)}

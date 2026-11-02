@@ -99,6 +99,10 @@ let current;
     expect(csv.length === joined.length + 1, `CSV has ${csv.length - 1} rows, the table ${joined.length}`);
     expect(/^\d{4}-\d{2}-\d{2}$/.test(csv[1].split(',')[5]), `joining date column looks wrong: ${csv[1]}`);
     ok(`exported ${csv.length - 1} rows as CSV with the on-screen columns in order (${download.suggestedFilename()})`);
+    const [xl] = await Promise.all([hr.waitForEvent('download'), hr.getByRole('link', { name: 'Export Excel' }).click()]);
+    const xlsx = fs.readFileSync(await xl.path());
+    expect(xlsx.subarray(0, 2).toString() === 'PK' && /\.xlsx$/.test(xl.suggestedFilename()), `Excel download looks wrong: ${xl.suggestedFilename()}`);
+    ok(`exported the same list as Excel (${xl.suggestedFilename()})`);
 
     // 4. Guided hire: duplicate warning, draft, resume.
     await hr.getByRole('button', { name: 'Add employee', exact: true }).click();

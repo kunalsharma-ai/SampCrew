@@ -9,7 +9,12 @@
  * 3. From the comparison they move a candidate on, and the board shows it.
  * 4. Bulk actions: they email everyone in Screening at once ({firstName} filled in), move two candidates to Offer
  *    together, and reject one with a neutral email; the board and the candidate's history agree after a reload.
+ * 5. Candidate list: they filter to the job and people still in process, sort by name, save that as their default
+ *    view (it reopens from the database), and export the same list as CSV and Excel.
+ * The comparison also shows the recruiter the job's pay range and an offer amount row (pay stays hidden from
+ * interviewers; the API tests cover that).
  */
+const fs = require('node:fs');
 const { chromium } = require('playwright');
 
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
@@ -71,6 +76,9 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     for (const r of ['Stage', 'Average score', 'Quality systems', 'Problem solving', 'Communication', 'Shop-floor safety', 'Recommendations', 'Offer']) {
       await table.getByRole('rowheader', { name: r, exact: true }).waitFor();
     }
+    const amountRow = await table.getByRole('row').filter({ has: p.getByRole('rowheader', { name: /^Offer amount/ }) }).innerText();
+    expect(/No amount yet|₹/.test(amountRow), `offer amount row looks wrong: ${amountRow}`);
+    await shot(p, 'design6-ats-compare-offer');
     const stageRow = await table.getByRole('row').filter({ has: p.getByRole('rowheader', { name: 'Stage', exact: true }) }).innerText();
     expect(/in process/.test(stageRow), 'days in process missing');
     ok('compared Ananya Joshi and Rahul Verma across the job scorecard');
@@ -126,6 +134,50 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await p.locator('li', { hasText: 'Email queued' }).filter({ hasText: 'rejected' }).first().waitFor();
     await p.locator('li', { hasText: 'Email queued' }).filter({ hasText: '“Your application for Quality Engineer”' }).first().waitFor();
     ok('rejected Sneha Kulkarni with a neutral email; the histories show the rejection and the bulk email');
+
+    // 5. Candidate list: filters, sort, a saved default view, CSV and Excel export.
+    await p.goto(BASE + '/recruitment/candidates?view=all');
+    const list = p.getByRole('table', { name: 'Candidates' });
+    await list.waitFor();
+    const jobFilter = p.getByRole('combobox', { name: 'Filter by job' });
+    const qe = (await jobFilter.locator('option').allInnerTexts()).find((o) => /Quality Engineer/.test(o));
+    expect(qe, 'Quality Engineer missing from the job filter');
+    await jobFilter.selectOption({ label: qe });
+    await p.waitForURL(/requisitionId=/);
+    await p.getByRole('combobox', { name: 'Filter by application status' }).selectOption({ label: 'In process' });
+    await p.waitForURL(/status=active/);
+    await p.getByRole('button', { name: /^Sort by Candidate/ }).click();
+    await p.waitForURL(/sort=name/);
+    await list.getByRole('link', { name: 'Ananya Joshi' }).waitFor();
+    expect(await list.getByRole('link', { name: 'Sneha Kulkarni' }).count() === 0, 'rejected candidate shown among people in process');
+    const names = await list.locator('tbody tr td:first-child a').allInnerTexts();
+    expect(names.length >= 2, `expected the in-process candidates, saw ${names.length}`);
+    const sortedNames = [...names].sort((a, b) => a.localeCompare(b));
+    const asc = names.join('|') === sortedNames.join('|');
+    expect(asc || names.join('|') === [...sortedNames].reverse().join('|'), `rows are not sorted by name: ${names.join(', ')}`);
+    const viewName = `QE in process ${Date.now() % 100000}`;
+    await p.getByRole('button', { name: /^Saved views/ }).click();
+    await p.getByRole('menuitem', { name: 'Save current view…' }).click();
+    await p.getByRole('textbox', { name: 'View name' }).fill(viewName);
+    await p.getByLabel('Open this view by default').check();
+    await p.getByRole('button', { name: 'Save view' }).click();
+    await p.getByRole('button', { name: `Saved views, showing ${viewName}` }).waitFor();
+    await p.goto(BASE + '/recruitment/candidates');
+    await p.waitForURL(/view=[0-9a-f-]{36}/);
+    await p.getByRole('button', { name: `Saved views, showing ${viewName}` }).waitFor();
+    expect((await p.getByRole('combobox', { name: 'Filter by application status' }).inputValue()) === 'active', 'status filter not restored');
+    expect((await list.locator('tbody tr td:first-child a').allInnerTexts()).join('|') === names.join('|'), 'saved view reopened a different list');
+    await shot(p, 'design6-ats-candidate-view');
+    ok(`filtered candidates to Quality Engineer, in process, by name; saved "${viewName}" as the default and it reopened`);
+
+    const [csvDl] = await Promise.all([p.waitForEvent('download'), p.getByRole('link', { name: 'Export CSV' }).click()]);
+    const csv = fs.readFileSync(await csvDl.path(), 'utf8').replace(/^\uFEFF/, '').trim().split(/\r?\n/);
+    expect(csv[0].startsWith('Name,Email,Phone'), `unexpected CSV header: ${csv[0]}`);
+    expect(csv.length === names.length + 1, `CSV has ${csv.length - 1} rows, the list ${names.length}`);
+    const [xlsxDl] = await Promise.all([p.waitForEvent('download'), p.getByRole('link', { name: 'Export Excel' }).click()]);
+    const xlsx = fs.readFileSync(await xlsxDl.path());
+    expect(xlsx.subarray(0, 2).toString() === 'PK' && /\.xlsx$/.test(xlsxDl.suggestedFilename()), `Excel download looks wrong: ${xlsxDl.suggestedFilename()}`);
+    ok(`exported the ${names.length} candidates as CSV and Excel (${xlsxDl.suggestedFilename()})`);
 
     const real = errs.filter((e) => !/favicon|DevTools/.test(e));
     expect(!real.length, `browser errors:\n${real.join('\n')}`);
