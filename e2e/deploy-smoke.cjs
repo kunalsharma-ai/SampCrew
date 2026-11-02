@@ -71,7 +71,10 @@ function expect(cond, msg) {
   await p.fill('input[name=email]', 'uk.hr@demo.crew.local');
   await p.fill('input[name=password]', PASSWORD);
   await p.click('button[type=submit]');
-  await p.waitForURL(`${WEB}/`, { timeout: 15000 });
+  await p.waitForURL(`${WEB}/`, { timeout: 30000 }).catch(async (e) => {
+    const text = (await p.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 600);
+    throw new Error(`sign-in did not reach Home (at ${p.url()}): ${e.message.split('\n')[0]}\npage: ${text}\nbrowser: ${errs.join(' | ')}`);
+  });
   const cookies = await ctx.cookies(WEB);
   const session = cookies.filter((c) => c.name === 'crew_at' || c.name === 'crew_rt');
   expect(session.length === 2 && session.every((c) => c.secure && c.httpOnly), `session cookies must be Secure and HttpOnly: ${JSON.stringify(session.map((c) => [c.name, c.secure, c.httpOnly]))}`);

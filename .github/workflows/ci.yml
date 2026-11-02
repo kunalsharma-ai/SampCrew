@@ -209,4 +209,4 @@ jobs:
         run: infra/deploy/smoke.sh
       - name: Stack logs
         if: failure()
-        run: tail -n 300 infra/deploy/smoke-logs.txt || true
+        run: grep -v -e RouterExplorer -e RoutesResolver infra/deploy/smoke-logs.txt | tail -n 300 || true
