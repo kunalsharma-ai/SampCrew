@@ -159,7 +159,7 @@ export class ExpensesService implements OnModuleInit {
         const le = e.legal_entity_id ? await one<{ currency: string }>(tx, 'select currency from legal_entities where id = $1', [e.legal_entity_id]) : undefined;
         const currency = le?.currency ?? (await one<{ currency: string }>(tx, 'select currency from tenants where id = app_tenant_id()'))!.currency;
         if (file && key) {
-          await this.storage.put(key, file.buffer);
+          await this.storage.put(key, file.buffer, { upload: true });
           stored = true;
         }
         const row = (await one<{ id: string }>(

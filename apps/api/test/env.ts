@@ -17,7 +17,9 @@ export function applyTestEnv() {
   process.env.DATABASE_URL = api.toString();
   process.env.JWT_ACCESS_SECRET ??= randomBytes(32).toString('base64');
   process.env.JWT_PLATFORM_SECRET ??= randomBytes(32).toString('base64');
-  process.env.FIELD_ENCRYPTION_KEY ??= randomBytes(32).toString('base64');
+  // Fixed across test files (each runs in its own worker), so data one file encrypted can be read by another, as in
+  // one installation. A test-only value; key-rotation tests add their own keys.
+  process.env.FIELD_ENCRYPTION_KEY ??= Buffer.from('crew-test-only-field-key-32bytes').toString('base64');
   process.env.CREW_DISABLE_DISPATCHER = 'true';
   // Integration tests post to receivers on 127.0.0.1; the config refuses this outside development and tests.
   process.env.INTEGRATIONS_ALLOW_PRIVATE_URLS = 'true';

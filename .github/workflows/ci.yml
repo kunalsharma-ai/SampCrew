@@ -210,3 +210,42 @@ jobs:
       - name: Stack logs
         if: failure()
         run: grep -v -e RouterExplorer -e RoutesResolver infra/deploy/smoke-logs.txt | tail -n 300 || true
+  malware-scan:
+    # The upload scanning tests (apps/api/test/gaps.spec.ts) against a real ClamAV daemon with current signatures,
+    # instead of the protocol stub the "test" job uses. ClamAV downloads its signatures when the container starts.
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/crew_test
+      CLAMAV_TEST_URL: tcp://127.0.0.1:3310
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - name: Start ClamAV and wait for its signatures
+        run: |
+          docker run -d --name clamav -p 3310:3310 clamav/clamav:1.4
+          for i in $(seq 1 90); do
+            if printf 'zPING\0' | timeout 3 nc -q 2 127.0.0.1 3310 2>/dev/null | grep -q PONG; then echo "clamd ready after $((i * 5)) s"; exit 0; fi
+            sleep 5
+          done
+          docker logs clamav | tail -n 50
+          exit 1
+      - name: Upload scanning against real ClamAV
+        run: cd apps/api && npx vitest run test/gaps.spec.ts
+      - name: ClamAV logs
+        if: failure()
+        run: docker logs clamav 2>&1 | tail -n 100 || true

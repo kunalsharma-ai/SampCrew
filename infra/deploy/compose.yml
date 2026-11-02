@@ -122,6 +122,16 @@ services:
       console: { condition: service_healthy }
     networks: [edge]
 
+  # Virus scanning of uploads (optional): `docker compose --profile scan up -d` and CLAMAV_URL=tcp://clamav:3310 in
+  # .env. ClamAV downloads and updates its signatures itself (it needs outbound access to database.clamav.net) and
+  # wants about 1.5 GB of memory. While CLAMAV_URL is set and clamd is down, uploads are refused, not stored unscanned.
+  clamav:
+    image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
+    profiles: [scan]
+    restart: unless-stopped
+    volumes: [clamav-db:/var/lib/clamav]
+    networks: [data]
+
   backup:
     image: ${CREW_IMAGE_PREFIX:-crew}-tools:${CREW_VERSION:-local}
     restart: unless-stopped
@@ -148,4 +158,5 @@ volumes:
   backups:
   files:
   caddy-data:
+  clamav-db:
   caddy-config:

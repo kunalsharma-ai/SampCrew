@@ -81,7 +81,7 @@ export class DocumentsService {
       const key = this.storage.newKey(actor.tenantId);
       const sha = createHash('sha256').update(file.buffer).digest('hex');
       const name = safeFileName(file.originalname, 'file');
-      await this.storage.put(key, file.buffer);
+      await this.storage.put(key, file.buffer, { upload: true });
       const row = (await one<{ id: string }>(
         tx,
         `insert into employee_documents (tenant_id, employee_id, category, title, file_name, content_type, size_bytes, sha256, storage_key, visibility, uploaded_by_membership_id)

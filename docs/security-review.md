@@ -61,9 +61,6 @@ the running system; it is **not** an external penetration test, which is still n
 - **Build and mobile tooling advisories**: postcss inside Next.js (build time only, processes CREW's own CSS),
   glob, minimatch and deepmerge inside the Expo CLI (developer tooling, not shipped), decode-uri-component inside
   expo-router (patched 0.5.1 released 23 October 2026; due from 6 November 2026).
-- **Content Security Policy with nonces**: removing `'unsafe-inline'` for scripts needs a per-request nonce through
-  Next.js middleware; worth doing, not done.
-- **Field encryption key rotation**: there is no re-encryption job yet, so `FIELD_ENCRYPTION_KEY` cannot be rotated
-  without losing MFA secrets and encrypted fields (the runbook says so).
+- ~~Content Security Policy with nonces~~, ~~field encryption key rotation~~ and ~~malware scanning of uploads~~:
+  done in Phase 13 (`docs/phases/phase-13.md`).
 - **External penetration test** by an independent firm, and single sign-on and SCIM against real identity providers.
-- **Malware scanning of uploads** is still not wired up (content type is checked, contents are not scanned).
