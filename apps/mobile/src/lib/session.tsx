@@ -1,13 +1,16 @@
 import type { LoginResponse, MeResponse } from '@crew/contracts';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
+import * as Crypto from 'expo-crypto';
 import * as ExpoDevice from 'expo-device';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
 import { AppState, Platform } from 'react-native';
 import { Api, ApiError } from './api';
 import { biometricEnabled, unlockWithBiometric } from './biometric';
 import { clock, randomId } from './clock';
 import { type FlushOutcome, Outbox, type PunchDraft, type QueuedPunch, type RefusedPunch } from './outbox';
+import { makePkce, readHandoff } from './sso';
 import { kv, secret, tokenStore } from './storage';
 
 export const API_URL: string = ((Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ?? 'http://localhost:4000').replace(/\/$/, '');
@@ -17,8 +20,18 @@ const RELOCK_AFTER_MS = 5 * 60_000;
 const INSTALLATION = 'crew.installationId';
 const CACHE = 'crew.session.cache';
 
+/** Where the browser preview keeps the PKCE verifier while the identity provider has the tab. */
+const SSO_VERIFIER = 'crew.sso.verifier';
+
+/** The app's address the Web Portal sends the browser back to (it must be on the API's MOBILE_SSO_REDIRECTS list). */
+export function ssoReturnAddress() {
+  return Platform.OS === 'web' ? `${window.location.origin}/sso` : 'crew://sso';
+}
+
 export type SignInStep =
   | { step: 'done' }
+  | { step: 'redirected' }
+  | { step: 'cancelled' }
   | { step: 'mfa'; mfaToken: string }
   | { step: 'workspace'; selectToken: string; workspaces: { id: string; name: string; slug: string }[] };
 
@@ -47,6 +60,10 @@ interface SessionValue {
   can(permission: string): boolean;
   hasFeature(feature: string): boolean;
   signIn(email: string, password: string, workspace?: string): Promise<SignInStep>;
+  /** Single sign-on through the workspace's identity provider, in the system browser. */
+  signInWithSso(email: string): Promise<SignInStep>;
+  /** Browser preview: finishes single sign-on when the tab comes back to /sso with the code. */
+  finishSso(code: string): Promise<SignInStep>;
   verifyMfa(mfaToken: string, code: string): Promise<SignInStep>;
   chooseWorkspace(selectToken: string, tenantId: string): Promise<SignInStep>;
   signOut(): Promise<void>;
@@ -212,6 +229,31 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     hasFeature: (f) => Boolean(me?.features.includes(f)),
     signIn: async (email, password, workspace) =>
       finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/login', { email, password, ...(workspace ? { tenantSlug: workspace } : {}) })),
+    async signInWithSso(email) {
+      const returnTo = ssoReturnAddress();
+      const pkce = await makePkce(
+        (n) => Crypto.getRandomBytes(n),
+        async (t) => new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, new TextEncoder().encode(t))),
+      );
+      const { authorizationUrl } = await api.publicRequest<{ authorizationUrl: string }>('POST', '/auth/sso/start', { email, returnTo, appChallenge: pkce.challenge });
+      if (Platform.OS === 'web') {
+        // The preview runs in a browser tab: the tab itself goes to the provider and comes back to /sso.
+        window.sessionStorage.setItem(SSO_VERIFIER, pkce.verifier);
+        window.location.assign(authorizationUrl);
+        return { step: 'redirected' };
+      }
+      const r = await WebBrowser.openAuthSessionAsync(authorizationUrl, returnTo);
+      if (r.type !== 'success') return { step: 'cancelled' };
+      const h = readHandoff(r.url, returnTo);
+      if ('error' in h) throw new ApiError(401, 'sso_failed', h.error);
+      return finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/sso/exchange', { code: h.code, verifier: pkce.verifier }));
+    },
+    async finishSso(code) {
+      const verifier = Platform.OS === 'web' ? window.sessionStorage.getItem(SSO_VERIFIER) : null;
+      if (Platform.OS === 'web') window.sessionStorage.removeItem(SSO_VERIFIER);
+      if (!verifier) throw new ApiError(401, 'sso_failed', 'This sign-in was not started from this app. Start again.');
+      return finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/sso/exchange', { code, verifier }));
+    },
     verifyMfa: async (mfaToken, code) => finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/mfa/verify', { mfaToken, code })),
     chooseWorkspace: async (selectToken, tenantId) => finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/select-tenant', { selectToken, tenantId })),
     async signOut() {

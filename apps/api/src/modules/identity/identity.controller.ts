@@ -1,9 +1,10 @@
-import { Body, Controller, Delete, Get, HttpCode, Post, Put } from '@nestjs/common';
-import { ssoConnectionInput, type SsoConnectionInput, ssoStatusInput } from '@crew/contracts';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
+import { scimGroupRoleInput, ssoConnectionInput, type SsoConnectionInput, ssoStatusInput } from '@crew/contracts';
 import type { z } from 'zod';
 import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
-import { ZodPipe } from '../../platform/http/zod';
+import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { ScimGroupsService } from './scim-groups.service';
 import { ScimService } from './scim.service';
 import { SsoService } from './sso.service';
 
@@ -15,6 +16,7 @@ export class IdentityController {
   constructor(
     private readonly sso: SsoService,
     private readonly scim: ScimService,
+    private readonly groups: ScimGroupsService,
   ) {}
 
   @Get('sso')
@@ -24,7 +26,7 @@ export class IdentityController {
   }
 
   @Put('sso')
-  @Doc({ summary: 'Create or change the OpenID Connect connection. A new provider or client must pass a test sign-in again.', body: ssoConnectionInput })
+  @Doc({ summary: 'Create or change the connection (OpenID Connect or SAML 2.0). A new provider, client or certificate must pass a test sign-in again.', body: ssoConnectionInput })
   saveSso(@Body(new ZodPipe(ssoConnectionInput)) body: SsoConnectionInput) {
     return this.sso.save(body);
   }
@@ -66,5 +68,17 @@ export class IdentityController {
   @Doc({ summary: 'Revoke the SCIM token; provisioning stops at once' })
   revokeScim() {
     return this.scim.revokeToken();
+  }
+
+  @Get('scim/groups')
+  @Doc({ summary: 'Groups your identity provider pushed with SCIM, and the CREW role each one grants' })
+  scimGroups() {
+    return this.groups.overview();
+  }
+
+  @Put('scim/groups/:id/role')
+  @Doc({ summary: 'Choose the role a provisioning group grants its members (null: none). The owner role cannot be granted.', body: scimGroupRoleInput })
+  scimGroupRole(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(scimGroupRoleInput)) body: { roleId: string | null }) {
+    return this.groups.setRole(id, body.roleId);
   }
 }

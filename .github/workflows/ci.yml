@@ -20,8 +20,15 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+      # Shared rate-limit counters (apps/api/test/rate-limits.spec.ts runs two API instances against it).
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/crew_test
+      REDIS_TEST_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -137,6 +144,15 @@ jobs:
           INTEGRATIONS_ALLOW_PRIVATE_URLS=true node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:enterprise
+      - name: Phase 11 end-to-end flow (local SAML test stub, no real identity provider)
+        # e2e/saml-stub.cjs runs inside the flow on 4031 and stands in for a SAML identity provider; the mobile app's
+        # browser build is served on 8081 and its /sso address is allowed to receive single sign-on for this run.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          INTEGRATIONS_ALLOW_PRIVATE_URLS=true MOBILE_SSO_REDIRECTS=crew://sso,http://localhost:8081/sso node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:hardening
       - name: Backup and restore drill
         # The client tools must match the server's major version, and the runner's own are newer. Run them from the
         # same postgres:16 image as the service (already pulled), sharing /tmp where the drill keeps its dump file.

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyScimPatch, emailDomain, parseScimFilter, parseScimToken, scimEmail, scimFullName, ssoConnectionInput, ssoSatisfiesMfa } from './enterprise';
+import {
+  applyScimGroupPatch, applyScimPatch, emailDomain, parseScimFilter, parseScimToken, RETENTION_DEFAULTS, retentionPolicyInput, samlSatisfiesMfa, scimEmail, scimFullName,
+  ssoConnectionInput, ssoSatisfiesMfa, ssoStartInput,
+} from './enterprise';
 
 describe('SCIM helpers', () => {
   it('parses the filters identity providers send', () => {
@@ -42,5 +45,40 @@ describe('single sign-on', () => {
     expect(ssoConnectionInput.safeParse({ issuer: 'https://acme.okta.com', clientId: 'x', domains: ['@acme.com'] }).success).toBe(false);
     expect(ssoConnectionInput.safeParse({ issuer: 'ftp://acme', clientId: 'x', domains: ['acme.com'] }).success).toBe(false);
     expect(emailDomain('Pat@Sub.Acme.com')).toBe('sub.acme.com');
+  });
+});
+
+describe('Phase 11 shared rules', () => {
+  it('reads group filters and the group patches Okta and Entra ID send', () => {
+    expect(parseScimFilter('displayName eq "Payroll team"', ['displayName', 'externalId'])).toEqual({ attr: 'displayName', value: 'Payroll team' });
+    expect(parseScimFilter('userName eq "x"', ['displayName', 'externalId'])).toBe('unsupported');
+    // Okta: add and remove with value lists; Entra: remove one member by filter path; both: rename.
+    const p = applyScimGroupPatch([
+      { op: 'add', path: 'members', value: [{ value: 'a' }, { value: 'b' }] },
+      { op: 'remove', path: 'members[value eq "c"]' },
+      { op: 'Replace', path: 'displayName', value: 'Finance' } as never,
+      { op: 'replace', path: 'description', value: 'x' },
+    ]);
+    expect(p).toMatchObject({ add: ['a', 'b'], remove: ['c'], displayName: 'Finance', ignored: ['description'] });
+    expect(applyScimGroupPatch([{ op: 'replace', path: 'members', value: [{ value: 'z' }] }]).replace).toEqual(['z']);
+    expect(applyScimGroupPatch([{ op: 'remove', path: 'members' }]).replace).toEqual([]);
+    expect(applyScimGroupPatch([{ op: 'add', value: { members: [{ value: 'q' }] } }]).add).toEqual(['q']);
+  });
+  it('accepts either single sign-on protocol, each with its own fields', () => {
+    const base = { domains: ['example.com'], jitProvisioning: false };
+    expect(ssoConnectionInput.safeParse({ ...base, issuer: 'https://idp.example', clientId: 'c' }).success).toBe(true);
+    expect(ssoConnectionInput.safeParse({ ...base, protocol: 'saml', idpEntityId: 'urn:idp', ssoUrl: 'https://idp.example/sso', certificate: 'M'.repeat(200) }).success).toBe(true);
+    expect(ssoConnectionInput.safeParse({ ...base, protocol: 'saml', idpEntityId: 'urn:idp', ssoUrl: 'ftp://idp.example/sso' }).success).toBe(false);
+    expect(ssoStartInput.safeParse({ email: 'a@b.co', returnTo: 'crew://sso', appChallenge: 'short' }).success).toBe(false);
+  });
+  it('counts only real second factors in SAML authentication contexts', () => {
+    expect(samlSatisfiesMfa(['urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport'])).toBe(false);
+    expect(samlSatisfiesMfa(['http://schemas.microsoft.com/claims/multipleauthn'])).toBe(true);
+    expect(samlSatisfiesMfa([])).toBe(false);
+  });
+  it('keeps retention limits sensible', () => {
+    expect(retentionPolicyInput.safeParse(RETENTION_DEFAULTS).success).toBe(true);
+    expect(retentionPolicyInput.safeParse({ ...RETENTION_DEFAULTS, signInLogDays: 3 }).success).toBe(false);
+    expect(retentionPolicyInput.safeParse({ ...RETENTION_DEFAULTS, exitedErasureYears: 0 }).success).toBe(false);
   });
 });

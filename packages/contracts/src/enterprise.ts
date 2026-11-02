@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 /**
- * Enterprise identity and privacy: single sign-on with OpenID Connect, SCIM 2.0 provisioning, and privacy
- * requests. SAML is not built yet.
+ * Enterprise identity and privacy: single sign-on with OpenID Connect or SAML 2.0 (web and mobile), SCIM 2.0
+ * provisioning of users and groups, privacy requests and retention schedules.
  */
 
 export const SCIM_TOKEN_PREFIX = 'scim_';
@@ -18,17 +18,44 @@ const domain = z
   .toLowerCase()
   .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/, 'A domain such as example.com, without @');
 
-export const ssoConnectionInput = z.object({
+const ssoCommon = {
+  domains: z.array(domain).min(1).max(20).refine((d) => new Set(d).size === d.length, 'Each domain once'),
+  jitProvisioning: z.boolean().default(false),
+};
+export const oidcConnectionInput = z.object({
+  protocol: z.literal('oidc').default('oidc'),
   issuer: z.url({ protocol: /^https?$/ }).max(500),
   clientId: z.string().trim().min(1).max(300),
   /** Leave out when changing other settings to keep the stored secret. */
   clientSecret: z.string().min(1).max(500).optional(),
-  domains: z.array(domain).min(1).max(20).refine((d) => new Set(d).size === d.length, 'Each domain once'),
-  jitProvisioning: z.boolean().default(false),
+  ...ssoCommon,
 });
+export const samlConnectionInput = z.object({
+  protocol: z.literal('saml'),
+  /** The identity provider's entity ID (the Issuer of its responses), for example http://www.okta.com/exk1... */
+  idpEntityId: z.string().trim().min(1).max(500),
+  /** The identity provider's single sign-on URL for the HTTP-Redirect binding. */
+  ssoUrl: z.url({ protocol: /^https?$/ }).max(1000),
+  /** The identity provider's signing certificate: PEM, or the base64 body from its metadata. */
+  /** Leave out to keep the stored certificate when changing other settings. */
+  certificate: z.string().trim().min(100).max(20000).optional(),
+  ...ssoCommon,
+});
+/** A connection is SAML when protocol is "saml"; anything else (including no protocol) is OpenID Connect. */
+export const ssoConnectionInput = z.union([samlConnectionInput, oidcConnectionInput]);
 export type SsoConnectionInput = z.infer<typeof ssoConnectionInput>;
 
-export const ssoStartInput = z.object({ email: z.email().max(254) });
+/** A PKCE challenge (S256, base64url): 43 characters. */
+const pkceChallenge = z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'A base64url SHA-256 challenge');
+export const ssoStartInput = z.object({
+  email: z.email().max(254),
+  /** Mobile only: where the app wants the browser sent back (must be on the installation's allow-list). */
+  returnTo: z.string().max(300).optional(),
+  /** Mobile only: the app's own PKCE challenge, so only the app that started the sign-in can collect the session. */
+  appChallenge: pkceChallenge.optional(),
+});
+export const ssoExchangeInput = z.object({ code: z.string().min(20).max(100), verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/) });
+export const samlCallbackInput = z.object({ samlResponse: z.string().min(100).max(500_000), relayState: z.string().min(20).max(200) });
 export const ssoCallbackInput = z.object({ code: z.string().min(1).max(4000), state: z.string().min(20).max(200) });
 
 export const ssoStatusInput = z.object({ status: z.enum(['active', 'disabled']), enforced: z.boolean().default(false) });
@@ -36,6 +63,19 @@ export const ssoStatusInput = z.object({ status: z.enum(['active', 'disabled']),
 /** amr values (RFC 8176) that mean the identity provider used more than a password. */
 export const MFA_AMR = ['mfa', 'otp', 'hwk', 'swk', 'fpt', 'face', 'iris', 'retina', 'sc', 'pop'] as const;
 export const ssoSatisfiesMfa = (amr: unknown) => Array.isArray(amr) && amr.some((a) => (MFA_AMR as readonly string[]).includes(String(a)));
+
+/** SAML authentication contexts that mean more than a password (SAML 2.0 classes, REFEDS MFA, Entra ID). */
+export const SAML_MFA_CONTEXTS = [
+  'urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract',
+  'urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorUnregistered',
+  'urn:oasis:names:tc:SAML:2.0:ac:classes:TimeSyncToken',
+  'urn:oasis:names:tc:SAML:2.0:ac:classes:Smartcard',
+  'urn:oasis:names:tc:SAML:2.0:ac:classes:SmartcardPKI',
+  'https://refeds.org/profile/mfa',
+  'http://schemas.microsoft.com/claims/multipleauthn',
+] as const;
+/** True when a SAML assertion's AuthnContextClassRef, or Entra ID's authnmethodsreferences attribute, says MFA. */
+export const samlSatisfiesMfa = (contexts: unknown[]) => contexts.some((c) => (SAML_MFA_CONTEXTS as readonly string[]).includes(String(c)));
 
 export const emailDomain = (email: string) => email.trim().toLowerCase().split('@')[1] ?? '';
 
@@ -109,13 +149,65 @@ export function applyScimPatch(current: { active: boolean; givenName: string; fa
   return { next, ignored };
 }
 
-/** SCIM filters CREW answers: `userName eq "x"` and `externalId eq "x"` (what Okta and Entra ID send). */
-export function parseScimFilter(filter: string | undefined): { attr: 'userName' | 'externalId'; value: string } | null | 'unsupported' {
+/**
+ * SCIM filters CREW answers: `<attr> eq "x"` for userName and externalId on users, displayName and externalId on
+ * groups (what Okta and Entra ID send).
+ */
+export function parseScimFilter<A extends string = 'userName' | 'externalId'>(
+  filter: string | undefined,
+  attrs: readonly A[] = ['userName', 'externalId'] as unknown as A[],
+): { attr: A; value: string } | null | 'unsupported' {
   if (!filter) return null;
-  const m = /^\s*(userName|externalId)\s+eq\s+"((?:[^"\\]|\\.)*)"\s*$/i.exec(filter);
-  if (!m) return 'unsupported';
-  return { attr: m[1]!.toLowerCase() === 'username' ? 'userName' : 'externalId', value: m[2]!.replace(/\\(.)/g, '$1') };
+  const m = /^\s*([A-Za-z]+)\s+eq\s+"((?:[^"\\]|\\.)*)"\s*$/i.exec(filter);
+  const attr = m && attrs.find((a) => a.toLowerCase() === m[1]!.toLowerCase());
+  if (!m || !attr) return 'unsupported';
+  return { attr, value: m[2]!.replace(/\\(.)/g, '$1') };
 }
+
+export const SCIM_GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
+
+export const scimGroupInput = z.looseObject({
+  displayName: z.string().trim().min(1).max(200),
+  externalId: z.string().max(200).optional(),
+  members: z.array(z.looseObject({ value: z.string().max(100) })).max(5000).optional(),
+});
+export type ScimGroupInput = z.infer<typeof scimGroupInput>;
+
+/**
+ * Reads a SCIM PATCH on a group in the shapes Okta and Microsoft Entra ID send: add/remove/replace on "members"
+ * (with a value list, or a `members[value eq "id"]` path), and replace of displayName or externalId.
+ */
+export function applyScimGroupPatch(ops: ScimPatchInput['Operations']) {
+  const out: { displayName?: string; externalId?: string | null; add: string[]; remove: string[]; replace?: string[]; ignored: string[] } = { add: [], remove: [], ignored: [] };
+  const ids = (v: unknown) => (Array.isArray(v) ? v : v ? [v] : []).map((m) => (m && typeof m === 'object' ? String((m as { value?: unknown }).value ?? '') : String(m))).filter(Boolean);
+  for (const op of ops) {
+    const path = op.path?.trim() ?? '';
+    const filtered = /^members\[\s*value\s+eq\s+"([^"]+)"\s*\]$/i.exec(path);
+    if (filtered) {
+      if (op.op === 'remove') out.remove.push(filtered[1]!);
+      else out.add.push(filtered[1]!);
+    } else if (path.toLowerCase() === 'members') {
+      if (op.op === 'add') out.add.push(...ids(op.value));
+      else if (op.op === 'remove') {
+        if (op.value === undefined) out.replace = [];
+        else out.remove.push(...ids(op.value));
+      } else out.replace = ids(op.value);
+    } else if (path.toLowerCase() === 'displayname' && op.op !== 'remove') out.displayName = String(op.value ?? '').trim().slice(0, 200);
+    else if (path.toLowerCase() === 'externalid') out.externalId = op.op === 'remove' || op.value == null ? null : String(op.value).slice(0, 200);
+    else if (!path && op.value && typeof op.value === 'object') {
+      const v = op.value as Record<string, unknown>;
+      if (typeof v.displayName === 'string') out.displayName = v.displayName.trim().slice(0, 200);
+      if (v.externalId !== undefined) out.externalId = v.externalId == null ? null : String(v.externalId).slice(0, 200);
+      if (v.members !== undefined) (op.op === 'add' ? out.add : (out.replace = [])).push(...ids(v.members));
+    } else out.ignored.push(path || '(no path)');
+  }
+  if (out.displayName === '') delete out.displayName;
+  return out;
+}
+
+/** Roles a provisioning group may grant: never the owner role, which only an owner can give in CREW. */
+export const SCIM_UNMAPPABLE_ROLES = ['tenant_owner'] as const;
+export const scimGroupRoleInput = z.object({ roleId: z.uuid().nullable() });
 
 // Privacy requests ---------------------------------------------------------------------------------------------------
 
@@ -135,8 +227,24 @@ export const ERASURE_RULES = [
   { area: 'Bank, tax and national ID', action: 'erased', detail: 'Removed.' },
   { area: 'Documents', action: 'erased', detail: 'Files deleted from storage and their records removed.' },
   { area: 'Sign-in account', action: 'erased', detail: 'Removed from this workspace and signed out everywhere; if the login belongs to no other workspace, its name and email are replaced and it is disabled.' },
-  { area: 'Helpdesk cases they raised', action: 'erased', detail: 'Subject and messages they wrote replaced with "[erased]".' },
-  { area: 'Payroll and payslips', action: 'kept', detail: 'Amounts kept, now linked to the pseudonymous record, because tax and labour law require payroll records to be kept for several years.' },
-  { area: 'Attendance and leave', action: 'kept', detail: 'Kept against the pseudonymous record for wage and working-time records.' },
+  { area: 'Helpdesk cases they raised', action: 'erased', detail: 'Subject, description, rating comment and the messages they wrote replaced with "[erased]".' },
+  { area: 'Reviews, feedback and goals', action: 'erased', detail: 'Written answers, comments, goal titles, descriptions and check-in notes replaced with "[erased]". Ratings, scores and dates are kept for workforce reports.' },
+  { area: 'Recognition', action: 'erased', detail: 'Messages written to them replaced with "[erased]".' },
+  { area: 'Requests and notes about them', action: 'erased', detail: 'Reasons on leave, attendance corrections and overtime claims, notes on job changes and courses, expense descriptions, attrition notes and scores, and approval summaries replaced or removed.' },
+  { area: 'Their own app data', action: 'erased', detail: 'AI assistant conversations, personal notes, saved views, notifications, drafts and registered phones deleted.' },
+  { area: 'Payroll, payslips and expense amounts', action: 'kept', detail: 'Amounts and receipts kept, linked to the pseudonymous record, because tax and labour law require payroll and expense records to be kept for several years.' },
+  { area: 'Attendance and leave', action: 'kept', detail: 'Days, punches and leave balances kept against the pseudonymous record for wage and working-time records. Raw punches are never changed.' },
   { area: 'Audit trail', action: 'kept', detail: 'Kept unchanged: it is insert-only evidence of who did what, and its integrity chain would break if edited.' },
+  { area: 'What colleagues already received', action: 'kept', detail: 'Notifications and emails already sent to other people are not changed. Text colleagues wrote about other people is not changed.' },
 ] as const;
+
+// Retention schedules ------------------------------------------------------------------------------------------------
+
+export const retentionPolicyInput = z.object({
+  /** Erase people automatically this many years after their last working day; null leaves erasure to HR. */
+  exitedErasureYears: z.number().int().min(1).max(30).nullable(),
+  exportDays: z.number().int().min(1).max(365),
+  signInLogDays: z.number().int().min(7).max(3650),
+});
+export type RetentionPolicyInput = z.infer<typeof retentionPolicyInput>;
+export const RETENTION_DEFAULTS: RetentionPolicyInput = { exitedErasureYears: null, exportDays: 30, signInLogDays: 90 };

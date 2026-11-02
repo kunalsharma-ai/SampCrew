@@ -38,12 +38,15 @@
     "e2e:universe": "node e2e/universe-flow.cjs",
     "e2e:ats": "node e2e/ats-flow.cjs",
     "e2e:iq": "node e2e/iq-flow.cjs",
+    "e2e:hardening": "node e2e/hardening-flow.cjs",
     "load-test": "node e2e/load.cjs"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
     "@types/node": "22.20.5",
+    "@xmldom/xmldom": "0.8.10",
     "otplib": "12.0.1",
-    "playwright": "1.63.0"
+    "playwright": "1.63.0",
+    "typescript": "5.9.3",
+    "xml-crypto": "6.1.2"
   }
 }

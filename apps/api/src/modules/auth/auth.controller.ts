@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Post, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
   acceptInviteRequest,
@@ -9,7 +9,9 @@ import {
   refreshRequest,
   selectTenantRequest,
   signupRequest,
+  samlCallbackInput,
   ssoCallbackInput,
+  ssoExchangeInput,
   ssoStartInput,
   switchTenantRequest,
 } from '@crew/contracts';
@@ -39,7 +41,7 @@ export class AuthController {
   @HttpCode(200)
   @Doc({ summary: 'Start single sign-on for a work email: returns the identity provider address to send the browser to', body: ssoStartInput })
   ssoStart(@Body(new ZodPipe(ssoStartInput)) body: z.infer<typeof ssoStartInput>, @Req() req: Request) {
-    return this.sso.startByEmail(body.email, clientOf(req) === 'mobile' ? 'mobile' : 'web');
+    return this.sso.startByEmail(body.email, clientOf(req) === 'mobile' ? 'mobile' : 'web', { returnTo: body.returnTo, appChallenge: body.appChallenge });
   }
 
   @Public()
@@ -49,6 +51,32 @@ export class AuthController {
   @Doc({ summary: 'Finish single sign-on with the code and state the identity provider returned', body: ssoCallbackInput })
   ssoCallback(@Body(new ZodPipe(ssoCallbackInput)) body: z.infer<typeof ssoCallbackInput>) {
     return this.auth.ssoCallback(body.code, body.state);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('sso/saml/callback')
+  @HttpCode(200)
+  @Doc({ summary: 'Finish SAML single sign-on with the SAMLResponse and RelayState the identity provider posted to the Web Portal', body: samlCallbackInput })
+  ssoSamlCallback(@Body(new ZodPipe(samlCallbackInput)) body: z.infer<typeof samlCallbackInput>) {
+    return this.auth.ssoSamlCallback(body.samlResponse, body.relayState);
+  }
+
+  @Public()
+  @Get('sso/saml/metadata')
+  @Header('content-type', 'application/samlmetadata+xml; charset=utf-8')
+  @Doc({ summary: "CREW's SAML service provider metadata (entity ID and Assertion Consumer Service), to load into the identity provider" })
+  ssoSamlMetadata() {
+    return this.sso.samlMetadata();
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('sso/exchange')
+  @HttpCode(200)
+  @Doc({ summary: 'Mobile app: exchange the one-time single sign-on code, with the PKCE verifier behind the challenge it started with, for a session', body: ssoExchangeInput })
+  ssoExchange(@Body(new ZodPipe(ssoExchangeInput)) body: z.infer<typeof ssoExchangeInput>) {
+    return this.auth.ssoExchange(body.code, body.verifier);
   }
 
   @Public()

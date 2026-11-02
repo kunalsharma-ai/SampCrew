@@ -197,12 +197,16 @@ export class MembersService {
       if (id === actor.membershipId && beforeKeys.includes('tenant_owner') && !roles.some((r) => r.key === 'tenant_owner')) {
         throw Errors.badRequest('cannot_demote_self', 'Ask another owner to remove your owner role');
       }
-      await tx.query('delete from role_assignments where membership_id = $1', [id]);
+      // Roles that come from a provisioning group stay while the person is in the group; the identity provider
+      // manages those. Everything else is replaced by what was sent.
+      await tx.query(`delete from role_assignments where membership_id = $1 and source = 'manual'`, [id]);
       for (const a of input.assignments) {
         const role = roles.find((r) => r.key === a.roleKey)!;
-        await tx.query('insert into role_assignments (tenant_id, membership_id, role_id, constraints, granted_by) values ($1, $2, $3, $4, $5)', [
-          actor.tenantId, id, role.id, JSON.stringify(a.constraints ?? {}), actor.membershipId,
-        ]);
+        await tx.query(
+          `insert into role_assignments (tenant_id, membership_id, role_id, constraints, granted_by) values ($1, $2, $3, $4, $5)
+           on conflict (membership_id, role_id) do update set constraints = excluded.constraints, granted_by = excluded.granted_by`,
+          [actor.tenantId, id, role.id, JSON.stringify(a.constraints ?? {}), actor.membershipId],
+        );
       }
       const after = await this.load(tx, id);
       await this.audit.record(tx, {

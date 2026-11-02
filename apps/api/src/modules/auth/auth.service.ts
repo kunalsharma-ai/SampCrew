@@ -13,7 +13,7 @@ import { DatabaseService, many, one, type Tx } from '../../platform/database/dat
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { AppError, Errors } from '../../platform/http/errors';
-import { SsoService } from '../identity/sso.service';
+import { SsoService, type SsoResult } from '../identity/sso.service';
 
 const MAX_FAILED_LOGINS = 5;
 const LOCK_MINUTES = 15;
@@ -169,13 +169,32 @@ export class AuthService {
     });
   }
 
-  /** Finishes a single sign-on: a session for a member, or the result of an owner's test. */
-  async ssoCallback(code: string, state: string): Promise<LoginResponse | { status: 'sso_test_passed'; email: string }> {
-    const r = await this.sso.callback(code, state);
+  /** Finishes an OpenID Connect sign-in: a session for a member, a hand-off for the mobile app, or an owner's test result. */
+  async ssoCallback(code: string, state: string) {
+    return this.ssoResult(await this.sso.callback(code, state));
+  }
+
+  /** Finishes a SAML sign-in from the identity provider's HTTP-POST response. */
+  async ssoSamlCallback(samlResponse: string, relayState: string) {
+    return this.ssoResult(await this.sso.samlCallback(samlResponse, relayState));
+  }
+
+  /** The mobile app collects its session with the one-time code and the verifier behind the challenge it started with. */
+  async ssoExchange(code: string, verifier: string): Promise<LoginResponse> {
+    const h = await this.sso.exchange(code, verifier);
+    return this.ssoSession({ ...h, client: 'mobile' });
+  }
+
+  private async ssoResult(r: SsoResult): Promise<LoginResponse | { status: 'sso_test_passed'; email: string } | { status: 'mobile_handoff'; redirectTo: string }> {
     if (r.kind === 'test') return { status: 'sso_test_passed', email: r.email };
+    if (r.kind === 'handoff') return { status: 'mobile_handoff', redirectTo: r.redirectTo };
+    return this.ssoSession(r);
+  }
+
+  private async ssoSession(r: { userId: string; tenantId: string; membershipId: string; mfa: boolean; client: Client }): Promise<LoginResponse> {
     const pair = await this.db.platform(async (tx) => {
       const p = await this.issueSession(tx, { userId: r.userId, tenantId: r.tenantId, membershipId: r.membershipId, mfa: r.mfa, client: r.client });
-      await this.audit.record(tx, { tenantId: r.tenantId, action: 'auth.sso_login', resourceType: 'membership', resourceId: r.membershipId, metadata: { mfaAtProvider: r.mfa } });
+      await this.audit.record(tx, { tenantId: r.tenantId, action: 'auth.sso_login', resourceType: 'membership', resourceId: r.membershipId, metadata: { mfaAtProvider: r.mfa, client: r.client } });
       return p;
     });
     return { status: 'ok', ...pair };

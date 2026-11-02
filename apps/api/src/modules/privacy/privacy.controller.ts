@@ -1,8 +1,9 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Res, StreamableFile } from '@nestjs/common';
-import { privacyDecisionInput, privacyRequestInput } from '@crew/contracts';
+import { Body, Controller, Get, HttpCode, Param, Post, Put, Query, Res, StreamableFile } from '@nestjs/common';
+import { privacyDecisionInput, privacyRequestInput, retentionPolicyInput, type RetentionPolicyInput } from '@crew/contracts';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { RequirePermission } from '../../platform/authz/decorators';
+import { requestContext } from '../../platform/context/request-context';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { PrivacyService } from './privacy.service';
@@ -62,5 +63,31 @@ export class PrivacyController {
   @Doc({ summary: 'Close a request without acting, with the reason (for example a legal hold)', body: privacyDecisionInput })
   reject(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(privacyDecisionInput)) body: z.infer<typeof privacyDecisionInput>) {
     return this.privacy.reject(id, body.note);
+  }
+}
+
+/** The workspace's retention schedule: when leavers are erased automatically, and when exports and logs are deleted. */
+@Controller('privacy/retention')
+@RequirePermission('privacy:manage')
+export class RetentionController {
+  constructor(private readonly privacy: PrivacyService) {}
+
+  @Get()
+  @Doc({ summary: 'The retention schedule (defaults until someone saves one), how many leavers are due for erasure, and recent runs' })
+  get() {
+    return this.privacy.retention();
+  }
+
+  @Put()
+  @Doc({ summary: 'Change the retention schedule. Automatic erasure of leavers is off unless a number of years is set.', body: retentionPolicyInput })
+  set(@Body(new ZodPipe(retentionPolicyInput)) body: RetentionPolicyInput) {
+    return this.privacy.setRetention(body);
+  }
+
+  @Post('run')
+  @HttpCode(200)
+  @Doc({ summary: 'Apply the retention schedule now (it also runs once a day on its own)' })
+  run() {
+    return this.privacy.applyRetention(requestContext.tenantActor().tenantId, 'manual');
   }
 }
