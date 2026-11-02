@@ -10,50 +10,19 @@ import {
   TextInput,
   type TextInputProps,
   type TextStyle,
-  useColorScheme,
   View,
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '../lib/api';
+import { useAppearanceTheme } from '../lib/appearance';
+import type { MobileTheme } from '../lib/theme';
 import { money } from '../lib/format';
 
-const light = {
-  bg: '#f6f7f9',
-  card: '#ffffff',
-  fg: '#111827',
-  muted: '#6b7280',
-  border: '#e5e7eb',
-  accent: '#1d4ed8',
-  accentFg: '#ffffff',
-  danger: '#b91c1c',
-  dangerBg: '#fef2f2',
-  warn: '#92400e',
-  warnBg: '#fffbeb',
-  ok: '#047857',
-  okBg: '#ecfdf5',
-  infoBg: '#eff6ff',
-};
-const dark: typeof light = {
-  bg: '#0b0f17',
-  card: '#151b26',
-  fg: '#f3f4f6',
-  muted: '#9ca3af',
-  border: '#273041',
-  accent: '#60a5fa',
-  accentFg: '#0b0f17',
-  danger: '#fca5a5',
-  dangerBg: '#2a1215',
-  warn: '#fcd34d',
-  warnBg: '#2a2110',
-  ok: '#6ee7b7',
-  okBg: '#0f2a22',
-  infoBg: '#111d33',
-};
-
-export type Theme = typeof light;
+export type Theme = MobileTheme;
+/** The member's palette (see lib/theme): their saved preset and mode, or the default before sign-in. */
 export function useTheme(): Theme {
-  return useColorScheme() === 'dark' ? dark : light;
+  return useAppearanceTheme();
 }
 
 export function Text({ children, muted, size = 15, weight, style, testID, numberOfLines }: { children: ReactNode; muted?: boolean; size?: number; weight?: TextStyle['fontWeight']; style?: TextStyle; testID?: string; numberOfLines?: number }) {
@@ -193,6 +162,7 @@ export function Choice<T extends string>({ label, value, options, onChange }: { 
               key={o.value}
               accessibilityRole="radio"
               accessibilityState={{ checked: on }}
+              aria-checked={on}
               onPress={() => onChange(o.value)}
               style={{ borderWidth: 1, borderColor: on ? t.accent : t.border, backgroundColor: on ? t.infoBg : t.card, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}
             >

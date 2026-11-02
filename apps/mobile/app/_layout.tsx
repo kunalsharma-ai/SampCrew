@@ -6,6 +6,7 @@ import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { appRoute } from '../src/lib/format';
 import { configureForeground } from '../src/lib/push';
+import { AppearanceProvider } from '../src/lib/appearance';
 import { SessionProvider, useSession } from '../src/lib/session';
 import { Loading, useTheme } from '../src/ui';
 
@@ -56,12 +57,19 @@ function Gate() {
   );
 }
 
+function ThemedStatusBar() {
+  const t = useTheme();
+  return <StatusBar style={t.mode === 'dark' ? 'light' : 'dark'} />;
+}
+
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <SessionProvider>
-        <StatusBar style="auto" />
-        <Gate />
+        <AppearanceProvider>
+          <ThemedStatusBar />
+          <Gate />
+        </AppearanceProvider>
       </SessionProvider>
     </SafeAreaProvider>
   );
