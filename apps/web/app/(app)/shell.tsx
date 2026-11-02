@@ -147,6 +147,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [iqOpen, setIqOpen] = useState(false);
+  const hasIq = me.features.includes('crew_iq');
   const collapsed = appearance.sidebar === 'collapsed';
   const allItems = useMemo(() => nav.flatMap((g) => g.items), [nav]);
   const allHrefs = allItems.map((i) => i.href);
@@ -159,7 +160,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
         setPaletteOpen((v) => !v);
       }
       // Ctrl/Cmd + J opens CREW IQ.
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j' && hasIq) {
         e.preventDefault();
         setIqOpen((v) => !v);
       }
@@ -175,7 +176,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [update, appearance.focusMode, collapsed]);
+  }, [update, appearance.focusMode, collapsed, hasIq]);
 
   // Record the page in "recently viewed" once its title has settled.
   const { setRecents } = experience;
@@ -224,23 +225,23 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               {me.subscription?.status === 'trialing' && me.subscription.trialEndsOn && (
                 <Badge tone="info" className="mr-1 hidden xl:inline-flex">Trial until {new Date(me.subscription.trialEndsOn).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Badge>
               )}
-              <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} className="mr-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-2.5 text-[0.8125rem] font-medium shadow-card hover:border-accent/50" title="CREW IQ (Ctrl+J)">
+              {hasIq && <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} className="mr-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-2.5 text-[0.8125rem] font-medium shadow-card hover:border-accent/50" title="CREW IQ (Ctrl+J)">
                 <Sparkles className="size-4 text-accent" aria-hidden /><span className="hidden sm:inline">CREW IQ</span><span className="sr-only sm:hidden">CREW IQ</span>
-              </button>
+              </button>}
               {quick.length > 0 && <QuickCreate actions={quick} />}
               <Link href="/approvals" className="relative hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg sm:block" aria-label={counts['/approvals'] ? `Approval inbox, ${counts['/approvals']} waiting` : 'Approval inbox'} title="Approval inbox">
                 <Inbox className="size-4" />
                 {(counts['/approvals'] ?? 0) > 0 && <span className="absolute right-0.5 top-0.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.625rem] font-semibold leading-4 text-accent-fg">{counts['/approvals']! > 99 ? '99+' : counts['/approvals']}</span>}
               </Link>
               <Link href="/tasks" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="My tasks" title="My tasks"><ListChecks className="size-4" /></Link>
-              {me.permissions['leave:request'] && <Link href="/leave" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="Leave calendar" title="Leave calendar"><CalendarDays className="size-4" /></Link>}
+              {me.permissions['leave:request'] && me.features.includes('leave') && <Link href="/leave" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="Leave calendar" title="Leave calendar"><CalendarDays className="size-4" /></Link>}
               {notifications && <NotificationBell data={notifications} />}
               <ThemeMenu />
             </div>
           </header>
           <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
         </div>
-        <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />
+        {hasIq && <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />}
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} nav={nav} me={me} quick={quick} workflows={workflows} />
       </div>
     </ExperienceContext.Provider>

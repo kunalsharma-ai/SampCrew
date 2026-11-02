@@ -37,3 +37,21 @@ export async function createAdminAction(body: { email: string; fullName: string;
   revalidatePath('/admins');
   return r;
 }
+
+export async function switchModulesAction(id: string, changes: { key: string; state: 'plan' | 'on' | 'off' }[]) {
+  const r = await act(() => api(`/platform/tenants/${id}/access/modules`, { method: 'PUT', body: { changes } }), changes.length === 1 ? 'Module updated.' : `${changes.length} modules updated.`);
+  revalidatePath(`/tenants/${id}/access`);
+  return r;
+}
+
+export async function switchPermissionsAction(id: string, changes: { key: string; enabled: boolean }[]) {
+  const r = await act(() => api(`/platform/tenants/${id}/access/permissions`, { method: 'PUT', body: { changes } }), changes.length === 1 ? 'Permission updated.' : `${changes.length} permissions updated.`);
+  revalidatePath(`/tenants/${id}/access`);
+  return r;
+}
+
+export async function setMemberModulesAction(id: string, membershipId: string, blockedFeatures: string[]) {
+  const r = await act(() => api(`/platform/tenants/${id}/access/members/${membershipId}`, { method: 'PUT', body: { blockedFeatures } }), 'Member access saved.');
+  revalidatePath(`/tenants/${id}/access`);
+  return r;
+}

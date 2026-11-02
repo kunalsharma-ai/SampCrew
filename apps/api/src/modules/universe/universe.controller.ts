@@ -1,9 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
-import { RequirePermission } from '../../platform/authz/decorators';
+import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { Doc } from '../../platform/openapi/openapi';
 import { UniverseService } from './universe.service';
 
 @Controller('insights')
+@RequireFeature('workforce_universe')
 export class UniverseController {
   constructor(private readonly universe: UniverseService) {}
 

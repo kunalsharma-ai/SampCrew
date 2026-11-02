@@ -6075,6 +6075,7 @@
           "Documents"
         ],
         "summary": "An employee's documents (HR-only documents are listed for people who manage documents)",
+        "description": "Requires plan feature `documents`.",
         "operationId": "Documents_list",
         "security": [
           {
@@ -6112,6 +6113,7 @@
           "Documents"
         ],
         "summary": "Upload a document (multipart/form-data: file, category, title, visibility). PDF, images, Word or text, up to 10 MB.",
+        "description": "Requires plan feature `documents`.",
         "operationId": "Documents_upload",
         "security": [
           {
@@ -6151,6 +6153,7 @@
           "Documents"
         ],
         "summary": "Get a download link valid for 5 minutes",
+        "description": "Requires plan feature `documents`.",
         "operationId": "Documents_link",
         "security": [
           {
@@ -6190,6 +6193,7 @@
           "Documents"
         ],
         "summary": "Archive a document (the file is retained)",
+        "description": "Requires plan feature `documents`.",
         "operationId": "Documents_archive",
         "security": [
           {
@@ -6284,7 +6288,7 @@
           "Leave"
         ],
         "summary": "Leave types",
-        "description": "Requires permission `leave:read`.",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_types",
         "security": [
           {
@@ -6312,7 +6316,7 @@
           "Leave"
         ],
         "summary": "Create a leave type",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_createType",
         "security": [
           {
@@ -6385,7 +6389,7 @@
           "Leave"
         ],
         "summary": "Update a leave type",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_updateType",
         "security": [
           {
@@ -6462,7 +6466,7 @@
           "Leave"
         ],
         "summary": "Archive a leave type and deactivate its policies (history is kept)",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_archiveType",
         "security": [
           {
@@ -6502,7 +6506,7 @@
           "Leave"
         ],
         "summary": "Active leave policies",
-        "description": "Requires permission `leave:read`.",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_policies",
         "security": [
           {
@@ -6530,7 +6534,7 @@
           "Leave"
         ],
         "summary": "Save the policy for a leave type and legal entity (replaces the active one)",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_setPolicy",
         "security": [
           {
@@ -6645,7 +6649,7 @@
           "Leave"
         ],
         "summary": "Deactivate a leave policy",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_removePolicy",
         "security": [
           {
@@ -7068,7 +7072,7 @@
           "Leave"
         ],
         "summary": "Leave balances for a year (yours when employeeId is omitted)",
-        "description": "Requires permission `leave:read`.",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_balances",
         "security": [
           {
@@ -7120,7 +7124,7 @@
           "Leave"
         ],
         "summary": "Ledger lines behind one balance",
-        "description": "Requires permission `leave:read`.",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_ledger",
         "security": [
           {
@@ -7182,6 +7186,7 @@
           "Leave"
         ],
         "summary": "Working days and balance impact of a draft request (nothing is saved)",
+        "description": "Requires plan feature `leave`.",
         "operationId": "Leave_preview",
         "security": [
           {
@@ -7269,6 +7274,7 @@
           "Leave"
         ],
         "summary": "Apply for leave (for yourself, or on behalf of someone you approve leave for)",
+        "description": "Requires plan feature `leave`.",
         "operationId": "Leave_request",
         "security": [
           {
@@ -7354,7 +7360,7 @@
           "Leave"
         ],
         "summary": "Leave requests: yours by default, or every request you can see with scope=visible",
-        "description": "Requires permission `leave:read`.",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_list",
         "security": [
           {
@@ -7453,7 +7459,7 @@
           "Leave"
         ],
         "summary": "One leave request with its approval trail",
-        "description": "Requires permission `leave:read`.",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_get",
         "security": [
           {
@@ -7493,6 +7499,7 @@
           "Leave"
         ],
         "summary": "Cancel a pending or approved request (approved days are returned to the balance)",
+        "description": "Requires plan feature `leave`.",
         "operationId": "Leave_cancel",
         "security": [
           {
@@ -7549,7 +7556,7 @@
           "Leave"
         ],
         "summary": "Who is on (or has requested) leave in a date range",
-        "description": "Requires permission `leave:read`.",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_away",
         "security": [
           {
@@ -7601,7 +7608,7 @@
           "Leave"
         ],
         "summary": "Add or deduct days with a note (recorded as a ledger adjustment)",
-        "description": "Requires permission `leave:approve`.",
+        "description": "Requires permission `leave:approve`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_adjust",
         "security": [
           {
@@ -7669,7 +7676,7 @@
           "Leave"
         ],
         "summary": "Post accruals due up to a date now (also runs automatically every hour; never double-credits)",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_run",
         "security": [
           {
@@ -7717,7 +7724,7 @@
           "Leave"
         ],
         "summary": "Close a past leave year: carry forward up to each cap, lapse the rest",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_yearEnd",
         "security": [
           {
@@ -8973,7 +8980,7 @@
           "Bids"
         ],
         "summary": "Clients that staffing bids are made to",
-        "description": "Requires permission `bids:read`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:read`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_clients",
         "security": [
           {
@@ -9015,7 +9022,7 @@
           "Bids"
         ],
         "summary": "Add a client",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_createClient",
         "security": [
           {
@@ -9099,7 +9106,7 @@
           "Bids"
         ],
         "summary": "Change a client",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_updateClient",
         "security": [
           {
@@ -9191,7 +9198,7 @@
           "Bids"
         ],
         "summary": "Archive a client (their bids are kept)",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_archiveClient",
         "security": [
           {
@@ -9231,7 +9238,7 @@
           "Bids"
         ],
         "summary": "Proposal templates: cover note, terms, validity and pricing defaults",
-        "description": "Requires permission `bids:read`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:read`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_templates",
         "security": [
           {
@@ -9259,7 +9266,7 @@
           "Bids"
         ],
         "summary": "Add a proposal template",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_createTemplate",
         "security": [
           {
@@ -9346,7 +9353,7 @@
           "Bids"
         ],
         "summary": "Change a proposal template (bids already made keep their own text)",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_updateTemplate",
         "security": [
           {
@@ -9441,7 +9448,7 @@
           "Bids"
         ],
         "summary": "Archive a proposal template",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_archiveTemplate",
         "security": [
           {
@@ -9481,7 +9488,7 @@
           "Bids"
         ],
         "summary": "Rate cards: standard monthly pay and bill rates per role, for every client or for one",
-        "description": "Requires permission `bids:read`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:read`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_rateCards",
         "security": [
           {
@@ -9509,7 +9516,7 @@
           "Bids"
         ],
         "summary": "Add a rate card",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_createRateCard",
         "security": [
           {
@@ -9614,7 +9621,7 @@
           "Bids"
         ],
         "summary": "Change a rate card (bids already priced keep their own rates)",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_updateRateCard",
         "security": [
           {
@@ -9727,7 +9734,7 @@
           "Bids"
         ],
         "summary": "Archive a rate card",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_archiveRateCard",
         "security": [
           {
@@ -9767,7 +9774,7 @@
           "Bids"
         ],
         "summary": "Staffing bids you can see, newest activity first",
-        "description": "Requires permission `bids:read`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:read`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_list",
         "security": [
           {
@@ -9834,7 +9841,7 @@
           "Bids"
         ],
         "summary": "Create a staffing bid (Quick Bid or Advanced Bid); pricing is worked out on the server",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_create",
         "security": [
           {
@@ -10069,7 +10076,7 @@
           "Bids"
         ],
         "summary": "A bid with its roles, pricing and margins, versions, approval and proposal emails",
-        "description": "Requires permission `bids:read`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:read`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_get",
         "security": [
           {
@@ -10107,7 +10114,7 @@
           "Bids"
         ],
         "summary": "Change a bid. Changing an approved or sent bid starts a new version that needs approval again.",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_update",
         "security": [
           {
@@ -10350,7 +10357,7 @@
           "Bids"
         ],
         "summary": "Delete a draft that was never submitted",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_remove",
         "security": [
           {
@@ -10390,7 +10397,7 @@
           "Bids"
         ],
         "summary": "Submit a bid for approval (by default, anyone with the Finance Manager role)",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_submit",
         "security": [
           {
@@ -10430,7 +10437,7 @@
           "Bids"
         ],
         "summary": "Record that a sent proposal was won or lost, or withdraw a bid",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_outcome",
         "security": [
           {
@@ -10499,7 +10506,7 @@
           "Bids"
         ],
         "summary": "Email the approved proposal (PDF attached) now or at a scheduled time",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_send",
         "security": [
           {
@@ -10584,7 +10591,7 @@
           "Bids"
         ],
         "summary": "Cancel a scheduled proposal email that has not gone yet",
-        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:manage`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_cancelEmail",
         "security": [
           {
@@ -10632,7 +10639,7 @@
           "Bids"
         ],
         "summary": "The client proposal as PDF: a version as sent, or a preview of the bid now (no costs or margins)",
-        "description": "Requires permission `bids:read`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:read`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_pdf",
         "security": [
           {
@@ -10682,7 +10689,7 @@
           "Bids"
         ],
         "summary": "The signed copy of a proposal accepted online: the PDF as sent plus the acceptance record",
-        "description": "Requires permission `bids:read`.\n\nRequires plan feature `recruitment`.",
+        "description": "Requires permission `bids:read`.\n\nRequires plan feature `staffing_bids`.",
         "operationId": "Bids_signed",
         "security": [
           {
@@ -10937,6 +10944,7 @@
           "Iq"
         ],
         "summary": "Ask CREW IQ. Answers come from your workspace under your own permissions, with how they were found and links to the source pages; actions open prefilled forms and change nothing. Saved to your conversation; pass conversationId to ask a follow-up.",
+        "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_ask",
         "security": [
           {
@@ -10998,6 +11006,7 @@
           "Iq"
         ],
         "summary": "Your CREW IQ conversations, newest first (only your own)",
+        "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_conversations",
         "security": [
           {
@@ -11025,6 +11034,7 @@
           "Iq"
         ],
         "summary": "Delete all your CREW IQ conversations",
+        "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_forgetAll",
         "security": [
           {
@@ -11054,6 +11064,7 @@
           "Iq"
         ],
         "summary": "One of your CREW IQ conversations with every question and answer",
+        "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_conversation",
         "security": [
           {
@@ -11091,6 +11102,7 @@
           "Iq"
         ],
         "summary": "Delete one of your CREW IQ conversations",
+        "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_forget",
         "security": [
           {
@@ -11130,7 +11142,7 @@
           "Universe"
         ],
         "summary": "Workforce Universe: the people you can see with their placement history, departments and locations, to replay the organization over time",
-        "description": "Requires permission `employees:read`.",
+        "description": "Requires permission `employees:read`.\n\nRequires plan feature `workforce_universe`.",
         "operationId": "Universe_load",
         "security": [
           {
@@ -11160,7 +11172,7 @@
           "Lenses"
         ],
         "summary": "Skills network: the skills held by the people you can see, with their level",
-        "description": "Requires permission `employees:read`.",
+        "description": "Requires permission `employees:read`.\n\nRequires plan feature `workforce_universe`.",
         "operationId": "Lenses_skills",
         "security": [
           {
@@ -11339,7 +11351,7 @@
           "Lenses"
         ],
         "summary": "Headcount scenarios: today’s baseline per department (with monthly cost when your payroll access covers everyone) and the saved scenarios",
-        "description": "Requires permission `reports:read`.",
+        "description": "Requires permission `reports:read`.\n\nRequires plan feature `workforce_universe`.",
         "operationId": "Lenses_scenarios",
         "security": [
           {
@@ -11367,7 +11379,7 @@
           "Lenses"
         ],
         "summary": "Save a headcount scenario",
-        "description": "Requires permission `reports:read`.",
+        "description": "Requires permission `reports:read`.\n\nRequires plan feature `workforce_universe`.",
         "operationId": "Lenses_create",
         "security": [
           {
@@ -11533,7 +11545,7 @@
           "Lenses"
         ],
         "summary": "Update a headcount scenario",
-        "description": "Requires permission `reports:read`.",
+        "description": "Requires permission `reports:read`.\n\nRequires plan feature `workforce_universe`.",
         "operationId": "Lenses_update",
         "security": [
           {
@@ -11707,7 +11719,7 @@
           "Lenses"
         ],
         "summary": "Delete a headcount scenario",
-        "description": "Requires permission `reports:read`.",
+        "description": "Requires permission `reports:read`.\n\nRequires plan feature `workforce_universe`.",
         "operationId": "Lenses_remove",
         "security": [
           {
@@ -25089,7 +25101,7 @@
           "Helpdesk"
         ],
         "summary": "Counts of my open cases and of cases assigned to me",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_summary",
         "security": [
           {
@@ -25119,7 +25131,7 @@
           "Helpdesk"
         ],
         "summary": "Helpdesk categories with response targets; with manage=true, also archived ones and their handlers (helpdesk:configure)",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_categories",
         "security": [
           {
@@ -25161,7 +25173,7 @@
           "Helpdesk"
         ],
         "summary": "Add a category with response targets and handlers",
-        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_createCategory",
         "security": [
           {
@@ -25257,7 +25269,7 @@
           "Helpdesk"
         ],
         "summary": "Change a category. Existing cases keep the confidentiality they were raised with.",
-        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_updateCategory",
         "security": [
           {
@@ -25363,7 +25375,7 @@
           "Helpdesk"
         ],
         "summary": "Stop offering a category for new cases",
-        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_archiveCategory",
         "security": [
           {
@@ -25403,7 +25415,7 @@
           "Helpdesk"
         ],
         "summary": "Members who can handle cases (helpdesk:manage or helpdesk:configure needed)",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_handlers",
         "security": [
           {
@@ -25433,7 +25445,7 @@
           "Helpdesk"
         ],
         "summary": "Published help articles, optionally by category or search; all=true includes drafts (helpdesk:configure)",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_articles",
         "security": [
           {
@@ -25494,7 +25506,7 @@
           "Helpdesk"
         ],
         "summary": "Write a help article",
-        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_createArticle",
         "security": [
           {
@@ -25568,7 +25580,7 @@
           "Helpdesk"
         ],
         "summary": "One help article",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_article",
         "security": [
           {
@@ -25606,7 +25618,7 @@
           "Helpdesk"
         ],
         "summary": "Change a help article",
-        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_updateArticle",
         "security": [
           {
@@ -25688,7 +25700,7 @@
           "Helpdesk"
         ],
         "summary": "Delete a help article",
-        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:configure`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_removeArticle",
         "security": [
           {
@@ -25728,7 +25740,7 @@
           "Helpdesk"
         ],
         "summary": "My cases, or the queue of cases I can handle (helpdesk:manage), most urgent first",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_cases",
         "security": [
           {
@@ -25809,7 +25821,7 @@
           "Helpdesk"
         ],
         "summary": "Raise a case; handlers can log one for someone in their scope with employeeId",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_create",
         "security": [
           {
@@ -25887,7 +25899,7 @@
           "Helpdesk"
         ],
         "summary": "A case with its conversation; handlers also get internal notes and history",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_get",
         "security": [
           {
@@ -25927,7 +25939,7 @@
           "Helpdesk"
         ],
         "summary": "Reply on a case; handlers can add internal notes",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_reply",
         "security": [
           {
@@ -25997,7 +26009,7 @@
           "Helpdesk"
         ],
         "summary": "Move a case: handlers work and resolve it; the person confirms (closes) or reopens it",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_status",
         "security": [
           {
@@ -26067,7 +26079,7 @@
           "Helpdesk"
         ],
         "summary": "Assign or unassign a case",
-        "description": "Requires permission `helpdesk:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:manage`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_assign",
         "security": [
           {
@@ -26135,7 +26147,7 @@
           "Helpdesk"
         ],
         "summary": "Change priority; response targets are recalculated",
-        "description": "Requires permission `helpdesk:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:manage`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_priority",
         "security": [
           {
@@ -26200,7 +26212,7 @@
           "Helpdesk"
         ],
         "summary": "Move a case to another category; moving into a confidential one makes it confidential",
-        "description": "Requires permission `helpdesk:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:manage`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_category",
         "security": [
           {
@@ -26261,7 +26273,7 @@
           "Helpdesk"
         ],
         "summary": "Rate how a resolved case was handled (once)",
-        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `helpdesk:use`.\n\nRequires plan feature `helpdesk`.",
         "operationId": "Helpdesk_rate",
         "security": [
           {
@@ -26327,7 +26339,7 @@
           "Announcements"
         ],
         "summary": "Announcements addressed to me, pinned first",
-        "description": "Requires permission `announcements:read`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:read`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_feed",
         "security": [
           {
@@ -26355,7 +26367,7 @@
           "Announcements"
         ],
         "summary": "Draft an announcement",
-        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_create",
         "security": [
           {
@@ -26472,7 +26484,7 @@
           "Announcements"
         ],
         "summary": "All announcements with audience size, reads and acknowledgements",
-        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_list",
         "security": [
           {
@@ -26502,7 +26514,7 @@
           "Announcements"
         ],
         "summary": "One announcement with who has read and acknowledged it",
-        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_detail",
         "security": [
           {
@@ -26542,7 +26554,7 @@
           "Announcements"
         ],
         "summary": "Open an announcement; records the first read",
-        "description": "Requires permission `announcements:read`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:read`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_read",
         "security": [
           {
@@ -26580,7 +26592,7 @@
           "Announcements"
         ],
         "summary": "Change a draft; after publishing only pinning and expiry can change",
-        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_update",
         "security": [
           {
@@ -26705,7 +26717,7 @@
           "Announcements"
         ],
         "summary": "Delete a draft",
-        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_remove",
         "security": [
           {
@@ -26745,7 +26757,7 @@
           "Announcements"
         ],
         "summary": "Acknowledge an announcement that asks for it",
-        "description": "Requires permission `announcements:read`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:read`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_acknowledge",
         "security": [
           {
@@ -26785,7 +26797,7 @@
           "Announcements"
         ],
         "summary": "Publish a draft and notify its audience",
-        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_publish",
         "security": [
           {
@@ -26825,7 +26837,7 @@
           "Announcements"
         ],
         "summary": "Take a published announcement off the feed",
-        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `self_service`.",
+        "description": "Requires permission `announcements:manage`.\n\nRequires plan feature `announcements`.",
         "operationId": "Announcements_archive",
         "security": [
           {
@@ -32145,6 +32157,350 @@
                 "required": [
                   "code"
                 ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/access": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Modules and permissions for a workspace: plan default, SAMPLEDGE switch and what is in effect",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_workspaceAccess",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/access/modules": {
+      "put": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Switch modules on or off for a workspace, or back to the plan default",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_switchModules",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "changes": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "plan",
+                            "on",
+                            "off"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "changes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/access/permissions": {
+      "put": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Switch permissions on or off for every role in a workspace",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_switchPermissions",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "changes": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "changes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/access/members": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Members of a workspace (account details only) with the modules each one is blocked from",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_memberAccess",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/access/members/{membershipId}": {
+      "put": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Choose which modules one member may use (list the modules to block; empty restores full access)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_setMemberAccess",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "membershipId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "blockedFeatures": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "blockedFeatures"
+                ],
+                "additionalProperties": false
               }
             }
           }

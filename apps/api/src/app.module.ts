@@ -46,6 +46,7 @@ import { OrganizationService } from './modules/organization/organization.service
 import { PlatformAuthController, PlatformController } from './modules/platform-admin/platform.controller';
 import { PlatformAuthService } from './modules/platform-admin/platform-auth.service';
 import { PlatformService } from './modules/platform-admin/platform.service';
+import { AccessControlsService } from './modules/platform-admin/access-controls.service';
 import { RolesController } from './modules/roles/roles.controller';
 import { RolesService } from './modules/roles/roles.service';
 import { SupportAccessController, TenancyController } from './modules/tenancy/tenancy.controller';
@@ -202,6 +203,7 @@ export const CONTROLLERS = [
     BillingService,
     PlatformAuthService,
     PlatformService,
+    AccessControlsService,
     NotificationService,
     MailerService,
     StorageService,

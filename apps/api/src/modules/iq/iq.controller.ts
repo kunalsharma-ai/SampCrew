@@ -1,11 +1,13 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { iqAskInput, type IqAskInput } from '@crew/contracts';
 import { Throttle } from '@nestjs/throttler';
+import { RequireFeature } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { IqService } from './iq.service';
 
 @Controller('iq')
+@RequireFeature('crew_iq')
 export class IqController {
   constructor(private readonly iq: IqService) {}
 

@@ -343,6 +343,7 @@ export class EmployeesService {
       const a = employeeAttrs(e);
       const covers = (perm: string, broadOnly = false) => grantsFor(s, perm).some((g) => (!broadOnly || g.scope !== 'own') && grantCovers(s, g, a));
       const isSelf = !!s.employeeId && s.employeeId === e.id;
+      const features = (await this.entitlements.current(tx)).features;
       return {
         ...e,
         isSelf,
@@ -351,9 +352,9 @@ export class EmployeesService {
           updateOwn: isSelf && covers('employees:update'),
           viewSensitive: covers('employees:sensitive:read'),
           lifecycle: covers('employees:lifecycle'),
-          readDocuments: covers('documents:read'),
-          manageDocuments: covers('documents:manage'),
-          readLeave: covers('leave:read'),
+          readDocuments: features.has('documents') && covers('documents:read'),
+          manageDocuments: features.has('documents') && covers('documents:manage'),
+          readLeave: features.has('leave') && covers('leave:read'),
         },
       };
     });

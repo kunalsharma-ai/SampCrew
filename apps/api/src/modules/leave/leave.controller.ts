@@ -13,7 +13,7 @@ import {
   yearEndInput,
 } from '@crew/contracts';
 import { z } from 'zod';
-import { RequirePermission } from '../../platform/authz/decorators';
+import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { LeaveService } from './leave.service';
@@ -36,6 +36,7 @@ export class LeaveController {
   constructor(private readonly leave: LeaveService) {}
 
   @Get('types')
+  @RequireFeature('leave')
   @RequirePermission('leave:read')
   @Doc({ summary: 'Leave types' })
   types(@Query(new ZodPipe(z.object({ includeArchived: z.enum(['true', 'false']).optional() }))) q: { includeArchived?: string }) {
@@ -43,6 +44,7 @@ export class LeaveController {
   }
 
   @Post('types')
+  @RequireFeature('leave')
   @RequirePermission('leave:configure')
   @Doc({ summary: 'Create a leave type', body: leaveTypeInput })
   createType(@Body(new ZodPipe(leaveTypeInput)) body: z.infer<typeof leaveTypeInput>) {
@@ -50,6 +52,7 @@ export class LeaveController {
   }
 
   @Patch('types/:id')
+  @RequireFeature('leave')
   @RequirePermission('leave:configure')
   @Doc({ summary: 'Update a leave type', body: typePatch })
   updateType(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(typePatch)) body: z.infer<typeof typePatch>) {
@@ -57,6 +60,7 @@ export class LeaveController {
   }
 
   @Delete('types/:id')
+  @RequireFeature('leave')
   @RequirePermission('leave:configure')
   @HttpCode(204)
   @Doc({ summary: 'Archive a leave type and deactivate its policies (history is kept)' })
@@ -65,6 +69,7 @@ export class LeaveController {
   }
 
   @Get('policies')
+  @RequireFeature('leave')
   @RequirePermission('leave:read')
   @Doc({ summary: 'Active leave policies' })
   policies() {
@@ -72,6 +77,7 @@ export class LeaveController {
   }
 
   @Post('policies')
+  @RequireFeature('leave')
   @RequirePermission('leave:configure')
   @Doc({ summary: 'Save the policy for a leave type and legal entity (replaces the active one)', body: leavePolicyInput })
   setPolicy(@Body(new ZodPipe(leavePolicyInput)) body: z.infer<typeof leavePolicyInput>) {
@@ -79,6 +85,7 @@ export class LeaveController {
   }
 
   @Delete('policies/:id')
+  @RequireFeature('leave')
   @RequirePermission('leave:configure')
   @HttpCode(204)
   @Doc({ summary: 'Deactivate a leave policy' })
@@ -131,6 +138,7 @@ export class LeaveController {
   }
 
   @Get('balances')
+  @RequireFeature('leave')
   @RequirePermission('leave:read')
   @Doc({ summary: 'Leave balances for a year (yours when employeeId is omitted)', query: balanceQuery })
   balances(@Query(new ZodPipe(balanceQuery)) q: z.infer<typeof balanceQuery>) {
@@ -138,6 +146,7 @@ export class LeaveController {
   }
 
   @Get('ledger')
+  @RequireFeature('leave')
   @RequirePermission('leave:read')
   @Doc({ summary: 'Ledger lines behind one balance', query: ledgerQuery })
   ledger(@Query(new ZodPipe(ledgerQuery)) q: z.infer<typeof ledgerQuery>) {
@@ -145,18 +154,21 @@ export class LeaveController {
   }
 
   @Post('requests/preview')
+  @RequireFeature('leave')
   @Doc({ summary: 'Working days and balance impact of a draft request (nothing is saved)', body: leaveRequestInput })
   preview(@Body(new ZodPipe(leaveRequestInput)) body: LeaveRequestInput) {
     return this.leave.preview(body);
   }
 
   @Post('requests')
+  @RequireFeature('leave')
   @Doc({ summary: 'Apply for leave (for yourself, or on behalf of someone you approve leave for)', body: leaveRequestInput })
   request(@Body(new ZodPipe(leaveRequestInput)) body: LeaveRequestInput) {
     return this.leave.request(body);
   }
 
   @Get('requests')
+  @RequireFeature('leave')
   @RequirePermission('leave:read')
   @Doc({ summary: 'Leave requests: yours by default, or every request you can see with scope=visible', query: requestQuery })
   list(@Query(new ZodPipe(requestQuery)) q: z.infer<typeof requestQuery>) {
@@ -164,6 +176,7 @@ export class LeaveController {
   }
 
   @Get('requests/:id')
+  @RequireFeature('leave')
   @RequirePermission('leave:read')
   @Doc({ summary: 'One leave request with its approval trail' })
   get(@Param('id', UuidPipe) id: string) {
@@ -171,12 +184,14 @@ export class LeaveController {
   }
 
   @Post('requests/:id/cancel')
+  @RequireFeature('leave')
   @Doc({ summary: 'Cancel a pending or approved request (approved days are returned to the balance)', body: leaveCancelInput })
   cancel(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(leaveCancelInput)) body: z.infer<typeof leaveCancelInput>) {
     return this.leave.cancel(id, body.reason);
   }
 
   @Get('away')
+  @RequireFeature('leave')
   @RequirePermission('leave:read')
   @Doc({ summary: 'Who is on (or has requested) leave in a date range', query: rangeQuery })
   away(@Query(new ZodPipe(rangeQuery)) q: z.infer<typeof rangeQuery>) {
@@ -184,6 +199,7 @@ export class LeaveController {
   }
 
   @Post('adjustments')
+  @RequireFeature('leave')
   @RequirePermission('leave:approve')
   @Doc({ summary: 'Add or deduct days with a note (recorded as a ledger adjustment)', body: leaveAdjustmentInput })
   adjust(@Body(new ZodPipe(leaveAdjustmentInput)) body: z.infer<typeof leaveAdjustmentInput>) {
@@ -191,6 +207,7 @@ export class LeaveController {
   }
 
   @Post('accruals/run')
+  @RequireFeature('leave')
   @RequirePermission('leave:configure')
   @Doc({ summary: 'Post accruals due up to a date now (also runs automatically every hour; never double-credits)', body: leaveRunInput })
   run(@Body(new ZodPipe(leaveRunInput)) body: z.infer<typeof leaveRunInput>) {
@@ -198,6 +215,7 @@ export class LeaveController {
   }
 
   @Post('year-end')
+  @RequireFeature('leave')
   @RequirePermission('leave:configure')
   @Doc({ summary: 'Close a past leave year: carry forward up to each cap, lapse the rest', body: yearEndInput })
   yearEnd(@Body(new ZodPipe(yearEndInput)) body: z.infer<typeof yearEndInput>) {

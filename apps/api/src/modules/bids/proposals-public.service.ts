@@ -62,7 +62,7 @@ export class ProposalsPublicService {
     if (!t) throw Errors.notFound('Proposal');
     return this.db.tenant(async (tx) => {
       const e = await this.entitlements.current(tx);
-      if (!e.features.has('recruitment')) throw Errors.notFound('Proposal');
+      if (!e.features.has('staffing_bids')) throw Errors.notFound('Proposal');
       const link = await one<LinkRow>(
         tx,
         `select id, bid_id, version_id, bid_email_id, sent_to::text, active_from, expires_at, revoked_at, decision, decided_at, signer_name, signer_title, decline_reason

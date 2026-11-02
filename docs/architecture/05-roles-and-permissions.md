@@ -143,6 +143,7 @@ Platform staff authenticate in a separate realm (`platform_admins` table, separa
 |---|---|---|---|---|
 | `tenants:read` | ✓ | ✓ | ✓ | ✓ |
 | `tenants:manage` | ✓ | · | · | · |
+| `access:manage` | ✓ | · | · | · |
 | `billing:read` | ✓ | · | ✓ | ✓ |
 | `billing:manage` | ✓ | · | ✓ | · |
 | `plans:manage` | ✓ | · | ✓ | · |

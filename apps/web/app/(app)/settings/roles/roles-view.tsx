@@ -10,7 +10,8 @@ import { deleteRoleAction, saveRoleAction } from '../actions';
 const SCOPE_LABEL: Record<string, string> = { own: 'Own', team: 'Team', department: 'Department', entity: 'Entity', tenant: 'All' };
 const MODULES = [...new Set(PERMISSIONS.map((p) => p.module))];
 
-export function RolesView({ roles, canManage, customRolesInPlan }: { roles: Role[]; canManage: boolean; customRolesInPlan: boolean }) {
+export function RolesView({ roles, canManage, customRolesInPlan, disabledPermissions = [] }: { roles: Role[]; canManage: boolean; customRolesInPlan: boolean; disabledPermissions?: string[] }) {
+  const off = useMemo(() => new Set(disabledPermissions), [disabledPermissions]);
   const [selectedId, setSelectedId] = useState(roles[0]?.id);
   const [editor, setEditor] = useState<Role | 'new' | null>(null);
   const selected = roles.find((r) => r.id === selectedId) ?? roles[0];
@@ -74,7 +75,7 @@ export function RolesView({ roles, canManage, customRolesInPlan }: { roles: Role
                   <ul className="grid gap-1.5">
                     {granted.map((p) => (
                       <li key={p.key} className="flex items-center justify-between gap-3 text-[0.8125rem]">
-                        <span>{p.description}{'requiresMfa' in p && p.requiresMfa && <Badge tone="warning" className="ml-2">MFA</Badge>}</span>
+                        <span className={off.has(p.key) ? 'text-fg-subtle line-through' : undefined}>{p.description}{'requiresMfa' in p && p.requiresMfa && <Badge tone="warning" className="ml-2">MFA</Badge>}{off.has(p.key) && <Badge tone="danger" className="ml-2">Switched off by SAMPLEDGE</Badge>}</span>
                         <Badge tone="accent">{SCOPE_LABEL[selected.grants[p.key]!]}</Badge>
                       </li>
                     ))}
@@ -86,12 +87,12 @@ export function RolesView({ roles, canManage, customRolesInPlan }: { roles: Role
           </div>
         </Card>
       )}
-      {editor && <RoleEditor role={editor === 'new' ? null : editor} onClose={() => setEditor(null)} />}
+      {editor && <RoleEditor role={editor === 'new' ? null : editor} off={off} onClose={() => setEditor(null)} />}
     </div>
   );
 }
 
-function RoleEditor({ role, onClose }: { role: Role | null; onClose: () => void }) {
+function RoleEditor({ role, off, onClose }: { role: Role | null; off: Set<string>; onClose: () => void }) {
   const router = useRouter();
   const [grants, setGrants] = useState<Record<string, Scope>>((role?.grants as Record<string, Scope>) ?? {});
   const [pending, start] = useTransition();
@@ -147,6 +148,7 @@ function RoleEditor({ role, onClose }: { role: Role | null; onClose: () => void 
                     id={`perm-${p.key}`}
                     className="size-4 accent-[var(--accent)]"
                     checked={!!grants[p.key]}
+                    disabled={off.has(p.key) && !grants[p.key]}
                     onChange={(e) => setGrants((g) => {
                       const n = { ...g };
                       if (e.target.checked) n[p.key] = p.scopes[p.scopes.length - 1] as Scope;
@@ -157,6 +159,7 @@ function RoleEditor({ role, onClose }: { role: Role | null; onClose: () => void 
                   <label htmlFor={`perm-${p.key}`} className="flex-1 text-[0.8125rem]">
                     {p.description}
                     {p.phase > 1 && <span className="ml-2 text-[0.6875rem] text-fg-subtle">Phase {p.phase}</span>}
+                    {off.has(p.key) && <Badge tone="danger" className="ml-2">Switched off by SAMPLEDGE</Badge>}
                   </label>
                   {grants[p.key] && (
                     <Select aria-label={`Scope for ${p.key}`} className="h-8 w-32 text-xs" value={grants[p.key]} onChange={(e) => setGrants((g) => ({ ...g, [p.key]: e.target.value as Scope }))}>

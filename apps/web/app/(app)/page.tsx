@@ -12,13 +12,14 @@ const SCOPE_LABEL: Record<string, string> = { own: 'Yourself', team: 'Your team'
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const { welcome } = await searchParams;
   const me = await load<Me>('/me');
-  const selfService = me.features.includes('self_service');
+  const hasAnnouncements = me.features.includes('announcements');
+  const hasHelpdesk = me.features.includes('helpdesk');
   const [overview, dashboard, prefs, news, helpdesk] = await Promise.all([
     can(me, 'org:read') ? loadOptional<Overview>('/org/overview') : null,
     loadOptional<Dashboard>('/dashboard'),
     loadOptional<MemberPreferences>('/me/preferences'),
-    selfService && can(me, 'announcements:read') ? loadOptional<Announcement[]>('/announcements') : null,
-    selfService && can(me, 'helpdesk:use') ? loadOptional<Summary>('/helpdesk/summary') : null,
+    hasAnnouncements && can(me, 'announcements:read') ? loadOptional<Announcement[]>('/announcements') : null,
+    hasHelpdesk && can(me, 'helpdesk:use') ? loadOptional<Summary>('/helpdesk/summary') : null,
   ]);
   const isAdmin = can(me, 'org:manage') || can(me, 'users:invite');
 

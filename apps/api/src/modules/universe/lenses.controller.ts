@@ -18,6 +18,7 @@ export class LensesController {
   constructor(private readonly lenses: LensesService, private readonly catalogue: SkillCatalogueService) {}
 
   @Get('insights/skills')
+  @RequireFeature('workforce_universe')
   @RequirePermission('employees:read')
   @Doc({ summary: 'Skills network: the skills held by the people you can see, with their level' })
   skills() {
@@ -47,6 +48,7 @@ export class LensesController {
   }
 
   @Get('insights/scenarios')
+  @RequireFeature('workforce_universe')
   @RequirePermission('reports:read')
   @Doc({ summary: 'Headcount scenarios: today’s baseline per department (with monthly cost when your payroll access covers everyone) and the saved scenarios' })
   scenarios() {
@@ -54,6 +56,7 @@ export class LensesController {
   }
 
   @Post('insights/scenarios')
+  @RequireFeature('workforce_universe')
   @RequirePermission('reports:read')
   @Doc({ summary: 'Save a headcount scenario', body: scenarioInput })
   create(@Body(new ZodPipe(scenarioInput)) body: ScenarioInput) {
@@ -61,6 +64,7 @@ export class LensesController {
   }
 
   @Put('insights/scenarios/:id')
+  @RequireFeature('workforce_universe')
   @RequirePermission('reports:read')
   @Doc({ summary: 'Update a headcount scenario', body: scenarioInput })
   update(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(scenarioInput)) body: ScenarioInput) {
@@ -76,6 +80,7 @@ export class LensesController {
   }
 
   @Delete('insights/scenarios/:id')
+  @RequireFeature('workforce_universe')
   @RequirePermission('reports:read')
   @Doc({ summary: 'Delete a headcount scenario' })
   remove(@Param('id', UuidPipe) id: string) {
