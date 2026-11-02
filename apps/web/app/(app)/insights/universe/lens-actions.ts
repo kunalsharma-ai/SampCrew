@@ -9,6 +9,13 @@ export async function saveScenarioAction(id: string | null, body: ScenarioInput)
   return r;
 }
 
+export async function raiseScenarioRequisitionsAction(id: string) {
+  const r = await act(() => api<Scenario>(`/insights/scenarios/${id}/requisitions`, { method: 'POST', body: {} }), 'Draft requisitions raised.');
+  revalidatePath('/insights/universe');
+  revalidatePath('/recruitment');
+  return r;
+}
+
 export async function deleteScenarioAction(id: string) {
   const r = await act(() => api(`/insights/scenarios/${id}`, { method: 'DELETE' }), 'Scenario deleted.');
   revalidatePath('/insights/universe');

@@ -6,6 +6,7 @@ import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { LensesService } from './lenses.service';
 
+const scenarioRequisitionsInput = z.object({ departmentIds: z.array(z.string().uuid()).min(1).max(100).optional() }).strict();
 const flowQuery = z.object({ period: z.enum(RECRUITMENT_FLOW_PERIODS).default('quarter') }).strict();
 
 @Controller()
@@ -60,6 +61,14 @@ export class LensesController {
   @Doc({ summary: 'Update a headcount scenario', body: scenarioInput })
   update(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(scenarioInput)) body: ScenarioInput) {
     return this.lenses.saveScenario(id, body);
+  }
+
+  @Post('insights/scenarios/:id/requisitions')
+  @RequireFeature('recruitment')
+  @RequirePermission('requisitions:create')
+  @Doc({ summary: 'Raise draft requisitions for the departments a scenario adds people to (once per department)', body: scenarioRequisitionsInput })
+  raise(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(scenarioRequisitionsInput)) body: z.infer<typeof scenarioRequisitionsInput>) {
+    return this.lenses.scenarioRequisitions(id, body.departmentIds);
   }
 
   @Delete('insights/scenarios/:id')

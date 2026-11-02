@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyScenario, flowByStage, globeCentre, orthographic, scenarioInput, skillsLayout, skillSummary, type RecruitmentFlow, type SkillsNetwork } from './lenses';
+import { addMonths, applyScenario, projectScenario, flowByStage, globeCentre, orthographic, scenarioInput, skillsLayout, skillSummary, type RecruitmentFlow, type SkillsNetwork } from './lenses';
 
 const net: SkillsNetwork = {
   skills: [{ id: 's1', name: 'Forklift', category: null }, { id: 's2', name: 'Welding', category: null }],
@@ -75,5 +75,25 @@ describe('scenarios', () => {
     expect(scenarioInput.safeParse({ name: 'X', changes: [{ departmentId: d, delta: 1 }] }).success).toBe(false);
     expect(scenarioInput.safeParse({ name: 'Plan', changes: [{ departmentId: d, delta: 1 }, { departmentId: d, delta: 2 }] }).success).toBe(false);
     expect(scenarioInput.safeParse({ name: 'Plan', changes: [{ departmentId: d, delta: 1 }] }).success).toBe(true);
+  });
+  it('projects month by month with timing, pay rises and attrition', () => {
+    expect(addMonths('2026-11', 2)).toBe('2027-01');
+    expect(addMonths('2026-12', 13)).toBe('2028-01');
+    const p = projectScenario(base, [{ departmentId: 'd1', delta: 4, monthlyCostPerHead: 30000, startMonth: '2027-01' }], { startMonth: null, horizonMonths: 6, attritionPctYear: 0, payRisePct: 10, payRiseMonth: '2027-03' });
+    expect(p.points.map((x) => x.month)).toEqual(['2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04']);
+    expect(p.points.map((x) => x.planned)).toEqual([3, 3, 7, 7, 7, 7]);
+    expect(p.points.map((x) => x.cost)).toEqual([120000, 120000, 240000, 240000, 264000, 264000]);
+    expect(p).toMatchObject({ totalCost: 1248000, baselineTotalCost: 744000, difference: 504000, leavers: 0, outside: [] });
+    // 12% a year leave and are not replaced; a cut in April takes the one Sales person; a change after the horizon is flagged.
+    const a = projectScenario(base, [{ departmentId: 'd2', delta: -1, startMonth: '2027-04' }, { departmentId: 'd1', delta: 1, startMonth: '2028-01' }], { startMonth: '2026-11', horizonMonths: 12, attritionPctYear: 12, payRisePct: 0, payRiseMonth: null });
+    expect(a.points.at(-1)).toMatchObject({ month: '2027-10', planned: 2, baseline: 2.6, expected: 1.8 });
+    expect(a.outside).toEqual(['d1']);
+    expect(projectScenario({ ...base, costs: false }, [{ departmentId: 'd1', delta: 1 }]).totalCost).toBeNull();
+  });
+  it('checks months and assumptions', () => {
+    const d = '00000000-0000-4000-8000-000000000001';
+    expect(scenarioInput.safeParse({ name: 'Plan', changes: [{ departmentId: d, delta: 1, startMonth: '2026-13' }] }).success).toBe(false);
+    expect(scenarioInput.safeParse({ name: 'Plan', changes: [{ departmentId: d, delta: 1 }], assumptions: { horizonMonths: 48 } }).success).toBe(false);
+    expect(scenarioInput.parse({ name: 'Plan', changes: [{ departmentId: d, delta: 1, role: 'Picker' }], assumptions: { attritionPctYear: 8 } }).assumptions).toEqual({ startMonth: null, horizonMonths: 12, attritionPctYear: 8, payRisePct: 0, payRiseMonth: null });
   });
 });

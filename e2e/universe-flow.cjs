@@ -10,7 +10,8 @@
  * 5. Locations: a globe with a dot per location, which turns; the table adds up.
  * 6. Skills: HR adds a skill on a profile and the skills network shows who holds it.
  * 7. Recruitment flow: stage by stage, drawn and tabled.
- * 8. Scenarios: a what-if plan is saved, reopened after a reload, and deleted.
+ * 8. Scenarios: a what-if plan with a month and attrition is projected, saved, reopened after a reload and deleted;
+ *    the plant head raises draft requisitions from the demo scenario, once, and opens one.
  */
 const { chromium } = require('playwright');
 
@@ -156,6 +157,20 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await p.getByLabel(/^Scenario name/).fill('E2E: Finance growth');
     await p.getByRole('button', { name: 'One more in Finance' }).click();
     await p.getByRole('button', { name: 'One more in Finance' }).click();
+    const now = new Date();
+    const inThree = `${new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 3, 1)).toISOString().slice(0, 7)}`;
+    await p.getByLabel('Month of the change in Finance').fill(inThree);
+    await p.getByLabel('Role added in Finance').fill('Financial Analyst');
+    await p.getByLabel(/^Attrition per year/).fill('10');
+    await p.getByLabel(/^Months ahead/).selectOption('18');
+    await p.getByText('Month by month').click();
+    const projRows = p.locator('table[aria-label="Projection by month"] tbody tr');
+    expect(await projRows.count() === 18, `projection has ${await projRows.count()} months`);
+    const planned = await projRows.evaluateAll((rs) => rs.map((r) => Number(r.children[1].textContent)));
+    expect(planned[3] === planned[0] + 2 && planned[2] === planned[0], `plan should add 2 in month 4: ${planned.slice(0, 5)}`);
+    const expectedEnd = Number(await projRows.last().locator('td').nth(2).innerText());
+    expect(expectedEnd < planned.at(-1), 'attrition should bring expected below planned');
+    expect((await p.locator('path[data-line="expected"]').getAttribute('d')).split('L').length === 18, 'chart should draw 18 months');
     const finRow = p.getByRole('table', { name: 'Scenario by department' }).getByRole('row').filter({ hasText: 'Finance' });
     const [finToday, finAfter] = [Number(await finRow.locator('td').nth(1).innerText()), Number(await finRow.locator('td').last().innerText())];
     expect(finAfter === finToday + 2, `Finance went from ${finToday} to ${finAfter}`);
@@ -164,12 +179,49 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await p.reload();
     const saved = p.locator('[aria-label="Saved scenarios"]').getByRole('button', { name: /E2E: Finance growth/ });
     await saved.click();
-    expect(await p.getByLabel('Change in Finance').inputValue() === '2', 'saved change not loaded');
+    expect(await p.getByLabel('Change in Finance', { exact: true }).inputValue() === '2', 'saved change not loaded');
+    expect(await p.getByLabel('Month of the change in Finance').inputValue() === inThree, 'saved month not loaded');
+    expect(await p.getByLabel(/^Attrition per year/).inputValue() === '10', 'saved attrition not loaded');
+    expect(await p.getByLabel('Role added in Finance').inputValue() === 'Financial Analyst', 'saved role not loaded');
     p.once('dialog', (d) => d.accept());
     await p.getByRole('button', { name: 'Delete' }).click();
     await p.getByText('Scenario deleted.').waitFor();
     await saved.waitFor({ state: 'detached' });
-    ok('saved a Finance +2 scenario, reopened it after a reload and deleted it');
+    ok('projected a Finance +2 scenario from a month with 10% attrition over 18 months, saved, reopened and deleted it');
+
+    // The plant head raises draft requisitions from the demo scenario: once, and each opens as a draft job.
+    const ctx2 = await b.newContext({ viewport: { width: 1440, height: 1000 } });
+    const q = await ctx2.newPage();
+    q.on('pageerror', (e) => errs.push(`PAGEERROR ${e.message}`));
+    for (let attempt = 1; ; attempt++) {
+      await q.goto(BASE + '/login');
+      await q.fill('input[name=email]', 'plant.head@demo.crew.local');
+      await q.fill('input[name=password]', PASSWORD);
+      await q.click('button[type=submit]');
+      const r = await Promise.race([
+        q.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 15000 }).then(() => 'in'),
+        q.getByText(/too many/i).waitFor({ timeout: 15000 }).then(() => 'limited'),
+      ]).catch(() => 'stuck');
+      if (r === 'in') break;
+      if (attempt >= 4) throw new Error(`plant head sign-in: ${r}`);
+      await q.waitForTimeout(20000);
+    }
+    await q.goto(BASE + '/insights/universe?lens=scenarios');
+    await q.locator('[aria-label="Saved scenarios"]').getByRole('button', { name: /Second shift on line 2/ }).click();
+    const reqCard = q.locator('[aria-label="Requisitions from this scenario"]');
+    await reqCard.getByRole('button', { name: 'Raise draft requisitions (2)' }).click();
+    await q.getByText(/2 draft requisition\(s\) raised/).waitFor();
+    const links = reqCard.getByRole('link');
+    expect(await links.count() === 2, `expected 2 requisitions, saw ${await links.count()}`);
+    expect(await reqCard.getByRole('button', { name: /^Raise draft requisitions/ }).isDisabled(), 'raising twice should be disabled');
+    await q.reload();
+    expect(await reqCard.getByRole('link').count() === 2, 'requisitions not kept after a reload');
+    await reqCard.getByRole('link', { name: /Machine Operator \(second shift\)/ }).click();
+    await q.waitForURL(/\/recruitment\/jobs\//);
+    await q.getByRole('heading', { name: /Machine Operator \(second shift\)/ }).first().waitFor();
+    await q.getByText(/^Draft$/i).first().waitFor();
+    await ctx2.close();
+    ok('the plant head raised 2 draft requisitions from the demo scenario, once, and opened one');
 
     const real = errs.filter((e) => !/favicon|DevTools/.test(e));
     expect(!real.length, `browser errors:\n${real.join('\n')}`);

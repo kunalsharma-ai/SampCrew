@@ -1,15 +1,15 @@
 'use client';
 import {
-  applyScenario, flowByStage, FLOW_OUTCOMES, globeCentre, orthographic, type RecruitmentFlow, type Scenario, type ScenarioBaseline, type ScenarioInput,
+  applyScenario, DEFAULT_ASSUMPTIONS, flowByStage, projectScenario, type ScenarioAssumptions, type ScenarioChange, FLOW_OUTCOMES, globeCentre, orthographic, type RecruitmentFlow, type Scenario, type ScenarioBaseline,
   SKILL_LEVEL_LABEL, skillsLayout, skillSummary, type SkillsNetwork, snapshot, timeline, type UniverseData,
 } from '@crew/contracts';
 import { Alert, Badge, Button, buttonClass, Card, CardHeader, EmptyState, Field, Input, Select, Stat, Table, TBody, TD, TH, THead, TR, Textarea, cn } from '@crew/ui';
-import { Globe2, Minus, Plus, RotateCcw, RotateCw, Save, Trash2 } from 'lucide-react';
+import { BriefcaseBusiness, Globe2, Minus, Plus, RotateCcw, RotateCw, Save, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { geoGraticule10, geoOrthographic, geoPath, type GeoPermissibleObjects } from 'd3-geo';
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { deleteScenarioAction, saveScenarioAction } from './lens-actions';
+import { deleteScenarioAction, raiseScenarioRequisitionsAction, saveScenarioAction } from './lens-actions';
 
 const PALETTE = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#ec4899', '#84cc16', '#f97316', '#06b6d4', '#a855f7'];
 const fmt = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -343,27 +343,52 @@ export function FlowLens({ flow }: { flow: RecruitmentFlow }) {
 // Scenarios
 // ---------------------------------------------------------------------------------------------------------------
 
-type Draft = { id: string | null; name: string; notes: string; delta: Record<string, string>; cost: Record<string, string> };
-const blank = (): Draft => ({ id: null, name: '', notes: '', delta: {}, cost: {} });
+type Draft = {
+  id: string | null; name: string; notes: string;
+  delta: Record<string, string>; cost: Record<string, string>; month: Record<string, string>; role: Record<string, string>;
+  a: { startMonth: string; horizonMonths: string; attritionPctYear: string; payRisePct: string; payRiseMonth: string };
+  requisitions: Scenario['requisitions'];
+};
+const draftAssumptions = (a: ScenarioAssumptions): Draft['a'] => ({
+  startMonth: a.startMonth ?? '', horizonMonths: String(a.horizonMonths), attritionPctYear: a.attritionPctYear ? String(a.attritionPctYear) : '',
+  payRisePct: a.payRisePct ? String(a.payRisePct) : '', payRiseMonth: a.payRiseMonth ?? '',
+});
+const blank = (): Draft => ({ id: null, name: '', notes: '', delta: {}, cost: {}, month: {}, role: {}, a: draftAssumptions(DEFAULT_ASSUMPTIONS), requisitions: [] });
 const fromScenario = (s: Scenario): Draft => ({
   id: s.id, name: s.name, notes: s.notes,
   delta: Object.fromEntries(s.changes.map((c) => [c.departmentId, String(c.delta)])),
   cost: Object.fromEntries(s.changes.filter((c) => c.monthlyCostPerHead != null).map((c) => [c.departmentId, String(c.monthlyCostPerHead)])),
+  month: Object.fromEntries(s.changes.filter((c) => c.startMonth).map((c) => [c.departmentId, c.startMonth!])),
+  role: Object.fromEntries(s.changes.filter((c) => c.role).map((c) => [c.departmentId, c.role!])),
+  a: draftAssumptions(s.assumptions), requisitions: s.requisitions,
 });
+const monthLabel = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' });
 
-export function ScenariosLens({ baseline, scenarios, canSave }: { baseline: ScenarioBaseline; scenarios: Scenario[]; canSave: boolean }) {
+export function ScenariosLens({ baseline, scenarios, canSave, canRaise }: { baseline: ScenarioBaseline; scenarios: Scenario[]; canSave: boolean; canRaise: boolean }) {
   const router = useRouter();
   const [d, setD] = useState<Draft>(() => (scenarios[0] ? fromScenario(scenarios[0]) : blank()));
   const [msg, setMsg] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [pending, start] = useTransition();
   const money = (n: number | null) => (n == null ? '—' : new Intl.NumberFormat('en-IN', { style: 'currency', currency: baseline.currency ?? 'INR', maximumFractionDigits: 0 }).format(n));
-  const changes: ScenarioInput['changes'] = baseline.departments
-    .map((x) => ({ departmentId: x.id, delta: Number(d.delta[x.id] || 0), monthlyCostPerHead: d.cost[x.id] ? Number(d.cost[x.id]) : undefined }))
+  const changes: ScenarioChange[] = baseline.departments
+    .map((x) => ({
+      departmentId: x.id, delta: Number(d.delta[x.id] || 0), monthlyCostPerHead: d.cost[x.id] ? Number(d.cost[x.id]) : undefined,
+      startMonth: d.month[x.id] || undefined, role: d.role[x.id]?.trim() || undefined,
+    }))
     .filter((c) => Number.isInteger(c.delta) && (c.delta !== 0 || c.monthlyCostPerHead != null));
+  const assumptions: ScenarioAssumptions = {
+    startMonth: d.a.startMonth || null, horizonMonths: Math.min(36, Math.max(3, Number(d.a.horizonMonths) || 12)),
+    attritionPctYear: Math.min(60, Number(d.a.attritionPctYear) || 0), payRisePct: Math.min(30, Number(d.a.payRisePct) || 0), payRiseMonth: d.a.payRiseMonth || null,
+  };
   const result = applyScenario(baseline, changes);
+  const projection = projectScenario(baseline, changes, assumptions);
+  const setA = (k: keyof Draft['a'], v: string) => setD({ ...d, a: { ...d.a, [k]: v } });
+  const raisedFor = new Set(d.requisitions.map((r) => r.departmentId));
+  const saved = scenarios.find((s) => s.id === d.id);
+  const toRaise = (saved?.changes ?? []).filter((c) => c.delta > 0 && !raisedFor.has(c.departmentId));
 
   const save = (asNew: boolean) => start(async () => {
-    const r = await saveScenarioAction(asNew ? null : d.id, { name: d.name, notes: d.notes, changes });
+    const r = await saveScenarioAction(asNew ? null : d.id, { name: d.name, notes: d.notes, changes, assumptions });
     setMsg({ tone: r.ok ? 'success' : 'danger', text: r.ok ? (r.message ?? 'Saved.') : [r.message, ...Object.values(r.fieldErrors ?? {})].filter(Boolean).join(' ') });
     if (r.ok && r.data) { setD(fromScenario(r.data)); router.refresh(); }
   });
@@ -372,6 +397,12 @@ export function ScenariosLens({ baseline, scenarios, canSave }: { baseline: Scen
     const r = await deleteScenarioAction(d.id);
     setMsg({ tone: r.ok ? 'success' : 'danger', text: r.message ?? (r.ok ? 'Deleted.' : 'Could not delete') });
     if (r.ok) { setD(blank()); router.refresh(); }
+  });
+  const raise = () => start(async () => {
+    if (!d.id) return;
+    const r = await raiseScenarioRequisitionsAction(d.id);
+    setMsg({ tone: r.ok ? 'success' : 'danger', text: r.ok ? `${r.data ? r.data.requisitions.length - d.requisitions.length : 0} draft requisition(s) raised. Submit them for approval from Recruitment.` : [r.message, ...Object.values(r.fieldErrors ?? {})].filter(Boolean).join(' ') });
+    if (r.ok && r.data) { setD(fromScenario(r.data)); router.refresh(); }
   });
 
   return (
@@ -406,7 +437,7 @@ export function ScenariosLens({ baseline, scenarios, canSave }: { baseline: Scen
           </div>
           <div className="overflow-x-auto">
             <Table aria-label="Scenario by department">
-              <THead><TR><TH>Department</TH><TH className="text-right">Today</TH><TH>Change</TH>{baseline.costs && <TH>Cost per added person / month</TH>}<TH className="text-right">After</TH>{baseline.costs && <TH className="text-right">Monthly cost after</TH>}</TR></THead>
+              <THead><TR><TH>Department</TH><TH className="text-right">Today</TH><TH>Change</TH><TH>From</TH><TH>Role added</TH>{baseline.costs && <TH>Cost per added person / month</TH>}<TH className="text-right">After</TH>{baseline.costs && <TH className="text-right">Monthly cost after</TH>}</TR></THead>
               <TBody>
                 {result.rows.map((r) => (
                   <TR key={r.id}>
@@ -418,6 +449,13 @@ export function ScenariosLens({ baseline, scenarios, canSave }: { baseline: Scen
                         <Input aria-label={`Change in ${r.name}`} className="!w-20 text-right" inputMode="numeric" value={d.delta[r.id] ?? ''} placeholder="0" disabled={!canSave} onChange={(e) => setD({ ...d, delta: { ...d.delta, [r.id]: e.target.value.replace(/[^\d-]/g, '') } })} />
                         <Button size="sm" variant="ghost" aria-label={`One more in ${r.name}`} disabled={!canSave} onClick={() => setD({ ...d, delta: { ...d.delta, [r.id]: String(Number(d.delta[r.id] || 0) + 1) } })}><Plus className="size-3.5" /></Button>
                       </div>
+                    </TD>
+                    <TD>
+                      <Input aria-label={`Month of the change in ${r.name}`} type="month" className="!w-36" value={d.month[r.id] ?? ''} disabled={!canSave} onChange={(e) => setD({ ...d, month: { ...d.month, [r.id]: e.target.value } })} />
+                      {projection.outside.includes(r.id) && <span className="mt-1 block text-xs text-warning">After the projection ends</span>}
+                    </TD>
+                    <TD>
+                      <Input aria-label={`Role added in ${r.name}`} className="!w-40" value={d.role[r.id] ?? ''} maxLength={120} placeholder={Number(d.delta[r.id] || 0) > 0 ? `New role in ${r.name}` : ''} disabled={!canSave || !(Number(d.delta[r.id] || 0) > 0)} onChange={(e) => setD({ ...d, role: { ...d.role, [r.id]: e.target.value } })} />
                     </TD>
                     {baseline.costs && (
                       <TD>
@@ -441,10 +479,85 @@ export function ScenariosLens({ baseline, scenarios, canSave }: { baseline: Scen
                 {d.id && <Button variant="ghost" onClick={remove} disabled={pending}><Trash2 className="size-4" /> Delete</Button>}
               </Fragment>
             ) : <p className="text-[0.8125rem] text-fg-subtle">You can try changes here; saving scenarios is for managers, HR and finance.</p>}
-            <p className="ml-auto text-xs text-fg-subtle">A plan only: nothing here changes headcount, requisitions or pay.</p>
+            <p className="ml-auto text-xs text-fg-subtle">A plan only: nothing here changes headcount or pay. Requisitions are raised only when you ask.</p>
           </div>
         </Card>
+        <Card aria-label="Assumptions">
+          <CardHeader title="Over time" description="When the plan starts, how far ahead to look, and what happens to the people you have." />
+          <div className="grid gap-3 p-4 pt-0 sm:grid-cols-3 lg:grid-cols-5">
+            <Field label="First month" hint="Empty: this month">{(f) => <Input {...f} type="month" value={d.a.startMonth} disabled={!canSave} onChange={(e) => setA('startMonth', e.target.value)} />}</Field>
+            <Field label="Months ahead">{(f) => <Select {...f} value={d.a.horizonMonths} disabled={!canSave} onChange={(e) => setA('horizonMonths', e.target.value)}>{[6, 12, 18, 24, 36].map((n) => <option key={n} value={n}>{n} months</option>)}</Select>}</Field>
+            <Field label="Attrition per year (%)" hint="Leavers are not replaced">{(f) => <Input {...f} inputMode="decimal" value={d.a.attritionPctYear} placeholder="0" disabled={!canSave} onChange={(e) => setA('attritionPctYear', e.target.value.replace(/[^\d.]/g, ''))} />}</Field>
+            <Field label="Pay rise (%)">{(f) => <Input {...f} inputMode="decimal" value={d.a.payRisePct} placeholder="0" disabled={!canSave} onChange={(e) => setA('payRisePct', e.target.value.replace(/[^\d.]/g, ''))} />}</Field>
+            <Field label="Pay rise from" hint="Empty: the first month">{(f) => <Input {...f} type="month" value={d.a.payRiseMonth} disabled={!canSave} onChange={(e) => setA('payRiseMonth', e.target.value)} />}</Field>
+          </div>
+          <ProjectionChart p={projection} money={money} />
+          <div className="grid grid-cols-2 gap-3 border-t border-border p-4 lg:grid-cols-4">
+            <Stat label={`Expected headcount, ${monthLabel(projection.end)}`} value={projection.points.at(-1)!.expected} hint={`Planned ${projection.points.at(-1)!.planned}`} />
+            <Stat label="Leavers to replace to hold the plan" value={projection.leavers} />
+            <Stat label={`Cost over ${assumptions.horizonMonths} months`} value={money(projection.totalCost)} hint={baseline.costs ? 'Expected headcount, with the pay rise' : 'Needs payroll access to everyone'} />
+            <Stat label="Against no changes" value={projection.difference == null ? '—' : `${projection.difference >= 0 ? '+' : ''}${money(projection.difference)}`} />
+          </div>
+        </Card>
+        {d.id && (
+          <Card aria-label="Requisitions from this scenario">
+            <CardHeader
+              title="Requisitions from this scenario"
+              description="One draft per department the scenario adds people to, with the role, the number of people and the month. Drafts go through the usual approval."
+              action={canRaise && canSave ? <Button size="sm" onClick={raise} loading={pending} disabled={!toRaise.length}><BriefcaseBusiness className="size-3.5" /> Raise draft requisitions{toRaise.length ? ` (${toRaise.length})` : ''}</Button> : undefined}
+            />
+            {d.requisitions.length ? (
+              <ul className="divide-y divide-border">
+                {d.requisitions.map((r) => (
+                  <li key={r.id} className="flex items-center gap-3 px-4 py-2.5 text-[0.8125rem]">
+                    <Link href={`/recruitment/jobs/${r.id}`} className="font-medium text-accent hover:underline">{r.code} · {r.title}</Link>
+                    <span className="text-fg-subtle">{baseline.departments.find((x) => x.id === r.departmentId)?.name} · {r.headcount} {r.headcount === 1 ? 'person' : 'people'}</span>
+                    <Badge className="ml-auto">{r.status.replace('_', ' ')}</Badge>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="px-4 pb-4 text-[0.8125rem] text-fg-subtle">{canRaise ? (toRaise.length ? 'None raised yet. Save your changes first: drafts use the saved scenario.' : 'This scenario adds nobody, so there is nothing to raise.') : 'Raising requisitions needs recruitment access.'}</p>}
+          </Card>
+        )}
       </div>
     </div>
+  );
+}
+
+/** Expected headcount month by month against the plan and against no changes, with the monthly cost under it. */
+function ProjectionChart({ p, money }: { p: ReturnType<typeof projectScenario>; money: (n: number | null) => string }) {
+  const W = 720; const H = 220; const L = 44; const R = 12; const T = 12; const B = 28;
+  const all = p.points.flatMap((x) => [x.planned, x.expected, x.baseline]);
+  const max = Math.max(1, ...all) * 1.1; const min = Math.max(0, Math.min(...all) * 0.85);
+  const x = (i: number) => L + (i / Math.max(1, p.points.length - 1)) * (W - L - R);
+  const y = (v: number) => T + (1 - (v - min) / (max - min || 1)) * (H - T - B);
+  const line = (k: 'planned' | 'expected' | 'baseline') => p.points.map((pt, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(pt[k]).toFixed(1)}`).join(' ');
+  const ticks = [min, (min + max) / 2, max].map((v) => Math.round(v));
+  const every = Math.ceil(p.points.length / 8);
+  return (
+    <figure className="px-4">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Projected headcount from ${monthLabel(p.start)} to ${monthLabel(p.end)}: ${p.points.at(-1)!.expected} expected against ${p.points.at(-1)!.baseline} with no changes`}>
+        {ticks.map((v) => <g key={v}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} className="stroke-border" strokeDasharray="3 3" /><text x={L - 6} y={y(v) + 4} textAnchor="end" className="fill-fg-subtle text-[10px]">{v}</text></g>)}
+        {p.points.map((pt, i) => (i % every === 0 || i === p.points.length - 1) && <text key={pt.month} x={x(i)} y={H - 8} textAnchor="middle" className="fill-fg-subtle text-[10px]">{monthLabel(pt.month)}</text>)}
+        <path d={line('baseline')} fill="none" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 4" data-line="baseline" />
+        <path d={line('planned')} fill="none" stroke="#a5b4fc" strokeWidth={1.5} data-line="planned" />
+        <path d={line('expected')} fill="none" stroke="#4f46e5" strokeWidth={2.5} data-line="expected" />
+        {p.points.map((pt, i) => <circle key={pt.month} cx={x(i)} cy={y(pt.expected)} r={2.5} fill="#4f46e5"><title>{`${monthLabel(pt.month)}: ${pt.expected} expected, ${pt.planned} planned, ${pt.baseline} with no changes${pt.cost != null ? `, ${money(pt.cost)} a month` : ''}`}</title></circle>)}
+      </svg>
+      <figcaption className="flex flex-wrap gap-4 pb-3 text-xs text-fg-subtle">
+        <span><span className="mr-1 inline-block h-0.5 w-4 bg-[#4f46e5] align-middle" />Expected (after leavers)</span>
+        <span><span className="mr-1 inline-block h-0.5 w-4 bg-[#a5b4fc] align-middle" />Planned</span>
+        <span><span className="mr-1 inline-block h-0.5 w-4 border-t border-dashed border-[#94a3b8] align-middle" />No changes</span>
+      </figcaption>
+      <details className="pb-3 text-[0.8125rem]">
+        <summary className="cursor-pointer text-fg-muted">Month by month</summary>
+        <div className="overflow-x-auto">
+          <Table aria-label="Projection by month">
+            <THead><TR><TH>Month</TH><TH className="text-right">Planned</TH><TH className="text-right">Expected</TH><TH className="text-right">No changes</TH><TH className="text-right">Monthly cost</TH></TR></THead>
+            <TBody>{p.points.map((pt) => <TR key={pt.month}><TD>{monthLabel(pt.month)}</TD><TD className="text-right tabular-nums">{pt.planned}</TD><TD className="text-right tabular-nums">{pt.expected}</TD><TD className="text-right tabular-nums">{pt.baseline}</TD><TD className="text-right tabular-nums">{money(pt.cost)}</TD></TR>)}</TBody>
+          </Table>
+        </div>
+      </details>
+    </figure>
   );
 }

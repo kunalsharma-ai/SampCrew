@@ -23,6 +23,7 @@ describe('universe lenses', () => {
     const people = {
       hr: await addMember(pool, t, { roles: ['hr_admin'], name: 'Hana HR' }),
       finance: await addMember(pool, t, { roles: ['payroll_admin'], name: 'Fin Finance' }),
+      talent: await addMember(pool, t, { roles: ['hr_admin', 'recruiter'], name: 'Tara Talent' }),
       olu: await addMember(pool, t, { departmentId: ids.ops, name: 'Olu Operator' }),
       peer: await addMember(pool, t, { departmentId: ids.sales, name: 'Pia Peer' }),
       stranger: await addMember(pool, other, { roles: ['hr_admin'], name: 'Other HR' }),
@@ -97,7 +98,8 @@ describe('universe lenses', () => {
       const body = { name: 'Second shift', notes: 'Peak season', changes: [{ departmentId: ids.ops, delta: 4, monthlyCostPerHead: 30000 }, { departmentId: ids.sales, delta: -1 }] };
       const made = await as('finance').post('/insights/scenarios').send(body);
       expect(made.status, JSON.stringify(made.body)).toBe(201);
-      expect(made.body).toMatchObject({ name: 'Second shift', createdBy: 'Fin Finance', changes: body.changes });
+      expect(made.body).toMatchObject({ name: 'Second shift', createdBy: 'Fin Finance', changes: body.changes, requisitions: [] });
+      expect(made.body.assumptions).toEqual({ startMonth: null, horizonMonths: 12, attritionPctYear: 0, payRisePct: 0, payRiseMonth: null });
       const upd = await as('hr').put(`/insights/scenarios/${made.body.id}`).send({ ...body, name: 'Second shift (lean)', changes: [{ departmentId: ids.ops, delta: 2 }] });
       expect(upd.status, JSON.stringify(upd.body)).toBe(200);
       expect((await as('hr').get('/insights/scenarios')).body.scenarios).toEqual([expect.objectContaining({ name: 'Second shift (lean)', changes: [{ departmentId: ids.ops, delta: 2 }] })]);
@@ -109,6 +111,34 @@ describe('universe lenses', () => {
       expect((await as('stranger').delete(`/insights/scenarios/${made.body.id}`)).status).toBe(404);
       expect((await as('hr').delete(`/insights/scenarios/${made.body.id}`)).status).toBe(200);
       expect((await as('hr').get('/insights/scenarios')).body.scenarios).toEqual([]);
+    });
+
+    it('keeps timing and assumptions, and raises draft requisitions once per department', async () => {
+      const body = {
+        name: 'Peak season 2027', notes: 'Two lines from March',
+        changes: [{ departmentId: ids.ops, delta: 3, startMonth: '2027-03', role: 'Forklift operator', monthlyCostPerHead: 25000 }, { departmentId: ids.sales, delta: -1, startMonth: '2027-06' }],
+        assumptions: { startMonth: '2027-01', horizonMonths: 18, attritionPctYear: 10, payRisePct: 6, payRiseMonth: '2027-04' },
+      };
+      const made = await as('hr').post('/insights/scenarios').send(body);
+      expect(made.status, JSON.stringify(made.body)).toBe(201);
+      expect(made.body).toMatchObject({ changes: body.changes, assumptions: body.assumptions });
+      expect((await as('hr').post('/insights/scenarios').send({ ...body, assumptions: { ...body.assumptions, horizonMonths: 60 } })).status).toBe(422);
+
+      // Raising needs requisitions:create as well as planning access; it happens once; the draft carries the role, the people and the month.
+      expect((await as('olu').post(`/insights/scenarios/${made.body.id}/requisitions`).send({})).status).toBe(403);
+      expect((await as('hr').post(`/insights/scenarios/${made.body.id}/requisitions`).send({})).status).toBe(403);
+      const raised = await as('talent').post(`/insights/scenarios/${made.body.id}/requisitions`).send({});
+      expect(raised.status, JSON.stringify(raised.body)).toBe(201);
+      expect(raised.body.requisitions).toEqual([expect.objectContaining({ title: 'Forklift operator', status: 'draft', departmentId: ids.ops, headcount: 3 })]);
+      const req = (await as('talent').get(`/recruitment/requisitions/${raised.body.requisitions[0].id}`)).body;
+      expect(req).toMatchObject({ status: 'draft', headcount: 3, targetStartDate: '2027-03-01', departmentId: ids.ops });
+      expect(req.justification).toContain('Peak season 2027');
+      const again = await as('talent').post(`/insights/scenarios/${made.body.id}/requisitions`).send({});
+      expect(again.status).toBe(422);
+      expect((await as('hr').get('/insights/scenarios')).body.scenarios[0].requisitions).toHaveLength(1);
+      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'scenario.requisition_raised' and resource_id = $2`, [t.id, made.body.id]);
+      expect(audit.rows[0].n).toBe(1);
+      expect((await as('stranger').get('/insights/scenarios')).body.scenarios).toEqual([]);
     });
   });
 });

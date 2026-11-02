@@ -165,9 +165,20 @@ async function seedLenses(client: PoolClient, c: { tid: string; membershipByEmai
   const assembly = await dept('Assembly Line');
   const quality = await dept('Quality Assurance');
   if (assembly && quality) {
+    const today = new Date();
+    const q = Math.floor(today.getUTCMonth() / 3) * 3 + 3;
+    const nextQuarter = `${today.getUTCFullYear() + Math.floor(q / 12)}-${String((q % 12) + 1).padStart(2, '0')}`;
     await client.query(
-      `insert into workforce_scenarios (tenant_id, name, notes, changes, created_by_membership_id) values ($1, 'Second shift on line 2', 'Demo data: what a second shift would add from next quarter.', $2, $3)`,
-      [tid, JSON.stringify([{ departmentId: assembly, delta: 6, monthlyCostPerHead: 32000 }, { departmentId: quality, delta: 1 }]), c.membershipByEmail.get('plant.head@demo.crew.local')],
+      `insert into workforce_scenarios (tenant_id, name, notes, changes, assumptions, created_by_membership_id) values ($1, 'Second shift on line 2', 'Demo data: what a second shift would add from next quarter.', $2, $3, $4)`,
+      [
+        tid,
+        JSON.stringify([
+          { departmentId: assembly, delta: 6, monthlyCostPerHead: 32000, startMonth: nextQuarter, role: 'Machine Operator (second shift)' },
+          { departmentId: quality, delta: 1, startMonth: nextQuarter, role: 'Quality Inspector' },
+        ]),
+        JSON.stringify({ startMonth: null, horizonMonths: 12, attritionPctYear: 12, payRisePct: 8, payRiseMonth: `${new Date().getUTCFullYear() + 1}-04` }),
+        c.membershipByEmail.get('plant.head@demo.crew.local'),
+      ],
     );
   }
 }

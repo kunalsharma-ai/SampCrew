@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { DEFAULT_ASSUMPTIONS, scenarioAssumptions } from '@crew/contracts';
 import type {
-  EmployeeSkill, RecruitmentFlow, RecruitmentFlowPeriod, Scenario, ScenarioBaseline, ScenarioInput, SetEmployeeSkillsInput, SkillsNetwork,
+  EmployeeSkill, RecruitmentFlow, RecruitmentFlowPeriod, Scenario, ScenarioBaseline, ScenarioInput,
+   SetEmployeeSkillsInput, SkillsNetwork, RequisitionInput,
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -11,8 +13,12 @@ import { Errors } from '../../platform/http/errors';
 import { EMPLOYEE_SCOPE, employeeAttrs } from '../employees/employee-attrs';
 import { EmployeesService } from '../employees/employees.service';
 import { REQ_SCOPE } from '../recruitment/recruitment-common';
+import { RequisitionsService } from '../recruitment/requisitions.service';
 
-const SCENARIO_COLS = `s.id, s.name, s.notes, s.changes, u.full_name as "createdBy", s.created_at as "createdAt", s.updated_at as "updatedAt"`;
+const SCENARIO_COLS = `s.id, s.name, s.notes, s.changes, s.assumptions,
+  coalesce((select json_agg(json_build_object('id', r.id, 'code', r.code, 'title', r.title, 'status', r.status, 'departmentId', r.department_id, 'headcount', r.headcount) order by r.created_at)
+     from job_requisitions r where r.source_scenario_id = s.id), '[]') as requisitions,
+  u.full_name as "createdBy", s.created_at as "createdAt", s.updated_at as "updatedAt"`;
 
 /**
  * Data for the Workforce Universe lenses. Every list is narrowed by the same permission scopes as the pages it
@@ -26,6 +32,7 @@ export class LensesService {
     private readonly employees: EmployeesService,
     private readonly entitlements: EntitlementsService,
     private readonly audit: AuditService,
+    private readonly requisitions: RequisitionsService,
   ) {}
 
   // ---- Skills -------------------------------------------------------------------------------------------------
@@ -160,9 +167,9 @@ export class LensesService {
   async scenarios(): Promise<{ baseline: ScenarioBaseline; scenarios: Scenario[] }> {
     return this.db.tenant(async (tx) => {
       const baseline = await this.baseline(tx);
-      const scenarios = await many<Scenario>(
+      const scenarios = (await many<Scenario>(
         tx, `select ${SCENARIO_COLS} from workforce_scenarios s left join memberships m on m.id = s.created_by_membership_id left join users u on u.id = m.user_id order by s.updated_at desc limit 50`,
-      );
+      )).map((x) => ({ ...x, assumptions: scenarioAssumptions.parse(x.assumptions ?? {}) }));
       return { baseline, scenarios };
     });
   }
@@ -175,16 +182,75 @@ export class LensesService {
       const s = await this.authz.subject(tx);
       this.planner(s);
       const changes = JSON.stringify(input.changes.filter((c) => c.delta !== 0 || c.monthlyCostPerHead != null));
+      const assumptions = JSON.stringify(input.assumptions ?? DEFAULT_ASSUMPTIONS);
       const row = id
-        ? await one<{ id: string }>(tx, `update workforce_scenarios set name = $2, notes = $3, changes = $4, updated_at = now() where id = $1 returning id`, [id, input.name, input.notes, changes])
+        ? await one<{ id: string }>(tx, `update workforce_scenarios set name = $2, notes = $3, changes = $4, assumptions = $5, updated_at = now() where id = $1 returning id`, [id, input.name, input.notes, changes, assumptions])
         : await one<{ id: string }>(
-          tx, `insert into workforce_scenarios (tenant_id, name, notes, changes, created_by_membership_id) values (app_tenant_id(), $1, $2, $3, $4) returning id`,
-          [input.name, input.notes, changes, s.membershipId],
+          tx, `insert into workforce_scenarios (tenant_id, name, notes, changes, assumptions, created_by_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5) returning id`,
+          [input.name, input.notes, changes, assumptions, s.membershipId],
         );
       if (!row) throw Errors.notFound('Scenario');
       await this.audit.record(tx, { action: id ? 'scenario.updated' : 'scenario.created', resourceType: 'workforce_scenario', resourceId: row.id });
-      return (await one<Scenario>(tx, `select ${SCENARIO_COLS} from workforce_scenarios s left join memberships m on m.id = s.created_by_membership_id left join users u on u.id = m.user_id where s.id = $1`, [row.id]))!;
+      return (await this.loadScenario(tx, row.id))!;
     });
+  }
+
+  private async loadScenario(tx: Tx, id: string) {
+    const s = await one<Scenario>(tx, `select ${SCENARIO_COLS} from workforce_scenarios s left join memberships m on m.id = s.created_by_membership_id left join users u on u.id = m.user_id where s.id = $1`, [id]);
+    return s && { ...s, assumptions: scenarioAssumptions.parse(s.assumptions ?? {}) };
+  }
+
+  /**
+   * Raises a draft requisition for every department the scenario adds people to (one per department, never twice),
+   * with the role as title, the added people as headcount and the change month as the target start. Each goes through
+   * the normal requisition rules and the caller's own requisitions:create scope; nothing is submitted for approval.
+   */
+  async scenarioRequisitions(id: string, departmentIds: string[] | undefined) {
+    const plan = await this.db.tenant(async (tx) => {
+      this.planner(await this.authz.subject(tx));
+      if (!(await this.entitlements.current(tx)).features.has('recruitment')) throw Errors.forbidden('Your plan does not include recruitment');
+      const sc = await this.loadScenario(tx, id);
+      if (!sc) throw Errors.notFound('Scenario');
+      const done = new Set(sc.requisitions.map((r) => r.departmentId));
+      const wanted = sc.changes.filter((c) => c.delta > 0 && !done.has(c.departmentId) && (!departmentIds || departmentIds.includes(c.departmentId)));
+      if (!wanted.length) throw Errors.validation([{ path: ['departmentIds'], message: done.size ? 'Requisitions were already raised for these departments' : 'This scenario adds nobody' }]);
+      const depts = await many<{ id: string; name: string; legalEntityId: string | null; head: string | null }>(
+        tx, `select id, name, legal_entity_id as "legalEntityId", head_membership_id as head from departments where id = any($1::uuid[])`, [wanted.map((c) => c.departmentId)],
+      );
+      const fallback = await one<{ id: string; currency: string }>(tx, `select id, currency from legal_entities order by created_at limit 1`);
+      const entities = new Map((await many<{ id: string; currency: string }>(tx, `select id, currency from legal_entities`)).map((e) => [e.id, e.currency]));
+      const me = (await this.authz.subject(tx)).membershipId;
+      const start = sc.assumptions.startMonth ?? new Date().toISOString().slice(0, 7);
+      const out: { departmentId: string; input: RequisitionInput }[] = [];
+      for (const c of wanted) {
+        const d = depts.find((x) => x.id === c.departmentId)!;
+        const entity = d.legalEntityId ?? fallback!.id;
+        // Checked for every department before any is raised, so a refusal never leaves half the drafts behind.
+        await this.authz.require('requisitions:create', { legalEntityId: entity, departmentId: c.departmentId, locationId: null, membershipId: d.head ?? me }, tx);
+        out.push({
+          departmentId: c.departmentId,
+          input: {
+            title: c.role ?? `New role in ${d.name}`, legalEntityId: entity, departmentId: c.departmentId, locationId: null, designationId: null,
+            hiringManagerMembershipId: d.head ?? me, employmentType: 'full_time', workMode: 'onsite', headcount: c.delta, reason: 'new_role',
+            replacingEmployeeId: null, salaryMin: null, salaryMax: null, currency: entities.get(entity) ?? fallback!.currency,
+            targetStartDate: `${c.startMonth && c.startMonth > start ? c.startMonth : start}-01`,
+            justification: `From the scenario “${sc.name}”.${sc.notes ? ` ${sc.notes}` : ''}`.slice(0, 2000),
+            description: '', scorecard: ['Role skills', 'Problem solving', 'Communication', 'Team fit'],
+          } as RequisitionInput,
+        });
+      }
+      return out;
+    });
+    const raised: { id: string }[] = [];
+    for (const p of plan) {
+      const r = (await this.requisitions.create(p.input)) as { id: string };
+      raised.push(r);
+      await this.db.tenant(async (tx) => {
+        await tx.query(`update job_requisitions set source_scenario_id = $2 where id = $1`, [r.id, id]);
+        await this.audit.record(tx, { action: 'scenario.requisition_raised', resourceType: 'workforce_scenario', resourceId: id, changes: { requisitionId: r.id, departmentId: p.departmentId, headcount: p.input.headcount } });
+      });
+    }
+    return this.db.tenant(async (tx) => (await this.loadScenario(tx, id))!);
   }
 
   async deleteScenario(id: string) {

@@ -39,7 +39,7 @@ export default async function UniversePage({ searchParams }: { searchParams: Pro
     body = flow ? <FlowLens flow={flow} /> : <Card><EmptyState title="Recruitment is not available" description="Your plan or access does not include recruitment." /></Card>;
   } else {
     const s = await loadOptional<{ baseline: ScenarioBaseline; scenarios: Scenario[] }>('/insights/scenarios');
-    body = s ? <ScenariosLens baseline={s.baseline} scenarios={s.scenarios} canSave={!!me.permissions['reports:read'] && me.permissions['reports:read'] !== 'own'} /> : <Card><EmptyState title="Scenarios are not available" description="You need access to reports to plan headcount." /></Card>;
+    body = s ? <ScenariosLens baseline={s.baseline} scenarios={s.scenarios} canSave={!!me.permissions['reports:read'] && me.permissions['reports:read'] !== 'own'} canRaise={!!me.permissions['requisitions:create'] && me.features.includes('recruitment')} /> : <Card><EmptyState title="Scenarios are not available" description="You need access to reports to plan headcount." /></Card>;
   }
 
   return (
