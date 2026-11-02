@@ -1,11 +1,11 @@
 'use client';
-import { IQ_SUGGESTIONS, type IqAnswer } from '@crew/contracts';
+import { IQ_SUGGESTIONS, type IqAnswer, type IqConversation } from '@crew/contracts';
 import { Badge, Button, cn } from '@crew/ui';
-import { ArrowRight, ExternalLink, Info, Send, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ExternalLink, History, Info, Plus, Send, Sparkles, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Fragment, useEffect, useRef, useState, useTransition } from 'react';
-import { askIqAction } from './iq-actions';
+import { askIqAction, forgetIqAction, iqConversationAction, iqConversationsAction } from './iq-actions';
 
 type Turn = { q: string; a: IqAnswer | null; error?: string };
 
@@ -32,6 +32,8 @@ function suggestionsFor(path: string) {
 export function IqPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const path = usePathname();
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [history, setHistory] = useState<IqConversation[] | null>(null);
   const [q, setQ] = useState('');
   const [pending, start] = useTransition();
   const input = useRef<HTMLTextAreaElement>(null);
@@ -52,10 +54,30 @@ export function IqPanel({ open, onClose }: { open: boolean; onClose: () => void 
     setQ('');
     setTurns((t) => [...t, { q: text, a: null }]);
     start(async () => {
-      const r = await askIqAction(text, path);
+      const r = await askIqAction(text, path, conversationId);
+      if (r.ok && r.data?.conversationId) setConversationId(r.data.conversationId);
       setTurns((t) => t.map((x, i) => (i === t.length - 1 ? (r.ok && r.data ? { q: text, a: r.data } : { q: text, a: null, error: r.ok ? 'No answer' : r.message }) : x)));
     });
   };
+  const fresh = () => { setTurns([]); setConversationId(null); setHistory(null); setTimeout(() => input.current?.focus(), 50); };
+  const showHistory = () => start(async () => {
+    const r = await iqConversationsAction();
+    setHistory(r.ok && r.data ? r.data : []);
+  });
+  const open2 = (id: string) => start(async () => {
+    const r = await iqConversationAction(id);
+    if (!r.ok || !r.data) return;
+    setConversationId(id);
+    setTurns(r.data.messages.map((m) => ({ q: m.question, a: m.answer })));
+    setHistory(null);
+  });
+  const forget = (id: string | null) => start(async () => {
+    if (!confirm(id ? 'Delete this conversation?' : 'Delete all your CREW IQ conversations?')) return;
+    await forgetIqAction(id);
+    if (!id || id === conversationId) { setTurns([]); setConversationId(null); }
+    const r = await iqConversationsAction();
+    setHistory(r.ok && r.data ? r.data : []);
+  });
 
   if (!open) return null;
   return (
@@ -66,13 +88,38 @@ export function IqPanel({ open, onClose }: { open: boolean; onClose: () => void 
           <h2 className="text-sm font-semibold">CREW IQ</h2>
           <p className="text-xs text-fg-subtle">Answers from your workspace, within your access</p>
         </div>
+        <button type="button" onClick={showHistory} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Past conversations"><History className="size-4" /></button>
+        <button type="button" onClick={fresh} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="New conversation"><Plus className="size-4" /></button>
         <button type="button" onClick={onClose} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Close CREW IQ"><X className="size-4" /></button>
       </header>
 
-      <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4" aria-live="polite">
+      {history && (
+        <div className="flex-1 overflow-y-auto px-4 py-4" aria-label="Past conversations">
+          <div className="mb-3 flex items-center gap-2">
+            <button type="button" onClick={() => setHistory(null)} className="inline-flex items-center gap-1 text-[0.8125rem] text-accent hover:underline"><ArrowLeft className="size-3.5" /> Back</button>
+            <span className="flex-1" />
+            {history.length > 0 && <button type="button" onClick={() => forget(null)} className="text-xs text-danger hover:underline">Delete all</button>}
+          </div>
+          {history.length ? (
+            <ul className="grid gap-1.5">
+              {history.map((c) => (
+                <li key={c.id} className="flex items-center gap-1 rounded-md border border-border hover:border-accent/50">
+                  <button type="button" onClick={() => open2(c.id)} className="flex-1 px-3 py-2 text-left text-[0.8125rem]">
+                    <span className="block font-medium">{c.title}</span>
+                    <span className="text-xs text-fg-subtle">{c.questions} question{c.questions === 1 ? '' : 's'} · {new Date(c.updatedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                  </button>
+                  <button type="button" onClick={() => forget(c.id)} className="p-2 text-fg-subtle hover:text-danger" aria-label={`Delete “${c.title}”`}><Trash2 className="size-3.5" /></button>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-[0.8125rem] text-fg-subtle">No past conversations. Only you can see yours, and you can delete them here.</p>}
+        </div>
+      )}
+
+      <div className={cn('flex-1 space-y-5 overflow-y-auto px-4 py-4', history && 'hidden')} aria-live="polite">
         {!turns.length && (
           <div className="space-y-3">
-            <p className="text-[0.8125rem] text-fg-muted">Ask about approvals, onboarding, leave, headcount, overtime or recruitment, or ask IQ to start a bid or a job description. IQ never changes anything on its own.</p>
+            <p className="text-[0.8125rem] text-fg-muted">Ask about approvals, leave, headcount, attendance, payroll, expenses, leavers, probation, goals, training, helpdesk cases or recruitment, or ask IQ to start a bid or a job description. Follow up with “and last month?” or “what about Sales?”. IQ never changes anything on its own.</p>
             <ul className="grid gap-1.5" aria-label="Suggested questions">
               {suggestionsFor(path).map((s) => (
                 <li key={s}><button type="button" onClick={() => ask(s)} className="w-full rounded-md border border-border px-3 py-2 text-left text-[0.8125rem] hover:border-accent/50 hover:bg-bg-subtle">{s}</button></li>

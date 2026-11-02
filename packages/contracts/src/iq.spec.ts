@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { draftJobDescription, IQ_SUGGESTIONS, matchIq } from './iq';
+import { draftJobDescription, IQ_SUGGESTIONS, matchInContext, matchIq } from './iq';
 
 describe('CREW IQ intent matching', () => {
   it('routes the example commands from the design to the right intent', () => {
@@ -39,5 +39,42 @@ describe('CREW IQ intent matching', () => {
     const d = draftJobDescription('Senior HR Manager', 'Northwind');
     expect(d).toContain('Northwind is looking for a Senior HR Manager');
     expect(d).toContain('[Main responsibility]');
+  });
+});
+
+describe('CREW IQ: more subjects and follow-ups', () => {
+  it('routes the new kinds of question', () => {
+    const cases: [string, string][] = [
+      ['What did the last payroll cost?', 'payroll_summary'],
+      ['Expense claims waiting for approval', 'expenses_pending'],
+      ['Who left this year?', 'attrition'],
+      ['What is our attrition this quarter', 'attrition'],
+      ['Whose probation ends this month?', 'probation'],
+      ['Open helpdesk cases', 'cases'],
+      ['Who is absent or late today?', 'attendance_today'],
+      ['Goals at risk', 'goals'],
+      ['Overdue training', 'learning'],
+      ['Work anniversaries this month', 'anniversaries'],
+      ['Who is on leave today?', 'on_leave'],
+      ['What is waiting for my approval?', 'approvals'],
+    ];
+    for (const [q, intent] of cases) expect(matchIq(q).intent, q).toBe(intent);
+  });
+
+  it('continues the previous subject for a short follow-up, with a new period or department', () => {
+    const first = matchInContext('Headcount by department', null, ['Sales', 'Operations']);
+    expect(first.intent).toBe('headcount');
+    const sales = matchInContext('What about Sales?', first, ['Sales', 'Operations']);
+    expect(sales).toMatchObject({ intent: 'headcount', followUp: true, params: { department: 'Sales' } });
+    const leave = matchInContext('Who is on leave this week?', sales, ['Sales']);
+    expect(leave).toMatchObject({ intent: 'on_leave', params: { period: 'week' } });
+    expect(leave.followUp).toBeUndefined();
+    const today = matchInContext('and today?', leave, ['Sales']);
+    expect(today).toMatchObject({ intent: 'on_leave', followUp: true, params: { period: 'today' } });
+    expect(matchInContext('for everyone', sales, ['Sales']).params.department).toBeUndefined();
+    // Without anything before it, a fragment is not guessed.
+    expect(matchInContext('and today?', null).intent).not.toBe('on_leave');
+    // A department named in a full question narrows it.
+    expect(matchInContext('Who is absent or late today in Operations?', null, ['Operations']).params.department).toBe('Operations');
   });
 });

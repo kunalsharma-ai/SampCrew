@@ -9,6 +9,8 @@
  *    Quick Bid opens with the role and the number of people filled in.
  * 4. They ask for a draft job description: the requisition form opens with the title and the draft filled in.
  * 5. Ctrl+J opens IQ from anywhere and Escape closes it.
+ * 6. The conversation is kept: a follow-up ("What about Talent Acquisition?") continues the last subject, and past
+ *    conversations can be reopened and deleted.
  */
 const { chromium } = require('playwright');
 
@@ -69,6 +71,12 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     expect(/^(1 person across 1 department|0 people across 0 departments)$/.test(headTitle), `recruiter headcount was "${headTitle}"`);
     ok(`headcount limited to the recruiter's own access ("${headTitle}")`);
 
+    // 2b. A follow-up continues the subject with a department.
+    const follow = await ask('What about Talent Acquisition?');
+    await follow.getByText(/Read as a follow-up to “Headcount by department”/).waitFor();
+    expect(/^1 person in Talent Acquisition$/.test(await follow.locator('h3').innerText()), 'follow-up did not narrow to the department');
+    ok('"What about Talent Acquisition?" continued the headcount question');
+
     // 3. A staffing proposal opens a prefilled Quick Bid; nothing is saved.
     const bid = await ask('Create a staffing proposal for five recruiters');
     const preview = bid.getByLabel('Preview');
@@ -102,6 +110,30 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await p.keyboard.press('Escape');
     await panel.waitFor({ state: 'detached' });
     ok('Ctrl+J opens IQ and Escape closes it');
+
+    // 6. Past conversations: the questions are kept and can be reopened, and deleted.
+    await p.keyboard.press('Control+j');
+    await panel.waitFor();
+    await panel.getByRole('button', { name: 'New conversation' }).click();
+    await panel.getByRole('button', { name: 'Past conversations' }).click();
+    const past = panel.locator('[aria-label="Past conversations"]').filter({ has: p.getByRole('list') });
+    const convos = past.getByRole('button', { name: /^Summarize recruitment performance this quarter/ });
+    await convos.first().waitFor();
+    const before = await convos.count();
+    await convos.first().click();
+    await panel.getByText('What about Talent Acquisition?').waitFor();
+    expect(await panel.locator('article').count() >= 4, 'reopened conversation is missing answers');
+    await shot(p, 'design5-iq-history');
+    ok('the conversation was kept and reopened with its answers');
+    await panel.getByRole('button', { name: 'Past conversations' }).click();
+    await convos.first().waitFor();
+    const rows = await past.locator('li').count();
+    p.once('dialog', (d) => d.accept());
+    await past.getByRole('button', { name: /^Delete “Summarize recruitment/ }).first().click();
+    await p.waitForFunction((n) => document.querySelectorAll('[aria-label="Past conversations"] li').length < n, rows);
+    expect(await convos.count() === before - 1, 'conversation not deleted');
+    ok('deleted the conversation');
+    await p.keyboard.press('Escape');
 
     const real = errs.filter((e) => !/favicon|Failed to load resource/.test(e));
     expect(!real.length, `browser errors:\n${real.join('\n')}`);

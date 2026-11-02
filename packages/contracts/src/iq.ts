@@ -8,7 +8,8 @@ import { z } from 'zod';
  */
 export const IQ_INTENTS = [
   'approvals', 'onboarding_tasks', 'on_leave', 'headcount', 'recruitment_summary', 'overtime', 'leave_trend',
-  'draft_bid', 'draft_job', 'onboarding_checklist', 'policy', 'unknown',
+  'draft_bid', 'draft_job', 'onboarding_checklist', 'payroll_summary', 'expenses_pending', 'attrition', 'probation',
+  'cases', 'attendance_today', 'goals', 'learning', 'anniversaries', 'policy', 'unknown',
 ] as const;
 export type IqIntent = (typeof IQ_INTENTS)[number];
 
@@ -16,6 +17,8 @@ export const iqAskInput = z.object({
   question: z.string().trim().min(2, 'Ask a question').max(500),
   /** The page the question was asked from, for context. */
   path: z.string().max(200).regex(/^\/[^\s]*$/).optional(),
+  /** Continue a conversation: follow-ups such as "and last month?" reuse what was asked before. */
+  conversationId: z.string().uuid().optional(),
 }).strict();
 export type IqAskInput = z.infer<typeof iqAskInput>;
 
@@ -27,7 +30,9 @@ export interface IqMatch {
   score: number;
   /** The words that decided the match, shown to the person. */
   matched: string[];
-  params: { count?: number; role?: string; title?: string; period?: IqPeriod };
+  params: { count?: number; role?: string; title?: string; period?: IqPeriod; department?: string };
+  /** True when the question was read as a follow-up to the previous one in the conversation. */
+  followUp?: boolean;
 }
 
 export interface IqAnswer {
@@ -45,7 +50,13 @@ export interface IqAnswer {
   action?: { label: string; href: string; preview: { label: string; value: string }[]; note: string };
   suggestions?: string[];
   interactionId?: string;
+  /** Set by the API: the conversation this answer was saved to, and the match it was answered from. */
+  conversationId?: string;
+  messageId?: string;
 }
+
+export interface IqConversation { id: string; title: string; updatedAt: string; questions: number }
+export interface IqMessage { id: string; question: string; answer: IqAnswer; createdAt: string }
 
 export const IQ_SUGGESTIONS = [
   'What is waiting for my approval?',
@@ -58,6 +69,15 @@ export const IQ_SUGGESTIONS = [
   'Create a staffing proposal for five recruiters',
   'Prepare a draft job description for a Senior HR Manager',
   'Prepare an employee onboarding checklist',
+  'What did the last payroll cost?',
+  'Expense claims waiting for approval',
+  'Who left this year?',
+  'Whose probation ends this month?',
+  'Open helpdesk cases',
+  'Who is absent or late today?',
+  'Goals at risk',
+  'Overdue training',
+  'Work anniversaries this month',
 ];
 
 const NUMBERS: Record<string, number> = {
@@ -88,14 +108,23 @@ interface Rule { intent: IqIntent; all?: RegExp[]; any: RegExp[] }
 
 /** Most specific first. A rule matches when every `all` pattern and at least one `any` pattern is in the question. */
 const RULES: Rule[] = [
+  { intent: 'expenses_pending', any: [/\bexpenses?\b/, /\b(expense |reimbursement )?claims?\b/, /\breimbursements?\b/] },
   { intent: 'draft_bid', all: [/\b(create|prepare|make|draft|start|new|build)\b/], any: [/\bstaffing (proposal|bid)\b/, /\b(proposal|bid|quote)\b/] },
   { intent: 'draft_job', all: [/\b(create|prepare|make|draft|write|start|new)\b/], any: [/\bjob description\b/, /\bjd\b/, /\b(requisition|job post(ing)?)\b/] },
   { intent: 'onboarding_checklist', all: [/\bonboarding\b/], any: [/\bchecklist\b/, /\btemplate\b/] },
   { intent: 'onboarding_tasks', all: [/\bonboarding\b/], any: [/\btasks?\b/, /\bpending\b/, /\bopen\b/, /\boverdue\b/, /\bshow\b/] },
+  { intent: 'payroll_summary', any: [/\bpayroll\b/, /\bpay ?runs?\b/, /\bnet pay\b/, /\bsalary (cost|bill)\b/, /\bwage bill\b/] },
+  { intent: 'probation', any: [/\bprobation\b/, /\bconfirmations? due\b/] },
+  { intent: 'cases', any: [/\bhelp ?desk\b/, /\b(hr |open |my )?(cases|tickets)\b/, /\bmy (hr )?requests?\b/, /\b(open|pending) (hr )?requests\b/] },
   { intent: 'approvals', any: [/\bapprov(e|al|als)\b/, /\bwaiting (for|on) me\b/, /\bmy inbox\b/, /\bpending requests?\b/] },
+  { intent: 'attendance_today', any: [/\b(absent|late)\b/, /\bmissing punch(es)?\b/, /\bdid not punch\b/, /\bwho (came|is) in\b/, /\battendance (today|now)\b/] },
   { intent: 'overtime', any: [/\bover ?time\b/, /\bextra hours\b/] },
   { intent: 'leave_trend', all: [/\bleave\b/], any: [/\btrends?\b/, /\bpattern\b/, /\busage\b/, /\bby month\b/, /\banaly/] },
-  { intent: 'on_leave', any: [/\bon leave\b/, /\b(away|off|out) (today|this week|next week)\b/, /\bwho is (away|off|out)\b/, /\bout of office\b/, /\babsent today\b/] },
+  { intent: 'on_leave', any: [/\bon leave\b/, /\b(away|off|out) (today|this week|next week)\b/, /\bwho is (away|off|out)\b/, /\bout of office\b/] },
+  { intent: 'attrition', any: [/\battrition\b/, /\bleavers?\b/, /\bwho (has )?left\b/, /\bexits?\b/, /\bturnover\b/, /\bresign(ed|ations?)?\b/] },
+  { intent: 'anniversaries', any: [/\banniversar(y|ies)\b/, /\bjoining day\b/] },
+  { intent: 'goals', any: [/\bgoals?\b/, /\bokrs?\b/, /\bobjectives\b/] },
+  { intent: 'learning', any: [/\btraining\b/, /\bcourses?\b/, /\blearning\b/, /\bcertifications?\b/] },
   { intent: 'recruitment_summary', any: [/\brecruit(ment|ing)?\b/, /\bhiring\b/, /\bfunnel\b/, /\bcandidates?\b/, /\bpipeline\b/, /\bapplications?\b/] },
   { intent: 'headcount', any: [/\bhead ?count\b/, /\bhow many (people|employees|staff)\b/, /\b(employees|people|staff) (by|per) (department|team)\b/, /\bworkforce size\b/] },
 ];
@@ -132,6 +161,31 @@ export function matchIq(raw: string): IqMatch {
   }
   if (QUESTION.test(q)) return { intent: 'policy', score: 0.5, matched: [], params: {} };
   return { intent: 'unknown', score: 0, matched: [], params: {} };
+}
+
+/** Intents a follow-up can continue: the ones that read figures for a period or a department. */
+const CONTINUABLE: IqIntent[] = ['on_leave', 'headcount', 'recruitment_summary', 'overtime', 'leave_trend', 'payroll_summary', 'expenses_pending', 'attrition', 'probation', 'cases', 'attendance_today', 'goals', 'learning', 'anniversaries'];
+const FOLLOW = /^(and|what about|how about|only|just|same|now|then|also|for|in|show|but)\b/;
+
+/**
+ * Reads a question in the light of the previous one in the conversation. "And this quarter?" or "What about Sales?"
+ * after "Headcount by department" keeps the subject and changes the period or the department. A question that
+ * matches a subject of its own is taken as it is.
+ */
+export function matchInContext(raw: string, previous?: IqMatch | null, departments: string[] = []): IqMatch {
+  const m = matchIq(raw);
+  const q = raw.toLowerCase().replace(/[’']/g, "'").replace(/[?.!]+$/, '').replace(/\s+/g, ' ').trim();
+  const dept = departments.filter((d) => new RegExp(`\\b${d.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(q)).sort((a, b) => b.length - a.length)[0];
+  if (dept) m.params.department = dept;
+  const when = period(q);
+  if (when && !m.params.period) m.params.period = when;
+  const short = q.split(' ').length <= 8;
+  if (previous && CONTINUABLE.includes(previous.intent) && (m.intent === 'unknown' || m.intent === 'policy') && short && (FOLLOW.test(q) || dept || m.params.period)) {
+    const params = { ...previous.params, ...(m.params.period ? { period: m.params.period } : {}), ...(dept ? { department: dept } : {}) };
+    if (/\b(all|every|whole|everyone)\b/.test(q) && !dept) delete params.department;
+    return { intent: previous.intent, score: 0.7, matched: [...(dept ? [dept] : []), ...(m.params.period ? [m.params.period] : [])], params, followUp: true };
+  }
+  return m;
 }
 
 /**
