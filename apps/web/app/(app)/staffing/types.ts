@@ -1,4 +1,5 @@
-import type { BidPricing, BidStatus } from '@crew/contracts';
+import type { BidFeeInput, BidPricing, BidStatus } from '@crew/contracts';
+export type { RateCard } from '@crew/contracts';
 
 export interface Client {
   id: string; name: string; legalName: string | null; industry: string | null; contactName: string | null; contactEmail: string | null;
@@ -18,7 +19,7 @@ export interface Bid {
   startDate: string; durationMonths: number; onCostPct: string; overheadPct: string; targetMarginPct: string; templateId: string | null; coverNote: string; terms: string;
   validUntil: string | null; version: number; clientName: string; clientContact: string | null; clientEmail: string | null; legalEntityName: string; ownerName: string;
   submittedAt: string | null; approvedAt: string | null; sentAt: string | null; decidedAt: string | null; outcomeReason: string | null; createdAt: string; updatedAt: string;
-  lines: BidLine[]; pricing: BidPricing;
+  lines: BidLine[]; fees: BidFeeInput[]; rateCardId: string | null; rateCardName: string | null; pricing: BidPricing;
   versions: { id: string; version: number; event: 'submitted' | 'sent'; createdAt: string; createdBy: string | null; hasPdf: boolean; pricing: BidPricing }[];
   emails: { id: string; versionId: string; to: string; cc: string[]; subject: string; sendAt: string; cancelledAt: string | null; createdAt: string; delivery: { status: string; sentAt: string | null; error: string | null }[]; links: { to: string; firstViewedAt: string | null; viewCount: number; decision: 'accepted' | 'declined' | null; decidedAt: string | null; expiresAt: string; revoked: boolean }[] }[];
   acceptance: { decision: 'accepted' | 'declined'; sentTo: string; decidedAt: string; signerName: string; signerTitle: string | null; signerEmail: string; reason: string | null; ip: string | null; version: number; hasSignedPdf: boolean } | null;

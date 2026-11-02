@@ -13,6 +13,9 @@
  *    signs with their typed name and accepts. The cc recipient's link then says it has been answered. The bid is
  *    Won with the signer on it and a signed copy of the PDF; the list shows a 100% win rate, after a reload.
  *    (The email is read from the mail queue in the database, so DATABASE_ADMIN_URL must be set.)
+ * 6. The recruiter keeps a rate card for the client, starts an Advanced Bid from it (typing a role fills its rates),
+ *    bills one role below the card and sees it flagged, adds a one-off recruitment fee, and the saved bid shows
+ *    the fee in the contract value and the warning, after a reload.
  */
 const path = require('node:path');
 const { chromium } = require('playwright');
@@ -226,6 +229,62 @@ const watch = (page) => {
     await row.getByText('Won').waitFor();
     await rec.getByText('100%').waitFor();
     ok('the list shows it won after a reload with a 100% win rate');
+
+    // 6. A rate card, then an Advanced Bid that uses it with a one-off fee.
+    await rec.goto(BASE + '/staffing/rate-cards');
+    await rec.getByRole('button', { name: 'New rate card' }).click();
+    const rd = rec.getByRole('dialog');
+    await rd.getByLabel(/^Name/).fill('Northwind 2027');
+    await rd.getByLabel(/^For client/).selectOption({ label: 'Northwind Logistics' });
+    await rd.getByLabel('Role 1', { exact: true }).fill('Forklift operator');
+    await rd.getByLabel('Pay for role 1').fill('28000');
+    await rd.getByLabel('Bill rate for role 1').fill('42000');
+    await rd.getByRole('button', { name: 'Add role' }).click();
+    await rd.getByLabel('Role 2', { exact: true }).fill('Warehouse associate');
+    await rd.getByLabel('Pay for role 2').fill('25000');
+    await rd.getByLabel('Bill rate for role 2').fill('38000');
+    await rd.getByRole('button', { name: 'Save rate card' }).click();
+    await rec.getByText('Northwind 2027 saved').waitFor();
+    const cardRows = rec.getByRole('table', { name: 'Rates in Northwind 2027' }).locator('tbody tr');
+    expect(await cardRows.count() === 2, 'rate card should list two roles');
+    ok('recruiter keeps a rate card for Northwind Logistics with two roles');
+
+    await rec.goto(BASE + '/staffing/bids/new?mode=advanced');
+    await rec.getByLabel(/^Client( \*)?$/).selectOption({ label: 'Northwind Logistics' });
+    await rec.getByLabel(/^Rate card/).selectOption({ label: 'Northwind 2027 (Northwind Logistics)' });
+    const r1 = rec.getByRole('group', { name: 'Role 1' });
+    await r1.getByLabel(/^Role( \*)?$/).fill('Forklift operator');
+    expect(await r1.getByLabel(/^Monthly pay per person/).inputValue() === '28000', 'typing a card role should fill its pay');
+    expect(await r1.getByLabel(/^Bill rate per person/).inputValue() === '42000', 'typing a card role should fill its bill rate');
+    await r1.getByLabel(/^People( \*)?$/).fill('4');
+    await rec.getByRole('button', { name: 'Add role' }).click();
+    const r2 = rec.getByRole('group', { name: 'Role 2' });
+    await r2.getByLabel(/^Role( \*)?$/).fill('Warehouse associate');
+    await r2.getByLabel(/^Bill rate per person/).fill('36000');
+    await r2.getByLabel(/^People( \*)?$/).fill('6');
+    await r2.getByText(/Below the rate card \(INR 38,000\.00 per person\)/).waitFor();
+    expect(await r1.getByText(/Below the rate card/).count() === 0, 'a role at the card rate should not be flagged');
+    await rec.getByRole('button', { name: 'Add fee' }).click();
+    const fee = rec.getByRole('group', { name: 'Fee 1' });
+    await fee.getByLabel('Fee', { exact: true }).fill('Recruitment drive');
+    await fee.getByLabel('Amount').fill('120000');
+    await fee.getByLabel(/^Our cost/).fill('45000');
+    await fee.getByLabel('Invoiced').selectOption('on_signing');
+    const sum2 = rec.getByRole('complementary', { name: 'Bid summary' });
+    // 4 x 42000 + 6 x 36000 = 3,84,000 a month; x 12 months + 1,20,000 = 47,28,000.
+    await sum2.getByText('INR 3,84,000').waitFor();
+    await sum2.getByText('INR 1,20,000').waitFor();
+    await sum2.getByText('INR 47,28,000').waitFor();
+    await sum2.getByText('1 role is billed below the rate card.').waitFor();
+    await sum2.getByRole('button', { name: 'Save draft' }).click();
+    await rec.waitForURL(/\/staffing\/bids\/[0-9a-f-]{36}$/);
+    await rec.reload();
+    await rec.getByText(/1 role is billed below the rate card “Northwind 2027”/).waitFor();
+    const fees = await rec.locator('[aria-label="One-off fees"]').innerText();
+    expect(/Recruitment drive/.test(fees) && /On signing/.test(fees) && /1,20,000/.test(fees), `fee missing on the bid: ${fees}`);
+    await rec.getByText('INR 47,28,000').first().waitFor();
+    await shot(rec, 'design6-bid-rate-card');
+    ok('advanced bid from the rate card: filled rates, a role below the card flagged, a one-off fee in the contract value');
 
     const real = errs.filter((e) => !/favicon|DevTools/.test(e));
     expect(!real.length, `browser errors:\n${real.join('\n')}`);

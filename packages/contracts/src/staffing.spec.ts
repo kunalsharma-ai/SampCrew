@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bidInput, bidSendInput, clientInput, formatAmount, priceBid } from './staffing';
+import { bidInput, bidSendInput, clientInput, formatAmount, priceBid, rateCardInput, rateFor } from './staffing';
 
 const base = { onCostPct: '13', overheadPct: '5', targetMarginPct: '18', durationMonths: 12 };
 
@@ -86,5 +86,31 @@ describe('formatAmount', () => {
     expect(formatAmount('999.5')).toBe('999.50');
     expect(formatAmount('1234567.00', 'USD')).toBe('1,234,567.00');
     expect(formatAmount('-5000.00')).toBe('-5,000.00');
+  });
+});
+
+describe('one-off fees and rate cards', () => {
+  const base = { onCostPct: '10', overheadPct: '0', targetMarginPct: '20', durationMonths: 12 };
+  it('adds fees to the contract figures only, and works the margin over the whole contract', () => {
+    const p = priceBid({ ...base, lines: [{ roleTitle: 'Picker', headcount: 10, payMonthly: '20000', billMonthly: '30000' }], fees: [
+      { label: 'Recruitment drive', amount: '150000', cost: '60000', billing: 'on_signing' }, { label: 'Safety kit', amount: '25000', billing: 'on_start' },
+    ] });
+    expect(p).toMatchObject({ monthlyRevenue: '300000.00', monthlyCost: '220000.00', feesTotal: '175000.00', feesCost: '60000.00' });
+    expect(p).toMatchObject({ contractRevenue: '3775000.00', contractCost: '2700000.00', contractMargin: '1075000.00', marginPct: '28.48' });
+    expect(p.fees[1]).toMatchObject({ amount: '25000.00', cost: '0.00', margin: '25000.00' });
+    // A fee that costs more than it earns can make the contract lose money.
+    const loss = priceBid({ ...base, lines: [{ roleTitle: 'Picker', headcount: 1, payMonthly: '20000', billMonthly: '22000' }], fees: [{ label: 'Setup', amount: '1000', cost: '100000', billing: 'on_start' }] });
+    expect(loss.lossMaking).toBe(true);
+  });
+  it('flags bill rates below the rate card, matching roles regardless of case and spacing', () => {
+    const card = { lines: [{ roleTitle: 'Forklift  Operator', payMonthly: '22000', billMonthly: '32000' }] };
+    expect(rateFor(card, 'forklift operator')).toMatchObject({ billMonthly: '32000' });
+    const p = priceBid({ ...base, lines: [
+      { roleTitle: 'Forklift operator', headcount: 2, payMonthly: '22000', billMonthly: '30000' },
+      { roleTitle: 'Supervisor', headcount: 1, payMonthly: '40000' },
+    ] }, card);
+    expect(p.lines.map((l) => [l.rateCardBill, l.belowRateCard])).toEqual([['32000.00', true], [null, false]]);
+    expect(p.belowRateCard).toBe(1);
+    expect(rateCardInput.safeParse({ name: 'Std', lines: [{ roleTitle: 'A b', payMonthly: '1', billMonthly: '2' }, { roleTitle: 'a B', payMonthly: '1', billMonthly: '2' }] }).success).toBe(false);
   });
 });

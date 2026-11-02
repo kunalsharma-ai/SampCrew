@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res } from '@nestjs/common';
 import {
   bidInput, type BidInput, bidListQuery, bidOutcomeInput, bidSendInput, type BidSendInput, bidTemplateInput, type BidTemplateInput, clientInput, type ClientInput,
-  proposalAcceptInput, type ProposalAcceptInput, proposalDeclineInput, type ProposalDeclineInput,
+  proposalAcceptInput, type ProposalAcceptInput, proposalDeclineInput, type ProposalDeclineInput, rateCardInput, type RateCardInput,
 } from '@crew/contracts';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -83,6 +83,35 @@ export class BidsController {
   }
 
   // Bids --------------------------------------------------------------------------------------------------
+
+  @Get('rate-cards')
+  @RequirePermission('bids:read')
+  @Doc({ summary: 'Rate cards: standard monthly pay and bill rates per role, for every client or for one' })
+  rateCards() {
+    return this.bids.rateCards();
+  }
+
+  @Post('rate-cards')
+  @RequirePermission('bids:manage')
+  @Doc({ summary: 'Add a rate card', body: rateCardInput })
+  createRateCard(@Body(new ZodPipe(rateCardInput)) body: RateCardInput) {
+    return this.bids.saveRateCard(null, body);
+  }
+
+  @Put('rate-cards/:id')
+  @RequirePermission('bids:manage')
+  @Doc({ summary: 'Change a rate card (bids already priced keep their own rates)', body: rateCardInput })
+  updateRateCard(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(rateCardInput)) body: RateCardInput) {
+    return this.bids.saveRateCard(id, body);
+  }
+
+  @Delete('rate-cards/:id')
+  @HttpCode(204)
+  @RequirePermission('bids:manage')
+  @Doc({ summary: 'Archive a rate card' })
+  async archiveRateCard(@Param('id', UuidPipe) id: string) {
+    await this.bids.archiveRateCard(id);
+  }
 
   @Get('bids')
   @RequirePermission('bids:read')

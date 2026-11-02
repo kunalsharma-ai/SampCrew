@@ -121,6 +121,8 @@ export async function renderProposal(d: ProposalData): Promise<Buffer> {
     'Staffing proposal Prepared for Attention: Role Location People Monthly rate each Per month Monthly total Term Contract value Terms Amounts exclude applicable taxes. Issued valid until version Page of person people month months from - . , : 0123456789',
     ...d.pricing.lines.flatMap((l) => [l.roleTitle, l.location ?? '-', money0(l.billMonthly), money0(l.monthlyRevenue)]),
     money0(d.pricing.monthlyRevenue), money0(d.pricing.contractRevenue),
+    'One-off fees Fee When invoiced On signing On start On delivery Monthly over the term',
+    ...(d.pricing.fees ?? []).flatMap((f) => [f.label, money0(f.amount)]), money0(d.pricing.feesTotal ?? '0'),
   ], [regular, bold]);
 
   let page: PDFPage = pdf.addPage(A4);
@@ -226,6 +228,29 @@ export async function renderProposal(d: ProposalData): Promise<Buffer> {
   };
   total('Monthly total', money(d.pricing.monthlyRevenue));
   total(`Term`, `${d.durationMonths} ${d.durationMonths === 1 ? 'month' : 'months'}`);
+  const fees = d.pricing.fees ?? [];
+  if (fees.length) {
+    // One-off fees: what they are, when they are invoiced, and the amount. They add to the contract value once.
+    y -= 6;
+    ensure(40 + fees.length * 19);
+    page.drawRectangle({ x: M, y: y - 6, width, height: 20, color: rgb(0.95, 0.95, 0.98) });
+    text('One-off fees', cols[0]! + 6, 9, bold, MUTED);
+    text('When invoiced', cols[2]!, 9, bold, MUTED);
+    right('Fee', cols[4]! - 6, 9, bold, MUTED);
+    y -= 24;
+    const when = { on_signing: 'On signing', on_start: 'On start', on_delivery: 'On delivery' } as const;
+    for (const f of fees) {
+      const top = y;
+      wrap(f.label, 10, regular, 230).slice(0, 2).forEach((r, i) => { y = top - i * 13; text(r, cols[0]! + 6, 10); });
+      y = top;
+      text(when[f.billing] ?? 'On start', cols[2]!, 10, regular, MUTED);
+      right(money(f.amount), cols[4]! - 6, 10);
+      y = top - (f.label.length > 40 ? 26 : 13) - 6;
+      page.drawLine({ start: { x: M, y: y + 4 }, end: { x: M + width, y: y + 4 }, thickness: 0.5, color: RULE });
+      y -= 6;
+    }
+    total('One-off fees', money(d.pricing.feesTotal));
+  }
   total('Contract value', money(d.pricing.contractRevenue), true);
   y -= 4;
   paragraph('Amounts exclude applicable taxes.', 8, regular, MUTED);

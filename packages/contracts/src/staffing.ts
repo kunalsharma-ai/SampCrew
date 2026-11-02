@@ -66,6 +66,19 @@ export const bidLineInput = z.object({
 }).strict();
 export type BidLineInput = z.infer<typeof bidLineInput>;
 
+/** A charge made once rather than monthly: a recruitment drive, onboarding, equipment, a setup fee. */
+export const bidFeeInput = z.object({
+  label: z.string().trim().min(2, 'Name the fee').max(120),
+  /** What the client pays, once. */
+  amount: positiveMoney,
+  /** What it costs to deliver; left out, nothing. */
+  cost: money.optional(),
+  /** When it is invoiced. */
+  billing: z.enum(['on_signing', 'on_start', 'on_delivery']).default('on_start'),
+}).strict();
+export type BidFeeInput = z.infer<typeof bidFeeInput>;
+export const FEE_BILLING_LABEL = { on_signing: 'On signing', on_start: 'On start', on_delivery: 'On delivery' } as const;
+
 export const bidInput = z.object({
   clientId: z.uuid(),
   legalEntityId: z.uuid(),
@@ -84,8 +97,38 @@ export const bidInput = z.object({
   terms: z.string().trim().max(4000).default(''),
   validUntil: isoDate.optional(),
   lines: z.array(bidLineInput).min(1, 'Add at least one role').max(50),
+  fees: z.array(bidFeeInput).max(20, 'Up to 20 fees').default([]),
+  /** The rate card the bill rates are checked against. */
+  rateCardId: z.uuid().nullable().optional(),
 }).strict();
 export type BidInput = z.infer<typeof bidInput>;
+
+// Rate cards -------------------------------------------------------------------------------------------
+
+/**
+ * Standard monthly pay and bill rates per role, for every client or for one. A bid that uses a card fills its rates
+ * from it, and a bill rate below the card is flagged for Finance.
+ */
+export const rateCardInput = z.object({
+  name: z.string().trim().min(2).max(80),
+  /** Left out, the card is for any client. */
+  clientId: z.uuid().nullable().default(null),
+  currency: currency.default('INR'),
+  notes: z.string().trim().max(1000).default(''),
+  lines: z.array(z.object({
+    roleTitle: z.string().trim().min(2).max(120),
+    payMonthly: positiveMoney,
+    billMonthly: positiveMoney,
+  }).strict()).min(1, 'Add at least one role').max(100),
+}).strict().refine((v) => new Set(v.lines.map((l) => l.roleTitle.toLowerCase())).size === v.lines.length, { message: 'Each role once', path: ['lines'] });
+export type RateCardInput = z.infer<typeof rateCardInput>;
+export interface RateCard extends RateCardInput { id: string; clientName: string | null; updatedAt: string }
+
+/** The card's rates for a role, matched on the title ignoring case and spacing. */
+export function rateFor(card: Pick<RateCardInput, 'lines'> | null | undefined, roleTitle: string) {
+  const key = roleTitle.trim().replace(/\s+/g, ' ').toLowerCase();
+  return card?.lines.find((l) => l.roleTitle.trim().replace(/\s+/g, ' ').toLowerCase() === key) ?? null;
+}
 
 export const bidListQuery = z.object({
   status: z.enum(BID_STATUSES).optional(),
@@ -126,10 +169,20 @@ export interface PricedLine {
   marginPct: string;
   markupPct: string;
   belowTarget: boolean;
+  /** The rate card's bill rate for this role, when the bid uses a card that lists it. */
+  rateCardBill: string | null;
+  /** Billed below the rate card. */
+  belowRateCard: boolean;
 }
+
+export interface PricedFee { label: string; amount: string; cost: string; margin: string; billing: BidFeeInput['billing'] }
 
 export interface BidPricing {
   lines: PricedLine[];
+  fees: PricedFee[];
+  /** One-off fees in total (included in the contract figures, not in the monthly ones). */
+  feesTotal: string;
+  feesCost: string;
   headcount: number;
   monthlyRevenue: string;
   monthlyCost: string;
@@ -140,6 +193,8 @@ export interface BidPricing {
   marginPct: string;
   belowTarget: boolean;
   lossMaking: boolean;
+  /** Lines billed below the rate card. */
+  belowRateCard: number;
 }
 
 /** a / b as a percentage with two decimals ("18.25"); 0 when b is 0. */
@@ -163,7 +218,10 @@ function pctLess(a: string, b: string): boolean {
  *   is never below target.
  * - Margin % = (revenue - cost) / revenue; markup % = (bill - loaded cost) / loaded cost.
  */
-export function priceBid(b: Pick<BidInput, 'lines' | 'onCostPct' | 'overheadPct' | 'targetMarginPct' | 'durationMonths'>): BidPricing {
+export function priceBid(
+  b: Pick<BidInput, 'lines' | 'onCostPct' | 'overheadPct' | 'targetMarginPct' | 'durationMonths'> & { fees?: BidFeeInput[] },
+  card?: Pick<RateCardInput, 'lines'> | null,
+): BidPricing {
   const target = rate(b.targetMarginPct, true);
   if (target.num >= target.den) throw new Error('Target margin must be below 100%');
   let rev = 0n;
@@ -181,6 +239,7 @@ export function priceBid(b: Pick<BidInput, 'lines' | 'onCostPct' | 'overheadPct'
     cost += lc;
     heads += l.headcount;
     const marginPct = pct(lr - lc, lr);
+    const std = rateFor(card, l.roleTitle);
     return {
       roleTitle: l.roleTitle,
       headcount: l.headcount,
@@ -195,22 +254,40 @@ export function priceBid(b: Pick<BidInput, 'lines' | 'onCostPct' | 'overheadPct'
       marginPct,
       markupPct: pct(bill - loaded, loaded),
       belowTarget: pctLess(marginPct, b.targetMarginPct),
+      rateCardBill: std ? fromMinor(toMinor(std.billMonthly)) : null,
+      belowRateCard: !!std && bill < toMinor(std.billMonthly),
     };
   });
   const months = BigInt(b.durationMonths);
-  const marginPct = pct(rev - cost, rev);
+  let feeRev = 0n;
+  let feeCost = 0n;
+  const fees = (b.fees ?? []).map((f): PricedFee => {
+    const a = toMinor(f.amount);
+    const c = toMinor(f.cost || '0');
+    feeRev += a;
+    feeCost += c;
+    return { label: f.label, amount: fromMinor(a), cost: fromMinor(c), margin: fromMinor(a - c), billing: f.billing ?? 'on_start' };
+  });
+  const cRev = rev * months + feeRev;
+  const cCost = cost * months + feeCost;
+  // Over the whole contract, so one-off fees count; with no fees this equals the monthly margin.
+  const marginPct = pct(cRev - cCost, cRev);
   return {
     lines,
+    fees,
+    feesTotal: fromMinor(feeRev),
+    feesCost: fromMinor(feeCost),
     headcount: heads,
     monthlyRevenue: fromMinor(rev),
     monthlyCost: fromMinor(cost),
     monthlyMargin: fromMinor(rev - cost),
-    contractRevenue: fromMinor(rev * months),
-    contractCost: fromMinor(cost * months),
-    contractMargin: fromMinor((rev - cost) * months),
+    contractRevenue: fromMinor(cRev),
+    contractCost: fromMinor(cCost),
+    contractMargin: fromMinor(cRev - cCost),
     marginPct,
     belowTarget: pctLess(marginPct, b.targetMarginPct),
-    lossMaking: rev < cost,
+    lossMaking: cRev < cCost,
+    belowRateCard: lines.filter((l) => l.belowRateCard).length,
   };
 }
 
@@ -271,6 +348,9 @@ export interface PublicProposal {
   lines: { roleTitle: string; location: string | null; headcount: number; billMonthly: string; monthlyRevenue: string }[];
   headcount: number;
   monthlyRevenue: string;
+  /** One-off fees, without what they cost us. */
+  fees: { label: string; amount: string; billing: BidFeeInput['billing'] }[];
+  feesTotal: string;
   contractRevenue: string;
   decision: { kind: 'accepted' | 'declined'; by: string; title: string | null; at: string; reason: string | null } | null;
 }

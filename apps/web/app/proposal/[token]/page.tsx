@@ -1,4 +1,4 @@
-import { formatAmount, type PublicProposal } from '@crew/contracts';
+import { FEE_BILLING_LABEL, formatAmount, type PublicProposal } from '@crew/contracts';
 import { Badge, Card, CardHeader, Table, TBody, TD, TH, THead, TR, buttonClass } from '@crew/ui';
 import { Download } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -57,6 +57,21 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
           </Table>
         </div>
       </Card>
+
+      {p.fees.length > 0 && (
+        <Card>
+          <CardHeader title="One-off fees" description="Charged once, in addition to the monthly rates." />
+          <div className="overflow-x-auto">
+            <Table aria-label="One-off fees">
+              <THead><TR><TH>Fee</TH><TH>When invoiced</TH><TH className="text-right">Amount</TH></TR></THead>
+              <TBody>
+                {p.fees.map((f, i) => <TR key={i}><TD className="font-medium">{f.label}</TD><TD>{FEE_BILLING_LABEL[f.billing]}</TD><TD className="text-right tabular-nums whitespace-nowrap">{money(f.amount)}</TD></TR>)}
+                <TR><TD className="font-medium">Total</TD><TD /><TD className="text-right tabular-nums font-medium whitespace-nowrap">{money(p.feesTotal)}</TD></TR>
+              </TBody>
+            </Table>
+          </div>
+        </Card>
+      )}
 
       {p.coverNote && <section className="grid gap-2"><h2 className="text-lg font-semibold">About this proposal</h2><p className="whitespace-pre-wrap text-[0.9375rem] leading-relaxed">{p.coverNote}</p></section>}
       {p.terms && <section className="grid gap-2"><h2 className="text-lg font-semibold">Terms</h2><p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">{p.terms}</p></section>}

@@ -98,6 +98,8 @@ export class ProposalsPublicService {
       // Rates and totals only: never pay, costs or margins.
       lines: p.lines.map((l) => ({ roleTitle: l.roleTitle, location: l.location, headcount: l.headcount, billMonthly: l.billMonthly, monthlyRevenue: l.monthlyRevenue })),
       headcount: p.headcount, monthlyRevenue: p.monthlyRevenue, contractRevenue: p.contractRevenue,
+      // Versions priced before fees existed have none.
+      fees: (p.fees ?? []).map((f) => ({ label: f.label, amount: f.amount, billing: f.billing })), feesTotal: p.feesTotal ?? '0.00',
       decision: c.link.decision
         ? { kind: c.link.decision, by: c.link.signer_name!, title: c.link.signer_title, at: c.link.decided_at!.toISOString(), reason: c.link.decline_reason }
         : null,

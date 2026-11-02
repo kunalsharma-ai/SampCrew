@@ -65,6 +65,7 @@ export const NAV: NavGroup[] = [
       { href: '/staffing/bids', label: 'Staffing bids', icon: 'handshake', permission: 'bids:read', feature: 'recruitment' },
       { href: '/staffing/clients', label: 'Clients', icon: 'building-office', permission: 'bids:read', feature: 'recruitment' },
       { href: '/staffing/templates', label: 'Proposal templates', icon: 'file-stack', permission: 'bids:manage', feature: 'recruitment' },
+      { href: '/staffing/rate-cards', label: 'Rate cards', icon: 'tags', permission: 'bids:read', feature: 'recruitment' },
     ],
   },
   {

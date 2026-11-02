@@ -1,5 +1,5 @@
 'use client';
-import { formatAmount } from '@crew/contracts';
+import { FEE_BILLING_LABEL, formatAmount } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardHeader, Dialog, Field, Input, PageHeader, Table, TBody, TD, TH, THead, TR, Textarea, buttonClass, cn } from '@crew/ui';
 import { AlertTriangle, Check, Clock, Download, Eye, FileSignature, Mail, Pencil, Send, Trash2, Trophy, Undo2, X } from 'lucide-react';
 import Link from 'next/link';
@@ -107,6 +107,7 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
             <Figure label="Contract margin" value={money(p.contractMargin)} />
             <Figure label="Margin" value={<Badge tone={p.lossMaking ? 'danger' : p.belowTarget ? 'warning' : 'success'}>{p.marginPct}% (target {bid.targetMarginPct}%)</Badge>} />
           </div>
+          {p.belowRateCard > 0 && <Alert tone="warning"><span className="inline-flex items-center gap-1.5"><AlertTriangle className="size-4" />{p.belowRateCard} role{p.belowRateCard > 1 ? 's are' : ' is'} billed below the rate card “{bid.rateCardName}”.</span></Alert>}
           {p.belowTarget && <Alert tone={p.lossMaking ? 'danger' : 'warning'}><span className="inline-flex items-center gap-1.5"><AlertTriangle className="size-4" />{p.lossMaking ? 'This bid costs more than it earns.' : `The margin is below the ${bid.targetMarginPct}% target. Finance sees this when approving.`}</span></Alert>}
 
           <Card>
@@ -121,7 +122,7 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
                       <TD className="text-right tabular-nums">{l.headcount}</TD>
                       <TD className="text-right tabular-nums whitespace-nowrap">{money(l.payMonthly)}</TD>
                       <TD className="text-right tabular-nums whitespace-nowrap">{money(l.loadedCostMonthly)}</TD>
-                      <TD className="text-right tabular-nums whitespace-nowrap">{money(l.billMonthly)}</TD>
+                      <TD className={cn('text-right tabular-nums whitespace-nowrap', l.belowRateCard && 'text-warning')}>{money(l.billMonthly)}{l.rateCardBill && <span className="block text-xs text-fg-subtle">Card {money(l.rateCardBill)}</span>}</TD>
                       <TD className={cn('text-right tabular-nums', l.belowTarget && 'text-warning')}>{l.marginPct}%</TD>
                       <TD className="text-right tabular-nums whitespace-nowrap">{money(l.monthlyRevenue)}</TD>
                     </TR>
@@ -130,7 +131,25 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
                 </TBody>
               </Table>
             </div>
+            {bid.rateCardName && <p className="px-5 pb-3 text-xs text-fg-subtle">Checked against the rate card “{bid.rateCardName}”.</p>}
           </Card>
+
+          {p.fees.length > 0 && (
+            <Card aria-label="One-off fees">
+              <CardHeader title="One-off fees" description="Added to the contract value once; the client sees the fee and when it is invoiced, not its cost." />
+              <div className="overflow-x-auto">
+                <Table>
+                  <THead><TR><TH>Fee</TH><TH>Invoiced</TH><TH className="text-right">Cost</TH><TH className="text-right">Margin</TH><TH className="text-right">Amount</TH></TR></THead>
+                  <TBody>
+                    {p.fees.map((f, i) => (
+                      <TR key={i}><TD className="font-medium">{f.label}</TD><TD>{FEE_BILLING_LABEL[f.billing]}</TD><TD className="text-right tabular-nums">{money(f.cost)}</TD><TD className="text-right tabular-nums">{money(f.margin)}</TD><TD className="text-right tabular-nums whitespace-nowrap">{money(f.amount)}</TD></TR>
+                    ))}
+                    <TR><TD className="font-medium">Total</TD><TD /><TD className="text-right tabular-nums">{money(p.feesCost)}</TD><TD /><TD className="text-right tabular-nums font-medium whitespace-nowrap">{money(p.feesTotal)}</TD></TR>
+                  </TBody>
+                </Table>
+              </div>
+            </Card>
+          )}
 
           <Card>
             <CardHeader title="Proposal emails" description="Each email carries the PDF of the version it was sent with." />

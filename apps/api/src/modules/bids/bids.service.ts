@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import {
   BID_EDITABLE,
+  type BidFeeInput,
   type BidInput,
   type BidPricing,
   type BidSendInput,
@@ -9,6 +10,8 @@ import {
   type BidTemplateInput,
   type ClientInput,
   formatAmount,
+  type RateCard,
+  type RateCardInput,
   priceBid,
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
@@ -50,13 +53,15 @@ interface BidRow {
   version: number;
   approval_request_id: string | null;
   owner_membership_id: string;
+  rate_card_id: string | null;
+  fees: BidFeeInput[];
 }
 
 interface LineRow { roleTitle: string; designationId: string | null; headcount: number; location: string | null; payMonthly: string; billMonthly: string | null; notes: string | null }
 
 const BID_COLS = `id, code, client_id, legal_entity_id, title, mode, status, currency, to_char(start_date, 'YYYY-MM-DD') as start_date, duration_months,
   on_cost_pct::text, overhead_pct::text, target_margin_pct::text, template_id, cover_note, terms, to_char(valid_until, 'YYYY-MM-DD') as valid_until,
-  version, approval_request_id, owner_membership_id`;
+  version, approval_request_id, owner_membership_id, rate_card_id, fees`;
 
 const CLIENT_COLS = `c.id, c.name, c.legal_name as "legalName", c.industry, c.contact_name as "contactName", c.contact_email as "contactEmail",
   c.contact_phone as "contactPhone", c.address, c.currency, c.notes, c.archived_at as "archivedAt", c.created_at as "createdAt"`;
@@ -125,13 +130,57 @@ export class BidsService implements OnModuleInit {
     );
   }
 
-  private price(b: BidRow, lines: LineRow[]): BidPricing {
+  private async card(tx: Tx, id: string | null) {
+    return id ? one<{ id: string; name: string; currency: string; lines: RateCardInput['lines'] }>(tx, `select id, name, currency, lines from bid_rate_cards where id = $1`, [id]) : null;
+  }
+
+  private price(b: BidRow, lines: LineRow[], card?: { lines: RateCardInput['lines'] } | null): BidPricing {
     return priceBid({
+      fees: b.fees ?? [],
       onCostPct: pctText(b.on_cost_pct),
       overheadPct: pctText(b.overhead_pct),
       targetMarginPct: pctText(b.target_margin_pct),
       durationMonths: b.duration_months,
       lines: lines.map((l) => ({ roleTitle: l.roleTitle, headcount: l.headcount, location: l.location ?? undefined, payMonthly: l.payMonthly, billMonthly: l.billMonthly ?? undefined })),
+    }, card);
+  }
+
+  // Rate cards ---------------------------------------------------------------------------------------------
+
+  async rateCards() {
+    return this.db.tenant(async (tx) => many<RateCard>(
+      tx,
+      `select r.id, r.name, r.client_id as "clientId", c.name as "clientName", r.currency, r.notes, r.lines, r.updated_at as "updatedAt"
+         from bid_rate_cards r left join clients c on c.id = r.client_id where r.archived_at is null order by r.client_id nulls first, lower(r.name)`,
+    ));
+  }
+
+  async saveRateCard(id: string | null, input: RateCardInput) {
+    return this.db.tenant(async (tx) => {
+      if (input.clientId && !(await one(tx, 'select 1 from clients where id = $1 and archived_at is null', [input.clientId]))) throw Errors.badRequest('invalid_client', 'Choose an active client');
+      const lines = JSON.stringify(input.lines.map((l) => ({ roleTitle: l.roleTitle.replace(/\s+/g, ' '), payMonthly: l.payMonthly, billMonthly: l.billMonthly })));
+      const params = [input.name, input.clientId, input.currency, input.notes, lines];
+      const r = id
+        ? await one<{ id: string }>(
+          tx, `update bid_rate_cards set name = $2, client_id = $3, currency = $4, notes = $5, lines = $6 where id = $1 and archived_at is null returning id`, [id, ...params],
+        ).catch(uniqueAs('rate_card_exists', 'A rate card with that name already exists'))
+        : await one<{ id: string }>(
+          tx, `insert into bid_rate_cards (tenant_id, name, client_id, currency, notes, lines, created_by_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5, $6) returning id`,
+          [...params, requestContext.tenantActor().membershipId],
+        ).catch(uniqueAs('rate_card_exists', 'A rate card with that name already exists'));
+      if (!r) throw Errors.notFound('Rate card');
+      await this.audit.record(tx, { action: id ? 'bid_rate_card.updated' : 'bid_rate_card.created', resourceType: 'bid_rate_card', resourceId: r.id, changes: { name: input.name, roles: input.lines.length } });
+      return one<RateCard>(
+        tx, `select r.id, r.name, r.client_id as "clientId", c.name as "clientName", r.currency, r.notes, r.lines, r.updated_at as "updatedAt" from bid_rate_cards r left join clients c on c.id = r.client_id where r.id = $1`, [r.id],
+      );
+    });
+  }
+
+  async archiveRateCard(id: string) {
+    return this.db.tenant(async (tx) => {
+      const r = await one(tx, `update bid_rate_cards set archived_at = now() where id = $1 and archived_at is null returning id`, [id]);
+      if (!r) throw Errors.notFound('Rate card');
+      await this.audit.record(tx, { action: 'bid_rate_card.archived', resourceType: 'bid_rate_card', resourceId: id });
     });
   }
 
@@ -266,6 +315,7 @@ export class BidsService implements OnModuleInit {
       const b = await this.load(tx, id);
       await this.authz.require('bids:read', attrs(b), tx);
       const lines = await this.lines(tx, id);
+      const card = await this.card(tx, b.rate_card_id);
       const s = await this.authz.subject(tx);
       const meta = await one<Record<string, unknown>>(
         tx,
@@ -312,7 +362,7 @@ export class BidsService implements OnModuleInit {
         startDate: b.start_date, durationMonths: b.duration_months, onCostPct: pctText(b.on_cost_pct), overheadPct: pctText(b.overhead_pct),
         targetMarginPct: pctText(b.target_margin_pct), templateId: b.template_id, coverNote: b.cover_note, terms: b.terms, validUntil: b.valid_until,
         version: b.version, ownerMembershipId: b.owner_membership_id, ...meta,
-        lines, pricing: this.price(b, lines), versions,
+        lines, fees: b.fees ?? [], rateCardId: b.rate_card_id, rateCardName: card?.name ?? null, pricing: this.price(b, lines, card), versions,
         emails: emails.map(({ ids, ...e }) => {
           const mine = links.filter((x) => x.emailId === e.id).map(({ emailId: _e, revokedAt, ...l }) => ({ ...l, revoked: !!revokedAt }));
           return { ...e, delivery: ids.map((i) => delivery.get(i) ?? { status: 'unknown', sentAt: null, error: null }), links: mine };
@@ -351,6 +401,12 @@ export class BidsService implements OnModuleInit {
     if (!(await one(tx, 'select 1 from clients where id = $1 and archived_at is null', [input.clientId]))) throw Errors.badRequest('invalid_client', 'Choose an active client');
     if (!(await one(tx, 'select 1 from legal_entities where id = $1', [input.legalEntityId]))) throw Errors.badRequest('invalid_entity', 'Choose a legal entity in this workspace');
     if (input.templateId && !(await one(tx, 'select 1 from bid_templates where id = $1', [input.templateId]))) throw Errors.badRequest('invalid_template', 'Choose a template in this workspace');
+    if (input.rateCardId) {
+      const card = await one<{ currency: string; clientId: string | null }>(tx, 'select currency, client_id as "clientId" from bid_rate_cards where id = $1 and archived_at is null', [input.rateCardId]);
+      if (!card) throw Errors.badRequest('invalid_rate_card', 'Choose an active rate card');
+      if (card.currency !== input.currency) throw Errors.badRequest('rate_card_currency', `This rate card is in ${card.currency}; the bid is in ${input.currency}`);
+      if (card.clientId && card.clientId !== input.clientId) throw Errors.badRequest('rate_card_client', 'This rate card is for another client');
+    }
     const designations = input.lines.map((l) => l.designationId).filter((x): x is string => !!x);
     if (designations.length) {
       const n = (await one<{ n: number }>(tx, 'select count(*)::int as n from designations where id = any($1::uuid[])', [designations]))!.n;
@@ -367,10 +423,10 @@ export class BidsService implements OnModuleInit {
         [bidId, i + 1, l.roleTitle, l.designationId ?? null, l.headcount, l.location ?? null, l.payMonthly, l.billMonthly ?? null, l.notes ?? null],
       );
     }
-    const p = priceBid(input);
+    const p = priceBid(input, await this.card(tx, input.rateCardId ?? null));
     await tx.query(
-      `update staffing_bids set headcount = $2, monthly_revenue = $3, contract_revenue = $4, margin_pct = $5 where id = $1`,
-      [bidId, p.headcount, p.monthlyRevenue, p.contractRevenue, p.marginPct],
+      `update staffing_bids set headcount = $2, monthly_revenue = $3, contract_revenue = $4, margin_pct = $5, fees = $6, rate_card_id = $7 where id = $1`,
+      [bidId, p.headcount, p.monthlyRevenue, p.contractRevenue, p.marginPct, JSON.stringify(input.fees ?? []), input.rateCardId ?? null],
     );
     return p;
   }
@@ -452,13 +508,13 @@ export class BidsService implements OnModuleInit {
       workspace: m.legalName, code: b.code, version: b.version, title: b.title, issuedOn, validUntil,
       client: { name: m.clientName, legalName: m.clientLegal, contactName: m.contact, address: m.address },
       currency: b.currency, startDate: b.start_date, durationMonths: b.duration_months, coverNote: b.cover_note, terms: b.terms,
-      preparedBy: m.owner, pricing: this.price(b, lines),
+      preparedBy: m.owner, pricing: this.price(b, lines, await this.card(tx, b.rate_card_id)),
     };
   }
 
   private snapshot(b: BidRow, lines: LineRow[], proposal: ProposalData) {
     const { pricing: _p, ...rest } = proposal;
-    return { ...rest, onCostPct: pctText(b.on_cost_pct), overheadPct: pctText(b.overhead_pct), targetMarginPct: pctText(b.target_margin_pct), lines };
+    return { ...rest, fees: b.fees ?? [], rateCardId: b.rate_card_id, onCostPct: pctText(b.on_cost_pct), overheadPct: pctText(b.overhead_pct), targetMarginPct: pctText(b.target_margin_pct), lines };
   }
 
   async submit(id: string) {
@@ -475,11 +531,12 @@ export class BidsService implements OnModuleInit {
         `insert into bid_versions (tenant_id, bid_id, version, event, snapshot, pricing, created_by_membership_id) values (app_tenant_id(), $1, $2, 'submitted', $3, $4, $5)`,
         [id, b.version, JSON.stringify(this.snapshot(b, lines, proposal)), JSON.stringify(p), requestContext.tenantActor().membershipId],
       );
-      const flag = p.lossMaking ? ' LOSS-MAKING' : p.belowTarget ? ' below target' : '';
-      const summary = `${b.code} ${proposal.client.name}: ${b.title}. ${p.headcount} people, ${b.currency} ${formatAmount(p.monthlyRevenue, b.currency)} a month for ${b.duration_months} months, margin ${p.marginPct}% (target ${pctText(b.target_margin_pct)}%)${flag}`;
+      const flag = (p.lossMaking ? ' LOSS-MAKING' : p.belowTarget ? ' below target' : '') + (p.belowRateCard ? `; ${p.belowRateCard} role(s) below the rate card` : '');
+      const fees = p.fees.length ? ` plus ${b.currency} ${formatAmount(p.feesTotal, b.currency)} in one-off fees` : '';
+      const summary = `${b.code} ${proposal.client.name}: ${b.title}. ${p.headcount} people, ${b.currency} ${formatAmount(p.monthlyRevenue, b.currency)} a month for ${b.duration_months} months${fees}, margin ${p.marginPct}% (target ${pctText(b.target_margin_pct)}%)${flag}`;
       const approvalId = await this.approvals.start(tx, { resourceType: 'staffing_bid', resourceId: id, subjectEmployeeId: null, summary });
       await tx.query(`update staffing_bids set status = 'pending_approval', submitted_at = now(), approval_request_id = $2 where id = $1`, [id, approvalId]);
-      await this.audit.record(tx, { action: 'bid.submitted', resourceType: 'staffing_bid', resourceId: id, changes: { version: b.version, marginPct: p.marginPct, belowTarget: p.belowTarget } });
+      await this.audit.record(tx, { action: 'bid.submitted', resourceType: 'staffing_bid', resourceId: id, changes: { version: b.version, marginPct: p.marginPct, belowTarget: p.belowTarget, belowRateCard: p.belowRateCard } });
       return { id, status: 'pending_approval' as const, approvalId };
     });
   }
@@ -577,8 +634,8 @@ export class BidsService implements OnModuleInit {
           ))!;
       }
       const attachment: EmailAttachment = { filename: `${b.code}-v${b.version}.pdf`, contentType: 'application/pdf', storageKey: version.pdf_storage_key };
-      const p = this.price(b, lines);
-      const summary = `${input.message}\n\n${b.code}: ${b.title}\n${p.headcount} people for ${b.duration_months} months from ${b.start_date}\nMonthly total: ${b.currency} ${formatAmount(p.monthlyRevenue, b.currency)}\nContract value: ${b.currency} ${formatAmount(p.contractRevenue, b.currency)}\n\nThe full proposal is attached as a PDF.`;
+      const p = this.price(b, lines, await this.card(tx, b.rate_card_id));
+      const summary = `${input.message}\n\n${b.code}: ${b.title}\n${p.headcount} people for ${b.duration_months} months from ${b.start_date}\nMonthly total: ${b.currency} ${formatAmount(p.monthlyRevenue, b.currency)}\n${p.fees.length ? `One-off fees: ${b.currency} ${formatAmount(p.feesTotal, b.currency)}\n` : ''}Contract value: ${b.currency} ${formatAmount(p.contractRevenue, b.currency)}\n\nThe full proposal is attached as a PDF.`;
       // Each recipient gets a private link to review and accept or decline online, live from when the email goes
       // until the proposal's validity ends (at least a week). Only its hash is stored.
       const until = (await one<{ v: string }>(tx, `select to_char(valid_until, 'YYYY-MM-DD') as v from staffing_bids where id = $1`, [id]))!.v;

@@ -321,4 +321,34 @@ describe('staffing bids', () => {
     ok(await as('recruiter').post(`/staffing/bids/${i.id}/emails/${later.id}/cancel`));
     expect((await pool.query(`select revoked_at from bid_acceptance_links where bid_email_id = $1`, [later.id])).rows[0].revoked_at).toBeTruthy();
   });
+
+  it('keeps rate cards, checks bids against them, and adds one-off fees to the contract', async () => {
+    const card = ok(await as('recruiter').post('/staffing/rate-cards').send({ name: 'Acme standard', clientId, lines: [{ roleTitle: 'Recruiter', payMonthly: '40000', billMonthly: '60000' }, { roleTitle: 'Sourcer', payMonthly: '30000', billMonthly: '45000' }] }), 201);
+    expect(card).toMatchObject({ name: 'Acme standard', clientName: 'Acme Logistics', currency: 'INR' });
+    expect((await as('recruiter').post('/staffing/rate-cards').send({ name: 'acme standard', lines: [{ roleTitle: 'X y', payMonthly: '1', billMonthly: '2' }] })).status).toBe(409);
+    expect((await as('employee').get('/staffing/rate-cards')).status).toBe(403);
+    expect((await as('finance').post('/staffing/rate-cards').send({ name: 'F', lines: [{ roleTitle: 'X y', payMonthly: '1', billMonthly: '2' }] })).status).toBe(403);
+    expect(ok(await as('stranger').get('/staffing/rate-cards'))).toEqual([]);
+    const usd = ok(await as('recruiter').post('/staffing/rate-cards').send({ name: 'US rates', currency: 'USD', lines: [{ roleTitle: 'Recruiter', payMonthly: '4000', billMonthly: '6000' }] }), 201);
+    const other = ok(await as('recruiter').post('/staffing/clients').send({ name: 'Other Client' }), 201);
+    expect((await as('recruiter').post('/staffing/bids').send(bid({ rateCardId: usd.id }))).body.error.code).toBe('rate_card_currency');
+    expect((await as('recruiter').post('/staffing/bids').send(bid({ clientId: other.id, rateCardId: card.id }))).body.error.code).toBe('rate_card_client');
+
+    const fees = [{ label: 'Sourcing drive', amount: '200000', cost: '50000', billing: 'on_signing' }];
+    const b = ok(await as('recruiter').post('/staffing/bids').send(bid({ rateCardId: card.id, fees, lines: [{ roleTitle: 'recruiter', headcount: 5, payMonthly: '40000', billMonthly: '55000' }] })), 201);
+    expect(b).toMatchObject({ rateCardId: card.id, rateCardName: 'Acme standard', fees });
+    expect(b.pricing.lines[0]).toMatchObject({ rateCardBill: '60000.00', belowRateCard: true });
+    expect(b.pricing).toMatchObject({ feesTotal: '200000.00', feesCost: '50000.00', contractRevenue: '1850000.00', belowRateCard: 1 });
+    const listed = (ok(await as('recruiter').get('/staffing/bids')) as unknown as { id: string; contractRevenue: string }[]).find((x) => x.id === b.id);
+    expect(listed?.contractRevenue).toBe('1850000.00');
+    ok(await as('recruiter').post(`/staffing/bids/${b.id}/submit`));
+    const inbox = ok(await as('finance').get('/approvals/inbox')) as unknown as { summary: string }[];
+    expect(inbox.find((i) => i.summary.startsWith(b.code))?.summary).toMatch(/plus INR 2,00,000\.00 in one-off fees.*1 role\(s\) below the rate card/);
+    const pdf = await binary(as('recruiter').get(`/staffing/bids/${b.id}/proposal.pdf`));
+    expect(pdf.status).toBe(200);
+    // Archiving a card keeps the bids that used it as they are.
+    expect((await as('recruiter').delete(`/staffing/rate-cards/${card.id}`)).status).toBe(204);
+    expect((ok(await as('recruiter').get('/staffing/rate-cards')) as unknown as { id: string }[]).map((x) => x.id)).toEqual([usd.id]);
+    expect(ok(await as('recruiter').get(`/staffing/bids/${b.id}`)).pricing.belowRateCard).toBe(1);
+  });
 });

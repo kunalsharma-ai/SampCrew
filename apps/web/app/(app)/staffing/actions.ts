@@ -1,5 +1,5 @@
 'use server';
-import type { BidInput, BidSendInput, BidTemplateInput, ClientInput } from '@crew/contracts';
+import type { BidInput, BidSendInput, BidTemplateInput, ClientInput, RateCard, RateCardInput } from '@crew/contracts';
 import { revalidatePath } from 'next/cache';
 import { act, api } from '@/lib/api';
 import type { Bid, BidTemplate, Client } from './types';
@@ -30,6 +30,18 @@ export async function saveTemplateAction(id: string | null, values: BidTemplateI
 export async function archiveTemplateAction(id: string) {
   const r = await act(() => api(`/staffing/templates/${id}`, { method: 'DELETE' }), 'Template archived');
   revalidatePath('/staffing/templates');
+  return r;
+}
+
+export async function saveRateCardAction(id: string | null, values: RateCardInput) {
+  const r = await act(() => api<RateCard>(id ? `/staffing/rate-cards/${id}` : '/staffing/rate-cards', { method: id ? 'PUT' : 'POST', body: values }), 'Rate card saved');
+  revalidatePath('/staffing/rate-cards');
+  return r;
+}
+
+export async function archiveRateCardAction(id: string) {
+  const r = await act(() => api(`/staffing/rate-cards/${id}`, { method: 'DELETE' }), 'Rate card archived');
+  revalidatePath('/staffing/rate-cards');
   return r;
 }
 
