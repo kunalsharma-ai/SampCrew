@@ -7,7 +7,8 @@ import { Alert, Badge, Button, buttonClass, Card, CardHeader, EmptyState, Field,
 import { Globe2, Minus, Plus, RotateCcw, RotateCw, Save, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Fragment, useMemo, useRef, useState, useTransition } from 'react';
+import { geoGraticule10, geoOrthographic, geoPath, type GeoPermissibleObjects } from 'd3-geo';
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { deleteScenarioAction, saveScenarioAction } from './lens-actions';
 
 const PALETTE = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#ec4899', '#84cc16', '#f97316', '#06b6d4', '#a855f7'];
@@ -43,21 +44,22 @@ export function LocationsLens({ data }: { data: UniverseData }) {
   const max = Math.max(1, ...rows.map((r) => r.n));
   const unplaced = counts.get('none') ?? 0;
 
-  const graticule = useMemo(() => {
-    const lines: string[] = [];
-    const path = (pts: { x: number; y: number; visible: boolean }[]) => {
-      let d = ''; let pen = false;
-      for (const p of pts) {
-        if (!p.visible) { pen = false; continue; }
-        d += `${pen ? 'L' : 'M'}${(R + p.x * R).toFixed(1)},${(R + p.y * R).toFixed(1)}`;
-        pen = true;
-      }
-      return d;
-    };
-    for (let lat = -60; lat <= 60; lat += 30) lines.push(path(Array.from({ length: 73 }, (_, k) => orthographic(lat, -180 + k * 5, view.lat, view.lng))));
-    for (let lng = -180; lng < 180; lng += 30) lines.push(path(Array.from({ length: 37 }, (_, k) => orthographic(-90 + k * 5, lng, view.lat, view.lng))));
-    return lines.filter(Boolean);
-  }, [view]);
+  // Land outlines (Natural Earth 1:110m, from world-atlas) load only when this lens opens.
+  const [land, setLand] = useState<GeoPermissibleObjects | null>(null);
+  useEffect(() => {
+    let live = true;
+    Promise.all([import('topojson-client'), import('world-atlas/land-110m.json')])
+      .then(([topo, world]) => {
+        const t = (world as { default?: unknown }).default ?? world;
+        if (live) setLand(topo.feature(t as never, (t as { objects: { land: never } }).objects.land) as unknown as GeoPermissibleObjects);
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const projection = useMemo(() => geoOrthographic().rotate([-view.lng, -view.lat]).scale(R).translate([R, R]).clipAngle(90), [view]);
+  const path = useMemo(() => geoPath(projection), [projection]);
+  const graticule = useMemo(() => path(geoGraticule10()) ?? '', [path]);
+  const landPath = useMemo(() => (land ? path(land) ?? '' : ''), [land, path]);
 
   const spin = (dLng: number, dLat = 0) => setView((v) => ({ lat: Math.max(-80, Math.min(80, v.lat + dLat)), lng: ((v.lng + dLng + 540) % 360) - 180 }));
 
@@ -94,12 +96,13 @@ export function LocationsLens({ data }: { data: UniverseData }) {
               <radialGradient id="sea" cx="40%" cy="35%"><stop offset="0%" stopColor="#3730a3" /><stop offset="100%" stopColor="#0f172a" /></radialGradient>
             </defs>
             <circle cx={R} cy={R} r={R} fill="url(#sea)" stroke="#6366f1" strokeOpacity={0.5} />
-            {graticule.map((d, k) => <path key={k} d={d} fill="none" stroke="#a5b4fc" strokeOpacity={0.18} strokeWidth={0.8} />)}
+            <path d={graticule} fill="none" stroke="#a5b4fc" strokeOpacity={0.15} strokeWidth={0.6} />
+            {landPath && <path d={landPath} fill="#4f46e5" fillOpacity={0.45} stroke="#a5b4fc" strokeOpacity={0.6} strokeWidth={0.6} data-land="" />}
             {mapped.map((l) => {
               const p = orthographic(l.latitude!, l.longitude!, view.lat, view.lng);
               if (!p.visible) return null;
               const r = l.n ? 4 + Math.sqrt(l.n / max) * 16 : 3;
-              const x = R + p.x * R; const y = R + p.y * R;
+              const [x, y] = projection([l.longitude!, l.latitude!]) ?? [R + p.x * R, R + p.y * R];
               const on2 = picked === l.id;
               return (
                 <g key={l.id} onClick={() => setPicked(on2 ? null : l.id)} className="cursor-pointer" data-location={l.name}>
@@ -110,6 +113,7 @@ export function LocationsLens({ data }: { data: UniverseData }) {
               );
             })}
           </svg>
+          <p className="absolute bottom-3 left-4 text-[0.6875rem] text-slate-400">Map data: Natural Earth</p>
           <div className="absolute bottom-3 right-3 flex gap-1">
             <Button size="sm" variant="secondary" onClick={() => spin(-30)} aria-label="Turn the globe west"><RotateCcw className="size-3.5" /></Button>
             <Button size="sm" variant="secondary" onClick={() => spin(30)} aria-label="Turn the globe east"><RotateCw className="size-3.5" /></Button>

@@ -107,13 +107,15 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     const locTable = p.getByRole('table', { name: 'Headcount by location' });
     await locTable.waitFor();
     const locCounts = (await locTable.locator('tbody tr td:nth-child(2)').allInnerTexts()).map(Number);
+    await p.locator('path[data-land]').waitFor();
+    expect(((await p.locator('path[data-land]').getAttribute('d')) ?? '').length > 1000, 'no coastlines on the globe');
     const pune = p.locator('[data-location="Pune Plant"] circle').last();
     await pune.waitFor();
     const x0 = await pune.getAttribute('cx');
     await p.getByRole('button', { name: 'Turn the globe east' }).click();
     expect((await pune.getAttribute('cx')) !== x0 || (await p.locator('[data-location="Pune Plant"]').count()) === 0, 'globe did not turn');
     expect(locCounts.reduce((a, b) => a + b, 0) > 0, 'no one placed on the globe');
-    ok(`globe and table show ${locCounts.length} locations, ${locCounts.reduce((a, b) => a + b, 0)} people`);
+    ok(`globe with coastlines; globe and table show ${locCounts.length} locations, ${locCounts.reduce((a, b) => a + b, 0)} people`);
 
     // 6. Skills: HR records a skill on a profile; the network and its table pick it up.
     await p.goto(BASE + '/employees?q=Rekha');

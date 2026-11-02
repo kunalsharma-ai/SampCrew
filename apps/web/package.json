@@ -12,6 +12,7 @@
   "dependencies": {
     "@crew/contracts": "workspace:*",
     "@crew/ui": "workspace:*",
+    "d3-geo": "3.1.1",
     "lucide-react": "1.66.0",
     "next": "15.5.28",
     "qrcode": "1.5.4",
@@ -19,15 +20,19 @@
     "react-dom": "19.1.10",
     "server-only": "0.0.1",
     "three": "0.178.0",
+    "topojson-client": "3.1.0",
+    "world-atlas": "2.0.2",
     "zod": "4.1.13"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
+    "@types/d3-geo": "3.1.0",
     "@types/node": "22.20.5",
     "@types/qrcode": "1.5.6",
     "@types/react": "19.1.17",
     "@types/react-dom": "19.1.11",
     "@types/three": "0.178.0",
+    "@types/topojson-client": "3.1.5",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3"
   }
