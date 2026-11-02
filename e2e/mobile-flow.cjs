@@ -314,8 +314,8 @@ function futureWeekday(taken) {
     // A change made in the Web Portal reaches the phone on the next start.
     await api(qa, 'PUT', '/me/preferences/appearance', { preset: 'sunset' });
     await p.reload();
-    await card.getByRole('radio', { name: 'Sunset Fusion' }).waitFor();
-    assert((await card.getByRole('radio', { name: 'Sunset Fusion' }).getAttribute('aria-checked')) === 'true', 'the phone picked up the theme chosen on the web');
+    // The app opens in the theme kept on the phone, then switches when the account's preference arrives.
+    await card.locator('[role="radio"][aria-label="Sunset Fusion"][aria-checked="true"]').waitFor();
     ok('picked Emerald in dark mode on the phone; saved to the account, kept after a reload, and a web change reaches the phone');
 
     // 7. Two-step sign-in with an authenticator code.

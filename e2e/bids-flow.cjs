@@ -245,7 +245,9 @@ const watch = (page) => {
     await rd.getByLabel('Bill rate for role 2').fill('38000');
     await rd.getByRole('button', { name: 'Save rate card' }).click();
     await rec.getByText('Northwind 2027 saved').waitFor();
+    // The saved message can show before the refreshed list arrives, so wait for both rows.
     const cardRows = rec.getByRole('table', { name: 'Rates in Northwind 2027' }).locator('tbody tr');
+    await cardRows.nth(1).waitFor();
     expect(await cardRows.count() === 2, 'rate card should list two roles');
     ok('recruiter keeps a rate card for Northwind Logistics with two roles');
 

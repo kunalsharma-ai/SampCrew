@@ -148,10 +148,13 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await p.waitForURL(/status=active/);
     await p.getByRole('button', { name: /^Sort by Candidate/ }).click();
     await p.waitForURL(/sort=name/);
-    await list.getByRole('link', { name: 'Ananya Joshi' }).waitFor();
+    // Who is still in process depends on whether e2e:recruitment hired Ananya Joshi first, so read the list.
+    await list.getByRole('link', { name: 'Rahul Verma' }).waitFor();
     expect(await list.getByRole('link', { name: 'Sneha Kulkarni' }).count() === 0, 'rejected candidate shown among people in process');
+    const jobs = await list.locator('tbody tr').evaluateAll((rows) => rows.map((r) => r.children[1]?.textContent ?? ''));
+    expect(jobs.every((j) => /Quality Engineer · (?!Hired|Rejected|Withdrew)/.test(j)), `someone not in process for Quality Engineer is listed: ${jobs.join(' | ')}`);
     const names = await list.locator('tbody tr td:first-child a').allInnerTexts();
-    expect(names.length >= 2, `expected the in-process candidates, saw ${names.length}`);
+    expect(names.length >= 1, `expected the in-process candidates, saw ${names.length}`);
     const sortedNames = [...names].sort((a, b) => a.localeCompare(b));
     const asc = names.join('|') === sortedNames.join('|');
     expect(asc || names.join('|') === [...sortedNames].reverse().join('|'), `rows are not sorted by name: ${names.join(', ')}`);
