@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
+import { AttendanceService } from '../src/modules/attendance/attendance.service';
 import { HrJobsService } from '../src/modules/hr-jobs/hr-jobs.service';
 import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, type TestTenant } from './helpers';
 
@@ -455,6 +456,30 @@ describe('Phase 11 hardening', () => {
       expect(runs).toEqual(['manual', 'schedule']);
       const sys = (await pool.query(`select actor_type from audit_events where tenant_id = $1 and action = 'privacy.retention_applied' order by id desc limit 1`, [ent.id])).rows[0];
       expect(sys.actor_type).toBe('system');
+    });
+  });
+  describe('attendance days written by several requests at once', () => {
+    it('does not deadlock when team views and the HR job recompute the same people together', async () => {
+      const t = await createTenant(pool, { plan: 'enterprise' });
+      const owner = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
+      for (let i = 0; i < 6; i++) {
+        ok(await api(app, owner).post('/employees').send({ legalEntityId: t.legalEntityId, firstName: `Pat${i}`, lastName: 'Parallel', dateOfJoining: '2024-01-08', onboardingTemplateId: null }), 201);
+      }
+      const attendance = app.get(AttendanceService);
+      const date = new Date().toISOString().slice(0, 10);
+      for (let round = 0; round < 3; round++) {
+        // Stale days force every caller to rewrite them.
+        await pool.query(`update attendance_days set computed_at = now() - interval '1 hour' where tenant_id = $1`, [t.id]);
+        const results = await Promise.allSettled([
+          attendance.refreshRecent(t.id),
+          ...Array.from({ length: 4 }, () => api(app, owner).get(`/attendance/team?date=${date}`)),
+          attendance.refreshRecent(t.id),
+        ]);
+        for (const r of results) {
+          expect(r.status, r.status === 'rejected' ? String(r.reason) : '').toBe('fulfilled');
+          if (r.status === 'fulfilled' && r.value && typeof r.value === 'object' && 'status' in r.value) expect((r.value as { status: number }).status).toBe(200);
+        }
+      }
     });
   });
 });
