@@ -75,13 +75,21 @@ function useExperienceState(prefs: MemberPreferences | null, cookieAppearance: A
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Quick changes (Ctrl+B then a click, say) send several saves; only the newest one's answer may set the state,
+  // or an older response arriving late would undo what the person just did.
+  const latest = useRef(appearance);
+  latest.current = appearance;
+  const saveSeq = useRef(0);
   const update = useCallback(async (patch: AppearancePatch) => {
-    const before = appearance;
-    const next = { ...appearance, ...patch };
+    const before = latest.current;
+    const next = { ...before, ...patch };
+    latest.current = next;
     setAppearance(next);
     applyAppearance(next);
+    const id = ++saveSeq.current;
     setSaving(true);
     const r = await saveAppearanceAction(patch);
+    if (id !== saveSeq.current) return r.ok ? { ok: true } : { ok: false, message: r.message };
     setSaving(false);
     if (!r.ok) {
       setAppearance(before);
@@ -89,8 +97,9 @@ function useExperienceState(prefs: MemberPreferences | null, cookieAppearance: A
       return { ok: false, message: r.message };
     }
     setAppearance(r.data!.appearance);
+    applyAppearance(r.data!.appearance);
     return { ok: true };
-  }, [appearance]);
+  }, []);
 
   const reset = useCallback(async () => {
     setSaving(true);
