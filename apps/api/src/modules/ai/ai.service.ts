@@ -26,7 +26,7 @@ export class AiService {
       const s = await this.authz.subject(tx);
       const features: Record<string, { available: boolean; reason: string | null }> = {};
       for (const f of AI_FEATURES) features[f] = await this.gateway.availability(tx, f);
-      return { configured: this.gateway.configured, ...this.gateway.providerInfo, canUse: hasPermission(s, 'ai:use').allowed, features };
+      return { ...(await this.gateway.providerInfo()), canUse: hasPermission(s, 'ai:use').allowed, features };
     });
   }
 
@@ -35,8 +35,7 @@ export class AiService {
       const s = await this.gateway.settings(tx);
       const usage = await this.gateway.usage(tx);
       return {
-        configured: this.gateway.configured,
-        ...this.gateway.providerInfo,
+        ...(await this.gateway.providerInfo()),
         features: Object.fromEntries(AI_FEATURES.map((f) => [f, Boolean(s.features[f])])) as Record<AiFeature, boolean>,
         promptLogDays: s.prompt_log_days,
         usage,

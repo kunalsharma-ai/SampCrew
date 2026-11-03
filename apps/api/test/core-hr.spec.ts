@@ -383,7 +383,7 @@ describe('core HR', () => {
       const r = await app.get(MailerService).sendBatch(500);
       expect(r.sent).toBe(0);
       const rows = await pool.query(`select status, last_error from email_messages where tenant_id = $1 limit 1`, [t.id]);
-      expect(rows.rows[0]).toEqual({ status: 'skipped', last_error: 'Email delivery is not configured (SMTP_URL is empty)' });
+      expect(rows.rows[0]).toEqual({ status: 'skipped', last_error: 'Email delivery is not set up (Super Admin Console > Integrations > Email)' });
     });
   });
 

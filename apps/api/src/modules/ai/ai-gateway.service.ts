@@ -1,13 +1,13 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { AI_FEATURE_LABEL, type AiFeature, creditsFor, redact, redactionCount } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
-import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, one, type Tx } from '../../platform/database/database.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { AppError, Errors } from '../../platform/http/errors';
 import { HttpStatus } from '@nestjs/common';
-import { type AiProvider, ProviderError, providerFor } from './ai-provider';
+import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
+import { AnthropicProvider, type AiProvider, ProviderError } from './ai-provider';
 
 export interface Evidence { kind: string; id: string; title: string }
 
@@ -34,28 +34,37 @@ export interface AiSettingsRow { features: Partial<Record<AiFeature, boolean>>; 
 @Injectable()
 export class AiGatewayService {
   private readonly logger = new Logger('AiGateway');
-  private provider: AiProvider | null;
+  /** Set by tests only; undefined means "use the settings in effect". */
+  private override: AiProvider | null | undefined;
+  private built?: { hash: string; provider: AiProvider };
 
   constructor(
     private readonly db: DatabaseService,
     private readonly entitlements: EntitlementsService,
     private readonly audit: AuditService,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
-  ) {
-    this.provider = providerFor(config);
+    private readonly integrations: PlatformIntegrationsService,
+  ) {}
+
+  /** For tests: swap the provider (for example to point at a local stub server). undefined goes back to the saved settings. */
+  setProvider(p: AiProvider | null | undefined) {
+    this.override = p;
   }
 
-  /** For tests: swap the provider (for example to point at a local stub server). */
-  setProvider(p: AiProvider | null) {
-    this.provider = p;
+  /**
+   * The provider for the Claude API settings in effect: saved by SAMPLEDGE in the Super Admin Console (Integrations),
+   * else the environment. The client is rebuilt only when those settings change.
+   */
+  async provider(): Promise<AiProvider | null> {
+    if (this.override !== undefined) return this.override;
+    const s = await this.integrations.ai();
+    if (!s) return null;
+    if (this.built?.hash !== s.hash) this.built = { hash: s.hash, provider: new AnthropicProvider(s) };
+    return this.built.provider;
   }
 
-  get configured() {
-    return this.provider !== null;
-  }
-
-  get providerInfo() {
-    return this.provider ? { provider: this.provider.name, model: this.provider.model } : { provider: 'none', model: '' };
+  async providerInfo() {
+    const p = await this.provider();
+    return p ? { configured: true, provider: p.name, model: p.model } : { configured: false, provider: 'none', model: '' };
   }
 
   async settings(tx: Tx): Promise<AiSettingsRow> {
@@ -71,7 +80,7 @@ export class AiGatewayService {
 
   /** Whether a feature can be used right now, and why not. */
   async availability(tx: Tx, feature: AiFeature): Promise<{ available: boolean; reason: string | null }> {
-    if (!this.provider) return { available: false, reason: 'AI is not set up for this CREW installation.' };
+    if (!(await this.provider())) return { available: false, reason: 'AI is not set up for this CREW installation.' };
     const e = await this.entitlements.current(tx);
     if (!e.features.has('ai_copilot')) return { available: false, reason: 'Your plan does not include CREW AI.' };
     const s = await this.settings(tx);
@@ -82,7 +91,7 @@ export class AiGatewayService {
   }
 
   private async record(tx: Tx, row: {
-    feature: AiFeature; status: string; promptVersion: string; model: string; subject?: { type: string; id: string };
+    provider: string; feature: AiFeature; status: string; promptVersion: string; model: string; subject?: { type: string; id: string };
     request: unknown; response: string | null; evidence: Evidence[]; redactions: Record<string, number>;
     inputTokens?: number; outputTokens?: number; credits?: number; latencyMs?: number; error?: string | null;
   }): Promise<string> {
@@ -92,7 +101,7 @@ export class AiGatewayService {
       `insert into ai_interactions (tenant_id, membership_id, feature, status, provider, model, prompt_version, subject_type, subject_id, request, response,
                                     evidence, redactions, input_tokens, output_tokens, credits, latency_ms, error)
        values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning id`,
-      [actor.membershipId, row.feature, row.status, this.provider?.name ?? 'none', row.model, row.promptVersion, row.subject?.type ?? null, row.subject?.id ?? null,
+      [actor.membershipId, row.feature, row.status, row.provider, row.model, row.promptVersion, row.subject?.type ?? null, row.subject?.id ?? null,
         row.request === null ? null : JSON.stringify(row.request), row.response, JSON.stringify(row.evidence), JSON.stringify(row.redactions),
         row.inputTokens ?? 0, row.outputTokens ?? 0, row.credits ?? 0, row.latencyMs ?? 0, row.error ?? null],
     );
@@ -102,8 +111,9 @@ export class AiGatewayService {
 
   /** Throws the reason a feature cannot be used right now (not set up, not in the plan, switched off). */
   async assertAvailable(feature: AiFeature) {
+    const provider = await this.provider();
     await this.db.tenant(async (tx) => {
-      if (!this.provider) throw Errors.conflict('ai_not_configured', 'AI is not set up for this CREW installation. An administrator can set an AI provider; until then CREW does not send data to any AI service.');
+      if (!provider) throw Errors.conflict('ai_not_configured', 'AI is not set up for this CREW installation. SAMPLEDGE sets it up in the Super Admin Console (Integrations); until then CREW does not send data to any AI service.');
       const e = await this.entitlements.current(tx);
       if (!e.features.has('ai_copilot')) throw Errors.featureNotInPlan('CREW AI Copilots');
       const s = await this.settings(tx);
@@ -115,12 +125,12 @@ export class AiGatewayService {
   async recordWithoutModel(input: { feature: AiFeature; promptVersion: string; question: string; response: string; subject?: { type: string; id: string } }) {
     return this.db.tenant(async (tx) => {
       const q = redact(input.question);
-      return this.record(tx, { feature: input.feature, status: 'no_sources', promptVersion: input.promptVersion, model: '', subject: input.subject, request: { user: q.text }, response: input.response, evidence: [], redactions: q.removed });
+      return this.record(tx, { provider: 'none', feature: input.feature, status: 'no_sources', promptVersion: input.promptVersion, model: '', subject: input.subject, request: { user: q.text }, response: input.response, evidence: [], redactions: q.removed });
     });
   }
 
   async complete(input: CompleteInput): Promise<CompleteResult> {
-    const provider = this.provider;
+    const provider = await this.provider();
     const sys = redact(input.system);
     const usr = redact(input.user);
     const removed: Record<string, number> = { ...sys.removed };
@@ -129,14 +139,14 @@ export class AiGatewayService {
 
     // 1. Checks, in their own short transaction.
     await this.db.tenant(async (tx) => {
-      if (!provider) throw Errors.conflict('ai_not_configured', 'AI is not set up for this CREW installation. An administrator can set an AI provider; until then CREW does not send data to any AI service.');
+      if (!provider) throw Errors.conflict('ai_not_configured', 'AI is not set up for this CREW installation. SAMPLEDGE sets it up in the Super Admin Console (Integrations); until then CREW does not send data to any AI service.');
       const e = await this.entitlements.current(tx);
       if (!e.features.has('ai_copilot')) throw Errors.featureNotInPlan('CREW AI Copilots');
       const s = await this.settings(tx);
       if (!s.features[input.feature]) throw Errors.conflict('ai_feature_off', `This AI feature is switched off for your workspace (${AI_FEATURE_LABEL[input.feature].split(':')[0]}).`);
       const u = await this.usage(tx);
       if (u.limit !== -1 && u.used >= u.limit) {
-        await this.record(tx, { feature: input.feature, status: 'over_limit', promptVersion: input.promptVersion, model: provider.model, subject: input.subject, request: null, response: null, evidence: [], redactions: {} });
+        await this.record(tx, { provider: provider.name, feature: input.feature, status: 'over_limit', promptVersion: input.promptVersion, model: provider.model, subject: input.subject, request: null, response: null, evidence: [], redactions: {} });
         throw new AppError(HttpStatus.PAYMENT_REQUIRED, 'ai_credits_used', `Your workspace has used its ${u.limit} AI credits for this month. They renew on the 1st.`);
       }
     });
@@ -165,7 +175,7 @@ export class AiGatewayService {
     // 3. The record, in a second transaction.
     const interactionId = await this.db.tenant((tx) =>
       this.record(tx, {
-        feature: input.feature, status, promptVersion: input.promptVersion, model, subject: input.subject, request, response: text || null,
+        provider: provider!.name, feature: input.feature, status, promptVersion: input.promptVersion, model, subject: input.subject, request, response: text || null,
         evidence: input.evidence, redactions: removed, inputTokens, outputTokens, credits, latencyMs, error,
       }),
     );

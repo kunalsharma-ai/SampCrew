@@ -17,6 +17,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<{ table: string; key: string; colu
   { table: 'integration_connections', key: 'id', column: 'credentials_enc' },
   { table: 'sso_connections', key: 'id', column: 'client_secret_enc' },
   { table: 'sso_login_states', key: 'state_hash', column: 'code_verifier_enc' },
+  { table: 'platform_integrations', key: 'key', column: 'secrets_enc' },
 ];
 
 export interface RotationColumnResult {

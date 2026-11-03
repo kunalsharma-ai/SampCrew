@@ -1,6 +1,6 @@
 'use client';
 import { Avatar, Badge, CrewLogo, cn } from '@crew/ui';
-import { Activity, Building2, Gauge, LogOut, Menu, Moon, ScrollText, Shield, Sun, Tag, X, type LucideIcon } from 'lucide-react';
+import { Activity, Building2, Gauge, LogOut, Menu, Moon, Plug, ScrollText, Shield, Sun, Tag, X, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
@@ -8,7 +8,7 @@ import type { Admin } from '@/lib/types';
 import { logoutAction } from '../auth-actions';
 
 export interface NavItem { href: string; label: string; icon: string }
-const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield };
+const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug };
 const ROLE_LABEL: Record<Admin['role'], string> = { super_admin: 'Super admin', support: 'Support', billing_ops: 'Billing operations', viewer: 'Viewer' };
 
 export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; children: React.ReactNode }) {

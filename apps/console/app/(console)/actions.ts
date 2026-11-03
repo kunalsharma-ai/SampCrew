@@ -55,3 +55,23 @@ export async function setMemberModulesAction(id: string, membershipId: string, b
   revalidatePath(`/tenants/${id}/access`);
   return r;
 }
+
+export async function saveIntegrationAction(key: string, values: Record<string, unknown>) {
+  const r = await act(() => api(`/platform/integrations/${key}`, { method: 'PUT', body: values }), 'Saved. CREW uses these settings from now on.');
+  revalidatePath('/integrations');
+  revalidatePath('/health');
+  return r;
+}
+
+export async function testIntegrationAction(key: string, values: Record<string, unknown>, extras: { sendTo?: string; pushToken?: string }) {
+  const r = await act(() => api<{ ok: boolean; detail: string; recorded: boolean }>(`/platform/integrations/${key}/test`, { method: 'POST', body: { values, ...extras } }));
+  revalidatePath('/integrations');
+  return r;
+}
+
+export async function resetIntegrationAction(key: string) {
+  const r = await act(() => api(`/platform/integrations/${key}`, { method: 'DELETE' }), 'Console setting removed. The server\'s own settings apply again.');
+  revalidatePath('/integrations');
+  revalidatePath('/health');
+  return r;
+}

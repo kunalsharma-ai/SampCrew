@@ -144,6 +144,7 @@ Platform staff authenticate in a separate realm (`platform_admins` table, separa
 | `tenants:read` | ✓ | ✓ | ✓ | ✓ |
 | `tenants:manage` | ✓ | · | · | · |
 | `access:manage` | ✓ | · | · | · |
+| `integrations:manage` (connect, test or switch Claude AI, email, push, scanning, mobile sign-in) | ✓ | · | · | · |
 | `billing:read` | ✓ | · | ✓ | ✓ |
 | `billing:manage` | ✓ | · | ✓ | · |
 | `plans:manage` | ✓ | · | ✓ | · |

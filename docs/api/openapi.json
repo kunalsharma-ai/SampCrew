@@ -28931,7 +28931,7 @@
         "tags": [
           "Integrations"
         ],
-        "summary": "Connectors (available and planned), webhook events, API key scopes and how many of each this workspace has",
+        "summary": "Connectors (available and planned), webhook events, API key scopes, how many of each this workspace has, and which installation-wide services are on",
         "description": "Requires plan feature `integrations_advanced`.",
         "operationId": "Integrations_catalogue",
         "security": [
@@ -33295,6 +33295,203 @@
                   "role",
                   "password"
                 ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/integrations": {
+      "get": {
+        "tags": [
+          "Platform: Integrations"
+        ],
+        "summary": "Installation-wide integrations: what is in effect, where it comes from (Console or environment) and the last connection test. Secrets show their last characters only.",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformIntegrations_list",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/integrations/{key}": {
+      "put": {
+        "tags": [
+          "Platform: Integrations"
+        ],
+        "summary": "Save an integration in the Console (it then wins over the environment). Secret fields left empty keep the secret in effect; null removes it.",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformIntegrations_save",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Platform: Integrations"
+        ],
+        "summary": "Forget the Console setting so the server's environment variables apply again",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformIntegrations_reset",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/integrations/{key}/test": {
+      "post": {
+        "tags": [
+          "Platform: Integrations"
+        ],
+        "summary": "Test the values on screen against the real service without saving them (email can send a test message, push can alert one device)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformIntegrations_test",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "sendTo": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "format": "email",
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "pushToken": {
+                    "type": "string",
+                    "pattern": "^Expo(nent)?PushToken\\[[^\\]]{10,200}\\]$"
+                  },
+                  "values": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "values"
+                ],
+                "additionalProperties": false
               }
             }
           }

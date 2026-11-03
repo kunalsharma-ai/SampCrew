@@ -5,6 +5,8 @@ export interface IntegrationsCatalogue {
   events: WebhookEventDef[];
   scopes: { key: string; description: string }[];
   retry: { maxAttempts: number; delaysSeconds: number[]; toleranceSeconds: number };
+  /** Installation-wide services SAMPLEDGE sets up for every workspace (on or off only). */
+  platformServices: { key: string; name: string; description: string; on: boolean; whenOff: string }[];
 }
 export interface ApiKey {
   id: string; name: string; prefix: string; scopes: string[]; expiresAt: string | null; lastUsedAt: string | null; lastUsedIp: string | null;

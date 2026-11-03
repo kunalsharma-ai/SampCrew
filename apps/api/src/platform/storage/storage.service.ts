@@ -7,6 +7,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { safeEqual } from '../auth/crypto';
 import { Errors } from '../http/errors';
+import { PlatformIntegrationsService } from '../integrations/platform-integrations.service';
 import { scanWithClamd } from './malware-scan';
 
 export type FileLinkKind = 'files' | 'resumes' | 'receipts';
@@ -21,7 +22,10 @@ export class StorageService {
   private readonly root: string;
   private readonly secret: Buffer;
 
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
+  constructor(
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly integrations: PlatformIntegrationsService,
+  ) {
     this.root = resolve(config.STORAGE_DIR);
     this.secret = config.FILE_URL_SECRET
       ? Buffer.from(config.FILE_URL_SECRET)
@@ -44,16 +48,17 @@ export class StorageService {
   private readonly logger = new Logger('Storage');
 
   /**
-   * Stores a file. `upload: true` marks a file that came from a person (documents, receipts, CVs): when CLAMAV_URL is
-   * set it is scanned first, and a flagged file is refused and never written. If the scanner cannot be reached the
+   * Stores a file. `upload: true` marks a file that came from a person (documents, receipts, CVs): when virus scanning
+   * is on (Super Admin Console > Integrations, else CLAMAV_URL) it is scanned first, and a flagged file is refused and never written. If the scanner cannot be reached the
    * upload is refused too (fail closed), so no unscanned file is stored while scanning is switched on. Files CREW
    * generates itself (exports, signed proposals) are not scanned.
    */
   async put(key: string, data: Buffer, opts: { upload?: boolean } = {}) {
-    if (opts.upload && this.config.CLAMAV_URL) {
+    const scanner = opts.upload ? await this.integrations.scanningUrl() : null;
+    if (scanner) {
       let r;
       try {
-        r = await scanWithClamd(this.config.CLAMAV_URL, data);
+        r = await scanWithClamd(scanner, data);
       } catch (e) {
         this.logger.error(`Upload refused, ${(e as Error).message}`);
         throw Errors.unavailable('scanner_unavailable', 'Files cannot be checked for viruses right now, so the upload was not saved. Try again in a few minutes.');

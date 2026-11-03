@@ -93,7 +93,7 @@ export class MembersService {
       const { membershipId, token } = await this.createInvitation(tx, input);
       return { member: await this.load(tx, membershipId), token };
     });
-    return { member: result.member, ...this.inviteResult(result.token) };
+    return { member: result.member, ...(await this.inviteResult(result.token)) };
   }
 
   /**
@@ -152,10 +152,10 @@ export class MembersService {
   }
 
   /** Outside staging/production the link is also returned so the flow can be tested without a mail server. */
-  private inviteResult(token: string) {
+  private async inviteResult(token: string) {
     const inviteUrl = `${this.config.WEB_PUBLIC_URL}/accept-invite?token=${token}`;
     if (!this.config.isProductionLike) this.logger.log(`Invitation link: ${inviteUrl}`);
-    return { inviteUrl: this.config.isProductionLike ? undefined : inviteUrl, delivery: this.mailer.configured ? ('email_queued' as const) : ('email_not_configured' as const) };
+    return { inviteUrl: this.config.isProductionLike ? undefined : inviteUrl, delivery: (await this.mailer.isConfigured()) ? ('email_queued' as const) : ('email_not_configured' as const) };
   }
 
   async update(id: string, input: z.infer<typeof updateMemberRequest>) {

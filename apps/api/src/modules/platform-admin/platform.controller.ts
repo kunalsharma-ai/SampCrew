@@ -1,8 +1,11 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
   email,
   featureSwitchUpdate,
+  integrationTestExtras,
+  PLATFORM_INTEGRATION_KEYS,
+  type PlatformIntegrationKey,
   memberAccessQuery,
   memberFeatureUpdate,
   permissionSwitchUpdate,
@@ -26,6 +29,12 @@ import { Doc } from '../../platform/openapi/openapi';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformService } from './platform.service';
 import { AccessControlsService } from './access-controls.service';
+import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
+
+const integrationKey = z.enum(PLATFORM_INTEGRATION_KEYS);
+/** The values are checked per integration by PlatformIntegrationsService (each has its own schema). */
+const integrationValues = z.record(z.string(), z.unknown());
+const integrationTest = integrationTestExtras.extend({ values: integrationValues });
 
 const tenantsQuery = paginationQuery.extend({ status: z.enum(['active', 'suspended', 'closed']).optional() });
 const subscriptionOverride = z
@@ -230,5 +239,46 @@ export class PlatformController {
   @Doc({ summary: 'Create a platform admin (they must enrol MFA at first sign-in)', body: createAdmin })
   createAdmin(@Body(new ZodPipe(createAdmin)) body: z.infer<typeof createAdmin>) {
     return this.platform.createAdmin(body);
+  }
+}
+
+/**
+ * Installation-wide integrations (Claude AI, email, mobile push, virus scanning, mobile sign-in addresses), set up in
+ * the Console instead of the server's environment file. Everyone who can see System health can see them (secrets are
+ * never returned); only Super admins can change or test them.
+ */
+@Controller('platform/integrations')
+export class PlatformIntegrationsController {
+  constructor(private readonly integrations: PlatformIntegrationsService) {}
+
+  @PlatformRealm('health:read')
+  @Get()
+  @Doc({ summary: 'Installation-wide integrations: what is in effect, where it comes from (Console or environment) and the last connection test. Secrets show their last characters only.' })
+  list() {
+    return this.integrations.list();
+  }
+
+  @PlatformRealm('integrations:manage')
+  @Put(':key')
+  @Doc({ summary: 'Save an integration in the Console (it then wins over the environment). Secret fields left empty keep the secret in effect; null removes it.', body: integrationValues })
+  save(@Param('key', new ZodPipe(integrationKey)) key: PlatformIntegrationKey, @Body(new ZodPipe(integrationValues)) body: Record<string, unknown>) {
+    return this.integrations.save(key, body);
+  }
+
+  @PlatformRealm('integrations:manage')
+  @Post(':key/test')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Doc({ summary: 'Test the values on screen against the real service without saving them (email can send a test message, push can alert one device)', body: integrationTest })
+  test(@Param('key', new ZodPipe(integrationKey)) key: PlatformIntegrationKey, @Body(new ZodPipe(integrationTest)) body: z.infer<typeof integrationTest>) {
+    const { values, ...extras } = body;
+    return this.integrations.test(key, values, extras);
+  }
+
+  @PlatformRealm('integrations:manage')
+  @Delete(':key')
+  @Doc({ summary: 'Forget the Console setting so the server\'s environment variables apply again' })
+  reset(@Param('key', new ZodPipe(integrationKey)) key: PlatformIntegrationKey) {
+    return this.integrations.reset(key);
   }
 }

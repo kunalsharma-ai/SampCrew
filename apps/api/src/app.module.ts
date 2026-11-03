@@ -43,7 +43,7 @@ import {
   OrganizationController,
 } from './modules/organization/organization.controller';
 import { OrganizationService } from './modules/organization/organization.service';
-import { PlatformAuthController, PlatformController } from './modules/platform-admin/platform.controller';
+import { PlatformAuthController, PlatformController, PlatformIntegrationsController } from './modules/platform-admin/platform.controller';
 import { PlatformAuthService } from './modules/platform-admin/platform-auth.service';
 import { PlatformService } from './modules/platform-admin/platform.service';
 import { AccessControlsService } from './modules/platform-admin/access-controls.service';
@@ -108,6 +108,7 @@ import { OutboxService } from './platform/events/outbox.service';
 import { contextMiddleware } from './platform/http/context.middleware';
 import { ErrorEnvelopeFilter } from './platform/http/exception.filter';
 import { IdempotencyInterceptor } from './platform/http/idempotency.interceptor';
+import { PlatformIntegrationsService } from './platform/integrations/platform-integrations.service';
 import { MailerService } from './platform/notify/mailer.service';
 import { NotificationService } from './platform/notify/notification.service';
 import { PushService } from './platform/notify/push.service';
@@ -172,6 +173,7 @@ export const CONTROLLERS = [
   InsightsController,
   PlatformAuthController,
   PlatformController,
+  PlatformIntegrationsController,
 ];
 
 @Module({
@@ -205,6 +207,7 @@ export const CONTROLLERS = [
     PlatformService,
     AccessControlsService,
     NotificationService,
+    PlatformIntegrationsService,
     MailerService,
     StorageService,
     ApprovalsService,

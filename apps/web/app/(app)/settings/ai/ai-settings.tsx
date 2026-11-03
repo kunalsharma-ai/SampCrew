@@ -19,11 +19,11 @@ export function AiSettingsForm({ settings, usage }: { settings: AiSettings; usag
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
       {settings.configured ? (
         <Alert tone="info" title={`AI provider: ${settings.provider === 'anthropic' ? 'Anthropic Claude API' : settings.provider} (${settings.model})`}>
-          Set up for this CREW installation by its operator. Personal identifiers such as email addresses, phone numbers, bank and national ID numbers are removed from everything sent. Pay, bank, tax and health fields are never included.
+          Connected for every workspace by SAMPLEDGE. Personal identifiers such as email addresses, phone numbers, bank and national ID numbers are removed from everything sent. Pay, bank, tax and health fields are never included.
         </Alert>
       ) : (
         <Alert tone="warning" title="AI is not set up for this CREW installation">
-          No AI provider is configured, so no AI feature works and no data is sent to any AI service. The switches below are kept for when it is.
+          SAMPLEDGE has not connected an AI provider yet, so no AI feature works and no data is sent to any AI service. The switches below are kept for when it is.
         </Alert>
       )}
       <div className="grid gap-4 sm:grid-cols-3">

@@ -8,6 +8,7 @@ import { RequireFeature, RequirePermission } from '../../platform/authz/decorato
 import { DatabaseService, one } from '../../platform/database/database.service';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
 import { ApiKeysService } from './api-keys.service';
 import { ConnectionsService } from './connections.service';
 import { WebhooksService } from './webhooks.service';
@@ -23,10 +24,11 @@ export class IntegrationsController {
     private readonly webhooks: WebhooksService,
     private readonly connections: ConnectionsService,
     private readonly db: DatabaseService,
+    private readonly platform: PlatformIntegrationsService,
   ) {}
 
   @Get('catalogue')
-  @Doc({ summary: 'Connectors (available and planned), webhook events, API key scopes and how many of each this workspace has' })
+  @Doc({ summary: 'Connectors (available and planned), webhook events, API key scopes, how many of each this workspace has, and which installation-wide services are on' })
   async catalogue() {
     const counts = await this.db.tenant((tx) =>
       one<{ keys: number; endpoints: number; slack: number }>(
@@ -42,6 +44,8 @@ export class IntegrationsController {
       events: WEBHOOK_EVENTS,
       scopes: API_KEY_SCOPES.map((s) => ({ key: s, description: perm.get(s) ?? s })),
       retry: { maxAttempts: WEBHOOK_MAX_ATTEMPTS, delaysSeconds: WEBHOOK_RETRY_DELAYS_S, toleranceSeconds: WEBHOOK_TOLERANCE_S },
+      // Installation-wide services SAMPLEDGE sets up for every workspace: on or off only, never their settings.
+      platformServices: await this.platform.workspaceStatus(),
     };
   }
 
