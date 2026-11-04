@@ -1,7 +1,7 @@
 import { Controller, Get, Injectable } from '@nestjs/common';
 import { zonedTime } from '@crew/contracts';
 import { AuthzService } from '../../platform/authz/authz.service';
-import { grantsFor, type Subject } from '../../platform/authz/policy';
+import { grantsFor, hasPermission, type Subject } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
@@ -49,7 +49,8 @@ export class DashboardService {
         people: people ? await this.people(tx, today) : null,
         probation: people ? await this.probation(tx, today) : [],
         hiring: features.has('recruitment') && wide(s, 'requisitions:read') ? await this.hiring(tx) : null,
-        payroll: features.has('payroll') && wide(s, 'payroll:read') ? await this.payroll(tx, wide(s, 'payroll:run')) : null,
+        // Payroll figures need two-step verification, as on the payroll pages.
+        payroll: features.has('payroll') && wide(s, 'payroll:read') && hasPermission(s, 'payroll:read').allowed ? await this.payroll(tx, wide(s, 'payroll:run')) : null,
         interviews: features.has('recruitment') ? await this.interviews(tx, actor.membershipId) : [],
       };
     });

@@ -6,7 +6,7 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-accent text-accent-fg hover:bg-accent-hover shadow-card',
+  primary: 'crew-btn-primary bg-accent text-accent-fg hover:bg-accent-hover shadow-card',
   secondary: 'bg-surface text-fg border border-border hover:bg-bg-subtle hover:border-border-strong shadow-card',
   ghost: 'text-fg-muted hover:text-fg hover:bg-bg-subtle',
   // Text in the surface colour: white on the light theme's red, dark on the dark theme's lighter red (AA in both).

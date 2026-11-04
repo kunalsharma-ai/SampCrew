@@ -115,6 +115,7 @@ jobs:
           pnpm e2e:payroll
           pnpm e2e:mobile
           pnpm e2e:experience
+          pnpm e2e:neon
           pnpm e2e:recruitment
           pnpm e2e:ats
           pnpm e2e:iq

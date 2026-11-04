@@ -2,6 +2,7 @@ import { Alert, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ApiError, api, load } from '@/lib/api';
+import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
 import type { AttendanceMonth, AttendanceToday, Me } from '@/lib/types';
 import { MonthView, TodayCard } from './attendance-view';
@@ -41,6 +42,13 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         description={own ? 'Punch in and out, see how each day was counted, and ask for corrections.' : `${data.employee.code}. Times are shown in ${data.employee.timeZone}.`}
         actions={can(me, 'attendance:approve') && <Link className="text-sm font-medium text-accent hover:underline" href="/attendance/team">Team attendance</Link>}
       />
+      {own && <ModuleOverview module="attendance" actions={allowed(me, [
+        { label: 'Team attendance', href: '/attendance/team', icon: 'users-round', permission: 'attendance:approve' },
+        { label: 'Missing punches', href: '/attendance/team?status=missing_punch', icon: 'clock', permission: 'attendance:approve' },
+        { label: 'Shifts', href: '/shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
+        { label: 'Attendance settings', href: '/settings/attendance', icon: 'timer', permission: 'attendance:configure' },
+        { label: 'Devices', href: '/settings/devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
+      ])} />}
       <div className="grid gap-6">
         {today && <TodayCard today={today} />}
         <MonthView data={data} month={month} own={own} canClaimFor={!own && can(me, 'attendance:correct')} />

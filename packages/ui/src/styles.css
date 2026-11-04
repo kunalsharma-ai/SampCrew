@@ -275,3 +275,210 @@
   from { background-position: 0% 0%; }
   to { background-position: 100% 60%; }
 }
+
+/* ===============================================================================================================
+ * Neon style (data-style="neon", the default): the glass and gradient design. Shape and light only; colours still
+ * come from the member's theme, so every preset, mode and contrast setting keeps working. Classic turns it off.
+ * These rules are unlayered on purpose so they win over the default utility classes they restyle.
+ * =============================================================================================================== */
+
+:root {
+  /* Captured at the root so parts that re-tint their own tokens (the dark sidebar) still see the theme's brand. */
+  --brand-1: var(--accent);
+  --brand-2: var(--ember);
+  --brand-fg: var(--accent-fg);
+  --neon-gradient: linear-gradient(120deg, var(--brand-1), color-mix(in srgb, var(--brand-1) 55%, var(--brand-2)));
+}
+
+/* Cards: frosted glass with a soft brand-tinted shadow. background-color only, so cards with art keep it. */
+:root[data-style="neon"] .crew-card {
+  background-color: color-mix(in srgb, var(--surface) 88%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+  border-color: color-mix(in srgb, var(--accent) 14%, var(--border));
+  border-radius: var(--radius-xl);
+  box-shadow: 0 18px 40px -24px color-mix(in srgb, var(--glow-1) 45%, transparent), 0 1px 2px rgb(16 24 40 / 0.05);
+}
+:root[data-style="neon"][data-contrast="high"] .crew-card, :root[data-style="neon"][data-focus="on"] .crew-card {
+  background-color: var(--surface);
+  backdrop-filter: none;
+  border-color: var(--border-strong);
+}
+
+/* Primary buttons: brand gradient with a glow. accent-fg on accent is checked at 4.5:1; the gradient's far end is a
+   mix of accent and the secondary colour, both kept legible against that text colour by the theme builder. */
+:root[data-style="neon"] .crew-btn-primary {
+  background-image: var(--neon-gradient);
+  box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--brand-1) 70%, transparent);
+  border-radius: calc(var(--radius-md) * 1.4);
+}
+:root[data-style="neon"] .crew-btn-primary:hover { filter: brightness(1.06); }
+
+:root[data-style="neon"] .crew-page-title { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+
+/* Sidebar: always a deep night panel, whatever the mode, with light text tokens re-declared inside it. */
+:root[data-style="neon"] .crew-sidebar {
+  color-scheme: dark;
+  --fg: #f6f3ff;
+  --fg-muted: #d9d2fb;
+  --fg-subtle: #b3abdf;
+  --border: rgb(255 255 255 / 0.12);
+  --border-strong: rgb(255 255 255 / 0.22);
+  --bg-subtle: rgb(255 255 255 / 0.08);
+  --surface: #1c1440;
+  --surface-raised: #241a52;
+  --accent-subtle: rgb(255 255 255 / 0.12);
+  --success: #4ade80;
+  --warning: #fbbf24;
+  /* Utilities read the --color-* aliases, which resolve at the root, so the aliases are re-pointed here too. */
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  background:
+    radial-gradient(18rem 14rem at 0% 0%, color-mix(in srgb, var(--glow-1) 40%, transparent), transparent 70%),
+    radial-gradient(16rem 16rem at 100% 100%, color-mix(in srgb, var(--glow-2) 32%, transparent), transparent 70%),
+    linear-gradient(180deg, #1a1240, #110b2b);
+  border-color: transparent;
+  color: var(--fg);
+  backdrop-filter: none;
+}
+:root[data-style="neon"] .crew-sidebar .crew-nav-link[aria-current="page"] {
+  background-image: var(--neon-gradient);
+  background-color: var(--brand-1);
+  color: var(--brand-fg);
+  font-weight: 600;
+  box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--brand-1) 85%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+:root[data-style="neon"] .crew-sidebar .crew-nav-link[aria-current="page"] .crew-nav-bar { display: none; }
+:root[data-style="neon"] .crew-sidebar .crew-nav-link { border-radius: 0.8rem; padding-top: 0.45rem; padding-bottom: 0.45rem; }
+.crew-upgrade { display: none; }
+:root[data-style="neon"] .crew-upgrade { display: block; }
+
+/* Top bar: no rule under it; the search field becomes a pill. */
+:root[data-style="neon"] .crew-topbar { border-color: transparent; background: color-mix(in srgb, var(--bg) 55%, transparent); }
+:root[data-style="neon"] .crew-search { border-radius: 999px; height: 2.5rem; }
+:root[data-style="neon"] .crew-ai-button {
+  background-image: var(--neon-gradient);
+  background-color: var(--brand-1);
+  color: var(--brand-fg);
+  border-color: transparent;
+  border-radius: 999px;
+  box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--brand-1) 80%, transparent);
+}
+:root[data-style="neon"] .crew-ai-button svg { color: inherit; }
+
+/* KPI tiles. Neon: a saturated gradient per tone, every stop chosen for 4.5:1 or more against white text. Classic:
+   a plain card with a tinted icon. */
+.crew-tile { position: relative; overflow: hidden; border-radius: var(--radius-xl); }
+.crew-tile-violet { --tile-1: #6d28d9; --tile-2: #a21caf; }
+.crew-tile-teal { --tile-1: #0f766e; --tile-2: #0e7490; }
+.crew-tile-orange { --tile-1: #c2410c; --tile-2: #b45309; }
+.crew-tile-blue { --tile-1: #1d4ed8; --tile-2: #0369a1; }
+.crew-tile-pink { --tile-1: #be185d; --tile-2: #9d174d; }
+.crew-tile-green { --tile-1: #15803d; --tile-2: #047857; }
+:root[data-style="neon"] .crew-tile {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--tile-1), var(--tile-2));
+  box-shadow: 0 18px 36px -18px var(--tile-1), inset 0 1px 0 rgb(255 255 255 / 0.2);
+}
+:root[data-style="neon"] .crew-tile::after {
+  content: "";
+  position: absolute;
+  right: -2.5rem;
+  top: -2.5rem;
+  width: 8rem;
+  height: 8rem;
+  border-radius: 999px;
+  border: 1.25rem solid rgb(255 255 255 / 0.08);
+  pointer-events: none;
+}
+:root[data-style="neon"] .crew-tile .crew-tile-icon { background: rgb(255 255 255 / 0.18); color: #ffffff; }
+:root[data-style="neon"] .crew-tile .crew-tile-muted { color: rgb(255 255 255 / 0.9); }
+:root[data-style="neon"] .crew-tile .crew-tile-chip { background: rgb(0 0 0 / 0.22); color: #ffffff; }
+:root:not([data-style="neon"]) .crew-tile { background: var(--surface); color: var(--fg); border: 1px solid var(--border); box-shadow: var(--shadow-card); }
+:root:not([data-style="neon"]) .crew-tile .crew-tile-icon { background: color-mix(in srgb, var(--tile-1) 12%, var(--surface)); color: var(--tile-1); }
+:root:not([data-style="neon"]) .crew-tile .crew-tile-muted { color: var(--fg-muted); }
+:root:not([data-style="neon"]) .crew-tile .crew-tile-chip { background: var(--bg-subtle); color: var(--fg-muted); }
+:root[data-contrast="high"] .crew-tile::after { display: none; }
+
+/* Quick action bar under module overviews. */
+:root[data-style="neon"] .crew-quickbar { border-radius: 999px; }
+
+/* Backdrops behind the app. All are built on the theme's own background colour, so text that sits directly on the
+   page (titles, descriptions) keeps the contrast the theme builder checked. */
+:root[data-style="neon"] .crew-ambient {
+  background:
+    radial-gradient(55rem 30rem at 10% -5%, color-mix(in srgb, var(--glow-1) 22%, transparent), transparent 70%),
+    radial-gradient(45rem 30rem at 95% 0%, color-mix(in srgb, var(--glow-3) 18%, transparent), transparent 70%),
+    radial-gradient(40rem 28rem at 70% 105%, color-mix(in srgb, var(--glow-2) 16%, transparent), transparent 70%),
+    var(--bg);
+}
+/* Aurora: layered mountain ridges across the top, drawn in the theme's glow colours and faded out downwards. */
+:root[data-style="neon"][data-backdrop="aurora"] .crew-ambient::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 26rem;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--glow-1) 55%, transparent), color-mix(in srgb, var(--glow-3) 45%, transparent));
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 420' preserveAspectRatio='none'%3E%3Cpath fill='%23000' fill-opacity='.35' d='M0 300 L120 210 L210 260 L330 150 L450 250 L560 170 L640 210 L760 90 L880 220 L990 160 L1100 240 L1210 130 L1330 230 L1440 180 V420 H0Z'/%3E%3Cpath fill='%23000' fill-opacity='.6' d='M0 360 L150 280 L260 330 L380 240 L500 320 L620 250 L740 300 L860 200 L980 300 L1090 250 L1210 320 L1330 260 L1440 300 V420 H0Z'/%3E%3C/svg%3E") bottom / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 420' preserveAspectRatio='none'%3E%3Cpath fill='%23000' fill-opacity='.35' d='M0 300 L120 210 L210 260 L330 150 L450 250 L560 170 L640 210 L760 90 L880 220 L990 160 L1100 240 L1210 130 L1330 230 L1440 180 V420 H0Z'/%3E%3Cpath fill='%23000' fill-opacity='.6' d='M0 360 L150 280 L260 330 L380 240 L500 320 L620 250 L740 300 L860 200 L980 300 L1090 250 L1210 320 L1330 260 L1440 300 V420 H0Z'/%3E%3C/svg%3E") bottom / 100% 100% no-repeat;
+  opacity: 0.32;
+  pointer-events: none;
+}
+:root[data-style="neon"][data-backdrop="aurora"] .crew-ambient::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 30rem;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--glow-1) 14%, transparent), transparent);
+  pointer-events: none;
+}
+/* Cosmos: a field of small stars and two deep glows. */
+:root[data-style="neon"][data-backdrop="cosmos"] .crew-ambient {
+  background:
+    radial-gradient(1px 1px at 12% 18%, color-mix(in srgb, var(--fg) 45%, transparent) 50%, transparent 51%),
+    radial-gradient(1px 1px at 68% 8%, color-mix(in srgb, var(--fg) 40%, transparent) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 84% 32%, color-mix(in srgb, var(--fg) 35%, transparent) 50%, transparent 51%),
+    radial-gradient(1px 1px at 35% 62%, color-mix(in srgb, var(--fg) 35%, transparent) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 52% 40%, color-mix(in srgb, var(--fg) 30%, transparent) 50%, transparent 51%),
+    radial-gradient(1px 1px at 92% 74%, color-mix(in srgb, var(--fg) 35%, transparent) 50%, transparent 51%),
+    radial-gradient(1px 1px at 22% 88%, color-mix(in srgb, var(--fg) 30%, transparent) 50%, transparent 51%),
+    radial-gradient(50rem 32rem at 15% 0%, color-mix(in srgb, var(--glow-1) 26%, transparent), transparent 70%),
+    radial-gradient(40rem 30rem at 100% 100%, color-mix(in srgb, var(--glow-2) 22%, transparent), transparent 70%),
+    var(--bg);
+  background-size: 420px 420px, 420px 420px, 420px 420px, 420px 420px, 420px 420px, 420px 420px, 420px 420px, auto, auto, auto;
+}
+/* Gradient: a stronger colour wash from all three theme colours. */
+:root[data-style="neon"][data-backdrop="gradient"] .crew-ambient {
+  background:
+    radial-gradient(60rem 40rem at 0% 0%, color-mix(in srgb, var(--glow-1) 32%, transparent), transparent 65%),
+    radial-gradient(55rem 40rem at 100% 10%, color-mix(in srgb, var(--glow-3) 28%, transparent), transparent 65%),
+    radial-gradient(55rem 40rem at 50% 110%, color-mix(in srgb, var(--glow-2) 28%, transparent), transparent 65%),
+    var(--bg);
+}
+:root[data-style="neon"][data-backdrop="plain"] .crew-ambient,
+:root[data-style="neon"][data-contrast="high"] .crew-ambient,
+:root[data-style="neon"][data-focus="on"] .crew-ambient { background: var(--bg); }
+:root[data-backdrop="plain"] .crew-ambient::before, :root[data-backdrop="plain"] .crew-ambient::after,
+:root[data-contrast="high"] .crew-ambient::before, :root[data-contrast="high"] .crew-ambient::after,
+:root[data-focus="on"] .crew-ambient::before, :root[data-focus="on"] .crew-ambient::after { display: none; }
+
+/* Home greeting: a glass hero with a soft brand glow. */
+:root[data-style="neon"] .crew-hero-title { font-size: clamp(1.6rem, 2.6vw, 2.2rem); font-weight: 800; letter-spacing: -0.02em; }
+
+/* The AI assistant card on Home: always a dark violet panel with light text (checked at 7:1). */
+.crew-ai-card {
+  color: #f6f3ff;
+  background:
+    radial-gradient(16rem 12rem at 100% 0%, color-mix(in srgb, var(--glow-3) 45%, transparent), transparent 70%),
+    radial-gradient(14rem 12rem at 0% 100%, color-mix(in srgb, var(--glow-1) 50%, transparent), transparent 70%),
+    linear-gradient(135deg, #2a1a66, #160f3a);
+}

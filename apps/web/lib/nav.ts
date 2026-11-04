@@ -110,6 +110,7 @@ export const NAV: NavGroup[] = [
   {
     label: 'Analytics & AI',
     items: [
+      { href: '/insights', label: 'HR analytics', icon: 'chart', permission: 'employees:read', beyondOwn: true },
       { href: '/insights/universe', label: 'Workforce Universe', icon: 'orbit', permission: 'employees:read', beyondOwn: true, feature: 'workforce_universe' },
       { href: '/insights/attrition', label: 'Attrition risk', icon: 'trending-down', permission: 'insights:attrition', feature: 'workforce_analytics' },
       { href: '/automation', label: 'Automation Studio', icon: 'workflow', permission: 'automation:manage', feature: 'automation' },

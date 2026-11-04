@@ -1,6 +1,7 @@
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load, loadOptional } from '@/lib/api';
+import { allowed, ModuleOverview } from '@/components/module-overview';
 import type { Department, LegalEntity, Location, Me, RecruitPerson, Requisition } from '@/lib/types';
 import { JobsView } from './jobs-view';
 
@@ -22,6 +23,13 @@ export default async function RecruitmentPage({ searchParams }: { searchParams: 
   return (
     <>
       <PageHeader title="Recruitment" description="Job requisitions, from approval to hire. Open a job to manage its posting and pipeline." />
+      <ModuleOverview module="recruitment" actions={allowed(me, [
+        { label: 'Create job', href: '/recruitment?create=requisition', icon: 'briefcase', permission: 'requisitions:create' },
+        { label: 'Candidates', href: '/recruitment/candidates', icon: 'user-search', permission: 'candidates:read' },
+        { label: 'Interviews', href: '/recruitment/interviews', icon: 'message-square', permission: 'interviews:feedback' },
+        { label: 'Offers', href: '/recruitment/offers', icon: 'handshake', permission: 'offers:manage' },
+        { label: 'Recruitment settings', href: '/settings/recruitment', icon: 'sliders', permission: 'recruitment:configure' },
+      ])} />
       <JobsView
         reqs={reqs}
         filter={{ status: status ?? '', scope: scope === 'mine' ? 'mine' : 'all' }}

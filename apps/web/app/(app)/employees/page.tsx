@@ -3,6 +3,7 @@ import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { load, loadOptional } from '@/lib/api';
+import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
 import type { Department, Designation, Employee, LegalEntity, Location, Me, OnboardingTemplate, Page } from '@/lib/types';
 import type { Structure } from '../payroll/types';
@@ -63,6 +64,13 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader title="Employees" description={`Employee records with job history, leave and documents. Showing: ${note}`} />
+      <ModuleOverview module="employees" actions={allowed(me, [
+        { label: 'Add employee', href: '/employees?create=employee', icon: 'user-plus', permission: 'employees:create' },
+        { label: 'Structure', href: '/organization', icon: 'building', permission: 'org:read' },
+        { label: 'Onboarding checklists', href: '/settings/onboarding', icon: 'list-checks', permission: 'employees:create' },
+        { label: 'Logins & access', href: '/people', icon: 'users', permission: 'users:read' },
+        { label: 'Workforce Universe', href: '/insights/universe', icon: 'orbit', permission: 'employees:read', feature: 'workforce_universe' },
+      ])} />
       <EmployeesView
         page={page}
         state={state}
