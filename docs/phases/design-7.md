@@ -103,6 +103,12 @@ preset, mode, contrast setting and the Classic look keep working.
   - The panel previews a look, and closing it puts the saved look back.
   - A background, colour and template are applied, persist after a reload, and Classic really turns the neon look off.
   - An employee gets no workspace overview.
+- Fixes found by the full browser run:
+  - Glass cards broke drag and drop on the recruitment pipeline in Chromium. Cards that hold draggable items are now
+    solid.
+  - The attendance overview failed when someone had punched in (punch times arrive as dates, not text).
+  - KPI tiles are named label first ("Pending approvals 3"), so screen readers and tests read the label before the
+    number.
 - `e2e/a11y.cjs` now also checks Employees, HR analytics, Reviews and Learning (with overviews) for an HR user.
 
 ## Not yet

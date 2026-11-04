@@ -233,7 +233,9 @@ function KpiCard({ k, tone }: { k: Kpi; tone: (typeof TONES)[number] }) {
     </>
   );
   const cls = cn('crew-tile group block p-4 transition-transform duration-150', `crew-tile-${tone}`, k.href && 'hover:-translate-y-0.5');
-  return k.href ? <Link href={k.href} className={cls} title={k.hint}>{inner}</Link> : <div className={cls}>{inner}</div>;
+  // Label first for screen readers ("Pending approvals 3, waiting for you"), whatever the visual order.
+  const name = `${k.label} ${formatKpi(k, k.value ?? 0)}${k.hint ? `, ${k.hint}` : ''}`;
+  return k.href ? <Link href={k.href} className={cls} title={k.hint} aria-label={name}>{inner}</Link> : <div className={cls} role="group" aria-label={name}>{inner}</div>;
 }
 
 function KpiStrip({ kpis }: { kpis: Kpi[] }) {

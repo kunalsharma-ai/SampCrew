@@ -27,7 +27,6 @@ export default async function RecruitmentPage({ searchParams }: { searchParams: 
         { label: 'Create job', href: '/recruitment?create=requisition', icon: 'briefcase', permission: 'requisitions:create' },
         { label: 'Candidates', href: '/recruitment/candidates', icon: 'user-search', permission: 'candidates:read' },
         { label: 'Interviews', href: '/recruitment/interviews', icon: 'message-square', permission: 'interviews:feedback' },
-        { label: 'Offers', href: '/recruitment/offers', icon: 'handshake', permission: 'offers:manage' },
         { label: 'Recruitment settings', href: '/settings/recruitment', icon: 'sliders', permission: 'recruitment:configure' },
       ])} />
       <JobsView

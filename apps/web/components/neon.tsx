@@ -55,7 +55,9 @@ export function KpiTile({ tile }: { tile: OverviewTile }) {
     </>
   );
   const cls = cn('crew-tile block p-4 transition-transform duration-150', `crew-tile-${tile.tone}`, tile.href && 'hover:-translate-y-0.5 focus-visible:-translate-y-0.5');
-  return tile.href ? <Link href={tile.href} className={cls}>{body}</Link> : <div className={cls}>{body}</div>;
+  // Label first for screen readers ("Present 12, 3 not in yet"), whatever the visual order.
+  const name = `${tile.label} ${formatValue(tile.value, tile.unit, tile.currency, false)}${tile.hint ? `, ${tile.hint}` : ''}${deltaText ? `, change ${deltaText}` : ''}`;
+  return tile.href ? <Link href={tile.href} className={cls} aria-label={name}>{body}</Link> : <div className={cls} role="group" aria-label={name}>{body}</div>;
 }
 
 export function KpiRow({ tiles }: { tiles: OverviewTile[] }) {

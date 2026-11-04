@@ -257,7 +257,7 @@ export class OverviewService {
       { key: 'applications', label: 'Applications', value: t.active, delta: t.week, hint: 'new in 7 days', tone: 'blue', icon: 'file-text', href: '/recruitment/candidates' },
       { key: 'screening', label: 'In screening', value: t.screening, tone: 'pink', icon: 'user-search', href: '/recruitment/candidates' },
       { key: 'interviews', label: 'Interviews', value: t.interviews, hint: 'Next 14 days', tone: 'orange', icon: 'message-square', href: '/recruitment/interviews' },
-      { key: 'offers', label: 'Offers', value: t.offers, hint: 'Open offers', tone: 'green', icon: 'handshake', href: '/recruitment/offers' },
+      { key: 'offers', label: 'Offers', value: t.offers, hint: 'Open offers', tone: 'green', icon: 'handshake', href: '/recruitment/candidates' },
     ], [
       { kind: 'bar', key: 'pipeline', title: 'Candidate pipeline', points: funnel.map((f) => ({ label: f.stage, value: f.count })), caption: 'Active applications by stage' },
       { kind: 'line', key: 'applications', title: 'Applications per week', points: weeks.map((w) => ({ label: w.wk, value: w.count })) },
@@ -283,7 +283,10 @@ export class OverviewService {
     const total = sum.total ?? 0;
     const offToday = (sum.holiday ?? 0) + (sum.weekly_off ?? 0) + (sum.not_joined ?? 0);
     const onLeave = (sum.on_leave ?? 0);
-    const rows = team.rows as unknown as { employeeName: string; firstIn: string | null; department: string | null; status: string; lateMinutes: number }[];
+    // Punch times arrive as Date objects from the driver; keep them as ISO strings for sorting and the response.
+    const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : typeof v === 'string' ? v : null);
+    const rows = (team.rows as unknown as { employeeName: string; firstIn: unknown; department: string | null; status: string; lateMinutes: number }[])
+      .map((r) => ({ ...r, firstIn: iso(r.firstIn) }));
     // A day "in progress" only counts as present once the person has punched in.
     const notInYet = rows.filter((r) => r.status === 'in_progress' && !r.firstIn).length;
     const present = (sum.present ?? 0) + (sum.half_day ?? 0) + (sum.half_day_leave ?? 0) + (sum.in_progress ?? 0) - notInYet;
