@@ -104,11 +104,11 @@ preset, mode, contrast setting and the Classic look keep working.
   - A background, colour and template are applied, persist after a reload, and Classic really turns the neon look off.
   - An employee gets no workspace overview.
 - Fixes found by the full browser run:
-  - Glass cards broke drag and drop on the recruitment pipeline in Chromium. Cards that hold draggable items are now
-    solid.
+  - The roomier cards push the recruitment pipeline lower on the page, so the drag test now scrolls the board into
+    view before dragging (a drag that has to scroll the page never lands, for a person or a test).
   - The attendance overview failed when someone had punched in (punch times arrive as dates, not text).
-  - KPI tiles are named label first ("Pending approvals 3"), so screen readers and tests read the label before the
-    number.
+  - KPI tiles put the label before the number in the page, and only show the number on top, so screen readers
+    read "Pending approvals 3" and the visible text matches the link name.
 - `e2e/a11y.cjs` now also checks Employees, HR analytics, Reviews and Learning (with overviews) for an HR user.
 
 ## Not yet

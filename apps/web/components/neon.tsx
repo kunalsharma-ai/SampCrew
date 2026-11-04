@@ -39,9 +39,9 @@ export function KpiTile({ tile }: { tile: OverviewTile }) {
     <>
       <div className="relative flex items-start gap-3">
         <span className="crew-tile-icon flex size-10 shrink-0 items-center justify-center rounded-xl"><Icon className="size-5" aria-hidden /></span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[1.6rem] font-bold leading-tight tabular-nums" data-testid={`tile-${tile.key}`}>{formatValue(tile.value, tile.unit, tile.currency)}</div>
+        <div className="flex min-w-0 flex-1 flex-col-reverse">
           <div className="crew-tile-muted truncate text-[0.8125rem] font-medium">{tile.label}</div>
+          <div className="text-[1.6rem] font-bold leading-tight tabular-nums" data-testid={`tile-${tile.key}`}>{formatValue(tile.value, tile.unit, tile.currency)}</div>
         </div>
       </div>
       <div className="relative mt-2 flex min-h-5 items-center justify-between gap-2 text-[0.6875rem]">
@@ -55,9 +55,7 @@ export function KpiTile({ tile }: { tile: OverviewTile }) {
     </>
   );
   const cls = cn('crew-tile block p-4 transition-transform duration-150', `crew-tile-${tile.tone}`, tile.href && 'hover:-translate-y-0.5 focus-visible:-translate-y-0.5');
-  // Label first for screen readers ("Present 12, 3 not in yet"), whatever the visual order.
-  const name = `${tile.label} ${formatValue(tile.value, tile.unit, tile.currency, false)}${tile.hint ? `, ${tile.hint}` : ''}${deltaText ? `, change ${deltaText}` : ''}`;
-  return tile.href ? <Link href={tile.href} className={cls} aria-label={name}>{body}</Link> : <div className={cls} role="group" aria-label={name}>{body}</div>;
+  return tile.href ? <Link href={tile.href} className={cls}>{body}</Link> : <div className={cls} role="group">{body}</div>;
 }
 
 export function KpiRow({ tiles }: { tiles: OverviewTile[] }) {

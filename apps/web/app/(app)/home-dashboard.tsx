@@ -217,9 +217,9 @@ function KpiCard({ k, tone }: { k: Kpi; tone: (typeof TONES)[number] }) {
     <>
       <div className="relative flex items-start gap-3">
         <span className="crew-tile-icon flex size-10 shrink-0 items-center justify-center rounded-xl"><Icon className="size-5" aria-hidden /></span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[1.6rem] font-bold leading-tight tabular">{formatKpi(k, v)}</div>
+        <div className="flex min-w-0 flex-1 flex-col-reverse">
           <div className="crew-tile-muted truncate text-[0.8125rem] font-medium">{k.label}</div>
+          <div className="text-[1.6rem] font-bold leading-tight tabular">{formatKpi(k, v)}</div>
         </div>
       </div>
       <div className="relative mt-2 flex min-h-5 items-center justify-between gap-2 text-[0.6875rem]">
@@ -233,9 +233,7 @@ function KpiCard({ k, tone }: { k: Kpi; tone: (typeof TONES)[number] }) {
     </>
   );
   const cls = cn('crew-tile group block p-4 transition-transform duration-150', `crew-tile-${tone}`, k.href && 'hover:-translate-y-0.5');
-  // Label first for screen readers ("Pending approvals 3, waiting for you"), whatever the visual order.
-  const name = `${k.label} ${formatKpi(k, k.value ?? 0)}${k.hint ? `, ${k.hint}` : ''}`;
-  return k.href ? <Link href={k.href} className={cls} title={k.hint} aria-label={name}>{inner}</Link> : <div className={cls} role="group" aria-label={name}>{inner}</div>;
+  return k.href ? <Link href={k.href} className={cls} title={k.hint}>{inner}</Link> : <div className={cls} role="group">{inner}</div>;
 }
 
 function KpiStrip({ kpis }: { kpis: Kpi[] }) {

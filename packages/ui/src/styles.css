@@ -299,12 +299,6 @@
   border-radius: var(--radius-xl);
   box-shadow: 0 18px 40px -24px color-mix(in srgb, var(--glow-1) 45%, transparent), 0 1px 2px rgb(16 24 40 / 0.05);
 }
-/* Chromium does not start an HTML5 drag from inside a backdrop-filter layer, so boards with draggable cards stay solid. */
-:root[data-style="neon"] .crew-card:has([draggable="true"]) {
-  background-color: var(--surface);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
 :root[data-style="neon"][data-contrast="high"] .crew-card, :root[data-style="neon"][data-focus="on"] .crew-card {
   background-color: var(--surface);
   backdrop-filter: none;
