@@ -1,0 +1,74 @@
+import { Injectable } from '@nestjs/common';
+import { FEATURES, UNLIMITED, type FeatureDefinition } from '@crew/contracts';
+import { requestContext } from '../context/request-context';
+import { DatabaseService, many, one, type Tx } from '../database/database.service';
+import { Errors } from '../http/errors';
+
+export interface Entitlements {
+  planKey: string | null;
+  status: string | null;
+  features: Set<string>;
+  limits: Record<string, number>;
+  trialEndsOn: string | null;
+}
+
+const KEY = Symbol('entitlements');
+
+/** Resolves which features and limits the current tenant's subscription grants. */
+@Injectable()
+export class EntitlementsService {
+  constructor(private readonly db: DatabaseService) {}
+
+  async current(tx?: Tx): Promise<Entitlements> {
+    const ctx = requestContext.get() as Record<symbol, Entitlements> | undefined;
+    if (ctx?.[KEY]) return ctx[KEY];
+    const e = tx ? await loadEntitlements(tx) : await this.db.tenant(loadEntitlements);
+    if (ctx) ctx[KEY] = e;
+    return e;
+  }
+
+  async requireFeature(feature: string, tx?: Tx) {
+    const e = await this.current(tx);
+    if (!e.features.has(feature)) {
+      const def = FEATURES.find((f) => f.key === feature);
+      throw Errors.featureNotInPlan(def?.name ?? feature);
+    }
+  }
+
+  /** Throws when adding `adding` more units would exceed the plan limit. */
+  async requireWithinLimit(limit: string, currentCount: number, tx?: Tx, adding = 1) {
+    const e = await this.current(tx);
+    const max = e.limits[limit];
+    if (max === undefined || max === UNLIMITED) return;
+    if (currentCount + adding > max) throw Errors.limitReached((FEATURES as readonly FeatureDefinition[]).find((f) => f.key === limit)?.unit ?? limit, max);
+  }
+}
+
+/** Subscriptions that are cancelled or suspended keep only the read-only baseline; trialing/active/past_due keep the plan. */
+export async function loadEntitlements(tx: Tx): Promise<Entitlements> {
+  const sub = await one<{ plan_id: string; plan_key: string; status: string; trial_ends_on: string | null; feature_overrides: Record<string, boolean | number> }>(
+    tx,
+    `select s.plan_id, p.key as plan_key, s.status, to_char(s.trial_ends_on, 'YYYY-MM-DD') as trial_ends_on, s.feature_overrides
+       from subscriptions s join plans p on p.id = s.plan_id`,
+  );
+  if (!sub || sub.status === 'cancelled' || sub.status === 'suspended') {
+    return { planKey: sub?.plan_key ?? null, status: sub?.status ?? null, features: new Set(), limits: {}, trialEndsOn: null };
+  }
+  const rows = await many<{ feature_key: string; limit_value: number | null; kind: string }>(
+    tx,
+    `select pf.feature_key, pf.limit_value, f.kind from plan_features pf join features f on f.key = pf.feature_key where pf.plan_id = $1`,
+    [sub.plan_id],
+  );
+  const features = new Set<string>();
+  const limits: Record<string, number> = {};
+  for (const r of rows) {
+    if (r.kind === 'boolean') features.add(r.feature_key);
+    else if (r.limit_value !== null) limits[r.feature_key] = r.limit_value;
+  }
+  // Platform-granted overrides (e.g. a negotiated enterprise add-on or a feature pilot).
+  for (const [key, value] of Object.entries(sub.feature_overrides ?? {})) {
+    if (typeof value === 'boolean') value ? features.add(key) : features.delete(key);
+    else if (typeof value === 'number') limits[key] = value;
+  }
+  return { planKey: sub.plan_key, status: sub.status, features, limits, trialEndsOn: sub.trial_ends_on };
+}

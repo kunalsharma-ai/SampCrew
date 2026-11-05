@@ -1,0 +1,186 @@
+/*
+ * CREW design tokens. Consumed by apps via:
+ *   @import "tailwindcss";
+ *   @import "@crew/ui/styles.css";
+ *   @source "../../../packages/ui/src";
+ * Light theme on :root, dark theme via prefers-color-scheme or [data-theme="dark"].
+ */
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-fg: var(--accent-fg);
+  --color-ember: var(--ember);
+  --color-ember-subtle: var(--ember-subtle);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-pop: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 4px 8px -4px rgb(16 24 40 / 0.08);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fade-in 200ms var(--ease-out-expo);
+  --animate-slide-up: slide-up 240ms var(--ease-out-expo);
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+:root {
+  color-scheme: light;
+  --bg: #f7f7fb;
+  --bg-subtle: #f0f0f6;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --fg: #12121a;
+  --fg-muted: #4b4b5c;
+  --fg-subtle: #7a7a8c;
+  --border: #e6e6ee;
+  --border-strong: #d2d2de;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-subtle: #eef0ff;
+  --accent-fg: #ffffff;
+  --ember: #ea580c;
+  --ember-subtle: #fff4ec;
+  --success: #15803d;
+  --success-subtle: #ecfdf3;
+  --warning: #b45309;
+  --warning-subtle: #fffbeb;
+  --danger: #dc2626;
+  --danger-subtle: #fef2f2;
+  --info: #0369a1;
+  --info-subtle: #f0f9ff;
+  --chart-1: #4f46e5;
+  --chart-2: #0ea5e9;
+  --chart-3: #f97316;
+  --chart-4: #10b981;
+  --ring: #6366f1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b0b12;
+    --bg-subtle: #11111a;
+    --surface: #15151f;
+    --surface-raised: #1b1b27;
+    --fg: #f2f2f7;
+    --fg-muted: #b4b4c4;
+    --fg-subtle: #85859a;
+    --border: #262634;
+    --border-strong: #353547;
+    --accent: #818cf8;
+    --accent-hover: #a5b4fc;
+    --accent-subtle: #1e1b4b;
+    --accent-fg: #0b0b12;
+    --ember: #fb923c;
+    --ember-subtle: #2a1609;
+    --success: #4ade80;
+    --success-subtle: #0d2316;
+    --warning: #fbbf24;
+    --warning-subtle: #2a1d06;
+    --danger: #f87171;
+    --danger-subtle: #2b0f0f;
+    --info: #38bdf8;
+    --info-subtle: #0a1f2c;
+    --chart-1: #818cf8;
+    --chart-2: #38bdf8;
+    --chart-3: #fb923c;
+    --chart-4: #34d399;
+    --ring: #a5b4fc;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b0b12;
+  --bg-subtle: #11111a;
+  --surface: #15151f;
+  --surface-raised: #1b1b27;
+  --fg: #f2f2f7;
+  --fg-muted: #b4b4c4;
+  --fg-subtle: #85859a;
+  --border: #262634;
+  --border-strong: #353547;
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-subtle: #1e1b4b;
+  --accent-fg: #0b0b12;
+  --ember: #fb923c;
+  --ember-subtle: #2a1609;
+  --success: #4ade80;
+  --success-subtle: #0d2316;
+  --warning: #fbbf24;
+  --warning-subtle: #2a1d06;
+  --danger: #f87171;
+  --danger-subtle: #2b0f0f;
+  --info: #38bdf8;
+  --info-subtle: #0a1f2c;
+  --chart-1: #818cf8;
+  --chart-2: #38bdf8;
+  --chart-3: #fb923c;
+  --chart-4: #34d399;
+  --ring: #a5b4fc;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

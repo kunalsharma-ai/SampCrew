@@ -1,0 +1,153 @@
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import {
+  acceptInviteRequest,
+  changePasswordRequest,
+  loginRequest,
+  mfaEnableRequest,
+  mfaVerifyRequest,
+  refreshRequest,
+  selectTenantRequest,
+  signupRequest,
+  switchTenantRequest,
+} from '@crew/contracts';
+import type { Request } from 'express';
+import type { z } from 'zod';
+import { AllowWithoutMfa, Public } from '../../platform/authz/decorators';
+import { UuidPipe, ZodPipe } from '../../platform/http/zod';
+import { Doc } from '../../platform/openapi/openapi';
+import { AuthService } from './auth.service';
+
+const clientOf = (req: Request) => {
+  const c = req.headers['x-crew-client'];
+  return c === 'mobile' || c === 'api' ? c : 'web';
+};
+
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly auth: AuthService) {}
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('signup')
+  @Doc({ summary: 'Create a workspace (tenant) and its owner account; starts a 14-day Professional trial', body: signupRequest })
+  signup(@Body(new ZodPipe(signupRequest)) body: z.infer<typeof signupRequest>, @Req() req: Request) {
+    return this.auth.signup(body, clientOf(req));
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('login')
+  @HttpCode(200)
+  @Doc({ summary: 'Sign in with email and password. May return an MFA challenge or a workspace picker.', body: loginRequest })
+  login(@Body(new ZodPipe(loginRequest)) body: z.infer<typeof loginRequest>, @Req() req: Request) {
+    return this.auth.login(body.email, body.password, body.tenantSlug, clientOf(req));
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('mfa/verify')
+  @HttpCode(200)
+  @Doc({ summary: 'Complete sign-in with a 6-digit authenticator code', body: mfaVerifyRequest })
+  verifyMfa(@Body(new ZodPipe(mfaVerifyRequest)) body: z.infer<typeof mfaVerifyRequest>) {
+    return this.auth.verifyMfa(body.mfaToken, body.code);
+  }
+
+  @Public()
+  @Post('select-tenant')
+  @HttpCode(200)
+  @Doc({ summary: 'Choose a workspace when the account belongs to several', body: selectTenantRequest })
+  selectTenant(@Body(new ZodPipe(selectTenantRequest)) body: z.infer<typeof selectTenantRequest>) {
+    return this.auth.selectTenant(body.selectToken, body.tenantId);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Post('refresh')
+  @HttpCode(200)
+  @Doc({ summary: 'Rotate the refresh token and get a new access token', body: refreshRequest })
+  refresh(@Body(new ZodPipe(refreshRequest)) body: z.infer<typeof refreshRequest>) {
+    return this.auth.refresh(body.refreshToken);
+  }
+
+  @Post('logout')
+  @AllowWithoutMfa()
+  @HttpCode(204)
+  @Doc({ summary: 'Sign out and revoke this session family' })
+  async logout() {
+    await this.auth.logout();
+  }
+
+  @Post('switch-tenant')
+  @AllowWithoutMfa()
+  @HttpCode(200)
+  @Doc({ summary: 'Switch to another workspace the user belongs to', body: switchTenantRequest })
+  switchTenant(@Body(new ZodPipe(switchTenantRequest)) body: z.infer<typeof switchTenantRequest>) {
+    return this.auth.switchTenant(body.tenantId);
+  }
+
+  @Public()
+  @Get('invitations/:token')
+  @Doc({ summary: 'Preview an invitation before accepting it' })
+  invitation(@Param('token') token: string) {
+    return this.auth.invitationPreview(token);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('invitations/accept')
+  @HttpCode(200)
+  @Doc({ summary: 'Accept an invitation, set a password (or confirm an existing one) and sign in', body: acceptInviteRequest })
+  accept(@Body(new ZodPipe(acceptInviteRequest)) body: z.infer<typeof acceptInviteRequest>, @Req() req: Request) {
+    return this.auth.acceptInvitation(body.token, body.fullName, body.password, clientOf(req));
+  }
+}
+
+@Controller('me')
+export class MeController {
+  constructor(private readonly auth: AuthService) {}
+
+  @Get()
+  @AllowWithoutMfa()
+  @Doc({ summary: 'Current user, workspace, roles, effective permissions, plan features and limits' })
+  me() {
+    return this.auth.me();
+  }
+
+  @Get('sessions')
+  @AllowWithoutMfa()
+  @Doc({ summary: 'Active sessions for this account in this workspace' })
+  sessions() {
+    return this.auth.sessions();
+  }
+
+  @Delete('sessions/:id')
+  @AllowWithoutMfa()
+  @HttpCode(204)
+  @Doc({ summary: 'Revoke one of your sessions' })
+  async revoke(@Param('id', UuidPipe) id: string) {
+    await this.auth.revokeSession(id);
+  }
+
+  @Post('mfa/setup')
+  @AllowWithoutMfa()
+  @Doc({ summary: 'Start authenticator-app enrolment; returns the secret and otpauth URI for a QR code' })
+  mfaSetup() {
+    return this.auth.mfaSetup();
+  }
+
+  @Post('mfa/enable')
+  @AllowWithoutMfa()
+  @HttpCode(200)
+  @Doc({ summary: 'Confirm enrolment with a first code; returns an MFA-verified session', body: mfaEnableRequest })
+  mfaEnable(@Body(new ZodPipe(mfaEnableRequest)) body: z.infer<typeof mfaEnableRequest>) {
+    return this.auth.mfaEnable(body.code);
+  }
+
+  @Post('password')
+  @HttpCode(204)
+  @Doc({ summary: 'Change password; signs out other sessions', body: changePasswordRequest })
+  async password(@Body(new ZodPipe(changePasswordRequest)) body: z.infer<typeof changePasswordRequest>) {
+    await this.auth.changePassword(body.currentPassword, body.newPassword);
+  }
+}
