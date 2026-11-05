@@ -19,3 +19,18 @@ export async function eraseAction(id: string, note: string) {
 export async function rejectPrivacyRequestAction(id: string, note: string) {
   return done(await act(() => api(`/privacy/requests/${id}/reject`, { method: 'POST', body: { note } }), 'Request closed as rejected, with your reason.'));
 }
+export async function saveRetentionAction(body: { exitedErasureYears: number | null; exportDays: number; signInLogDays: number }) {
+  return done(await act(() => api('/privacy/retention', { method: 'PUT', body }), 'Retention schedule saved. It runs once a day.'));
+}
+export async function runRetentionAction() {
+  return done(await act(() => api<RetentionRunResult>('/privacy/retention/run', { method: 'POST' })));
+}
+export interface RetentionRunResult {
+  trigger: 'schedule' | 'manual';
+  erased: number;
+  heldByPayroll: number;
+  exportsDeleted: number;
+  signInStates: number;
+  mobileHandoffs: number;
+  provisioningCalls: number;
+}

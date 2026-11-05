@@ -22,9 +22,10 @@ function Gate() {
   useEffect(() => {
     if (status === 'loading') return;
     const at = segments[0];
-    if (status === 'signedOut' && at !== 'login') router.replace('/login');
+    // /sso is where single sign-on comes back to in the browser preview; it signs the person in itself.
+    if (status === 'signedOut' && at !== 'login' && at !== 'sso') router.replace('/login');
     else if (status === 'locked' && at !== 'unlock') router.replace('/unlock');
-    else if (status === 'ready' && (at === 'login' || at === 'unlock')) router.replace('/');
+    else if (status === 'ready' && (at === 'login' || at === 'unlock' || at === 'sso')) router.replace('/');
   }, [status, segments, router]);
 
   // Tapping a push notification opens the screen it is about (after sign-in and unlock).
@@ -45,6 +46,7 @@ function Gate() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="unlock" options={{ headerShown: false }} />
+      <Stack.Screen name="sso" options={{ headerShown: false }} />
       <Stack.Screen name="approvals" options={{ title: 'Approvals' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
       <Stack.Screen name="leave/new" options={{ title: 'Apply for leave' }} />

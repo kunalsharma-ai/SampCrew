@@ -1,6 +1,7 @@
 import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { SharedRateLimitStorage } from './platform/http/rate-limit-storage';
 import { ApprovalsController } from './modules/approvals/approvals.controller';
 import { ApprovalsService } from './modules/approvals/approvals.service';
 import { AuditController } from './modules/audit/audit.controller';
@@ -83,8 +84,9 @@ import { IntegrationsController } from './modules/integrations/integrations.cont
 import { IdentityController } from './modules/identity/identity.controller';
 import { ScimController } from './modules/identity/scim.controller';
 import { ScimService } from './modules/identity/scim.service';
+import { ScimGroupsService } from './modules/identity/scim-groups.service';
 import { SsoService } from './modules/identity/sso.service';
-import { PrivacyController } from './modules/privacy/privacy.controller';
+import { PrivacyController, RetentionController } from './modules/privacy/privacy.controller';
 import { PrivacyService } from './modules/privacy/privacy.service';
 import { ApiKeysService } from './modules/integrations/api-keys.service';
 import { WebhooksService } from './modules/integrations/webhooks.service';
@@ -165,6 +167,7 @@ export const CONTROLLERS = [
   IdentityController,
   ScimController,
   PrivacyController,
+  RetentionController,
   InsightsController,
   PlatformAuthController,
   PlatformController,
@@ -172,10 +175,15 @@ export const CONTROLLERS = [
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot({
-      throttlers: [{ name: 'default', ttl: 60_000, limit: Number(process.env.API_RATE_LIMIT_PER_MINUTE ?? 600) }],
-      // Rate limits are in-memory per instance for now; switch to Redis storage before running more than one API replica.
-      skipIf: () => process.env.CREW_ENV === 'test',
+    ThrottlerModule.forRootAsync({
+      // With REDIS_URL the counters are shared by all API servers; without it each server counts on its own, which
+      // is only right for a single server (local development, tests, a one-replica install).
+      useFactory: () => ({
+        throttlers: [{ name: 'default', ttl: 60_000, limit: Number(process.env.API_RATE_LIMIT_PER_MINUTE ?? 600) }],
+        storage: process.env.REDIS_URL ? new SharedRateLimitStorage(process.env.REDIS_URL) : undefined,
+        // Tests switch limits off, except the ones that check them.
+        skipIf: () => process.env.CREW_ENV === 'test' && process.env.CREW_TEST_RATE_LIMITS !== 'true',
+      }),
     }),
   ],
   controllers: CONTROLLERS,
@@ -238,6 +246,7 @@ export const CONTROLLERS = [
     ApiKeysService,
     SsoService,
     ScimService,
+    ScimGroupsService,
     PrivacyService,
     WebhooksService,
     ConnectionsService,

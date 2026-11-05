@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ERASURE_RULES, PRIVACY_DUE_DAYS } from '@crew/contracts';
+import { ERASURE_RULES, PRIVACY_DUE_DAYS, RETENTION_DEFAULTS, type RetentionPolicyInput } from '@crew/contracts';
 import { createHash, randomUUID } from 'node:crypto';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
@@ -178,7 +178,10 @@ export class PrivacyService {
 
   async download(id: string) {
     const r = await this.db.tenant(async (tx) => {
-      const row = await one<{ export_storage_key: string | null; employee_code: string }>(tx, 'select r.export_storage_key, e.employee_code from privacy_requests r join employees e on e.id = r.employee_id where r.id = $1', [id]);
+      const row = await one<{ export_storage_key: string | null; export_deleted_at: Date | null; employee_code: string }>(
+        tx, 'select r.export_storage_key, r.export_deleted_at, e.employee_code from privacy_requests r join employees e on e.id = r.employee_id where r.id = $1', [id],
+      );
+      if (row?.export_deleted_at) throw Errors.conflict('export_deleted', 'The export file was deleted: exports are kept for the period in the retention schedule, and deleted when the person is erased.');
       if (!row?.export_storage_key) throw Errors.notFound('Export');
       await this.audit.record(tx, { action: 'privacy.export_downloaded', resourceType: 'privacy_request', resourceId: id });
       return row;
@@ -194,7 +197,17 @@ export class PrivacyService {
   async erase(id: string, note: string) {
     const actor = requestContext.tenantActor();
     const files: string[] = [];
-    const result = await this.db.tenant(async (tx) => {
+    const result = await this.db.tenant((tx) => this.eraseRequest(tx, id, note, actor.membershipId, actor.tenantId, files));
+    await this.removeFiles(files);
+    return { ok: true, ...result };
+  }
+
+  private async removeFiles(files: string[]) {
+    for (const f of files) await this.storage.remove(f).catch((err: Error) => this.logger.error(`Could not delete ${f}: ${err.message}`));
+  }
+
+  /** Erases the person behind an open erasure request. decidedBy is null when the retention schedule does it. */
+  private async eraseRequest(tx: Tx, id: string, note: string, decidedBy: string | null, tenantId: string, files: string[]) {
       const r = await this.open(tx, id);
       if (r.kind !== 'erasure') throw Errors.badRequest('wrong_kind', 'This is not an erasure request.');
       const e = (await one<{ status: string; last_working_day: string | null; membership_id: string | null; past: boolean }>(
@@ -221,15 +234,16 @@ export class PrivacyService {
       const docs = await many<{ storage_key: string }>(tx, 'delete from employee_documents where employee_id = $1 returning storage_key', [r.employee_id]);
       files.push(...docs.map((d) => d.storage_key));
       counts.documents = docs.length;
-      counts.helpdeskCases = (await tx.query(`update helpdesk_cases set subject = '[erased]', description = '[erased] (personal details removed on request)' where employee_id = $1`, [r.employee_id])).rowCount ?? 0;
-      counts.leaveReasons = (await tx.query(`update leave_requests set reason = null where employee_id = $1 and reason is not null`, [r.employee_id])).rowCount ?? 0;
+      counts.helpdeskCases = (await tx.query(`update helpdesk_cases set subject = '[erased]', description = '[erased] (personal details removed on request)', satisfaction_comment = null where employee_id = $1`, [r.employee_id])).rowCount ?? 0;
+      counts.leaveReasons = (await tx.query(`update leave_requests set reason = null, cancel_reason = null where employee_id = $1 and (reason is not null or cancel_reason is not null)`, [r.employee_id])).rowCount ?? 0;
+      counts.freeText = await this.eraseFreeText(tx, r.employee_id, e.membership_id, tenantId);
       if (e.membership_id) {
-        counts.helpdeskMessages = (await this.db.platform((ptx) => ptx.query(`update helpdesk_messages set body = '[erased]' where author_membership_id = $1 and tenant_id = $2`, [e.membership_id, actor.tenantId]))).rowCount ?? 0;
+        counts.helpdeskMessages = (await this.db.platform((ptx) => ptx.query(`update helpdesk_messages set body = '[erased]' where author_membership_id = $1 and tenant_id = $2`, [e.membership_id, tenantId]))).rowCount ?? 0;
         await tx.query(`update memberships set status = 'suspended', scim_external_id = null where id = $1`, [e.membership_id]);
         // The login is global: it is anonymised only when it belongs to no other workspace.
         await this.db.platform(async (ptx) => {
           const u = (await one<{ id: string; others: number }>(ptx, `select u.id, (select count(*)::int from memberships o where o.user_id = u.id and o.id <> m.id) as others from memberships m join users u on u.id = m.user_id where m.id = $1`, [e.membership_id]))!;
-          await ptx.query(`update sessions set revoked_at = now(), revoked_reason = 'erased' where user_id = $1 and tenant_id = $2 and revoked_at is null`, [u.id, actor.tenantId]);
+          await ptx.query(`update sessions set revoked_at = now(), revoked_reason = 'erased' where user_id = $1 and tenant_id = $2 and revoked_at is null`, [u.id, tenantId]);
           if (u.others === 0) {
             await ptx.query(
               `update users set email = $2, full_name = 'Erased person', password_hash = null, mfa_secret_enc = null, mfa_enabled = false, status = 'disabled' where id = $1`,
@@ -242,18 +256,156 @@ export class PrivacyService {
       const resultJson = { removed: counts, rules: ERASURE_RULES };
       await tx.query(
         `update privacy_requests set status = 'completed', decided_by_membership_id = $2, decision_note = $3, result = $4, completed_at = now(), updated_at = now() where id = $1`,
-        [id, actor.membershipId, note, JSON.stringify(resultJson)],
+        [id, decidedBy, note, JSON.stringify(resultJson)],
       );
       // An access export made earlier would now be the only copy of the erased details, so it goes too.
-      const exports = await many<{ export_storage_key: string }>(tx, `select export_storage_key from privacy_requests where employee_id = $1 and export_storage_key is not null`, [r.employee_id]);
+      const exports = await many<{ export_storage_key: string }>(
+        tx, `update privacy_requests p set export_storage_key = null, export_deleted_at = now() from (select id, export_storage_key from privacy_requests where employee_id = $1 and export_storage_key is not null) o where p.id = o.id returning o.export_storage_key`, [r.employee_id],
+      );
       files.push(...exports.map((x) => x.export_storage_key));
-      await this.audit.record(tx, { action: 'privacy.erased', resourceType: 'employee', resourceId: r.employee_id, metadata: { requestId: id, removed: counts } });
+      await this.audit.record(tx, { tenantId, action: 'privacy.erased', resourceType: 'employee', resourceId: r.employee_id, metadata: { requestId: id, removed: counts, by: decidedBy ? 'hr' : 'retention_schedule' } });
       return resultJson;
+  }
+  /**
+   * Free text written by or about the person in records that otherwise stay (see ERASURE_RULES). Numbers, ratings,
+   * dates and statuses are kept for payroll and workforce reports; only the words go. Frozen records (released
+   * reviews, submitted feedback, completed courses) accept exactly this change while crew.erasure is on.
+   */
+  private async eraseFreeText(tx: Tx, employeeId: string, membershipId: string | null, tenantId: string) {
+    const n = async (sql: string, params: unknown[] = [employeeId]) => (await tx.query(sql, params)).rowCount ?? 0;
+    const platform = async (sql: string, params: unknown[]) => (await this.db.platform((ptx) => ptx.query(sql, params))).rowCount ?? 0;
+    const ERASED = '[erased]';
+    let total = 0;
+    total += await n(`update expense_claims set description = $2 where employee_id = $1 and description is not null and description <> $2`, [employeeId, ERASED]);
+    total += await n(`update goals set title = $2, description = '' where employee_id = $1`, [employeeId, ERASED]);
+    // Check-ins are insert-only for the app, so the platform role blanks them, limited to this workspace.
+    total += await platform(`update goal_checkins set note = '' where tenant_id = $1 and note <> '' and goal_id in (select id from goals where tenant_id = $1 and employee_id = $2)`, [tenantId, employeeId]);
+    total += await n(`update review_feedback set answers = '{"erased": true}'::jsonb where review_id in (select id from reviews where employee_id = $1) and answers is distinct from '{"erased": true}'::jsonb`);
+    total += await n(`update reviews set self_answers = '{"erased": true}'::jsonb, manager_answers = '{"erased": true}'::jsonb, employee_comment = null, excluded_reason = null where employee_id = $1`);
+    total += await n(`update recognitions set message = $2 where to_employee_id = $1 and message <> $2`, [employeeId, ERASED]);
+    total += await n(`update attendance_corrections set reason = $2 where employee_id = $1 and reason is not null and reason <> $2`, [employeeId, ERASED]);
+    total += await n(`update overtime_claims set reason = null where employee_id = $1 and reason is not null`);
+    total += await n(`update employment_records set note = null where employee_id = $1 and note is not null`);
+    total += await n(`update course_assignments set completion_note = null, cancelled_reason = null where employee_id = $1 and (completion_note is not null or cancelled_reason is not null)`);
+    total += await n(`update approval_requests set summary = $2 where subject_employee_id = $1 and summary <> $2`, [employeeId, ERASED]);
+    // Attrition risk is an inference about the person: scores and the notes on them (cascade) go.
+    total += await n(`delete from attrition_scores where employee_id = $1`);
+    if (membershipId) {
+      for (const t of ['iq_messages', 'iq_conversations', 'saved_views', 'notifications', 'employee_drafts']) {
+        total += await n(`delete from ${quoteIdent(t)} where membership_id = $1`, [membershipId]);
+      }
+      // Not deletable by the app role; the platform role does it, limited to this workspace.
+      total += await platform(`delete from member_preferences where tenant_id = $1 and membership_id = $2`, [tenantId, membershipId]);
+      total += await platform(`delete from mobile_devices where tenant_id = $1 and membership_id = $2`, [tenantId, membershipId]);
+    }
+    return total;
+  }
+  // Retention schedule ---------------------------------------------------------------------------------------------
+
+  async retention() {
+    return this.db.tenant(async (tx) => {
+      const p = await one<{ exitedErasureYears: number | null; exportDays: number; signInLogDays: number; updatedAt: Date; updatedBy: string | null }>(
+        tx,
+        `select p.exited_erasure_years as "exitedErasureYears", p.export_days as "exportDays", p.sign_in_log_days as "signInLogDays", p.updated_at as "updatedAt", u.full_name as "updatedBy"
+           from retention_policies p left join memberships m on m.id = p.updated_by_membership_id left join users u on u.id = m.user_id`,
+      );
+      const runs = await many(tx, `select id, ran_at as "ranAt", result from retention_runs order by ran_at desc limit 10`);
+      const due = await one<{ n: number }>(
+        tx,
+        `select count(*)::int as n from employees where status = 'exited' and erased_at is null and $1::int is not null and last_working_day < current_date - make_interval(years => $1::int)`,
+        [p?.exitedErasureYears ?? null],
+      );
+      return { policy: p ?? { ...RETENTION_DEFAULTS, updatedAt: null, updatedBy: null }, isDefault: !p, dueForErasure: due!.n, runs };
     });
-    for (const f of files) await this.storage.remove(f).catch((err: Error) => this.logger.error(`Could not delete ${f}: ${err.message}`));
-    return { ok: true, ...result };
+  }
+
+  async setRetention(input: RetentionPolicyInput) {
+    const actor = requestContext.tenantActor();
+    await this.db.tenant(async (tx) => {
+      const before = await one(tx, 'select exited_erasure_years, export_days, sign_in_log_days from retention_policies');
+      await tx.query(
+        `insert into retention_policies (tenant_id, exited_erasure_years, export_days, sign_in_log_days, updated_by_membership_id)
+         values (app_tenant_id(), $1, $2, $3, $4)
+         on conflict (tenant_id) do update set exited_erasure_years = excluded.exited_erasure_years, export_days = excluded.export_days,
+            sign_in_log_days = excluded.sign_in_log_days, updated_by_membership_id = excluded.updated_by_membership_id, updated_at = now()`,
+        [input.exitedErasureYears, input.exportDays, input.signInLogDays, actor.membershipId],
+      );
+      await this.audit.record(tx, { action: 'privacy.retention_changed', resourceType: 'retention_policy', resourceId: actor.tenantId, changes: { before, after: input } });
+    });
+    return this.retention();
+  }
+
+  /**
+   * Applies the retention schedule once: erases people past the period after their last working day (each through a
+   * privacy request, so it is listed with the others), deletes old access exports, and deletes old sign-in and
+   * provisioning logs. Raw attendance punches, payroll and the audit trail are never touched. Runs daily from the HR
+   * jobs, and on demand from Settings.
+   */
+  async applyRetention(tenantId: string, trigger: 'schedule' | 'manual') {
+    const files: string[] = [];
+    const result = await this.db.tenant(async (tx) => {
+      const row = await one<{ exited_erasure_years: number | null; export_days: number; sign_in_log_days: number; updated_by_membership_id: string | null }>(
+        tx, 'select exited_erasure_years, export_days, sign_in_log_days, updated_by_membership_id from retention_policies',
+      );
+      const p = row ?? { exited_erasure_years: RETENTION_DEFAULTS.exitedErasureYears, export_days: RETENTION_DEFAULTS.exportDays, sign_in_log_days: RETENTION_DEFAULTS.signInLogDays, updated_by_membership_id: null };
+      const erased: string[] = [];
+      let heldByPayroll = 0;
+      if (p.exited_erasure_years && p.updated_by_membership_id) {
+        const due = await many<{ id: string; open_payroll: boolean }>(
+          tx,
+          `select e.id, exists (select 1 from payroll_items i join payroll_runs pr on pr.id = i.run_id where i.employee_id = e.id and pr.status not in ('finalised', 'cancelled')) as open_payroll
+             from employees e
+            where e.status = 'exited' and e.erased_at is null and e.last_working_day < current_date - make_interval(years => $1::int)
+            order by e.last_working_day limit 25`,
+          [p.exited_erasure_years],
+        );
+        for (const e of due) {
+          if (e.open_payroll) {
+            heldByPayroll++;
+            continue;
+          }
+          const open = await one<{ id: string }>(tx, `select id from privacy_requests where employee_id = $1 and kind = 'erasure' and status = 'open'`, [e.id]);
+          const reqId = open?.id ?? (await one<{ id: string }>(
+            tx,
+            `insert into privacy_requests (tenant_id, employee_id, kind, source, due_on, requested_by_membership_id)
+             values (app_tenant_id(), $1, 'erasure', 'Retention schedule', current_date, $2) returning id`,
+            [e.id, p.updated_by_membership_id],
+          ))!.id;
+          await this.eraseRequest(tx, reqId, `Erased by the retention schedule: more than ${p.exited_erasure_years} years after the last working day.`, null, tenantId, files);
+          erased.push(e.id);
+        }
+      }
+      const exports = await many<{ export_storage_key: string }>(
+        tx,
+        `update privacy_requests p set export_storage_key = null, export_deleted_at = now()
+           from (select id, export_storage_key from privacy_requests where export_storage_key is not null and completed_at < now() - make_interval(days => $1::int)) o
+          where p.id = o.id returning o.export_storage_key`,
+        [p.export_days],
+      );
+      files.push(...exports.map((x) => x.export_storage_key));
+      // These logs are append-only for the app; the platform role deletes them, limited to this workspace.
+      const logs = await this.db.platform(async (ptx) => {
+        const del = async (table: string) =>
+          (await ptx.query(`delete from ${quoteIdent(table)} where tenant_id = $1 and created_at < now() - make_interval(days => $2::int)`, [tenantId, p.sign_in_log_days])).rowCount ?? 0;
+        return { signInStates: await del('sso_login_states'), mobileHandoffs: await del('sso_handoffs'), provisioningCalls: await del('scim_events') };
+      });
+      const out = { trigger, erased: erased.length, heldByPayroll, exportsDeleted: exports.length, ...logs, policy: { exitedErasureYears: p.exited_erasure_years, exportDays: p.export_days, signInLogDays: p.sign_in_log_days } };
+      await tx.query('insert into retention_runs (tenant_id, result) values (app_tenant_id(), $1)', [JSON.stringify(out)]);
+      await this.audit.record(tx, { tenantId, action: 'privacy.retention_applied', resourceType: 'retention_policy', resourceId: tenantId, metadata: out });
+      return out;
+    }, { tenantId });
+    await this.removeFiles(files);
+    return result;
+  }
+
+  /** Once a day per workspace, from the hourly HR jobs. */
+  async applyRetentionDaily(tenantId: string) {
+    const ranToday = await this.db.tenant((tx) => one(tx, `select 1 from retention_runs where ran_at > now() - interval '1 day' and result->>'trigger' = 'schedule' limit 1`), { tenantId });
+    if (ranToday) return null;
+    return this.applyRetention(tenantId, 'schedule');
   }
 }
+
 
 function quoteIdent(name: string) {
   if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error('bad identifier');

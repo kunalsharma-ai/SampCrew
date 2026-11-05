@@ -552,10 +552,10 @@ export class AttendanceService implements OnModuleInit {
           where ${where.join(' and ')} limit 1000`,
         params,
       );
-      for (const p of people) {
-        const today = localToday(p.tz);
-        if (q.date > today) continue;
-        if (!p.computed || (q.date >= addDays(today, -1) && !p.fresh)) await this.days.recompute(tx, p.id, q.date, q.date);
+      const stale = people.filter((p) => q.date <= localToday(p.tz) && (!p.computed || (q.date >= addDays(localToday(p.tz), -1) && !p.fresh)));
+      if (stale.length) {
+        await this.days.lockBulk(tx);
+        for (const p of stale.sort((a, b) => a.id.localeCompare(b.id))) await this.days.recompute(tx, p.id, q.date, q.date);
       }
       if (!people.length) return { date: q.date, summary: {}, rows: [] };
       const rows = await many<{ status: string; lateMinutes: number; firstIn: string | null; lastOut: string | null }>(
@@ -805,6 +805,7 @@ export class AttendanceService implements OnModuleInit {
       if (q.employeeId) { params.push(q.employeeId); where.push(`e.id = $${params.length}`); }
       const people = await many<{ id: string }>(tx, `select e.id from employees e where ${where.join(' and ')}`, params);
       let days = 0;
+      if (people.length > 1) await this.days.lockBulk(tx);
       for (const p of people) days += (await this.days.recompute(tx, p.id, q.from, q.to)).size;
       await this.audit.record(tx, { action: 'attendance.recomputed', resourceType: 'attendance', resourceId: q.employeeId ?? 'all', metadata: { from: q.from, to: q.to, employees: people.length, days } });
       return { employees: people.length, days };
@@ -821,7 +822,8 @@ export class AttendanceService implements OnModuleInit {
         tx, `select id from employees where status <> 'pre_boarding' and date_of_joining <= current_date + 1 and (last_working_day is null or last_working_day >= current_date - $1::int)`, [days + 1],
       );
       let n = 0;
-      for (const p of people) {
+      if (people.length) await this.days.lockBulk(tx);
+      for (const p of people.sort((a, b) => a.id.localeCompare(b.id))) {
         const e = (await this.days.employee(tx, p.id))!;
         const today = localToday(e.tz);
         const from = addDays(today, -days) < e.date_of_joining ? e.date_of_joining : addDays(today, -days);

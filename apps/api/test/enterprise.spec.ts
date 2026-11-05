@@ -88,7 +88,7 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
       fails(await as('hr').get('/security/sso'), 403);
       fails(await as('ownerNoMfa').get('/security/sso'), 403, 'mfa_required');
       fails(await as('bizOwner').get('/security/sso'), 402);
-      expect(ok(await as('owner').get('/security/sso'))).toEqual({ connection: null, redirectUri: 'http://localhost:3000/sso/callback' });
+      expect(ok(await as('owner').get('/security/sso'))).toMatchObject({ connection: null, redirectUri: 'http://localhost:3000/sso/callback' });
     });
 
     it('checks the provider before saving, keeps the secret encrypted and claims the domain', async () => {

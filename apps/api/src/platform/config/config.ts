@@ -51,8 +51,12 @@ const schema = z.object({
    * and tests only; refused in staging and production, where those calls could reach internal services.
    */
   INTEGRATIONS_ALLOW_PRIVATE_URLS: z.enum(['true', 'false']).default('false'),
+  /** Where the mobile app may ask to be sent back after single sign-on (comma-separated, exact matches). */
+  MOBILE_SSO_REDIRECTS: z.string().default('crew://sso'),
   /** Tests only: send Slack messages to this base instead of https://hooks.slack.com (refused in staging and production). */
   SLACK_WEBHOOK_BASE_URL: optional(z.string().url()),
+  /** Redis for state shared by API servers (rate-limit counters). Needed when running more than one API replica. */
+  REDIS_URL: optional(z.string().regex(/^rediss?:\/\//, 'REDIS_URL must start with redis:\/\/ or rediss:\/\/')),
   FIELD_ENCRYPTION_KEY: z
     .string()
     .refine((v) => Buffer.from(v, 'base64').length === 32, 'FIELD_ENCRYPTION_KEY must be 32 bytes, base64 encoded'),

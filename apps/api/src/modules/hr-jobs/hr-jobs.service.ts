@@ -9,6 +9,7 @@ import { HelpdeskService } from '../helpdesk/helpdesk.service';
 import { CandidatesService } from '../recruitment/candidates.service';
 import { AiService } from '../ai/ai.service';
 import { InsightsService } from '../insights/insights.service';
+import { PrivacyService } from '../privacy/privacy.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 
 export interface HrJobResult {
@@ -23,6 +24,7 @@ export interface HrJobResult {
   helpdeskCasesClosed: number;
   attritionScored: number;
   aiPromptsPurged: number;
+  retentionApplied: boolean;
 }
 
 /**
@@ -46,6 +48,7 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly helpdesk: HelpdeskService,
     private readonly ai: AiService,
     private readonly insights: InsightsService,
+    private readonly privacy: PrivacyService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -104,6 +107,8 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     }, { tenantId });
     // AI prompt and answer text past the workspace's retention period is removed; usage numbers stay.
     const aiPromptsPurged = await this.db.tenant((tx) => this.ai.purgeExpired(tx), { tenantId });
-    return { ...hr, attendanceDaysComputed, devicesAlerted, candidatesAnonymized, helpdeskCasesClosed, attritionScored, aiPromptsPurged };
+    // The workspace's retention schedule (leavers, exports, sign-in logs), once a day.
+    const retentionApplied = Boolean(await this.privacy.applyRetentionDaily(tenantId));
+    return { ...hr, attendanceDaysComputed, devicesAlerted, candidatesAnonymized, helpdeskCasesClosed, attritionScored, aiPromptsPurged, retentionApplied };
   }
 }
