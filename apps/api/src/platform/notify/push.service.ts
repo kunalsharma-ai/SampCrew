@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { DatabaseService } from '../database/database.service';
+import { PlatformIntegrationsService } from '../integrations/platform-integrations.service';
 
 const MAX_ATTEMPTS = 5;
 
@@ -24,7 +25,8 @@ interface ExpoTicket {
 /**
  * Sends queued push messages to the mobile app through the Expo push service. Each push says only that there
  * is something new and carries the notification id and in-app link; the text is loaded by the signed-in app,
- * so no personal data passes through Apple, Google or Expo. Without EXPO_PUSH_ENABLED=true nothing is sent and
+ * so no personal data passes through Apple, Google or Expo. Push is switched on by SAMPLEDGE in the Super Admin
+ * Console (Integrations > Mobile push), else by EXPO_PUSH_ENABLED=true in the environment. While it is off nothing is sent and
  * messages are marked skipped with the reason. A device the push service reports as no longer registered has
  * its token removed.
  */
@@ -37,10 +39,11 @@ export class PushService implements OnApplicationBootstrap, OnModuleDestroy {
   constructor(
     private readonly db: DatabaseService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly integrations: PlatformIntegrationsService,
   ) {}
 
-  get enabled() {
-    return this.config.EXPO_PUSH_ENABLED === 'true';
+  async enabled() {
+    return (await this.integrations.push()).enabled;
   }
 
   onApplicationBootstrap() {
@@ -59,6 +62,7 @@ export class PushService implements OnApplicationBootstrap, OnModuleDestroy {
     if (this.running) return out;
     this.running = true;
     try {
+      const settings = await this.integrations.push();
       await this.db.platform(async (tx) => {
         const { rows } = await tx.query<Due>(
           `select p.id, p.notification_id, n.link, d.push_token, d.revoked_at is not null as revoked, p.attempts, d.id as device_id
@@ -72,7 +76,7 @@ export class PushService implements OnApplicationBootstrap, OnModuleDestroy {
         };
         const sendable: Due[] = [];
         for (const m of rows) {
-          if (!this.enabled) await skip(m.id, 'Push delivery is not configured (EXPO_PUSH_ENABLED is not true)');
+          if (!settings.enabled) await skip(m.id, 'Push delivery is not set up (Super Admin Console > Integrations > Mobile push)');
           else if (m.revoked || !m.push_token) await skip(m.id, 'The device was signed out or turned push off');
           else sendable.push(m);
         }
@@ -85,7 +89,7 @@ export class PushService implements OnApplicationBootstrap, OnModuleDestroy {
             headers: {
               'content-type': 'application/json',
               accept: 'application/json',
-              ...(this.config.EXPO_ACCESS_TOKEN ? { authorization: `Bearer ${this.config.EXPO_ACCESS_TOKEN}` } : {}),
+              ...(settings.accessToken ? { authorization: `Bearer ${settings.accessToken}` } : {}),
             },
             body: JSON.stringify(sendable.map((m) => ({
               to: m.push_token,

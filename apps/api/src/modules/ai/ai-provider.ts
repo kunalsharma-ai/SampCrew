@@ -1,5 +1,4 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { AppConfig } from '../../platform/config/config';
 
 export interface ProviderRequest {
   system: string;
@@ -29,19 +28,29 @@ export interface AiProvider {
   complete(req: ProviderRequest): Promise<ProviderResult>;
 }
 
+/** The Claude API settings in effect: saved in the Super Admin Console, or from the environment (bootstrap fallback). */
+export interface AnthropicSettings {
+  apiKey: string;
+  baseUrl?: string | null;
+  model: string;
+  effort: 'low' | 'medium' | 'high';
+  refusalFallback: boolean;
+  timeoutMs: number;
+}
+
 export class AnthropicProvider implements AiProvider {
   readonly name = 'anthropic';
   readonly model: string;
   private readonly client: Anthropic;
 
-  constructor(private readonly config: AppConfig) {
-    this.model = config.AI_MODEL;
+  constructor(private readonly settings: AnthropicSettings) {
+    this.model = settings.model;
     this.client = new Anthropic({
-      apiKey: config.ANTHROPIC_API_KEY,
+      apiKey: settings.apiKey,
       // Only the configured key is used, never other credentials found in the environment.
       authToken: null,
-      baseURL: config.ANTHROPIC_BASE_URL,
-      timeout: config.AI_TIMEOUT_MS,
+      baseURL: settings.baseUrl || undefined,
+      timeout: settings.timeoutMs,
       // The SDK retries 408/409/429/5xx and connection errors with back-off.
       maxRetries: 2,
     });
@@ -49,13 +58,13 @@ export class AnthropicProvider implements AiProvider {
 
   async complete(req: ProviderRequest): Promise<ProviderResult> {
     try {
-      const fallback = this.config.AI_REFUSAL_FALLBACK === 'true';
+      const fallback = this.settings.refusalFallback;
       const msg = await this.client.beta.messages.create({
         model: this.model,
         max_tokens: req.maxTokens,
         system: req.system,
         messages: [{ role: 'user', content: req.user }],
-        output_config: { effort: this.config.AI_EFFORT },
+        output_config: { effort: this.settings.effort },
         ...(fallback ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
       });
       const text = msg.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('').trim();
@@ -70,14 +79,10 @@ export class AnthropicProvider implements AiProvider {
       if (err instanceof Anthropic.APIConnectionError) throw new ProviderError('The AI provider could not be reached', null, true);
       if (err instanceof Anthropic.APIError) {
         const status = typeof err.status === 'number' ? err.status : null;
-        throw new ProviderError(`The AI provider returned an error${status ? ` (${status})` : ''}`, status, status === 429 || (status ?? 0) >= 500);
+        const why = status === 401 ? ': the API key was refused' : status === 403 ? ': the API key may not use this model' : status === 404 ? ': unknown model or address' : '';
+        throw new ProviderError(`The AI provider returned an error${status ? ` (${status})` : ''}${why}`, status, status === 429 || (status ?? 0) >= 500);
       }
       throw err;
     }
   }
-}
-
-export function providerFor(config: AppConfig): AiProvider | null {
-  if (config.AI_PROVIDER === 'anthropic' && config.ANTHROPIC_API_KEY) return new AnthropicProvider(config);
-  return null;
 }

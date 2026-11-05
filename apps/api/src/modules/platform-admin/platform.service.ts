@@ -11,6 +11,7 @@ import { pingClamd } from '../../platform/storage/malware-scan';
 import { DatabaseService, many, one } from '../../platform/database/database.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
+import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
 import { decodeCursor, page } from '../../platform/http/pagination';
 
 /**
@@ -25,6 +26,7 @@ export class PlatformService {
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly integrations: PlatformIntegrationsService,
   ) {}
 
   async metrics() {
@@ -233,6 +235,8 @@ export class PlatformService {
   }
 
   async health() {
+    const scanner = await this.integrations.scanningUrl();
+    const services = await this.integrations.workspaceStatus();
     const started = Date.now();
     return this.db.platform(async (tx) => {
       await tx.query('select 1');
@@ -253,10 +257,11 @@ export class PlatformService {
         outbox,
         platformAuditChain: { checked: Number(chain!.checked), intact: chain!.first_broken_seq === null },
         fieldEncryption: await this.fieldEncryption(),
-        uploadScanning: this.config.CLAMAV_URL ? { configured: true, reachable: await pingClamd(this.config.CLAMAV_URL) } : { configured: false, reachable: false },
+        uploadScanning: scanner ? { configured: true, reachable: await pingClamd(scanner) } : { configured: false, reachable: false },
+        integrations: services.map((s) => ({ key: s.key, name: s.name, on: s.on })),
         notConfigured: [
           ...(this.config.REDIS_URL ? [] : ['Redis (rate limits shared by several API servers)']),
-          ...(this.config.CLAMAV_URL ? [] : ['Virus scanning of uploads (ClamAV)']),
+          ...services.filter((s) => !s.on).map((s) => `${s.name} (Console > Integrations)`),
           'Object storage (files are on the API server\'s disk)',
           'Error tracking (Sentry)',
           'Payment provider',

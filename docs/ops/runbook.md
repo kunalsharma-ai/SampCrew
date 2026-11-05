@@ -47,8 +47,9 @@ Health checks:
    chmod 600 .env
    ```
    Then edit `.env`: the three addresses and URLs, `ACME_EMAIL`, `CREW_BOOTSTRAP_ADMIN_EMAIL` and a strong
-   `CREW_BOOTSTRAP_ADMIN_PASSWORD` (14+ characters), `SMTP_URL` and `MAIL_FROM`, and `CONSOLE_ALLOWED_IPS` (your office
-   or VPN ranges). **Keep a copy of `FIELD_ENCRYPTION_KEY` and `BACKUP_PASSPHRASE` in your password manager**: without
+   `CREW_BOOTSTRAP_ADMIN_PASSWORD` (14+ characters), and `CONSOLE_ALLOWED_IPS` (your office
+   or VPN ranges). Email, Claude AI, mobile push, virus scanning and mobile sign-in addresses do not need `.env`:
+   set them up after the first sign-in in Console > Integrations (section 7). **Keep a copy of `FIELD_ENCRYPTION_KEY` and `BACKUP_PASSPHRASE` in your password manager**: without
    them, encrypted fields and backups cannot be read.
 4. **Start**:
    ```sh
@@ -134,9 +135,9 @@ minutes). Recovery time measured by the drill: seconds for the demo data size, g
 | `DATABASE_API_PASSWORD` | Change in `.env`, run `docker compose up -d --wait` (the migrate job sets the role's password before the API starts). |
 | `POSTGRES_PASSWORD` | `alter role postgres password '...'` in psql, then update `.env`. |
 | `REDIS_PASSWORD` | Change and `docker compose up -d --wait`; counters reset, which is harmless. |
-| `FIELD_ENCRYPTION_KEY` | In three steps, below. Never just replace it: values written with the old key (MFA secrets, bank and tax identifiers, webhook, Slack and single sign-on secrets) need it to be read. |
+| `FIELD_ENCRYPTION_KEY` | In three steps, below. Never just replace it: values written with the old key (MFA secrets, bank and tax identifiers, webhook, Slack and single sign-on secrets, and the keys and passwords saved in Console > Integrations) need it to be read. |
 | `BACKUP_PASSPHRASE` | Change for new backups; keep the old one for as long as older backups are kept. |
-| `ANTHROPIC_API_KEY`, `SMTP_URL`, `EXPO_ACCESS_TOKEN` | Change and restart the API. |
+| Claude API key, SMTP password, Expo access token | Paste the new value in Console > Integrations, press Test connection, then Save. No restart; every API server uses it within 5 seconds. (If they still come from `ANTHROPIC_API_KEY`, `SMTP_URL`, `EXPO_ACCESS_TOKEN` in `.env`, change them there and restart, or move them to the Console.) |
 
 **Rotating `FIELD_ENCRYPTION_KEY`** (on a schedule, or at once if the key may have leaked):
 
@@ -161,11 +162,23 @@ environment variables from it instead of using `.env`.
 
 ## 7. Operating
 
-- **Virus scanning of uploads**: start ClamAV with `docker compose --profile scan up -d` and set
-  `CLAMAV_URL=tcp://clamav:3310` in `.env` (then `docker compose up -d --wait`). Every uploaded document, expense
+- **Integrations (Console > Integrations)**: Claude AI, email (SMTP), mobile push (Expo), virus scanning (ClamAV) and
+  the mobile app's single sign-on addresses are set up by a Super admin in the Super Admin Console, with numbered
+  steps, a Test connection button that tries the values against the real service before saving, and an on/off switch.
+  Keys and passwords are encrypted with `FIELD_ENCRYPTION_KEY` and only their last four characters are ever shown.
+  A value saved in the Console wins over `.env`; while nothing is saved for an integration, its `.env` variables are
+  used (so an existing install keeps working), and the page says which ones still come from the server's settings
+  file. "Use server settings instead" removes the Console value. Every save, test and removal is in the Platform
+  audit. Workspace integrations (Slack, webhooks, API keys, single sign-on) stay in each workspace's own Settings.
+  What must stay in `.env`: database, Redis, token secrets, `FIELD_ENCRYPTION_KEY` (it protects the saved secrets,
+  so it cannot be stored next to them), public URLs and CORS origins, because the API needs them before it can read
+  the database.
+- **Virus scanning of uploads**: start ClamAV with `docker compose --profile scan up -d`, then in Console >
+  Integrations > Virus scanning enter `tcp://clamav:3310`, test it and switch it on (or set
+  `CLAMAV_URL=tcp://clamav:3310` in `.env` and `docker compose up -d --wait`). Every uploaded document, expense
   receipt and CV, including CVs from the public careers page, is scanned before it is stored; a flagged file is
-  refused with a message and never written, and the log line names the signature and workspace. While `CLAMAV_URL` is
-  set and ClamAV is down, uploads are refused rather than stored unscanned, and System health shows the scanner as
+  refused with a message and never written, and the log line names the signature and workspace. While scanning is
+  on and ClamAV is down, uploads are refused rather than stored unscanned, and System health shows the scanner as
   unreachable. ClamAV needs about 1.5 GB of memory and outbound access to `database.clamav.net` for signature
   updates. Files uploaded before scanning was switched on are not scanned retroactively.
 

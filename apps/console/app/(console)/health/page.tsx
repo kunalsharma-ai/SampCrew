@@ -41,7 +41,7 @@ export default async function HealthPage() {
         <Stat
           label="Virus scanning of uploads"
           value={<Badge tone={!h.uploadScanning.configured ? 'neutral' : h.uploadScanning.reachable ? 'success' : 'danger'} dot>{!h.uploadScanning.configured ? 'off' : h.uploadScanning.reachable ? 'on' : 'unreachable'}</Badge>}
-          hint={!h.uploadScanning.configured ? 'Set CLAMAV_URL to scan documents, receipts and CVs' : h.uploadScanning.reachable ? 'Uploads are scanned before they are stored' : 'Uploads are being refused until the scanner answers'}
+          hint={!h.uploadScanning.configured ? 'Switch it on in Integrations to scan documents, receipts and CVs' : h.uploadScanning.reachable ? 'Uploads are scanned before they are stored' : 'Uploads are being refused until the scanner answers'}
         />
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">

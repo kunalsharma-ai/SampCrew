@@ -40,6 +40,7 @@
     "e2e:iq": "node e2e/iq-flow.cjs",
     "e2e:hardening": "node e2e/hardening-flow.cjs",
     "e2e:access": "node e2e/access-flow.cjs",
+    "e2e:platform-integrations": "node e2e/platform-integrations-flow.cjs",
     "e2e:a11y": "node e2e/a11y.cjs",
     "e2e:deploy": "infra/deploy/smoke.sh",
     "load-test": "node e2e/load.cjs",

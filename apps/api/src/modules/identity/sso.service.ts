@@ -4,6 +4,7 @@ import { type CacheProvider, type Profile, SAML, ValidateInResponseTo } from '@n
 import { createHash, X509Certificate } from 'node:crypto';
 import { createLocalJWKSet, type JSONWebKeySet, jwtVerify } from 'jose';
 import { AuditService } from '../../platform/audit/audit.service';
+import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
 import { decryptField, encryptField, randomToken, sha256 } from '../../platform/auth/crypto';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
@@ -71,6 +72,7 @@ export class SsoService {
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly integrations: PlatformIntegrationsService,
   ) {}
 
   get redirectUri() {
@@ -111,10 +113,6 @@ export class SsoService {
   samlMetadata() {
     const noCache: CacheProvider = { saveAsync: async () => null, getAsync: async () => null, removeAsync: async () => null };
     return this.saml({ saml_sso_url: 'https://example.invalid', saml_idp_cert: 'unused', issuer: 'unused' } as ConnectionRow, noCache).generateServiceProviderMetadata(null, null);
-  }
-
-  private get mobileRedirects() {
-    return this.config.MOBILE_SSO_REDIRECTS.split(',').map((s) => s.trim()).filter(Boolean);
   }
 
   private get allowPrivate() {
@@ -288,7 +286,7 @@ export class SsoService {
   async startByEmail(email: string, client: Client, mobile?: Partial<MobileStart>) {
     if (client === 'mobile') {
       if (!mobile?.returnTo || !mobile.appChallenge) throw Errors.validation([{ path: 'appChallenge', message: 'The app must send returnTo and appChallenge' }]);
-      if (!this.mobileRedirects.includes(mobile.returnTo)) throw Errors.badRequest('return_to_not_allowed', 'This app address is not allowed to receive single sign-on.');
+      if (!(await this.integrations.mobileSsoRedirects()).includes(mobile.returnTo)) throw Errors.badRequest('return_to_not_allowed', 'This app address is not allowed to receive single sign-on.');
     }
     const domain = emailDomain(email);
     const c = await this.db.platform((tx) =>

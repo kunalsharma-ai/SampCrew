@@ -7,7 +7,6 @@ import { AiGatewayService } from '../src/modules/ai/ai-gateway.service';
 import { AiService } from '../src/modules/ai/ai.service';
 import { AnthropicProvider } from '../src/modules/ai/ai-provider';
 import { WorkflowRunnerService } from '../src/modules/automation/workflow-runner.service';
-import { APP_CONFIG, type AppConfig } from '../src/platform/config/config';
 import { DatabaseService } from '../src/platform/database/database.service';
 import { OutboxService } from '../src/platform/events/outbox.service';
 import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestTenant } from './helpers';
@@ -67,8 +66,7 @@ describe('AI copilots, Automation Studio and insights', () => {
     return res.body;
   };
   const useStub = () => {
-    const config = app.get<AppConfig>(APP_CONFIG);
-    gateway.setProvider(new AnthropicProvider({ ...config, ANTHROPIC_API_KEY: 'sk-test-not-a-real-key', ANTHROPIC_BASE_URL: `http://127.0.0.1:${(stub.server.address() as AddressInfo).port}`, AI_MODEL: 'claude-opus-5-5' }));
+    gateway.setProvider(new AnthropicProvider({ apiKey: 'sk-test-not-a-real-key', baseUrl: `http://127.0.0.1:${(stub.server.address() as AddressInfo).port}`, model: 'claude-opus-5-5', effort: 'low', refusalFallback: true, timeoutMs: 30_000 }));
   };
   const hire = async (who: string, first: string, extra: Record<string, unknown> = {}) => {
     const body = ok(await as('hr').post('/employees').send({

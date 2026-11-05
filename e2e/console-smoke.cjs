@@ -51,7 +51,7 @@ const watch = (p) => {
   await shot(admin, 'console-overview');
   ok('MFA enrolled, overview loads');
 
-  for (const path of ['/tenants', '/plans', '/health', '/audit', '/admins']) {
+  for (const path of ['/tenants', '/plans', '/integrations', '/health', '/audit', '/admins']) {
     const r = await admin.goto(CONSOLE + path);
     if (r.status() !== 200 || (await admin.locator('h1').count()) === 0) throw new Error(`${path} failed`);
   }
