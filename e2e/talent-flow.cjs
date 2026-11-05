@@ -84,7 +84,7 @@ async function writeReview(p, rating, label) {
   await gd.locator('select[name=parentGoalId]').selectOption(parent);
   await arjun.click('button:has-text("Add goal")');
   await arjun.waitForURL(/\/goals\/[0-9a-f-]{36}$/, { timeout: 10000 }).catch((e) => shot(arjun, e));
-  await arjun.getByLabel('Changeovers under 10 minutes').fill('4');
+  await arjun.getByRole('textbox', { name: 'Changeovers under 10 minutes', exact: true }).fill('4');
   await arjun.locator('textarea').last().fill('Two changeovers this week came in under ten minutes');
   await arjun.click('button:has-text("Save check-in")');
   await arjun.locator('text=Two changeovers this week').waitFor({ timeout: 10000 }).catch((e) => shot(arjun, e));

@@ -1,0 +1,6 @@
+# Overrides for the local and CI smoke test of the production stack (infra/deploy/smoke.sh). It runs the real
+# images and proxy, with TLS from Caddy's own test authority instead of Let's Encrypt, as "staging" (the same
+# safety checks as production, but labelled demo data is allowed so there is someone to sign in as).
+services:
+  proxy:
+    ports: !override ["8443:8443", "8444:8444", "8445:8445"]

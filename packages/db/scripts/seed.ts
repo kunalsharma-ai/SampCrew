@@ -19,7 +19,11 @@ async function main() {
 
     const email = process.env.CREW_BOOTSTRAP_ADMIN_EMAIL;
     const password = process.env.CREW_BOOTSTRAP_ADMIN_PASSWORD;
+    const production = process.env.CREW_ENV === 'production';
     if (email && password) {
+      if (production && (password.length < 14 || /change-?me|example|password/i.test(password))) {
+        throw new Error('CREW_BOOTSTRAP_ADMIN_PASSWORD must be at least 14 characters and not a template value in production');
+      }
       const { rowCount } = await pool.query('select 1 from platform_admins');
       if (!rowCount) {
         await pool.query(
@@ -30,6 +34,10 @@ async function main() {
       }
     }
 
+    if (process.env.CREW_SEED_DEMO === 'true' && production) {
+      // Demo users share one password; they belong on laptops and staging, never in production.
+      throw new Error('CREW_SEED_DEMO=true is refused when CREW_ENV=production');
+    }
     if (process.env.CREW_SEED_DEMO === 'true') {
       const demoPassword = process.env.CREW_DEMO_PASSWORD;
       if (!demoPassword) throw new Error('CREW_SEED_DEMO=true needs CREW_DEMO_PASSWORD');

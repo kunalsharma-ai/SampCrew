@@ -11,6 +11,11 @@
     "test": "vitest run",
     "docs:permissions": "node scripts/permission-matrix.mjs > ../../docs/architecture/05-roles-and-permissions.md"
   },
-  "dependencies": { "zod": "4.1.13" },
-  "devDependencies": { "typescript": "5.9.3", "vitest": "3.2.7" }
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
 }

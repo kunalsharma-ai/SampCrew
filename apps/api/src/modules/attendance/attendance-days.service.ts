@@ -194,18 +194,24 @@ export class AttendanceDaysService {
   }
 
   /**
-   * Recomputes and stores days for one employee. Locked days are left as they are. Returns the computed days.
-   */
-  /**
    * Taken before recomputing many people's days in one transaction (team view, HR jobs, recompute requests). Two such
    * transactions writing the same people's days in different orders would deadlock, so they take turns within a
-   * workspace. Single-person writes (punches, corrections) do not need it: they touch one person and cannot form a cycle.
+   * workspace. Single-person recomputes (punches, leave approvals, corrections) take the same lock shared, before
+   * writing any day: they run alongside each other, but never alongside a bulk recompute. The workflow load test
+   * found that a bulk run and a leave approval could otherwise each hold a day the other needed.
    */
   async lockBulk(tx: Tx) {
     await tx.query(`select pg_advisory_xact_lock(hashtext('crew.attendance_days.bulk'), hashtext(app_tenant_id()::text))`);
   }
 
+  private async lockShared(tx: Tx) {
+    await tx.query(`select pg_advisory_xact_lock_shared(hashtext('crew.attendance_days.bulk'), hashtext(app_tenant_id()::text))`);
+  }
+
+  /** Recomputes and stores days for one employee. Locked days are left as they are. Returns the computed days. */
   async recompute(tx: Tx, employeeId: string, from: string, to: string, now = Date.now()): Promise<Map<string, DayResult>> {
+    // Re-entrant: a bulk recompute already holds the lock exclusively, and taking it shared again is free.
+    await this.lockShared(tx);
     const e = await this.employee(tx, employeeId);
     const results = new Map<string, DayResult>();
     if (!e) return results;

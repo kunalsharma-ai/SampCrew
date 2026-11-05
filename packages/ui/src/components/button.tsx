@@ -9,7 +9,8 @@ const variants: Record<Variant, string> = {
   primary: 'bg-accent text-accent-fg hover:bg-accent-hover shadow-card',
   secondary: 'bg-surface text-fg border border-border hover:bg-bg-subtle hover:border-border-strong shadow-card',
   ghost: 'text-fg-muted hover:text-fg hover:bg-bg-subtle',
-  danger: 'bg-danger text-white hover:opacity-90 shadow-card',
+  // Text in the surface colour: white on the light theme's red, dark on the dark theme's lighter red (AA in both).
+  danger: 'bg-danger text-surface hover:opacity-90 shadow-card',
 };
 const sizes: Record<Size, string> = { sm: 'h-8 px-3 text-[0.8125rem] gap-1.5', md: 'h-9 px-3.5 text-sm gap-2', lg: 'h-11 px-5 text-[0.9375rem] gap-2' };
 

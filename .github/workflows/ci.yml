@@ -171,6 +171,42 @@ jobs:
           pnpm --filter @crew/console start > console.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3001/login
           pnpm e2e:console
+      - name: Accessibility check (axe-core, WCAG 2.1 A and AA, light and dark)
+        # Web Portal and Console are still running from the steps above; the script serves the mobile browser build.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
+          pnpm e2e:a11y
+      - name: Workflow load test (overlapping writes must not fail)
+        # Shared CI machines vary, so the latency threshold is looser than on a dedicated machine; errors must stay under 1%.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          API_RATE_LIMIT_PER_MINUTE=1000000 node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready
+          node e2e/load-workflows.cjs --duration 30 --concurrency 12 --hires 100 --p95 2500
       - name: Server logs
         if: failure()
         run: tail -n 200 api.log web.log console.log stub.log || true
+
+  deploy:
+    # Builds the production images and runs infra/deploy/compose.yml as a real stack (TLS proxy, PostgreSQL, Redis,
+    # migration job, backups), then checks it from outside and restores a backup into a new database.
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Production stack smoke test
+        run: infra/deploy/smoke.sh
+      - name: Stack logs
+        if: failure()
+        run: grep -v -e RouterExplorer -e RoutesResolver infra/deploy/smoke-logs.txt | tail -n 300 || true

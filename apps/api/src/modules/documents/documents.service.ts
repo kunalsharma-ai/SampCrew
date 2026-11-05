@@ -11,6 +11,7 @@ import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
 import { employeeAttrs } from '../employees/employee-attrs';
+import { safeFileName } from '../../platform/http/content-disposition';
 
 export interface UploadedFile {
   originalname: string;
@@ -79,7 +80,7 @@ export class DocumentsService {
       }
       const key = this.storage.newKey(actor.tenantId);
       const sha = createHash('sha256').update(file.buffer).digest('hex');
-      const name = file.originalname.replace(/[^\w.\- ()]+/g, '_').slice(0, 200) || 'file';
+      const name = safeFileName(file.originalname, 'file');
       await this.storage.put(key, file.buffer);
       const row = (await one<{ id: string }>(
         tx,

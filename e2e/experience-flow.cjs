@@ -86,7 +86,7 @@ function leaveDay() {
     const attention = sup.getByRole('region', { name: 'Needs your attention' });
     const item = attention.getByRole('listitem').filter({ hasText: `Neha Deshmukh: Casual leave, ${day}` });
     await item.waitFor();
-    const approvals = sup.getByRole('link', { name: /^Pending approvals: [1-9]/ });
+    const approvals = sup.getByRole('link', { name: /^Pending approvals [1-9]/ });
     await approvals.waitFor();
     await item.getByRole('button', { name: /^Approve:/ }).click();
     await item.getByText('Approved', { exact: true }).waitFor({ timeout: 10000 });

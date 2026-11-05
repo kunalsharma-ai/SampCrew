@@ -44,7 +44,7 @@ export function GoalsView({ view, goals, overall, alignable, people, manages }: 
                     <div className="text-xs text-fg-muted">{g.keyResultCount ? `${g.keyResultCount} key result${g.keyResultCount === 1 ? '' : 's'}` : 'Progress reported directly'}{g.weight ? ` · weight ${g.weight}%` : ''}</div>
                   </TD>
                   <TD className="whitespace-nowrap text-fg-muted">{g.periodStart} to {g.periodEnd}</TD>
-                  <TD><Progress value={g.progress} tone={g.confidence === 'off_track' ? 'danger' : g.confidence === 'at_risk' ? 'warning' : 'accent'} /></TD>
+                  <TD><Progress label={`${g.title} progress`} value={g.progress} tone={g.confidence === 'off_track' ? 'danger' : g.confidence === 'at_risk' ? 'warning' : 'accent'} /></TD>
                   <TD>{g.confidence ? <Badge tone={CONFIDENCE_TONE[g.confidence]} dot>{CONFIDENCE[g.confidence]}</Badge> : <span className="text-xs text-fg-muted">No check-in yet</span>}</TD>
                   <TD><Badge tone={GOAL_TONE[g.status]}>{GOAL_STATUS[g.status]}</Badge></TD>
                 </TR>

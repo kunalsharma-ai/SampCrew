@@ -7,6 +7,7 @@ import { Public } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { DocumentsService, type UploadedFile } from './documents.service';
+import { contentDisposition } from '../../platform/http/content-disposition';
 
 const fileQuery = z.object({ exp: z.coerce.number().int(), sig: z.string().min(10).max(200) });
 
@@ -47,7 +48,7 @@ export class DocumentsController {
     const f = await this.documents.open(id, q.exp, q.sig);
     res.setHeader('content-type', f.contentType);
     res.setHeader('content-length', String(f.size));
-    res.setHeader('content-disposition', `attachment; filename="${f.fileName.replace(/"/g, '')}"`);
+    res.setHeader('content-disposition', contentDisposition('attachment', f.fileName));
     res.setHeader('cache-control', 'private, no-store');
     f.stream.pipe(res);
   }

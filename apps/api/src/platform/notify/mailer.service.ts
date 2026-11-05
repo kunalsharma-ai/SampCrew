@@ -34,7 +34,8 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
 
   onApplicationBootstrap() {
     if (this.config.CREW_DISABLE_DISPATCHER === 'true') return;
-    this.timer = setInterval(() => void this.sendBatch(), 2000);
+    // Like the outbox: a database blip is logged and retried on the next tick, never an unhandled rejection.
+    this.timer = setInterval(() => void this.sendBatch().catch((err: Error) => this.logger.error(`Email batch failed: ${err.message}`)), 2000);
     this.timer.unref();
   }
 
@@ -81,7 +82,7 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
                  next_attempt_at = now() + make_interval(secs => $5) where id = $1`,
               [m.id, attempts, (err as Error).message.slice(0, 1000), final, Math.min(30 * 2 ** attempts, 3600)],
             );
-            this.logger.warn(`Email ${m.id} to ${m.to_email} failed (attempt ${attempts}): ${(err as Error).message}`);
+            this.logger.warn(`Email ${m.id} failed (attempt ${attempts}): ${(err as Error).message}`);
             out.failed++;
           }
         }

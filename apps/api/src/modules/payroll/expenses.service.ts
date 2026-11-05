@@ -14,6 +14,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import type { UploadedFile } from '../documents/documents.service';
 import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
 import { attrsOf, payrollEmployee } from './salaries.service';
+import { safeFileName } from '../../platform/http/content-disposition';
 
 interface ClaimRow {
   id: string;
@@ -167,7 +168,7 @@ export class ExpensesService implements OnModuleInit {
            values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`,
           [
             e.id, input.categoryId, input.spentOn, input.amount, currency, input.description, key,
-            file ? file.originalname.replace(/[^\w.\- ()]+/g, '_').slice(0, 200) || 'receipt' : null, file?.mimetype ?? null, file?.size ?? null,
+            file ? safeFileName(file.originalname, 'receipt') : null, file?.mimetype ?? null, file?.size ?? null,
             file ? createHash('sha256').update(file.buffer).digest('hex') : null, actor.membershipId,
           ],
         ))!;

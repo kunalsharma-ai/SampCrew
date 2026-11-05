@@ -58,16 +58,38 @@ export class DatabaseService implements OnModuleDestroy {
       for (const [k, v] of Object.entries(settings)) {
         await client.query('select set_config($1, $2, true)', [k, v]);
       }
+      deferred.set(client, []);
       const result = await fn(client);
+      // Work deferred to the end of the transaction (the audit trail), in the order it was asked for.
+      for (const job of deferred.get(client) ?? []) await job();
       await client.query('commit');
       return result;
     } catch (err) {
       await client.query('rollback').catch(() => undefined);
       throw err;
     } finally {
+      deferred.delete(client);
       client.release();
     }
   }
+}
+
+const deferred = new WeakMap<Tx, Array<() => Promise<void>>>();
+
+/**
+ * Runs `job` inside the same transaction, just before it commits. Returns false (and does nothing) for a transaction
+ * this service did not open, so the caller can run the work at once instead.
+ *
+ * Why: writing to the audit trail takes the workspace's audit-chain lock until commit. Taken in the middle of a
+ * transaction, it made two overlapping requests wait on each other (one holding the chain lock and waiting for a leave
+ * balance row, the other holding that row and waiting for the chain lock), and PostgreSQL broke the deadlock by
+ * failing one of them. Taking it last, right before commit, means a transaction holding it never waits on anything else.
+ */
+export function deferUntilCommit(tx: Tx, job: () => Promise<void>): boolean {
+  const jobs = deferred.get(tx);
+  if (!jobs) return false;
+  jobs.push(job);
+  return true;
 }
 
 export async function one<T extends QueryResultRow>(tx: Tx, sql: string, params: unknown[] = []): Promise<T | undefined> {
