@@ -18,6 +18,7 @@ import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService, type ApprovalRequestRow } from '../approvals/approvals.service';
+import { AttendanceService } from '../attendance/attendance.service';
 import { employeeAttrs } from '../employees/employee-attrs';
 
 
@@ -91,6 +92,7 @@ export class LeaveService implements OnModuleInit {
     private readonly outbox: OutboxService,
     private readonly notifications: NotificationService,
     private readonly approvals: ApprovalsService,
+    private readonly attendance: AttendanceService,
   ) {}
 
   onModuleInit() {
@@ -474,6 +476,8 @@ export class LeaveService implements OnModuleInit {
       [r.employee_id, r.leave_type_id, yearOf(r.start_date), fromH(-toH(r.days)), r.start_date, r.id, requestContext.tenantActor().userId],
     );
     await this.audit.record(tx, { action: 'leave_request.approved', resourceType: 'leave_request', resourceId: r.id, metadata: { days: r.days } });
+    // Attendance days already past show the leave instead of an absence.
+    await this.attendance.recomputeFor(tx, r.employee_id, r.start_date, r.end_date);
     await this.outbox.publish(tx, requestContext.tenantActor().tenantId, 'leave.approved', { leaveRequestId: r.id, employeeId: r.employee_id });
   }
 
@@ -509,6 +513,7 @@ export class LeaveService implements OnModuleInit {
           [r.employee_id, r.leave_type_id, yearOf(r.start_date), r.days, r.start_date, id, reason ?? 'Cancelled', actor.userId],
         );
       }
+      if (r.status === 'approved') await this.attendance.recomputeFor(tx, r.employee_id, r.start_date, r.end_date);
       await this.audit.record(tx, { action: 'leave_request.cancelled', resourceType: 'leave_request', resourceId: id, metadata: { from: r.status, reason: reason ?? null } });
       if (!isOwner || r.status === 'approved') {
         const approvers = r.approval_request_id

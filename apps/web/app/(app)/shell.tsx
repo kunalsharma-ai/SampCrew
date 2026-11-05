@@ -2,7 +2,7 @@
 import { Avatar, Badge, CrewLogo, Dialog, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
-  Settings, Shield, SlidersHorizontal, Sun, Users, X,
+  Settings, Shield, SlidersHorizontal, Sun, Users, X, Clock, CalendarClock, UsersRound, Timer, Fingerprint,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -15,6 +15,7 @@ import { logoutAction, markAllNotificationsReadAction, markNotificationReadActio
 const ICONS: Record<string, LucideIcon> = {
   home: Home, users: Users, building: Building2, shield: Shield, scroll: ScrollText, 'credit-card': CreditCard, settings: Settings, 'life-buoy': LifeBuoy, key: KeyRound,
   inbox: Inbox, calendar: CalendarDays, 'list-checks': ListChecks, contact: Contact, sliders: SlidersHorizontal,
+  clock: Clock, 'calendar-clock': CalendarClock, 'users-round': UsersRound, timer: Timer, fingerprint: Fingerprint,
 };
 
 export interface Notifications { unread: number; items: Notification[] }

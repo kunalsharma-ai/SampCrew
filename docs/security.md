@@ -16,11 +16,12 @@ This document describes the controls implemented so far and the plan for the res
 | Audit | Append-only (trigger + no UPDATE/DELETE grant) and SHA-256 hash-chained per tenant; written in the same transaction as the change; secrets redacted; verification endpoint detects tampering | migration, `platform/audit` |
 | Platform staff | Separate table, signing key, sessions and login; MFA mandatory; no tenant data access without a customer-approved, time-boxed support grant, which is audited in the customer's own trail | `modules/platform-admin` |
 | API hygiene | Input validation on every route (zod), uniform error envelope without stack traces, request ids, helmet security headers, CORS allow-list, rate limiting (stricter on auth routes), Idempotency-Key support | `platform/http` |
+| Attendance | Raw punches append-only (trigger + insert-only grant) and deduplicated; derived days rebuilt, never hand-edited; corrections add punches through approval; payroll locks freeze days. Devices accepted only by registered serial and optional IP allow-list, with request size limits; kiosk tokens stored hashed and kept in the URL fragment; QR codes HMAC-signed, 30-second windows, one punch per person per code; no biometric templates stored | `modules/attendance`, `0003_attendance.sql` |
 | Secrets | No secrets in code; configuration validated at start-up and the process refuses weak or missing keys | `platform/config` |
 
 ## Planned
 
 - Phase 2: field-level envelope encryption (per-tenant data keys via KMS) for bank, tax and national ID fields; signed URLs for documents; malware scanning of uploads.
-- Phase 3: biometric data minimisation (events, not templates), consent records, jurisdiction switches.
+- Consent records and jurisdiction switches for location and biometric data (Phase 3 stores punch events only, never biometric templates).
 - Redis-backed distributed rate limits and session cache before multi-replica deployment.
 - Phase 10: SSO (SAML/OIDC), SCIM, data residency cells, DR drills, external penetration test, privacy request tooling (access, erasure, portability) and retention schedules.

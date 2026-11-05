@@ -139,6 +139,12 @@ export async function provisionTenant(db: PoolClient, input: ProvisionTenantInpu
     `insert into onboarding_templates (tenant_id, name, description, tasks, is_default) values ($1, 'Standard onboarding', 'Default checklist for new joiners', $2, true)`,
     [tenantId, JSON.stringify(DEFAULT_ONBOARDING_TASKS)],
   );
+  // A general shift and a workspace attendance policy that uses it, so attendance works from day one.
+  const shift = await db.query<{ id: string }>(
+    `insert into shift_templates (tenant_id, code, name, start_time, end_time, break_minutes) values ($1, 'GEN', 'General shift', '09:00', '18:00', 60) returning id`,
+    [tenantId],
+  );
+  await db.query(`insert into attendance_policies (tenant_id, default_shift_id) values ($1, $2)`, [tenantId, shift.rows[0]!.id]);
 
   return { tenantId, ownerUserId: userId, ownerMembershipId, legalEntityId, existingUser };
 }

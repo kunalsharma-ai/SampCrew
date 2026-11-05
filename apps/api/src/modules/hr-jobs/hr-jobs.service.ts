@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { DatabaseService, many, one } from '../../platform/database/database.service';
+import { AttendanceService } from '../attendance/attendance.service';
+import { DevicesService } from '../attendance/devices.service';
 import { EmployeesService } from '../employees/employees.service';
 import { LeaveService } from '../leave/leave.service';
 
@@ -10,6 +12,8 @@ export interface HrJobResult {
   joinersStarted: number;
   exitsCompleted: number;
   accrualsPosted: number;
+  attendanceDaysComputed: number;
+  devicesAlerted: number;
 }
 
 /**
@@ -27,6 +31,8 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly db: DatabaseService,
     private readonly employees: EmployeesService,
     private readonly leave: LeaveService,
+    private readonly attendance: AttendanceService,
+    private readonly devices: DevicesService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -61,13 +67,17 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     }
   }
 
-  runTenant(tenantId: string, asOf: string): Promise<HrJobResult> {
-    return this.db.tenant(async (tx) => {
+  async runTenant(tenantId: string, asOf: string): Promise<HrJobResult> {
+    const hr = await this.db.tenant(async (tx) => {
       const placementsUpdated = (await one<{ n: number }>(tx, 'select employees_apply_current($1::date) as n', [asOf]))!.n;
       const joinersStarted = await this.employees.startJoiners(tx, asOf);
       const exitsCompleted = await this.employees.finaliseExits(tx, asOf);
       const accrualsPosted = await this.leave.runAccruals(tx, asOf);
       return { tenantId, placementsUpdated, joinersStarted, exitsCompleted, accrualsPosted };
     }, { tenantId });
+    // Attendance runs in its own transactions so a problem there never holds back the HR changes above.
+    const attendanceDaysComputed = await this.attendance.refreshRecent(tenantId);
+    const devicesAlerted = await this.devices.alertOffline(tenantId);
+    return { ...hr, attendanceDaysComputed, devicesAlerted };
   }
 }

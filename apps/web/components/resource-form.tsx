@@ -7,7 +7,7 @@ import type { ActionResult } from '@/lib/api';
 export interface FieldDef {
   name: string;
   label: string;
-  type?: 'text' | 'number' | 'select' | 'textarea';
+  type?: 'text' | 'number' | 'select' | 'textarea' | 'time' | 'date';
   options?: { value: string; label: string }[];
   required?: boolean;
   /** Empty value is sent as null (clears the field) instead of being omitted. */
@@ -95,7 +95,7 @@ export function ResourceDialog({ open, onClose, title, description, fields, init
                 ) : def.type === 'textarea' ? (
                   <Textarea {...p} name={def.name} defaultValue={dv} placeholder={def.placeholder} />
                 ) : (
-                  <Input {...p} name={def.name} type={def.type === 'number' ? 'number' : 'text'} step={def.step} defaultValue={dv} required={def.required} placeholder={def.placeholder} />
+                  <Input {...p} name={def.name} type={def.type === 'number' || def.type === 'time' || def.type === 'date' ? def.type : 'text'} step={def.step} defaultValue={dv} required={def.required} placeholder={def.placeholder} />
                 )
               }
             </Field>

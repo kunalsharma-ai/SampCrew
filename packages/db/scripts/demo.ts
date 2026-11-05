@@ -105,6 +105,7 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
       ownerTitle: 'Managing Director', people: [{ email: 'owner@demo.crew.local', name: 'Aarav Mehta', title: 'Managing Director', dept: hr.id, loc: blr.id, entity: t.legalEntityId }, ...people],
       membershipByEmail,
     });
+    await seedAttendance(client, { tid, puneId: pune.id, membershipByEmail });
 
     await client.query(
       `insert into audit_events (tenant_id, actor_type, actor_label, action, resource_type, resource_id, metadata)
@@ -273,4 +274,87 @@ async function seedCoreHr(
       [tid, neha, sl, year, day, lr.id],
     );
   }
+}
+
+/**
+ * Phase 3 demo data: a night shift, a Pune policy, about a week of punches for the plant, and a simulated device
+ * whose punches arrive through enrolment numbers. Attendance days are not inserted: the API derives them from these
+ * raw punches on first view and in the hourly job, exactly as it does for real data.
+ */
+async function seedAttendance(client: PoolClient, c: { tid: string; puneId: string; membershipByEmail: Map<string, string> }) {
+  const { tid } = c;
+  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
+  const gen = await q(`select id from shift_templates where tenant_id = $1 and code = 'GEN'`, [tid]);
+  await client.query(
+    `insert into shift_templates (tenant_id, code, name, start_time, end_time, break_minutes, overtime_enabled, overtime_min_minutes, color)
+     values ($1, 'NIGHT', 'Night shift (demo data)', '22:00', '06:00', 30, true, 30, '#7c3aed')`,
+    [tid],
+  );
+  await client.query(
+    `insert into attendance_policies (tenant_id, location_id, geofence_mode, default_shift_id, correction_window_days) values ($1, $2, 'warn', $3, 30)`,
+    [tid, c.puneId, gen.id],
+  );
+
+  const emp = async (where: string, value: string) => (await q(`select id from employees where tenant_id = $1 and ${where} = $2`, [tid, value])).id;
+  const web = {
+    arjun: await emp('work_email', 'operator1@demo.crew.local'),
+    neha: await emp('work_email', 'operator2@demo.crew.local'),
+    sunita: await emp('work_email', 'supervisor@demo.crew.local'),
+  };
+  const ganesh = await emp('first_name', 'Ganesh');
+  const rekha = await emp('first_name', 'Rekha');
+
+  const device = await q(
+    `insert into attendance_devices (tenant_id, name, vendor, model, serial_number, location_id, time_zone, simulated, last_seen_at)
+     values ($1, 'Pune gate (simulated demo device)', 'zkteco', 'Simulated', $2, $3, 'Asia/Kolkata', true, now()) returning id`,
+    [tid, `DEMO${tid.replace(/-/g, '').slice(0, 10).toUpperCase()}`, c.puneId],
+  );
+  await client.query(`insert into device_user_mappings (tenant_id, device_id, device_user_id, employee_id) values ($1, null, '101', $2), ($1, null, '102', $3)`, [tid, ganesh, rekha]);
+
+  // The last 26 days before today that the Pune calendar treats as working days (Sundays and holidays skipped).
+  const holidays = new Set((await client.query<{ d: string }>(`select to_char(h.holiday_date, 'YYYY-MM-DD') as d from holidays h join holiday_calendars hc on hc.id = h.calendar_id where hc.tenant_id = $1 and hc.location_id = $2`, [tid, c.puneId])).rows.map((r) => r.d));
+  const days: string[] = [];
+  const cursor = new Date(Date.now() + 5.5 * 3_600_000); // today in India
+  while (days.length < 26) {
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    const d = cursor.toISOString().slice(0, 10);
+    if (cursor.getUTCDay() !== 0 && !holidays.has(d)) days.push(d);
+  }
+  const at = (d: string, hm: string) => `${d}T${hm}:00+05:30`;
+  const pune = { latitude: 18.5205, longitude: 73.8566, accuracy: 15, distance: 15 };
+  let accepted = 0;
+  for (const [i, d] of days.entries()) {
+    for (const [key, id] of Object.entries(web)) {
+      const late = key === 'neha' && i % 3 === 1;
+      const missingOut = key === 'arjun' && i === 2; // a forgotten punch-out, to try a correction on
+      const punches: [string, 'in' | 'out'][] = [[late ? '09:34' : `08:5${i % 7}`, 'in']];
+      if (!missingOut) punches.push([key === 'sunita' && i === 0 ? '19:20' : `18:0${(i * 3) % 10}`, 'out']);
+      for (const [hm, direction] of punches) {
+        await client.query(
+          `insert into attendance_events (tenant_id, employee_id, source, source_event_id, captured_at, direction, latitude, longitude, accuracy_m, geofence_result, distance_m, note)
+           values ($1, $2, 'web', $3, $4, $5, $6, $7, $8, 'inside', $9, 'Demo data')`,
+          [tid, id, `demo-${key}-${d}-${direction}`, at(d, hm), direction, pune.latitude, pune.longitude, pune.accuracy, pune.distance],
+        );
+      }
+    }
+    // Shop floor staff punch on the device. 103 is not mapped yet, so it shows up as an enrolment number to map.
+    for (const [pin, inAt, outAt] of [['101', '08:46', '17:58'], ['102', `08:5${i % 9}`, '18:04'], ['103', '08:55', '18:01']] as const) {
+      for (const [hm, direction, status] of [[inAt, 'in', 0], [outAt, 'out', 1]] as const) {
+        await client.query(
+          `insert into attendance_events (tenant_id, device_id, device_user_id, source, source_event_id, captured_at, device_local_time, direction, verify_method, raw)
+           values ($1, $2, $3, 'device', $4, $5, $6, $7, 'fingerprint', $8)`,
+          [tid, device.id, pin, `demo-${device.id}-${pin}-${d}-${direction}`, at(d, hm), `${d} ${hm}:00`, direction, { demo: true, status }],
+        );
+        accepted++;
+      }
+    }
+  }
+  await client.query(
+    `update attendance_devices set records_accepted = $2, last_punch_at = $3 where id = $1`,
+    [device.id, accepted, at(days[0]!, '18:04')],
+  );
+  await client.query(
+    `insert into device_ingest_log (tenant_id, device_id, kind, records, accepted, duplicates, rejected, detail) values ($1, $2, 'attlog', $3, $3, 0, 0, 'Demo data: a week of punches')`,
+    [tid, device.id, accepted],
+  );
 }

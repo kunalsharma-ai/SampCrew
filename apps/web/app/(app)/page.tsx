@@ -11,7 +11,6 @@ interface Overview { legalEntities: number; businessUnits: number; locations: nu
 const SCOPE_LABEL: Record<string, string> = { own: 'Yourself', team: 'Your team', department: 'Your department', entity: 'Your legal entity', tenant: 'Whole organization' };
 
 const ROADMAP = [
-  { phase: 3, title: 'Attendance & workforce', items: 'Mobile/GPS attendance, geofencing, biometric device hub, shifts, overtime' },
   { phase: 4, title: 'Recruitment', items: 'Requisitions, candidate CRM, ATS pipeline, interviews, career pages' },
   { phase: 5, title: 'Payroll & finance', items: 'Salary structures, India payroll, payslips, expenses' },
   { phase: 8, title: 'AI & automation', items: 'Copilots, workflow studio, predictive insights' },
@@ -93,7 +92,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                   ))}
                 </ul>
               ) : (
-                <p className="text-[13px] text-fg-muted">Your self-service features (profile, attendance, leave, payslips) arrive with the Core HR and Attendance releases.</p>
+                <p className="text-[13px] text-fg-muted">Your self-service features appear here once your administrator gives you access. Payslips arrive with the Payroll release.</p>
               )}
             </CardBody>
           </Card>

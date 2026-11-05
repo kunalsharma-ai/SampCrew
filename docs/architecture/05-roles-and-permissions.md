@@ -55,10 +55,10 @@ CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carr
 | **Attendance** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `attendance:read` View attendance records | 3 |  | A | · | A | E | O | O | A | O | A | T | O | · |
 | `attendance:punch` Record own attendance | 3 |  | O | · | O | O | O | O | O | O | O | O | O | · |
-| `attendance:correct` Request attendance corrections | 3 |  | A | · | O | O | O | O | O | O | A | O | O | · |
+| `attendance:correct` Request attendance corrections | 3 |  | A | · | A | O | O | O | O | O | A | O | O | · |
 | `attendance:approve` Approve corrections and overtime | 3 |  | A | · | A | E | · | · | · | · | A | T | · | · |
 | `attendance:configure` Configure attendance policies, geofences and locks | 3 |  | A | · | A | · | · | · | · | · | A | · | · | · |
-| `devices:manage` Manage biometric devices and sync agents | 3 |  | A | · | · | · | · | · | · | · | A | · | · | · |
+| `devices:manage` Manage biometric devices and sync agents | 3 |  | A | · | A | · | · | · | · | · | A | · | · | · |
 | **Scheduling** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `shifts:read` View shifts and rosters | 3 |  | A | · | A | E | O | O | O | O | A | T | O | · |
 | `shifts:manage` Create rosters, assign and swap shifts | 3 |  | A | · | A | E | · | · | · | · | A | T | · | · |

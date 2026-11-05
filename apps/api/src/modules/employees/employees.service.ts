@@ -26,7 +26,7 @@ import { NotificationService } from '../../platform/notify/notification.service'
 import { LeaveService } from '../leave/leave.service';
 import { MembersService } from '../members/members.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
-import { employeeAttrs } from './employee-attrs';
+import { EMPLOYEE_SCOPE, employeeAttrs } from './employee-attrs';
 
 export { employeeAttrs };
 
@@ -50,13 +50,7 @@ export const EMPLOYEE_FROM = `from employees e
   left join memberships m on m.id = e.membership_id`;
 
 /** Columns the ABAC scope predicate uses for employee rows (aliased e). */
-export const EMPLOYEE_SCOPE = {
-  membershipId: 'e.membership_id',
-  legalEntityId: 'e.current_legal_entity_id',
-  departmentId: 'e.current_department_id',
-  locationId: 'e.current_location_id',
-  employeeId: 'e.id',
-};
+export { EMPLOYEE_SCOPE };
 
 export interface EmployeeRow {
   id: string;
