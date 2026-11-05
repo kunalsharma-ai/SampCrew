@@ -66,6 +66,10 @@ import { AiGatewayService } from './modules/ai/ai-gateway.service';
 import { AiService } from './modules/ai/ai.service';
 import { AssistantService } from './modules/ai/assistant.service';
 import { AutomationController } from './modules/automation/automation.controller';
+import { IntegrationsController } from './modules/integrations/integrations.controller';
+import { ApiKeysService } from './modules/integrations/api-keys.service';
+import { WebhooksService } from './modules/integrations/webhooks.service';
+import { ConnectionsService } from './modules/integrations/connections.service';
 import { AutomationService } from './modules/automation/automation.service';
 import { WorkflowRunnerService } from './modules/automation/workflow-runner.service';
 import { InsightsController } from './modules/insights/insights.controller';
@@ -130,6 +134,7 @@ export const CONTROLLERS = [
   MobileController,
   AiController,
   AutomationController,
+  IntegrationsController,
   InsightsController,
   PlatformAuthController,
   PlatformController,
@@ -193,6 +198,9 @@ export const CONTROLLERS = [
     AssistantService,
     AutomationService,
     WorkflowRunnerService,
+    ApiKeysService,
+    WebhooksService,
+    ConnectionsService,
     InsightsService,
     PushService,
     HrJobsService,

@@ -46,6 +46,13 @@ const schema = z.object({
   /** Retry a refused request on the provider's fallback model (Claude API only). */
   AI_REFUSAL_FALLBACK: z.enum(['true', 'false']).default('true'),
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(30_000),
+  /**
+   * Let webhooks and connectors call private and local network addresses (and plain http). For local development
+   * and tests only; refused in staging and production, where those calls could reach internal services.
+   */
+  INTEGRATIONS_ALLOW_PRIVATE_URLS: z.enum(['true', 'false']).default('false'),
+  /** Tests only: send Slack messages to this base instead of https://hooks.slack.com (refused in staging and production). */
+  SLACK_WEBHOOK_BASE_URL: optional(z.string().url()),
   FIELD_ENCRYPTION_KEY: z
     .string()
     .refine((v) => Buffer.from(v, 'base64').length === 32, 'FIELD_ENCRYPTION_KEY must be 32 bytes, base64 encoded'),
@@ -65,6 +72,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   if (parsed.data.AI_PROVIDER === 'anthropic' && !parsed.data.ANTHROPIC_API_KEY) {
     throw new Error('Invalid configuration: AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY');
+  }
+  const productionLike = parsed.data.CREW_ENV === 'production' || parsed.data.CREW_ENV === 'staging';
+  if (productionLike && (parsed.data.INTEGRATIONS_ALLOW_PRIVATE_URLS === 'true' || parsed.data.SLACK_WEBHOOK_BASE_URL)) {
+    throw new Error('Invalid configuration: INTEGRATIONS_ALLOW_PRIVATE_URLS and SLACK_WEBHOOK_BASE_URL are for local development and tests only');
   }
   if (parsed.data.JWT_ACCESS_SECRET === parsed.data.JWT_PLATFORM_SECRET) {
     throw new Error('Invalid configuration: JWT_ACCESS_SECRET and JWT_PLATFORM_SECRET must differ');

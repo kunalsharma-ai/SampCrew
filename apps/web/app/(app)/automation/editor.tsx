@@ -16,6 +16,8 @@ function blank(type: WorkflowStep['type'], cat: Catalogue, trigger: TriggerEvent
     case 'delay': return { id, type, amount: 1, unit: 'days' };
     case 'approval': return { id, type, approver: 'manager', summary: '' };
     case 'assign_course': return { id, type, courseId: cat.courses[0]?.id ?? '', dueInDays: 30 };
+    case 'slack': return { id, type, connectionId: cat.slackConnections.find((c) => c.status === 'active')?.id ?? '', text: '' };
+    case 'webhook': return { id, type, endpointId: cat.webhookEndpoints.find((w) => w.status === 'active')?.id ?? '', message: '' };
   }
 }
 
@@ -178,7 +180,7 @@ export function WorkflowEditor({ catalogue, workflow, aiDraft }: { catalogue: Ca
           ))}
           <div className="flex flex-wrap gap-2">
             {catalogue.steps.map((t) => (
-              <Button key={t.key} size="sm" variant="secondary" disabled={steps.length >= 20 || (t.key === 'assign_course' && !catalogue.courses.length)} onClick={() => setSteps([...steps, blank(t.key, catalogue, trigger, nextId(t.key, steps))])}>+ {t.label}</Button>
+              <Button key={t.key} size="sm" variant="secondary" disabled={steps.length >= 20 || (t.key === 'assign_course' && !catalogue.courses.length) || (t.key === 'slack' && !catalogue.slackConnections.length) || (t.key === 'webhook' && !catalogue.webhookEndpoints.length)} onClick={() => setSteps([...steps, blank(t.key, catalogue, trigger, nextId(t.key, steps))])}>+ {t.label}</Button>
             ))}
           </div>
         </CardBody>
@@ -249,6 +251,38 @@ function StepFields({ step: s, catalogue, fields, update, err }: {
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Course" error={err('courseId')}>{(p) => <Select {...p} value={str('courseId')} onChange={(e) => update({ courseId: e.target.value })}>{catalogue.courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}</Select>}</Field>
           <Field label="Due in (days)" hint="Leave empty for no due date" error={err('dueInDays')}>{(p) => <Input {...p} type="number" min={1} max={365} value={s.dueInDays === null ? '' : str('dueInDays')} onChange={(e) => update({ dueInDays: e.target.value })} />}</Field>
+        </div>
+      );
+    case 'slack':
+      return (
+        <div className="grid gap-3">
+          <Field label="Slack channel" hint={catalogue.slackConnections.length ? undefined : 'Connect a channel under Settings, Integrations, Slack first (Business plan and above).'} error={err('connectionId')}>
+            {(p) => (
+              <Select {...p} value={str('connectionId')} onChange={(e) => update({ connectionId: e.target.value })}>
+                <option value="">Choose a channel</option>
+                {catalogue.slackConnections.map((c) => <option key={c.id} value={c.id}>{c.name}{c.status !== 'active' ? ' (not working)' : ''}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label="Message" hint="Posted as plain text. You can use {{employee.name}} and the other values listed above. Avoid pay and personal details: everyone in the channel sees it." error={err('text')}>
+            {(p) => <Textarea {...p} rows={2} maxLength={2000} value={str('text')} onChange={(e) => update({ text: e.target.value })} />}
+          </Field>
+        </div>
+      );
+    case 'webhook':
+      return (
+        <div className="grid gap-3">
+          <Field label="Webhook endpoint" hint={catalogue.webhookEndpoints.length ? 'Sent as a workflow.webhook event with the run\'s values, signed like every webhook.' : 'Add an endpoint under Settings, Integrations, Webhooks first (Business plan and above).'} error={err('endpointId')}>
+            {(p) => (
+              <Select {...p} value={str('endpointId')} onChange={(e) => update({ endpointId: e.target.value })}>
+                <option value="">Choose an endpoint</option>
+                {catalogue.webhookEndpoints.map((w) => <option key={w.id} value={w.id}>{w.name}{w.status !== 'active' ? ` (${w.status})` : ''}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label="Message" hint="A short note included with the values. You can use placeholders." error={err('message')}>
+            {(p) => <Input {...p} maxLength={500} value={str('message')} onChange={(e) => update({ message: e.target.value })} />}
+          </Field>
         </div>
       );
   }

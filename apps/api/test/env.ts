@@ -19,6 +19,8 @@ export function applyTestEnv() {
   process.env.JWT_PLATFORM_SECRET ??= randomBytes(32).toString('base64');
   process.env.FIELD_ENCRYPTION_KEY ??= randomBytes(32).toString('base64');
   process.env.CREW_DISABLE_DISPATCHER = 'true';
+  // Integration tests post to receivers on 127.0.0.1; the config refuses this outside development and tests.
+  process.env.INTEGRATIONS_ALLOW_PRIVATE_URLS = 'true';
   delete process.env.SMTP_URL; // email.spec.ts starts its own SMTP server
   process.env.STORAGE_DIR ??= './.data/test-files';
   process.env.WEB_PUBLIC_URL ??= 'http://localhost:3000';

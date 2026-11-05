@@ -91,6 +91,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/roles', label: 'Roles & permissions', icon: 'shield', permission: 'roles:read' },
       { href: '/settings/ai', label: 'AI settings', icon: 'sparkles', permission: 'ai:configure', feature: 'ai_copilot' },
       { href: '/settings/ai/activity', label: 'AI activity', icon: 'bot', permission: 'audit:read', feature: 'ai_copilot' },
+      { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
       { href: '/settings/audit', label: 'Audit trail', icon: 'scroll', permission: 'audit:read' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },

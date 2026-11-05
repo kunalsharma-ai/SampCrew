@@ -76,7 +76,7 @@ function TestPanel({ workflow }: { workflow: WorkflowDetail }) {
   const used = new Set<string>();
   for (const s of workflow.latest.definition.steps) {
     if (s.type === 'condition') used.add(s.field);
-    const text = s.type === 'notify' ? `${s.title} ${s.body}` : s.type === 'approval' ? s.summary : '';
+    const text = s.type === 'notify' ? `${s.title} ${s.body}` : s.type === 'approval' ? s.summary : s.type === 'slack' ? s.text : s.type === 'webhook' ? s.message : '';
     for (const p of automation.placeholders(text)) used.add(p);
   }
   const shown = fields.filter((f) => used.has(f.key) || f.key === 'employee.name');

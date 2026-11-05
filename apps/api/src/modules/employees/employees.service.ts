@@ -710,6 +710,7 @@ export class EmployeesService {
         }
       }
       await this.audit.record(tx, { action: 'employee.exited', resourceType: 'employee', resourceId: e.id, metadata: { lastWorkingDay: e.last_working_day }, tenantId: e.tenant_id });
+      await this.outbox.publish(tx, e.tenant_id, 'employee.exited', { employeeId: e.id });
     }
     return due.length;
   }

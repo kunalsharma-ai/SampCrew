@@ -41,3 +41,4 @@ export { workflowDefinition, workflowInput, workflowTestInput, workflowDraftInpu
 export type { WorkflowDefinition, WorkflowStep, WorkflowInput, WorkflowTestInput, TriggerEvent, StepType, DefinitionIssue } from './automation';
 export * as insights from './insights';
 export type { AttritionInput, AttritionResult, RiskFactor, PayAnomaly } from './insights';
+export * from './integrations';

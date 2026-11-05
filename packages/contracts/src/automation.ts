@@ -88,15 +88,27 @@ const assignCourseStep = z.object({
   dueInDays: z.number().int().min(1).max(365).nullable().default(30),
 });
 
-export const workflowStep = z.discriminatedUnion('type', [conditionStep, notifyStep, delayStep, approvalStep, assignCourseStep]);
+const slackStep = z.object({
+  id: stepId, type: z.literal('slack'),
+  connectionId: z.uuid(),
+  text: template(2000),
+});
+const webhookStep = z.object({
+  id: stepId, type: z.literal('webhook'),
+  endpointId: z.uuid(),
+  message: template(500),
+});
+
+export const workflowStep = z.discriminatedUnion('type', [conditionStep, notifyStep, delayStep, approvalStep, assignCourseStep, slackStep, webhookStep]);
 export type WorkflowStep = z.infer<typeof workflowStep>;
 export type StepType = WorkflowStep['type'];
-export const STEP_TYPES: StepType[] = ['condition', 'notify', 'delay', 'approval', 'assign_course'];
+export const STEP_TYPES: StepType[] = ['condition', 'notify', 'delay', 'approval', 'assign_course', 'slack', 'webhook'];
 export const STEP_LABEL: Record<StepType, string> = {
   condition: 'Continue only if', notify: 'Send a notification', delay: 'Wait', approval: 'Ask for approval', assign_course: 'Assign a course',
+  slack: 'Post to Slack', webhook: 'Send to a webhook',
 };
-/** Steps whose effects reach people or records; a test run only describes them. */
-export const SIDE_EFFECT_STEPS: StepType[] = ['notify', 'approval', 'assign_course'];
+/** Steps whose effects reach people, records or outside systems; a test run only describes them. */
+export const SIDE_EFFECT_STEPS: StepType[] = ['notify', 'approval', 'assign_course', 'slack', 'webhook'];
 
 export const workflowDefinition = z.object({
   trigger: z.object({ event: z.enum(TRIGGER_EVENTS as [TriggerEvent, ...TriggerEvent[]]) }),
@@ -172,6 +184,12 @@ export function validateDefinition(input: unknown, knownRoles?: readonly string[
         if (s.approver === 'role' && s.role && knownRoles && !knownRoles.includes(s.role)) issues.push({ path: `${at}.role`, message: `Role "${s.role}" does not exist` });
         checkTemplate(s.summary, 'summary');
         break;
+      case 'slack':
+        checkTemplate(s.text, 'text');
+        break;
+      case 'webhook':
+        checkTemplate(s.message, 'message');
+        break;
       default:
         break;
     }
@@ -233,5 +251,7 @@ export function describeStep(s: WorkflowStep): string {
     case 'delay': return `Wait ${s.amount} ${s.amount === 1 ? s.unit.replace(/s$/, '') : s.unit}`;
     case 'approval': return `Ask ${s.approver === 'manager' ? "the employee's manager" : `the ${s.role} role`} to approve: "${s.summary}"`;
     case 'assign_course': return `Assign a course${s.dueInDays ? `, due in ${s.dueInDays} days` : ''}`;
+    case 'slack': return `Post to Slack: "${s.text.length > 80 ? `${s.text.slice(0, 77)}...` : s.text}"`;
+    case 'webhook': return `Send to a webhook endpoint: "${s.message}"`;
   }
 }

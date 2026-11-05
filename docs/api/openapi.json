@@ -22525,6 +22525,64 @@
                                 "type",
                                 "courseId"
                               ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "slack"
+                                },
+                                "connectionId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 2000
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "connectionId",
+                                "text"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "webhook"
+                                },
+                                "endpointId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "message": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 500
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "endpointId",
+                                "message"
+                              ]
                             }
                           ]
                         }
@@ -22882,6 +22940,64 @@
                                 "id",
                                 "type",
                                 "courseId"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "slack"
+                                },
+                                "connectionId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 2000
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "connectionId",
+                                "text"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,30}$"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "webhook"
+                                },
+                                "endpointId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "message": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 500
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "type",
+                                "endpointId",
+                                "message"
                               ]
                             }
                           ]
@@ -23354,6 +23470,977 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/catalogue": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Connectors (available and planned), webhook events, API key scopes and how many of each this workspace has",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_catalogue",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/api-keys": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "API keys with their scopes, owner and last use (the secret part is never returned)",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_listKeys",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Create an API key. The full key is in this response only; store it safely.",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_createKey",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 80
+                  },
+                  "scopes": {
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "org:read",
+                        "employees:read",
+                        "leave:read",
+                        "attendance:read",
+                        "shifts:read",
+                        "requisitions:read",
+                        "candidates:read",
+                        "learning:read",
+                        "performance:read",
+                        "announcements:read",
+                        "reports:read",
+                        "audit:read"
+                      ]
+                    }
+                  },
+                  "expiresInDays": {
+                    "default": 90,
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "const": 30
+                      },
+                      {
+                        "type": "number",
+                        "const": 90
+                      },
+                      {
+                        "type": "number",
+                        "const": 180
+                      },
+                      {
+                        "type": "number",
+                        "const": 365
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "scopes"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/api-keys/{id}/revoke": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Revoke an API key. It stops working at once and cannot be restored.",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_revokeKey",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/webhooks": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Webhook endpoints with recent delivery counts",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_listWebhooks",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Add a webhook endpoint. The signing secret is in this response only.",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_createWebhook",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 80
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "format": "uri"
+                  },
+                  "events": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "employee.created",
+                        "employee.changed",
+                        "employee.job_changed",
+                        "employee.confirmed",
+                        "employee.exit_scheduled",
+                        "employee.exit_withdrawn",
+                        "employee.exited",
+                        "leave.requested",
+                        "leave.approved",
+                        "helpdesk.case_created",
+                        "payroll.run_finalised",
+                        "workflow.webhook"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "url",
+                  "events"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/webhooks/{id}": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "A webhook endpoint",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_getWebhook",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Change a webhook endpoint's name, address or events",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_updateWebhook",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 80
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "format": "uri"
+                  },
+                  "events": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "employee.created",
+                        "employee.changed",
+                        "employee.job_changed",
+                        "employee.confirmed",
+                        "employee.exit_scheduled",
+                        "employee.exit_withdrawn",
+                        "employee.exited",
+                        "leave.requested",
+                        "leave.approved",
+                        "helpdesk.case_created",
+                        "payroll.run_finalised",
+                        "workflow.webhook"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "url",
+                  "events"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Delete a webhook endpoint and its delivery log",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_deleteWebhook",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/webhooks/{id}/enable": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Switch an endpoint on (also after it was switched off for failing)",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_enableWebhook",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/webhooks/{id}/pause": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Pause an endpoint. Nothing new is queued for it while paused.",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_pauseWebhook",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/webhooks/{id}/rotate-secret": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Replace the signing secret. The new secret is in this response only and is used from the next attempt.",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_rotateSecret",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/webhooks/{id}/test": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Queue a webhook.test event to this endpoint",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_testWebhook",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/webhooks/{id}/deliveries": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Recent deliveries to an endpoint, newest first",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_deliveries",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "sending",
+                "succeeded",
+                "failed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/deliveries/{id}": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "A delivery with its payload and every attempt",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_delivery",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/deliveries/{id}/redeliver": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Send a finished delivery again (for example after fixing the receiver)",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_redeliver",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/connections": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Connections to outside services (Slack)",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_listConnections",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/connections/slack": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Connect a Slack channel with an incoming webhook URL. A confirmation message is posted first; nothing is saved if Slack refuses it.",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_connectSlack",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 80
+                  },
+                  "webhookUrl": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "pattern": "^https:\\/\\/hooks\\.slack\\.com\\/services\\/T[A-Z0-9]+\\/B[A-Z0-9]+\\/[A-Za-z0-9]+$"
+                  }
+                },
+                "required": [
+                  "name",
+                  "webhookUrl"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/connections/{id}/test": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Post a test message through a connection",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_testConnection",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/connections/{id}/logs": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Recent calls made through a connection",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_connectionLogs",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/connections/{id}/disconnect": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Disconnect and wipe the stored credentials",
+        "description": "Requires plan feature `integrations_advanced`.",
+        "operationId": "Integrations_disconnect",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
