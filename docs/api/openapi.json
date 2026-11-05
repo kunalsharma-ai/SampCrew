@@ -32829,7 +32829,7 @@
         "tags": [
           "Platform: "
         ],
-        "summary": "The workspace's activity: what happened, who did it, when and from which app (record contents are not included)",
+        "summary": "The workspace's activity: what happened, who did it, when and from which app (contents: one event at a time, audited)",
         "description": "SAMPLEDGE platform realm (console token, MFA required).",
         "operationId": "Platform_activity",
         "security": [
@@ -32898,6 +32898,54 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/activity/{eventId}": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "One activity event with its recorded contents (before and after values) and the history of the same record. Every read is recorded in the customer's audit trail and the platform log.",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_activityEvent",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],

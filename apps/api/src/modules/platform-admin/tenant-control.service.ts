@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DEVICE_INTEGRATIONS,
+  type ActivityEventDetail,
   type ActivityRow,
   type DeviceVendor,
   type MemberAction,
@@ -17,6 +18,9 @@ import { deviceStatus } from '../attendance/devices.service';
 
 const INVITE_TTL_DAYS = 7;
 
+const ACTIVITY_COLUMNS = `a.id::text, a.created_at as "createdAt", a.action, split_part(a.action, '.', 1) as area, a.actor_type as "actorType", a.actor_label as "actorLabel",
+  a.resource_type as "resourceType", a.resource_id as "resourceId", a.metadata->>'client' as client, host(a.ip) as ip, a.changes <> '{}'::jsonb as "hasChanges"`;
+
 /** Escapes a search term for ILIKE. */
 const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
@@ -32,10 +36,11 @@ const USER_COLUMNS = `m.id as "membershipId", u.id as "userId", u.full_name as "
 
 /**
  * Everything the SAMPLEDGE Super Admin does to the people, activity and attendance machines of a customer
- * workspace from the Console. Runs with the platform role. It shows account and sign-in details, activity
- * headlines (what happened, who, when, from which app) and machine health, never HR record contents: the
- * before/after values in the audit trail stay behind an approved support grant. Every action is written to both
- * the platform audit log and the customer's own audit trail.
+ * workspace from the Console. Runs with the platform role. It shows account and sign-in details, the workspace's
+ * activity and machine health. The recorded contents of an activity event (before and after values, for example a
+ * salary change) are shown without the customer's approval, as SAMPLEDGE decided on 2026-11-05, but one event at a
+ * time and every read is written to both audit trails, so the customer can see what SAMPLEDGE looked at.
+ * Every action is written to both the platform audit log and the customer's own audit trail.
  */
 @Injectable()
 export class TenantControlService {
@@ -172,7 +177,7 @@ export class TenantControlService {
   // Activity
   // -----------------------------------------------------------------------------------------------------------
 
-  /** The customer's audit trail as headlines: what happened, who did it, when, from which app. No record contents. */
+  /** The customer's audit trail as headlines: what happened, who did it, when, from which app. Contents: activityEvent. */
   async activity(tenantId: string, q: { q?: string; area?: string; actorType?: string; before?: number; limit: number }) {
     return this.db.platform(async (tx) => {
       await this.requireTenant(tx, tenantId);
@@ -197,8 +202,7 @@ export class TenantControlService {
       params.push(q.limit + 1);
       const rows = await many<ActivityRow>(
         tx,
-        `select a.id::text, a.created_at as "createdAt", a.action, split_part(a.action, '.', 1) as area, a.actor_type as "actorType", a.actor_label as "actorLabel",
-                a.resource_type as "resourceType", a.resource_id as "resourceId", a.metadata->>'client' as client, host(a.ip) as ip
+        `select ${ACTIVITY_COLUMNS}
            from audit_events a where ${where.join(' and ')} order by a.id desc limit $${params.length}`,
         params,
       );
@@ -219,6 +223,44 @@ export class TenantControlService {
         [tenantId],
       );
       return { items, nextBefore: rows.length > q.limit ? Number(items[items.length - 1]!.id) : null, summary, areas };
+    });
+  }
+
+  /**
+   * One event with its recorded contents (before and after values) and the history of the same record. Shown without
+   * the customer's approval; every read is recorded in the customer's trail (`activity.contents_viewed_by_sampledge`)
+   * and the platform log, with who looked and which event.
+   */
+  async activityEvent(tenantId: string, eventId: string): Promise<ActivityEventDetail> {
+    const admin = requestContext.platformActor();
+    return this.db.platform(async (tx) => {
+      await this.requireTenant(tx, tenantId);
+      const ev = await one<ActivityEventDetail>(
+        tx,
+        `select ${ACTIVITY_COLUMNS}, a.changes, a.metadata, a.user_agent as "userAgent", a.request_id as "requestId"
+           from audit_events a where a.tenant_id = $1 and a.id = $2`,
+        [tenantId, eventId],
+      );
+      if (!ev) throw Errors.notFound('Activity event');
+      ev.history = ev.resourceId
+        ? await many(
+            tx,
+            `select ${ACTIVITY_COLUMNS}, a.changes from audit_events a
+              where a.tenant_id = $1 and a.resource_type = $2 and a.resource_id = $3 and a.id <> $4 order by a.id desc limit 50`,
+            [tenantId, ev.resourceType, ev.resourceId, eventId],
+          )
+        : [];
+      const viewed = { eventId: ev.id, eventAction: ev.action, resourceType: ev.resourceType, resourceId: ev.resourceId, historyEvents: ev.history.length };
+      await this.audit.record(tx, {
+        tenantId,
+        action: 'activity.contents_viewed_by_sampledge',
+        resourceType: 'audit_event',
+        resourceId: ev.id,
+        changes: viewed,
+        metadata: { by: 'SAMPLEDGE', admin: admin.label },
+      });
+      await this.audit.record(tx, { tenantId: null, action: 'platform.activity_contents_viewed', resourceType: 'tenant', resourceId: tenantId, changes: viewed });
+      return ev;
     });
   }
 

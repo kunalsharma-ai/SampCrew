@@ -21,3 +21,11 @@ export const UuidPipe = new (class implements PipeTransform<string, string> {
     return value;
   }
 })();
+
+/** A positive whole-number id in a path (audit event ids are bigint identities); anything else is a 404. */
+export const IdNumberPipe = new (class implements PipeTransform<string, string> {
+  transform(value: string) {
+    if (!/^[1-9][0-9]{0,17}$/.test(value)) throw Errors.notFound();
+    return value;
+  }
+})();

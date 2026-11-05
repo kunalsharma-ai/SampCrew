@@ -112,6 +112,19 @@ export interface ActivityRow {
   id: string; createdAt: string; action: string; area: string;
   actorType: string; actorLabel: string | null; resourceType: string; resourceId: string | null;
   client: string | null; ip: string | null;
+  /** True when the event records changed values (shown on the event's own page; opening it is audited). */
+  hasChanges: boolean;
+}
+
+/** One activity event with its recorded contents, for the SAMPLEDGE Super Admin. Every read is audited. */
+export interface ActivityEventDetail extends ActivityRow {
+  /** Changed values as { field: { from, to } } or the values recorded at creation. Secrets, bank and ID numbers are never stored. */
+  changes: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  userAgent: string | null;
+  requestId: string | null;
+  /** Earlier and later events on the same record, newest first, with their contents. */
+  history: (ActivityRow & { changes: Record<string, unknown> })[];
 }
 
 export interface WorkspaceAccess {
