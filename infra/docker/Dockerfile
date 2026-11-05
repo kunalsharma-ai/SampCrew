@@ -16,7 +16,14 @@ ARG NODE_IMAGE=node:26.12.1-alpine
 ARG POSTGRES_IMAGE=postgres:16-alpine
 
 FROM ${NODE_IMAGE} AS base
-RUN corepack enable
+# Node.js 25 and later no longer ship Corepack, so install a pinned copy; it then runs the pnpm version named in
+# package.json ("packageManager"). Only the build stage uses it: the runtime images start again from NODE_IMAGE.
+ARG COREPACK_VERSION=0.36.0
+RUN --mount=type=secret,id=ca,required=false \
+    if [ -f /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca; fi; \
+    npm install --global --no-fund --no-audit corepack@${COREPACK_VERSION} \
+ && npm cache clean --force \
+ && corepack enable
 WORKDIR /app
 
 FROM base AS build
