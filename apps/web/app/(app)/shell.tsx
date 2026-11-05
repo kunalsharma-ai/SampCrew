@@ -5,6 +5,7 @@ import {
   Settings, Shield, SlidersHorizontal, Sun, Users, X, Clock, CalendarClock, UsersRound, Timer, Fingerprint, Briefcase, UserSearch, MessageSquare,
   type LucideIcon,
   Banknote, FileText, Landmark, Receipt, Wallet,
+  BarChart3, BookOpen, CalendarRange, ClipboardList, GraduationCap, Heart, MessagesSquare, Target,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -19,6 +20,8 @@ const ICONS: Record<string, LucideIcon> = {
   clock: Clock, 'calendar-clock': CalendarClock, 'users-round': UsersRound, timer: Timer, fingerprint: Fingerprint,
   briefcase: Briefcase, 'user-search': UserSearch, 'message-square': MessageSquare,
   'file-text': FileText, receipt: Receipt, wallet: Wallet, banknote: Banknote, landmark: Landmark,
+  target: Target, 'messages-square': MessagesSquare, 'graduation-cap': GraduationCap, 'clipboard-list': ClipboardList, heart: Heart,
+  'calendar-range': CalendarRange, 'book-open': BookOpen, chart: BarChart3,
 };
 
 export interface Notifications { unread: number; items: Notification[] }

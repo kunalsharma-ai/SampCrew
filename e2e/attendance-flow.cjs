@@ -57,7 +57,9 @@ const shot = async (p, e) => {
 
   // 2. They fix the day with the missing punch-out (seeded demo data).
   const missing = () => op.locator('tr', { hasText: 'Missing punch' }).locator('button', { hasText: 'Fix punches' }).first();
-  if (!(await missing().count())) await op.click('a[aria-label="Previous month"]');
+  // Early in a month the seeded day falls in the previous month.
+  const inPreviousMonth = !(await missing().count());
+  if (inPreviousMonth) await op.click('a[aria-label="Previous month"]');
   await missing().click();
   const dialog = op.locator('dialog');
   // The dialog suggests the shift end for the missing punch-out; keep only that row, at 18:00.
@@ -84,6 +86,10 @@ const shot = async (p, e) => {
   ok('supervisor opens team attendance and shifts');
 
   await op.goto(BASE + '/attendance');
+  if (inPreviousMonth) {
+    await op.click('a[aria-label="Previous month"]');
+    await op.waitForURL(/month=/);
+  }
   if (await op.locator('text=Correction pending').count()) throw new Error('correction still shown as pending after approval');
   await op.locator('td >> text=Approved').first().waitFor({ timeout: 10000 }).catch((e) => shot(op, e));
   ok('operator sees the correction approved and the day recalculated');

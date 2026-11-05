@@ -86,7 +86,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm build
-      - name: Web Portal smoke test, Core HR, attendance and recruitment flows
+      - name: Web Portal smoke test and end-to-end flows
         run: |
           pnpm db:reset
           node apps/api/dist/main.js > api.log 2>&1 &
@@ -94,6 +94,7 @@ jobs:
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:web
           pnpm e2e:hr
+          pnpm e2e:talent
           pnpm e2e:attendance
           pnpm e2e:recruitment
           pnpm e2e:payroll

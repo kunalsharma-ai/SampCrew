@@ -108,6 +108,7 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
     await seedAttendance(client, { tid, puneId: pune.id, membershipByEmail });
     await seedRecruitment(client, { tid, indiaId: t.legalEntityId, puneId: pune.id, manufacturingId: manufacturing.id, membershipByEmail });
     await seedPayroll(client, { tid, indiaId: t.legalEntityId, membershipByEmail });
+    await seedTalent(client, { tid, assemblyId: assembly.id, manufacturingId: manufacturing.id, membershipByEmail });
 
     await client.query(
       `insert into audit_events (tenant_id, actor_type, actor_label, action, resource_type, resource_id, metadata)
@@ -518,4 +519,152 @@ async function seedPayroll(client: PoolClient, c: { tid: string; indiaId: string
   );
   await client.query(`insert into approval_steps (tenant_id, request_id, seq, kind, approver_membership_id, status) values ($1, $2, 1, 'manager', $3, 'pending')`, [tid, ar.id, supM]);
   await client.query(`update expense_claims set approval_request_id = $2 where id = $1`, [claim.id, ar.id]);
+}
+
+/**
+ * Phase 6 demo data: goals with check-ins, a mid-year review cycle in progress for the Assembly Line, learning
+ * assignments, an open anonymous survey with a few answers, and recognition posts. Every record says it is demo data.
+ */
+async function seedTalent(client: PoolClient, c: { tid: string; assemblyId: string; manufacturingId: string; membershipByEmail: Map<string, string> }) {
+  const { tid } = c;
+  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
+  const emp = async (where: string, value: string) => (await q(`select id from employees where tenant_id = $1 and ${where} = $2`, [tid, value])).id;
+  const m = (email: string) => c.membershipByEmail.get(email)!;
+  const year = new Date().getUTCFullYear();
+  const vikram = await emp('work_email', 'plant.head@demo.crew.local');
+  const sunita = await emp('work_email', 'supervisor@demo.crew.local');
+  const arjun = await emp('work_email', 'operator1@demo.crew.local');
+  const neha = await emp('work_email', 'operator2@demo.crew.local');
+  const farhan = await emp('work_email', 'qa.lead@demo.crew.local');
+  const ganesh = await emp('first_name', 'Ganesh');
+  const rekha = await emp('first_name', 'Rekha');
+
+  // Goals --------------------------------------------------------------------------------------------------------
+  const goal = async (employeeId: string, by: string, title: string, parent: string | null, weight: number, progress: number, confidence: string | null) =>
+    (await q(
+      `insert into goals (tenant_id, employee_id, parent_goal_id, title, description, period_start, period_end, weight, progress, reported_progress, confidence, last_checkin_at, created_by_membership_id)
+       values ($1, $2, $3, $4, 'Demo data', $5, $6, $7, $8, $8, $9, case when $9::text is null then null else now() - interval '3 days' end, $10) returning id`,
+      [tid, employeeId, parent, title, `${year}-01-01`, `${year}-12-31`, weight, progress, confidence, m(by)],
+    )).id;
+  const kr = (goalId: string, pos: number, title: string, start: number, target: number, current: number, unit: string) =>
+    client.query(
+      `insert into goal_key_results (tenant_id, goal_id, position, title, start_value, target_value, current_value, unit) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [tid, goalId, pos, title, start, target, current, unit],
+    );
+  const oee = await goal(vikram, 'plant.head@demo.crew.local', 'Raise assembly line OEE to 85%', null, 60, 38.5, 'on_track');
+  await kr(oee, 1, 'Overall equipment effectiveness', 72, 85, 77, '%');
+  const defects = await goal(sunita, 'supervisor@demo.crew.local', 'Cut night-shift handover defects', oee, 50, 40, 'at_risk');
+  await kr(defects, 1, 'Handover defects per month', 40, 10, 28, 'defects');
+  await client.query(
+    `insert into goal_checkins (tenant_id, goal_id, progress, confidence, note, values, by_membership_id, created_at)
+     values ($1, $2, 40, 'at_risk', 'Checklist adopted on line 2; line 3 still uses paper (demo data)', $3, $4, now() - interval '3 days')`,
+    [tid, defects, JSON.stringify([{ title: 'Handover defects per month', from: '34.00', to: '28' }]), m('supervisor@demo.crew.local')],
+  );
+  await goal(arjun, 'supervisor@demo.crew.local', 'Get certified on the new CNC cell', defects, 40, 50, 'on_track');
+
+  // Review cycle in progress -------------------------------------------------------------------------------------
+  const questions = [
+    { id: 'achievements', text: 'What were the most important results this period?' },
+    { id: 'strengths', text: 'Which strengths made the biggest difference?' },
+    { id: 'growth', text: 'What should change or grow next period?' },
+  ];
+  const scale = [
+    { value: 1, label: 'Below expectations' }, { value: 2, label: 'Partly meets expectations' }, { value: 3, label: 'Meets expectations' },
+    { value: 4, label: 'Exceeds expectations' }, { value: 5, label: 'Outstanding' },
+  ];
+  const cycle = await q(
+    `insert into review_cycles (tenant_id, name, period_start, period_end, status, self_review, peer_feedback, questions, rating_scale, department_id, launched_at, created_by_membership_id)
+     values ($1, $2, $3, $4, 'active', true, true, $5, $6, $7, now() - interval '10 days', $8) returning id`,
+    [tid, `Mid-year ${year} review (demo data)`, `${year}-01-01`, `${year}-06-30`, JSON.stringify(questions), JSON.stringify(scale), c.assemblyId, m('hr.admin@demo.crew.local')],
+  );
+  const answers = (who: string) => JSON.stringify({
+    achievements: `${who} delivered the planned output with fewer stoppages (demo data).`,
+    strengths: 'Reliable on night shifts and helps new joiners.',
+    growth: 'Take on the changeover checklist and train one colleague.',
+  });
+  const review = async (employeeId: string, managerId: string, selfDone: boolean, managerRating: number | null) =>
+    (await q(
+      `insert into reviews (tenant_id, cycle_id, employee_id, manager_employee_id, self_status, self_answers, self_rating, self_submitted_at,
+                            manager_status, manager_answers, manager_rating, manager_submitted_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`,
+      [tid, cycle.id, employeeId, managerId, selfDone ? 'submitted' : 'pending', selfDone ? answers('I') : '{}', selfDone ? 3 : null, selfDone ? new Date() : null,
+        managerRating ? 'submitted' : 'pending', managerRating ? answers('They') : '{}', managerRating, managerRating ? new Date() : null],
+    )).id;
+  await review(sunita, vikram, true, 4);
+  await review(neha, sunita, true, 3);
+  await review(ganesh, sunita, false, 3);
+  await review(rekha, sunita, false, 4);
+  const arjunReview = await review(arjun, sunita, false, null);
+  const peer = [
+    [neha, 'Always first to help with a jammed feeder.', 'Write down the fixes so others can learn them.'],
+    [rekha, 'Calm and careful during changeovers.', 'Speak up earlier when parts run low.'],
+    [ganesh, 'Explains the machine clearly to helpers.', 'Hand over the shift log on time.'],
+  ] as const;
+  for (const [reviewer, strengths, improve] of peer) {
+    await client.query(
+      `insert into review_feedback (tenant_id, review_id, reviewer_employee_id, requested_by_membership_id, status, answers, submitted_at) values ($1, $2, $3, $4, 'submitted', $5, now() - interval '2 days')`,
+      [tid, arjunReview, reviewer, m('supervisor@demo.crew.local'), JSON.stringify({ strengths: `${strengths} (demo data)`, improve })],
+    );
+  }
+
+  // Learning -----------------------------------------------------------------------------------------------------
+  const course = async (title: string, format: string, minutes: number, validity: number | null, category: string, selfEnrol: boolean, description: string) =>
+    (await q(
+      `insert into courses (tenant_id, title, description, format, duration_minutes, validity_months, category, self_enrol, created_by_membership_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+      [tid, title, `${description} (demo data, no content link)`, format, minutes, validity, category, selfEnrol, m('hr.admin@demo.crew.local')],
+    )).id;
+  const forklift = await course('Forklift safety refresher', 'document', 45, 12, 'Safety', false, 'Annual refresher on safe forklift operation in the plant');
+  const drill = await course('Fire drill and evacuation', 'classroom', 60, 12, 'Safety', false, 'Practical drill on the shop floor');
+  await course('Lean basics: 5S on the line', 'online', 90, null, 'Operations', true, 'Sort, set in order, shine, standardise, sustain');
+  await course('Spreadsheets for supervisors', 'online', 120, null, 'Skills', true, 'Shift reports and simple charts');
+  const path = await q(`insert into learning_paths (tenant_id, title, description) values ($1, 'Shop floor safety', 'Required every year for plant staff (demo data)') returning id`, [tid]);
+  await client.query(`insert into learning_path_courses (tenant_id, path_id, course_id, position) values ($1, $2, $3, 1), ($1, $2, $4, 2)`, [tid, path.id, forklift, drill]);
+  const due = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
+  for (const who of [arjun, neha]) {
+    for (const courseId of [forklift, drill]) {
+      await client.query(
+        `insert into course_assignments (tenant_id, employee_id, course_id, path_id, source, assigned_by_membership_id, due_on) values ($1, $2, $3, $4, 'assigned', $5, $6)`,
+        [tid, who, courseId, path.id, m('supervisor@demo.crew.local'), due],
+      );
+    }
+  }
+  await client.query(
+    `update course_assignments set status = 'completed', started_at = now() - interval '5 days', completed_on = current_date - 4, completion_note = 'Demo data',
+            completed_by_membership_id = $3, expires_on = (current_date - 4 + interval '12 months')::date
+      where tenant_id = $1 and employee_id = $2 and course_id = $4`,
+    [tid, neha, m('operator2@demo.crew.local'), forklift],
+  );
+
+  // An open anonymous survey for Manufacturing, with three demo answers ----------------------------------------------
+  const survey = await q(
+    `insert into surveys (tenant_id, title, description, min_responses, questions, status, department_id, closes_on, opened_at, created_by_membership_id)
+     values ($1, 'Plant pulse (demo data)', 'Five questions, fully anonymous.', 3, $2, 'open', $3, current_date + 10, now() - interval '2 days', $4) returning id`,
+    [tid, JSON.stringify([
+      { id: 'tools', kind: 'scale', text: 'I have the tools and information I need to do my job well' },
+      { id: 'safety', kind: 'scale', text: 'I feel safe raising a problem on the line' },
+      { id: 'enps', kind: 'enps', text: 'How likely are you to recommend working here to a friend?' },
+      { id: 'comments', kind: 'text', text: 'What one thing would make work better?' },
+    ]), c.manufacturingId, m('hr.admin@demo.crew.local')],
+  );
+  const audience = (await client.query<{ id: string }>(
+    `with recursive deps(id) as (select $2::uuid union select d.id from departments d join deps on d.parent_id = deps.id)
+     select id from employees where tenant_id = $1 and membership_id is not null and status in ('probation', 'active', 'notice') and current_department_id in (select id from deps)`,
+    [tid, c.manufacturingId],
+  )).rows.map((r) => r.id);
+  await client.query(`insert into survey_invitations (tenant_id, survey_id, employee_id, responded) select $1, $2, x, x = any($4::uuid[]) from unnest($3::uuid[]) x`, [tid, survey.id, audience, [vikram, sunita, farhan]]);
+  for (const a of [{ tools: 4, safety: 5, enps: 9, comments: 'More spare parts on the night shift (demo data)' }, { tools: 3, safety: 4, enps: 7 }, { tools: 2, safety: 3, enps: 6, comments: 'Fix the canteen timings (demo data)' }]) {
+    await client.query(`insert into survey_responses (tenant_id, survey_id, department_id, answers, submitted_on) values ($1, $2, $3, $4, current_date - 1)`, [tid, survey.id, c.manufacturingId, JSON.stringify(a)]);
+  }
+
+  // Recognition --------------------------------------------------------------------------------------------------
+  const value = async (name: string) => (await q(`select id from company_values where tenant_id = $1 and name = $2`, [tid, name])).id;
+  const recognise = (from: string, to: string, valueName: string, message: string, daysAgo: number) =>
+    value(valueName).then((v) => client.query(
+      `insert into recognitions (tenant_id, from_employee_id, to_employee_id, value_id, message, created_at) values ($1, $2, $3, $4, $5, now() - make_interval(days => $6))`,
+      [tid, from, to, v, `${message} (demo data)`, daysAgo],
+    ));
+  await recognise(sunita, neha, 'Teamwork', 'Covered two night shifts at short notice so the Diwali order shipped on time.', 6);
+  await recognise(vikram, sunita, 'Ownership', 'Rolled out the handover checklist on line 2 without being asked.', 4);
+  await recognise(farhan, arjun, 'Safety', 'Stopped the press when the guard sensor failed and reported it straight away.', 1);
 }

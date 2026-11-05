@@ -22,3 +22,7 @@ export * as money from './money';
 export * as payrollEngine from './payroll-engine';
 export type { StatutorySettings, StructureLine, SalaryComponent, PayrollInput, PayrollResult, PayLine, CalcMethod } from './payroll-engine';
 export { DEFAULT_IN_STATUTORY } from './payroll-engine';
+export * from './schemas/talent';
+export * as talentMath from './talent-math';
+export type { RatingLevel, SurveyQuestion, SurveyAnswers, QuestionSummary, AnonBreakdown } from './talent-math';
+export { DEFAULT_RATING_SCALE, SURVEY_QUESTION_KINDS } from './talent-math';
