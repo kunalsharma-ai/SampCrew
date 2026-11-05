@@ -61,3 +61,25 @@ export function Checkbox({ label, description, className, ...props }: InputHTMLA
     </div>
   );
 }
+
+/** An on/off switch (role="switch"). `label` names it for screen readers when no visible label is next to it. */
+export function Switch({ checked, onChange, label, disabled, className, testId }: { checked: boolean; onChange: (next: boolean) => void; label: string; disabled?: boolean; className?: string; testId?: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      data-testid={testId}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border transition-colors focus:outline-none focus-visible:ring-3 focus-visible:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-50',
+        checked ? 'border-success bg-success' : 'border-border-strong bg-bg-subtle',
+        className,
+      )}
+    >
+      <span aria-hidden className={cn('inline-block size-3.5 rounded-full bg-white shadow transition-transform', checked ? 'translate-x-[18px]' : 'translate-x-[2px]')} />
+    </button>
+  );
+}

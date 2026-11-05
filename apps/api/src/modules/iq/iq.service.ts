@@ -154,9 +154,9 @@ export class IqService {
       case 'attendance_today': return this.gated('attendance_basic', 'attendance:read', 'attendance', (tx) => this.attendanceTodayAnswer(tx, m, how('today’s attendance')));
       case 'goals': return this.gated('talent', 'performance:read', 'goals', (tx) => this.goalsAnswer(tx, m, how('goals')));
       case 'learning': return this.gated('talent', 'learning:read', 'learning', (tx) => this.learningAnswer(tx, m, how('training')));
-      case 'cases': return this.gated('self_service', 'helpdesk:use', 'the helpdesk', (_tx, s) => this.casesAnswer(s, how('helpdesk cases')));
+      case 'cases': return this.gated('helpdesk', 'helpdesk:use', 'the helpdesk', (_tx, s) => this.casesAnswer(s, how('helpdesk cases')));
       case 'recruitment_summary': return this.gated('recruitment', 'requisitions:read', 'recruitment', (tx, s) => this.recruitmentAnswer(tx, s, m, how('the recruitment summary')));
-      case 'draft_bid': return this.gated('recruitment', 'bids:manage', 'staffing bids', () => this.bidAction(m, how('a new staffing bid')));
+      case 'draft_bid': return this.gated('staffing_bids', 'bids:manage', 'staffing bids', () => this.bidAction(m, how('a new staffing bid')));
       case 'draft_job': return this.gated('recruitment', 'requisitions:create', 'requisitions', (tx) => this.jobAction(tx, m, how('a new requisition')));
       case 'policy': return this.policyAnswer(question);
       default: return {
@@ -171,7 +171,7 @@ export class IqService {
   private async gated(feature: BooleanFeatureKey, permission: string, area: string, fn: (tx: Tx, s: Subject) => Promise<IqAnswer>): Promise<IqAnswer> {
     return this.db.tenant(async (tx) => {
       const e = await this.entitlements.current(tx);
-      if (!e.features.has(feature)) return this.refusal(`Your workspace's plan does not include ${area}.`);
+      if (!e.features.has(feature)) return this.refusal(e.blocked[feature] === 'member_blocked' ? `You do not have access to ${area} in this workspace.` : e.blocked[feature] ? `${area[0]!.toUpperCase()}${area.slice(1)} is switched off for this workspace.` : `Your workspace's plan does not include ${area}.`);
       const s = await this.authz.subject(tx);
       if (!grantsFor(s, permission).length) return this.refusal(`Your role does not give you access to ${area}, so IQ cannot look this up for you.`);
       return fn(tx, s);

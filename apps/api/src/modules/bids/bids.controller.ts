@@ -17,7 +17,7 @@ const clientQuery = z.object({ archived: z.enum(['true', 'false']).optional() })
 const pdfQuery = z.object({ version: z.uuid().optional() });
 
 @Controller('staffing')
-@RequireFeature('recruitment')
+@RequireFeature('staffing_bids')
 export class BidsController {
   constructor(private readonly bids: BidsService) {}
 

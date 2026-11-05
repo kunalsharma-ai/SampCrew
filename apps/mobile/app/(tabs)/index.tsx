@@ -8,16 +8,16 @@ export default function Home() {
   const { api, me, hasFeature, can, queue } = useSession();
   const router = useRouter();
   const attendance = hasFeature('attendance_basic') && can('attendance:punch');
-  const selfService = hasFeature('self_service');
+  const hasNews = hasFeature('announcements') && can('announcements:read');
   const { data, error, loading, reload } = useLoad(async () => {
     const [today, inbox, notes, news] = await Promise.all([
       attendance ? api.get<Today>('/attendance/today').catch(() => null) : null,
       api.get<InboxItem[]>('/approvals/inbox').catch(() => []),
       api.get<{ unread: number; items: Notification[] }>('/notifications?limit=5'),
-      selfService ? api.get<Announcement[]>('/announcements') : [],
+      hasNews ? api.get<Announcement[]>('/announcements') : [],
     ]);
     return { today, inbox, notes, news };
-  }, [api, attendance, selfService]);
+  }, [api, attendance, hasNews]);
   useReloadOnFocus(reload);
 
   const firstName = me?.user.fullName.split(' ')[0] ?? '';
@@ -53,7 +53,7 @@ export default function Home() {
         </Card>
       )}
 
-      {selfService && (
+      {hasNews && (
         <Card testID="home-announcements">
           <Text weight="700">Announcements</Text>
           {data?.news.length === 0 && <Empty>No announcements.</Empty>}

@@ -1,6 +1,7 @@
 export * from './permissions';
 export * from './roles';
 export * from './features';
+export * from './access';
 export * from './schemas/common';
 export * from './schemas/auth';
 export * from './schemas/organization';

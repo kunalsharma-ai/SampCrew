@@ -12,7 +12,7 @@ export default async function RolesPage() {
   return (
     <>
       <PageHeader title="Roles & permissions" description="Each permission is granted at a scope: the person themself, their team, their department, their legal entity, or the whole organization." />
-      <RolesView roles={roles} canManage={can(me, 'roles:manage')} customRolesInPlan={me.features.includes('custom_roles')} />
+      <RolesView roles={roles} canManage={can(me, 'roles:manage')} customRolesInPlan={me.features.includes('custom_roles')} disabledPermissions={me.disabledPermissions ?? []} />
     </>
   );
 }

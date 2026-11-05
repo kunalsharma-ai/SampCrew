@@ -69,6 +69,10 @@ export interface MeResponse {
   membership: { id: string; status: string; roles: { key: string; name: string }[] };
   permissions: Record<string, string>;
   features: string[];
+  /** Modules the plan includes that SAMPLEDGE switched off for the workspace (workspace_off) or for this member (member_blocked). */
+  featureBlocks: Record<string, 'workspace_off' | 'member_blocked'>;
+  /** Permissions SAMPLEDGE switched off for the whole workspace: no role can grant them. */
+  disabledPermissions: string[];
   limits: Record<string, number>;
   subscription: { plan: string; status: string; trialEndsOn: string | null } | null;
   session: { mfa: boolean };

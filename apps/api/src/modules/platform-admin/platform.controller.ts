@@ -2,6 +2,10 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from 
 import { Throttle } from '@nestjs/throttler';
 import {
   email,
+  featureSwitchUpdate,
+  memberAccessQuery,
+  memberFeatureUpdate,
+  permissionSwitchUpdate,
   mfaEnableRequest,
   name,
   paginationQuery,
@@ -21,6 +25,7 @@ import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformService } from './platform.service';
+import { AccessControlsService } from './access-controls.service';
 
 const tenantsQuery = paginationQuery.extend({ status: z.enum(['active', 'suspended', 'closed']).optional() });
 const subscriptionOverride = z
@@ -92,7 +97,42 @@ export class PlatformAuthController {
 
 @Controller('platform')
 export class PlatformController {
-  constructor(private readonly platform: PlatformService) {}
+  constructor(private readonly platform: PlatformService, private readonly access: AccessControlsService) {}
+
+  @PlatformRealm('tenants:read')
+  @Get('tenants/:id/access')
+  @Doc({ summary: 'Modules and permissions for a workspace: plan default, SAMPLEDGE switch and what is in effect' })
+  workspaceAccess(@Param('id', UuidPipe) id: string) {
+    return this.access.workspace(id);
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('tenants/:id/access/modules')
+  @Doc({ summary: 'Switch modules on or off for a workspace, or back to the plan default', body: featureSwitchUpdate })
+  switchModules(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(featureSwitchUpdate)) body: z.infer<typeof featureSwitchUpdate>) {
+    return this.access.setFeatures(id, body.changes);
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('tenants/:id/access/permissions')
+  @Doc({ summary: 'Switch permissions on or off for every role in a workspace', body: permissionSwitchUpdate })
+  switchPermissions(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(permissionSwitchUpdate)) body: z.infer<typeof permissionSwitchUpdate>) {
+    return this.access.setPermissions(id, body.changes);
+  }
+
+  @PlatformRealm('access:manage')
+  @Get('tenants/:id/access/members')
+  @Doc({ summary: 'Members of a workspace (account details only) with the modules each one is blocked from', query: memberAccessQuery })
+  memberAccess(@Param('id', UuidPipe) id: string, @Query(new ZodPipe(memberAccessQuery)) q: z.infer<typeof memberAccessQuery>) {
+    return this.access.members(id, q);
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('tenants/:id/access/members/:membershipId')
+  @Doc({ summary: 'Choose which modules one member may use (list the modules to block; empty restores full access)', body: memberFeatureUpdate })
+  setMemberAccess(@Param('id', UuidPipe) id: string, @Param('membershipId', UuidPipe) membershipId: string, @Body(new ZodPipe(memberFeatureUpdate)) body: z.infer<typeof memberFeatureUpdate>) {
+    return this.access.setMemberFeatures(id, membershipId, body.blockedFeatures);
+  }
 
   @PlatformRealm('tenants:read')
   @Get('metrics')

@@ -17,6 +17,16 @@ const REASONS: Record<string, { title: string; description: string; icon: React.
     description: 'Your workspace plan does not include this module. An administrator can compare plans on the Plan & billing page.',
     icon: <Sparkles className="size-6" />,
   },
+  feature_disabled: {
+    title: 'This module is switched off',
+    description: 'SAMPLEDGE has switched this module off for your workspace. Your workspace owner can contact SAMPLEDGE support to turn it back on.',
+    icon: <Lock className="size-6" />,
+  },
+  feature_not_for_member: {
+    title: 'This module is not available to you',
+    description: 'Your access to this module has been turned off for your account. Ask your workspace administrator if you need it for your work.',
+    icon: <Lock className="size-6" />,
+  },
 };
 
 export default async function NoAccessPage({ searchParams }: { searchParams: Promise<{ reason?: string }> }) {

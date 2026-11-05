@@ -54,7 +54,9 @@ export async function loadSubject(tx: Tx, membershipId: string, userId: string, 
        from role_assignments ra
        join roles r on r.id = ra.role_id
        join role_permissions rp on rp.role_id = r.id
-      where ra.membership_id = $1`,
+      where ra.membership_id = $1
+        -- Permissions SAMPLEDGE switched off for the workspace have no effect, whatever the member's roles say.
+        and not exists (select 1 from tenant_access_controls c where rp.permission = any(c.disabled_permissions))`,
     [membershipId],
   );
 

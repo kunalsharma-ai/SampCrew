@@ -11,10 +11,12 @@ export interface FeatureDefinition {
   /** Phase in which the gated functionality ships. */
   phase: number;
   unit?: string;
+  /** Foundation every workspace needs (employee records). It cannot be switched off. */
+  core?: boolean;
 }
 
 export const FEATURES = [
-  { key: 'core_hr', name: 'Core HR and employee records', module: 'People', kind: 'boolean', phase: 2 },
+  { key: 'core_hr', name: 'Core HR and employee records', module: 'People', kind: 'boolean', phase: 2, core: true },
   { key: 'leave', name: 'Leave management', module: 'Leave', kind: 'boolean', phase: 2 },
   { key: 'self_service', name: 'Employee and manager self-service', module: 'People', kind: 'boolean', phase: 2 },
   { key: 'documents', name: 'Documents and e-signatures', module: 'Documents', kind: 'boolean', phase: 2 },
@@ -25,9 +27,14 @@ export const FEATURES = [
   { key: 'payroll', name: 'Payroll', module: 'Payroll', kind: 'boolean', phase: 5 },
   { key: 'expenses', name: 'Expenses and reimbursements', module: 'Expenses', kind: 'boolean', phase: 5 },
   { key: 'talent', name: 'Performance, learning and engagement', module: 'Talent', kind: 'boolean', phase: 6 },
+  { key: 'helpdesk', name: 'HR helpdesk (Ask HR) and help articles', module: 'Helpdesk', kind: 'boolean', phase: 7 },
+  { key: 'announcements', name: 'Announcements with read receipts', module: 'Announcements', kind: 'boolean', phase: 7 },
   { key: 'automation', name: 'Workflow Automation Studio', module: 'Automation', kind: 'boolean', phase: 8 },
   { key: 'ai_copilot', name: 'CREW AI Copilots', module: 'AI', kind: 'boolean', phase: 8 },
   { key: 'workforce_analytics', name: 'Workforce analytics and Ask Anything', module: 'Analytics', kind: 'boolean', phase: 8 },
+  { key: 'crew_iq', name: 'CREW IQ in-app assistant', module: 'AI', kind: 'boolean', phase: 11 },
+  { key: 'workforce_universe', name: 'Workforce Universe, skills and scenario planning', module: 'Analytics', kind: 'boolean', phase: 11 },
+  { key: 'staffing_bids', name: 'Staffing bids, clients, rate cards and proposals', module: 'Staffing bids', kind: 'boolean', phase: 11 },
   { key: 'integrations_advanced', name: 'Advanced integrations and webhooks', module: 'Integrations', kind: 'boolean', phase: 9 },
   { key: 'global_payroll', name: 'Global payroll provider integrations', module: 'Payroll', kind: 'boolean', phase: 9 },
   { key: 'multi_entity', name: 'Multiple legal entities and countries', module: 'Organization', kind: 'boolean', phase: 1 },
@@ -61,8 +68,8 @@ export interface PlanTemplate {
   limits: Record<LimitFeatureKey, number>;
 }
 
-const STARTER: BooleanFeatureKey[] = ['core_hr', 'leave', 'self_service', 'documents', 'attendance_basic'];
-const PROFESSIONAL: BooleanFeatureKey[] = [...STARTER, 'recruitment', 'attendance_advanced', 'shift_scheduling', 'automation', 'custom_roles'];
+const STARTER: BooleanFeatureKey[] = ['core_hr', 'leave', 'self_service', 'documents', 'attendance_basic', 'helpdesk', 'announcements', 'crew_iq', 'workforce_universe'];
+const PROFESSIONAL: BooleanFeatureKey[] = [...STARTER, 'recruitment', 'staffing_bids', 'attendance_advanced', 'shift_scheduling', 'automation', 'custom_roles'];
 const BUSINESS: BooleanFeatureKey[] = [...PROFESSIONAL, 'payroll', 'expenses', 'talent', 'ai_copilot', 'workforce_analytics', 'integrations_advanced', 'multi_entity', 'audit_export'];
 const ENTERPRISE: BooleanFeatureKey[] = [...BUSINESS, 'global_payroll', 'sso', 'enterprise_support'];
 
@@ -91,3 +98,35 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = [
     limits: { max_employees: UNLIMITED, max_legal_entities: UNLIMITED, ai_credits_monthly: 50000, storage_gb: 2000 },
   },
 ];
+
+/**
+ * Which module switch a permission belongs to: when the module is off for a workspace (or for one member),
+ * the permission has no effect there, so the Console shows it under that module. Permissions with no entry
+ * (administration, organization, billing) belong to the always-on foundation.
+ */
+export const PERMISSION_MODULE_FEATURE: Record<string, BooleanFeatureKey> = {
+  People: 'core_hr',
+  Documents: 'documents',
+  Leave: 'leave',
+  Attendance: 'attendance_basic',
+  Scheduling: 'shift_scheduling',
+  Recruitment: 'recruitment',
+  Payroll: 'payroll',
+  Expenses: 'expenses',
+  Performance: 'talent',
+  Learning: 'talent',
+  Engagement: 'talent',
+  Helpdesk: 'helpdesk',
+  Announcements: 'announcements',
+  Analytics: 'workforce_analytics',
+  Automation: 'automation',
+  AI: 'ai_copilot',
+  Integrations: 'integrations_advanced',
+  'Staffing bids': 'staffing_bids',
+};
+
+export const BOOLEAN_FEATURES = FEATURES.filter((f) => f.kind === 'boolean') as readonly Extract<(typeof FEATURES)[number], { kind: 'boolean' }>[];
+
+export function isCoreFeature(key: string): boolean {
+  return FEATURES.some((f) => f.key === key && 'core' in f && f.core === true);
+}

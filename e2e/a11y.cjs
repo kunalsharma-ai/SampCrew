@@ -121,9 +121,9 @@ async function consoleScreens(b, found, checked) {
   const tenant = await p.locator('a[href^="/tenants/"]').first().getAttribute('href');
   for (const theme of ['light', 'dark']) {
     await p.emulateMedia({ colorScheme: theme });
-    for (const path of ['/', '/tenants', tenant, '/plans', '/health', '/audit', '/admins']) {
+    for (const path of ['/', '/tenants', tenant, `${tenant}/access`, `${tenant}/access?tab=permissions`, `${tenant}/access?tab=people`, '/plans', '/health', '/audit', '/admins']) {
       await p.goto(`${CONSOLE}${path}`);
-      const label = `Console ${path === tenant ? '/tenants/:id' : path} (${theme})`;
+      const label = `Console ${path.startsWith(tenant) ? path.replace(tenant, '/tenants/:id') : path} (${theme})`;
       found.push(...(await check(p, label)));
       checked.push(label);
     }

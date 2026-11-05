@@ -1,7 +1,8 @@
 'use client';
-import { FEATURES, SUBSCRIPTION_STATUSES, supportAccessRequest } from '@crew/contracts';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Dialog, Field, Input, Select, Stat, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
-import { Eye, LifeBuoy, PauseCircle, PlayCircle, SlidersHorizontal } from 'lucide-react';
+import { SUBSCRIPTION_STATUSES, supportAccessRequest } from '@crew/contracts';
+import { Alert, Badge, Button, buttonClass, Card, CardBody, CardHeader, Dialog, Field, Input, Select, Stat, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
+import { Eye, LifeBuoy, PauseCircle, PlayCircle, SlidersHorizontal, ToggleRight } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { TenantDetail } from '@/lib/types';
@@ -15,7 +16,6 @@ export interface SupportSnapshot {
 }
 
 type DialogKind = 'status' | 'subscription' | 'support' | null;
-const BOOLEAN_FEATURES = (FEATURES as readonly { key: string; name: string; kind: string }[]).filter((f) => f.kind === 'boolean');
 
 export function TenantView({ t, plans, snapshot, caps }: { t: TenantDetail; plans: { key: string; name: string }[]; snapshot: SupportSnapshot | null; caps: { manage: boolean; billing: boolean; support: boolean } }) {
   const [dialog, setDialog] = useState<DialogKind>(null);
@@ -39,6 +39,7 @@ export function TenantView({ t, plans, snapshot, caps }: { t: TenantDetail; plan
           : <Button onClick={() => setDialog('status')}><PlayCircle className="size-4" /> Reactivate</Button>)}
         {caps.billing && s && <Button variant="secondary" onClick={() => setDialog('subscription')}><SlidersHorizontal className="size-4" /> Adjust subscription</Button>}
         {caps.support && <Button variant="secondary" onClick={() => setDialog('support')}><LifeBuoy className="size-4" /> Request support access</Button>}
+        <Link href={`/tenants/${t.id}/access`} className={buttonClass('secondary')} data-testid="open-access"><ToggleRight className="size-4" /> Features &amp; permissions</Link>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -58,7 +59,7 @@ export function TenantView({ t, plans, snapshot, caps }: { t: TenantDetail; plan
                 <div><dt className="text-fg-subtle">Current period ends</dt><dd>{s.currentPeriodEnd ?? '—'}</dd></div>
                 <div><dt className="text-fg-subtle">Payment provider</dt><dd>{s.provider === 'manual' ? 'Manual invoicing (no provider connected)' : s.provider}</dd></div>
                 <div><dt className="text-fg-subtle">Workspace MFA policy</dt><dd>{t.requireMfa ? 'Required for everyone' : 'Optional'}</dd></div>
-                <div className="col-span-2"><dt className="text-fg-subtle">Feature overrides</dt><dd>{Object.keys(s.featureOverrides ?? {}).length ? Object.entries(s.featureOverrides).map(([k, v]) => <Badge key={k} className="mr-1" tone={v === false ? 'danger' : 'accent'}>{k}: {String(v)}</Badge>) : 'None'}</dd></div>
+                <div className="col-span-2"><dt className="text-fg-subtle">Module switches</dt><dd>{Object.keys(s.featureOverrides ?? {}).length ? Object.entries(s.featureOverrides).map(([k, v]) => <Badge key={k} className="mr-1" tone={v === false ? 'danger' : 'accent'}>{k}: {v === true ? 'on' : v === false ? 'off' : String(v)}</Badge>) : 'All modules follow the plan'}</dd></div>
               </dl>
             ) : <p className="text-sm text-fg-muted">No subscription.</p>}
           </CardBody>
@@ -146,21 +147,13 @@ function SubscriptionDialog({ t, plans, onClose, onDone }: { t: TenantDetail; pl
   const [status, setStatus] = useState(s.status);
   const [seats, setSeats] = useState(String(s.seats));
   const [trialEndsOn, setTrialEndsOn] = useState(s.trialEndsOn ?? '');
-  const [overrides, setOverrides] = useState<Record<string, boolean | number>>(s.featureOverrides ?? {});
   const [pending, start] = useTransition();
   const n = Number(seats);
   const seatsError = !Number.isInteger(n) || n < 1 ? 'Whole number, at least 1' : undefined;
-  const cycleOverride = (key: string) => {
-    const next = { ...overrides };
-    if (next[key] === undefined) next[key] = true;
-    else if (next[key] === true) next[key] = false;
-    else delete next[key];
-    setOverrides(next);
-  };
   return (
     <Dialog open onClose={onClose} size="lg" title="Adjust subscription" description="Commercial overrides for this customer. Every change is recorded in both audit logs."
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={Boolean(seatsError)} loading={pending} onClick={() => start(async () => {
-        const r = await overrideSubscriptionAction(t.id, { planKey, status, seats: n, trialEndsOn: trialEndsOn || null, featureOverrides: overrides });
+        const r = await overrideSubscriptionAction(t.id, { planKey, status, seats: n, trialEndsOn: trialEndsOn || null });
         if (onDone(r)) router.refresh();
       })}>Save</Button></>}>
       <div className="grid gap-4">
@@ -170,21 +163,7 @@ function SubscriptionDialog({ t, plans, onClose, onDone }: { t: TenantDetail; pl
           <Field label="Seats" error={seatsError}>{(p) => <Input {...p} type="number" min={1} value={seats} onChange={(e) => setSeats(e.target.value)} />}</Field>
           <Field label="Trial ends on" hint="Leave empty for no trial">{(p) => <Input {...p} type="date" value={trialEndsOn} onChange={(e) => setTrialEndsOn(e.target.value)} />}</Field>
         </div>
-        <div>
-          <div className="mb-1 text-[13px] font-medium">Feature overrides</div>
-          <p className="mb-2 text-xs text-fg-subtle">Click to cycle: plan default, force on, force off.</p>
-          <div className="flex flex-wrap gap-1.5">
-            {BOOLEAN_FEATURES.map((f) => {
-              const v = overrides[f.key];
-              return (
-                <button key={f.key} type="button" onClick={() => cycleOverride(f.key)} title={f.name}
-                  className={`rounded-full border px-2.5 py-1 text-xs ${v === true ? 'border-success bg-success-subtle text-success' : v === false ? 'border-danger bg-danger-subtle text-danger' : 'border-border text-fg-muted hover:bg-bg-subtle'}`}>
-                  {f.name}{v === true ? ' · on' : v === false ? ' · off' : ''}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <p className="text-xs text-fg-subtle">Modules and permissions are switched on the <Link href={`/tenants/${t.id}/access`} className="text-accent hover:underline">Features &amp; permissions</Link> page.</p>
       </div>
     </Dialog>
   );

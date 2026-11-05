@@ -33,7 +33,7 @@ const articleQuery = z.object({ categoryId: z.uuid().optional(), q: z.string().t
 const categoryQuery = z.object({ manage: z.enum(['true', 'false']).optional() });
 
 @Controller('helpdesk')
-@RequireFeature('self_service')
+@RequireFeature('helpdesk')
 export class HelpdeskController {
   constructor(private readonly helpdesk: HelpdeskService) {}
 
@@ -184,7 +184,7 @@ export class HelpdeskController {
 }
 
 @Controller('announcements')
-@RequireFeature('self_service')
+@RequireFeature('announcements')
 export class AnnouncementsController {
   constructor(private readonly announcements: AnnouncementsService) {}
 

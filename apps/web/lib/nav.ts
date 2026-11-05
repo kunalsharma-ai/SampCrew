@@ -28,15 +28,15 @@ export const NAV: NavGroup[] = [
       { href: '/', label: 'Home', icon: 'home' },
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
-      { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'self_service' },
-      { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'self_service' },
+      { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
+      { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'helpdesk' },
     ],
   },
   {
     label: 'My work',
     items: [
       { href: '/attendance', label: 'Attendance', icon: 'clock', permission: 'attendance:punch', feature: 'attendance_basic' },
-      { href: '/leave', label: 'Leave', icon: 'calendar', permission: 'leave:request' },
+      { href: '/leave', label: 'Leave', icon: 'calendar', permission: 'leave:request', feature: 'leave' },
       { href: '/payslips', label: 'Payslips', icon: 'file-text', permission: 'payslips:read', feature: 'payroll' },
       { href: '/expenses', label: 'Expenses', icon: 'receipt', permission: 'expenses:submit', feature: 'expenses' },
       { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'interviews:feedback', feature: 'recruitment' },
@@ -62,10 +62,10 @@ export const NAV: NavGroup[] = [
   {
     label: 'Staffing & bids',
     items: [
-      { href: '/staffing/bids', label: 'Staffing bids', icon: 'handshake', permission: 'bids:read', feature: 'recruitment' },
-      { href: '/staffing/clients', label: 'Clients', icon: 'building-office', permission: 'bids:read', feature: 'recruitment' },
-      { href: '/staffing/templates', label: 'Proposal templates', icon: 'file-stack', permission: 'bids:manage', feature: 'recruitment' },
-      { href: '/staffing/rate-cards', label: 'Rate cards', icon: 'tags', permission: 'bids:read', feature: 'recruitment' },
+      { href: '/staffing/bids', label: 'Staffing bids', icon: 'handshake', permission: 'bids:read', feature: 'staffing_bids' },
+      { href: '/staffing/clients', label: 'Clients', icon: 'building-office', permission: 'bids:read', feature: 'staffing_bids' },
+      { href: '/staffing/templates', label: 'Proposal templates', icon: 'file-stack', permission: 'bids:manage', feature: 'staffing_bids' },
+      { href: '/staffing/rate-cards', label: 'Rate cards', icon: 'tags', permission: 'bids:read', feature: 'staffing_bids' },
     ],
   },
   {
@@ -75,7 +75,7 @@ export const NAV: NavGroup[] = [
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
       { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
       { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
-      { href: '/settings/leave', label: 'Leave settings', icon: 'sliders', permission: 'leave:configure' },
+      { href: '/settings/leave', label: 'Leave settings', icon: 'sliders', permission: 'leave:configure', feature: 'leave' },
     ],
   },
   {
@@ -102,15 +102,15 @@ export const NAV: NavGroup[] = [
       { href: '/recognition', label: 'Recognition', icon: 'heart', permission: 'recognition:give', feature: 'talent' },
       { href: '/surveys', label: 'Surveys', icon: 'clipboard-list', permission: 'surveys:respond', feature: 'talent' },
       { href: '/surveys/manage', label: 'Survey results', icon: 'chart', permission: 'engagement:manage', feature: 'talent' },
-      { href: '/announcements/manage', label: 'Manage announcements', icon: 'megaphone', permission: 'announcements:manage', feature: 'self_service' },
-      { href: '/helpdesk/queue', label: 'HR helpdesk queue', icon: 'headset', permission: 'helpdesk:manage', feature: 'self_service' },
-      { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'self_service' },
+      { href: '/announcements/manage', label: 'Manage announcements', icon: 'megaphone', permission: 'announcements:manage', feature: 'announcements' },
+      { href: '/helpdesk/queue', label: 'HR helpdesk queue', icon: 'headset', permission: 'helpdesk:manage', feature: 'helpdesk' },
+      { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'helpdesk' },
     ],
   },
   {
     label: 'Analytics & AI',
     items: [
-      { href: '/insights/universe', label: 'Workforce Universe', icon: 'orbit', permission: 'employees:read', beyondOwn: true },
+      { href: '/insights/universe', label: 'Workforce Universe', icon: 'orbit', permission: 'employees:read', beyondOwn: true, feature: 'workforce_universe' },
       { href: '/insights/attrition', label: 'Attrition risk', icon: 'trending-down', permission: 'insights:attrition', feature: 'workforce_analytics' },
       { href: '/automation', label: 'Automation Studio', icon: 'workflow', permission: 'automation:manage', feature: 'automation' },
       { href: '/automation/runs', label: 'Workflow runs', icon: 'activity', permission: 'automation:manage', feature: 'automation' },
@@ -154,11 +154,11 @@ export function quickActions(me: Me): QuickAction[] {
   if (has('employees:create')) out.push({ key: 'employee', label: 'Create employee', href: '/employees?create=employee', icon: 'user-plus', keywords: 'add hire new joiner' });
   if (has('users:invite')) out.push({ key: 'invite', label: 'Invite a colleague', href: '/people?create=invite', icon: 'users', keywords: 'login access' });
   if (has('requisitions:create', 'recruitment')) out.push({ key: 'requisition', label: 'Create job requisition', href: '/recruitment?create=requisition', icon: 'briefcase', keywords: 'job opening hiring position' });
-  if (has('bids:manage', 'recruitment')) out.push({ key: 'bid', label: 'Create staffing bid', href: '/staffing/bids/new?mode=quick', icon: 'handshake', keywords: 'proposal quote client staffing rate margin' });
-  if (has('leave:request')) out.push({ key: 'leave', label: 'Request time off', href: '/leave?create=leave', icon: 'calendar', keywords: 'leave holiday vacation apply' });
+  if (has('bids:manage', 'staffing_bids')) out.push({ key: 'bid', label: 'Create staffing bid', href: '/staffing/bids/new?mode=quick', icon: 'handshake', keywords: 'proposal quote client staffing rate margin' });
+  if (has('leave:request', 'leave')) out.push({ key: 'leave', label: 'Request time off', href: '/leave?create=leave', icon: 'calendar', keywords: 'leave holiday vacation apply' });
   if (has('performance:read', 'talent')) out.push({ key: 'goal', label: 'Set a goal', href: '/goals?create=goal', icon: 'target', keywords: 'okr objective' });
   if (has('expenses:submit', 'expenses')) out.push({ key: 'expense', label: 'Claim an expense', href: '/expenses', icon: 'receipt', keywords: 'reimbursement receipt' });
-  if (has('helpdesk:use', 'self_service')) out.push({ key: 'ask', label: 'Ask HR a question', href: '/helpdesk', icon: 'life-buoy', keywords: 'helpdesk case ticket' });
+  if (has('helpdesk:use', 'helpdesk')) out.push({ key: 'ask', label: 'Ask HR a question', href: '/helpdesk', icon: 'life-buoy', keywords: 'helpdesk case ticket' });
   return out;
 }
 

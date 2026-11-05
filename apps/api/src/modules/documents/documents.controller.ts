@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { DOCUMENT_MAX_BYTES, documentMetaInput } from '@crew/contracts';
 import type { Response } from 'express';
 import { z } from 'zod';
-import { Public } from '../../platform/authz/decorators';
+import { Public, RequireFeature } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { DocumentsService, type UploadedFile } from './documents.service';
@@ -16,12 +16,14 @@ export class DocumentsController {
   constructor(private readonly documents: DocumentsService) {}
 
   @Get('employees/:id/documents')
+  @RequireFeature('documents')
   @Doc({ summary: "An employee's documents (HR-only documents are listed for people who manage documents)" })
   list(@Param('id', UuidPipe) id: string) {
     return this.documents.list(id);
   }
 
   @Post('employees/:id/documents')
+  @RequireFeature('documents')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: DOCUMENT_MAX_BYTES, files: 1 } }))
   @Doc({ summary: 'Upload a document (multipart/form-data: file, category, title, visibility). PDF, images, Word or text, up to 10 MB.' })
   upload(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(documentMetaInput)) meta: z.infer<typeof documentMetaInput>, @File() file?: UploadedFile) {
@@ -29,12 +31,14 @@ export class DocumentsController {
   }
 
   @Post('documents/:id/link')
+  @RequireFeature('documents')
   @Doc({ summary: 'Get a download link valid for 5 minutes' })
   link(@Param('id', UuidPipe) id: string) {
     return this.documents.link(id);
   }
 
   @Delete('documents/:id')
+  @RequireFeature('documents')
   @HttpCode(204)
   @Doc({ summary: 'Archive a document (the file is retained)' })
   async archive(@Param('id', UuidPipe) id: string) {
