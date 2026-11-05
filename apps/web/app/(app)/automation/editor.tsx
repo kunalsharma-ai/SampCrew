@@ -138,7 +138,7 @@ export function WorkflowEditor({ catalogue, workflow, aiDraft }: { catalogue: Ca
                 <Textarea rows={3} maxLength={1500} placeholder="When someone in Assembly Line asks for more than 3 days of sick leave, ask their manager to approve and then notify the HR admin role." value={prompt} onChange={(e) => setPrompt(e.target.value)} />
                 <div><Button variant="secondary" loading={drafting} disabled={prompt.trim().length < 10} onClick={draft}>Draft steps</Button></div>
               </div>
-            ) : <p className="text-[13px] text-fg-muted">{aiDraft.reason}</p>}
+            ) : <p className="text-[0.8125rem] text-fg-muted">{aiDraft.reason}</p>}
           </CardBody>
         </Card>
       )}
@@ -161,7 +161,7 @@ export function WorkflowEditor({ catalogue, workflow, aiDraft }: { catalogue: Ca
       <Card>
         <CardHeader title="Steps" description="Run from top to bottom. A condition that is not met, or a rejected approval, stops the run." />
         <CardBody className="grid gap-4">
-          {steps.length === 0 && <p className="text-[13px] text-fg-muted">Add the first step below.</p>}
+          {steps.length === 0 && <p className="text-[0.8125rem] text-fg-muted">Add the first step below.</p>}
           {touched && issues.steps && <Alert tone="danger">{issues.steps}</Alert>}
           {steps.map((s, i) => (
             <div key={i} className="rounded-lg border border-border p-4">

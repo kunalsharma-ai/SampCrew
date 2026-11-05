@@ -28,7 +28,7 @@ export default async function CareerSitePage({ params }: { params: Promise<{ sit
         {s.jobs.length ? s.jobs.map((j) => (
           <Link key={j.slug} href={`/careers/${site}/${j.slug}`} className="grid gap-1 rounded-lg border border-border bg-surface p-4 shadow-card transition-colors hover:border-accent">
             <span className="font-medium text-accent">{j.title}</span>
-            {j.summary && <span className="text-[13px] text-fg-muted">{j.summary}</span>}
+            {j.summary && <span className="text-[0.8125rem] text-fg-muted">{j.summary}</span>}
             <span className="flex flex-wrap gap-1.5 pt-1">
               <Badge>{j.department}</Badge>
               <Badge>{MODE[j.workMode] ?? j.workMode}</Badge>

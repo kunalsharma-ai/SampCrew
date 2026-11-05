@@ -71,7 +71,7 @@ export function SurveyDialog({ open, onClose, entities, departments, survey }: {
         <Field label="Closes on" className="col-span-2 sm:col-span-1">{(p) => <Input {...p} type="date" name="closesOn" defaultValue={survey?.closesOn ?? ''} />}</Field>
         <div className="col-span-2 grid gap-2">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] font-medium">Questions</span>
+            <span className="text-[0.8125rem] font-medium">Questions</span>
             <Button size="sm" variant="ghost" type="button" disabled={questions.length >= 30} onClick={() => setQuestions([...questions, { id: `q${Date.now() % 100000}`, kind: 'scale', text: '' }])}><Plus className="size-3.5" /> Add question</Button>
           </div>
           {questions.map((q, i) => (

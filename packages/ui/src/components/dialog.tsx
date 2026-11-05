@@ -38,7 +38,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
           <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
             <div>
               <h2 className="text-base font-semibold">{title}</h2>
-              {description && <p className="mt-0.5 text-[13px] text-fg-muted">{description}</p>}
+              {description && <p className="mt-0.5 text-[0.8125rem] text-fg-muted">{description}</p>}
             </div>
             <button type="button" onClick={onClose} className="rounded-md p-1 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Close">
               <X className="size-4" />

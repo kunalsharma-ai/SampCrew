@@ -4,6 +4,10 @@ import type {
   confirmInput,
   CreateEmployeeInput,
   designationInput,
+  duplicateCheckInput,
+  EmployeeColumn,
+  employeeDraftInput,
+  employeeExportQuery,
   employeeListQuery,
   exitInput,
   extendProbationInput,
@@ -40,6 +44,35 @@ export const EMPLOYEE_COLUMNS = `e.id, e.employee_code as "employeeCode", e.firs
   e.current_location_id as "locationId", l.name as "locationName", e.current_designation_id as "designationId", ds.name as "designationName",
   e.current_manager_employee_id as "managerEmployeeId", trim(coalesce(mgr.preferred_name, mgr.first_name) || ' ' || mgr.last_name) as "managerName",
   e.current_grade as "grade", e.membership_id as "membershipId", m.status as "loginStatus", e.created_at as "createdAt"`;
+
+const SORT_KEYS: Record<z.infer<typeof employeeListQuery>['sort'], string> = {
+  name: `lower(e.first_name || ' ' || e.last_name)`,
+  code: 'lower(e.employee_code)',
+  joined: `to_char(e.date_of_joining, 'YYYY-MM-DD')`,
+  department: `lower(coalesce(d.name, ''))`,
+  location: `lower(coalesce(l.name, ''))`,
+  status: 'e.status',
+};
+
+const EXPORT_HEADERS: Record<EmployeeColumn, string> = {
+  name: 'Name', code: 'Employee code', designation: 'Designation', department: 'Department', location: 'Location', entity: 'Legal entity',
+  manager: 'Manager', workEmail: 'Work email', type: 'Employment type', joined: 'Date of joining', status: 'Status',
+};
+function exportValue(r: EmployeeRow, c: EmployeeColumn): unknown {
+  switch (c) {
+    case 'name': return r.displayName;
+    case 'code': return r.employeeCode;
+    case 'designation': return r.designationName;
+    case 'department': return r.departmentName;
+    case 'location': return r.locationName;
+    case 'entity': return r.legalEntityName;
+    case 'manager': return r.managerName;
+    case 'workEmail': return r.workEmail;
+    case 'type': return r.employmentType;
+    case 'joined': return r.dateOfJoining;
+    case 'status': return r.status;
+  }
+}
 
 export const EMPLOYEE_FROM = `from employees e
   left join legal_entities le on le.id = e.current_legal_entity_id
@@ -155,44 +188,144 @@ export class EmployeesService {
   // Directory and profile
   // ---------------------------------------------------------------------------------------------------------
 
+  /** Directory filters shared by the list and the CSV export. */
+  private async directoryWhere(tx: Tx, q: Omit<z.infer<typeof employeeListQuery>, 'cursor' | 'limit'>, params: unknown[]) {
+    const where = [await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx)];
+    if (q.q) {
+      params.push(`%${q.q.toLowerCase()}%`);
+      const p = `$${params.length}`;
+      where.push(`(lower(e.first_name || ' ' || e.last_name) like ${p} or lower(coalesce(e.preferred_name, '')) like ${p} or lower(e.employee_code) like ${p} or lower(coalesce(e.work_email::text, '')) like ${p})`);
+    }
+    if (q.status) {
+      params.push(q.status);
+      where.push(`e.status = $${params.length}`);
+    } else if (q.includeExited !== 'true') {
+      where.push(`e.status <> 'exited'`);
+    }
+    if (q.departmentId) {
+      params.push(q.departmentId);
+      where.push(`e.current_department_id = $${params.length}`);
+    }
+    if (q.legalEntityId) {
+      params.push(q.legalEntityId);
+      where.push(`e.current_legal_entity_id = $${params.length}`);
+    }
+    return where;
+  }
+
   async list(q: z.infer<typeof employeeListQuery>) {
     return this.db.tenant(async (tx) => {
       const params: unknown[] = [];
-      const where = [await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx)];
-      if (q.q) {
-        params.push(`%${q.q.toLowerCase()}%`);
-        const p = `$${params.length}`;
-        where.push(`(lower(e.first_name || ' ' || e.last_name) like ${p} or lower(coalesce(e.preferred_name, '')) like ${p} or lower(e.employee_code) like ${p} or lower(coalesce(e.work_email::text, '')) like ${p})`);
-      }
-      if (q.status) {
-        params.push(q.status);
-        where.push(`e.status = $${params.length}`);
-      } else if (q.includeExited !== 'true') {
-        where.push(`e.status <> 'exited'`);
-      }
-      if (q.departmentId) {
-        params.push(q.departmentId);
-        where.push(`e.current_department_id = $${params.length}`);
-      }
-      if (q.legalEntityId) {
-        params.push(q.legalEntityId);
-        where.push(`e.current_legal_entity_id = $${params.length}`);
-      }
+      const where = await this.directoryWhere(tx, q, params);
+      const total = (await one<{ n: number }>(tx, `select count(*)::int as n from employees e where ${where.join(' and ')}`, params))!.n;
+      // Keyset pagination on (sort key as text, id), in either direction.
+      const key = SORT_KEYS[q.sort];
+      const cmp = q.dir === 'desc' ? '<' : '>';
       const cursor = decodeCursor(q.cursor);
       if (cursor) {
-        params.push(cursor[0], cursor[1]);
-        where.push(`(lower(e.first_name || ' ' || e.last_name), e.id) > ($${params.length - 1}, $${params.length}::uuid)`);
+        params.push(String(cursor[0]), cursor[1]);
+        where.push(`(${key}, e.id) ${cmp} ($${params.length - 1}, $${params.length}::uuid)`);
       }
       params.push(q.limit + 1);
-      const rows = await many<EmployeeRow>(
+      const rows = await many<EmployeeRow & { sortKey: string }>(
         tx,
-        `select ${EMPLOYEE_COLUMNS} ${EMPLOYEE_FROM} where ${where.join(' and ')} order by lower(e.first_name || ' ' || e.last_name), e.id limit $${params.length}`,
+        `select ${EMPLOYEE_COLUMNS}, ${key} as "sortKey" ${EMPLOYEE_FROM} where ${where.join(' and ')} order by ${key} ${q.dir}, e.id ${q.dir} limit $${params.length}`,
         params,
       );
       // Personal contact details are not part of the directory listing.
       const items = rows.map(({ personalEmail: _p, phone: _ph, dateOfBirth: _d, gender: _g, exitReason: _x, ...rest }) => rest);
-      return page(items as EmployeeRow[], q.limit, (r) => `${r.firstName} ${r.lastName}`.toLowerCase());
+      const out = page(items as (EmployeeRow & { sortKey: string })[], q.limit, (r) => r.sortKey);
+      return { ...out, items: out.items.map(({ sortKey: _k, ...r }) => r), total };
     });
+  }
+
+  /** The directory as CSV with the chosen columns, same scope and filters as the list. Audited. */
+  async exportCsv(q: z.infer<typeof employeeExportQuery>, format: 'csv' | 'xlsx' = 'csv') {
+    return this.db.tenant(async (tx) => {
+      const params: unknown[] = [];
+      const where = await this.directoryWhere(tx, q, params);
+      const key = SORT_KEYS[q.sort];
+      const rows = await many<EmployeeRow>(tx, `select ${EMPLOYEE_COLUMNS} ${EMPLOYEE_FROM} where ${where.join(' and ')} order by ${key} ${q.dir}, e.id ${q.dir} limit 20001`, params);
+      if (rows.length > 20000) throw Errors.badRequest('export_too_large', 'More than 20,000 people match. Narrow the filters and export again.');
+      const cell = (v: unknown) => {
+        let t = v === null || v === undefined ? '' : String(v);
+        // Neutralise spreadsheet formulas (CSV injection).
+        if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+        return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+      };
+      const lines = [q.columns.map((c) => EXPORT_HEADERS[c]).join(',')];
+      for (const r of rows) lines.push(q.columns.map((c) => cell(exportValue(r, c))).join(','));
+      await this.audit.record(tx, { action: 'employee.directory_exported', resourceType: 'employee', resourceId: null, changes: { format, rows: rows.length, columns: q.columns, filters: { q: q.q ?? null, status: q.status ?? null, departmentId: q.departmentId ?? null } } });
+      return { fileName: `employees-${new Date().toISOString().slice(0, 10)}.csv`, content: `\ufeff${lines.join('\r\n')}\r\n` };
+    });
+  }
+
+  /** People who may already have a record, so a hire is not entered twice. */
+  async duplicates(input: z.infer<typeof duplicateCheckInput>) {
+    return this.db.tenant(async (tx) => {
+      const params: unknown[] = [];
+      const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
+      const conds: string[] = [];
+      const reasons: string[] = [];
+      const add = (sql: string, value: unknown, reason: string) => {
+        params.push(value);
+        conds.push(sql.replace('$x', `$${params.length}`));
+        reasons.push(`case when ${sql.replace('$x', `$${params.length}`)} then '${reason}' end`);
+      };
+      if (input.workEmail?.includes('@')) add('lower(e.work_email::text) = lower($x)', input.workEmail, 'Same work email');
+      if (input.personalEmail?.includes('@')) add('lower(e.personal_email::text) = lower($x)', input.personalEmail, 'Same personal email');
+      const digits = (input.phone ?? '').replace(/\D/g, '');
+      if (digits.length >= 7) add(`right(regexp_replace(coalesce(e.phone, ''), '\\D', '', 'g'), 10) = right($x, 10)`, digits, 'Same phone number');
+      if (input.firstName && input.lastName) {
+        params.push(input.firstName.toLowerCase(), input.lastName.toLowerCase());
+        const nameSql = `(lower(e.first_name) = $${params.length - 1} and lower(e.last_name) = $${params.length})`;
+        if (input.dateOfBirth && /^\d{4}-\d{2}-\d{2}$/.test(input.dateOfBirth)) {
+          params.push(input.dateOfBirth);
+          const both = `(${nameSql} and e.date_of_birth = $${params.length}::date)`;
+          conds.push(both);
+          reasons.push(`case when ${both} then 'Same name and date of birth' end`);
+        }
+        conds.push(nameSql);
+        reasons.push(`case when ${nameSql} then 'Same name' end`);
+      }
+      if (!conds.length) return { matches: [] };
+      const matches = await many<{ id: string; displayName: string; employeeCode: string; status: string; departmentName: string | null; reasons: string[] }>(
+        tx,
+        `select e.id, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "displayName", e.employee_code as "employeeCode", e.status,
+                d.name as "departmentName", array_remove(array[${reasons.join(', ')}], null) as reasons
+           from employees e left join departments d on d.id = e.current_department_id
+          where ${scope} and (${conds.join(' or ')}) order by e.status = 'exited', e.date_of_joining desc limit 5`,
+        params,
+      );
+      return { matches };
+    });
+  }
+
+  // Hire drafts -----------------------------------------------------------------------------------------------
+
+  async drafts() {
+    const me = requestContext.tenantActor().membershipId;
+    return this.db.tenant((tx) => many(tx, `select id, step, data, updated_at as "updatedAt" from employee_drafts where membership_id = $1 order by updated_at desc limit 20`, [me]));
+  }
+
+  async saveDraft(id: string | null, input: z.infer<typeof employeeDraftInput>) {
+    const me = requestContext.tenantActor().membershipId;
+    return this.db.tenant(async (tx) => {
+      if (id) {
+        const r = await one(tx, `update employee_drafts set step = $3, data = $4 where id = $1 and membership_id = $2 returning id, step, data, updated_at as "updatedAt"`, [id, me, input.step, input.data]);
+        if (!r) throw Errors.notFound('Draft');
+        return r;
+      }
+      const n = (await one<{ n: number }>(tx, 'select count(*)::int as n from employee_drafts where membership_id = $1', [me]))!.n;
+      if (n >= 20) throw Errors.conflict('too_many_drafts', 'You have 20 unfinished hires. Finish or discard one first.');
+      return one(tx, `insert into employee_drafts (tenant_id, membership_id, step, data) values (app_tenant_id(), $1, $2, $3) returning id, step, data, updated_at as "updatedAt"`, [me, input.step, input.data]);
+    });
+  }
+
+  async deleteDraft(id: string) {
+    const me = requestContext.tenantActor().membershipId;
+    const r = await this.db.tenant((tx) => tx.query('delete from employee_drafts where id = $1 and membership_id = $2', [id, me]));
+    if (!r.rowCount) throw Errors.notFound('Draft');
   }
 
   async load(tx: Tx, id: string): Promise<EmployeeRow> {
@@ -231,6 +364,172 @@ export class EmployeesService {
     const row = await this.db.tenant((tx) => one<{ id: string }>(tx, 'select id from employees where membership_id = $1', [actor.membershipId]));
     if (!row) return { employee: null };
     return { employee: await this.get(row.id) };
+  }
+
+  /**
+   * The Employee 360 summary: one figure or short list per area (attendance, leave, pay, performance, learning,
+   * recognition, requests, documents) and a merged activity timeline. Each area is included only when the plan has
+   * the module and the caller's own permissions cover this employee for it, exactly as the area's own pages check;
+   * an area left out is null, so the page can say it is hidden rather than empty.
+   */
+  async summary360(id: string) {
+    return this.db.tenant(async (tx) => {
+      const e = await this.load(tx, id);
+      await this.authz.require('employees:read', employeeAttrs(e), tx);
+      const s = await this.authz.subject(tx);
+      const a = employeeAttrs(e);
+      const covers = (perm: string, broadOnly = false) => grantsFor(s, perm).some((g) => (!broadOnly || g.scope !== 'own') && grantCovers(s, g, a));
+      const isSelf = !!s.employeeId && s.employeeId === e.id;
+      const f = (await this.entitlements.current(tx)).features;
+      const today = new Date().toISOString().slice(0, 10);
+      const timeline: { at: string; kind: string; title: string; detail: string | null; link: string | null }[] = [];
+
+      const tenure = await one<{ joined: string | null; days: number | null }>(
+        tx, `select to_char(min(effective_from), 'YYYY-MM-DD') as joined, (current_date - min(effective_from))::int as days from employment_records where employee_id = $1`, [id],
+      );
+
+      let attendance = null;
+      if (f.has('attendance_basic') && covers('attendance:read')) {
+        const r = (await one<Record<string, number>>(
+          tx,
+          `select count(*) filter (where status in ('present', 'half_day'))::int as present, count(*) filter (where status = 'absent')::int as absent,
+                  count(*) filter (where status = 'missing_punch')::int as "missingPunch", count(*) filter (where status in ('on_leave', 'half_day_leave'))::int as "onLeave",
+                  count(*) filter (where late_minutes > 0)::int as late, count(*) filter (where day_type = 'working' and status not in ('in_progress', 'not_joined'))::int as "workingDays",
+                  coalesce(round(avg(worked_minutes) filter (where status in ('present', 'half_day'))), 0)::int as "avgWorkedMinutes",
+                  coalesce(sum(approved_overtime_minutes), 0)::int as "overtimeMinutes"
+             from attendance_days where employee_id = $1 and work_date between current_date - 29 and current_date`,
+          [id],
+        ))!;
+        attendance = { from: new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10), to: today, ...r };
+      }
+
+      let leave = null;
+      if (f.has('leave') && covers('leave:read')) {
+        const reqs = await many<{ id: string; type: string; startDate: string; endDate: string; days: string; status: string; createdAt: string }>(
+          tx,
+          `select r.id, t.name as type, to_char(r.start_date, 'YYYY-MM-DD') as "startDate", to_char(r.end_date, 'YYYY-MM-DD') as "endDate", r.days::text, r.status, r.created_at as "createdAt"
+             from leave_requests r join leave_types t on t.id = r.leave_type_id where r.employee_id = $1 order by r.created_at desc limit 20`,
+          [id],
+        );
+        const taken = (await one<{ d: string }>(tx, `select coalesce(sum(days), 0)::text as d from leave_requests where employee_id = $1 and status = 'approved' and date_part('year', start_date) = date_part('year', current_date)`, [id]))!.d;
+        leave = {
+          pending: reqs.filter((r) => r.status === 'pending').length,
+          takenThisYear: taken,
+          next: reqs.filter((r) => r.status === 'approved' && r.startDate >= today).sort((x, y) => x.startDate.localeCompare(y.startDate))[0] ?? null,
+        };
+        for (const r of reqs.slice(0, 8)) timeline.push({ at: r.createdAt, kind: 'leave', title: `${r.type}: ${r.days} day${r.days === '1.00' ? '' : 's'} from ${r.startDate}`, detail: r.status, link: null });
+      }
+
+      // Pay is sensitive: only people whose payroll access covers this employee see salary; the employee sees their own payslips.
+      let pay = null;
+      if (f.has('payroll') && (covers('payroll:read') || (isSelf && covers('payslips:read')))) {
+        const salary = covers('payroll:read')
+          ? await one<{ annualCtc: string; currency: string; effectiveFrom: string }>(
+            tx, `select annual_ctc::text as "annualCtc", currency, to_char(effective_from, 'YYYY-MM-DD') as "effectiveFrom" from employee_salaries where employee_id = $1 and effective_from <= current_date order by effective_from desc limit 1`, [id],
+          )
+          : null;
+        const payslip = await one<{ periodEnd: string; net: string; currency: string; payDate: string }>(
+          tx,
+          `select to_char(r.period_end, 'YYYY-MM-DD') as "periodEnd", i.net::text as net, r.currency, to_char(r.pay_date, 'YYYY-MM-DD') as "payDate"
+             from payroll_items i join payroll_runs r on r.id = i.run_id where i.employee_id = $1 and r.status = 'finalised' order by r.period_end desc limit 1`,
+          [id],
+        );
+        pay = { salary: salary ?? null, lastPayslip: payslip ?? null };
+      }
+
+      let performance = null;
+      if (f.has('talent') && covers('performance:read')) {
+        const goals = await many<{ title: string; status: string; progress: string; confidence: string | null; periodEnd: string; updatedAt: string }>(
+          tx,
+          `select title, status, progress::text, confidence, to_char(period_end, 'YYYY-MM-DD') as "periodEnd", updated_at as "updatedAt" from goals
+            where employee_id = $1 and status <> 'cancelled' order by (status = 'active') desc, period_end desc limit 20`,
+          [id],
+        );
+        // Ratings: managers and HR see the latest finalised rating; the employee only once it is released to them.
+        const broad = covers('performance:read', true) && !isSelf;
+        const review = await one<{ cycle: string; rating: number | null; releasedAt: string | null }>(
+          tx,
+          `select c.name as cycle, r.final_rating as rating, r.released_at as "releasedAt" from reviews r join review_cycles c on c.id = r.cycle_id
+            where r.employee_id = $1 and not r.excluded and r.final_rating is not null ${broad ? '' : 'and r.released_at is not null'} order by c.created_at desc limit 1`,
+          [id],
+        );
+        const active = goals.filter((g) => g.status === 'active');
+        performance = {
+          activeGoals: active.length,
+          completedGoals: goals.filter((g) => g.status === 'completed').length,
+          atRisk: active.filter((g) => g.confidence === 'at_risk' || g.confidence === 'off_track').length,
+          averageProgress: active.length ? (active.reduce((t, g) => t + Number(g.progress), 0) / active.length).toFixed(0) : null,
+          goals: active.slice(0, 5).map(({ updatedAt: _u, ...g }) => g),
+          latestReview: review ?? null,
+        };
+        for (const g of goals.slice(0, 5)) timeline.push({ at: g.updatedAt, kind: 'goal', title: `Goal: ${g.title}`, detail: g.status === 'completed' ? 'completed' : `${Number(g.progress).toFixed(0)}%`, link: null });
+      }
+
+      let learning = null;
+      if (f.has('talent') && covers('learning:read')) {
+        const r = (await one<Record<string, number>>(
+          tx,
+          `select count(*) filter (where status in ('assigned', 'in_progress'))::int as open, count(*) filter (where status = 'completed')::int as completed,
+                  count(*) filter (where status in ('assigned', 'in_progress') and due_on < current_date)::int as overdue,
+                  count(*) filter (where status = 'completed' and expires_on < current_date)::int as expired
+             from course_assignments where employee_id = $1`,
+          [id],
+        ))!;
+        const done = await many<{ title: string; completedOn: string }>(
+          tx, `select c.title, to_char(a.completed_on, 'YYYY-MM-DD') as "completedOn" from course_assignments a join courses c on c.id = a.course_id where a.employee_id = $1 and a.status = 'completed' order by a.completed_on desc limit 5`, [id],
+        );
+        learning = { ...r, recent: done };
+        for (const d of done) timeline.push({ at: `${d.completedOn}T12:00:00Z`, kind: 'learning', title: `Completed ${d.title}`, detail: null, link: null });
+      }
+
+      // Recognition is posted to the whole workspace, so anyone who may see the employee may see what they received.
+      let recognition = null;
+      if (f.has('talent')) {
+        const recent = await many<{ from: string; value: string | null; message: string; createdAt: string }>(
+          tx,
+          `select coalesce(f.preferred_name, f.first_name) || ' ' || f.last_name as "from", v.name as value, r.message, r.created_at as "createdAt"
+             from recognitions r join employees f on f.id = r.from_employee_id left join company_values v on v.id = r.value_id
+            where r.to_employee_id = $1 and r.hidden_at is null order by r.created_at desc limit 5`,
+          [id],
+        );
+        const n = (await one<{ n: number }>(tx, `select count(*)::int as n from recognitions where to_employee_id = $1 and hidden_at is null and created_at > now() - interval '90 days'`, [id]))!.n;
+        recognition = { last90Days: n, recent };
+        for (const r of recent) timeline.push({ at: r.createdAt, kind: 'recognition', title: `Recognised by ${r.from}${r.value ? ` for ${r.value}` : ''}`, detail: r.message, link: null });
+      }
+
+      // Requests: helpdesk handlers see non-confidential cases; the employee sees all of their own.
+      let requests = null;
+      if (isSelf || covers('helpdesk:manage')) {
+        const cases = await many<{ id: string; number: number; subject: string; status: string; createdAt: string }>(
+          tx,
+          `select id, number, subject, status, created_at as "createdAt" from helpdesk_cases where employee_id = $1 ${isSelf ? '' : 'and not confidential'} order by created_at desc limit 10`,
+          [id],
+        );
+        requests = { open: cases.filter((c) => !['resolved', 'closed'].includes(c.status)).length, recent: cases.slice(0, 5) };
+        for (const c of cases.slice(0, 5)) timeline.push({ at: c.createdAt, kind: 'request', title: `Request #${c.number}: ${c.subject}`, detail: c.status.replace(/_/g, ' '), link: `/helpdesk/${c.id}` });
+      }
+
+      let documents = null;
+      if (f.has('documents') && covers('documents:read')) {
+        const docs = await many<{ title: string; category: string; createdAt: string }>(
+          tx, `select title, category, created_at as "createdAt" from employee_documents where employee_id = $1 and archived_at is null order by created_at desc limit 20`, [id],
+        );
+        documents = { count: docs.length, categories: [...new Set(docs.map((d) => d.category))] };
+        for (const d of docs.slice(0, 5)) timeline.push({ at: d.createdAt, kind: 'document', title: `Document added: ${d.title}`, detail: d.category.replace(/_/g, ' '), link: null });
+      }
+
+      const events = await many<{ kind: string; effectiveOn: string; createdAt: string; details: Record<string, unknown> }>(
+        tx, `select kind, to_char(effective_on, 'YYYY-MM-DD') as "effectiveOn", created_at as "createdAt", details from lifecycle_events where employee_id = $1 order by created_at desc limit 10`, [id],
+      );
+      for (const ev of events) timeline.push({ at: `${ev.effectiveOn}T09:00:00Z`, kind: 'job', title: ev.kind.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()), detail: `effective ${ev.effectiveOn}`, link: null });
+
+      timeline.sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime());
+      return {
+        employeeId: id, isSelf, joinedOn: tenure?.joined ?? null, tenureDays: tenure?.days ?? null,
+        attendance, leave, pay, performance, learning, recognition, requests, documents,
+        timeline: timeline.slice(0, 30),
+      };
+    });
   }
 
   /** Job history and lifecycle events, newest first. */

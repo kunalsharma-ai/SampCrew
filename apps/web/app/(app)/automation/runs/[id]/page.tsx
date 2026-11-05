@@ -25,14 +25,14 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
         <Card>
           <CardHeader title="Trace" description={run.error ? undefined : run.outcome ?? undefined} />
           <CardBody className="grid gap-4">
-            {run.error && <p className="text-[13px] text-danger">{run.error}</p>}
+            {run.error && <p className="text-[0.8125rem] text-danger">{run.error}</p>}
             {run.plan.map((p) => {
               const attempts = run.steps.filter((s) => s.index === p.index);
               const current = run.status === 'running' || run.status === 'waiting' ? run.stepIndex === p.index : false;
               return (
                 <div key={p.index} className="flex gap-3">
                   <span className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${current ? 'bg-accent text-white' : 'bg-bg-subtle text-fg-muted'}`}>{p.index + 1}</span>
-                  <div className="min-w-0 text-[13px]">
+                  <div className="min-w-0 text-[0.8125rem]">
                     <div className="font-medium">{p.summary}</div>
                     {attempts.length === 0 && <div className="text-fg-subtle">{current ? 'Next' : 'Not reached'}</div>}
                     {attempts.map((a, i) => (
@@ -48,12 +48,12 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
                 </div>
               );
             })}
-            {run.approvalRequestId && run.status === 'waiting' && <p className="text-[13px] text-fg-muted">Waiting for a decision in <Link className="text-accent hover:underline" href="/approvals">Approvals</Link>.</p>}
+            {run.approvalRequestId && run.status === 'waiting' && <p className="text-[0.8125rem] text-fg-muted">Waiting for a decision in <Link className="text-accent hover:underline" href="/approvals">Approvals</Link>.</p>}
           </CardBody>
         </Card>
         <Card>
           <CardHeader title="Values" description="What the trigger provided when the run started." />
-          <CardBody className="grid gap-1 text-[13px]">
+          <CardBody className="grid gap-1 text-[0.8125rem]">
             {context.length === 0 && <p className="text-fg-muted">None.</p>}
             {context.map(([k, v]) => <div key={k} className="flex justify-between gap-3"><span className="text-fg-muted">{k}</span><span className="text-right">{String(v)}</span></div>)}
           </CardBody>

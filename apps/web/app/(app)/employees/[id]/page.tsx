@@ -5,6 +5,9 @@ import { notFound } from 'next/navigation';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
 import type { Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, OnboardingTask, Page } from '@/lib/types';
 import { EmployeeStatus } from '../status';
+import type { EmployeeSkill } from '@crew/contracts';
+import { ActivityTab, AtAGlance, type Summary360 } from './at-a-glance';
+import { SkillsCard } from './skills-card';
 import { DocumentsTab, JobTab, LeaveTab, OnboardingTab, OverviewTab } from './tabs';
 
 export const metadata: Metadata = { title: 'Employee' };
@@ -15,6 +18,7 @@ const TABS = [
   { key: 'leave', label: 'Leave' },
   { key: 'documents', label: 'Documents' },
   { key: 'onboarding', label: 'Onboarding' },
+  { key: 'activity', label: 'Activity' },
 ] as const;
 
 export default async function EmployeePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
@@ -32,7 +36,13 @@ export default async function EmployeePage({ params, searchParams }: { params: P
 
   let content: React.ReactNode;
   if (tab === 'overview') {
-    content = <OverviewTab e={e} />;
+    const [summary, skills] = await Promise.all([
+      loadOptional<Summary360>(`/employees/${id}/360`),
+      loadOptional<{ skills: EmployeeSkill[]; canEdit: boolean }>(`/employees/${id}/skills`),
+    ]);
+    content = <>{summary && <AtAGlance s={summary} />}<OverviewTab e={e} />{skills && <SkillsCard employeeId={id} initial={skills.skills} canEdit={skills.canEdit} />}</>;
+  } else if (tab === 'activity') {
+    content = <ActivityTab s={await load<Summary360>(`/employees/${id}/360`)} />;
   } else if (tab === 'job') {
     const [history, reports, departments, entities, locations, designations, managers] = await Promise.all([
       load<{ records: JobRecord[]; events: LifecycleEvent[] }>(`/employees/${id}/history`),
@@ -63,7 +73,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
 
   return (
     <>
-      <div className="mb-2 text-[13px]"><Link href="/employees" className="text-fg-subtle hover:text-fg">Employees</Link></div>
+      <div className="mb-2 text-[0.8125rem]"><Link href="/employees" className="text-fg-subtle hover:text-fg">Employees</Link></div>
       <PageHeader
         title={
           <span className="flex items-center gap-3">
@@ -82,7 +92,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
             key={t.key}
             href={`/employees/${id}?tab=${t.key}`}
             aria-current={t.key === tab ? 'page' : undefined}
-            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-[13.5px] ${t.key === tab ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg'}`}
+            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-[0.8438rem] ${t.key === tab ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg'}`}
           >
             {t.label}
           </Link>

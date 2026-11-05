@@ -119,7 +119,7 @@ function CategoryDialog({ category, handlers, onClose }: { category: Category | 
           <Checkbox label="Confidential" description="For example grievances. Only the handlers named below and the person who raised it can see these cases; viewing them is recorded in the audit trail." checked={confidential} onChange={(e) => setConfidential(e.target.checked)} />
         </div>
         <fieldset className="col-span-2 grid gap-1.5">
-          <legend className="mb-1 text-[13px] font-medium">Handlers{confidential && <span className="text-danger"> *</span>}</legend>
+          <legend className="mb-1 text-[0.8125rem] font-medium">Handlers{confidential && <span className="text-danger"> *</span>}</legend>
           {handlers.length === 0 && <p className="text-xs text-fg-muted">Nobody has a role that can handle cases yet.</p>}
           {handlers.map((h) => (
             <Checkbox key={h.membershipId} label={h.name} description={h.scope === 'tenant' ? 'Whole organization' : 'Their legal entity'} checked={picked.includes(h.membershipId)}

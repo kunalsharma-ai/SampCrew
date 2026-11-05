@@ -21,13 +21,13 @@ export function SurveyFormView({ form }: { form: SurveyForm }) {
       {form.questions.map((q, i) => (
         <Card key={q.id}>
           <CardBody className="grid gap-3">
-            <div className="text-[13px] font-medium">{i + 1}. {q.text}{q.kind !== 'text' && <span className="text-danger"> *</span>}</div>
+            <div className="text-[0.8125rem] font-medium">{i + 1}. {q.text}{q.kind !== 'text' && <span className="text-danger"> *</span>}</div>
             {q.kind === 'text' ? (
               <Textarea aria-label={q.text} rows={3} maxLength={2000} value={String(answers[q.id] ?? '')} onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })} placeholder="Optional. Avoid details that identify you if you want to stay anonymous." />
             ) : (
               <div role="radiogroup" aria-label={q.text} className="flex flex-wrap gap-1.5">
                 {Array.from({ length: q.kind === 'enps' ? 11 : 5 }, (_, k) => (q.kind === 'enps' ? k : k + 1)).map((v) => (
-                  <label key={v} className={`cursor-pointer rounded-md border px-3 py-1.5 text-[13px] ${answers[q.id] === v ? 'border-accent bg-accent text-accent-fg' : 'border-border hover:bg-bg-subtle'}`}>
+                  <label key={v} className={`cursor-pointer rounded-md border px-3 py-1.5 text-[0.8125rem] ${answers[q.id] === v ? 'border-accent bg-accent text-accent-fg' : 'border-border hover:bg-bg-subtle'}`}>
                     <input type="radio" className="sr-only" name={q.id} value={v} checked={answers[q.id] === v} onChange={() => setAnswers({ ...answers, [q.id]: v })} />
                     {q.kind === 'scale' ? `${v} · ${SCALE_LABELS[v - 1]}` : v}
                   </label>

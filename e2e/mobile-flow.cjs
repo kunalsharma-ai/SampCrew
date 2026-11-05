@@ -19,6 +19,8 @@
  * 6. Opens a payslip, when payroll has published one.
  * 7. Another employee with two-step sign-in signs in with an authenticator code.
  * 8. Signs this phone out from the devices screen; the server refuses its old refresh token afterwards.
+ * Between 6 and 7: the QA lead picks the Emerald theme in dark mode on the phone. It is saved to their account (the
+ * Web Portal reads the same preference), survives a reload, and signing out goes back to the default theme.
  * Fails on any browser error.
  */
 const http = require('node:http');
@@ -103,7 +105,16 @@ async function signIn(p, email, { code } = {}) {
     await p.getByLabel('Password').fill(PASSWORD);
     await p.getByRole('button', { name: 'Sign in' }).click();
     if (code) {
-      await p.getByText('Two-step sign-in').waitFor({ timeout: 15000 });
+      // The password step can be rate limited too (10 sign-ins a minute); wait and try again rather than time out.
+      const step = await Promise.race([
+        p.getByText('Two-step sign-in').waitFor({ timeout: 20000 }).then(() => 'code'),
+        p.getByText('Too many attempts').waitFor({ timeout: 20000 }).then(() => 'limited'),
+      ]);
+      if (step === 'limited') {
+        if (attempt >= 4) throw new Error(`sign-in for ${email} stayed rate limited`);
+        await p.waitForTimeout(20000);
+        continue;
+      }
       await p.getByLabel('Code').fill(code());
       await p.getByRole('button', { name: 'Verify' }).click();
     }
@@ -281,6 +292,32 @@ function futureWeekday(taken) {
       ok('opened a payslip; net pay shown to the paisa');
     } else ok('# skip payslip: no published payslip for the QA lead yet (run after e2e:payroll)');
 
+    // 6b. Theme: saved to the account and shared with the Web Portal.
+    await p.goto(APP + '/me');
+    const card = p.getByTestId('appearance');
+    await card.waitFor();
+    const colours = () => card.evaluate((el) => ({ card: getComputedStyle(el).backgroundColor }));
+    const themeBefore = await colours();
+    await card.getByRole('radio', { name: 'Emerald Command' }).click();
+    await p.getByTestId('me-message').getByText('Theme changed to Emerald Command.').waitFor();
+    await card.getByRole('radio', { name: 'Dark' }).click();
+    await p.getByTestId('me-message').getByText('CREW now uses dark mode.').waitFor();
+    const themed = await colours();
+    assert(themed.card !== themeBefore.card, `the card colour changed with the theme (${themeBefore.card} -> ${themed.card})`);
+    const saved = (await api(qa, 'GET', '/me/preferences')).appearance;
+    assert(saved.preset === 'emerald' && saved.mode === 'dark', `theme saved to the account (${saved.preset}, ${saved.mode})`);
+    await p.reload();
+    await card.waitFor();
+    assert((await colours()).card === themed.card, 'the theme survives a reload');
+    assert((await card.getByRole('radio', { name: 'Emerald Command' }).getAttribute('aria-checked')) === 'true', 'Emerald still selected after a reload');
+    if (process.env.SHOTS) { await card.getByRole('radio', { name: 'Emerald Command' }).scrollIntoViewIfNeeded(); await p.screenshot({ path: `${process.env.SHOTS}/design6-mobile-theme.png` }); }
+    // A change made in the Web Portal reaches the phone on the next start.
+    await api(qa, 'PUT', '/me/preferences/appearance', { preset: 'sunset' });
+    await p.reload();
+    // The app opens in the theme kept on the phone, then switches when the account's preference arrives.
+    await card.locator('[role="radio"][aria-label="Sunset Fusion"][aria-checked="true"]').waitFor();
+    ok('picked Emerald in dark mode on the phone; saved to the account, kept after a reload, and a web change reaches the phone');
+
     // 7. Two-step sign-in with an authenticator code.
     const ukSales = 'uk.sales@demo.crew.local';
     const us = await apiLogin(ukSales);
@@ -304,6 +341,15 @@ function futureWeekday(taken) {
     assert(refresh.status === 401, `old refresh token refused after sign-out (got ${refresh.status})`);
     const after = await api(await apiLogin(qaEmail), 'GET', '/mobile/devices');
     assert(after.every((d) => d.revokedAt), 'the device shows as signed out');
+    const loginBg = await p.evaluate(() => {
+      for (let el = document.querySelector('input'); el; el = el.parentElement) {
+        const c = getComputedStyle(el).backgroundColor;
+        if (c && c !== 'rgba(0, 0, 0, 0)' && el.tagName !== 'INPUT') return c;
+      }
+      return null;
+    });
+    assert(loginBg !== themed.card, `signing out leaves the member's theme behind (${loginBg})`);
+    await api(await apiLogin(qaEmail), 'PUT', '/me/preferences/appearance', { preset: 'midnight', mode: 'system' });
     ok('signed the phone out; the server refuses its old session');
 
     if (errs.length) throw new Error('browser errors:\n' + errs.join('\n'));

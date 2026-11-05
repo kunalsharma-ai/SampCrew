@@ -28,7 +28,7 @@ export function RosterEditor({ roster, shifts }: { roster: RosterGrid; shifts: S
         {notice && <Alert tone={notice.ok ? 'success' : 'danger'}>{notice.text}</Alert>}
         {!roster.canEdit && <Alert tone="info">You can view this roster but some people on it are outside the team you schedule.</Alert>}
         <div className="overflow-x-auto">
-          <table className="w-full border-separate border-spacing-0 text-[13px]">
+          <table className="w-full border-separate border-spacing-0 text-[0.8125rem]">
             <thead>
               <tr>
                 <th className="sticky left-0 bg-surface px-2 py-2 text-left font-medium text-fg-subtle">Employee</th>

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
+  type BulkApplicationsInput,
+  fillCandidateEmail,
   RESUME_MAX_BYTES,
   RESUME_TYPES,
   type applicationListQuery,
@@ -10,12 +12,13 @@ import {
   type rejectInput,
 } from '@crew/contracts';
 import type { z } from 'zod';
+import type { CandidateListQuery } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { can } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
-import { Errors } from '../../platform/http/errors';
+import { AppError, Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
 import type { UploadedFile } from '../documents/documents.service';
@@ -79,22 +82,45 @@ export class CandidatesService {
     return row;
   }
 
-  async list(q: { q?: string; tag?: string; requisitionId?: string; limit?: number }) {
+  private async listWhere(tx: Tx, q: Partial<CandidateListQuery>, params: unknown[]) {
+    const where = [await this.candidateScope(tx, 'candidates:read', params), 'c.anonymized_at is null'];
+    if (q.q) {
+      params.push(`%${q.q.toLowerCase()}%`);
+      where.push(`(lower(c.first_name || ' ' || c.last_name) like $${params.length} or c.email like $${params.length} or lower(coalesce(c.current_company, '')) like $${params.length})`);
+    }
+    if (q.tag) {
+      params.push(q.tag);
+      where.push(`$${params.length} = any(c.tags)`);
+    }
+    if (q.source) {
+      params.push(q.source);
+      where.push(`c.source = $${params.length}`);
+    }
+    // Job and status together mean "their application for this job is in this state".
+    const app: string[] = [];
+    if (q.requisitionId) {
+      params.push(q.requisitionId);
+      app.push(`x.requisition_id = $${params.length}`);
+    }
+    if (q.status && q.status !== 'none') {
+      params.push(q.status);
+      app.push(`x.status = $${params.length}`);
+    }
+    if (app.length) where.push(`exists (select 1 from applications x where x.candidate_id = c.id and ${app.join(' and ')})`);
+    if (q.status === 'none') where.push(`not exists (select 1 from applications x where x.candidate_id = c.id)`);
+    return where;
+  }
+
+  private order(q: Partial<CandidateListQuery>) {
+    const dir = q.dir === 'asc' ? 'asc' : 'desc';
+    const key = q.sort === 'name' ? `lower(c.first_name || ' ' || c.last_name)` : q.sort === 'added' ? 'c.created_at' : 'c.last_activity_at';
+    return `${key} ${dir}, c.id ${dir}`;
+  }
+
+  async list(q: Partial<CandidateListQuery>) {
     return this.db.tenant(async (tx) => {
       const params: unknown[] = [];
-      const where = [await this.candidateScope(tx, 'candidates:read', params), 'c.anonymized_at is null'];
-      if (q.q) {
-        params.push(`%${q.q.toLowerCase()}%`);
-        where.push(`(lower(c.first_name || ' ' || c.last_name) like $${params.length} or c.email like $${params.length} or lower(coalesce(c.current_company, '')) like $${params.length})`);
-      }
-      if (q.tag) {
-        params.push(q.tag);
-        where.push(`$${params.length} = any(c.tags)`);
-      }
-      if (q.requisitionId) {
-        params.push(q.requisitionId);
-        where.push(`exists (select 1 from applications x where x.candidate_id = c.id and x.requisition_id = $${params.length})`);
-      }
+      const where = await this.listWhere(tx, q, params);
       params.push(Math.min(q.limit ?? 200, 500));
       return many(
         tx,
@@ -102,9 +128,35 @@ export class CandidatesService {
                 (select count(*)::int from applications x where x.candidate_id = c.id and x.status = 'active') as "activeApplications",
                 (select json_agg(json_build_object('requisitionCode', r2.code, 'requisitionTitle', r2.title, 'stage', s2.name, 'status', x.status) order by x.applied_at desc)
                    from applications x join job_requisitions r2 on r2.id = x.requisition_id join recruitment_stages s2 on s2.id = x.stage_id where x.candidate_id = c.id) as applications
-           from candidates c where ${where.join(' and ')} order by c.last_activity_at desc limit $${params.length}`,
+           from candidates c where ${where.join(' and ')} order by ${this.order(q)} limit $${params.length}`,
         params,
       );
+    });
+  }
+
+  /** The list as a file, with the same scope and filters (up to 5,000 people). Audited, as it carries contact details. */
+  async export(q: Partial<CandidateListQuery>, format: 'csv' | 'xlsx') {
+    return this.db.tenant(async (tx) => {
+      const params: unknown[] = [];
+      const where = await this.listWhere(tx, q, params);
+      const rows = await many<{ name: string; email: string; phone: string | null; currentTitle: string | null; currentCompany: string | null; locationText: string | null; source: string; tags: string[]; createdAt: Date; lastActivityAt: Date; jobs: string | null }>(
+        tx,
+        `select ${CANDIDATE_COLUMNS},
+                (select string_agg(r2.code || ' ' || r2.title || ' (' || case when x.status = 'active' then s2.name else x.status end || ')', '; ' order by x.applied_at desc)
+                   from applications x join job_requisitions r2 on r2.id = x.requisition_id join recruitment_stages s2 on s2.id = x.stage_id where x.candidate_id = c.id) as jobs
+           from candidates c where ${where.join(' and ')} order by ${this.order(q)} limit 5001`,
+        params,
+      );
+      if (rows.length > 5000) throw Errors.badRequest('export_too_large', 'More than 5,000 candidates match. Narrow the filters and export again.');
+      const cell = (v: unknown) => {
+        let t = v === null || v === undefined ? '' : v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
+        if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+        return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+      };
+      const lines = ['Name,Email,Phone,Current title,Current company,Location,Source,Tags,Jobs,Added,Last activity'];
+      for (const r of rows) lines.push([r.name, r.email, r.phone, r.currentTitle, r.currentCompany, r.locationText, r.source, r.tags.join('; '), r.jobs, r.createdAt, r.lastActivityAt].map(cell).join(','));
+      await this.audit.record(tx, { action: 'candidate.list_exported', resourceType: 'candidate', resourceId: null, changes: { format, rows: rows.length, filters: { q: q.q ?? null, tag: q.tag ?? null, requisitionId: q.requisitionId ?? null, source: q.source ?? null, status: q.status ?? null } } });
+      return { fileName: `candidates-${new Date().toISOString().slice(0, 10)}.csv`, content: `\ufeff${lines.join('\r\n')}\r\n` };
     });
   }
 
@@ -265,6 +317,68 @@ export class CandidatesService {
     });
   }
 
+  /**
+   * Side-by-side comparison of 2 to 4 applications for the same job: where each candidate is, how long they have
+   * been in process, and their interview scores per scorecard criterion and recommendations, averaged across
+   * submitted scorecards. Visible to whoever can see the pipeline, like the average score on the board.
+   */
+  async compare(requisitionId: string, ids: string[]) {
+    return this.db.tenant(async (tx) => {
+      const r = await loadRequisition(tx, requisitionId);
+      await this.authz.require('candidates:read', reqAttrs(r), tx);
+      const apps = await many<Record<string, unknown> & { id: string; appliedAt: Date; stageEnteredAt: Date }>(
+        tx,
+        `select ${APPLICATION_COLUMNS}, c.location_text as "locationText", c.anonymized_at is not null as anonymized
+           from ${APPLICATION_FROM} where a.requisition_id = $1 and a.id = any($2::uuid[])`,
+        [requisitionId, ids],
+      );
+      if (apps.length !== ids.length) throw Errors.badRequest('not_in_job', 'Compare candidates who applied to this job');
+      const criteria = await many<{ applicationId: string; criterion: string; average: string; ratings: number }>(
+        tx,
+        `select i.application_id as "applicationId", x->>'criterion' as criterion, round(avg((x->>'score')::numeric), 2)::text as average, count(*)::int as ratings
+           from interviews i join interview_feedback f on f.interview_id = i.id, jsonb_array_elements(f.ratings) x
+          where i.application_id = any($1::uuid[]) group by 1, 2`,
+        [ids],
+      );
+      const recs = await many<{ applicationId: string; recommendation: string; n: number }>(
+        tx,
+        `select i.application_id as "applicationId", f.recommendation, count(*)::int as n
+           from interviews i join interview_feedback f on f.interview_id = i.id where i.application_id = any($1::uuid[]) group by 1, 2`,
+        [ids],
+      );
+      // Offer amounts only for people who make offers on this job (pay is not shared with every interviewer).
+      const s = await this.authz.subject(tx);
+      const showPay = can(s, 'offers:manage', reqAttrs(r)).allowed;
+      const offers = showPay ? await many<{ applicationId: string; amount: string; currency: string; payPeriod: string; status: string; aboveRange: boolean; variablePay: string | null }>(
+        tx,
+        `select distinct on (o.application_id) o.application_id as "applicationId", o.base_salary::text as amount, o.currency, o.pay_period as "payPeriod", o.status,
+                o.above_range as "aboveRange", o.variable_pay as "variablePay"
+           from offers o where o.application_id = any($1::uuid[]) and o.status not in ('withdrawn', 'rejected') order by o.application_id, o.created_at desc`,
+        [ids],
+      ) : [];
+      const days = (d: Date) => Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000));
+      // Criteria from the job's scorecard first, then any others interviewers rated.
+      const extra = [...new Set(criteria.map((c) => c.criterion))].filter((c) => !r.scorecard.includes(c)).sort();
+      return {
+        requisition: { id: r.id, code: r.code, title: r.title },
+        criteria: [...r.scorecard, ...extra],
+        /** Whether offer amounts are shown; with them, the job's approved range. */
+        pay: showPay ? { salaryMin: r.salary_min, salaryMax: r.salary_max, currency: r.currency } : null,
+        applications: ids.map((id) => {
+          const a = apps.find((x) => x.id === id)!;
+          return {
+            ...a,
+            daysInProcess: days(a.appliedAt),
+            daysInStage: days(a.stageEnteredAt),
+            criteria: Object.fromEntries(criteria.filter((c) => c.applicationId === id).map((c) => [c.criterion, { average: c.average, ratings: c.ratings }])),
+            recommendations: Object.fromEntries(recs.filter((x) => x.applicationId === id).map((x) => [x.recommendation, x.n])),
+            offer: showPay ? (offers.find((o) => o.applicationId === id) ?? null) : undefined,
+          };
+        }),
+      };
+    });
+  }
+
   async move(applicationId: string, input: z.infer<typeof moveStageInput>) {
     return this.db.tenant(async (tx) => {
       const a = await loadApplication(tx, applicationId, true);
@@ -299,6 +413,54 @@ export class CandidatesService {
         await recordEvent(tx, applicationId, 'email_queued', { detail: { template: 'candidate.rejected' } });
       }
       return { status: 'rejected' };
+    });
+  }
+
+  /**
+   * One action on several applications for a job. Each application is handled on its own, with the same checks as
+   * doing it one by one, so one that cannot be moved (closed, erased, hired stage) does not stop the rest; the
+   * result says which ones were skipped and why.
+   */
+  async bulk(requisitionId: string, input: BulkApplicationsInput) {
+    const ids = [...new Set(input.applicationIds)];
+    await this.db.tenant(async (tx) => {
+      const r = await loadRequisition(tx, requisitionId);
+      await this.authz.require('candidates:manage', reqAttrs(r), tx);
+      const found = await many<{ id: string }>(tx, 'select id from applications where requisition_id = $1 and id = any($2::uuid[])', [requisitionId, ids]);
+      if (found.length !== ids.length) throw Errors.badRequest('not_in_job', 'Choose candidates who applied to this job');
+    });
+    const results: { id: string; ok: boolean; code?: string; message?: string }[] = [];
+    for (const id of ids) {
+      try {
+        if (input.action === 'move') await this.move(id, { stageId: input.stageId, note: input.note });
+        else if (input.action === 'reject') await this.reject(id, { reason: input.reason, note: input.note, notifyCandidate: input.notifyCandidate });
+        else await this.emailOne(id, input.subject, input.message);
+        results.push({ id, ok: true });
+      } catch (e) {
+        if (!(e instanceof AppError) || e.getStatus() >= 500) throw e;
+        results.push({ id, ok: false, code: e.code, message: (e.getResponse() as { message: string }).message });
+      }
+    }
+    const done = results.filter((x) => x.ok).length;
+    await this.db.tenant((tx) => this.audit.record(tx, {
+      action: `applications.bulk_${input.action}`, resourceType: 'requisition', resourceId: requisitionId,
+      changes: { done, skipped: results.length - done, ...(input.action === 'move' ? { stageId: input.stageId } : input.action === 'reject' ? { reason: input.reason, notifyCandidate: input.notifyCandidate } : { subject: input.subject }) },
+    }));
+    return { done, skipped: results.length - done, results };
+  }
+
+  /** Emails one candidate about their application, from the hiring organisation. */
+  private async emailOne(applicationId: string, subject: string, message: string) {
+    return this.db.tenant(async (tx) => {
+      const a = await loadApplication(tx, applicationId, true);
+      await this.authz.require('candidates:manage', reqAttrs(a.req), tx);
+      if (a.anonymized) throw Errors.conflict('candidate_erased', 'This candidate’s details were erased');
+      if (!a.candidate_email) throw Errors.conflict('no_email', 'This candidate has no email address');
+      const first = (await one<{ f: string }>(tx, 'select first_name as f from candidates where id = $1', [a.candidate_id]))!.f;
+      const v = { firstName: first, jobTitle: a.req.title };
+      const org = await this.orgName(tx);
+      await this.notifications.queueEmail(tx, requestContext.tenantActor().tenantId, a.candidate_email, fillCandidateEmail(subject, v), `${fillCandidateEmail(message, v)}\n\n${org}`, 'candidate.message', CANDIDATE_FOOTER);
+      await recordEvent(tx, applicationId, 'email_queued', { detail: { template: 'candidate.message', subject: fillCandidateEmail(subject, v) } });
     });
   }
 

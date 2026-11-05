@@ -35,7 +35,7 @@ export function Field({ label, hint, error, required, className, children }: Fie
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
-      <label htmlFor={id} className="text-[13px] font-medium text-fg">
+      <label htmlFor={id} className="text-[0.8125rem] font-medium text-fg">
         {label}
         {required && <span className="text-danger"> *</span>}
       </label>

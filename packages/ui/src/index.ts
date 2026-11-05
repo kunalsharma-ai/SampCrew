@@ -5,3 +5,4 @@ export * from './components/surface';
 export * from './components/table';
 export * from './components/dialog';
 export * from './components/brand';
+export * from './components/data-table';

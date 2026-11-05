@@ -35,6 +35,12 @@ export function HelpdeskHome({ categories, cases, articles, showAll }: { categor
     const r = await articleAction(id);
     if (r.ok && r.data) setReading(r.data);
   };
+  // A link to /helpdesk?article=<id> (from CREW IQ, for example) opens that article.
+  useEffect(() => {
+    const id = new URL(window.location.href).searchParams.get('article');
+    if (id && /^[0-9a-f-]{36}$/.test(id)) void open(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
@@ -42,7 +48,7 @@ export function HelpdeskHome({ categories, cases, articles, showAll }: { categor
         <Card>
           <CardHeader
             title={showAll ? 'All my cases' : 'My open cases'}
-            action={<Link className="text-[13px] font-medium text-accent hover:underline" href={showAll ? '/helpdesk' : '/helpdesk?show=all'}>{showAll ? 'Open only' : 'Show closed too'}</Link>}
+            action={<Link className="text-[0.8125rem] font-medium text-accent hover:underline" href={showAll ? '/helpdesk' : '/helpdesk?show=all'}>{showAll ? 'Open only' : 'Show closed too'}</Link>}
           />
           {cases.length ? (
             <Table>
@@ -69,7 +75,7 @@ export function HelpdeskHome({ categories, cases, articles, showAll }: { categor
             <ul className="divide-y divide-border">
               {articles.map((a) => (
                 <li key={a.id} className="px-5 py-3">
-                  <button type="button" className="text-left text-[13px] font-medium text-accent hover:underline" onClick={() => open(a.id)}>{a.title}</button>
+                  <button type="button" className="text-left text-[0.8125rem] font-medium text-accent hover:underline" onClick={() => open(a.id)}>{a.title}</button>
                   <p className="mt-0.5 line-clamp-2 text-xs text-fg-muted">{a.categoryName ? `${a.categoryName} · ` : ''}{a.excerpt}</p>
                 </li>
               ))}
@@ -118,7 +124,7 @@ export function HelpdeskHome({ categories, cases, articles, showAll }: { categor
             )}
             <Field label="Subject" required error={fe.subject}>{(p) => <Input {...p} name="subject" required minLength={3} maxLength={200} value={subject} onChange={(e) => setSubject(e.target.value)} />}</Field>
             {suggested.length > 0 && (
-              <div className="rounded-lg border border-border bg-bg-subtle/60 p-3 text-[13px]">
+              <div className="rounded-lg border border-border bg-bg-subtle/60 p-3 text-[0.8125rem]">
                 <div className="mb-1 font-medium">These articles may already answer it</div>
                 <ul className="grid gap-1">
                   {suggested.map((a) => <li key={a.id}><button type="button" className="text-left text-accent hover:underline" onClick={() => open(a.id)}>{a.title}</button></li>)}
@@ -137,7 +143,7 @@ export function HelpdeskHome({ categories, cases, articles, showAll }: { categor
       </Card>
 
       <Dialog open={reading !== null} onClose={() => setReading(null)} title={reading?.title ?? ''} description={reading?.categoryName ?? undefined} size="lg">
-        <div className="whitespace-pre-wrap text-[13px] leading-relaxed">{reading?.body}</div>
+        <div className="whitespace-pre-wrap text-[0.8125rem] leading-relaxed">{reading?.body}</div>
       </Dialog>
     </div>
   );

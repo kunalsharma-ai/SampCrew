@@ -23,7 +23,7 @@ export class ApiError extends Error {
 }
 
 /**
- * The visitor's address, so the API's per-address rate limits apply to each visitor rather than to this web
+ * The visitor's address (and browser), so the API's per-address rate limits apply to each visitor rather than to this web
  * server. Takes the right-most X-Forwarded-For entry, which is the one added by the proxy in front of the web
  * app (entries further left come from the client and can be forged).
  */
@@ -31,7 +31,11 @@ async function clientIp(): Promise<Record<string, string>> {
   try {
     const h = await requestHeaders();
     const ip = h.get('x-forwarded-for')?.split(',').pop()?.trim() || h.get('x-real-ip')?.trim();
-    return ip && /^[0-9a-fA-F:.]{3,45}$/.test(ip) ? { 'x-forwarded-for': ip } : {};
+    const out: Record<string, string> = ip && /^[0-9a-fA-F:.]{3,45}$/.test(ip) ? { 'x-forwarded-for': ip } : {};
+    // The browser's own user agent, so audit records and signed proposals name the real device.
+    const ua = h.get('user-agent');
+    if (ua) out['user-agent'] = ua.slice(0, 500);
+    return out;
   } catch {
     return {}; // outside a request (build time)
   }

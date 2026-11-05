@@ -1,4 +1,5 @@
 'use client';
+import { useCreateParam } from '@/lib/use-create-param';
 import { Badge, Button, Card, CardHeader, EmptyState, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Plus } from 'lucide-react';
 import Link from 'next/link';
@@ -10,6 +11,9 @@ import { saveRequisitionAction } from './actions';
 import { range, REQ_STATUS, REQ_TONE, WORK_MODE } from './labels';
 import { requisitionFields, type RequisitionRefs } from './requisition-form';
 
+/** Starting values another page may pass, such as a draft from CREW IQ. */
+const PREFILL = ['title', 'description'] as const;
+
 const FILTERS = [
   { status: '', label: 'All' }, { status: 'open', label: 'Open' }, { status: 'pending_approval', label: 'Awaiting approval' },
   { status: 'draft', label: 'Drafts' }, { status: 'on_hold', label: 'On hold' }, { status: 'filled', label: 'Filled' }, { status: 'closed', label: 'Closed' },
@@ -19,7 +23,7 @@ export function JobsView({ reqs, filter, canCreate, refs, defaults }: {
   reqs: Requisition[]; filter: { status: string; scope: 'all' | 'mine' }; canCreate: boolean; refs: RequisitionRefs; defaults: { currency: string; membershipId: string };
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen, prefill] = useCreateParam('requisition', PREFILL);
   const href = (status: string, scope = filter.scope) => {
     const q = new URLSearchParams();
     if (status) q.set('status', status);
@@ -30,10 +34,10 @@ export function JobsView({ reqs, filter, canCreate, refs, defaults }: {
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (
-          <Link key={f.status} href={href(f.status)} className={`rounded-full px-3 py-1 text-[13px] font-medium ${filter.status === f.status ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{f.label}</Link>
+          <Link key={f.status} href={href(f.status)} className={`rounded-full px-3 py-1 text-[0.8125rem] font-medium ${filter.status === f.status ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{f.label}</Link>
         ))}
         <span className="mx-1 h-4 w-px bg-border" />
-        <Link href={href(filter.status, filter.scope === 'mine' ? 'all' : 'mine')} className="text-[13px] font-medium text-accent hover:underline">
+        <Link href={href(filter.status, filter.scope === 'mine' ? 'all' : 'mine')} className="text-[0.8125rem] font-medium text-accent hover:underline">
           {filter.scope === 'mine' ? 'Show all jobs I can see' : 'Only jobs I manage or raised'}
         </Link>
       </div>
@@ -73,6 +77,7 @@ export function JobsView({ reqs, filter, canCreate, refs, defaults }: {
           currency: defaults.currency, headcount: 1, employmentType: 'full_time', workMode: 'onsite', legalEntityId: refs.entities[0]?.id, departmentId: refs.departments[0]?.id,
           hiringManagerMembershipId: refs.people.some((p) => p.membershipId === defaults.membershipId) ? defaults.membershipId : refs.people[0]?.membershipId,
           scorecard: 'Role skills\nProblem solving\nCommunication\nTeam fit',
+          ...prefill,
         }}
         submitLabel="Save draft"
         onSubmit={async (v) => {

@@ -32,23 +32,23 @@ export function ItemView({ runId, currency, item, editable }: { runId: string; c
             <TBody>
               {groups.map((g) => (
                 <Fragment key={g.kind}>
-                  <tr><td colSpan={3} className="bg-bg-subtle/60 px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">{LINE_KIND[g.kind]}</td></tr>
+                  <tr><td colSpan={3} className="bg-bg-subtle/60 px-5 py-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle">{LINE_KIND[g.kind]}</td></tr>
                   {g.lines.map((l) => (
                     <TR key={`${g.kind}-${l.code}`}>
                       <TD className="font-medium">{l.name}{l.kind === 'earning' && l.taxable === false && <span className="ml-1 text-xs text-fg-muted">(not taxable)</span>}</TD>
-                      <TD className="text-[13px] text-fg-muted">{l.explanation}</TD>
+                      <TD className="text-[0.8125rem] text-fg-muted">{l.explanation}</TD>
                       <TD className="whitespace-nowrap text-right tabular-nums">{l.kind === 'deduction' ? '-' : ''}{money(l.amount)}</TD>
                     </TR>
                   ))}
                 </Fragment>
               ))}
-              <TR><TD className="font-semibold">Net pay</TD><TD className="text-[13px] text-fg-muted">Earnings + reimbursements - deductions</TD><TD className="whitespace-nowrap text-right font-semibold tabular-nums">{money(item.net)}</TD></TR>
+              <TR><TD className="font-semibold">Net pay</TD><TD className="text-[0.8125rem] text-fg-muted">Earnings + reimbursements - deductions</TD><TD className="whitespace-nowrap text-right font-semibold tabular-nums">{money(item.net)}</TD></TR>
             </TBody>
           </Table>
         </Card>
         <Card>
           <CardHeader title="Why these numbers" />
-          <CardBody><ul className="list-disc space-y-1 pl-5 text-[13px]">{item.explanation.map((e, i) => <li key={i}>{e}</li>)}</ul></CardBody>
+          <CardBody><ul className="list-disc space-y-1 pl-5 text-[0.8125rem]">{item.explanation.map((e, i) => <li key={i}>{e}</li>)}</ul></CardBody>
         </Card>
       </div>
 
@@ -56,7 +56,7 @@ export function ItemView({ runId, currency, item, editable }: { runId: string; c
         <Card>
           <CardHeader title="Days" />
           <CardBody>
-            <dl className="grid grid-cols-2 gap-3 text-[13px]">
+            <dl className="grid grid-cols-2 gap-3 text-[0.8125rem]">
               <div><dt className="text-fg-muted">Days in month</dt><dd className="font-medium tabular-nums">{item.daysInPeriod}</dd></div>
               <div><dt className="text-fg-muted">Employed</dt><dd className="font-medium tabular-nums">{item.employedDays}</dd></div>
               <div><dt className="text-fg-muted">Loss of pay</dt><dd className="font-medium tabular-nums">{days(item.lopOverride ?? item.lopDays)}{item.lopOverride !== null && <Badge tone="info" className="ml-1">set by hand</Badge>}</dd></div>

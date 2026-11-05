@@ -28,7 +28,7 @@ export default async function SurveysPage() {
                   <TD><div className="font-medium">{s.title}</div><div className="text-xs text-fg-muted">{s.questions} question{s.questions === 1 ? '' : 's'}</div></TD>
                   <TD className="text-fg-muted">{s.closesOn ?? 'No closing date'}</TD>
                   <TD>{s.responded ? <Badge tone="success" dot>Answered</Badge> : s.status === 'open' ? <Badge tone="warning" dot>Waiting for you</Badge> : <Badge>Closed</Badge>}</TD>
-                  <TD className="text-right">{!s.responded && s.status === 'open' && <Link className="text-[13px] font-medium text-accent hover:underline" href={`/surveys/${s.id}`}>Answer</Link>}</TD>
+                  <TD className="text-right">{!s.responded && s.status === 'open' && <Link className="text-[0.8125rem] font-medium text-accent hover:underline" href={`/surveys/${s.id}`}>Answer</Link>}</TD>
                 </TR>
               ))}
             </TBody>

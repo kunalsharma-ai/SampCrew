@@ -243,6 +243,35 @@ describe('recruitment', () => {
       expect(profile.body.timeline.map((e: { kind: string }) => e.kind)).toEqual(expect.arrayContaining(['applied', 'email_queued']));
     });
 
+    it('filters, sorts and exports the candidate list within the viewer\'s scope', async () => {
+      const referrals = await as('recruiter').get('/recruitment/candidates').query({ source: 'referral' });
+      expect(referrals.status).toBe(200);
+      expect(referrals.body.map((c: { id: string }) => c.id)).toEqual([vikramId]);
+      const byName = await as('recruiter').get('/recruitment/candidates').query({ sort: 'name', dir: 'asc' });
+      const names = byName.body.map((c: { lastName: string | null; firstName: string }) => `${c.firstName}`);
+      expect(names).toEqual([...names].sort((a: string, b: string) => a.localeCompare(b)));
+      const forJob = await as('recruiter').get('/recruitment/candidates').query({ requisitionId: reqId, status: 'active' });
+      expect(forJob.body.length).toBeGreaterThanOrEqual(2);
+      expect((await as('recruiter').get('/recruitment/candidates').query({ status: 'nonsense' })).status).toBe(422);
+      const csv = await as('recruiter').get('/recruitment/candidates/export.csv').query({ source: 'referral' });
+      expect(csv.status).toBe(200);
+      expect(csv.headers['content-type']).toContain('text/csv');
+      const lines = csv.text.trim().split(/\r?\n/);
+      expect(lines[0]).toContain('Name,Email');
+      expect(lines).toHaveLength(2);
+      expect(lines[1]).toContain('vikram@example.com');
+      const xlsx = await as('recruiter').get('/recruitment/candidates/export.xlsx').buffer(true).parse((res, cb) => {
+        const chunks: Buffer[] = []; res.on('data', (c: Buffer) => chunks.push(c)); res.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+      expect(xlsx.status).toBe(200);
+      expect(xlsx.headers['content-type']).toContain('spreadsheetml');
+      expect((xlsx.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+      // Out of scope people export nothing, and the export is audited.
+      const none = await as('salesManager').get('/recruitment/candidates/export.csv');
+      expect(none.text.trim().split(/\r?\n/)).toHaveLength(1);
+      expect((await pool.query("select count(*)::int as n from audit_events where action = 'candidate.list_exported'")).rows[0].n).toBeGreaterThanOrEqual(3);
+    });
+
     it('moves candidates between stages but never straight to Hired', async () => {
       const board = (await as('recruiter').get(`/recruitment/requisitions/${reqId}/pipeline`)).body as { stages: { id: string; kind: string }[] };
       const stage = (kind: string) => board.stages.find((s) => s.kind === kind)!.id;
@@ -326,6 +355,28 @@ describe('recruitment', () => {
       expect(board.body.applications.find((a: { id: string }) => a.id === ashaApp)).toMatchObject({ scorecards: 2, averageScore: '3.17' });
     });
 
+    it('compares candidates side by side with scores per criterion, for people who can see the board', async () => {
+      const vApp = (await applicationOf(vikramId, reqId)).id;
+      const res = await as('manager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.criteria).toEqual(['Coding', 'System design', 'Communication']);
+      const [asha, vikram] = res.body.applications;
+      expect(asha).toMatchObject({ id: ashaApp, candidateName: 'Asha Rao', stageName: 'Interview', scorecards: 2, averageScore: '3.17', recommendations: { strong_yes: 1, yes: 1 } });
+      // (4 + 3) / 2, (3 + 2) / 2, (4 + 3) / 2
+      expect(asha.criteria).toEqual({ Coding: { average: '3.50', ratings: 2 }, 'System design': { average: '2.50', ratings: 2 }, Communication: { average: '3.50', ratings: 2 } });
+      expect(vikram).toMatchObject({ candidateName: 'Vikram Shah', currentTitle: 'SDE II', criteria: {}, recommendations: {}, scorecards: 0 });
+      expect(vikram.daysInProcess).toBeGreaterThanOrEqual(0);
+      // The hiring manager does not make offers here, so no pay is shown.
+      expect(res.body.pay).toBeNull();
+      expect(asha).not.toHaveProperty('offer');
+      // One candidate, five, or someone from another job are refused; people outside the job's scope cannot compare.
+      expect((await as('manager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp}`)).status).toBe(422);
+      const salesApp = (await pool.query<{ id: string }>(`select id from applications where requisition_id = $1 limit 1`, [salesReqId])).rows[0]?.id ?? '00000000-0000-4000-8000-000000000000';
+      expect((await as('manager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${salesApp}`)).status).toBe(400);
+      expect((await as('salesManager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`)).status).toBe(404);
+      expect((await as('employee').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`)).status).toBe(403);
+    });
+
     it('does not open scorecards before the interview starts', async () => {
       const vApp = (await applicationOf(vikramId, reqId)).id;
       const res = await as('recruiter').post(`/recruitment/applications/${vApp}/interviews`).send({
@@ -375,6 +426,13 @@ describe('recruitment', () => {
         expect((await api(app, noMfa).post(`/approvals/${item.id}/approve`).send({})).status).toBe(403);
         expect((await as('hr').post(`/approvals/${item.id}/approve`).send({})).status).toBe(200);
         expect((await pool.query('select status, above_range from offers where id = $1', [offerId])).rows[0]).toEqual({ status: 'approved', above_range: true });
+        // The recruiter, who makes offers on this job, sees the amount and the approved range when comparing.
+        const vApp = (await applicationOf(vikramId, reqId)).id;
+        const cmp = await as('recruiter').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`);
+        expect(cmp.status, JSON.stringify(cmp.body)).toBe(200);
+        expect(cmp.body.pay).toMatchObject({ currency: 'INR' });
+        expect(cmp.body.applications[0].offer).toMatchObject({ amount: '2600000.00', currency: 'INR', payPeriod: 'annual', status: 'approved', aboveRange: true });
+        expect(cmp.body.applications[1].offer).toBeNull();
       });
 
       it('sends the offer, records the answer, and refuses to hire before acceptance', async () => {
@@ -458,6 +516,80 @@ describe('recruitment', () => {
       expect((await as('recruiter').delete(`/recruitment/settings/stages/${ids[0]}`)).status).toBe(400);
       expect((await as('recruiter').delete(`/recruitment/settings/stages/${ids[4]}`)).status).toBe(204);
       expect((await as('manager').post('/recruitment/settings/stages').send({ name: 'Vibe check', kind: 'screen' })).status).toBe(403);
+    });
+  });
+
+  describe('bulk actions', () => {
+    it('moves, emails and rejects several candidates at once, skipping the ones that cannot be changed', async () => {
+      const job = await openReq(requisition({ title: 'QA Engineer' }));
+      const add = async (firstName: string, email: string) => {
+        const c = await as('recruiter').post('/recruitment/candidates').send({ firstName, lastName: 'Bulk', email, source: 'sourced', requisitionId: job, lawfulBasisConfirmed: true });
+        expect(c.status, JSON.stringify(c.body)).toBe(201);
+        return (await applicationOf(c.body.id, job)).id;
+      };
+      const neha = await add('Neha', 'neha.bulk@example.com');
+      const karan = await add('Karan', 'karan.bulk@example.com');
+      const omar = await add('Omar', 'omar.bulk@example.com');
+      expect((await as('recruiter').post(`/recruitment/applications/${omar}/reject`).send({ reason: 'not_qualified' })).status).toBe(200);
+      const stages = (await as('recruiter').get(`/recruitment/requisitions/${job}/pipeline`)).body.stages as { id: string; kind: string }[];
+      const stage = (kind: string) => stages.find((x) => x.kind === kind)!.id;
+      const bulk = (who: string, body: unknown, id = job) => as(who).post(`/recruitment/requisitions/${id}/applications/bulk`).send(body);
+
+      const moved = await bulk('manager', { action: 'move', applicationIds: [neha, karan, omar, neha], stageId: stage('screen'), note: 'Batch screen' });
+      expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+      expect(moved.body).toMatchObject({ done: 2, skipped: 1 });
+      expect(moved.body.results.find((r: { id: string }) => r.id === omar)).toMatchObject({ ok: false, code: 'application_closed' });
+      const board = (await as('recruiter').get(`/recruitment/requisitions/${job}/pipeline`)).body.applications as { id: string; stageId: string }[];
+      expect(board.filter((a) => [neha, karan].includes(a.id)).map((a) => a.stageId)).toEqual([stage('screen'), stage('screen')]);
+      // Hired is never a bulk move; the same rule as one by one.
+      expect((await bulk('recruiter', { action: 'move', applicationIds: [neha], stageId: stage('hired') })).body).toMatchObject({ done: 0, skipped: 1, results: [{ code: 'use_hire' }] });
+
+      const mailed = await bulk('recruiter', { action: 'email', applicationIds: [neha, karan], subject: 'Next steps for {jobTitle}', message: 'Dear {firstName},\n\nThank you for applying. We will call you this week.' });
+      expect(mailed.body).toMatchObject({ done: 2, skipped: 0 });
+      const nehaMail = await emails('neha.bulk@example.com', 'candidate.message');
+      expect(nehaMail).toEqual([expect.objectContaining({ subject: 'Next steps for QA Engineer' })]);
+      expect(nehaMail[0]!.text_body).toMatch(/^Dear Neha,/);
+      expect((await emails('karan.bulk@example.com', 'candidate.message'))[0]!.text_body).toMatch(/^Dear Karan,/);
+      const events = await pool.query(`select kind from application_events where application_id = $1 order by id`, [karan]);
+      expect(events.rows.map((r) => r.kind)).toEqual(expect.arrayContaining(['stage_changed', 'email_queued']));
+
+      const rejected = await bulk('recruiter', { action: 'reject', applicationIds: [neha, karan], reason: 'position_closed', notifyCandidate: true });
+      expect(rejected.body).toMatchObject({ done: 2, skipped: 0 });
+      expect(await emails('neha.bulk@example.com', 'candidate.rejected')).toHaveLength(1);
+      expect((await applicationOf((await candidateByEmail('karan.bulk@example.com'))!, job)).status).toBe('rejected');
+
+      // Candidates from another job, people outside the job's scope, and bad input are refused before anything changes.
+      const otherApp = (await pool.query<{ id: string }>(`select id from applications where requisition_id <> $1 and tenant_id = $2 limit 1`, [job, t.id])).rows[0]!.id;
+      expect((await bulk('recruiter', { action: 'move', applicationIds: [omar, otherApp], stageId: stage('screen') })).status).toBe(400);
+      expect((await bulk('salesManager', { action: 'move', applicationIds: [neha], stageId: stage('screen') })).status).toBe(404);
+      expect((await bulk('employee', { action: 'move', applicationIds: [neha], stageId: stage('screen') })).status).toBe(403);
+      expect((await bulk('recruiter', { action: 'email', applicationIds: [neha], subject: 'Hi', message: 'short' })).status).toBe(422);
+      expect((await bulk('recruiter', { action: 'move', applicationIds: [] , stageId: stage('screen') })).status).toBe(422);
+      const audit = await pool.query(`select action, changes from audit_events where tenant_id = $1 and resource_id = $2 and action like 'applications.bulk_%' order by created_at`, [t.id, job]);
+      expect(audit.rows.map((r) => r.action)).toEqual(['applications.bulk_move', 'applications.bulk_move', 'applications.bulk_email', 'applications.bulk_reject']);
+      expect(audit.rows[0].changes).toMatchObject({ done: 2, skipped: 1 });
+    });
+  });
+
+  describe('recruitment flow (Workforce Universe)', () => {
+    it('counts how applications moved between stages and where they stopped, within the viewer’s jobs', async () => {
+      const r = await as('recruiter').get('/insights/recruitment-flow?period=all');
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      const f = r.body as { applications: number; stages: { id: string; kind: string; reached: number; now: number }[]; moves: { from: string; to: string; count: number }[] };
+      const total = (await pool.query(`select count(*)::int as n from applications where tenant_id = $1`, [t.id])).rows[0].n;
+      expect(f.applications).toBe(total);
+      const id = (kind: string) => f.stages.find((s) => s.kind === kind)!.id;
+      // Every application reached the first stage; the bulk test moved two on to screening and rejected them there.
+      expect(f.stages.find((s) => s.kind === 'new')!.reached).toBe(total);
+      expect(f.moves.find((m) => m.from === id('new') && m.to === id('screen'))!.count).toBeGreaterThanOrEqual(2);
+      expect(f.moves.find((m) => m.from === id('screen') && m.to === 'rejected')!.count).toBeGreaterThanOrEqual(2);
+      const live = (await pool.query(`select count(*)::int as n from applications where tenant_id = $1 and status in ('active', 'hired')`, [t.id])).rows[0].n;
+      expect(f.stages.reduce((a, s) => a + s.now, 0)).toBe(live);
+      // A department-scoped manager sees only their department's jobs; an employee none.
+      const dept = (await as('salesManager').get('/insights/recruitment-flow?period=all')).body;
+      expect(dept.applications).toBeLessThan(total);
+      expect((await as('employee').get('/insights/recruitment-flow')).status).toBe(403);
+      expect((await as('recruiter').get('/insights/recruitment-flow?period=decade')).status).toBe(422);
     });
   });
 

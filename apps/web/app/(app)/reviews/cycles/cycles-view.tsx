@@ -86,7 +86,7 @@ export function CycleDialog({ open, onClose, entities, departments, cycle }: { o
         </div>
         <div className="col-span-2 grid gap-2">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] font-medium">Questions</span>
+            <span className="text-[0.8125rem] font-medium">Questions</span>
             <Button size="sm" variant="ghost" type="button" disabled={questions.length >= 15} onClick={() => setQuestions([...questions, { id: `q${Date.now() % 100000}`, text: '' }])}><Plus className="size-3.5" /> Add question</Button>
           </div>
           {questions.map((q, i) => (
@@ -97,10 +97,10 @@ export function CycleDialog({ open, onClose, entities, departments, cycle }: { o
           ))}
         </div>
         <div className="col-span-2 grid gap-2">
-          <span className="text-[13px] font-medium">Rating scale (lowest first)</span>
+          <span className="text-[0.8125rem] font-medium">Rating scale (lowest first)</span>
           {scale.map((l, i) => (
             <div key={l.value} className="flex items-center gap-2">
-              <span className="w-6 text-right text-[13px] tabular-nums text-fg-muted">{l.value}</span>
+              <span className="w-6 text-right text-[0.8125rem] tabular-nums text-fg-muted">{l.value}</span>
               <Input aria-label={`Rating ${l.value}`} value={l.label} required onChange={(e) => setScale(scale.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
             </div>
           ))}

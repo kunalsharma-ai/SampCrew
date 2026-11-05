@@ -64,7 +64,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure }: { next: stri
           {(p) => <Input {...p} name="email" type="email" autoComplete="username" defaultValue={step.email} required autoFocus />}
         </Field>
         <Button type="submit" size="lg" loading={pending}>Continue</Button>
-        <button type="button" className="text-[13px] text-fg-muted hover:text-fg" onClick={() => { setError(null); setStep({ kind: 'password' }); }}>Use a password instead</button>
+        <button type="button" className="text-[0.8125rem] text-fg-muted hover:text-fg" onClick={() => { setError(null); setStep({ kind: 'password' }); }}>Use a password instead</button>
       </form>
     );
   }
@@ -88,7 +88,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure }: { next: stri
           {(p) => <Input {...p} name="code" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} autoFocus className="text-center text-lg tracking-[0.5em] tabular h-11" />}
         </Field>
         <Button type="submit" size="lg" loading={pending}>Verify</Button>
-        <button type="button" className="text-[13px] text-fg-muted hover:text-fg" onClick={() => setStep({ kind: 'password' })}>Use a different account</button>
+        <button type="button" className="text-[0.8125rem] text-fg-muted hover:text-fg" onClick={() => setStep({ kind: 'password' })}>Use a different account</button>
       </form>
     );
   }
@@ -149,7 +149,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure }: { next: stri
       {workspace && <input type="hidden" name="tenantSlug" value={workspace} />}
       <Button type="submit" size="lg" loading={pending}>Sign in</Button>
       <Button type="button" variant="secondary" size="lg" disabled={pending} onClick={() => { setError(null); setStep({ kind: 'sso', email: '' }); }}>Sign in with single sign-on</Button>
-      <p className="text-center text-[13px] text-fg-muted">
+      <p className="text-center text-[0.8125rem] text-fg-muted">
         New to CREW? <Link href="/signup" className="font-medium text-accent hover:underline">Create a workspace</Link>
       </p>
     </form>

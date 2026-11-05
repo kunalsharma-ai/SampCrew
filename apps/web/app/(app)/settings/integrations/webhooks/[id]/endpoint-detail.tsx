@@ -48,7 +48,7 @@ export function EndpointDetail({ endpoint: w, deliveries, events, status }: { en
             <TBody>
               {deliveries.map((d) => (
                 <TR key={d.id}>
-                  <TD><Link className="font-mono text-[13px] text-accent hover:underline" href={`/settings/integrations/deliveries/${d.id}`}>{d.eventType}</Link></TD>
+                  <TD><Link className="font-mono text-[0.8125rem] text-accent hover:underline" href={`/settings/integrations/deliveries/${d.id}`}>{d.eventType}</Link></TD>
                   <TD><StatusPill status={d.status} /></TD>
                   <TD className="tabular-nums">{d.attempts}</TD>
                   <TD className="max-w-[16rem] truncate text-fg-muted">{d.lastStatusCode ? `HTTP ${d.lastStatusCode}` : d.lastError ?? '–'}</TD>

@@ -12,7 +12,7 @@ export function PayChecks({ runId, checks, finalised }: { runId: string; checks:
         title={finalised ? 'Checks' : 'Checks before approval'}
         description={`${checks.checked} payslips compared with each person's last three finalised months. Changes of more than ${checks.thresholdPct}% and unusual amounts are flagged for a second look; nothing is changed.`}
       />
-      <CardBody className="grid gap-3 text-[13px]">
+      <CardBody className="grid gap-3 text-[0.8125rem]">
         {checks.flagged === 0 ? (
           <Alert tone="success">No payslip needs a second look.</Alert>
         ) : (

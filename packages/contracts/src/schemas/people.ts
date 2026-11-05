@@ -100,7 +100,38 @@ export const employeeListQuery = z.object({
   departmentId: z.uuid().optional(),
   legalEntityId: z.uuid().optional(),
   includeExited: z.enum(['true', 'false']).optional(),
+  sort: z.enum(['name', 'code', 'joined', 'department', 'location', 'status']).default('name'),
+  dir: z.enum(['asc', 'desc']).default('asc'),
 });
+export const EMPLOYEE_SORTS = ['name', 'code', 'joined', 'department', 'location', 'status'] as const;
+
+/** Columns the directory can show and export. */
+export const EMPLOYEE_COLUMNS_CATALOGUE = ['name', 'code', 'designation', 'department', 'location', 'entity', 'manager', 'workEmail', 'type', 'joined', 'status'] as const;
+export type EmployeeColumn = (typeof EMPLOYEE_COLUMNS_CATALOGUE)[number];
+export const employeeExportQuery = employeeListQuery.omit({ cursor: true, limit: true }).extend({
+  columns: z.string().max(400).optional().transform((v, ctx) => {
+    if (!v) return [...EMPLOYEE_COLUMNS_CATALOGUE];
+    const cols = v.split(',').map((c) => c.trim()).filter(Boolean);
+    const bad = cols.filter((c) => !(EMPLOYEE_COLUMNS_CATALOGUE as readonly string[]).includes(c));
+    if (bad.length || !cols.length) { ctx.addIssue({ code: 'custom', message: `Unknown column ${bad.join(', ')}` }); return z.NEVER; }
+    return cols as EmployeeColumn[];
+  }),
+});
+
+/** A hire in progress, saved so it can be resumed later (files are attached only when the hire is completed). */
+export const employeeDraftInput = z.object({
+  step: z.number().int().min(0).max(10),
+  data: z.record(z.string().max(60), z.union([z.string().max(500), z.number(), z.boolean(), z.null()])).refine((d) => Object.keys(d).length <= 60, 'Too many fields'),
+}).strict();
+
+export const duplicateCheckInput = z.object({
+  firstName: z.string().trim().max(80).optional(),
+  lastName: z.string().trim().max(80).optional(),
+  workEmail: z.string().trim().max(200).optional(),
+  personalEmail: z.string().trim().max(200).optional(),
+  phone: z.string().trim().max(40).optional(),
+  dateOfBirth: z.string().trim().max(10).optional(),
+}).strict();
 
 export const ONBOARDING_OWNERS = ['hr', 'manager', 'employee', 'it'] as const;
 export const onboardingTemplateInput = z.object({

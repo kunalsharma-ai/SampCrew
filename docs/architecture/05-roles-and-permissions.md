@@ -113,6 +113,10 @@ CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carr
 | **Administration** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `security:manage` Set up single sign-on and user provisioning (SCIM) | 10 | yes | A | · | · | · | · | · | · | · | · | · | · | · |
 | `privacy:manage` Handle privacy requests: export a person's data and erase it | 10 | yes | A | · | A | · | · | · | · | · | · | · | · | · |
+| **Staffing bids** | | |  |  |  |  |  |  |  |  |  |  |  |  |
+| `bids:read` View staffing bids, their pricing and margins, and clients | 11 |  | A | · | A | · | A | · | · | A | · | · | · | · |
+| `bids:manage` Create and price staffing bids, manage clients and templates, send approved proposals | 11 |  | A | · | · | · | A | · | · | · | · | · | · | · |
+| `bids:approve` Approve staffing bids and their margins before they go to the client | 11 |  | A | · | A | · | · | · | · | A | · | · | · | · |
 
 Legend: O own, T team, D department, E legal entity, A all (tenant), · not granted.
 

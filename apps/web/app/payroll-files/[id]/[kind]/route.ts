@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { apiDownload } from '@/lib/api';
 
-const PATHS: Record<string, string> = { register: 'register.csv', 'bank-file': 'bank-file.csv' };
+const PATHS: Record<string, string> = { register: 'register.csv', 'register-xlsx': 'register.xlsx', 'bank-file': 'bank-file.csv' };
 
-/** Streams a payroll CSV export from the API (which checks access and audits the export). */
+/** Streams a payroll export (CSV, or the register as Excel) from the API (which checks access and audits the export). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string; kind: string }> }) {
   const { id, kind } = await params;
   if (!PATHS[kind] || !/^[0-9a-f-]{36}$/.test(id)) return new NextResponse('Not found', { status: 404 });

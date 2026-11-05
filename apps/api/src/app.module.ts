@@ -18,6 +18,19 @@ import { LeaveController } from './modules/leave/leave.controller';
 import { LeaveService } from './modules/leave/leave.service';
 import { MembersController } from './modules/members/members.controller';
 import { MembersService } from './modules/members/members.service';
+import { DashboardController, DashboardService } from './modules/experience/dashboard.controller';
+import { PreferencesController } from './modules/experience/preferences.controller';
+import { ViewsController } from './modules/experience/views.controller';
+import { BidsController, ProposalsPublicController } from './modules/bids/bids.controller';
+import { IqController } from './modules/iq/iq.controller';
+import { IqService } from './modules/iq/iq.service';
+import { ProposalsPublicService } from './modules/bids/proposals-public.service';
+import { BidsService } from './modules/bids/bids.service';
+import { LensesController } from './modules/universe/lenses.controller';
+import { LensesService } from './modules/universe/lenses.service';
+import { SkillCatalogueService } from './modules/universe/skill-catalogue.service';
+import { UniverseController } from './modules/universe/universe.controller';
+import { UniverseService } from './modules/universe/universe.service';
 import { NotificationsController } from './modules/notifications/notifications.controller';
 import { OnboardingController } from './modules/onboarding/onboarding.controller';
 import { OnboardingService } from './modules/onboarding/onboarding.service';
@@ -119,6 +132,14 @@ export const CONTROLLERS = [
   LeaveController,
   ApprovalsController,
   NotificationsController,
+  PreferencesController,
+  ViewsController,
+  BidsController,
+  ProposalsPublicController,
+  IqController,
+  UniverseController,
+  LensesController,
+  DashboardController,
   AttendanceController,
   KioskController,
   ShiftsController,
@@ -177,6 +198,13 @@ export const CONTROLLERS = [
     MailerService,
     StorageService,
     ApprovalsService,
+    DashboardService,
+    BidsService,
+    ProposalsPublicService,
+    IqService,
+    UniverseService,
+    LensesService,
+    SkillCatalogueService,
     OnboardingService,
     LeaveService,
     EmployeesService,

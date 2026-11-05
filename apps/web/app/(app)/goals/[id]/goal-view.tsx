@@ -42,7 +42,7 @@ export function GoalView({ goal, alignable }: { goal: GoalDetail; alignable: Ali
               <ul className="grid gap-3">
                 {goal.keyResults.map((k) => (
                   <li key={k.id} className="grid gap-1">
-                    <div className="flex justify-between gap-4 text-[13px]">
+                    <div className="flex justify-between gap-4 text-[0.8125rem]">
                       <span className="font-medium">{k.title}</span>
                       <span className="whitespace-nowrap text-fg-muted">{num(k.currentValue)} of {num(k.targetValue)}{k.unit ? ` ${k.unit}` : ''} (from {num(k.startValue)})</span>
                     </div>
@@ -64,7 +64,7 @@ export function GoalView({ goal, alignable }: { goal: GoalDetail; alignable: Ali
           {goal.checkins.length ? (
             <ul className="divide-y divide-border">
               {goal.checkins.map((c) => (
-                <li key={c.id} className="grid gap-1 px-5 py-3 text-[13px]">
+                <li key={c.id} className="grid gap-1 px-5 py-3 text-[0.8125rem]">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{c.byName}</span>
                     <span className="text-fg-muted">{dateTime(c.createdAt)}</span>
@@ -122,7 +122,7 @@ export function GoalView({ goal, alignable }: { goal: GoalDetail; alignable: Ali
         {(goal.parent || goal.children.length > 0) && (
           <Card>
             <CardHeader title="Alignment" />
-            <CardBody className="grid gap-3 text-[13px]">
+            <CardBody className="grid gap-3 text-[0.8125rem]">
               {goal.parent && (
                 <div>
                   <div className="text-xs text-fg-muted">Supports</div>

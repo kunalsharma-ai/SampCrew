@@ -93,7 +93,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'learning:read': 'tenant', 'learning:manage': 'tenant', 'learning:configure': 'tenant',
       'engagement:manage': 'tenant', 'helpdesk:manage': 'tenant', 'helpdesk:configure': 'tenant', 'announcements:manage': 'tenant', 'reports:read': 'tenant', 'automation:manage': 'tenant', 'insights:attrition': 'tenant',
       'requisitions:read': 'tenant', 'requisitions:approve': 'tenant', 'candidates:read': 'tenant', 'offers:approve': 'tenant', 'recruitment:configure': 'tenant',
-      'privacy:manage': 'tenant',
+      'privacy:manage': 'tenant', 'bids:read': 'tenant', 'bids:approve': 'tenant',
     },
   },
   {
@@ -120,6 +120,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'org:read': 'tenant', 'users:read': 'tenant',
       'requisitions:read': 'tenant', 'requisitions:create': 'tenant', 'candidates:read': 'tenant', 'candidates:manage': 'tenant',
       'offers:manage': 'tenant', 'recruitment:configure': 'tenant', 'reports:read': 'own',
+      'bids:read': 'tenant', 'bids:manage': 'tenant',
     },
   },
   {
@@ -152,6 +153,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       ...EMPLOYEE_SELF,
       'org:read': 'tenant', 'billing:read': 'tenant', 'payroll:read': 'tenant', 'payroll:approve': 'tenant',
       'expenses:approve': 'tenant', 'requisitions:read': 'tenant', 'requisitions:approve': 'tenant', 'reports:read': 'tenant',
+      'bids:read': 'tenant', 'bids:approve': 'tenant',
     },
   },
   {

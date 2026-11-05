@@ -15,7 +15,7 @@ export default async function AiActivityPage({ searchParams }: { searchParams: P
   return (
     <>
       <PageHeader title="AI activity" description="Every AI call in this workspace: who asked, what was sent after personal identifiers were removed, the answer, its sources and the credits used. Opening a call is recorded in the audit trail." />
-      <div className="mb-4 flex flex-wrap gap-2 text-[13px]">
+      <div className="mb-4 flex flex-wrap gap-2 text-[0.8125rem]">
         <Link className={!feature ? 'font-semibold text-accent' : 'text-fg-muted hover:text-fg'} href="/settings/ai/activity">All</Link>
         {Object.entries(FEATURE).map(([k, v]) => <Link key={k} className={feature === k ? 'font-semibold text-accent' : 'text-fg-muted hover:text-fg'} href={`/settings/ai/activity?feature=${k}`}>{v.name}</Link>)}
       </div>

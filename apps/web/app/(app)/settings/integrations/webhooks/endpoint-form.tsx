@@ -17,7 +17,7 @@ export function EndpointFields({ draft, onChange, events, error }: { draft: Endp
         {(p) => <Input {...p} value={draft.url} maxLength={2000} onChange={(e) => onChange({ ...draft, url: e.target.value })} placeholder="https://example.com/crew-events" />}
       </Field>
       <fieldset className="grid gap-3">
-        <legend className="mb-1 text-[13px] font-medium">Events to send</legend>
+        <legend className="mb-1 text-[0.8125rem] font-medium">Events to send</legend>
         {groups.map((g) => (
           <div key={g}>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-subtle">{g}</div>
@@ -26,7 +26,7 @@ export function EndpointFields({ draft, onChange, events, error }: { draft: Endp
                 <Checkbox
                   key={e.type}
                   label={e.label}
-                  description={<span className="font-mono text-[11px]">{e.type} · sends {e.dataKeys.join(', ')}</span>}
+                  description={<span className="font-mono text-[0.6875rem]">{e.type} · sends {e.dataKeys.join(', ')}</span>}
                   checked={draft.events.includes(e.type)}
                   onChange={(x) => onChange({ ...draft, events: x.target.checked ? [...draft.events, e.type] : draft.events.filter((t) => t !== e.type) })}
                 />

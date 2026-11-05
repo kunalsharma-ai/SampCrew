@@ -40,7 +40,7 @@ export function AuditView({ page, query, hasCursor }: { page: Page<AuditEvent>; 
   return (
     <div className="grid gap-4">
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div className="flex items-center gap-3 text-[13px]">
+        <div className="flex items-center gap-3 text-[0.8125rem]">
           <ShieldCheck className="size-5 text-accent" />
           <span>Check that no entry has been altered or removed since it was written.</span>
         </div>

@@ -20,7 +20,7 @@ function QuestionCard({ q }: { q: QuestionResult }) {
       />
       <CardBody>
         {q.kind === 'text' ? (
-          q.comments?.length ? <ul className="grid list-disc gap-1 pl-5 text-[13px]">{q.comments.map((c, i) => <li key={i}>{c}</li>)}</ul> : <p className="text-[13px] text-fg-muted">No comments.</p>
+          q.comments?.length ? <ul className="grid list-disc gap-1 pl-5 text-[0.8125rem]">{q.comments.map((c, i) => <li key={i}>{c}</li>)}</ul> : <p className="text-[0.8125rem] text-fg-muted">No comments.</p>
         ) : (
           <div className="grid gap-1.5">
             {q.distribution?.map((d) => (
@@ -76,7 +76,7 @@ export function SurveyAdminView({ survey, results, entities, departments }: { su
         <Card>
           <CardHeader title="Questions" />
           <ol className="divide-y divide-border">
-            {survey.questions.map((q, i) => <li key={q.id} className="px-5 py-2.5 text-[13px]">{i + 1}. {q.text} <span className="text-xs text-fg-muted">· {QUESTION_KIND[q.kind]}</span></li>)}
+            {survey.questions.map((q, i) => <li key={q.id} className="px-5 py-2.5 text-[0.8125rem]">{i + 1}. {q.text} <span className="text-xs text-fg-muted">· {QUESTION_KIND[q.kind]}</span></li>)}
           </ol>
         </Card>
       )}
@@ -105,7 +105,7 @@ export function SurveyAdminView({ survey, results, entities, departments }: { su
                 </TBody>
               </Table>
             ) : (
-              <CardBody><p className="text-[13px] text-fg-muted">{results.breakdown.reason}.</p></CardBody>
+              <CardBody><p className="text-[0.8125rem] text-fg-muted">{results.breakdown.reason}.</p></CardBody>
             )}
           </Card>
         </>

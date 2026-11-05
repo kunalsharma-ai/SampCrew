@@ -37,11 +37,15 @@
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-glow-1: var(--glow-1);
+  --color-glow-2: var(--glow-2);
+  --color-glow-3: var(--glow-3);
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  --radius-sm: calc(6px * var(--radius-scale, 1));
+  --radius-md: calc(10px * var(--radius-scale, 1));
+  --radius-lg: calc(14px * var(--radius-scale, 1));
+  --radius-xl: calc(20px * var(--radius-scale, 1));
 
   --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
   --shadow-pop: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 4px 8px -4px rgb(16 24 40 / 0.08);
@@ -89,6 +93,10 @@
   --chart-2: #0ea5e9;
   --chart-3: #f97316;
   --chart-4: #10b981;
+  --chart-5: #db2777;
+  --glow-1: #4f46e5;
+  --glow-2: #0ea5e9;
+  --glow-3: #f97316;
   --ring: #6366f1;
 }
 
@@ -167,7 +175,7 @@
     background: var(--bg);
     color: var(--fg);
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: 0.875rem;
     line-height: 1.5;
   }
   :focus-visible {
@@ -183,4 +191,87 @@
       transition-duration: 0.01ms !important;
     }
   }
+}
+
+/*
+ * Workspace experience preferences, set as attributes on <html> by the Web Portal (see @crew/contracts experience.ts).
+ * Colours come from the generated theme stylesheet; everything here is shape, size and motion.
+ */
+
+/* Density scales Tailwind's spacing unit, so every padding, gap and height follows. */
+:root[data-density="compact"] { --spacing: 0.215rem; }
+:root[data-density="spacious"] { --spacing: 0.28rem; }
+
+/* Font size: text sizes are in rem, so the root size scales all of them. */
+:root[data-font="small"] { font-size: 15px; }
+:root[data-font="large"] { font-size: 17.5px; }
+
+:root[data-radius="sharp"] { --radius-scale: 0.4; }
+:root[data-radius="round"] { --radius-scale: 1.6; }
+
+/* High contrast: heavier focus ring and borders on interactive controls. */
+:root[data-contrast="high"] :focus-visible { outline-width: 3px; outline-offset: 3px; }
+:root[data-contrast="high"] { --shadow-card: 0 0 0 1px var(--border-strong); }
+
+/* Tables: compact rows for long lists. */
+:root[data-table="compact"] td, :root[data-table="compact"] th { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+
+/* Motion. Focus removes every transition and animation; Balanced keeps routine 120 to 250 ms transitions;
+   Cinematic adds the slow ambient light behind the app. The OS reduced-motion setting always wins (see base). */
+:root[data-motion="focus"] *, :root[data-motion="focus"] *::before, :root[data-motion="focus"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+@layer components {
+  /* Glass: translucent surface for the shell. Falls back to solid where backdrop-filter is unavailable. */
+  .crew-glass {
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  }
+  :root[data-sidebar-style="solid"] .crew-glass, :root[data-focus="on"] .crew-glass { background: var(--surface); backdrop-filter: none; }
+
+  /* Ambient backdrop: two soft light sources from the theme's primary and secondary colours. */
+  .crew-ambient {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60rem 40rem at 8% -10%, color-mix(in srgb, var(--glow-1) 16%, transparent), transparent 70%),
+      radial-gradient(50rem 36rem at 100% 0%, color-mix(in srgb, var(--glow-2) 12%, transparent), transparent 70%),
+      radial-gradient(40rem 30rem at 60% 110%, color-mix(in srgb, var(--glow-3) 8%, transparent), transparent 70%),
+      var(--bg);
+  }
+  :root[data-focus="on"] .crew-ambient, :root[data-contrast="high"] .crew-ambient { background: var(--bg); }
+  :root[data-motion="cinematic"] .crew-ambient { background-size: 140% 140%; animation: crew-drift 28s ease-in-out infinite alternate; }
+
+  /* A thin gradient edge for highlighted panels. */
+  .crew-edge { position: relative; }
+  .crew-edge::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--glow-1) 35%, transparent), transparent 40%, color-mix(in srgb, var(--glow-2) 28%, transparent));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  :root[data-focus="on"] .crew-edge::before { display: none; }
+
+  .crew-gradient-text {
+    background: linear-gradient(100deg, var(--accent), var(--ember));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+@keyframes crew-drift {
+  from { background-position: 0% 0%; }
+  to { background-position: 100% 60%; }
 }

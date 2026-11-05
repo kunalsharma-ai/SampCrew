@@ -70,7 +70,7 @@ function Editor({ template, onClose }: { template: OnboardingTemplate | null; on
         <Field label="Description">{(p) => <Input {...p} value={description} onChange={(e) => setDescription(e.target.value)} />}</Field>
         <Checkbox label="Use for new joiners by default" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} />
         <div className="grid gap-2">
-          <div className="text-[13px] font-medium">Tasks</div>
+          <div className="text-[0.8125rem] font-medium">Tasks</div>
           {tasks.map((t, i) => (
             <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2">
               <Input aria-label={`Task ${i + 1}`} placeholder="Task" value={t.title} onChange={(e) => set(i, { title: e.target.value })} maxLength={200} />

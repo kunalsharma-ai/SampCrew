@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { Public, RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { sendFile } from '../../platform/export/tabular';
 import type { UploadedFile } from '../documents/documents.service';
 import { ExpensesService } from './expenses.service';
 import { PayrollConfigService } from './payroll-config.service';
@@ -272,6 +273,13 @@ export class PayrollController {
   @Doc({ summary: 'Download the payroll register (CSV)' })
   async register(@Param('id', UuidPipe) id: string, @Res() res: Response) {
     sendCsv(res, await this.runs.register(id));
+  }
+
+  @Get('runs/:id/register.xlsx')
+  @RequirePermission('payroll:read')
+  @Doc({ summary: 'Download the payroll register (Excel)' })
+  async registerXlsx(@Param('id', UuidPipe) id: string, @Res() res: Response) {
+    sendFile(res, await this.runs.register(id), 'xlsx', 'Payroll register');
   }
 
   @Get('runs/:id/bank-file.csv')

@@ -2,10 +2,10 @@ import type { HTMLAttributes, ReactNode, TdHTMLAttributes, ThHTMLAttributes } fr
 import { cn } from '../cn';
 
 /** Lightweight table primitives. Wrap in a Card; scrolls horizontally on narrow screens. */
-export function Table({ className, children }: { className?: string; children: ReactNode }) {
+export function Table({ className, children, 'aria-label': label }: { className?: string; children: ReactNode; 'aria-label'?: string }) {
   return (
     <div className="overflow-x-auto">
-      <table className={cn('w-full text-left text-[13px]', className)}>{children}</table>
+      <table aria-label={label} className={cn('w-full text-left text-[0.8125rem]', className)}>{children}</table>
     </div>
   );
 }

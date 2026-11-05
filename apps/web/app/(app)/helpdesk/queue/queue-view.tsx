@@ -98,14 +98,14 @@ function LogCaseDialog({ open, onClose, categories }: { open: boolean; onClose: 
       }}>
         {error && <Alert tone="danger">{error}</Alert>}
         {who ? (
-          <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-[13px]"><span className="font-medium">{who.name}</span><Button size="sm" variant="ghost" type="button" className="ml-auto" onClick={() => setWho(null)}>Change</Button></div>
+          <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-[0.8125rem]"><span className="font-medium">{who.name}</span><Button size="sm" variant="ghost" type="button" className="ml-auto" onClick={() => setWho(null)}>Change</Button></div>
         ) : (
           <div className="grid gap-2">
             <div className="flex gap-2">
               <Input aria-label="Find the employee" placeholder="Find the employee" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); find(); } }} />
               <Button type="button" variant="secondary" onClick={find}><Search className="size-3.5" /></Button>
             </div>
-            {found.map((x) => <button key={x.id} type="button" className="rounded-md px-2 py-1 text-left text-[13px] hover:bg-bg-subtle" onClick={() => setWho(x)}>{x.name} <span className="text-xs text-fg-muted">{x.departmentName}</span></button>)}
+            {found.map((x) => <button key={x.id} type="button" className="rounded-md px-2 py-1 text-left text-[0.8125rem] hover:bg-bg-subtle" onClick={() => setWho(x)}>{x.name} <span className="text-xs text-fg-muted">{x.departmentName}</span></button>)}
           </div>
         )}
         <Field label="Category" required error={fe.categoryId}>{(p) => <Select {...p} name="categoryId" required><option value="">Choose…</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>}</Field>

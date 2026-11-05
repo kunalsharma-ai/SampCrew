@@ -110,7 +110,8 @@ async function apiLogin(email) {
 /** Two consecutive weekdays at least two weeks ahead (clear of the demo's pending request), in this year. */
 function leaveDays() {
   const d = new Date();
-  d.setUTCDate(d.getUTCDate() + 14);
+  // Three weeks out: the demo seeds a pending leave for Arjun 8 to 14 days ahead.
+  d.setUTCDate(d.getUTCDate() + 21);
   while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
   const from = d.toISOString().slice(0, 10);
   d.setUTCDate(d.getUTCDate() + 1);

@@ -47,8 +47,8 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
       [tid, t.legalEntityId],
     );
     const lon = await q(
-      `insert into locations (tenant_id, legal_entity_id, name, code, kind, timezone, city, country_code)
-       values ($1, $2, 'London Office', 'LON-1', 'office', 'Europe/London', 'London', 'GB') returning id`,
+      `insert into locations (tenant_id, legal_entity_id, name, code, kind, timezone, city, country_code, latitude, longitude)
+       values ($1, $2, 'London Office', 'LON-1', 'office', 'Europe/London', 'London', 'GB', 51.5072, -0.1276) returning id`,
       [tid, uk.id],
     );
 
@@ -112,6 +112,7 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
     await seedTalent(client, { tid, assemblyId: assembly.id, manufacturingId: manufacturing.id, membershipByEmail });
     await seedHelpdesk(client, { tid, manufacturingId: manufacturing.id, membershipByEmail });
     await seedAiAutomation(client, { tid, membershipByEmail });
+    await seedLenses(client, { tid, membershipByEmail });
 
     await client.query(
       `insert into audit_events (tenant_id, actor_type, actor_label, action, resource_type, resource_id, metadata)
@@ -125,6 +126,66 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
     throw e;
   } finally {
     client.release();
+  }
+}
+
+/** Skills for the Workforce Universe skills network, by job title, and one saved headcount scenario. */
+async function seedLenses(client: PoolClient, c: { tid: string; membershipByEmail: Map<string, string> }) {
+  const { tid } = c;
+  const SKILL_CATEGORY: Record<string, string> = {
+    'CNC operation': 'Shop floor', Forklift: 'Shop floor', '5S': 'Shop floor', 'Shift planning': 'Shop floor', 'Lean manufacturing': 'Shop floor', Metrology: 'Quality',
+    'First aid': 'Safety', 'Six Sigma': 'Quality', 'Root cause analysis': 'Quality', 'ISO 9001': 'Quality',
+    'Employment law': 'People', Interviewing: 'People', 'Payroll basics': 'People', Sourcing: 'People', 'Employer branding': 'People', Coaching: 'People',
+    'Statutory compliance': 'Finance', 'Excel modelling': 'Finance', Negotiation: 'Business', 'Key accounts': 'Business', Strategy: 'Business',
+  };
+  // [skill, level] by words in the job title. Demo figures.
+  const byTitle: [RegExp, [string, number][]][] = [
+    [/operator|technician/i, [['CNC operation', 3], ['Forklift', 2], ['5S', 2], ['First aid', 1]]],
+    [/supervisor|plant head|manager/i, [['Shift planning', 3], ['Lean manufacturing', 3], ['5S', 3], ['Coaching', 2]]],
+    [/quality|inspector|qa/i, [['Six Sigma', 3], ['Root cause analysis', 3], ['ISO 9001', 2], ['Metrology', 2]]],
+    [/hr|people/i, [['Employment law', 3], ['Interviewing', 3], ['Payroll basics', 2], ['Coaching', 2]]],
+    [/recruit|talent/i, [['Interviewing', 4], ['Sourcing', 3], ['Employer branding', 2]]],
+    [/finance|payroll|account/i, [['Payroll basics', 4], ['Statutory compliance', 3], ['Excel modelling', 3]]],
+    [/sales/i, [['Negotiation', 3], ['Key accounts', 3], ['Excel modelling', 1]]],
+    [/director|owner/i, [['Strategy', 4], ['Negotiation', 3], ['Lean manufacturing', 2]]],
+  ];
+  const people = (await client.query<{ id: string; title: string | null; n: number }>(
+    `select e.id, d.name as title, row_number() over (order by e.employee_code)::int as n from employees e left join designations d on d.id = e.current_designation_id
+      where e.tenant_id = $1 and e.status not in ('exited', 'pre_boarding')`,
+    [tid],
+  )).rows;
+  const skillId = new Map<string, string>();
+  for (const p of people) {
+    const set = byTitle.find(([re]) => re.test(p.title ?? ''))?.[1] ?? [['First aid', 1]];
+    // Vary levels a little so the network is not uniform.
+    for (const [i, [name, level]] of set.entries()) {
+      if ((p.n + i) % 5 === 0) continue;
+      if (!skillId.has(name)) {
+        skillId.set(name, (await client.query<{ id: string }>(`insert into skills (tenant_id, name, category) values ($1, $2, $3) returning id`, [tid, name, SKILL_CATEGORY[name] ?? null])).rows[0]!.id);
+      }
+      const lv = Math.max(1, Math.min(4, level + ((p.n + i) % 3 === 0 ? 1 : (p.n + i) % 4 === 0 ? -1 : 0)));
+      await client.query(`insert into employee_skills (tenant_id, employee_id, skill_id, level) values ($1, $2, $3, $4)`, [tid, p.id, skillId.get(name), lv]);
+    }
+  }
+  const dept = async (name: string) => (await client.query<{ id: string }>(`select id from departments where tenant_id = $1 and name = $2`, [tid, name])).rows[0]?.id;
+  const assembly = await dept('Assembly Line');
+  const quality = await dept('Quality Assurance');
+  if (assembly && quality) {
+    const today = new Date();
+    const q = Math.floor(today.getUTCMonth() / 3) * 3 + 3;
+    const nextQuarter = `${today.getUTCFullYear() + Math.floor(q / 12)}-${String((q % 12) + 1).padStart(2, '0')}`;
+    await client.query(
+      `insert into workforce_scenarios (tenant_id, name, notes, changes, assumptions, created_by_membership_id) values ($1, 'Second shift on line 2', 'Demo data: what a second shift would add from next quarter.', $2, $3, $4)`,
+      [
+        tid,
+        JSON.stringify([
+          { departmentId: assembly, delta: 6, monthlyCostPerHead: 32000, startMonth: nextQuarter, role: 'Machine Operator (second shift)' },
+          { departmentId: quality, delta: 1, startMonth: nextQuarter, role: 'Quality Inspector' },
+        ]),
+        JSON.stringify({ startMonth: null, horizonMonths: 12, attritionPctYear: 12, payRisePct: 8, payRiseMonth: `${new Date().getUTCFullYear() + 1}-04` }),
+        c.membershipByEmail.get('plant.head@demo.crew.local'),
+      ],
+    );
   }
 }
 
@@ -179,9 +240,24 @@ async function seedCoreHr(
     employeeByEmail.set(p.email, id);
   }
   const supervisor = employeeByEmail.get('supervisor@demo.crew.local')!;
+  const shopFloor = new Map<string, string>();
   for (const [name, title, dept] of [['Ganesh Pawar', 'Helper', c.assemblyId], ['Rekha Jadhav', 'Machine Operator', c.assemblyId], ['Sameer Khan', 'Quality Inspector', c.qualityId]] as const) {
-    await addEmployee({ name, title, dept, loc: c.puneId, entity: c.indiaId, managerId: dept === c.qualityId ? employeeByEmail.get('qa.lead@demo.crew.local')! : supervisor, joined: '2023-06-01' });
+    shopFloor.set(name, await addEmployee({ name, title, dept, loc: c.puneId, entity: c.indiaId, managerId: dept === c.qualityId ? employeeByEmail.get('qa.lead@demo.crew.local')! : supervisor, joined: '2023-06-01' }));
   }
+  // Some history for the Workforce Universe timeline: Rekha started as a quality inspector and moved to the
+  // assembly line as a machine operator the next spring.
+  const rekha = shopFloor.get('Rekha Jadhav')!;
+  const moveOn = '2024-04-01';
+  await client.query(
+    `update employment_records set department_id = $2, designation_id = $3, manager_employee_id = $4, effective_to = date '${moveOn}' - 1 where employee_id = $1`,
+    [rekha, c.qualityId, designation.get('Quality Inspector'), employeeByEmail.get('qa.lead@demo.crew.local')],
+  );
+  await client.query(
+    `insert into employment_records (tenant_id, employee_id, effective_from, legal_entity_id, department_id, location_id, designation_id, manager_employee_id, employment_type, change_reason)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, 'full_time', 'transfer')`,
+    [tid, rekha, moveOn, c.indiaId, c.assemblyId, c.puneId, designation.get('Machine Operator'), supervisor],
+  );
+  await client.query(`insert into lifecycle_events (tenant_id, employee_id, kind, effective_on, details) values ($1, $2, 'transferred', $3, '{"demo": true}')`, [tid, rekha, moveOn]);
   await client.query(`insert into employee_number_series (tenant_id, prefix, padding, next_value) values ($1, 'NW', 4, $2)`, [tid, n]);
   // Memberships follow employee placement through a trigger; this reconciles managers set before their reports existed.
   await client.query(`select employees_apply_current(current_date)`);

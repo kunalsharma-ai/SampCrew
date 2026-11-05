@@ -2,15 +2,15 @@ import type { HTMLAttributes, ReactNode } from 'react';
 import { cn } from '../cn';
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('rounded-lg border border-border bg-surface shadow-card', className)} {...props} />;
+  return <div className={cn('rounded-xl border border-border bg-surface shadow-card', className)} {...props} />;
 }
 
 export function CardHeader({ title, description, action, className }: { title: ReactNode; description?: ReactNode; action?: ReactNode; className?: string }) {
   return (
     <div className={cn('flex items-start justify-between gap-4 px-5 pt-5 pb-3', className)}>
       <div className="min-w-0">
-        <h3 className="text-[15px] font-semibold text-fg">{title}</h3>
-        {description && <p className="mt-0.5 text-[13px] text-fg-muted">{description}</p>}
+        <h3 className="text-[0.9375rem] font-semibold text-fg">{title}</h3>
+        {description && <p className="mt-0.5 text-[0.8125rem] text-fg-muted">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>
@@ -88,11 +88,11 @@ export function Avatar({ name, size = 32, className }: { name: string; size?: nu
 export function Stat({ label, value, hint, icon }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode }) {
   return (
     <Card className="p-5">
-      <div className="flex items-center justify-between text-[13px] text-fg-muted">
+      <div className="flex items-center justify-between text-[0.8125rem] text-fg-muted">
         <span>{label}</span>
         {icon && <span className="text-fg-subtle">{icon}</span>}
       </div>
-      <div className="mt-2 text-[28px] font-semibold tracking-tight tabular text-fg">{value}</div>
+      <div className="mt-2 text-[1.75rem] font-semibold tracking-tight tabular text-fg">{value}</div>
       {hint && <div className="mt-1 text-xs text-fg-subtle">{hint}</div>}
     </Card>
   );
@@ -102,8 +102,8 @@ export function EmptyState({ icon, title, description, action }: { icon?: ReactN
   return (
     <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
       {icon && <div className="mb-4 flex size-12 items-center justify-center rounded-xl bg-accent-subtle text-accent">{icon}</div>}
-      <h3 className="text-[15px] font-semibold text-fg">{title}</h3>
-      {description && <p className="mt-1 max-w-sm text-[13px] text-fg-muted">{description}</p>}
+      <h3 className="text-[0.9375rem] font-semibold text-fg">{title}</h3>
+      {description && <p className="mt-1 max-w-sm text-[0.8125rem] text-fg-muted">{description}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
@@ -115,7 +115,7 @@ export function Skeleton({ className }: { className?: string }) {
 
 export function Alert({ tone = 'info', title, children, className }: { tone?: 'info' | 'warning' | 'danger' | 'success'; title?: ReactNode; children?: ReactNode; className?: string }) {
   return (
-    <div role={tone === 'danger' ? 'alert' : 'status'} className={cn('rounded-md border px-4 py-3 text-[13px]', tones[tone], 'border-current/15', className)}>
+    <div role={tone === 'danger' ? 'alert' : 'status'} className={cn('rounded-md border px-4 py-3 text-[0.8125rem]', tones[tone], 'border-current/15', className)}>
       {title && <div className="font-semibold">{title}</div>}
       {children && <div className={cn(title && 'mt-0.5', 'opacity-90')}>{children}</div>}
     </div>
@@ -123,5 +123,5 @@ export function Alert({ tone = 'info', title, children, className }: { tone?: 'i
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="rounded border border-border bg-bg-subtle px-1.5 py-0.5 font-mono text-[11px] text-fg-muted">{children}</kbd>;
+  return <kbd className="rounded border border-border bg-bg-subtle px-1.5 py-0.5 font-mono text-[0.6875rem] text-fg-muted">{children}</kbd>;
 }

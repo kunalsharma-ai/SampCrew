@@ -121,6 +121,11 @@ export const PERMISSIONS = [
   // Phase 10: enterprise
   { key: 'security:manage', module: 'Administration', description: 'Set up single sign-on and user provisioning (SCIM)', phase: 10, scopes: TENANT_ONLY, requiresMfa: true },
   { key: 'privacy:manage', module: 'Administration', description: 'Handle privacy requests: export a person\'s data and erase it', phase: 10, scopes: TENANT_ONLY, requiresMfa: true, sensitive: true },
+
+  // Design refresh: staffing bids and the Workforce Universe
+  { key: 'bids:read', module: 'Staffing bids', description: 'View staffing bids, their pricing and margins, and clients', phase: 11, scopes: ['own', 'entity', 'tenant'] },
+  { key: 'bids:manage', module: 'Staffing bids', description: 'Create and price staffing bids, manage clients and templates, send approved proposals', phase: 11, scopes: ['own', 'entity', 'tenant'] },
+  { key: 'bids:approve', module: 'Staffing bids', description: 'Approve staffing bids and their margins before they go to the client', phase: 11, scopes: ['entity', 'tenant'] },
 ] as const satisfies readonly PermissionDefinition[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

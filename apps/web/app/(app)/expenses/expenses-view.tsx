@@ -26,7 +26,7 @@ export function ExpensesView({ view, claims, categories, canApprove, canSubmit, 
         {tabs.length > 1 && (
           <div className="flex flex-wrap gap-2">
             {tabs.map((t) => (
-              <Link key={t.v} href={t.v === 'mine' ? '/expenses' : `/expenses?view=${t.v}`} className={`rounded-full px-3 py-1 text-[13px] font-medium ${view === t.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{t.l}</Link>
+              <Link key={t.v} href={t.v === 'mine' ? '/expenses' : `/expenses?view=${t.v}`} className={`rounded-full px-3 py-1 text-[0.8125rem] font-medium ${view === t.v ? 'bg-accent text-accent-fg' : 'bg-bg-subtle text-fg-muted hover:text-fg'}`}>{t.l}</Link>
             ))}
           </div>
         )}
@@ -50,7 +50,7 @@ export function ExpensesView({ view, claims, categories, canApprove, canSubmit, 
                       {c.paidInMonth && <div className="mt-0.5 text-xs text-fg-muted">with {monthLabel(c.paidInMonth)} pay</div>}
                     </TD>
                     <TD className="whitespace-nowrap text-right">
-                      {c.receiptName && <a className="mr-2 inline-flex items-center gap-1 text-[13px] text-accent hover:underline" href={`/expense-receipts/${c.id}`}><Paperclip className="size-3" /> Receipt</a>}
+                      {c.receiptName && <a className="mr-2 inline-flex items-center gap-1 text-[0.8125rem] text-accent hover:underline" href={`/expense-receipts/${c.id}`}><Paperclip className="size-3" /> Receipt</a>}
                       {view === 'mine' && c.status === 'pending' && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Withdraw this claim?') && run(() => cancelClaimAction(c.id))}>Withdraw</Button>}
                       {view === 'approvals' && c.approvalRequestId && (
                         <span className="inline-flex gap-1">

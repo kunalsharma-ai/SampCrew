@@ -5,6 +5,7 @@ import {
   applicationListQuery,
   applyInput,
   candidateInput,
+  candidateListQuery,
   type CandidateInput,
   candidatePatch,
   careerSiteInput,
@@ -23,6 +24,8 @@ import {
   type PostingInput,
   publicApplyInput,
   type PublicApplyInput,
+  bulkApplicationsInput,
+  type BulkApplicationsInput,
   rejectInput,
   REQUISITION_STATUSES,
   requisitionInput,
@@ -38,6 +41,7 @@ import { z } from 'zod';
 import { Public, RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { sendFile } from '../../platform/export/tabular';
 import type { UploadedFile } from '../documents/documents.service';
 import { CandidatesService } from './candidates.service';
 import { CareersService } from './careers.service';
@@ -47,12 +51,17 @@ import { RequisitionsService } from './requisitions.service';
 
 const requisitionPatch = patchOf(requisitionInput);
 const listQuery = z.object({ status: z.enum(REQUISITION_STATUSES).optional(), scope: z.enum(['all', 'mine']).default('all') });
-const candidateQuery = z.object({ q: z.string().trim().max(120).optional(), tag: z.string().trim().max(30).optional(), requisitionId: z.uuid().optional() });
+const candidateQuery = candidateListQuery;
 const peopleQuery = z.object({ q: z.string().trim().max(120).optional() });
 const reasonInput = z.object({ reason: z.string().trim().min(3).max(500) });
 const renameInput = z.object({ name: z.string().trim().min(2).max(40) });
 const fileQuery = z.object({ exp: z.coerce.number().int(), sig: z.string().min(10).max(200) });
 const noteBody = noteInput.extend({ applicationId: z.uuid().optional() });
+
+const compareQuery = z.object({
+  /** Two to four application ids, separated by commas. */
+  applications: z.string().regex(/^[0-9a-f-]{36}(,[0-9a-f-]{36}){1,3}$/i, 'Choose two to four candidates to compare'),
+});
 
 @Controller('recruitment')
 @RequireFeature('recruitment')
@@ -141,6 +150,21 @@ export class RecruitmentController {
     return this.candidates.pipeline(id, q);
   }
 
+  @Post('requisitions/:id/applications/bulk')
+  @HttpCode(200)
+  @RequirePermission('candidates:manage')
+  @Doc({ summary: 'Move, reject or email up to 100 candidates for a job at once; each is checked on its own and the result lists any skipped', body: bulkApplicationsInput })
+  bulk(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(bulkApplicationsInput)) body: BulkApplicationsInput) {
+    return this.candidates.bulk(id, body);
+  }
+
+  @Get('requisitions/:id/compare')
+  @RequirePermission('candidates:read')
+  @Doc({ summary: 'Compare 2 to 4 candidates for a job side by side: stage, time in process, scores per criterion and recommendations', query: compareQuery })
+  compare(@Param('id', UuidPipe) id: string, @Query(new ZodPipe(compareQuery)) q: z.infer<typeof compareQuery>) {
+    return this.candidates.compare(id, [...new Set(q.applications.toLowerCase().split(','))]);
+  }
+
   @Get('people')
   @Doc({ summary: 'Active members to pick as hiring manager or interviewer', query: peopleQuery })
   people(@Query(new ZodPipe(peopleQuery)) q: z.infer<typeof peopleQuery>) {
@@ -154,6 +178,20 @@ export class RecruitmentController {
   @Doc({ summary: 'Candidates you can see', query: candidateQuery })
   candidatesList(@Query(new ZodPipe(candidateQuery)) q: z.infer<typeof candidateQuery>) {
     return this.candidates.list(q);
+  }
+
+  @Get('candidates/export.csv')
+  @RequirePermission('candidates:read')
+  @Doc({ summary: 'The candidate list as CSV (same scope and filters as the list; audited)', query: candidateQuery })
+  async candidatesCsv(@Query(new ZodPipe(candidateQuery)) q: z.infer<typeof candidateQuery>, @Res() res: Response) {
+    sendFile(res, await this.candidates.export(q, 'csv'), 'csv');
+  }
+
+  @Get('candidates/export.xlsx')
+  @RequirePermission('candidates:read')
+  @Doc({ summary: 'The candidate list as an Excel workbook (same scope and filters as the list; audited)', query: candidateQuery })
+  async candidatesXlsx(@Query(new ZodPipe(candidateQuery)) q: z.infer<typeof candidateQuery>, @Res() res: Response) {
+    sendFile(res, await this.candidates.export(q, 'xlsx'), 'xlsx', 'Candidates');
   }
 
   @Post('candidates')

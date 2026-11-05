@@ -99,12 +99,18 @@ jobs:
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:web
           pnpm e2e:hr
+          pnpm e2e:directory
+          pnpm e2e:bids
+          pnpm e2e:universe
           pnpm e2e:talent
           pnpm e2e:helpdesk
           pnpm e2e:attendance
           pnpm e2e:payroll
           pnpm e2e:mobile
+          pnpm e2e:experience
           pnpm e2e:recruitment
+          pnpm e2e:ats
+          pnpm e2e:iq
       - name: AI features end-to-end flow (local AI test stub, no real model)
         # e2e/ai-stub.cjs stands in for the Claude Messages API with fixed answers; the key is a dummy value.
         run: |

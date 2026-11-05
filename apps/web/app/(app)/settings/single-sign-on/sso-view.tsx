@@ -40,7 +40,7 @@ function CopyValue({ value, testId }: { value: string; testId?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <code data-testid={testId} className="break-all rounded bg-bg-subtle px-2 py-1 font-mono text-[12px] text-fg">{value}</code>
+      <code data-testid={testId} className="break-all rounded bg-bg-subtle px-2 py-1 font-mono text-[0.75rem] text-fg">{value}</code>
       <Button size="sm" variant="ghost" type="button" onClick={() => { void navigator.clipboard?.writeText(value).catch(() => undefined); setCopied(true); }}>
         {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />} {copied ? 'Copied' : 'Copy'}
       </Button>
@@ -93,17 +93,17 @@ export function SsoView({ sso, scim, tested, failure }: { sso: SsoState; scim: S
         />
         <CardBody className="grid gap-5">
           <div className="grid gap-1">
-            <p className="text-[13px] font-medium text-fg">1. Register CREW in your identity provider</p>
-            <p className="text-[13px] text-fg-muted">Create a web application with the authorization code flow and this redirect URI, then assign it to the people who should use CREW.</p>
+            <p className="text-[0.8125rem] font-medium text-fg">1. Register CREW in your identity provider</p>
+            <p className="text-[0.8125rem] text-fg-muted">Create a web application with the authorization code flow and this redirect URI, then assign it to the people who should use CREW.</p>
             <CopyValue value={sso.redirectUri} testId="redirect-uri" />
           </div>
 
           {c && !editing ? (
             <div className="grid gap-3">
-              <p className="text-[13px] font-medium text-fg">2. Connection</p>
-              <dl className="grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-[10rem_1fr]">
-                <dt className="text-fg-muted">Issuer</dt><dd className="break-all font-mono text-[12px]">{c.issuer}</dd>
-                <dt className="text-fg-muted">Client ID</dt><dd className="break-all font-mono text-[12px]">{c.clientId}</dd>
+              <p className="text-[0.8125rem] font-medium text-fg">2. Connection</p>
+              <dl className="grid gap-x-6 gap-y-2 text-[0.8125rem] sm:grid-cols-[10rem_1fr]">
+                <dt className="text-fg-muted">Issuer</dt><dd className="break-all font-mono text-[0.75rem]">{c.issuer}</dd>
+                <dt className="text-fg-muted">Client ID</dt><dd className="break-all font-mono text-[0.75rem]">{c.clientId}</dd>
                 <dt className="text-fg-muted">Email domains</dt><dd>{c.domains.join(', ')}</dd>
                 <dt className="text-fg-muted">New people</dt><dd>{c.jitProvisioning ? 'Get an account with the Employee role on first sign-in (within your seat limit)' : 'Must be invited or provisioned first'}</dd>
                 <dt className="text-fg-muted">Last test</dt><dd data-testid="sso-verified">{c.verifiedAt ? `Passed ${when(c.verifiedAt)} as ${c.verifiedEmail}` : 'Not tested yet'}</dd>
@@ -112,7 +112,7 @@ export function SsoView({ sso, scim, tested, failure }: { sso: SsoState; scim: S
             </div>
           ) : (
             <div className="grid gap-4">
-              <p className="text-[13px] font-medium text-fg">2. Connect it here</p>
+              <p className="text-[0.8125rem] font-medium text-fg">2. Connect it here</p>
               {error && <Alert tone="danger">{error}</Alert>}
               <Field label="Issuer URL" hint="From the provider, for example https://login.microsoftonline.com/<tenant>/v2.0. CREW reads its settings from /.well-known/openid-configuration." required>
                 {(p) => <Input {...p} name="issuer" value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="https://" />}
@@ -137,8 +137,8 @@ export function SsoView({ sso, scim, tested, failure }: { sso: SsoState; scim: S
 
           {c && !editing && (
             <div className="grid gap-3">
-              <p className="text-[13px] font-medium text-fg">3. Test, then switch on</p>
-              <p className="text-[13px] text-fg-muted">The test sends you to the provider and back without signing anyone in. Use an account with one of the domains above.</p>
+              <p className="text-[0.8125rem] font-medium text-fg">3. Test, then switch on</p>
+              <p className="text-[0.8125rem] text-fg-muted">The test sends you to the provider and back without signing anyone in. Use an account with one of the domains above.</p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" disabled={pending} onClick={test}>Test sign-in</Button>
                 {c.status !== 'active' && <Button disabled={pending || !c.verifiedAt} onClick={() => run(() => ssoStatusAction('active', false))}>Switch on</Button>}
@@ -165,10 +165,10 @@ export function SsoView({ sso, scim, tested, failure }: { sso: SsoState; scim: S
         <CardBody className="grid gap-4">
           {token && <SecretOnce label="SCIM token" value={token} onDone={() => setToken(null)} />}
           <div className="grid gap-1">
-            <p className="text-[13px] text-fg-muted">SCIM base URL</p>
+            <p className="text-[0.8125rem] text-fg-muted">SCIM base URL</p>
             <CopyValue value={scim.baseUrl} testId="scim-base-url" />
           </div>
-          <div className="flex flex-wrap items-center gap-3 text-[13px]">
+          <div className="flex flex-wrap items-center gap-3 text-[0.8125rem]">
             {scim.token ? (
               <span data-testid="scim-token">Token <span className="font-mono">crew_scim_{scim.token.prefix}_…</span> by {scim.token.createdBy} · last used {when(scim.token.lastUsedAt)} · {scim.token.useCount} calls</span>
             ) : <span className="text-fg-muted">No token. Provisioning is off.</span>}
@@ -185,9 +185,9 @@ export function SsoView({ sso, scim, tested, failure }: { sso: SsoState; scim: S
               {scim.events.map((e, i) => (
                 <TR key={i}>
                   <TD className="whitespace-nowrap text-fg-muted">{when(e.createdAt)}</TD>
-                  <TD className="font-mono text-[12px]">{e.method} {e.path}</TD>
+                  <TD className="font-mono text-[0.75rem]">{e.method} {e.path}</TD>
                   <TD><Badge tone={e.status < 300 ? 'success' : e.status < 500 ? 'warning' : 'danger'}>{e.status}</Badge></TD>
-                  <TD className="text-[13px] text-fg-muted">{e.detail ?? ''}</TD>
+                  <TD className="text-[0.8125rem] text-fg-muted">{e.detail ?? ''}</TD>
                 </TR>
               ))}
             </TBody>

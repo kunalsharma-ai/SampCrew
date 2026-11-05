@@ -35,10 +35,10 @@ export default async function OrganizationPage({ searchParams }: { searchParams:
             key={t.key}
             href={`/organization?tab=${t.key}`}
             aria-current={tab === t.key ? 'page' : undefined}
-            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-[13.5px] ${tab === t.key ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg'}`}
+            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-[0.8438rem] ${tab === t.key ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg'}`}
           >
             {t.label}
-            <span className="ml-1.5 rounded-full bg-bg-subtle px-1.5 text-[11px] text-fg-subtle tabular">
+            <span className="ml-1.5 rounded-full bg-bg-subtle px-1.5 text-[0.6875rem] text-fg-subtle tabular">
               {{ entities: entities.length, locations: locations.length, departments: departments.length, units: units.length }[t.key]}
             </span>
           </Link>

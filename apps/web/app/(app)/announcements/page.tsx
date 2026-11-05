@@ -26,13 +26,13 @@ export default async function AnnouncementsPage() {
           <Card key={a.id}>
             <CardBody>
               <div className="flex flex-wrap items-center gap-2">
-                <Link href={`/announcements/${a.id}`} className="text-[15px] font-semibold text-fg hover:text-accent hover:underline">{a.title}</Link>
+                <Link href={`/announcements/${a.id}`} className="text-[0.9375rem] font-semibold text-fg hover:text-accent hover:underline">{a.title}</Link>
                 {a.pinned && <Badge>Pinned</Badge>}
                 {!a.readAt && <Badge tone="info">New</Badge>}
                 {a.requiresAck && !a.acknowledgedAt && <Badge tone="warning">Please acknowledge</Badge>}
                 {a.requiresAck && a.acknowledgedAt && <Badge tone="success">Acknowledged</Badge>}
               </div>
-              <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[13px] text-fg-muted">{a.body}</p>
+              <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[0.8125rem] text-fg-muted">{a.body}</p>
               <p className="mt-2 text-xs text-fg-subtle">{a.publishedAt && dateTime(a.publishedAt)}{a.publishedByName ? ` · ${a.publishedByName}` : ''}</p>
             </CardBody>
           </Card>

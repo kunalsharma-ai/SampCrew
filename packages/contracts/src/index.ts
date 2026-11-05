@@ -43,3 +43,8 @@ export * as insights from './insights';
 export type { AttritionInput, AttritionResult, RiskFactor, PayAnomaly } from './insights';
 export * from './integrations';
 export * from './enterprise';
+export * from './experience';
+export * from './staffing';
+export * from './universe';
+export * from './iq';
+export * from './lenses';

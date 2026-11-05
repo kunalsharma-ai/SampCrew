@@ -67,6 +67,20 @@ export type PostingInput = z.infer<typeof postingInput>;
 
 export const CANDIDATE_SOURCES = ['career_site', 'referral', 'agency', 'sourced', 'manual'] as const;
 export const APPLICATION_STATUSES = ['active', 'rejected', 'withdrawn', 'hired'] as const;
+export const CANDIDATE_SORTS = ['activity', 'name', 'added'] as const;
+/** The candidate list: search, tag, job, source, where their applications stand, and the order. */
+export const candidateListQuery = z.object({
+  q: z.string().trim().max(120).optional(),
+  tag: z.string().trim().max(30).optional(),
+  requisitionId: z.uuid().optional(),
+  source: z.enum(CANDIDATE_SOURCES).optional(),
+  /** Candidates with an application in this state; "none" for people not in any job. */
+  status: z.enum([...APPLICATION_STATUSES, 'none']).optional(),
+  sort: z.enum(CANDIDATE_SORTS).default('activity'),
+  dir: z.enum(['asc', 'desc']).default('desc'),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+export type CandidateListQuery = z.infer<typeof candidateListQuery>;
 export const STAGE_KINDS = ['new', 'screen', 'interview', 'offer', 'hired'] as const;
 
 export const candidateInput = z.object({
@@ -108,6 +122,22 @@ export const rejectInput = z.object({
   /** Queue a short, neutral rejection email to the candidate. */
   notifyCandidate: z.boolean().default(false),
 });
+
+/**
+ * One action on several applications for the same job: move them to a stage, reject them (optionally telling each
+ * candidate), or email them. In emails, {firstName} and {jobTitle} are filled in per candidate.
+ */
+export const bulkApplicationsInput = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('move'), applicationIds: z.array(z.uuid()).min(1).max(100), stageId: z.uuid(), note: optionalText(2000) }).strict(),
+  z.object({ action: z.literal('reject'), applicationIds: z.array(z.uuid()).min(1).max(100), reason: z.enum(REJECTION_REASONS), note: optionalText(2000), notifyCandidate: z.boolean().default(false) }).strict(),
+  z.object({ action: z.literal('email'), applicationIds: z.array(z.uuid()).min(1).max(100), subject: z.string().trim().min(3).max(200), message: z.string().trim().min(10).max(5000) }).strict(),
+]);
+export type BulkApplicationsInput = z.infer<typeof bulkApplicationsInput>;
+
+/** Fills {firstName} and {jobTitle} in a bulk email. Unknown placeholders are left as typed. */
+export function fillCandidateEmail(text: string, v: { firstName: string; jobTitle: string }) {
+  return text.replace(/\{(firstName|jobTitle)\}/g, (_m, k: 'firstName' | 'jobTitle') => v[k]);
+}
 
 export const noteInput = z.object({ body: z.string().trim().min(1).max(5000) });
 

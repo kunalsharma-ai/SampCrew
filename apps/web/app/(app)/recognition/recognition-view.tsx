@@ -28,7 +28,7 @@ export function RecognitionView({ feed, values, moderator }: { feed: Recognition
           <Card key={r.id} className={r.hiddenAt ? 'opacity-60' : undefined}>
             <CardBody className="flex gap-3">
               <Avatar name={r.fromName} />
-              <div className="min-w-0 flex-1 text-[13px]">
+              <div className="min-w-0 flex-1 text-[0.8125rem]">
                 <div><span className="font-medium">{r.fromName}</span> recognised <span className="font-medium">{r.toName}</span>{r.toDepartmentName && <span className="text-fg-muted"> · {r.toDepartmentName}</span>}</div>
                 <p className="mt-1 whitespace-pre-wrap text-fg">{r.message}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
@@ -60,7 +60,7 @@ export function RecognitionView({ feed, values, moderator }: { feed: Recognition
               }}
             >
               {to ? (
-                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-[13px]">
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-[0.8125rem]">
                   <span className="font-medium">{to.name}</span><span className="text-xs text-fg-muted">{to.departmentName}</span>
                   <Button size="sm" variant="ghost" type="button" className="ml-auto" onClick={() => setTo(null)}>Change</Button>
                 </div>
@@ -74,7 +74,7 @@ export function RecognitionView({ feed, values, moderator }: { feed: Recognition
                   {results.length > 0 && (
                     <ul className="grid max-h-48 gap-0.5 overflow-auto rounded-lg border border-border p-1">
                       {results.map((c) => (
-                        <li key={c.id}><button type="button" className="w-full rounded-md px-2 py-1 text-left text-[13px] hover:bg-bg-subtle" onClick={() => setTo(c)}>{c.name} <span className="text-xs text-fg-muted">{c.departmentName}</span></button></li>
+                        <li key={c.id}><button type="button" className="w-full rounded-md px-2 py-1 text-left text-[0.8125rem] hover:bg-bg-subtle" onClick={() => setTo(c)}>{c.name} <span className="text-xs text-fg-muted">{c.departmentName}</span></button></li>
                       ))}
                     </ul>
                   )}
@@ -94,7 +94,7 @@ export function RecognitionView({ feed, values, moderator }: { feed: Recognition
             <CardHeader title="Company values" action={<Button size="sm" variant="secondary" onClick={() => setValueDialog('new')}>Add</Button>} />
             <ul className="divide-y divide-border">
               {values.map((v) => (
-                <li key={v.id} className={`flex items-start gap-2 px-5 py-2.5 text-[13px] ${v.archivedAt ? 'opacity-60' : ''}`}>
+                <li key={v.id} className={`flex items-start gap-2 px-5 py-2.5 text-[0.8125rem] ${v.archivedAt ? 'opacity-60' : ''}`}>
                   <div className="min-w-0 flex-1"><div className="font-medium">{v.name}{v.archivedAt && ' (archived)'}</div><div className="text-xs text-fg-muted">{v.description}</div></div>
                   {!v.archivedAt && (
                     <>

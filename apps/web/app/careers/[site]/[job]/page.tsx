@@ -42,7 +42,7 @@ export default async function JobPage({ params }: { params: Promise<{ site: stri
         </div>
         {d.job.summary && <p className="text-fg-muted">{d.job.summary}</p>}
       </header>
-      <article className="whitespace-pre-wrap text-[15px] leading-relaxed">{d.job.description}</article>
+      <article className="whitespace-pre-wrap text-[0.9375rem] leading-relaxed">{d.job.description}</article>
       <ApplyForm site={site} job={job} privacyNotice={d.privacyNotice} organisation={d.organisation} />
     </div>
   );

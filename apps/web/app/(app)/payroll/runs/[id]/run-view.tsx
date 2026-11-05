@@ -33,6 +33,7 @@ export function RunView({ run, people }: { run: PayrollRunDetail; people: { id: 
           action={
             <div className="flex flex-wrap gap-2">
               {computed && <a className={buttonClass('secondary', 'sm')} href={`/payroll-files/${run.id}/register`}><Download className="size-3.5" /> Register (CSV)</a>}
+              {computed && <a className={buttonClass('secondary', 'sm')} href={`/payroll-files/${run.id}/register-xlsx`}><Download className="size-3.5" /> Register (Excel)</a>}
               {run.can.exportBankFile && <a className={buttonClass('secondary', 'sm')} href={`/payroll-files/${run.id}/bank-file`}><Download className="size-3.5" /> Bank file (CSV)</a>}
               {editable && <Button size="sm" variant={s === 'draft' ? 'primary' : 'secondary'} loading={pending} onClick={() => go(() => computeRunAction(run.id))}>{s === 'draft' ? 'Compute payroll' : 'Recompute'}</Button>}
               {run.can.submit && <Button size="sm" loading={pending} onClick={() => confirm(`Send payroll for approval? Net pay ${money(run.net)} for ${run.employeeCount} employee(s).`) && go(() => submitRunAction(run.id))}>Send for approval</Button>}
@@ -61,7 +62,7 @@ export function RunView({ run, people }: { run: PayrollRunDetail; people: { id: 
       {run.warnings.length > 0 && (
         <Alert tone="warning" title={`${run.warnings.length} thing(s) to check`}>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">{warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-          {run.warnings.length > 6 && <button className="mt-1 text-[13px] font-medium underline" onClick={() => setAllWarnings((v) => !v)}>{allWarnings ? 'Show fewer' : `Show all ${run.warnings.length}`}</button>}
+          {run.warnings.length > 6 && <button className="mt-1 text-[0.8125rem] font-medium underline" onClick={() => setAllWarnings((v) => !v)}>{allWarnings ? 'Show fewer' : `Show all ${run.warnings.length}`}</button>}
         </Alert>
       )}
 
@@ -120,7 +121,7 @@ export function RunView({ run, people }: { run: PayrollRunDetail; people: { id: 
             </TBody>
           </Table>
         ) : (
-          <CardBody className="text-[13px] text-fg-muted">No adjustments.</CardBody>
+          <CardBody className="text-[0.8125rem] text-fg-muted">No adjustments.</CardBody>
         )}
       </Card>
 

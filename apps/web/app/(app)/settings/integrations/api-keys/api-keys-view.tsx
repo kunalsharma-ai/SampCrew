@@ -84,7 +84,7 @@ export function ApiKeysView({ keys, scopes }: { keys: ApiKey[]; scopes: { key: s
             {(p) => <Select {...p} value={expiry} onChange={(e) => setExpiry(e.target.value)}>{EXPIRY.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</Select>}
           </Field>
           <fieldset className="grid gap-2">
-            <legend className="mb-1 text-[13px] font-medium">Scopes (read only)</legend>
+            <legend className="mb-1 text-[0.8125rem] font-medium">Scopes (read only)</legend>
             <div className="grid gap-2 sm:grid-cols-2">
               {scopes.map((s) => (
                 <Checkbox key={s.key} label={s.key} description={s.description} checked={chosen.includes(s.key)} onChange={(e) => setChosen(e.target.checked ? [...chosen, s.key] : chosen.filter((x) => x !== s.key))} />

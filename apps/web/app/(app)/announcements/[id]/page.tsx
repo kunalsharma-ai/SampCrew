@@ -25,13 +25,13 @@ export default async function AnnouncementPage({ params }: { params: Promise<{ i
         <Card>
           <CardBody>
             {a.pinned && <Badge className="mb-2">Pinned</Badge>}
-            <div className="whitespace-pre-wrap text-[14px] leading-relaxed">{a.body}</div>
+            <div className="whitespace-pre-wrap text-[0.875rem] leading-relaxed">{a.body}</div>
           </CardBody>
         </Card>
         {a.requiresAck && a.inAudience && (
           a.acknowledgedAt
             ? <Alert tone="success">You acknowledged this on {dateTime(a.acknowledgedAt)}.</Alert>
-            : <Card><CardBody className="flex flex-wrap items-center justify-between gap-3"><span className="text-[13px]">HR has asked everyone to confirm they have read this.</span><AcknowledgeButton id={a.id} /></CardBody></Card>
+            : <Card><CardBody className="flex flex-wrap items-center justify-between gap-3"><span className="text-[0.8125rem]">HR has asked everyone to confirm they have read this.</span><AcknowledgeButton id={a.id} /></CardBody></Card>
         )}
       </div>
     </>

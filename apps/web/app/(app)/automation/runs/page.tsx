@@ -27,7 +27,7 @@ export default async function RunsPage({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHeader eyebrow={<Link href="/automation" className="hover:underline">Automation Studio</Link>} title="Workflow runs" description="Every run with where it got to. Open a run for its step-by-step trace; failed runs can be retried from the step that failed." />
-      <div className="mb-4 flex flex-wrap gap-3 text-[13px]">
+      <div className="mb-4 flex flex-wrap gap-3 text-[0.8125rem]">
         {FILTERS.map((f) => <Link key={f.key} href={href(f.key)} className={(sp.status ?? '') === f.key ? 'font-semibold text-accent' : 'text-fg-muted hover:text-fg'}>{f.label}</Link>)}
         {sp.workflowId && <Link href={sp.status ? `/automation/runs?status=${sp.status}` : '/automation/runs'} className="text-fg-muted hover:text-fg">(all workflows)</Link>}
       </div>
@@ -42,8 +42,8 @@ export default async function RunsPage({ searchParams }: { searchParams: Promise
                   <TD>{r.workflowName} <span className="text-xs text-fg-subtle">v{r.version}</span>{r.mode === 'test' && <Badge tone="ember" className="ml-2">Test</Badge>}</TD>
                   <TD>{r.employeeName ?? '–'}</TD>
                   <TD><Badge tone={RUN_STATUS[r.status].tone} dot>{RUN_STATUS[r.status].label}</Badge></TD>
-                  <TD className="tabular-nums text-[13px]">{Math.min(r.stepIndex, r.stepCount)} of {r.stepCount}{r.status === 'waiting' && r.wakeAt ? `, next ${when(r.wakeAt)}` : ''}</TD>
-                  <TD className="max-w-[24rem] text-[13px]">{r.error ? <span className="text-danger">{r.error}</span> : r.outcome ?? '–'}</TD>
+                  <TD className="tabular-nums text-[0.8125rem]">{Math.min(r.stepIndex, r.stepCount)} of {r.stepCount}{r.status === 'waiting' && r.wakeAt ? `, next ${when(r.wakeAt)}` : ''}</TD>
+                  <TD className="max-w-[24rem] text-[0.8125rem]">{r.error ? <span className="text-danger">{r.error}</span> : r.outcome ?? '–'}</TD>
                 </TR>
               ))}
             </TBody>

@@ -106,7 +106,7 @@ export function GoalDialog({ open, onClose, goal, alignable, people }: {
 
         <div className="col-span-2 grid gap-2">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] font-medium">Key results</span>
+            <span className="text-[0.8125rem] font-medium">Key results</span>
             <Button size="sm" variant="ghost" type="button" disabled={krs.length >= 10} onClick={() => setKrs([...krs, { title: '', startValue: '0', targetValue: '', unit: '' }])}>
               <Plus className="size-3.5" /> Add key result
             </Button>

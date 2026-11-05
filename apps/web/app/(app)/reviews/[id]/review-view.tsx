@@ -13,7 +13,7 @@ import type { Colleague, Level, Question, ReviewDetail } from '../../talent/type
 
 function Answers({ questions, answers, rating, scale }: { questions: Question[]; answers: Record<string, string>; rating: number | null; scale: Level[] }) {
   return (
-    <dl className="grid gap-3 text-[13px]">
+    <dl className="grid gap-3 text-[0.8125rem]">
       {questions.map((q) => (
         <div key={q.id}>
           <dt className="text-xs text-fg-muted">{q.text}</dt>
@@ -94,7 +94,7 @@ function RequestFeedback({ review }: { review: ReviewDetail }) {
             const on = picked.some((p) => p.id === c.id);
             return (
               <li key={c.id}>
-                <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-bg-subtle">
+                <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[0.8125rem] hover:bg-bg-subtle">
                   <input type="checkbox" checked={on} onChange={() => setPicked(on ? picked.filter((p) => p.id !== c.id) : [...picked, c])} />
                   <span className="font-medium">{c.name}</span>
                   <span className="text-xs text-fg-muted">{c.departmentName}</span>
@@ -173,7 +173,7 @@ export function ReviewView({ review }: { review: ReviewDetail }) {
             <CardBody>
               {review.can.writeManager ? <WriteForm review={review} part="manager" />
                 : managerVisible ? <Answers questions={review.cycle.questions} answers={review.managerAnswers} rating={review.managerRating} scale={scale} />
-                : <p className="text-[13px] text-fg-muted">Not submitted yet.</p>}
+                : <p className="text-[0.8125rem] text-fg-muted">Not submitted yet.</p>}
             </CardBody>
           </Card>
         )}
@@ -181,7 +181,7 @@ export function ReviewView({ review }: { review: ReviewDetail }) {
         {review.cycle.peerFeedback && (
           <Card>
             <CardHeader title="Peer feedback" action={review.can.requestFeedback ? <RequestFeedback review={review} /> : undefined} />
-            <CardBody className="grid gap-3 text-[13px]">
+            <CardBody className="grid gap-3 text-[0.8125rem]">
               {'reason' in review.peer && <p className="text-fg-muted">{review.peer.reason}</p>}
               {'answers' in review.peer && review.peer.answers.map((q) => (
                 <div key={q.id}>
@@ -230,7 +230,7 @@ export function ReviewView({ review }: { review: ReviewDetail }) {
       <div className="grid content-start gap-6">
         <Card>
           <CardHeader title="Goals in this period" />
-          <CardBody className="grid gap-3 text-[13px]">
+          <CardBody className="grid gap-3 text-[0.8125rem]">
             {review.goals.length ? review.goals.map((g) => (
               <div key={g.id}>
                 <Link className="font-medium text-accent hover:underline" href={`/goals/${g.id}`}>{g.title}</Link>
@@ -243,7 +243,7 @@ export function ReviewView({ review }: { review: ReviewDetail }) {
         <Card>
           <CardHeader title="Rating scale" />
           <CardBody>
-            <ol className="grid gap-1 text-[13px]">{scale.map((l) => <li key={l.value}><span className="font-medium tabular-nums">{l.value}</span> · {l.label}</li>)}</ol>
+            <ol className="grid gap-1 text-[0.8125rem]">{scale.map((l) => <li key={l.value}><span className="font-medium tabular-nums">{l.value}</span> · {l.label}</li>)}</ol>
           </CardBody>
         </Card>
         {review.can.exclude && (

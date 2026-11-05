@@ -8,7 +8,8 @@
  * 1. The payroll lead turns on two-step verification (payroll needs it) and reviews settings and salaries.
  * 2. An operator submits an expense claim with a receipt; their supervisor approves the pending demo claim.
  * 3. The payroll lead starts last month's run, computes it, opens one payslip calculation, adds an adjustment
- *    and sends the run for approval.
+ *    and sends the run for approval. The stepper above the run follows: Inputs and Compute, then Review, then
+ *    Approval, then every step done.
  * 4. The finance manager turns on two-step verification and approves; the run is finalised.
  * 5. The payroll lead downloads the register. The operator opens their payslip, with the reimbursed expense.
  * Also opens every payroll screen and fails on any browser error.
@@ -117,10 +118,16 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
   await pay.waitForURL(/\/payroll\/runs\/[0-9a-f-]{36}$/, { timeout: 15000 }).catch((e) => shot(pay, e));
   const runUrl = pay.url();
   await pay.locator(`text=Payroll for ${monthName}`).waitFor();
+  const stepper = pay.getByRole('navigation', { name: 'Payroll steps' });
+  const current = async () => (await stepper.locator('li[aria-current=step]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label').split(':')[0]))).join(',');
+  if ((await current()) !== 'Inputs,Compute') throw new Error(`new run: current steps ${await current()}`);
   await pay.click('button:has-text("Compute payroll")');
   await pay.locator('text=Payroll computed.').waitFor({ timeout: 30000 }).catch((e) => shot(pay, e));
   await pay.locator('a:has-text("Arjun Kulkarni")').first().waitFor();
   ok(`payroll lead computed ${monthName}`);
+  await stepper.getByText(/people, net /).waitFor();
+  if ((await current()) !== 'Review') throw new Error(`computed run: current step ${await current()}`);
+  ok('the stepper moved on to Review, with the head count and net pay under Compute');
   await pay.locator('text=Checks before approval').waitFor({ timeout: 10000 }).catch((e) => shot(pay, e));
   await pay.locator('text=/compared with each person.s last three finalised months/').waitFor();
   ok('payroll checks compare every payslip with the person\'s earlier months before approval');
@@ -143,7 +150,9 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
   await pay.locator('td:has-text("Night shift allowance")').waitFor({ timeout: 15000 }).catch((e) => shot(pay, e));
   await pay.click('button:has-text("Send for approval")');
   await pay.locator('text=Waiting for approval').first().waitFor({ timeout: 15000 }).catch((e) => shot(pay, e));
-  ok('payroll lead added an adjustment and sent the run for approval');
+  if ((await current()) !== 'Approval') throw new Error(`submitted run: current step ${await current()}`);
+  await stepper.getByText('1 adjustment').waitFor();
+  ok('payroll lead added an adjustment and sent the run for approval; the stepper is at Approval');
 
   // 4. Finance approves.
   const fin = await signIn(b, 'finance@demo.crew.local');
@@ -154,7 +163,8 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
   await fin.locator(`text=/Payroll for .*${monthName}/`).waitFor({ state: 'detached', timeout: 15000 }).catch((e) => shot(fin, e));
   await pay.goto(runUrl);
   await pay.locator('text=Finalised').first().waitFor({ timeout: 10000 }).catch((e) => shot(pay, e));
-  ok('finance manager approved; the run is finalised');
+  if ((await stepper.locator('li[aria-label$=": done"]').count()) !== 6) throw new Error('finalised run: not every step is done');
+  ok('finance manager approved; the run is finalised and every step is done');
 
   // 5. Exports and payslips.
   const reg = await pay.request.get(runUrl.replace('/payroll/runs/', '/payroll-files/') + '/register');

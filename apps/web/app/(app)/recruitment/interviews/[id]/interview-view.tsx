@@ -25,18 +25,18 @@ export function InterviewView({ d }: { d: InterviewDetail }) {
         {d.myFeedback && <FeedbackCard f={d.myFeedback} mine />}
         {d.othersHidden && <Alert tone="info">Other interviewers have submitted. You will see their scorecards after you submit yours, so first impressions stay independent.</Alert>}
         {d.otherFeedback.map((f) => <FeedbackCard key={f.id} f={f} />)}
-        {!d.myFeedback && !d.otherFeedback.length && !d.can.feedback && !d.othersHidden && <Card><CardBody className="text-[13px] text-fg-muted">No scorecards yet.</CardBody></Card>}
+        {!d.myFeedback && !d.otherFeedback.length && !d.can.feedback && !d.othersHidden && <Card><CardBody className="text-[0.8125rem] text-fg-muted">No scorecards yet.</CardBody></Card>}
         {i.jobDescription && (
           <Card>
             <CardHeader title="About the role" />
-            <CardBody className="whitespace-pre-wrap text-[13px]">{i.jobDescription}</CardBody>
+            <CardBody className="whitespace-pre-wrap text-[0.8125rem]">{i.jobDescription}</CardBody>
           </Card>
         )}
       </div>
       <div className="grid content-start gap-6">
         <Card>
           <CardHeader title="Details" />
-          <CardBody className="grid gap-2 text-[13px]">
+          <CardBody className="grid gap-2 text-[0.8125rem]">
             <div>
               <div className="text-fg-muted">Candidate</div>
               {d.can.manage ? <Link className="text-accent hover:underline" href={`/recruitment/candidates/${i.candidateId}`}>{i.candidateName}</Link> : i.candidateName}
@@ -108,7 +108,7 @@ function FeedbackCard({ f, mine }: { f: Feedback; mine?: boolean }) {
         title={<span className="flex items-center gap-2">{mine ? 'Your scorecard' : f.interviewerName}<Badge tone={f.recommendation.endsWith('yes') ? 'success' : 'danger'}>{RECOMMENDATION[f.recommendation]}</Badge></span>}
         description={`Submitted ${when(f.submittedAt)} · average ${avg.toFixed(2)} out of 4`}
       />
-      <CardBody className="grid gap-2 text-[13px]">
+      <CardBody className="grid gap-2 text-[0.8125rem]">
         {f.ratings.map((r) => (
           <div key={r.criterion} className="flex gap-3">
             <span className="w-40 shrink-0 text-fg-muted">{r.criterion}</span>

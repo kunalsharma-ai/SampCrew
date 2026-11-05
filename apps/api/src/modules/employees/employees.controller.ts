@@ -1,9 +1,13 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   confirmInput,
   createEmployeeInput,
   type CreateEmployeeInput,
   designationInput,
+  duplicateCheckInput,
+  employeeDraftInput,
+  employeeExportQuery,
   employeeListQuery,
   exitInput,
   extendProbationInput,
@@ -15,6 +19,7 @@ import { z } from 'zod';
 import { RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { sendFile } from '../../platform/export/tabular';
 import { EmployeesService } from './employees.service';
 
 const linkInput = z.object({ membershipId: z.uuid() });
@@ -65,6 +70,57 @@ export class EmployeesController {
     return this.employees.list(q);
   }
 
+  @Get('export.csv')
+  @RequirePermission('employees:read')
+  @Doc({ summary: 'The directory as CSV with chosen columns (same scope and filters as the list; audited)', query: employeeExportQuery })
+  async exportCsv(@Query(new ZodPipe(employeeExportQuery)) q: z.infer<typeof employeeExportQuery>, @Res() res: Response) {
+    sendFile(res, await this.employees.exportCsv(q, 'csv'), 'csv');
+  }
+
+  @Get('export.xlsx')
+  @RequirePermission('employees:read')
+  @Doc({ summary: 'The directory as an Excel workbook with chosen columns (same scope and filters as the list; audited)', query: employeeExportQuery })
+  async exportXlsx(@Query(new ZodPipe(employeeExportQuery)) q: z.infer<typeof employeeExportQuery>, @Res() res: Response) {
+    sendFile(res, await this.employees.exportCsv(q, 'xlsx'), 'xlsx', 'Employees');
+  }
+
+  @Post('duplicate-check')
+  @HttpCode(200)
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Existing records that may be the same person (by email, phone, or name and date of birth)', body: duplicateCheckInput })
+  duplicateCheck(@Body(new ZodPipe(duplicateCheckInput)) body: z.infer<typeof duplicateCheckInput>) {
+    return this.employees.duplicates(body);
+  }
+
+  @Get('drafts')
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Your unfinished hires' })
+  drafts() {
+    return this.employees.drafts();
+  }
+
+  @Post('drafts')
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Save an unfinished hire to resume later', body: employeeDraftInput })
+  createDraft(@Body(new ZodPipe(employeeDraftInput)) body: z.infer<typeof employeeDraftInput>) {
+    return this.employees.saveDraft(null, body);
+  }
+
+  @Put('drafts/:id')
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Update an unfinished hire', body: employeeDraftInput })
+  updateDraft(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(employeeDraftInput)) body: z.infer<typeof employeeDraftInput>) {
+    return this.employees.saveDraft(id, body);
+  }
+
+  @Delete('drafts/:id')
+  @HttpCode(204)
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'Discard an unfinished hire' })
+  async deleteDraft(@Param('id', UuidPipe) id: string) {
+    await this.employees.deleteDraft(id);
+  }
+
   @Get('me')
   @Doc({ summary: 'Your own employee record, if your login is linked to one' })
   me() {
@@ -90,6 +146,13 @@ export class EmployeesController {
   @Doc({ summary: 'Update profile fields. Employees may change only their preferred name, personal email and phone.', body: updateEmployeeInput })
   update(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(updateEmployeeInput)) body: z.infer<typeof updateEmployeeInput>) {
     return this.employees.update(id, body);
+  }
+
+  @Get(':id/360')
+  @RequirePermission('employees:read')
+  @Doc({ summary: 'Employee 360: attendance, leave, pay, performance, learning, recognition, requests and documents at a glance, each only when your access covers it, with an activity timeline' })
+  summary360(@Param('id', UuidPipe) id: string) {
+    return this.employees.summary360(id);
   }
 
   @Get(':id/history')

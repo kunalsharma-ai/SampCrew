@@ -63,3 +63,58 @@ export async function linkLoginAction(id: string, membershipId: string) {
   refresh(id);
   return r;
 }
+
+// Add-employee wizard --------------------------------------------------------------------------------------
+
+export type DraftData = Record<string, string | number | boolean | null>;
+
+export async function saveHireDraftAction(id: string | null, step: number, data: DraftData) {
+  return act(() => api<{ id: string; step: number; updatedAt: string }>(id ? `/employees/drafts/${id}` : '/employees/drafts', { method: id ? 'PUT' : 'POST', body: { step, data } }));
+}
+
+export async function discardHireDraftAction(id: string) {
+  const r = await act(() => api(`/employees/drafts/${id}`, { method: 'DELETE' }), 'Draft discarded');
+  revalidatePath('/employees');
+  return r;
+}
+
+export async function duplicateCheckAction(values: Record<string, string>) {
+  return act(() => api<{ matches: { id: string; displayName: string; employeeCode: string; status: string; departmentName: string | null; reasons: string[] }[] }>('/employees/duplicate-check', { method: 'POST', body: values }));
+}
+
+/**
+ * Completes a hire from the wizard in one go: creates the employee (job record, onboarding checklist, optional
+ * invitation), then assigns their salary and uploads their documents, and finally removes the saved draft.
+ * The employee is created first and kept even if a later step fails; those failures come back as warnings
+ * so HR can finish them from the profile.
+ */
+export async function completeHireAction(form: FormData) {
+  let payload: { employee: Record<string, unknown>; salary?: { structureId: string; annualCtc: string; effectiveFrom: string } | null; draftId?: string | null; documents?: { category: string; title: string; visibility: string }[] };
+  try {
+    payload = JSON.parse(String(form.get('payload') ?? '{}'));
+  } catch {
+    return { ok: false as const, message: 'The form could not be read. Please try again.' };
+  }
+  const hired = await act(() => api<{ employee: { id: string }; inviteUrl?: string }>('/employees', { method: 'POST', body: payload.employee, idempotencyKey: String(form.get('idempotencyKey') ?? crypto.randomUUID()) }));
+  if (!hired.ok) return hired;
+  const id = hired.data!.employee.id;
+  const warnings: string[] = [];
+  if (payload.salary) {
+    const s = await act(() => api(`/payroll/salaries/${id}`, { method: 'POST', body: payload.salary }));
+    if (!s.ok) warnings.push(`Salary was not saved: ${s.message}`);
+  }
+  const files = form.getAll('documents').filter((f): f is File => f instanceof File && f.size > 0);
+  for (const [i, file] of files.entries()) {
+    const meta = payload.documents?.[i];
+    const fd = new FormData();
+    fd.set('file', file, file.name);
+    fd.set('category', meta?.category ?? 'other');
+    fd.set('title', meta?.title || file.name);
+    fd.set('visibility', meta?.visibility ?? 'employee');
+    const d = await act(() => apiForm(`/employees/${id}/documents`, fd));
+    if (!d.ok) warnings.push(`${file.name} was not uploaded: ${d.message}`);
+  }
+  if (payload.draftId) await act(() => api(`/employees/drafts/${payload.draftId}`, { method: 'DELETE' }));
+  refresh();
+  return { ok: true as const, data: { employeeId: id, inviteUrl: hired.data!.inviteUrl ?? null, warnings } };
+}

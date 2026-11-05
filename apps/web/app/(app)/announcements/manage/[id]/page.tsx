@@ -28,7 +28,7 @@ export default async function ReceiptsPage({ params }: { params: Promise<{ id: s
         </div>
         <Card>
           <CardHeader title="Message" />
-          <CardBody><div className="whitespace-pre-wrap text-[13px]">{a.body}</div></CardBody>
+          <CardBody><div className="whitespace-pre-wrap text-[0.8125rem]">{a.body}</div></CardBody>
         </Card>
         <Card>
           <CardHeader title="People" />
