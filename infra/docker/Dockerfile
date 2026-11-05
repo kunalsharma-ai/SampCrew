@@ -10,8 +10,8 @@
 #   docker build --secret id=ca,src=/path/to/ca.pem ...
 # No secrets are baked in: every image reads its configuration from the environment at run time.
 
-# Pin by digest in your registry for repeatable builds, e.g. --build-arg NODE_IMAGE=node:22-alpine@sha256:...
-ARG NODE_IMAGE=node:22-alpine
+# Pin by digest in your registry for repeatable builds, e.g. --build-arg NODE_IMAGE=node:26.12.1-alpine@sha256:...
+ARG NODE_IMAGE=node:26.12.1-alpine
 # Must be the same major version as the database server (PostgreSQL 16).
 ARG POSTGRES_IMAGE=postgres:16-alpine
 

@@ -38,7 +38,7 @@ Not connected yet, and labelled as such in the product: payment collection (invo
 
 ## Getting started
 
-Requirements: Node 22, pnpm 10, PostgreSQL 16 (or Docker).
+Requirements: Node.js 26 (the current Active LTS; the exact version CI and the Docker images use is in `.nvmrc`), pnpm 10, PostgreSQL 16 (or Docker).
 
 ```bash
 pnpm install
