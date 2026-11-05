@@ -7,6 +7,9 @@ import {
   deviceInput,
   type DeviceInput,
   deviceMappingInput,
+  deviceApiHeartbeat,
+  deviceApiPunches,
+  type DeviceApiPunches,
   isoDate,
   kioskInput,
   overtimeClaimInput,
@@ -22,6 +25,7 @@ import {
   swapRequestInput,
   DAY_STATUSES,
 } from '@crew/contracts';
+import { Throttle } from '@nestjs/throttler';
 import { z } from 'zod';
 import { Public, RequireFeature, RequirePermission, RootPath } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
@@ -39,7 +43,7 @@ const listQuery = z.object({ scope: z.enum(['mine', 'visible']).default('mine'),
 const unlockInput = z.object({ reason: z.string().trim().min(3).max(300) });
 const dateQuery = z.object({ date: isoDate });
 const archivedQuery = z.object({ includeArchived: z.enum(['true', 'false']).optional() });
-const devicePatch = deviceInput.partial().omit({ serialNumber: true, vendor: true, simulated: true });
+const devicePatch = deviceInput.partial().omit({ serialNumber: true, vendor: true, simulated: true, protocol: true });
 
 @Controller('attendance')
 @RequireFeature('attendance_basic')
@@ -351,6 +355,21 @@ export class DevicesController {
     return this.devices.create(body);
   }
 
+  @Get('integrations')
+  @RequirePermission('devices:manage')
+  @Doc({ summary: 'Attendance machine integrations and which ones SAMPLEDGE allows for this workspace' })
+  integrations() {
+    return this.devices.integrations();
+  }
+
+  @Post(':id/token')
+  @HttpCode(200)
+  @RequirePermission('devices:manage')
+  @Doc({ summary: 'Issue a new device API token for a machine (shown once; the old token stops working)' })
+  rotateToken(@Param('id', UuidPipe) id: string) {
+    return this.devices.rotateToken(id);
+  }
+
   @Get('mappings')
   @RequirePermission('devices:manage')
   @Doc({ summary: 'Enrolment numbers mapped to employees' })
@@ -445,5 +464,32 @@ export class ZkPushController {
   @Doc({ summary: 'Device command results' })
   commandResult(@Req() req: PushRequest) {
     return this.devices.commandResult(req.query.SN, req.ip ?? null);
+  }
+}
+
+/**
+ * CREW device API: for attendance machines that do not speak the ZKTeco push protocol (Hikvision, Matrix, Realtime,
+ * Suprema...) through their event forwarding, a vendor bridge or any middleware that can make an HTTPS call. The
+ * machine is identified by its token (Settings > Devices shows it once), sent as a Bearer token.
+ */
+@Controller('device-api')
+@Public()
+export class DeviceApiController {
+  constructor(private readonly devices: DevicesService) {}
+
+  @Post('punches')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @Doc({ summary: 'Send punches from a machine (up to 500 per call; repeats are ignored)', body: deviceApiPunches })
+  punches(@Headers('authorization') authorization: string | undefined, @Body(new ZodPipe(deviceApiPunches)) body: DeviceApiPunches, @Req() req: { ip?: string }) {
+    return this.devices.apiPunches(authorization, body, req.ip ?? null);
+  }
+
+  @Post('heartbeat')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @Doc({ summary: 'Tell CREW the machine is online (and optionally its firmware and counts)', body: deviceApiHeartbeat })
+  heartbeat(@Headers('authorization') authorization: string | undefined, @Body(new ZodPipe(deviceApiHeartbeat)) body: z.infer<typeof deviceApiHeartbeat>, @Req() req: { ip?: string }) {
+    return this.devices.apiHeartbeat(authorization, body, req.ip ?? null);
   }
 }

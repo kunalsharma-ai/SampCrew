@@ -1,10 +1,18 @@
 import type { HTMLAttributes, ReactNode, TdHTMLAttributes, ThHTMLAttributes } from 'react';
 import { cn } from '../cn';
 
-/** Lightweight table primitives. Wrap in a Card; scrolls horizontally on narrow screens. */
+/**
+ * Lightweight table primitives. Wrap in a Card; scrolls horizontally on narrow screens. The scrolling wrapper takes
+ * keyboard focus, so people who do not use a mouse can scroll a wide table with the arrow keys (WCAG 2.1.1).
+ */
 export function Table({ className, children, 'aria-label': label }: { className?: string; children: ReactNode; 'aria-label'?: string }) {
   return (
-    <div className="overflow-x-auto">
+    <div
+      className="overflow-x-auto rounded-[inherit] outline-none focus-visible:ring-3 focus-visible:ring-accent/40"
+      tabIndex={0}
+      role="region"
+      aria-label={label ?? 'Table'}
+    >
       <table aria-label={label} className={cn('w-full text-left text-[0.8125rem]', className)}>{children}</table>
     </div>
   );

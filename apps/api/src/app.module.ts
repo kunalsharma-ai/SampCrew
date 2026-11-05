@@ -48,10 +48,11 @@ import { PlatformAuthController, PlatformController, PlatformIntegrationsControl
 import { PlatformAuthService } from './modules/platform-admin/platform-auth.service';
 import { PlatformService } from './modules/platform-admin/platform.service';
 import { AccessControlsService } from './modules/platform-admin/access-controls.service';
+import { TenantControlService } from './modules/platform-admin/tenant-control.service';
 import { RolesController } from './modules/roles/roles.controller';
 import { RolesService } from './modules/roles/roles.service';
 import { SupportAccessController, TenancyController } from './modules/tenancy/tenancy.controller';
-import { AttendanceController, DevicesController, KioskController, ShiftsController, ZkPushController } from './modules/attendance/attendance.controller';
+import { AttendanceController, DeviceApiController, DevicesController, KioskController, ShiftsController, ZkPushController } from './modules/attendance/attendance.controller';
 import { AttendanceDaysService } from './modules/attendance/attendance-days.service';
 import { AttendanceService } from './modules/attendance/attendance.service';
 import { DevicesService } from './modules/attendance/devices.service';
@@ -151,6 +152,7 @@ export const CONTROLLERS = [
   ShiftsController,
   DevicesController,
   ZkPushController,
+  DeviceApiController,
   RecruitmentController,
   CareersPublicController,
   ResumeFilesController,
@@ -208,6 +210,7 @@ export const CONTROLLERS = [
     PlatformAuthService,
     PlatformService,
     AccessControlsService,
+    TenantControlService,
     NotificationService,
     PlatformIntegrationsService,
     MailerService,

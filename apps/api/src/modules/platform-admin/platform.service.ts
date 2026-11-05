@@ -106,7 +106,7 @@ export class PlatformService {
         `select t.id, t.name, t.slug::text, t.status, t.status_reason as "statusReason", t.region, t.country_code as "countryCode", t.timezone, t.currency,
                 t.is_demo as "isDemo", t.require_mfa as "requireMfa", t.created_at as "createdAt",
                 json_build_object('plan', p.key, 'planName', p.name, 'status', s.status, 'billingCycle', s.billing_cycle, 'seats', s.seats, 'currency', s.currency,
-                  'unitPrice', s.unit_price::text, 'trialEndsOn', to_char(s.trial_ends_on, 'YYYY-MM-DD'), 'currentPeriodEnd', to_char(s.current_period_end, 'YYYY-MM-DD'),
+                  'unitPrice', s.unit_price::text, 'trialEndsOn', to_char(s.trial_ends_on, 'YYYY-MM-DD'), 'currentPeriodEnd', to_char(s.current_period_end, 'YYYY-MM-DD'), 'currentPeriodStart', to_char(s.current_period_start, 'YYYY-MM-DD'), 'cancelAtPeriodEnd', s.cancel_at_period_end,
                   'featureOverrides', s.feature_overrides, 'provider', s.provider) as subscription,
                 (select count(*)::int from memberships m where m.tenant_id = t.id and m.status = 'active') as "activeMembers",
                 (select count(*)::int from memberships m where m.tenant_id = t.id and m.status = 'invited') as "pendingInvites",
@@ -173,9 +173,14 @@ export class PlatformService {
     });
   }
 
-  async overrideSubscription(id: string, input: { planKey?: string; status?: string; seats?: number; trialEndsOn?: string | null; featureOverrides?: Record<string, boolean | number> }) {
+  async overrideSubscription(id: string, input: {
+    planKey?: string; status?: string; seats?: number; trialEndsOn?: string | null; featureOverrides?: Record<string, boolean | number>;
+    billingCycle?: string; unitPrice?: string; currentPeriodEnd?: string; cancelAtPeriodEnd?: boolean; limits?: Partial<Record<string, number | null>>;
+  }) {
     return this.db.platform(async (tx) => {
-      const sub = await one<{ id: string }>(tx, 'select id from subscriptions where tenant_id = $1 for update', [id]);
+      const sub = await one<{ id: string; feature_overrides: Record<string, boolean | number>; current_period_start: string }>(
+        tx, `select id, feature_overrides, to_char(current_period_start, 'YYYY-MM-DD') as current_period_start from subscriptions where tenant_id = $1 for update`, [id],
+      );
       if (!sub) throw Errors.notFound('Subscription');
       const sets: string[] = [];
       const params: unknown[] = [id];
@@ -191,6 +196,22 @@ export class PlatformService {
       if (input.status) add('status = ?', input.status);
       if (input.seats) add('seats = ?', input.seats);
       if (input.trialEndsOn !== undefined) add('trial_ends_on = ?', input.trialEndsOn);
+      if (input.billingCycle) add('billing_cycle = ?', input.billingCycle);
+      if (input.unitPrice) add('unit_price = ?', input.unitPrice);
+      if (input.cancelAtPeriodEnd !== undefined) add('cancel_at_period_end = ?', input.cancelAtPeriodEnd);
+      if (input.currentPeriodEnd) {
+        if (input.currentPeriodEnd <= sub.current_period_start) throw Errors.badRequest('period_end_before_start', `The period end must be after the period start (${sub.current_period_start}).`);
+        add('current_period_end = ?', input.currentPeriodEnd);
+      }
+      if (input.limits && !input.featureOverrides) {
+        // Limits live with the module switches; merge so neither overwrites the other.
+        const next = { ...(sub.feature_overrides ?? {}) };
+        for (const [k, v] of Object.entries(input.limits)) {
+          if (v === null || v === undefined) delete next[k];
+          else next[k] = v;
+        }
+        add('feature_overrides = ?', JSON.stringify(next));
+      }
       if (input.featureOverrides) {
         const known = new Set((await many<{ key: string }>(tx, 'select key from features')).map((f) => f.key));
         const unknown = Object.keys(input.featureOverrides).filter((k) => !known.has(k));

@@ -1,5 +1,7 @@
-import { Badge, Card, CardBody, CardHeader, PageHeader, Stat, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
+import { Badge, Card, CardBody, CardHeader, PageHeader, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
+import { Building2, Coins, Sparkles, Users } from 'lucide-react';
 import Link from 'next/link';
+import { Tile, TileRow } from '@/components/neon';
 import { load } from '@/lib/api';
 
 interface Metrics {
@@ -20,12 +22,12 @@ export default async function Overview() {
   return (
     <>
       <PageHeader title="Overview" description="CREW across all customers. Demo workspaces are counted separately and excluded from revenue." />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Workspaces" value={m.tenants.total} hint={`${m.tenants.active} active · ${m.tenants.suspended} suspended · ${m.tenants.demo} demo`} />
-        <Stat label="New in 30 days" value={m.tenants.newLast30Days} />
-        <Stat label="Active members" value={m.members.active.toLocaleString()} hint={`${m.members.total.toLocaleString()} memberships in total`} />
-        <Stat label="MRR (list price)" value={m.mrrByCurrency.length ? m.mrrByCurrency.map((x) => money(x.mrr, x.currency)).join(' + ') : '—'} hint={m.note} />
-      </div>
+      <TileRow>
+        <Tile tone="violet" icon={<Building2 className="size-5" />} label="Workspaces" value={m.tenants.total} href="/tenants" hint={`${m.tenants.active} active · ${m.tenants.suspended} suspended · ${m.tenants.demo} demo`} />
+        <Tile tone="teal" icon={<Sparkles className="size-5" />} label="New in 30 days" value={m.tenants.newLast30Days} hint="Workspaces created" />
+        <Tile tone="orange" icon={<Users className="size-5" />} label="Active members" value={m.members.active.toLocaleString()} hint={`${m.members.total.toLocaleString()} memberships in total`} />
+        <Tile tone="blue" icon={<Coins className="size-5" />} label="MRR (list price)" value={m.mrrByCurrency.length ? m.mrrByCurrency.map((x) => money(x.mrr, x.currency)).join(' + ') : '—'} hint={m.note} />
+      </TileRow>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_380px]">
         <Card>
@@ -33,7 +35,7 @@ export default async function Overview() {
           <CardBody>
             <div className="flex h-32 items-end gap-1" role="img" aria-label={`Sign-ups per day; peak ${max}`}>
               {m.signups.map((s) => (
-                <div key={s.day} title={`${s.day}: ${s.count}`} className="flex-1 rounded-t bg-accent/80" style={{ height: `${Math.max(2, (s.count / max) * 100)}%`, opacity: s.count ? 1 : 0.25 }} />
+                <div key={s.day} title={`${s.day}: ${s.count}`} className="flex-1 rounded-t bg-gradient-to-t from-accent to-ember/80" style={{ height: `${Math.max(2, (s.count / max) * 100)}%`, opacity: s.count ? 1 : 0.25 }} />
               ))}
             </div>
             <div className="mt-2 flex justify-between text-[11px] text-fg-subtle"><span>{m.signups[0]?.day}</span><span>{m.signups.at(-1)?.day}</span></div>

@@ -1,3 +1,9 @@
 @import "tailwindcss";
 @import "@crew/ui/styles.css";
 @source "../../../packages/ui/src";
+
+/* Neon look for the Console's own pieces (the shared rules live in @crew/ui/styles.css). */
+:root[data-style="neon"] .crew-tab-active {
+  background-image: var(--neon-gradient);
+  box-shadow: 0 8px 20px -10px color-mix(in srgb, var(--brand-1) 80%, transparent);
+}

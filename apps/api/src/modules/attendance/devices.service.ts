@@ -1,7 +1,9 @@
 import { BlockList, isIP } from 'node:net';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { z } from 'zod';
-import { zonedTime, type DeviceInput, type deviceMappingInput, type simulateInput } from '@crew/contracts';
+import { createHash } from 'node:crypto';
+import { DEVICE_INTEGRATIONS, deviceProtocolFor, zonedTime, type DeviceApiPunches, type DeviceInput, type deviceMappingInput, type simulateInput } from '@crew/contracts';
+import { randomToken, sha256 } from '../../platform/auth/crypto';
 import { AuditService } from '../../platform/audit/audit.service';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
@@ -9,7 +11,10 @@ import { DatabaseService, many, one, type Tx } from '../../platform/database/dat
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { AttendanceDaysService, EVENT_EMPLOYEE } from './attendance-days.service';
-import { attlogLines, handshakeResponse, parseAttlog, parseInfo } from './zk-push';
+import { attlogLines, handshakeResponse, parseAttlog, parseInfo, type ParseResult } from './zk-push';
+
+/** Machine tokens for the device API start with this, so they are easy to recognise (and to find in leaked text). */
+export const DEVICE_TOKEN_PREFIX = 'crewdev_';
 
 const { addDays, localToday, hhmm, toLocal } = zonedTime;
 
@@ -17,6 +22,10 @@ interface DeviceRow {
   id: string;
   tenant_id: string;
   name: string;
+  vendor: string;
+  protocol: string;
+  paused_at: Date | null;
+  vendor_off: boolean;
   serial_number: string;
   time_zone: string;
   direction_from_device: boolean;
@@ -27,7 +36,7 @@ interface DeviceRow {
   last_error_at: Date | null;
 }
 
-export type DeviceStatus = 'online' | 'delayed' | 'offline' | 'waiting' | 'error' | 'simulated';
+export type DeviceStatus = 'online' | 'delayed' | 'offline' | 'waiting' | 'error' | 'simulated' | 'paused';
 
 /** Honest status: online only if we heard from the device within its expected interval. */
 export function deviceStatus(d: { simulated: boolean; last_seen_at: Date | string | null; last_error_at: Date | string | null; expected_interval_seconds: number }, now = Date.now()): DeviceStatus {
@@ -60,7 +69,9 @@ const DEVICE_COLUMNS = `d.id, d.name, d.vendor, d.model, d.serial_number as "ser
   d.time_zone as "timeZone", d.direction_from_device as "directionFromDevice", d.allowed_ips as "allowedIps", d.simulated, d.expected_interval_seconds as "expectedIntervalSeconds",
   d.firmware, d.reported_user_count as "reportedUserCount", d.reported_punch_count as "reportedPunchCount", d.last_seen_at as "lastSeenAt", d.last_punch_at as "lastPunchAt",
   d.last_error as "lastError", d.last_error_at as "lastErrorAt", d.records_accepted::int as "recordsAccepted", d.records_duplicate::int as "recordsDuplicate",
-  d.records_rejected::int as "recordsRejected", d.archived_at as "archivedAt", d.created_at as "createdAt", d.last_error_at as last_error_at, d.last_seen_at as last_seen_at`;
+  d.records_rejected::int as "recordsRejected", d.archived_at as "archivedAt", d.created_at as "createdAt", d.last_error_at as last_error_at, d.last_seen_at as last_seen_at,
+  d.paused_at as "pausedAt", d.paused_reason as "pausedReason", d.api_token_hint as "tokenHint",
+  d.vendor = any(coalesce((select c.device_vendors_disabled from tenant_access_controls c), '{}')) as "integrationOff"`;
 
 /**
  * Attendance devices: registration, health, enrolment-number mappings, and the ZKTeco/eSSL push endpoint.
@@ -77,9 +88,20 @@ export class DevicesService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  private shape<T extends { simulated: boolean; last_seen_at: Date | null; last_error_at: Date | null; expectedIntervalSeconds: number }>(row: T) {
+  private shape<T extends { simulated: boolean; last_seen_at: Date | null; last_error_at: Date | null; expectedIntervalSeconds: number; pausedAt?: Date | null; integrationOff?: boolean }>(row: T) {
     const { last_seen_at, last_error_at, ...rest } = row;
-    return { ...rest, status: deviceStatus({ simulated: row.simulated, last_seen_at, last_error_at, expected_interval_seconds: row.expectedIntervalSeconds }) };
+    // Paused by SAMPLEDGE (one machine, or its whole integration): pushes are refused until it is resumed.
+    const status: DeviceStatus = row.pausedAt || row.integrationOff ? 'paused' : deviceStatus({ simulated: row.simulated, last_seen_at, last_error_at, expected_interval_seconds: row.expectedIntervalSeconds });
+    return { ...rest, status };
+  }
+
+  /** The machine integrations this workspace may use (SAMPLEDGE chooses them in the Console). */
+  async integrations() {
+    return this.db.tenant(async (tx) => {
+      const c = await one<{ off: string[] }>(tx, 'select device_vendors_disabled as off from tenant_access_controls');
+      const off = new Set(c?.off ?? []);
+      return DEVICE_INTEGRATIONS.map((i) => ({ ...i, enabled: !off.has(i.key) }));
+    });
   }
 
   async list() {
@@ -119,33 +141,64 @@ export class DevicesService {
         users: seenUsers,
         coverage: { seen: seenUsers.length, mapped: seenUsers.filter((u) => u.employeeId).length },
         log,
-        setup: {
-          // What to enter in the device's cloud / ADMS server settings.
-          serverAddress: url.hostname,
-          serverPort: url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80,
-          https: url.protocol === 'https:',
-          path: '/iclock/cdata',
-          serialNumber: row.serialNumber,
-        },
+        setup: (row as unknown as { protocol: string }).protocol === 'device_api'
+          ? {
+              // What the machine's bridge or middleware calls, with the machine token as a Bearer token.
+              protocol: 'device_api' as const,
+              punchesUrl: `${base}/api/v1/device-api/punches`,
+              heartbeatUrl: `${base}/api/v1/device-api/heartbeat`,
+              tokenHint: (row as unknown as { tokenHint: string | null }).tokenHint,
+              serialNumber: row.serialNumber,
+            }
+          : {
+              // What to enter in the device's cloud / ADMS server settings.
+              protocol: 'push_http' as const,
+              serverAddress: url.hostname,
+              serverPort: url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80,
+              https: url.protocol === 'https:',
+              path: '/iclock/cdata',
+              serialNumber: row.serialNumber,
+            },
       };
     });
   }
 
   async create(input: DeviceInput) {
     return this.db.tenant(async (tx) => {
+      const integration = DEVICE_INTEGRATIONS.find((i) => i.key === input.vendor)!;
+      const protocol = deviceProtocolFor(input.vendor, input.protocol);
+      if (!integration.protocols.includes(protocol)) throw Errors.badRequest('protocol_not_supported', `${integration.name} machines connect through the device API, not the ZKTeco push protocol.`);
+      const off = (await one<{ off: string[] }>(tx, 'select device_vendors_disabled as off from tenant_access_controls'))?.off ?? [];
+      if (off.includes(input.vendor)) throw Errors.forbidden(`The ${integration.name} integration is switched off for this workspace by SAMPLEDGE.`);
       const loc = await one<{ timezone: string }>(tx, 'select timezone from locations where id = $1 and archived_at is null', [input.locationId]);
       if (!loc) throw Errors.badRequest('invalid_location', 'Location not found');
+      const token = protocol === 'device_api' && !input.simulated ? `${DEVICE_TOKEN_PREFIX}${randomToken(32)}` : protocol === 'device_api' ? `${DEVICE_TOKEN_PREFIX}sim_${randomToken(16)}` : null;
       const row = (await one<{ id: string }>(
         tx,
-        `insert into attendance_devices (tenant_id, name, vendor, model, serial_number, location_id, time_zone, direction_from_device, allowed_ips, simulated, expected_interval_seconds)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
-        [input.name, input.vendor, input.model ?? null, input.serialNumber, input.locationId, input.timeZone ?? loc.timezone, input.directionFromDevice, input.allowedIps, input.simulated, input.expectedIntervalSeconds],
+        `insert into attendance_devices (tenant_id, name, vendor, model, serial_number, location_id, time_zone, direction_from_device, allowed_ips, simulated, expected_interval_seconds, protocol, api_token_hash, api_token_hint)
+         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id`,
+        [input.name, input.vendor, input.model ?? null, input.serialNumber, input.locationId, input.timeZone ?? loc.timezone, input.directionFromDevice, input.allowedIps, input.simulated, input.expectedIntervalSeconds,
+          protocol, token ? sha256(token) : null, token ? token.slice(-4) : null],
       ).catch((err: { code?: string }) => {
         if (err.code === '23505') throw Errors.conflict('serial_registered', 'A device with this serial number is already registered. Archive it there first.');
         throw err;
       }))!;
-      await this.audit.record(tx, { action: 'device.registered', resourceType: 'attendance_device', resourceId: row.id, changes: input });
-      return { id: row.id };
+      await this.audit.record(tx, { action: 'device.registered', resourceType: 'attendance_device', resourceId: row.id, changes: { ...input, protocol } });
+      // The token is shown once; only its hash is kept.
+      return { id: row.id, protocol, token: token ?? undefined };
+    });
+  }
+
+  /** Issues a new device API token; the old one stops working at once. */
+  async rotateToken(id: string) {
+    return this.db.tenant(async (tx) => {
+      const d = await one<{ protocol: string }>(tx, 'select protocol from attendance_devices where id = $1 and archived_at is null', [id]);
+      if (!d) throw Errors.notFound('Device');
+      if (d.protocol !== 'device_api') throw Errors.badRequest('no_token', 'This machine uses the ZKTeco push protocol, which identifies it by serial number. It has no token.');
+      const token = `${DEVICE_TOKEN_PREFIX}${randomToken(32)}`;
+      await tx.query('update attendance_devices set api_token_hash = $2, api_token_hint = $3 where id = $1', [id, sha256(token), token.slice(-4)]);
+      await this.audit.record(tx, { action: 'device.token_rotated', resourceType: 'attendance_device', resourceId: id });
+      return { id, token };
     });
   }
 
@@ -231,34 +284,88 @@ export class DevicesService {
   // Push protocol ingest (no user session: the device is identified by its registered serial number)
   // ---------------------------------------------------------------------------------------------------------
 
-  private async findDevice(serial: string | undefined): Promise<DeviceRow | undefined> {
-    if (!serial || !/^[A-Za-z0-9_-]{4,40}$/.test(serial)) return undefined;
+  private async findDevice(by: { serial: string } | { tokenHash: string }): Promise<DeviceRow | undefined> {
+    const bySerial = 'serial' in by;
     return this.db.platform((tx) =>
       one<DeviceRow>(
         tx,
-        `select d.id, d.tenant_id, d.name, d.serial_number, d.time_zone, d.direction_from_device, d.allowed_ips, d.simulated, d.expected_interval_seconds, d.last_seen_at, d.last_error_at
-           from attendance_devices d join tenants t on t.id = d.tenant_id
-          where upper(d.serial_number) = upper($1) and d.archived_at is null and t.status = 'active'`,
-        [serial],
+        `select d.id, d.tenant_id, d.name, d.vendor, d.protocol, d.serial_number, d.time_zone, d.direction_from_device, d.allowed_ips, d.simulated, d.expected_interval_seconds,
+                d.last_seen_at, d.last_error_at, d.paused_at, d.vendor = any(coalesce(c.device_vendors_disabled, '{}')) as vendor_off
+           from attendance_devices d join tenants t on t.id = d.tenant_id left join tenant_access_controls c on c.tenant_id = d.tenant_id
+          where ${bySerial ? `upper(d.serial_number) = upper($1) and d.protocol = 'push_http'` : 'd.api_token_hash = $1'} and d.archived_at is null and t.status = 'active'`,
+        [bySerial ? by.serial : by.tokenHash],
       ),
     );
   }
 
   private async authorise(serial: string | undefined, ip: string | null): Promise<DeviceRow> {
-    const d = await this.findDevice(serial);
+    const d = serial && /^[A-Za-z0-9_-]{4,40}$/.test(serial) ? await this.findDevice({ serial }) : undefined;
     if (!d) {
       this.logger.warn(`Push from unregistered serial ${String(serial).slice(0, 40)} (${ip ?? 'unknown ip'})`);
       throw Errors.unauthorized('Unknown device');
     }
+    return this.admit(d, ip);
+  }
+
+  /** Checks shared by both protocols: simulated, allowed addresses, and SAMPLEDGE's pause or integration switch. */
+  private async admit(d: DeviceRow, ip: string | null): Promise<DeviceRow> {
     if (d.simulated) throw Errors.forbidden('This device is registered as simulated');
-    if (!ipAllowed(d.allowed_ips, ip)) {
+    const refuse = async (detail: string, error: string) => {
       await this.db.tenant(async (tx) => {
-        await tx.query(`insert into device_ingest_log (tenant_id, device_id, kind, detail, remote_ip) values ($1, $2, 'rejected', 'address not on the allowed list', $3)`, [d.tenant_id, d.id, ip]);
-        await tx.query(`update attendance_devices set last_error = 'Connection from an address not on the allowed list', last_error_at = now() where id = $1`, [d.id]);
+        await tx.query(`insert into device_ingest_log (tenant_id, device_id, kind, detail, remote_ip) values ($1, $2, 'rejected', $3, $4)`, [d.tenant_id, d.id, detail, ip]);
+        await tx.query(`update attendance_devices set last_error = $2, last_error_at = now() where id = $1`, [d.id, error]);
       }, { tenantId: d.tenant_id });
+    };
+    if (!ipAllowed(d.allowed_ips, ip)) {
+      await refuse('address not on the allowed list', 'Connection from an address not on the allowed list');
       throw Errors.forbidden('Address not allowed for this device');
     }
+    if (d.paused_at || d.vendor_off) {
+      const why = d.paused_at ? 'machine paused by SAMPLEDGE' : 'machine integration switched off by SAMPLEDGE';
+      await refuse(why, `Refused: ${why}`);
+      throw Errors.forbidden(`This machine is not accepted: ${why}.`);
+    }
     return d;
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
+  // CREW device API (any machine, bridge or middleware; identified by its machine token)
+  // ---------------------------------------------------------------------------------------------------------
+
+  private async byToken(authorization: string | undefined, ip: string | null): Promise<DeviceRow> {
+    const token = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+    if (!token.startsWith(DEVICE_TOKEN_PREFIX) || token.length > 120) throw Errors.unauthorized('Send the machine token as a Bearer token');
+    const d = await this.findDevice({ tokenHash: sha256(token) });
+    if (!d) {
+      this.logger.warn(`Device API call with an unknown token (${ip ?? 'unknown ip'})`);
+      throw Errors.unauthorized('Unknown machine token');
+    }
+    return this.admit(d, ip);
+  }
+
+  async apiHeartbeat(authorization: string | undefined, body: { firmware?: string; users?: number; records?: number }, ip: string | null) {
+    const d = await this.byToken(authorization, ip);
+    await this.db.tenant(async (tx) => {
+      await tx.query(
+        `update attendance_devices set last_seen_at = now(), firmware = coalesce($2, firmware), reported_user_count = coalesce($3, reported_user_count), reported_punch_count = coalesce($4, reported_punch_count) where id = $1`,
+        [d.id, body.firmware ?? null, body.users ?? null, body.records ?? null],
+      );
+      await tx.query(`insert into device_ingest_log (tenant_id, device_id, kind, remote_ip) values ($1, $2, 'heartbeat', $3)`, [d.tenant_id, d.id, ip]);
+    }, { tenantId: d.tenant_id });
+    return { ok: true, device: d.name, serverTime: new Date().toISOString() };
+  }
+
+  async apiPunches(authorization: string | undefined, body: DeviceApiPunches, ip: string | null) {
+    const d = await this.byToken(authorization, ip);
+    const parsed = parseDeviceApi(body, d.id, d.time_zone, d.direction_from_device);
+    const r = await this.db.tenant(async (tx) => {
+      if (body.device) {
+        await tx.query(`update attendance_devices set firmware = coalesce($2, firmware), reported_user_count = coalesce($3, reported_user_count), reported_punch_count = coalesce($4, reported_punch_count) where id = $1`,
+          [d.id, body.device.firmware ?? null, body.device.users ?? null, body.device.records ?? null]);
+      }
+      return this.storeParsed(tx, d, parsed, ip, 'device_api');
+    }, { tenantId: d.tenant_id });
+    return { ...r, received: body.punches.length };
   }
 
   async handshake(serial: string | undefined, query: Record<string, string>, ip: string | null) {
@@ -306,7 +413,10 @@ export class DevicesService {
 
   /** Parses and stores an ATTLOG body, then recomputes the days it touches. Shared by the push endpoint and the simulator. */
   private async store(tx: Tx, d: Pick<DeviceRow, 'id' | 'tenant_id' | 'serial_number' | 'time_zone' | 'direction_from_device'>, body: string, ip: string | null, kind: 'attlog' | 'simulated') {
-    const parsed = parseAttlog(body, d.serial_number, d.time_zone, d.direction_from_device);
+    return this.storeParsed(tx, d, parseAttlog(body, d.serial_number, d.time_zone, d.direction_from_device), ip, kind);
+  }
+
+  private async storeParsed(tx: Tx, d: Pick<DeviceRow, 'id' | 'tenant_id'>, parsed: ParseResult, ip: string | null, kind: 'attlog' | 'simulated' | 'device_api') {
     let accepted = 0;
     let duplicates = 0;
     const touched = new Map<string, number[]>();
@@ -412,6 +522,43 @@ export class DevicesService {
       return alerted;
     }, { tenantId });
   }
+}
+
+/**
+ * Device API punches into the same shape as ATTLOG records. Times without an offset are the machine's local time;
+ * with Z or an offset they are exact instants. A punch's identity is the machine's own record id when sent,
+ * otherwise the machine, person, time and direction, so a retried upload never counts twice.
+ */
+export function parseDeviceApi(body: DeviceApiPunches, deviceId: string, timeZone: string, directionFromDevice: boolean): ParseResult {
+  const out: ParseResult = { punches: [], rejected: [] };
+  const now = Date.now();
+  for (const p of body.punches) {
+    const raw = JSON.stringify(p).slice(0, 500);
+    const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:\d{2})?$/.exec(p.time)!;
+    const [, date, hh, mm, ss = '00', offset] = m as unknown as string[];
+    if (Number(hh) > 23 || Number(mm) > 59 || Number(ss) > 59 || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+      out.rejected.push({ line: raw, reason: 'invalid date or time' });
+      continue;
+    }
+    const capturedAt = offset ? Date.parse(`${date}T${hh}:${mm}:${ss}${offset}`) : zonedTime.fromLocal(date!, Number(hh) * 60 + Number(mm), timeZone) + Number(ss) * 1000;
+    if (capturedAt > now + 10 * 60_000) {
+      out.rejected.push({ line: raw, reason: 'time is in the future' });
+      continue;
+    }
+    const local = toLocal(capturedAt, timeZone);
+    const localTime = `${local.date} ${zonedTime.fmtHhmm(local.minutes)}:${String(new Date(capturedAt).getUTCSeconds()).padStart(2, '0')}`;
+    const identity = p.id ? `api|${deviceId}|id|${p.id}` : `api|${deviceId}|${p.userId}|${localTime}|${p.direction}`;
+    out.punches.push({
+      sourceEventId: createHash('sha256').update(identity).digest('hex'),
+      deviceUserId: p.userId,
+      localTime,
+      capturedAt,
+      direction: directionFromDevice ? p.direction : 'unknown',
+      verifyMethod: p.verify,
+      raw,
+    });
+  }
+  return out;
 }
 
 function fmt(minutes: number) {

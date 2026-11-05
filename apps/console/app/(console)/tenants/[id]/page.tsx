@@ -1,9 +1,11 @@
+import { PLATFORM_ROLE_CAPABILITIES } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { api, ApiError, load } from '@/lib/api';
 import { hasCap } from '@/lib/caps';
-import type { Admin, TenantDetail } from '@/lib/types';
+import { WorkspaceTabs } from '@/components/neon';
+import type { Admin, HistoryRow, PlanSummary, TenantDetail } from '@/lib/types';
 import { TenantView, type SupportSnapshot } from './tenant-view';
 
 export const metadata: Metadata = { title: 'Workspace' };
@@ -13,8 +15,9 @@ export default async function TenantPage({ params }: { params: Promise<{ id: str
   const [me, t, plans] = await Promise.all([
     load<Admin>('/platform/auth/me'),
     load<TenantDetail>(`/platform/tenants/${id}`),
-    load<{ key: string; name: string; features: { key: string; limitValue: number | null }[] }[]>('/platform/plans').catch(() => []),
+    load<PlanSummary[]>('/platform/plans').catch(() => []),
   ]);
+  const history = hasCap(me, 'billing:read') ? await load<HistoryRow[]>(`/platform/tenants/${id}/subscription/history`) : [];
   // The support snapshot exists only while the customer has an approved, unexpired grant for this admin.
   const hasActiveGrant = t.supportAccess.some((g) => g.status === 'approved' && g.expiresAt && new Date(g.expiresAt) > new Date());
   let snapshot: SupportSnapshot | null = null;
@@ -24,9 +27,11 @@ export default async function TenantPage({ params }: { params: Promise<{ id: str
   return (
     <>
       <PageHeader eyebrow={<Link href="/tenants" className="hover:underline">Workspaces</Link>} title={t.name} description={`${t.slug} · ${t.region} · ${t.countryCode} · created ${new Date(t.createdAt).toLocaleDateString()}`} />
+      <WorkspaceTabs tenantId={id} current="overview" caps={[...(PLATFORM_ROLE_CAPABILITIES[me.role] ?? [])]} />
       <TenantView
         t={t}
-        plans={plans.map((p) => ({ key: p.key, name: p.name }))}
+        plans={plans}
+        history={history}
         snapshot={snapshot}
         caps={{ manage: hasCap(me, 'tenants:manage'), billing: hasCap(me, 'billing:manage'), support: hasCap(me, 'support:request') }}
       />

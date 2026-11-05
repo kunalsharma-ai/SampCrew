@@ -205,6 +205,11 @@ export class AuthService {
     tx: Tx,
     s: { userId: string; tenantId: string; membershipId: string; mfa: boolean; client: Client; familyId?: string },
   ): Promise<TokenPair> {
+    // SAMPLEDGE can switch the Web Portal or the mobile app off for a workspace (Console > Features & permissions > Apps).
+    if (s.client === 'web' || s.client === 'mobile') {
+      const apps = await one<{ web: boolean; mobile: boolean }>(tx, 'select web_portal_enabled as web, mobile_app_enabled as mobile from tenant_access_controls where tenant_id = $1', [s.tenantId]);
+      if (apps && !apps[s.client]) throw Errors.appSwitchedOff(s.client);
+    }
     const refreshToken = randomToken(32);
     const ctx = requestContext.get();
     const session = await one<{ id: string }>(
@@ -315,6 +320,7 @@ export class AuthService {
       limits: data.ent.limits,
       subscription: data.ent.planKey ? { plan: data.ent.planKey, status: data.ent.status!, trialEndsOn: data.ent.trialEndsOn } : null,
       session: { mfa: actor.mfa },
+      client: actor.client ?? 'web',
       tenants,
     };
   }

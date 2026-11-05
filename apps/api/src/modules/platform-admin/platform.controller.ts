@@ -8,6 +8,13 @@ import {
   type PlatformIntegrationKey,
   memberAccessQuery,
   memberFeatureUpdate,
+  activityQuery,
+  channelSwitchUpdate,
+  deviceIntegrationUpdate,
+  devicePauseRequest,
+  memberActionRequest,
+  platformDevicesQuery,
+  platformUsersQuery,
   permissionSwitchUpdate,
   mfaEnableRequest,
   name,
@@ -24,11 +31,12 @@ import {
 } from '@crew/contracts';
 import { z } from 'zod';
 import { AllowWithoutMfa, PlatformRealm, Public } from '../../platform/authz/decorators';
-import { UuidPipe, ZodPipe } from '../../platform/http/zod';
+import { IdNumberPipe, UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformService } from './platform.service';
 import { AccessControlsService } from './access-controls.service';
+import { TenantControlService } from './tenant-control.service';
 import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
 
 const integrationKey = z.enum(PLATFORM_INTEGRATION_KEYS);
@@ -44,6 +52,13 @@ const subscriptionOverride = z
     seats: z.number().int().min(1).optional(),
     trialEndsOn: z.iso.date().nullable().optional(),
     featureOverrides: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), z.union([z.boolean(), z.number().int()])).optional(),
+    billingCycle: z.enum(['monthly', 'annual']).optional(),
+    /** Negotiated price per seat per month, in the subscription's currency. */
+    unitPrice: z.string().regex(/^\d{1,8}(\.\d{1,2})?$/, 'A price such as 6.40').optional(),
+    currentPeriodEnd: z.iso.date().optional(),
+    cancelAtPeriodEnd: z.boolean().optional(),
+    /** Plan limits for this customer only (-1 is unlimited); null goes back to the plan's limit. Merged with the module switches. */
+    limits: z.partialRecord(z.enum(['max_employees', 'max_legal_entities', 'ai_credits_monthly', 'storage_gb']), z.number().int().min(-1).max(10_000_000).nullable()).optional(),
   })
   .strict();
 const createAdmin = z.object({ email, fullName: name, role: z.enum(PLATFORM_ROLES), password });
@@ -106,7 +121,95 @@ export class PlatformAuthController {
 
 @Controller('platform')
 export class PlatformController {
-  constructor(private readonly platform: PlatformService, private readonly access: AccessControlsService) {}
+  constructor(private readonly platform: PlatformService, private readonly access: AccessControlsService, private readonly control: TenantControlService) {}
+
+  @PlatformRealm('access:manage')
+  @Put('tenants/:id/access/apps')
+  @Doc({ summary: 'Switch the Web Portal or the mobile app on or off for a workspace, and modules off in one app only (switching an app off ends its sessions)', body: channelSwitchUpdate })
+  switchApps(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(channelSwitchUpdate)) body: z.infer<typeof channelSwitchUpdate>) {
+    return this.access.setChannels(id, body);
+  }
+
+  @PlatformRealm('access:manage')
+  @Get('users')
+  @Doc({ summary: 'People in every workspace (account and sign-in details only), with search and status filters', query: platformUsersQuery })
+  allUsers(@Query(new ZodPipe(platformUsersQuery)) q: z.infer<typeof platformUsersQuery>) {
+    return this.control.users(q);
+  }
+
+  @PlatformRealm('access:manage')
+  @Get('tenants/:id/users')
+  @Doc({ summary: 'People in one workspace (account and sign-in details only)', query: platformUsersQuery })
+  tenantUsers(@Param('id', UuidPipe) id: string, @Query(new ZodPipe(platformUsersQuery)) q: z.infer<typeof platformUsersQuery>) {
+    return this.control.users({ ...q, tenantId: id });
+  }
+
+  @PlatformRealm('access:manage')
+  @Post('tenants/:id/users/:membershipId/actions')
+  @HttpCode(200)
+  @Doc({ summary: 'Suspend, reactivate, sign out, reset two-step verification or resend the invitation of one person (reason required, audited in both trails)', body: memberActionRequest })
+  userAction(@Param('id', UuidPipe) id: string, @Param('membershipId', UuidPipe) membershipId: string, @Body(new ZodPipe(memberActionRequest)) body: z.infer<typeof memberActionRequest>) {
+    return this.control.userAction(id, membershipId, body.action, body.reason);
+  }
+
+  @PlatformRealm('access:manage')
+  @Get('tenants/:id/activity')
+  @Doc({ summary: 'The workspace\'s activity: what happened, who did it, when and from which app (contents: one event at a time, audited)', query: activityQuery })
+  activity(@Param('id', UuidPipe) id: string, @Query(new ZodPipe(activityQuery)) q: z.infer<typeof activityQuery>) {
+    return this.control.activity(id, q);
+  }
+
+  @PlatformRealm('access:manage')
+  @Get('tenants/:id/activity/:eventId')
+  @Doc({ summary: 'One activity event with its recorded contents (before and after values) and the history of the same record. Every read is recorded in the customer\'s audit trail and the platform log.' })
+  activityEvent(@Param('id', UuidPipe) id: string, @Param('eventId', IdNumberPipe) eventId: string) {
+    return this.control.activityEvent(id, eventId);
+  }
+
+  @PlatformRealm('tenants:read')
+  @Get('devices')
+  @Doc({ summary: 'Attendance machines in every workspace with live status', query: platformDevicesQuery })
+  allDevices(@Query(new ZodPipe(platformDevicesQuery)) q: z.infer<typeof platformDevicesQuery>) {
+    return this.control.devices(q);
+  }
+
+  @PlatformRealm('tenants:read')
+  @Get('tenants/:id/devices')
+  @Doc({ summary: 'Attendance machines of one workspace and the machine integrations it may use' })
+  async tenantDevices(@Param('id', UuidPipe) id: string) {
+    const [devices, integrations] = await Promise.all([this.control.devices({ tenantId: id }), this.control.deviceIntegrations(id)]);
+    return { ...devices, integrations };
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('tenants/:id/devices/integrations')
+  @Doc({ summary: 'Choose which attendance machine integrations a workspace may use (machines of a switched-off integration are refused)', body: deviceIntegrationUpdate })
+  setDeviceIntegrations(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(deviceIntegrationUpdate)) body: z.infer<typeof deviceIntegrationUpdate>) {
+    return this.control.setDeviceIntegrations(id, body.changes);
+  }
+
+  @PlatformRealm('access:manage')
+  @Post('tenants/:id/devices/:deviceId/pause')
+  @HttpCode(200)
+  @Doc({ summary: 'Pause one attendance machine: its pushes are refused and logged until resumed', body: devicePauseRequest })
+  pauseDevice(@Param('id', UuidPipe) id: string, @Param('deviceId', UuidPipe) deviceId: string, @Body(new ZodPipe(devicePauseRequest)) body: z.infer<typeof devicePauseRequest>) {
+    return this.control.pauseDevice(id, deviceId, body.reason);
+  }
+
+  @PlatformRealm('access:manage')
+  @Post('tenants/:id/devices/:deviceId/resume')
+  @HttpCode(200)
+  @Doc({ summary: 'Resume a paused attendance machine' })
+  resumeDevice(@Param('id', UuidPipe) id: string, @Param('deviceId', UuidPipe) deviceId: string) {
+    return this.control.pauseDevice(id, deviceId, null);
+  }
+
+  @PlatformRealm('billing:read')
+  @Get('tenants/:id/subscription/history')
+  @Doc({ summary: 'Changes SAMPLEDGE made to a workspace\'s subscription, status and modules' })
+  subscriptionHistory(@Param('id', UuidPipe) id: string) {
+    return this.control.subscriptionHistory(id);
+  }
 
   @PlatformRealm('tenants:read')
   @Get('tenants/:id/access')
