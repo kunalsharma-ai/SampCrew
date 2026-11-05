@@ -9,6 +9,8 @@ import {
   refreshRequest,
   selectTenantRequest,
   signupRequest,
+  ssoCallbackInput,
+  ssoStartInput,
   switchTenantRequest,
 } from '@crew/contracts';
 import type { Request } from 'express';
@@ -16,6 +18,7 @@ import type { z } from 'zod';
 import { AllowWithoutMfa, Public } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { SsoService } from '../identity/sso.service';
 import { AuthService } from './auth.service';
 
 const clientOf = (req: Request) => {
@@ -25,7 +28,28 @@ const clientOf = (req: Request) => {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly sso: SsoService,
+  ) {}
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('sso/start')
+  @HttpCode(200)
+  @Doc({ summary: 'Start single sign-on for a work email: returns the identity provider address to send the browser to', body: ssoStartInput })
+  ssoStart(@Body(new ZodPipe(ssoStartInput)) body: z.infer<typeof ssoStartInput>, @Req() req: Request) {
+    return this.sso.startByEmail(body.email, clientOf(req) === 'mobile' ? 'mobile' : 'web');
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('sso/callback')
+  @HttpCode(200)
+  @Doc({ summary: 'Finish single sign-on with the code and state the identity provider returned', body: ssoCallbackInput })
+  ssoCallback(@Body(new ZodPipe(ssoCallbackInput)) body: z.infer<typeof ssoCallbackInput>) {
+    return this.auth.ssoCallback(body.code, body.state);
+  }
 
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })

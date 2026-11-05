@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { LoginResponse, MeResponse, SignupRequest, TokenPair } from '@crew/contracts';
 import { provisionTenant, SlugTakenError } from '@crew/db';
 import { AuditService } from '../../platform/audit/audit.service';
@@ -12,7 +12,8 @@ import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
-import { Errors } from '../../platform/http/errors';
+import { AppError, Errors } from '../../platform/http/errors';
+import { SsoService } from '../identity/sso.service';
 
 const MAX_FAILED_LOGINS = 5;
 const LOCK_MINUTES = 15;
@@ -40,6 +41,7 @@ export class AuthService {
     private readonly authz: AuthzService,
     private readonly entitlements: EntitlementsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly sso: SsoService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -118,8 +120,17 @@ export class AuthService {
   }
 
   private async afterPrimaryAuth(userId: string, tenantSlug: string | undefined, mfa: boolean, client: Client): Promise<LoginResponse> {
-    const memberships = await this.activeMemberships(userId);
-    if (!memberships.length) throw Errors.forbidden('Your account is not active in any workspace');
+    const all = await this.activeMemberships(userId);
+    if (!all.length) throw Errors.forbidden('Your account is not active in any workspace');
+    // Workspaces that require single sign-on take members (other than owners) through their identity provider instead.
+    const blocked = new Set<string>();
+    await this.db.platform(async (tx) => {
+      for (const m of all) if (await this.sso.passwordBlocked(tx, m.tenant_id, m.membership_id)) blocked.add(m.tenant_id);
+    });
+    const memberships = all.filter((m) => !blocked.has(m.tenant_id));
+    if (!memberships.length || (tenantSlug && all.some((m) => m.slug === tenantSlug && blocked.has(m.tenant_id)))) {
+      throw new AppError(HttpStatus.FORBIDDEN, 'sso_required', 'Your organisation signs in with single sign-on. Use "Sign in with single sign-on" and your work email.');
+    }
     let chosen = tenantSlug ? memberships.find((m) => m.slug === tenantSlug) : memberships.length === 1 ? memberships[0] : undefined;
     if (tenantSlug && !chosen) throw Errors.forbidden('You are not a member of that workspace');
     if (!chosen) {
@@ -156,6 +167,18 @@ export class AuthService {
       );
       await this.audit.record(tx, { tenantId: null, action: 'auth.login_failed', resourceType: 'user', resourceId: userId });
     });
+  }
+
+  /** Finishes a single sign-on: a session for a member, or the result of an owner's test. */
+  async ssoCallback(code: string, state: string): Promise<LoginResponse | { status: 'sso_test_passed'; email: string }> {
+    const r = await this.sso.callback(code, state);
+    if (r.kind === 'test') return { status: 'sso_test_passed', email: r.email };
+    const pair = await this.db.platform(async (tx) => {
+      const p = await this.issueSession(tx, { userId: r.userId, tenantId: r.tenantId, membershipId: r.membershipId, mfa: r.mfa, client: r.client });
+      await this.audit.record(tx, { tenantId: r.tenantId, action: 'auth.sso_login', resourceType: 'membership', resourceId: r.membershipId, metadata: { mfaAtProvider: r.mfa } });
+      return p;
+    });
+    return { status: 'ok', ...pair };
   }
 
   /** Creates a session row (refresh token stored as a hash) and returns a signed access token. */

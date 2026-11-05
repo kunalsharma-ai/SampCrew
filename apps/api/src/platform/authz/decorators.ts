@@ -25,3 +25,6 @@ export const AllowWithoutMfa = () => SetMetadata(ALLOW_WITHOUT_MFA_KEY, true);
 
 /** Served at the server root instead of under /api/v1 (device protocols with fixed paths). */
 export const RootPath = () => SetMetadata(ROOT_PATH_KEY, true);
+
+/** SCIM provisioning routes: a workspace SCIM token, not a user session. */
+export const ScimRealm = () => SetMetadata(REALM_KEY, { realm: 'scim' });

@@ -117,6 +117,10 @@ export const PERMISSIONS = [
   { key: 'ai:use', module: 'AI', description: 'Use CREW AI assistants (always limited to the user\'s own permissions)', phase: 8, scopes: ['own'] },
   { key: 'ai:configure', module: 'AI', description: 'Configure AI providers, features and limits', phase: 8, scopes: TENANT_ONLY, requiresMfa: true },
   { key: 'integrations:manage', module: 'Integrations', description: 'Connect and disconnect integrations', phase: 9, scopes: TENANT_ONLY, requiresMfa: true },
+
+  // Phase 10: enterprise
+  { key: 'security:manage', module: 'Administration', description: 'Set up single sign-on and user provisioning (SCIM)', phase: 10, scopes: TENANT_ONLY, requiresMfa: true },
+  { key: 'privacy:manage', module: 'Administration', description: 'Handle privacy requests: export a person\'s data and erase it', phase: 10, scopes: TENANT_ONLY, requiresMfa: true, sensitive: true },
 ] as const satisfies readonly PermissionDefinition[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

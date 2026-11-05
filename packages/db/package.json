@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
+    "dr-drill": "tsx scripts/dr-drill.ts",
     "reset": "tsx scripts/reset.ts && tsx scripts/migrate.ts && tsx scripts/seed.ts"
   },
   "dependencies": {

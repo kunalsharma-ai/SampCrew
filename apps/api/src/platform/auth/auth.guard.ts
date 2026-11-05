@@ -9,6 +9,7 @@ import { DatabaseService, one } from '../database/database.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
 import { Errors } from '../http/errors';
 import { ApiKeysService } from '../../modules/integrations/api-keys.service';
+import { ScimService } from '../../modules/identity/scim.service';
 import { TokenService } from './token.service';
 
 /**
@@ -29,6 +30,7 @@ export class AuthGuard implements CanActivate {
     private readonly authz: AuthzService,
     private readonly entitlements: EntitlementsService,
     private readonly apiKeys: ApiKeysService,
+    private readonly scimTokens: ScimService,
   ) {}
 
   private meta<T>(key: string, ctx: ExecutionContext): T | undefined {
@@ -44,8 +46,9 @@ export class AuthGuard implements CanActivate {
     if (!token) throw Errors.unauthorized();
     const allowWithoutMfa = this.meta<boolean>(ALLOW_WITHOUT_MFA_KEY, ctx) ?? false;
 
-    const realm = this.meta<{ realm: 'platform'; capability?: string }>(REALM_KEY, ctx);
+    const realm = this.meta<{ realm: 'platform' | 'scim'; capability?: string }>(REALM_KEY, ctx);
     if (realm?.realm === 'platform') return this.platform(token, realm.capability, allowWithoutMfa);
+    if (realm?.realm === 'scim') return this.scim(token);
     if (token.startsWith(API_KEY_PREFIX)) return this.apiKey(token, req, ctx);
 
     const claims = await this.tokens.verifyAccess(token).catch(() => {
@@ -96,6 +99,19 @@ export class AuthGuard implements CanActivate {
     const feature = this.meta<string>(FEATURE_KEY, ctx);
     if (feature) await this.entitlements.requireFeature(feature);
     await this.authz.require(permission);
+    return true;
+  }
+
+  /**
+   * SCIM provisioning. The token belongs to a workspace and acts as the owner who created it; it works only on
+   * SCIM routes, only while that owner is active and only while the plan includes single sign-on.
+   */
+  private async scim(token: string): Promise<boolean> {
+    const t = await this.scimTokens.authenticate(token);
+    if (!t) throw Errors.unauthorized('This SCIM token is not valid. It may have been revoked.');
+    if (t.tenantStatus !== 'active') throw Errors.tenantSuspended();
+    requestContext.setActor({ kind: 'user', userId: t.userId, tenantId: t.tenantId, membershipId: t.membershipId, sessionId: `scim:${t.id}`, mfa: false, label: `SCIM provisioning (token ${t.prefix}, created by ${t.createdBy})` });
+    await this.entitlements.requireFeature('sso');
     return true;
   }
 

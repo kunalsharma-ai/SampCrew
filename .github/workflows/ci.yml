@@ -122,6 +122,25 @@ jobs:
           INTEGRATIONS_ALLOW_PRIVATE_URLS=true SLACK_WEBHOOK_BASE_URL=http://localhost:4020 node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:integrations
+      - name: Enterprise end-to-end flow (local OIDC test stub, no real identity provider)
+        # e2e/oidc-stub.cjs runs inside the flow on 4030 and stands in for an identity provider; its issuer is a
+        # loopback http address, which the API only accepts with INTEGRATIONS_ALLOW_PRIVATE_URLS (refused outside local and test).
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          INTEGRATIONS_ALLOW_PRIVATE_URLS=true node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:enterprise
+      - name: Backup and restore drill
+        # The client tools must match the server's major version, and the runner's own are newer. Run them from the
+        # same postgres:16 image as the service (already pulled), sharing /tmp where the drill keeps its dump file.
+        run: |
+          mkdir -p "$RUNNER_TEMP/pg16"
+          for t in pg_dump pg_restore; do
+            printf '#!/bin/sh\nexec docker run --rm --network host -v /tmp:/tmp postgres:16 %s "$@"\n' "$t" > "$RUNNER_TEMP/pg16/$t"
+          done
+          chmod +x "$RUNNER_TEMP/pg16/"*
+          PG_BIN="$RUNNER_TEMP/pg16" pnpm --filter @crew/db dr-drill
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true

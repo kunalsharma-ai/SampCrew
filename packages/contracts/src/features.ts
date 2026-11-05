@@ -33,7 +33,7 @@ export const FEATURES = [
   { key: 'multi_entity', name: 'Multiple legal entities and countries', module: 'Organization', kind: 'boolean', phase: 1 },
   { key: 'custom_roles', name: 'Custom roles', module: 'Administration', kind: 'boolean', phase: 1 },
   { key: 'audit_export', name: 'Audit log export', module: 'Administration', kind: 'boolean', phase: 1 },
-  { key: 'sso', name: 'Single sign-on (SAML / OIDC)', module: 'Security', kind: 'boolean', phase: 10 },
+  { key: 'sso', name: 'Single sign-on (OpenID Connect) and user provisioning (SCIM)', module: 'Security', kind: 'boolean', phase: 10 },
   { key: 'enterprise_support', name: 'Enterprise support and SLA', module: 'Support', kind: 'boolean', phase: 1 },
   { key: 'max_employees', name: 'Employees included', module: 'Billing', kind: 'limit', phase: 1, unit: 'employees' },
   { key: 'max_legal_entities', name: 'Legal entities', module: 'Organization', kind: 'limit', phase: 1, unit: 'entities' },

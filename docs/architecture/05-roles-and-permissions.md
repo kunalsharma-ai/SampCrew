@@ -110,6 +110,9 @@ CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carr
 | `ai:configure` Configure AI providers, features and limits | 8 | yes | A | A | · | · | · | · | · | · | · | · | · | · |
 | **Integrations** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `integrations:manage` Connect and disconnect integrations | 9 | yes | A | A | · | · | · | · | · | · | · | · | · | · |
+| **Administration** | | |  |  |  |  |  |  |  |  |  |  |  |  |
+| `security:manage` Set up single sign-on and user provisioning (SCIM) | 10 | yes | A | · | · | · | · | · | · | · | · | · | · | · |
+| `privacy:manage` Handle privacy requests: export a person's data and erase it | 10 | yes | A | · | A | · | · | · | · | · | · | · | · | · |
 
 Legend: O own, T team, D department, E legal entity, A all (tenant), · not granted.
 

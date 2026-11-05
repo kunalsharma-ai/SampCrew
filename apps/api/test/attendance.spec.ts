@@ -174,6 +174,21 @@ describe('attendance', () => {
       // Someone outside the team cannot open a colleague's day.
       expect((await api(app, await token('peer')).get(`/attendance/days/${people.operator!.employeeId}/${d1}`)).status).toBe(404);
     });
+
+    it("team view reuses today's computed days for 30 seconds instead of rewriting them on every request", async () => {
+      const today = istToday();
+      const computedAt = async () => (await pool.query(`select computed_at from attendance_days where employee_id = $1 and work_date = $2`, [people.operator!.employeeId, today])).rows[0]?.computed_at as Date;
+      const sup = await token('supervisor');
+      expect((await api(app, sup).get(`/attendance/team?date=${today}`)).status).toBe(200);
+      const first = await computedAt();
+      expect(first).toBeTruthy();
+      await api(app, sup).get(`/attendance/team?date=${today}`);
+      expect(await computedAt()).toEqual(first);
+      // Older than the window: refreshed on the next view.
+      await pool.query(`update attendance_days set computed_at = now() - interval '1 minute' where employee_id = $1 and work_date = $2`, [people.operator!.employeeId, today]);
+      await api(app, sup).get(`/attendance/team?date=${today}`);
+      expect((await computedAt()).getTime()).toBeGreaterThan(Date.now() - 10_000);
+    });
   });
 
   describe('corrections and overtime', () => {

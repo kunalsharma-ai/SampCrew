@@ -2,7 +2,8 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 const ACCESS = 'crew_at';
 const REFRESH = 'crew_rt';
-const PUBLIC = ['/login', '/signup', '/accept-invite', '/kiosk', '/careers'];
+// /sso/callback is where the identity provider sends the browser back; it signs the person in itself.
+const PUBLIC = ['/login', '/signup', '/accept-invite', '/kiosk', '/careers', '/sso'];
 const API_URL = process.env.CREW_API_URL ?? 'http://localhost:4000';
 const secure = process.env.SESSION_COOKIE_SECURE !== 'false';
 

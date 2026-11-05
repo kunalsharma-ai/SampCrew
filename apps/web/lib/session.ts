@@ -3,6 +3,8 @@ import { cookies } from 'next/headers';
 
 export const ACCESS_COOKIE = 'crew_at';
 export const REFRESH_COOKIE = 'crew_rt';
+/** Why the last single sign-on attempt failed, set by /sso/callback for one minute. */
+export const SSO_ERROR_COOKIE = 'crew_sso_error';
 
 const secure = process.env.SESSION_COOKIE_SECURE !== 'false';
 
@@ -27,4 +29,9 @@ export async function clearSession() {
 
 export async function accessToken() {
   return (await cookies()).get(ACCESS_COOKIE)?.value;
+}
+
+/** The reason the last single sign-on attempt failed, if it was in the last minute. */
+export async function ssoError() {
+  return (await cookies()).get(SSO_ERROR_COOKIE)?.value ?? null;
 }

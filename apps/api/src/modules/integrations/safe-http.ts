@@ -29,7 +29,7 @@ export function isPrivateAddress(ip: string): boolean {
   return a === '::' || a === '::1' || a.startsWith('fc') || a.startsWith('fd') || a.startsWith('fe8') || a.startsWith('fe9') || a.startsWith('fea') || a.startsWith('feb') || a.startsWith('ff');
 }
 
-export interface SafeHttpOptions { allowPrivate: boolean; timeoutMs?: number }
+export interface SafeHttpOptions { allowPrivate: boolean; timeoutMs?: number; /** Response bytes kept (default 2000). */ maxBytes?: number }
 export interface SafeHttpResult { status: number; body: string; durationMs: number }
 
 /** Checks a URL's form before it is saved: http(s), no credentials in it, https unless private addresses are allowed. */
@@ -66,28 +66,34 @@ export function safeLookup(allowPrivate: boolean) {
 }
 
 export function postJson(url: string, body: string, headers: Record<string, string>, opts: SafeHttpOptions): Promise<SafeHttpResult> {
+  return safeRequest('POST', url, body, { 'content-type': 'application/json', ...headers }, opts);
+}
+
+/** Any method; `body` undefined sends none. Same protections as postJson. */
+export function safeRequest(method: 'GET' | 'POST', url: string, body: string | undefined, headers: Record<string, string>, opts: SafeHttpOptions): Promise<SafeHttpResult> {
   const u = new URL(url);
   const shape = checkUrlShape(url, opts.allowPrivate);
   if (shape) return Promise.reject(new UnsafeUrlError(shape));
   const client = u.protocol === 'https:' ? https : http;
   const started = Date.now();
   const lookup = safeLookup(opts.allowPrivate);
+  const max = opts.maxBytes ?? 2000;
   return new Promise((resolve, reject) => {
     const req = client.request(
       u,
-      { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body).toString(), ...headers }, lookup: lookup as never, timeout: opts.timeoutMs ?? 10_000 },
+      { method, headers: { ...(body === undefined ? {} : { 'content-length': Buffer.byteLength(body).toString() }), ...headers }, lookup: lookup as never, timeout: opts.timeoutMs ?? 10_000 },
       (res) => {
         let out = '';
         res.setEncoding('utf8');
         res.on('data', (c: string) => {
-          if (out.length < 2000) out += c;
+          if (out.length < max) out += c;
         });
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out.slice(0, 2000), durationMs: Date.now() - started }));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out.slice(0, max), durationMs: Date.now() - started }));
         res.on('error', reject);
       },
     );
     req.on('timeout', () => req.destroy(new Error(`No response within ${Math.round((opts.timeoutMs ?? 10_000) / 1000)} seconds`)));
     req.on('error', (err) => reject(err));
-    req.end(body);
+    req.end(body ?? undefined);
   });
 }
