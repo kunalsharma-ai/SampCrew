@@ -105,6 +105,15 @@ jobs:
           pnpm e2e:payroll
           pnpm e2e:mobile
           pnpm e2e:recruitment
+      - name: AI features end-to-end flow (local AI test stub, no real model)
+        # e2e/ai-stub.cjs stands in for the Claude Messages API with fixed answers; the key is a dummy value.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node e2e/ai-stub.cjs > stub.log 2>&1 &
+          AI_PROVIDER=anthropic ANTHROPIC_API_KEY=ci-test-key-not-a-real-key ANTHROPIC_BASE_URL=http://localhost:4010 node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:4010/__requests
+          pnpm e2e:ai
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true
@@ -115,4 +124,4 @@ jobs:
           pnpm e2e:console
       - name: Server logs
         if: failure()
-        run: tail -n 200 api.log web.log console.log || true
+        run: tail -n 200 api.log web.log console.log stub.log || true

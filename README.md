@@ -6,7 +6,7 @@ CREW is an AI-native workforce platform: HRMS, recruitment CRM and ATS, attendan
 
 This repository is being built phase by phase. See [docs/architecture](docs/architecture/README.md) for the Phase 0 architecture pack and [docs/phases](docs/phases) for what each phase delivered.
 
-## What works today (Phases 1 to 7)
+## What works today (Phases 1 to 8)
 
 - Multi-tenant API with PostgreSQL Row-Level Security underneath every query
 - Sign-up, sign-in, TOTP MFA, refresh-token rotation, workspace switching, invitations
@@ -22,6 +22,7 @@ This repository is being built phase by phase. See [docs/architecture](docs/arch
 - **Payroll and finance (Phase 5)**: exact-decimal India payroll engine with an explanation for every amount; pay components, salary structures and effective-dated salaries; statutory settings each workspace reviews and saves per legal entity (starting values are not certified); monthly runs with loss of pay from attendance and unpaid leave, adjustments, overrides, approval by someone other than the preparer, and a database-level freeze on finalise; payslips; payroll register and audited bank file; expense claims with receipts, manager approval and reimbursement through payroll. See [docs/phases/phase-5.md](docs/phases/phase-5.md)
 - **Performance, learning and engagement (Phase 6)**: goals with key results, check-ins and alignment up the manager chain; review cycles with self and manager reviews, 360 feedback shown to the employee without names and only above a threshold, calibration with recorded reasons, release and acknowledgement, frozen by the database after release; a learning catalogue with paths, assignment, self-enrolment, manager-recorded classroom attendance and expiry; always-anonymous surveys with eNPS and a small-group-safe breakdown; a recognition wall with company values. See [docs/phases/phase-6.md](docs/phases/phase-6.md)
 - **Mobile app and HR helpdesk (Phase 7)**: an HR helpdesk with numbered cases, help-article suggestions, auto-assignment, priority-scaled response targets, internal notes, ratings, auto-close and confidential categories that managers never see; announcements with audiences, read receipts and acknowledgements; an Expo app for iOS and Android (employees and managers) with two-step sign-in, fingerprint or face unlock, punching with an offline queue that keeps the original time and flags clock changes, leave, payslips, approvals, Ask HR and announcements; device sign-out and generic push through Expo (off until configured). The app has been tested through its browser build, not yet on phones. See [docs/phases/phase-7.md](docs/phases/phase-7.md)
+- **AI copilots, Automation Studio and insights (Phase 8)**: an HR assistant that answers employees only from published help articles with citations, and reply drafts for HR, through one AI gateway with per-workspace switches, monthly credits, removal of personal identifiers before sending and a full call log for auditors (off unless the installation sets `AI_PROVIDER` and a key; only the Claude API is implemented, and it has been tested against a local stub, not a real model yet); Automation Studio with triggers, conditions, notifications, waits, approvals and course assignment, AI-drafted workflows, immutable tested versions, durable runs with retries and a step-by-step trace; a rule-based attrition risk score with named signals for HR only; payroll checks against each person's earlier months before approval. See [docs/phases/phase-8.md](docs/phases/phase-8.md)
 - OpenAPI 3.1 spec at `/api/v1/openapi.json` and in [docs/api/openapi.json](docs/api/openapi.json)
 
 Not connected yet, and labelled as such in the product: payment collection (invoices are issued manually by SAMPLEDGE finance), Redis, and S3-compatible object storage (files use local disk). Email is sent only when `SMTP_URL` is set; otherwise it is recorded as skipped, and invitation links are shown on screen in local environments.
@@ -45,7 +46,7 @@ The mobile app is in `apps/mobile` (Expo). Set `EXPO_PUBLIC_CREW_API_URL` to an 
 
 Sign in to the Web Portal with a demo user (below). Sign in to the console with `CREW_BOOTSTRAP_ADMIN_EMAIL` / `CREW_BOOTSTRAP_ADMIN_PASSWORD` from your `.env`; you will be asked to set up an authenticator app before anything else.
 
-The demo tenant `demo-northwind` ("Northwind Manufacturing (Demo)") is fictional and flagged as demo data. All its users share `CREW_DEMO_PASSWORD`, for example `owner@demo.crew.local`, `hr.admin@demo.crew.local`, `supervisor@demo.crew.local`, `operator1@demo.crew.local`, `payroll@demo.crew.local`, `finance@demo.crew.local`.
+The demo tenant `demo-northwind` ("Northwind Manufacturing (Demo)") is fictional and flagged as demo data. All its users share `CREW_DEMO_PASSWORD`, for example `owner@demo.crew.local`, `hr.admin@demo.crew.local`, `hr.ops@demo.crew.local`, `supervisor@demo.crew.local`, `operator1@demo.crew.local`, `payroll@demo.crew.local`, `finance@demo.crew.local`.
 
 ## Tests
 
@@ -59,6 +60,7 @@ pnpm e2e:attendance # Attendance flow: punch, correct, approve, simulated device
 pnpm e2e:recruitment # Recruitment flow: apply on the career site, pipeline, scorecard, offer approval, hire (fresh db, API + web)
 pnpm e2e:payroll    # Payroll flow: settings, salaries, expenses, run, approval, payslip (fresh db, API + web)
 pnpm e2e:mobile     # Mobile app (browser build) against the API: offline punches, leave approval, Ask HR, two-step sign-in, device sign-out (before e2e:recruitment; build with export:web first)
+pnpm e2e:ai         # AI, Automation Studio and attrition flow against the local AI test stub (fresh db; start `node e2e/ai-stub.cjs` and the API with AI_PROVIDER=anthropic ANTHROPIC_API_KEY=<any test value> ANTHROPIC_BASE_URL=http://localhost:4010)
 pnpm e2e:console    # browser test of the console, including support access across both apps (fresh db, API + web + console)
 ```
 

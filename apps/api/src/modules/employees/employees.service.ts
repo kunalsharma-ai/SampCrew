@@ -584,7 +584,7 @@ export class EmployeesService {
         changes: Object.fromEntries(changedCols.map((c) => [c, { from: current[c] ?? null, to: (next as Record<string, unknown>)[c] ?? null }])),
         metadata: { effectiveFrom: input.effectiveFrom, reason: input.reason },
       });
-      await this.outbox.publish(tx, actor.tenantId, 'employee.job_changed', { employeeId: id, effectiveFrom: input.effectiveFrom });
+      await this.outbox.publish(tx, actor.tenantId, 'employee.job_changed', { employeeId: id, effectiveFrom: input.effectiveFrom, changed: changedCols });
       const newManager = next.manager_employee_id ? await one<{ membership_id: string | null }>(tx, 'select membership_id from employees where id = $1', [next.manager_employee_id]) : undefined;
       await this.notifications.notify(tx, {
         membershipIds: [e.membershipId, changedCols.includes('manager_employee_id') ? newManager?.membership_id : null],

@@ -3,11 +3,14 @@ import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Sele
 import { useState } from 'react';
 import { useRunner } from '../../recruitment/use-runner';
 import { assignAction, categoryAction, priorityAction, rateAction, replyAction, statusAction } from '../actions';
+import { draftReplyAction } from '../../ai/actions';
+import type { AiSource } from '../../ai/types';
 import { dateTime, HISTORY, MOVE, PRIORITY, PRIORITY_TONE, STATUS, STATUS_MINE, STATUS_TONE, TARGET, TARGET_TONE } from '../labels';
 import type { CaseDetail, Category, Handler } from '../types';
 
-export function CaseView({ c, handlers, categories }: { c: CaseDetail; handlers: Handler[]; categories: Category[] }) {
+export function CaseView({ c, handlers, categories, aiDrafts }: { c: CaseDetail; handlers: Handler[]; categories: Category[]; aiDrafts: boolean }) {
   const { pending, notice, run } = useRunner();
+  const [draft, setDraft] = useState<{ id: string; sources: AiSource[] } | null>(null);
   const [body, setBody] = useState('');
   const [internal, setInternal] = useState(false);
   const [rating, setRating] = useState(0);
@@ -33,7 +36,7 @@ export function CaseView({ c, handlers, categories }: { c: CaseDetail; handlers:
           <CardBody className="grid gap-3">
             <Message author={c.employeeName} at={c.createdAt} body={c.description} />
             {c.messages.map((m) => (
-              <Message key={m.id} author={`${m.authorName}${m.fromHr ? ' (HR)' : ''}`} at={m.createdAt} body={m.body} internal={m.internal} hr={m.fromHr} />
+              <Message key={m.id} author={`${m.authorName}${m.fromHr ? ' (HR)' : ''}`} at={m.createdAt} body={m.body} internal={m.internal} hr={m.fromHr} ai={m.aiDrafted} />
             ))}
           </CardBody>
         </Card>
@@ -41,13 +44,23 @@ export function CaseView({ c, handlers, categories }: { c: CaseDetail; handlers:
         {c.can.reply && (
           <Card>
             <CardBody>
-              <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); run(() => replyAction(c.id, text, internal), () => setBody('')); }}>
+              <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); run(() => replyAction(c.id, text, internal, internal ? undefined : draft?.id), () => { setBody(''); setDraft(null); }); }}>
                 <Field label={internal ? 'Internal note (HR only)' : handler ? 'Reply to the employee' : 'Your reply'}>
                   {(p) => <Textarea {...p} name="body" rows={4} maxLength={5000} value={body} onChange={(e) => setBody(e.target.value)} />}
                 </Field>
+                {draft && !internal && (
+                  <Alert tone="info" title="AI draft: check and edit it before sending">
+                    It is sent as your reply, marked as drafted with AI.{draft.sources.length > 0 && <> Based on: {draft.sources.map((x) => x.title).join(', ')}.</>} Replace anything in [square brackets].
+                  </Alert>
+                )}
                 {c.can.internalNote && <Checkbox label="Internal note" description="Only HR handlers see it; the employee is not notified." checked={internal} onChange={(e) => setInternal(e.target.checked)} />}
                 <div className="flex flex-wrap gap-2">
                   <Button type="submit" loading={pending} disabled={!text}>{internal ? 'Add note' : 'Send reply'}</Button>
+                  {handler && aiDrafts && !c.confidential && !internal && (
+                    <Button type="button" variant="secondary" loading={pending} onClick={() => run(() => draftReplyAction(c.id), (d) => { const r = d as { interactionId: string; draft: string; sources: AiSource[] }; setBody(r.draft); setDraft({ id: r.interactionId, sources: r.sources }); })}>
+                      Draft a reply with AI
+                    </Button>
+                  )}
                   {c.moves.map((s) => (
                     <Button key={s} type="button" variant={s === 'resolved' || s === 'closed' ? 'primary' : 'secondary'} loading={pending} disabled={s === 'resolved' && (!text || internal)} onClick={() => move(s)}>
                       {MOVE[s] ?? s}
@@ -146,12 +159,13 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-fg-muted">{label}</span><span className="flex items-center gap-2">{children}</span></div>;
 }
 
-function Message({ author, at, body, internal, hr }: { author: string; at: string; body: string; internal?: boolean; hr?: boolean }) {
+function Message({ author, at, body, internal, hr, ai }: { author: string; at: string; body: string; internal?: boolean; hr?: boolean; ai?: boolean }) {
   return (
     <div className={cn('rounded-lg border px-4 py-3', internal ? 'border-warning/40 bg-warning-subtle/50' : hr ? 'border-accent/20 bg-accent-subtle/40' : 'border-border bg-bg-subtle/40')}>
       <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
         <span className="font-medium text-fg">{author}</span>
         {internal && <Badge tone="warning">Internal note</Badge>}
+        {ai && <Badge tone="info">Drafted with AI</Badge>}
         <span>{dateTime(at)}</span>
       </div>
       <div className="whitespace-pre-wrap text-[13px]">{body}</div>

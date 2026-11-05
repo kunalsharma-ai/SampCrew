@@ -102,6 +102,7 @@ CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carr
 | `announcements:manage` Publish announcements and see who has read them | 7 |  | A | · | A | · | · | · | · | · | · | · | · | · |
 | **Analytics** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `reports:read` View workforce analytics and reports | 8 |  | A | A | A | E | O | · | A | A | · | T | · | A |
+| `insights:attrition` See attrition risk scores, and the factors behind them, for people in scope (never shown to managers by default) | 8 |  | A | · | A | · | · | · | · | · | · | · | · | · |
 | **Automation** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `automation:manage` Build, test and activate workflows | 8 | yes | A | A | A | · | · | · | · | · | · | · | · | · |
 | **AI** | | |  |  |  |  |  |  |  |  |  |  |  |  |

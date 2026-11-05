@@ -119,8 +119,11 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
   await pay.locator(`text=Payroll for ${monthName}`).waitFor();
   await pay.click('button:has-text("Compute payroll")');
   await pay.locator('text=Payroll computed.').waitFor({ timeout: 30000 }).catch((e) => shot(pay, e));
-  await pay.locator('a:has-text("Arjun Kulkarni")').waitFor();
+  await pay.locator('a:has-text("Arjun Kulkarni")').first().waitFor();
   ok(`payroll lead computed ${monthName}`);
+  await pay.locator('text=Checks before approval').waitFor({ timeout: 10000 }).catch((e) => shot(pay, e));
+  await pay.locator('text=/compared with each person.s last three finalised months/').waitFor();
+  ok('payroll checks compare every payslip with the person\'s earlier months before approval');
 
   await pay.click('a:has-text("Arjun Kulkarni")');
   await pay.locator('text=Why these numbers').waitFor({ timeout: 10000 }).catch((e) => shot(pay, e));

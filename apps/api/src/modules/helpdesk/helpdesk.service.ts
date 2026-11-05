@@ -2,9 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { type ArticleInput, type CaseInput, type CasePriority, type CaseStatus, type CategoryInput, caseRef, helpdeskMath } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService, loadSubject } from '../../platform/authz/authz.service';
+import { requestContext } from '../../platform/context/request-context';
 import { can, hasPermission, type Subject } from '../../platform/authz/policy';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
 import { Errors } from '../../platform/http/errors';
+import { OutboxService } from '../../platform/events/outbox.service';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
 import { attrsOf, nameOf, needEmployee, talentEmployee } from '../talent/talent-common';
@@ -65,6 +67,7 @@ export class HelpdeskService {
     private readonly authz: AuthzService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationService,
+    private readonly outbox: OutboxService,
   ) {}
 
   // Access -----------------------------------------------------------------------------------------------------
@@ -350,6 +353,8 @@ export class HelpdeskService {
       if (e.id !== s.employeeId) {
         await this.notifications.notify(tx, { membershipIds: [e.membership_id], kind: 'helpdesk.case_logged', title: `HR logged case ${caseRef(number)} for you`, link: `/helpdesk/${c.id}` });
       }
+      // Workflows can start from a new case, but never from a confidential one.
+      if (!k.confidential) await this.outbox.publish(tx, requestContext.tenantActor().tenantId, 'helpdesk.case_created', { caseId: c.id, employeeId: e.id });
       return { id: c.id, ref: caseRef(number) };
     });
   }
@@ -360,7 +365,7 @@ export class HelpdeskService {
       const row = (await one<Record<string, unknown>>(tx, `select ${CASE_COLS}, c.description, c.raised_by_membership_id as "raisedByMembershipId" from ${CASE_FROM} where c.id = $1`, [id]))!;
       const messages = await many(
         tx,
-        `select x.id, x.body, x.internal, x.created_at as "createdAt", x.author_membership_id as "authorMembershipId",
+        `select x.id, x.body, x.internal, x.created_at as "createdAt", (x.ai_interaction_id is not null) as "aiDrafted", x.author_membership_id as "authorMembershipId",
                 coalesce(nullif(${nameOf('e')}, ''), u.full_name) as "authorName", (x.author_membership_id = $3) as mine,
                 (x.author_membership_id is distinct from $2) as "fromHr"
            from helpdesk_messages x join memberships m on m.id = x.author_membership_id join users u on u.id = m.user_id
@@ -399,12 +404,35 @@ export class HelpdeskService {
     });
   }
 
-  async reply(id: string, body: string, internal: boolean) {
+  /**
+   * What an AI reply draft may see: the request and the public conversation, with people named only as
+   * "the employee" and "HR". Internal notes are left out. Only a handler of the case gets it.
+   */
+  async draftContext(id: string) {
+    return this.db.tenant(async (tx) => {
+      const { c, role } = await this.load(tx, id);
+      if (role !== 'handler') throw Errors.notFound('Case');
+      if (c.status === 'closed') throw Errors.conflict('case_closed', 'This case is closed.');
+      const k = (await one<{ name: string; description: string }>(tx, 'select name from helpdesk_categories where id = $1', [c.category_id]))!;
+      const desc = (await one<{ description: string }>(tx, 'select description from helpdesk_cases where id = $1', [id]))!.description;
+      const messages = await many<{ fromHr: boolean; body: string }>(
+        tx, `select (author_membership_id is distinct from $2) as "fromHr", body from helpdesk_messages where case_id = $1 and not internal order by created_at`, [id, c.requester_membership_id],
+      );
+      return { ref: caseRef(c.number), category: k.name, confidential: c.confidential, subject: c.subject, description: desc, messages };
+    });
+  }
+
+  async reply(id: string, body: string, internal: boolean, aiInteractionId?: string) {
     return this.db.tenant(async (tx) => {
       const { c, role, s } = await this.load(tx, id);
       if (c.status === 'closed') throw Errors.conflict('case_closed', 'This case is closed. Raise a new case if you still need help.');
       if (internal && role !== 'handler') throw Errors.forbidden('Only HR can add internal notes');
-      await tx.query(`insert into helpdesk_messages (tenant_id, case_id, author_membership_id, body, internal) values (app_tenant_id(), $1, $2, $3, $4)`, [id, s.membershipId, body, internal]);
+      if (aiInteractionId) {
+        // Only the handler's own draft for this very case can be linked.
+        const d = await one(tx, `select 1 from ai_interactions where id = $1 and feature = 'helpdesk_draft' and status = 'ok' and subject_id = $2 and membership_id = $3`, [aiInteractionId, id, s.membershipId]);
+        if (role !== 'handler' || !d) throw Errors.badRequest('unknown_draft', 'That AI draft is not one of yours for this case');
+      }
+      await tx.query(`insert into helpdesk_messages (tenant_id, case_id, author_membership_id, body, internal, ai_interaction_id) values (app_tenant_id(), $1, $2, $3, $4, $5)`, [id, s.membershipId, body, internal, aiInteractionId ?? null]);
       const ref = caseRef(c.number);
       if (role === 'handler' && !internal) {
         // The first public reply counts as the first response, starts work on an open case and, if nobody has the
