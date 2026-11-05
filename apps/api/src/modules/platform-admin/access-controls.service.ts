@@ -35,8 +35,16 @@ export class AccessControlsService {
         [tenantId],
       );
       const inPlan = new Set(sub ? (await many<{ feature_key: string }>(tx, 'select feature_key from plan_features where plan_id = $1', [sub.plan_id])).map((r) => r.feature_key) : []);
-      const live = sub && sub.status !== 'cancelled' && sub.status !== 'suspended';
-      const controls = await one<{ disabled_permissions: string[]; updated_at: string }>(tx, 'select disabled_permissions, updated_at from tenant_access_controls where tenant_id = $1', [tenantId]);
+      const subLive = sub && sub.status !== 'cancelled' && sub.status !== 'suspended';
+      const controls = await one<{ disabled_permissions: string[]; updated_at: string; web_portal_enabled: boolean; mobile_app_enabled: boolean; web_off_features: string[]; mobile_off_features: string[] }>(
+        tx, 'select disabled_permissions, updated_at, web_portal_enabled, mobile_app_enabled, web_off_features, mobile_off_features from tenant_access_controls where tenant_id = $1', [tenantId],
+      );
+      const live = await one<{ web: number; mobile: number }>(
+        tx,
+        `select count(*) filter (where client = 'web')::int as web, count(*) filter (where client = 'mobile')::int as mobile
+           from sessions where tenant_id = $1 and revoked_at is null and expires_at > now()`,
+        [tenantId],
+      );
       const disabled = new Set(controls?.disabled_permissions ?? []);
       const blockedCounts = await many<{ key: string; n: number }>(
         tx,
@@ -60,7 +68,7 @@ export class AccessControlsService {
         const planHas = inPlan.has(f.key);
         return {
           key: f.key, name: f.name, module: f.module, core, inPlan: planHas, override,
-          effective: Boolean(live) && (core ? planHas : override ?? planHas),
+          effective: Boolean(subLive) && (core ? planHas : override ?? planHas),
           blockedMembers: blockedCounts.find((b) => b.key === f.key)?.n ?? 0,
         };
       });
@@ -78,6 +86,13 @@ export class AccessControlsService {
         plan: sub ? { key: sub.plan_key, name: sub.plan_name, status: sub.status } : null,
         features,
         permissions,
+        channels: {
+          web: controls?.web_portal_enabled ?? true,
+          mobile: controls?.mobile_app_enabled ?? true,
+          webOff: controls?.web_off_features ?? [],
+          mobileOff: controls?.mobile_off_features ?? [],
+          liveSessions: live ?? { web: 0, mobile: 0 },
+        },
         updatedAt: controls?.updated_at ?? null,
       };
     });
@@ -116,6 +131,45 @@ export class AccessControlsService {
         [tenantId, list, requestContext.platformActor().adminId],
       );
       await this.record(tx, tenantId, 'access.permissions_switched', 'tenant', tenantId, { permissions: changes, disabledNow: list });
+    });
+    return this.workspace(tenantId);
+  }
+
+  /**
+   * Apps: the Web Portal and the mobile app can each be switched off for the whole workspace (their open sessions
+   * end at once), and single modules can be switched off in one app only.
+   */
+  async setChannels(tenantId: string, input: { web?: boolean; mobile?: boolean; modules?: { key: string; web: boolean; mobile: boolean }[] }): Promise<WorkspaceAccess> {
+    await this.db.platform(async (tx) => {
+      await this.requireTenant(tx, tenantId);
+      await this.ensureRow(tx, tenantId);
+      const before = (await one<{ web: boolean; mobile: boolean; web_off: string[]; mobile_off: string[] }>(
+        tx, 'select web_portal_enabled as web, mobile_app_enabled as mobile, web_off_features as web_off, mobile_off_features as mobile_off from tenant_access_controls where tenant_id = $1 for update', [tenantId],
+      ))!;
+      const web = input.web ?? before.web;
+      const mobile = input.mobile ?? before.mobile;
+      if (!web && !mobile) throw Errors.badRequest('no_app_left', 'Keep at least one app on. To stop all access, suspend the workspace instead.');
+      const webOff = new Set(before.web_off);
+      const mobileOff = new Set(before.mobile_off);
+      for (const m of input.modules ?? []) {
+        m.web ? webOff.delete(m.key) : webOff.add(m.key);
+        m.mobile ? mobileOff.delete(m.key) : mobileOff.add(m.key);
+      }
+      const after = { web, mobile, webOff: [...webOff].sort(), mobileOff: [...mobileOff].sort() };
+      await tx.query(
+        `update tenant_access_controls set web_portal_enabled = $2, mobile_app_enabled = $3, web_off_features = $4, mobile_off_features = $5,
+                updated_by_admin_id = $6, updated_at = now() where tenant_id = $1`,
+        [tenantId, after.web, after.mobile, after.webOff, after.mobileOff, requestContext.platformActor().adminId],
+      );
+      let signedOut = 0;
+      for (const app of ['web', 'mobile'] as const) {
+        if (before[app] && !after[app]) {
+          signedOut += (await tx.query(`update sessions set revoked_at = now(), revoked_reason = 'app_switched_off' where tenant_id = $1 and client = $2 and revoked_at is null`, [tenantId, app])).rowCount ?? 0;
+        }
+      }
+      await this.record(tx, tenantId, 'access.apps_switched', 'tenant', tenantId, {
+        before: { web: before.web, mobile: before.mobile, webOff: before.web_off, mobileOff: before.mobile_off }, after, sessionsEnded: signedOut,
+      });
     });
     return this.workspace(tenantId);
   }
@@ -165,6 +219,10 @@ export class AccessControlsService {
       await this.record(tx, tenantId, 'access.member_modules_changed', 'membership', membershipId, { member: m.email, blockedBefore: before, blockedNow: blockedFeatures });
       return { membershipId, blockedFeatures };
     });
+  }
+
+  private async ensureRow(tx: Tx, tenantId: string) {
+    await tx.query(`insert into tenant_access_controls (tenant_id) values ($1) on conflict (tenant_id) do nothing`, [tenantId]);
   }
 
   private async requireTenant(tx: Tx, tenantId: string) {

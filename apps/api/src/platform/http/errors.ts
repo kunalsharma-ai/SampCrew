@@ -24,6 +24,10 @@ export const Errors = {
   validation: (details: unknown) => new AppError(HttpStatus.UNPROCESSABLE_ENTITY, 'validation_failed', 'Some fields need attention', details),
   badRequest: (code: string, message: string) => new AppError(HttpStatus.BAD_REQUEST, code, message),
   limitReached: (limit: string, value: number) => new AppError(HttpStatus.PAYMENT_REQUIRED, 'plan_limit_reached', `Your plan allows ${value} ${limit}. Upgrade to add more.`, { limit, value }),
+  appSwitchedOff: (client: 'web' | 'mobile') => new AppError(HttpStatus.FORBIDDEN, 'app_switched_off', client === 'mobile'
+    ? 'The CREW mobile app is switched off for this workspace by SAMPLEDGE. Use the Web Portal, or ask your administrator.'
+    : 'The CREW Web Portal is switched off for this workspace by SAMPLEDGE. Use the mobile app, or ask your administrator.', { client }),
+  featureOffInApp: (feature: string, client: string) => new AppError(HttpStatus.FORBIDDEN, 'feature_off_in_app', `${feature} is switched off in the ${client === 'mobile' ? 'mobile app' : 'Web Portal'} for this workspace by SAMPLEDGE.`, { feature, client }),
   tenantSuspended: () => new AppError(HttpStatus.FORBIDDEN, 'tenant_suspended', 'This workspace is suspended. Contact your administrator or SAMPLEDGE support.'),
   unavailable: (code: string, message: string) => new AppError(HttpStatus.SERVICE_UNAVAILABLE, code, message),
   tooMany: (message = 'Too many attempts. Try again later.') => new AppError(HttpStatus.TOO_MANY_REQUESTS, 'rate_limited', message),

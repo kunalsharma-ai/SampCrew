@@ -55,22 +55,26 @@ export class AuthGuard implements CanActivate {
       throw Errors.unauthorized('Your session has expired. Sign in again.');
     });
     const row = await this.db.platform((tx) =>
-      one<{ session_ok: boolean; membership_status: string; tenant_status: string; require_mfa: boolean; full_name: string; email: string }>(
+      one<{ session_ok: boolean; membership_status: string; tenant_status: string; require_mfa: boolean; full_name: string; email: string; client: 'web' | 'mobile' | 'api'; web_on: boolean; mobile_on: boolean }>(
         tx,
         `select (s.revoked_at is null and s.expires_at > now()) as session_ok, m.status as membership_status,
-                t.status as tenant_status, t.require_mfa, u.full_name, u.email::text
+                t.status as tenant_status, t.require_mfa, u.full_name, u.email::text, s.client,
+                coalesce(c.web_portal_enabled, true) as web_on, coalesce(c.mobile_app_enabled, true) as mobile_on
            from sessions s
            join memberships m on m.id = $2 and m.user_id = s.user_id and m.tenant_id = $3
            join tenants t on t.id = m.tenant_id
            join users u on u.id = s.user_id and u.status = 'active'
+           left join tenant_access_controls c on c.tenant_id = t.id
           where s.id = $1 and s.user_id = $4 and s.tenant_id = $3`,
         [claims.sid, claims.mid, claims.tid, claims.sub],
       ),
     );
     if (!row?.session_ok || row.membership_status !== 'active') throw Errors.unauthorized('Your session is no longer valid. Sign in again.');
     if (row.tenant_status !== 'active') throw Errors.tenantSuspended();
+    // An app SAMPLEDGE switched off for the workspace is closed on every request, not only at sign-in.
+    if ((row.client === 'web' && !row.web_on) || (row.client === 'mobile' && !row.mobile_on)) throw Errors.appSwitchedOff(row.client);
 
-    requestContext.setActor({ kind: 'user', userId: claims.sub, tenantId: claims.tid, membershipId: claims.mid, sessionId: claims.sid, mfa: claims.mfa, label: `${row.full_name} <${row.email}>` });
+    requestContext.setActor({ kind: 'user', userId: claims.sub, tenantId: claims.tid, membershipId: claims.mid, sessionId: claims.sid, mfa: claims.mfa, client: row.client, label: `${row.full_name} <${row.email}>` });
 
     if (row.require_mfa && !claims.mfa && !allowWithoutMfa) throw Errors.mfaRequired();
 

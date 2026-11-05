@@ -8,6 +8,8 @@ export interface TenantActor {
   sessionId: string;
   mfa: boolean;
   label: string;
+  /** The app the session was opened in (web, mobile, or api for programmatic sign-ins). Absent for API keys. */
+  client?: 'web' | 'mobile' | 'api';
   /** Set when the request was made with a workspace API key: it acts as its creator, limited to these permissions. */
   apiKey?: { id: string; scopes: readonly string[] };
 }

@@ -75,3 +75,32 @@ export async function resetIntegrationAction(key: string) {
   revalidatePath('/health');
   return r;
 }
+
+export async function switchAppsAction(id: string, body: { web?: boolean; mobile?: boolean; modules?: { key: string; web: boolean; mobile: boolean }[] }) {
+  const r = await act(() => api(`/platform/tenants/${id}/access/apps`, { method: 'PUT', body }), body.web === false || body.mobile === false ? 'App switched off. Its open sessions have ended.' : 'Apps updated.');
+  revalidatePath(`/tenants/${id}/access`);
+  return r;
+}
+
+export async function memberAction(id: string, membershipId: string, action: string, reason: string) {
+  const r = await act(() => api<{ sessionsEnded?: number; inviteUrl?: string }>(`/platform/tenants/${id}/users/${membershipId}/actions`, { method: 'POST', body: { action, reason } }));
+  revalidatePath(`/tenants/${id}/users`);
+  revalidatePath('/users');
+  return r;
+}
+
+export async function setDeviceIntegrationsAction(id: string, changes: { key: string; enabled: boolean }[]) {
+  const r = await act(() => api(`/platform/tenants/${id}/devices/integrations`, { method: 'PUT', body: { changes } }), 'Machine integrations updated.');
+  revalidatePath(`/tenants/${id}/devices`);
+  return r;
+}
+
+export async function pauseDeviceAction(id: string, deviceId: string, reason: string | null) {
+  const r = await act(
+    () => api(`/platform/tenants/${id}/devices/${deviceId}/${reason === null ? 'resume' : 'pause'}`, { method: 'POST', body: reason === null ? {} : { reason } }),
+    reason === null ? 'Machine resumed. CREW accepts its punches again.' : 'Machine paused. CREW refuses what it sends until you resume it.',
+  );
+  revalidatePath(`/tenants/${id}/devices`);
+  revalidatePath('/devices');
+  return r;
+}

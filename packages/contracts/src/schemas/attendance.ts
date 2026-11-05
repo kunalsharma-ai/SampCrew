@@ -108,10 +108,35 @@ export const periodLockInput = z.object({
   note: z.string().trim().max(300).optional(),
 }).refine((v) => v.periodEnd >= v.periodStart, { message: 'End is before start', path: ['periodEnd'] });
 
-export const DEVICE_VENDORS = ['zkteco', 'essl'] as const;
+export const DEVICE_VENDORS = ['zkteco', 'essl', 'hikvision', 'matrix', 'realtime', 'suprema', 'generic'] as const;
+export type DeviceVendor = (typeof DEVICE_VENDORS)[number];
+/**
+ * How a machine sends punches to CREW:
+ *   push_http   the ZKTeco / eSSL "PUSH" (ADMS) protocol at /iclock/cdata, identified by serial number;
+ *   device_api  CREW's own HTTPS device API (POST /api/v1/device-api/punches) with a per-machine token, for any
+ *               machine, vendor bridge or middleware that can make an HTTPS call.
+ */
+export const DEVICE_PROTOCOLS = ['push_http', 'device_api'] as const;
+export type DeviceProtocol = (typeof DEVICE_PROTOCOLS)[number];
+
+/** Attendance machine integrations SAMPLEDGE can switch on or off per workspace (Console > a workspace > Devices). */
+export const DEVICE_INTEGRATIONS: readonly { key: DeviceVendor; name: string; protocols: readonly DeviceProtocol[]; note: string }[] = [
+  { key: 'zkteco', name: 'ZKTeco', protocols: ['push_http', 'device_api'], note: 'Cloud server (ADMS push) built into the machine, or the device API through a bridge.' },
+  { key: 'essl', name: 'eSSL', protocols: ['push_http', 'device_api'], note: 'eSSL machines on ZKTeco firmware use the same ADMS push.' },
+  { key: 'hikvision', name: 'Hikvision', protocols: ['device_api'], note: 'Through a bridge or middleware that forwards access events to the device API.' },
+  { key: 'matrix', name: 'Matrix COSEC', protocols: ['device_api'], note: 'Through COSEC event forwarding or a bridge calling the device API.' },
+  { key: 'realtime', name: 'Realtime', protocols: ['device_api'], note: 'Through a bridge or middleware calling the device API.' },
+  { key: 'suprema', name: 'Suprema', protocols: ['device_api'], note: 'Through BioStar event forwarding or a bridge calling the device API.' },
+  { key: 'generic', name: 'Other machine or middleware', protocols: ['device_api'], note: 'Any system that can make an HTTPS call with the machine token.' },
+];
+export const deviceProtocolFor = (vendor: DeviceVendor, asked?: DeviceProtocol): DeviceProtocol =>
+  asked ?? (vendor === 'zkteco' || vendor === 'essl' ? 'push_http' : 'device_api');
+
 export const deviceInput = z.object({
   name: z.string().trim().min(1).max(120),
   vendor: z.enum(DEVICE_VENDORS),
+  /** Defaults to push_http for ZKTeco and eSSL, device_api for everything else. */
+  protocol: z.enum(DEVICE_PROTOCOLS).optional(),
   model: z.string().trim().max(80).optional(),
   serialNumber: z.string().trim().regex(/^[A-Za-z0-9_-]{4,40}$/, 'Use the serial number shown on the device (letters and digits)'),
   locationId: z.uuid(),
@@ -123,6 +148,22 @@ export const deviceInput = z.object({
   expectedIntervalSeconds: z.number().int().min(30).max(86_400).default(300),
 });
 export type DeviceInput = z.infer<typeof deviceInput>;
+
+const deviceLocalOrIso = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})?$/;
+/** Body of POST /api/v1/device-api/punches. Times without an offset are the machine's local time in its time zone. */
+export const deviceApiPunches = z.object({
+  punches: z.array(z.object({
+    userId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,32}$/, 'Use the enrolment number on the machine'),
+    time: z.string().trim().regex(deviceLocalOrIso, 'Use YYYY-MM-DD HH:MM:SS, optionally with Z or an offset such as +05:30'),
+    direction: z.enum(['in', 'out', 'unknown']).default('unknown'),
+    verify: z.enum(['fingerprint', 'face', 'card', 'pin', 'palm', 'unknown']).default('unknown'),
+    /** The machine's own record id, when it has one; repeats of the same id are one punch. */
+    id: z.string().trim().max(80).optional(),
+  }).strict()).min(1).max(500),
+  device: z.object({ firmware: z.string().trim().max(80).optional(), users: z.number().int().min(0).optional(), records: z.number().int().min(0).optional() }).strict().optional(),
+}).strict();
+export type DeviceApiPunches = z.infer<typeof deviceApiPunches>;
+export const deviceApiHeartbeat = z.object({ firmware: z.string().trim().max(80).optional(), users: z.number().int().min(0).optional(), records: z.number().int().min(0).optional() }).strict();
 
 export const deviceMappingInput = z.object({
   deviceUserId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,32}$/),

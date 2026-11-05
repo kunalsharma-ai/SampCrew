@@ -28,7 +28,9 @@ export class EntitlementsService {
     // Per-member module access applies to people signed in to the workspace (and API keys acting as them).
     const actor = requestContext.get()?.actor;
     const membershipId = actor?.kind === 'user' ? actor.membershipId : undefined;
-    const load = (t: Tx) => loadEntitlements(t, membershipId);
+    // Modules switched off in one app apply to sessions opened in that app; API keys carry no app.
+    const client = actor?.kind === 'user' && !actor.apiKey && (actor.client === 'web' || actor.client === 'mobile') ? actor.client : undefined;
+    const load = (t: Tx) => loadEntitlements(t, membershipId, client);
     const e = tx ? await load(tx) : await this.db.tenant(load);
     if (ctx) ctx[KEY] = e;
     return e;
@@ -41,6 +43,7 @@ export class EntitlementsService {
       const reason = e.blocked[feature];
       if (reason === 'workspace_off') throw Errors.featureSwitchedOff(name);
       if (reason === 'member_blocked') throw Errors.featureNotForMember(name);
+      if (reason === 'channel_off') throw Errors.featureOffInApp(name, (requestContext.get()?.actor as { client?: string } | undefined)?.client ?? 'web');
       throw Errors.featureNotInPlan(name);
     }
   }
@@ -58,7 +61,7 @@ export class EntitlementsService {
  * Subscriptions that are cancelled or suspended keep only the read-only baseline; trialing/active/past_due keep the plan.
  * With a membership, the modules SAMPLEDGE took away from that member are removed as well.
  */
-export async function loadEntitlements(tx: Tx, membershipId?: string): Promise<Entitlements> {
+export async function loadEntitlements(tx: Tx, membershipId?: string, client?: 'web' | 'mobile'): Promise<Entitlements> {
   const sub = await one<{ plan_id: string; plan_key: string; status: string; trial_ends_on: string | null; feature_overrides: Record<string, boolean | number> }>(
     tx,
     `select s.plan_id, p.key as plan_key, s.status, to_char(s.trial_ends_on, 'YYYY-MM-DD') as trial_ends_on, s.feature_overrides
@@ -92,6 +95,12 @@ export async function loadEntitlements(tx: Tx, membershipId?: string): Promise<E
     const member = await one<{ blocked_features: string[] }>(tx, 'select blocked_features from member_feature_access where membership_id = $1', [membershipId]);
     for (const key of member?.blocked_features ?? []) {
       if (!CORE.has(key) && features.delete(key)) blocked[key] = 'member_blocked';
+    }
+  }
+  if (client) {
+    const apps = await one<{ off: string[] }>(tx, `select case when $1 = 'mobile' then mobile_off_features else web_off_features end as off from tenant_access_controls`, [client]);
+    for (const key of apps?.off ?? []) {
+      if (!CORE.has(key) && features.delete(key)) blocked[key] = 'channel_off';
     }
   }
   return { planKey: sub.plan_key, status: sub.status, features, limits, trialEndsOn: sub.trial_ends_on, blocked };

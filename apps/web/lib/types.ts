@@ -158,12 +158,17 @@ export interface Device {
   directionFromDevice: boolean; allowedIps: string[]; simulated: boolean; expectedIntervalSeconds: number; firmware: string | null; reportedUserCount: number | null;
   reportedPunchCount: number | null; lastSeenAt: string | null; lastPunchAt: string | null; lastError: string | null; lastErrorAt: string | null;
   recordsAccepted: number; recordsDuplicate: number; recordsRejected: number; status: string; unmappedUsers?: number;
+  /** Set when SAMPLEDGE paused this machine, or switched its integration off for the workspace. */
+  pausedAt: string | null; pausedReason: string | null; integrationOff: boolean; tokenHint: string | null;
 }
+export interface DeviceIntegration { key: string; name: string; protocols: string[]; note: string; enabled: boolean }
 export interface DeviceDetail extends Device {
   users: { deviceUserId: string; punches: number; lastPunchAt: string; employeeId: string | null; employeeName: string | null }[];
   coverage: { seen: number; mapped: number };
   log: { id: number; kind: string; records: number; accepted: number; duplicates: number; rejected: number; detail: string | null; remoteIp: string | null; createdAt: string }[];
-  setup: { serverAddress: string; serverPort: number; https: boolean; path: string; serialNumber: string };
+  setup:
+    | { protocol: 'push_http'; serverAddress: string; serverPort: number; https: boolean; path: string; serialNumber: string }
+    | { protocol: 'device_api'; punchesUrl: string; heartbeatUrl: string; tokenHint: string | null; serialNumber: string };
 }
 export interface DeviceMapping { id: string; deviceId: string | null; deviceName: string | null; deviceUserId: string; employeeId: string; employeeName: string; employeeCode: string; createdAt: string }
 

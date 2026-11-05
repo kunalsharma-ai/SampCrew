@@ -1,11 +1,12 @@
 'use client';
 import { SUBSCRIPTION_STATUSES, supportAccessRequest } from '@crew/contracts';
 import { Alert, Badge, Button, buttonClass, Card, CardBody, CardHeader, Dialog, Field, Input, Select, Stat, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
-import { Eye, LifeBuoy, PauseCircle, PlayCircle, SlidersHorizontal, ToggleRight } from 'lucide-react';
+import { Activity, CreditCard, Eye, LifeBuoy, PauseCircle, PlayCircle, SlidersHorizontal, ToggleRight, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import type { TenantDetail } from '@/lib/types';
+import { Tile, TileRow } from '@/components/neon';
+import type { HistoryRow, PlanSummary, TenantDetail } from '@/lib/types';
 import { overrideSubscriptionAction, requestSupportAccessAction, setTenantStatusAction } from '../../actions';
 
 export interface SupportSnapshot {
@@ -17,7 +18,25 @@ export interface SupportSnapshot {
 
 type DialogKind = 'status' | 'subscription' | 'support' | null;
 
-export function TenantView({ t, plans, snapshot, caps }: { t: TenantDetail; plans: { key: string; name: string }[]; snapshot: SupportSnapshot | null; caps: { manage: boolean; billing: boolean; support: boolean } }) {
+const LIMITS = [
+  { key: 'max_employees', label: 'Employees included' },
+  { key: 'max_legal_entities', label: 'Legal entities' },
+  { key: 'ai_credits_monthly', label: 'AI credits per month' },
+  { key: 'storage_gb', label: 'Document storage (GB)' },
+] as const;
+
+const HISTORY_LABEL: Record<string, string> = {
+  'platform.subscription_overridden': 'Subscription changed',
+  'platform.access_modules_switched': 'Modules switched',
+  'platform.tenant_suspended': 'Workspace suspended',
+  'platform.tenant_reactivated': 'Workspace reactivated',
+  'platform.tenant_created': 'Workspace created',
+};
+
+const describe = (changes: Record<string, unknown>) =>
+  Object.entries(changes).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(' · ').slice(0, 220);
+
+export function TenantView({ t, plans, history, snapshot, caps }: { t: TenantDetail; plans: PlanSummary[]; history: HistoryRow[]; snapshot: SupportSnapshot | null; caps: { manage: boolean; billing: boolean; support: boolean } }) {
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [flash, setFlash] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const s = t.subscription;
@@ -42,12 +61,12 @@ export function TenantView({ t, plans, snapshot, caps }: { t: TenantDetail; plan
         <Link href={`/tenants/${t.id}/access`} className={buttonClass('secondary')} data-testid="open-access"><ToggleRight className="size-4" /> Features &amp; permissions</Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Plan" value={s?.planName ?? 'None'} hint={s ? <Badge tone={s.status === 'active' ? 'success' : s.status === 'trialing' ? 'accent' : 'warning'}>{s.status}{s.trialEndsOn ? ` to ${s.trialEndsOn}` : ''}</Badge> : undefined} />
-        <Stat label="Members" value={`${t.activeMembers} / ${s?.seats ?? '—'}`} hint={`${t.pendingInvites} pending invitations`} />
-        <Stat label="Legal entities" value={t.legalEntities} />
-        <Stat label="Last activity" value={t.lastActivityAt ? new Date(t.lastActivityAt).toLocaleDateString() : 'Never'} hint={`${t.aiCreditsThisMonth} AI credits this month`} />
-      </div>
+      <TileRow>
+        <Tile tone="violet" icon={<CreditCard className="size-5" />} label="Plan" value={s?.planName ?? 'None'} hint={s ? `${s.status}${s.trialEndsOn ? ` to ${s.trialEndsOn}` : ''} · ${s.billingCycle}` : undefined} testId="tile-plan" />
+        <Tile tone="teal" icon={<Users className="size-5" />} label="Members" value={`${t.activeMembers} / ${s?.seats ?? '—'}`} hint={`${t.pendingInvites} pending invitations`} href={`/tenants/${t.id}/users`} />
+        <Tile tone="orange" icon={<ToggleRight className="size-5" />} label="Module switches" value={Object.values(s?.featureOverrides ?? {}).filter((v) => typeof v === 'boolean').length} hint="Set by SAMPLEDGE" href={`/tenants/${t.id}/access`} />
+        <Tile tone="blue" icon={<Activity className="size-5" />} label="Last activity" value={t.lastActivityAt ? new Date(t.lastActivityAt).toLocaleDateString() : 'Never'} hint={`${t.aiCreditsThisMonth} AI credits this month`} href={`/tenants/${t.id}/activity`} />
+      </TileRow>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card>
@@ -55,11 +74,17 @@ export function TenantView({ t, plans, snapshot, caps }: { t: TenantDetail; plan
           <CardBody>
             {s ? (
               <dl className="grid grid-cols-2 gap-3 text-[13px]">
-                <div><dt className="text-fg-subtle">Billing</dt><dd>{s.billingCycle}, {s.currency} {s.unitPrice} per seat per month</dd></div>
-                <div><dt className="text-fg-subtle">Current period ends</dt><dd>{s.currentPeriodEnd ?? '—'}</dd></div>
+                <div><dt className="text-fg-subtle">Billing</dt><dd data-testid="sub-billing">{s.billingCycle}, {s.currency} {s.unitPrice} per seat per month</dd></div>
+                <div><dt className="text-fg-subtle">Current period</dt><dd data-testid="sub-period">{s.currentPeriodStart ?? '—'} to {s.currentPeriodEnd ?? '—'}{s.cancelAtPeriodEnd ? ' (cancels at the end)' : ''}</dd></div>
+                <div className="col-span-2"><dt className="text-fg-subtle">Limits</dt><dd className="flex flex-wrap gap-1">{LIMITS.map((l) => {
+                  const own = s.featureOverrides?.[l.key];
+                  const plan = plans.find((p) => p.key === s.plan)?.features.find((f) => f.key === l.key)?.limitValue;
+                  const v = typeof own === 'number' ? own : plan;
+                  return <Badge key={l.key} tone={typeof own === 'number' ? 'accent' : 'neutral'}>{l.label}: {v === -1 ? 'unlimited' : v ?? '—'}{typeof own === 'number' ? ' (custom)' : ''}</Badge>;
+                })}</dd></div>
                 <div><dt className="text-fg-subtle">Payment provider</dt><dd>{s.provider === 'manual' ? 'Manual invoicing (no provider connected)' : s.provider}</dd></div>
                 <div><dt className="text-fg-subtle">Workspace MFA policy</dt><dd>{t.requireMfa ? 'Required for everyone' : 'Optional'}</dd></div>
-                <div className="col-span-2"><dt className="text-fg-subtle">Module switches</dt><dd>{Object.keys(s.featureOverrides ?? {}).length ? Object.entries(s.featureOverrides).map(([k, v]) => <Badge key={k} className="mr-1" tone={v === false ? 'danger' : 'accent'}>{k}: {v === true ? 'on' : v === false ? 'off' : String(v)}</Badge>) : 'All modules follow the plan'}</dd></div>
+                <div className="col-span-2"><dt className="text-fg-subtle">Module switches</dt><dd>{Object.values(s.featureOverrides ?? {}).some((v) => typeof v === 'boolean') ? Object.entries(s.featureOverrides).filter(([, v]) => typeof v === 'boolean').map(([k, v]) => <Badge key={k} className="mr-1" tone={v === false ? 'danger' : 'accent'}>{k}: {v === true ? 'on' : v === false ? 'off' : String(v)}</Badge>) : 'All modules follow the plan'}</dd></div>
               </dl>
             ) : <p className="text-sm text-fg-muted">No subscription.</p>}
           </CardBody>
@@ -86,6 +111,25 @@ export function TenantView({ t, plans, snapshot, caps }: { t: TenantDetail; plan
           )}
         </Card>
       </div>
+
+      {history.length > 0 && (
+        <Card>
+          <CardHeader title="Subscription history" description="Every change SAMPLEDGE made to this workspace's plan, status, price and modules." />
+          <Table aria-label="Subscription history">
+            <THead><TR><TH>When</TH><TH>Change</TH><TH>By</TH><TH>Details</TH></TR></THead>
+            <TBody>
+              {history.slice(0, 15).map((h) => (
+                <TR key={h.id}>
+                  <TD className="whitespace-nowrap text-fg-muted">{new Date(h.createdAt).toLocaleString()}</TD>
+                  <TD>{HISTORY_LABEL[h.action] ?? h.action}</TD>
+                  <TD className="text-fg-muted">{h.actorLabel ?? 'System'}</TD>
+                  <TD className="max-w-md truncate text-xs text-fg-muted" title={describe(h.changes)}>{describe(h.changes) || '—'}</TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        </Card>
+      )}
 
       {snapshot && (
         <Card className="ring-2 ring-warning/40">
@@ -140,29 +184,67 @@ function StatusDialog({ t, onClose, onDone }: { t: TenantDetail; onClose: () => 
   );
 }
 
-function SubscriptionDialog({ t, plans, onClose, onDone }: { t: TenantDetail; plans: { key: string; name: string }[]; onClose: () => void; onDone: Done }) {
+function SubscriptionDialog({ t, plans, onClose, onDone }: { t: TenantDetail; plans: PlanSummary[]; onClose: () => void; onDone: Done }) {
   const router = useRouter();
   const s = t.subscription!;
   const [planKey, setPlanKey] = useState(s.plan);
   const [status, setStatus] = useState(s.status);
   const [seats, setSeats] = useState(String(s.seats));
   const [trialEndsOn, setTrialEndsOn] = useState(s.trialEndsOn ?? '');
+  const [billingCycle, setBillingCycle] = useState(s.billingCycle);
+  const [unitPrice, setUnitPrice] = useState(s.unitPrice);
+  const [periodEnd, setPeriodEnd] = useState(s.currentPeriodEnd ?? '');
+  const [cancelAtEnd, setCancelAtEnd] = useState(s.cancelAtPeriodEnd);
+  const [limits, setLimits] = useState<Record<string, string>>(() => Object.fromEntries(LIMITS.map((l) => [l.key, typeof s.featureOverrides?.[l.key] === 'number' ? String(s.featureOverrides[l.key]) : ''])));
+  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const n = Number(seats);
   const seatsError = !Number.isInteger(n) || n < 1 ? 'Whole number, at least 1' : undefined;
+  const priceError = /^\d{1,8}(\.\d{1,2})?$/.test(unitPrice) ? undefined : 'A price such as 6.40';
+  const limitErrors = Object.fromEntries(Object.entries(limits).filter(([, v]) => v !== '' && !/^-?\d+$/.test(v)).map(([k]) => [k, 'Whole number, or -1 for unlimited']));
+  const planLimit = (key: string) => plans.find((p) => p.key === planKey)?.features.find((f) => f.key === key)?.limitValue;
   return (
     <Dialog open onClose={onClose} size="lg" title="Adjust subscription" description="Commercial overrides for this customer. Every change is recorded in both audit logs."
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={Boolean(seatsError)} loading={pending} onClick={() => start(async () => {
-        const r = await overrideSubscriptionAction(t.id, { planKey, status, seats: n, trialEndsOn: trialEndsOn || null });
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={Boolean(seatsError || priceError || Object.keys(limitErrors).length)} loading={pending} onClick={() => start(async () => {
+        setError(null);
+        const changedLimits = Object.fromEntries(LIMITS.flatMap((l) => {
+          const before = typeof s.featureOverrides?.[l.key] === 'number' ? String(s.featureOverrides[l.key]) : '';
+          return limits[l.key] === before ? [] : [[l.key, limits[l.key] === '' ? null : Number(limits[l.key])]];
+        }));
+        const r = await overrideSubscriptionAction(t.id, {
+          planKey, status, seats: n, trialEndsOn: trialEndsOn || null, billingCycle, unitPrice, cancelAtPeriodEnd: cancelAtEnd,
+          ...(periodEnd && periodEnd !== s.currentPeriodEnd ? { currentPeriodEnd: periodEnd } : {}),
+          ...(Object.keys(changedLimits).length ? { limits: changedLimits } : {}),
+        });
+        if (!r.ok) setError(r.message ?? 'Could not save.');
         if (onDone(r)) router.refresh();
       })}>Save</Button></>}>
       <div className="grid gap-4">
+        {error && <Alert tone="danger">{error}</Alert>}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Plan">{(p) => <Select {...p} value={planKey} onChange={(e) => setPlanKey(e.target.value)}>{plans.map((x) => <option key={x.key} value={x.key}>{x.name}</option>)}</Select>}</Field>
           <Field label="Status">{(p) => <Select {...p} value={status} onChange={(e) => setStatus(e.target.value)}>{SUBSCRIPTION_STATUSES.map((x) => <option key={x}>{x}</option>)}</Select>}</Field>
           <Field label="Seats" error={seatsError}>{(p) => <Input {...p} type="number" min={1} value={seats} onChange={(e) => setSeats(e.target.value)} />}</Field>
           <Field label="Trial ends on" hint="Leave empty for no trial">{(p) => <Input {...p} type="date" value={trialEndsOn} onChange={(e) => setTrialEndsOn(e.target.value)} />}</Field>
+          <Field label="Billing cycle">{(p) => <Select {...p} value={billingCycle} onChange={(e) => setBillingCycle(e.target.value)}><option value="monthly">Monthly</option><option value="annual">Annual</option></Select>}</Field>
+          <Field label={`Price per seat per month (${s.currency})`} error={priceError} hint="A negotiated price for this customer">{(p) => <Input {...p} inputMode="decimal" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />}</Field>
+          <Field label="Current period ends" hint={`Started ${s.currentPeriodStart ?? '—'}`}>{(p) => <Input {...p} type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />}</Field>
+          <Field label="At the end of the period">{(p) => <Select {...p} value={cancelAtEnd ? 'cancel' : 'renew'} onChange={(e) => setCancelAtEnd(e.target.value === 'cancel')}><option value="renew">Renew</option><option value="cancel">Cancel</option></Select>}</Field>
         </div>
+        <fieldset className="grid gap-3 rounded-lg border border-border p-3">
+          <legend className="px-1 text-[13px] font-medium">Limits for this customer</legend>
+          <p className="text-xs text-fg-subtle">Leave empty to use the plan&apos;s limit. -1 is unlimited.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {LIMITS.map((l) => {
+              const pl = planLimit(l.key);
+              return (
+                <Field key={l.key} label={l.label} error={limitErrors[l.key]} hint={`Plan: ${pl === -1 ? 'unlimited' : pl ?? '—'}`}>
+                  {(p) => <Input {...p} inputMode="numeric" value={limits[l.key]} placeholder="Plan limit" onChange={(e) => setLimits((x) => ({ ...x, [l.key]: e.target.value.trim() }))} />}
+                </Field>
+              );
+            })}
+          </div>
+        </fieldset>
         <p className="text-xs text-fg-subtle">Modules and permissions are switched on the <Link href={`/tenants/${t.id}/access`} className="text-accent hover:underline">Features &amp; permissions</Link> page.</p>
       </div>
     </Dialog>

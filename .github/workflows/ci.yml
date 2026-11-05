@@ -189,6 +189,14 @@ jobs:
           node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
           pnpm e2e:platform-integrations
+      - name: Super Admin control of workspaces (apps, users, activity, attendance machines, subscription)
+        # Needs a console admin without MFA, so it runs on a fresh database; Web Portal and Console are still running.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
+          pnpm e2e:superadmin
       - name: Accessibility check (axe-core, WCAG 2.1 A and AA, light and dark)
         # Web Portal and Console are still running from the steps above; the script serves the mobile browser build.
         run: |

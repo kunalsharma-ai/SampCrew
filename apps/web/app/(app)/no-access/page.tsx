@@ -22,6 +22,16 @@ const REASONS: Record<string, { title: string; description: string; icon: React.
     description: 'SAMPLEDGE has switched this module off for your workspace. Your workspace owner can contact SAMPLEDGE support to turn it back on.',
     icon: <Lock className="size-6" />,
   },
+  feature_off_in_app: {
+    title: 'Not available in the Web Portal',
+    description: 'SAMPLEDGE has switched this module off in the Web Portal for your workspace. It may still be available in the CREW mobile app.',
+    icon: <Lock className="size-6" />,
+  },
+  app_switched_off: {
+    title: 'The Web Portal is switched off',
+    description: 'SAMPLEDGE has switched the Web Portal off for your workspace. Use the CREW mobile app, or ask your workspace owner to contact SAMPLEDGE support.',
+    icon: <Lock className="size-6" />,
+  },
   feature_not_for_member: {
     title: 'This module is not available to you',
     description: 'Your access to this module has been turned off for your account. Ask your workspace administrator if you need it for your work.',

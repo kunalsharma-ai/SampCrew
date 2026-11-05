@@ -1,19 +1,20 @@
 'use client';
 import type { MemberAccessRow, WorkspaceAccess } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardHeader, Dialog, EmptyState, Input, Switch, Table, TBody, TD, TH, THead, TR, cn } from '@crew/ui';
-import { Blocks, KeyRound, Search, Users } from 'lucide-react';
+import { Blocks, Globe, KeyRound, Search, Smartphone, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
-import { setMemberModulesAction, switchModulesAction, switchPermissionsAction } from '../../../actions';
+import { setMemberModulesAction, switchAppsAction, switchModulesAction, switchPermissionsAction } from '../../../actions';
 
-export type AccessTab = 'modules' | 'permissions' | 'people';
+export type AccessTab = 'modules' | 'apps' | 'permissions' | 'people';
 type Feature = WorkspaceAccess['features'][number];
 type Permission = WorkspaceAccess['permissions'][number];
 type Flash = { tone: 'success' | 'danger'; text: string } | null;
 
 const TABS: { key: AccessTab; label: string; icon: React.ReactNode }[] = [
   { key: 'modules', label: 'Modules', icon: <Blocks className="size-4" aria-hidden /> },
+  { key: 'apps', label: 'Web & mobile apps', icon: <Smartphone className="size-4" aria-hidden /> },
   { key: 'permissions', label: 'Permissions', icon: <KeyRound className="size-4" aria-hidden /> },
   { key: 'people', label: 'People', icon: <Users className="size-4" aria-hidden /> },
 ];
@@ -47,6 +48,7 @@ export function AccessView({ tenantId, tab, access, members, page, pageSize, q, 
         ))}
       </nav>
       {tab === 'modules' && <ModulesTab tenantId={tenantId} features={access.features} canManage={canManage} setFlash={setFlash} />}
+      {tab === 'apps' && <AppsTab tenantId={tenantId} access={access} canManage={canManage} setFlash={setFlash} />}
       {tab === 'permissions' && <PermissionsTab tenantId={tenantId} access={access} canManage={canManage} setFlash={setFlash} />}
       {tab === 'people' && (canManage && members
         ? <PeopleTab tenantId={tenantId} features={access.features} members={members} page={page} pageSize={pageSize} q={q} setFlash={setFlash} />
@@ -120,6 +122,65 @@ function ModulesTab({ tenantId, features, canManage, setFlash }: { tenantId: str
         </TBody>
       </Table>
     </Card>
+  );
+}
+
+/**
+ * Web Portal and mobile app: each can be switched off for the whole workspace (its open sessions end), and every
+ * module can be switched off in one app only. A module that is inactive for the workspace is off in both.
+ */
+function AppsTab({ tenantId, access, canManage, setFlash }: { tenantId: string; access: WorkspaceAccess; canManage: boolean; setFlash: (f: Flash) => void }) {
+  const { pending, run } = useSave(setFlash);
+  const c = access.channels;
+  const webOff = new Set(c.webOff);
+  const mobileOff = new Set(c.mobileOff);
+  const app = (key: 'web' | 'mobile', next: boolean) => {
+    const name = key === 'web' ? 'Web Portal' : 'mobile app';
+    if (!next && !confirm(`Switch the ${name} off for this workspace? ${c.liveSessions[key]} open ${key} session(s) end now and nobody can sign in to the ${name} until it is switched back on.`)) return;
+    run(() => switchAppsAction(tenantId, { [key]: next }));
+  };
+  const setModule = (key: string, web: boolean, mobile: boolean) => run(() => switchAppsAction(tenantId, { modules: [{ key, web, mobile }] }));
+  const switchable = access.features.filter((f) => !f.core);
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-2">
+        {([['web', 'Web Portal', 'CREW in the browser: HR, managers and employees.', <Globe key="w" className="size-5" />], ['mobile', 'Mobile app', 'CREW on Android and iPhone: attendance, leave, Ask HR, approvals.', <Smartphone key="m" className="size-5" />]] as const).map(([key, title, text, icon]) => (
+          <Card key={key} className="p-5" data-testid={`app-${key}`}>
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-subtle text-accent" aria-hidden>{icon}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-semibold">{title}</h3>
+                  <Switch checked={c[key]} label={`${title} on`} testId={`switch-app-${key}`} disabled={!canManage || pending} onChange={(next) => app(key, next)} />
+                </div>
+                <p className="mt-1 text-[13px] text-fg-muted">{text}</p>
+                <p className="mt-2 text-xs text-fg-subtle">{c[key] ? <>On · {c.liveSessions[key]} open session(s)</> : <span className="text-danger">Switched off: sign-in refused</span>}</p>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardHeader title="Modules in each app" description="Switch a module off in one app only, for example Payroll on the web but not on phones. Modules switched off for the workspace (Modules tab) are off in both apps." />
+        <Table aria-label="Modules in each app">
+          <THead><TR><TH>Module</TH><TH>Workspace</TH><TH className="text-right">Web Portal</TH><TH className="text-right">Mobile app</TH></TR></THead>
+          <TBody>
+            {switchable.map((f) => {
+              const web = !webOff.has(f.key);
+              const mobile = !mobileOff.has(f.key);
+              return (
+                <TR key={f.key} data-testid={`apps-module-${f.key}`}>
+                  <TD><div className="font-medium text-fg">{f.name}</div><div className="text-xs text-fg-subtle">{f.module}</div></TD>
+                  <TD>{f.effective ? <Badge tone="success">Active</Badge> : <Badge tone="neutral">Inactive</Badge>}</TD>
+                  <TD className="text-right"><Switch checked={f.effective && web} label={`${f.name} in the Web Portal`} testId={`switch-web-${f.key}`} disabled={!canManage || pending || !f.effective || !c.web} onChange={(next) => setModule(f.key, next, mobile)} /></TD>
+                  <TD className="text-right"><Switch checked={f.effective && mobile} label={`${f.name} in the mobile app`} testId={`switch-mobile-${f.key}`} disabled={!canManage || pending || !f.effective || !c.mobile} onChange={(next) => setModule(f.key, web, next)} /></TD>
+                </TR>
+              );
+            })}
+          </TBody>
+        </Table>
+      </Card>
+    </div>
   );
 }
 

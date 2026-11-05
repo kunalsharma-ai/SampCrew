@@ -1,8 +1,9 @@
-import type { MemberAccessRow, WorkspaceAccess } from '@crew/contracts';
+import { PLATFORM_ROLE_CAPABILITIES, type MemberAccessRow, type WorkspaceAccess } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load } from '@/lib/api';
+import { WorkspaceTabs } from '@/components/neon';
 import { hasCap } from '@/lib/caps';
 import type { Admin, TenantDetail } from '@/lib/types';
 import { AccessView, type AccessTab } from './access-view';
@@ -14,7 +15,7 @@ const PAGE_SIZE = 25;
 export default async function AccessPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; q?: string; page?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
-  const tab: AccessTab = sp.tab === 'permissions' || sp.tab === 'people' ? sp.tab : 'modules';
+  const tab: AccessTab = sp.tab === 'permissions' || sp.tab === 'people' || sp.tab === 'apps' ? sp.tab : 'modules';
   const [me, t, access] = await Promise.all([
     load<Admin>('/platform/auth/me'),
     load<TenantDetail>(`/platform/tenants/${id}`),
@@ -31,8 +32,9 @@ export default async function AccessPage({ params, searchParams }: { params: Pro
       <PageHeader
         eyebrow={<><Link href="/tenants" className="hover:underline">Workspaces</Link> / <Link href={`/tenants/${id}`} className="hover:underline">{t.name}</Link></>}
         title="Features & permissions"
-        description="Switch CREW modules and permissions active or inactive for this workspace, and choose which modules each person may use. The API enforces every switch, and the web and mobile apps hide what is off."
+        description="Switch CREW modules, the Web Portal and the mobile app, and permissions active or inactive for this workspace, and choose which modules each person may use. The API enforces every switch, and the web and mobile apps hide what is off."
       />
+      <WorkspaceTabs tenantId={id} current="access" caps={[...(PLATFORM_ROLE_CAPABILITIES[me.role] ?? [])]} />
       <AccessView tenantId={id} tab={tab} access={access} members={members} page={page} pageSize={PAGE_SIZE} q={q} canManage={canManage} />
     </>
   );

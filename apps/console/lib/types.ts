@@ -8,9 +8,12 @@ export interface TenantRow {
 export interface TenantDetail {
   id: string; name: string; slug: string; status: string; statusReason: string | null; region: string; countryCode: string; timezone: string; currency: string;
   isDemo: boolean; requireMfa: boolean; createdAt: string;
-  subscription: { plan: string; planName: string; status: string; billingCycle: string; seats: number; currency: string; unitPrice: string; trialEndsOn: string | null; currentPeriodEnd: string | null; featureOverrides: Record<string, boolean | number>; provider: string } | null;
+  subscription: { plan: string; planName: string; status: string; billingCycle: string; seats: number; currency: string; unitPrice: string; trialEndsOn: string | null; currentPeriodEnd: string | null; currentPeriodStart: string | null; cancelAtPeriodEnd: boolean; featureOverrides: Record<string, boolean | number>; provider: string } | null;
   activeMembers: number; pendingInvites: number; legalEntities: number; lastActivityAt: string | null; aiCreditsThisMonth: number;
   supportAccess: { id: string; reason: string; status: string; durationMinutes: number; createdAt: string; expiresAt: string | null; requestedBy: string }[];
 }
 
 export interface Page<T> { items: T[]; nextCursor: string | null }
+
+export interface PlanSummary { key: string; name: string; features: { key: string; limitValue: number | null }[] }
+export interface HistoryRow { id: string; action: string; actorLabel: string | null; changes: Record<string, unknown>; createdAt: string }

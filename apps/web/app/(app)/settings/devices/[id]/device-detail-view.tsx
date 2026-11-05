@@ -5,8 +5,8 @@ import { useState, useTransition } from 'react';
 import { ResourceDialog } from '@/components/resource-form';
 import type { ActionResult } from '@/lib/api';
 import type { DeviceDetail, DeviceMapping, Location } from '@/lib/types';
-import { archiveDeviceAction, mapUserAction, simulateAction, unmapAction, updateDeviceAction } from '../../../attendance/actions';
-import { DEVICE_STATUS_LABEL, VENDOR_LABEL, deviceFields } from '../devices-view';
+import { archiveDeviceAction, mapUserAction, rotateDeviceTokenAction, simulateAction, unmapAction, updateDeviceAction } from '../../../attendance/actions';
+import { DEVICE_STATUS_LABEL, PROTOCOL_LABEL, TokenDialog, VENDOR_LABEL, deviceFields } from '../devices-view';
 
 const SCENARIOS: { value: string; label: string; detail: string }[] = [
   { value: 'normal_day', label: 'Normal day', detail: 'Everyone mapped punches in around 08:50 and out around 18:05.' },
@@ -20,6 +20,7 @@ const STATUS_HELP: Record<string, string> = {
   delayed: 'The device has missed a few check-ins. Punches are kept on the device and sent when it reconnects.',
   offline: 'The device has stopped checking in. HR admins were notified. Check its power and network.',
   error: 'The last contact failed. See the error below.',
+  paused: 'SAMPLEDGE has paused this machine for your workspace, so CREW refuses what it sends. Punches stay on the machine. Contact SAMPLEDGE support to resume it.',
 };
 
 type Emp = { id: string; label: string };
@@ -30,6 +31,7 @@ export function DeviceDetailView({ device, mappings, employees, locations }: { d
   const [pending, start] = useTransition();
   const [notice, setNotice] = useState<Notice>(null);
   const [editing, setEditing] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
   const run = (fn: () => Promise<ActionResult<unknown>>, ok?: (d: unknown) => string) => start(async () => {
     const r = await fn();
     setNotice(r.ok ? { tone: 'success', text: ok ? ok(r.data) : r.message ?? 'Saved' } : { tone: 'danger', text: r.message });
@@ -39,6 +41,7 @@ export function DeviceDetailView({ device, mappings, employees, locations }: { d
   return (
     <div className="grid gap-6">
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
+      {device.status === 'paused' && <Alert tone="danger" title="Paused by SAMPLEDGE">{device.pausedReason ?? 'The integration for this make is switched off for your workspace.'}</Alert>}
       {device.simulated && <Alert tone="info" title="Simulated device">This device exists for testing. It sends demo punches through the same pipeline a real device uses, and refuses real pushes.</Alert>}
 
       <Card>
@@ -64,6 +67,7 @@ export function DeviceDetailView({ device, mappings, employees, locations }: { d
           {device.lastError && <Alert tone="danger" title="Last error">{device.lastError}{device.lastErrorAt ? ` (${new Date(device.lastErrorAt).toLocaleString()})` : ''}</Alert>}
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
             <Stat label="Make and model" value={`${VENDOR_LABEL[device.vendor] ?? device.vendor}${device.model ? ` ${device.model}` : ''}`} />
+            <Stat label="Connection" value={PROTOCOL_LABEL[device.protocol] ?? device.protocol} />
             <Stat label="Firmware" value={device.firmware ?? 'Not reported'} />
             <Stat label="Time zone" value={device.timeZone} />
             <Stat label="Check-in expected" value={`Every ${device.expectedIntervalSeconds}s`} />
@@ -73,15 +77,38 @@ export function DeviceDetailView({ device, mappings, employees, locations }: { d
             <Stat label="Last punch" value={device.lastPunchAt ? new Date(device.lastPunchAt).toLocaleString() : 'None yet'} />
             <Stat label="Users on device" value={device.reportedUserCount === null ? 'Not reported' : String(device.reportedUserCount)} />
             <Stat label="In/out from device" value={device.directionFromDevice ? 'Yes' : 'No, from punch order'} />
-            <Stat label="Allowed addresses" value={device.allowedIps.length ? device.allowedIps.join(', ') : 'Any (serial number only)'} />
+            <Stat label="Allowed addresses" value={device.allowedIps.length ? device.allowedIps.join(', ') : device.protocol === 'device_api' ? 'Any (token only)' : 'Any (serial number only)'} />
           </dl>
-          {!device.allowedIps.length && !device.simulated && (
+          {!device.allowedIps.length && !device.simulated && device.protocol === 'push_http' && (
             <Alert tone="warning">Any device that knows this serial number can send punches. Restrict it to your office's public address under Edit.</Alert>
           )}
         </CardBody>
       </Card>
 
-      {!device.simulated ? (
+      {!device.simulated && device.setup.protocol === 'device_api' ? (
+        <Card>
+          <CardHeader
+            title="Setup: CREW device API"
+            description="Point the machine's event forwarding, its vendor bridge or your middleware at these addresses. Each call carries the machine token."
+            action={<Button size="sm" variant="secondary" loading={pending} onClick={() => {
+              if (confirm('Issue a new token? The current one stops working at once.')) start(async () => {
+                const r = await rotateDeviceTokenAction(device.id);
+                if (r.ok && r.data) setToken(r.data.token); else if (!r.ok) setNotice({ tone: 'danger', text: r.message });
+              });
+            }}>New token</Button>}
+          />
+          <CardBody className="grid gap-4">
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+              <Stat label="Punches (POST)" value={device.setup.punchesUrl} mono />
+              <Stat label="Heartbeat (POST)" value={device.setup.heartbeatUrl} mono />
+              <Stat label="Token" value={device.setup.tokenHint ? `crewdev_…${device.setup.tokenHint}` : 'Not issued'} mono />
+              <Stat label="Header" value="Authorization: Bearer <token>" mono />
+            </dl>
+            <pre className="overflow-x-auto rounded-md bg-bg-subtle p-3 font-mono text-xs">{`{ "punches": [ { "userId": "101", "time": "2026-11-05 09:01:00", "direction": "in", "verify": "face", "id": "event-123" } ] }`}</pre>
+            <p className="text-xs text-fg-muted">Times without an offset are read in the machine&apos;s time zone ({device.timeZone}). Up to 500 punches per call; sending the same punch again is ignored.</p>
+          </CardBody>
+        </Card>
+      ) : !device.simulated && device.setup.protocol === 'push_http' ? (
         <Card>
           <CardHeader title="Setup on the device" description="On the device open Comm. or Cloud Server Setting (named ADMS on some models) and enter these values. The device then pushes punches to CREW by itself." />
           <CardBody>
@@ -121,6 +148,8 @@ export function DeviceDetailView({ device, mappings, employees, locations }: { d
         ) : <EmptyState title="Nothing received yet" description="Contacts appear here as soon as the device reaches CREW." />}
       </Card>
 
+      {token && <TokenDialog token={token} onClose={() => { setToken(null); router.refresh(); }} />}
+
       <ResourceDialog
         open={editing}
         onClose={() => setEditing(false)}
@@ -138,7 +167,7 @@ function Stat({ label, value, mono }: { label: string; value: string; mono?: boo
   return (
     <div>
       <dt className="text-xs text-fg-muted">{label}</dt>
-      <dd className={mono ? 'font-mono' : undefined}>{value}</dd>
+      <dd className={mono ? 'break-all font-mono' : undefined}>{value}</dd>
     </div>
   );
 }

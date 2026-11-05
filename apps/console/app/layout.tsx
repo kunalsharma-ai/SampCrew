@@ -18,17 +18,21 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
 
-const themeScript = `try{var t=localStorage.getItem('crew-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}`;
+// Light or dark, and the neon (default) or classic look, as each SAMPLEDGE admin last chose on this browser.
+const themeScript = `try{var d=document.documentElement,t=localStorage.getItem('crew-theme'),s=localStorage.getItem('crew-console-style');if(t==='light'||t==='dark')d.dataset.theme=t;if(s==='classic')d.dataset.style='classic'}catch(e){}`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // The script nonce for this request (middleware.ts); the Content Security Policy runs no inline script without it.
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-style="neon" data-backdrop="aurora" suppressHydrationWarning>
       <head>
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <div className="crew-ambient" aria-hidden />
+        {children}
+      </body>
     </html>
   );
 }

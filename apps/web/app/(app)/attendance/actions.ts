@@ -154,8 +154,15 @@ export async function swapResponseAction(id: string, action: 'accept' | 'decline
 export async function createDeviceAction(values: Record<string, unknown>) {
   const body = typed(values, { bools: ['simulated', 'directionFromDevice'], numbers: ['expectedIntervalSeconds'] });
   if (typeof body.allowedIps === 'string') body.allowedIps = body.allowedIps.split(/[\s,]+/).filter(Boolean);
-  const r = await act(() => api<{ id: string }>('/attendance/devices', { method: 'POST', body }));
+  if (body.protocol === '') delete body.protocol;
+  const r = await act(() => api<{ id: string; protocol: string; token?: string }>('/attendance/devices', { method: 'POST', body }));
   revalidatePath('/settings/devices');
+  return r;
+}
+
+export async function rotateDeviceTokenAction(id: string) {
+  const r = await act(() => api<{ id: string; token: string }>(`/attendance/devices/${id}/token`, { method: 'POST' }));
+  revalidatePath(`/settings/devices/${id}`);
   return r;
 }
 
