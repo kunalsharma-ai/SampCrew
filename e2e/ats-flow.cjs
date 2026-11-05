@@ -54,6 +54,8 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     const column = (name) => p.getByRole('region', { name, exact: true });
     const card = (name) => p.locator('[data-application]').filter({ has: p.getByRole('link', { name, exact: true }) });
     await column('Applied').getByRole('link', { name: 'Sneha Kulkarni' }).waitFor();
+    // Bring the board into view first: a drag that has to scroll the page to reach its drop target never lands.
+    await column('Screening').scrollIntoViewIfNeeded();
     await card('Sneha Kulkarni').dragTo(column('Screening'));
     await column('Screening').getByRole('link', { name: 'Sneha Kulkarni' }).waitFor();
     await p.reload();

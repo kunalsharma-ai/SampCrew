@@ -17,25 +17,15 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { applyAppearance } from '@/lib/appearance-client';
+import { ICONS } from '@/lib/icons';
 import type { NavGroup, NavItem, QuickAction } from '@/lib/nav';
 import type { Me, Notification } from '@/lib/types';
 import { paletteSearchAction, recordVisitAction, resetAppearanceAction, saveAppearanceAction, saveFavouritesAction, syncAppearanceCookieAction } from './experience-actions';
 import { IqPanel } from './iq-panel';
+import { ThemePanel } from './theme-panel';
 import { logoutAction, markAllNotificationsReadAction, markNotificationReadAction, switchTenantAction } from './shell-actions';
 
-export const ICONS: Record<string, LucideIcon> = {
-  home: Home, users: Users, building: Building2, shield: Shield, scroll: ScrollText, 'credit-card': CreditCard, settings: Settings, 'life-buoy': LifeBuoy, key: KeyRound,
-  inbox: Inbox, calendar: CalendarDays, 'list-checks': ListChecks, contact: Contact, sliders: SlidersHorizontal,
-  clock: Clock, 'calendar-clock': CalendarClock, 'users-round': UsersRound, timer: Timer, fingerprint: Fingerprint,
-  briefcase: Briefcase, 'user-search': UserSearch, 'message-square': MessageSquare,
-  'file-text': FileText, receipt: Receipt, wallet: Wallet, banknote: Banknote, landmark: Landmark,
-  target: Target, 'messages-square': MessagesSquare, 'graduation-cap': GraduationCap, 'clipboard-list': ClipboardList, heart: Heart,
-  'calendar-range': CalendarRange, 'book-open': BookOpen, chart: BarChart3,
-  headset: Headset, megaphone: Megaphone,
-  activity: Activity, bot: Bot, plug: Plug, sparkles: Sparkles, 'trending-down': TrendingDown, workflow: Workflow,
-  'lock-keyhole': LockKeyhole, 'user-x': UserX, palette: Palette, 'user-plus': UserPlus,
-  handshake: Handshake, 'building-office': Building, 'file-stack': FileStack, orbit: Orbit, tags: Tags,
-};
+export { ICONS };
 
 export interface Notifications { unread: number; items: Notification[] }
 
@@ -52,6 +42,10 @@ interface Experience {
   toggleFavourite: (href: string) => void;
   recents: MemberPreferences['recents'];
   setRecents: (r: MemberPreferences['recents']) => void;
+  /** Opens the Themes & Templates panel. */
+  openThemes: () => void;
+  /** Opens CREW IQ when the workspace has it. */
+  openAssistant: (() => void) | null;
 }
 const ExperienceContext = createContext<Experience | null>(null);
 export function useExperience() {
@@ -60,7 +54,7 @@ export function useExperience() {
   return x;
 }
 
-function useExperienceState(prefs: MemberPreferences | null, cookieAppearance: Appearance): Experience {
+function useExperienceState(prefs: MemberPreferences | null, cookieAppearance: Appearance): Omit<Experience, 'openThemes' | 'openAssistant'> {
   const [appearance, setAppearance] = useState<Appearance>(prefs?.appearance ?? cookieAppearance);
   const [favourites, setFavourites] = useState<string[]>(prefs?.favourites ?? []);
   const [recents, setRecents] = useState<MemberPreferences['recents']>(prefs?.recents ?? []);
@@ -142,12 +136,16 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const experience = useExperienceState(prefs, cookieAppearance);
+  const [themesOpen, setThemesOpen] = useState(false);
+  const [iqOpen, setIqOpen] = useState(false);
+  const hasIq = me.features.includes('crew_iq');
+  const state = useExperienceState(prefs, cookieAppearance);
+  const openThemes = useCallback(() => setThemesOpen(true), []);
+  const openAssistant = useCallback(() => setIqOpen(true), []);
+  const experience = useMemo<Experience>(() => ({ ...state, openThemes, openAssistant: hasIq ? openAssistant : null }), [state, openThemes, openAssistant, hasIq]);
   const { appearance, update } = experience;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [iqOpen, setIqOpen] = useState(false);
-  const hasIq = me.features.includes('crew_iq');
   const collapsed = appearance.sidebar === 'collapsed';
   const allItems = useMemo(() => nav.flatMap((g) => g.items), [nav]);
   const allHrefs = allItems.map((i) => i.href);
@@ -200,32 +198,32 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
     <ExperienceContext.Provider value={experience}>
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:shadow-pop">Skip to content</a>
       <div className="flex min-h-dvh">
-        <aside className={cn('crew-glass sticky top-0 hidden h-dvh shrink-0 border-r border-border transition-[width] duration-200 lg:block', collapsed ? 'w-[4.5rem]' : 'w-64')}>{sidebar(collapsed)}</aside>
+        <aside className={cn('crew-glass crew-sidebar sticky top-0 hidden h-dvh shrink-0 border-r border-border transition-[width] duration-200 lg:block', collapsed ? 'w-[4.5rem]' : 'w-64')}>{sidebar(collapsed)}</aside>
         {mobileOpen && (
           <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
             <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-            <aside className="absolute inset-y-0 left-0 w-72 bg-surface shadow-pop animate-slide-up">
+            <aside className="crew-sidebar absolute inset-y-0 left-0 w-72 bg-surface shadow-pop animate-slide-up">
               <button className="absolute right-3 top-4 z-10 rounded-md p-1 text-fg-subtle hover:bg-bg-subtle" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X className="size-4" /></button>
               {sidebar(false)}
             </aside>
           </div>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="crew-glass sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border px-3 sm:gap-3 sm:px-6">
+          <header className="crew-glass crew-topbar sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border px-3 sm:gap-3 sm:px-6">
             <button className="rounded-md p-1.5 text-fg-muted hover:bg-bg-subtle lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu className="size-5" /></button>
             <button
               onClick={() => setPaletteOpen(true)}
-              className="flex h-9 w-full max-w-md items-center gap-2 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] text-fg-subtle shadow-card transition-colors hover:border-border-strong"
+              className="crew-search flex h-9 w-full max-w-md items-center gap-2 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] text-fg-subtle shadow-card transition-colors hover:border-border-strong"
             >
               <Search className="size-4" aria-hidden />
-              <span className="flex-1 truncate text-left">Search people, pages and actions…</span>
+              <span className="flex-1 truncate text-left">Search employees, candidates, pages…</span>
               <span className="hidden sm:inline"><Kbd>Ctrl</Kbd> <Kbd>K</Kbd></span>
             </button>
             <div className="ml-auto flex items-center gap-1">
               {me.subscription?.status === 'trialing' && me.subscription.trialEndsOn && (
                 <Badge tone="info" className="mr-1 hidden xl:inline-flex">Trial until {new Date(me.subscription.trialEndsOn).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Badge>
               )}
-              {hasIq && <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} className="mr-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-2.5 text-[0.8125rem] font-medium shadow-card hover:border-accent/50" title="CREW IQ (Ctrl+J)">
+              {hasIq && <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} className="crew-ai-button mr-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] font-semibold shadow-card hover:border-accent/50" title="CREW IQ, your AI HR assistant (Ctrl+J)">
                 <Sparkles className="size-4 text-accent" aria-hidden /><span className="hidden sm:inline">CREW IQ</span><span className="sr-only sm:hidden">CREW IQ</span>
               </button>}
               {quick.length > 0 && <QuickCreate actions={quick} />}
@@ -237,11 +235,13 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               {me.permissions['leave:request'] && me.features.includes('leave') && <Link href="/leave" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="Leave calendar" title="Leave calendar"><CalendarDays className="size-4" /></Link>}
               {notifications && <NotificationBell data={notifications} />}
               <ThemeMenu />
+              <HeaderUser me={me} />
             </div>
           </header>
           <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
         </div>
         {hasIq && <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />}
+        <ThemePanel open={themesOpen} onClose={() => setThemesOpen(false)} appearance={appearance} update={update} />
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} nav={nav} me={me} quick={quick} workflows={workflows} />
       </div>
     </ExperienceContext.Provider>
@@ -283,12 +283,12 @@ function Sidebar({ me, nav, counts, rail, pathname, allHrefs, onCollapse }: { me
           aria-current={active ? 'page' : undefined}
           title={rail ? item.label : undefined}
           className={cn(
-            'relative flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[0.84rem] transition-colors duration-150',
+            'crew-nav-link relative flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[0.84rem] transition-colors duration-150',
             rail && 'justify-center px-0 py-2',
             active ? 'bg-accent-subtle font-medium text-accent' : 'text-fg-muted hover:bg-bg-subtle hover:text-fg',
           )}
         >
-          {active && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent" aria-hidden />}
+          {active && <span className="crew-nav-bar absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent" aria-hidden />}
           <Icon className="size-4 shrink-0" aria-hidden />
           {rail ? <span className="sr-only">{item.label}</span> : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
           {count ? <span className={cn('rounded-full bg-accent px-1.5 text-[0.625rem] font-semibold leading-4 text-accent-fg tabular', rail && 'absolute right-1 top-0.5')} aria-label={`${count} waiting`}>{count > 99 ? '99+' : count}</span> : null}
@@ -347,8 +347,34 @@ function Sidebar({ me, nav, counts, rail, pathname, allHrefs, onCollapse }: { me
         })}
         {q && !groups.length && <p className="px-2 text-[0.8125rem] text-fg-subtle">Nothing in the menu matches “{filter}”.</p>}
       </div>
+      {!rail && <UpgradeCard me={me} />}
       <UserMenu me={me} rail={rail} />
     </nav>
+  );
+}
+
+/** Shown in the neon sidebar to people who can see billing, when a higher plan exists. Links to the real plans page. */
+function UpgradeCard({ me }: { me: Me }) {
+  if (!me.permissions['billing:read'] || !me.subscription || me.subscription.plan === 'enterprise') return null;
+  return (
+    <Link href="/settings/billing" className="crew-upgrade mx-1 rounded-xl border border-border bg-bg-subtle p-3 text-[0.8125rem] hover:border-border-strong">
+      <span className="flex items-center gap-1.5 font-semibold text-fg"><Sparkles className="size-4 text-warning" aria-hidden /> Upgrade your plan</span>
+      <span className="mt-0.5 block text-[0.75rem] text-fg-muted">You are on {me.subscription.plan[0]!.toUpperCase()}{me.subscription.plan.slice(1)}. Compare plans and features.</span>
+    </Link>
+  );
+}
+
+/** Greeting chip on the right of the top bar (wide screens), linking to the member's appearance and profile. */
+function HeaderUser({ me }: { me: Me }) {
+  const role = me.membership.roles.find((r) => r.key !== 'employee') ?? me.membership.roles[0];
+  return (
+    <Link href="/settings/appearance" className="ml-1 hidden items-center gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-bg-subtle xl:flex" title="Your appearance and profile">
+      <Avatar name={me.user.fullName} size={32} />
+      <span className="flex flex-col leading-tight">
+        <span className="text-[0.8125rem] font-semibold">Hi, {me.user.fullName.split(' ')[0]}</span>
+        <span className="text-[0.6875rem] text-fg-subtle">{role?.name}</span>
+      </span>
+    </Link>
   );
 }
 
@@ -530,7 +556,7 @@ export function PresetSwatch({ preset, mode, size = 'sm' }: { preset: string; mo
 }
 
 function ThemeMenu() {
-  const { appearance, update } = useExperience();
+  const { appearance, update, openThemes } = useExperience();
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ModeIcon = appearance.mode === 'light' ? Sun : appearance.mode === 'dark' ? Moon : Monitor;
@@ -562,8 +588,11 @@ function ThemeMenu() {
           <Focus className="size-4 text-accent" /> <span className="flex-1">Focus mode</span>
           <span className={cn('h-4 w-7 rounded-full p-0.5 transition-colors', appearance.focusMode ? 'bg-accent' : 'bg-border-strong')}><span className={cn('block size-3 rounded-full bg-white transition-transform', appearance.focusMode && 'translate-x-3')} /></span>
         </button>
-        <Link href="/settings/appearance" onClick={close} className="flex items-center gap-2 rounded-lg px-2 py-2 text-[0.8125rem] text-accent hover:bg-bg-subtle">
-          <Palette className="size-4" /> <span className="flex-1">Open Theme Studio</span> <ArrowRight className="size-3.5" />
+        <button type="button" onClick={() => { close(); openThemes(); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[0.8125rem] font-medium text-accent hover:bg-bg-subtle">
+          <Palette className="size-4" /> <span className="flex-1">Themes &amp; Templates</span> <ArrowRight className="size-3.5" />
+        </button>
+        <Link href="/settings/appearance" onClick={close} className="flex items-center gap-2 rounded-lg px-2 py-2 text-[0.8125rem] text-fg-muted hover:bg-bg-subtle hover:text-fg">
+          <SlidersHorizontal className="size-4" /> <span className="flex-1">Open Theme Studio</span> <ArrowRight className="size-3.5" />
         </Link>
       </Popover>
     </div>

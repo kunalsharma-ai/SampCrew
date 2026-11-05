@@ -52,3 +52,4 @@ export * from './lenses';
 export * from './safe-path';
 export * from './csp';
 export * from './platform-integrations';
+export * from './overview';

@@ -1,6 +1,7 @@
 import { Alert, Card, CardHeader, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { ApiError, api, load } from '@/lib/api';
+import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
 import type { LeaveBalance, LeaveRequest, Me } from '@/lib/types';
 import { BalanceCards } from '../employees/[id]/tabs';
@@ -34,6 +35,12 @@ export default async function LeavePage() {
   return (
     <>
       <PageHeader title="Leave" description={`Your balances for ${balances.year}, requests and approvals.`} actions={can(me, 'leave:request') && <ApplyLeave balances={balances.balances} />} />
+      <ModuleOverview module="leave" actions={allowed(me, [
+        { label: 'Apply leave', href: '/leave?create=leave', icon: 'calendar', permission: 'leave:request' },
+        { label: 'Approve requests', href: '/approvals', icon: 'check', permission: 'leave:approve' },
+        { label: 'Team attendance', href: '/attendance/team?status=on_leave', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },
+        { label: 'Leave policy', href: '/settings/leave', icon: 'sliders', permission: 'leave:configure' },
+      ])} />
       <div className="grid gap-6">
         <BalanceCards balances={balances.balances} />
         <Card>

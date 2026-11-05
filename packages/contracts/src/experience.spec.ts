@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_APPEARANCE, THEME_PRESETS, THEME_TOKENS, appearanceAttributes, appearancePatch, appPath, buildTheme, contrast, dashboardLayoutInput,
-  normaliseAppearance, resolveLayout, themeStylesheet,
+  normaliseAppearance, PALETTE_SWATCHES, resolveLayout, THEME_TEMPLATES, themeStylesheet,
 } from './experience';
 
 describe('theme presets', () => {
-  it('ships the twelve named presets', () => {
+  it('ships the thirteen named presets', () => {
     expect(THEME_PRESETS.map((p) => p.name)).toEqual([
       'Midnight Intelligence', 'Aurora Glass', 'Executive Pearl', 'Graphite Elite', 'Oceanic Intelligence', 'Emerald Command',
-      'Royal Amethyst', 'Sunset Fusion', 'Arctic Frost', 'Copper Executive', 'Rose Quartz', 'Monochrome Precision',
+      'Royal Amethyst', 'Sunset Fusion', 'Arctic Frost', 'Copper Executive', 'Rose Quartz', 'Monochrome Precision', 'Cyber Neon',
     ]);
   });
 
@@ -55,6 +55,21 @@ describe('theme presets', () => {
 describe('appearance preferences', () => {
   it('defaults to Midnight Intelligence, comfortable density and balanced motion', () => {
     expect(DEFAULT_APPEARANCE).toMatchObject({ preset: 'midnight', mode: 'system', density: 'comfortable', motion: 'balanced', focusMode: false });
+  });
+
+  it('defaults to the neon style with the aurora backdrop, and keeps older saved preferences working', () => {
+    expect(DEFAULT_APPEARANCE).toMatchObject({ style: 'neon', backdrop: 'aurora' });
+    // A preference saved before the neon design has no style or backdrop: it gets the defaults.
+    expect(normaliseAppearance({ preset: 'rose', mode: 'dark' })).toMatchObject({ preset: 'rose', style: 'neon', backdrop: 'aurora' });
+    expect(appearancePatch.safeParse({ style: 'classic', backdrop: 'cosmos' }).success).toBe(true);
+    expect(appearancePatch.safeParse({ style: 'glossy' }).success).toBe(false);
+    expect(appearanceAttributes({ ...DEFAULT_APPEARANCE, style: 'classic', backdrop: 'plain' })).toMatchObject({ 'data-style': 'classic', 'data-backdrop': 'plain' });
+  });
+
+  it('ships templates that are valid appearance updates', () => {
+    expect(THEME_TEMPLATES.map((t) => t.name)).toEqual(['Corporate Modern', 'Creative Gradient', 'Dark Elegant', 'Minimal Clean', 'Nature Fresh', 'Tech Futuristic']);
+    for (const t of THEME_TEMPLATES) expect(appearancePatch.safeParse(t.patch).success, t.key).toBe(true);
+    for (const c of PALETTE_SWATCHES) expect(appearancePatch.safeParse({ primary: c }).success, c).toBe(true);
   });
 
   it('normalises stored values field by field', () => {

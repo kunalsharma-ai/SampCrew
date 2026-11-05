@@ -11,7 +11,7 @@ import { z } from 'zod';
 // ---------------------------------------------------------------------------------------------------------------
 
 export const THEME_PRESET_KEYS = [
-  'midnight', 'aurora', 'pearl', 'graphite', 'oceanic', 'emerald', 'amethyst', 'sunset', 'arctic', 'copper', 'rose', 'monochrome',
+  'midnight', 'aurora', 'pearl', 'graphite', 'oceanic', 'emerald', 'amethyst', 'sunset', 'arctic', 'copper', 'rose', 'monochrome', 'cyber',
 ] as const;
 export type ThemePresetKey = (typeof THEME_PRESET_KEYS)[number];
 
@@ -64,6 +64,9 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
   preset('monochrome', 'Monochrome Precision', 'Black, white and neutral grey',
     { primary: '#111111', secondary: '#525252', tertiary: '#262626', neutral: { bg: '#f6f6f6', surface: '#ffffff', fg: '#0a0a0a' } },
     { primary: '#f5f5f5', secondary: '#a3a3a3', tertiary: '#e5e5e5', neutral: { bg: '#0a0a0a', surface: '#161616', fg: '#fafafa' } }),
+  preset('cyber', 'Cyber Neon', 'Electric magenta, violet and cyan',
+    { primary: '#a21caf', secondary: '#6d28d9', tertiary: '#0891b2', neutral: { bg: '#f8f4fe', surface: '#ffffff', fg: '#1b0f33' } },
+    { primary: '#e879f9', secondary: '#a78bfa', tertiary: '#22d3ee', neutral: { bg: '#0a0618', surface: '#150d2c', fg: '#f5efff' } }),
 ];
 
 export const presetByKey = (key: string): ThemePreset => THEME_PRESETS.find((p) => p.key === key) ?? THEME_PRESETS[0]!;
@@ -90,12 +93,34 @@ export const appearanceSchema = z.object({
   tableDensity: z.enum(['compact', 'comfortable']),
   chartPalette: z.enum(['theme', 'colorblind', 'monochrome']),
   focusMode: z.boolean(),
+  /** Visual style: "neon" is the glass and gradient design (default); "classic" is the flat original look. */
+  style: z.enum(['neon', 'classic']),
+  /** Background art behind the app in the neon style. */
+  backdrop: z.enum(['aurora', 'cosmos', 'gradient', 'plain']),
 });
 export type Appearance = z.infer<typeof appearanceSchema>;
 export const DEFAULT_APPEARANCE: Appearance = {
   preset: 'midnight', mode: 'system', primary: null, secondary: null, accent: null, contrast: 'standard', density: 'comfortable', motion: 'balanced',
   radius: 'default', fontSize: 'default', sidebar: 'expanded', sidebarStyle: 'glass', tableDensity: 'comfortable', chartPalette: 'theme', focusMode: false,
+  style: 'neon', backdrop: 'aurora',
 };
+
+/** Colour palette swatches offered in the Themes panel: each sets the primary colour (null keeps the preset's own). */
+export const PALETTE_SWATCHES = ['#7c3aed', '#2563eb', '#0d9488', '#ea580c', '#db2777', '#4f46e5'] as const;
+
+/**
+ * Ready-made looks in the Themes panel. Each is just a set of appearance fields, saved to the member's preferences
+ * like any other change, so a template can be tweaked afterwards.
+ */
+export interface ThemeTemplate { key: string; name: string; description: string; patch: Partial<Appearance> }
+export const THEME_TEMPLATES: readonly ThemeTemplate[] = [
+  { key: 'corporate-modern', name: 'Corporate Modern', description: 'Calm blues on light glass', patch: { preset: 'pearl', mode: 'light', style: 'neon', backdrop: 'aurora', primary: null, radius: 'default' } },
+  { key: 'creative-gradient', name: 'Creative Gradient', description: 'Violet and pink with a colour wash', patch: { preset: 'amethyst', mode: 'light', style: 'neon', backdrop: 'gradient', primary: '#7c3aed', radius: 'round' } },
+  { key: 'dark-elegant', name: 'Dark Elegant', description: 'Deep night with neon edges', patch: { preset: 'midnight', mode: 'dark', style: 'neon', backdrop: 'cosmos', primary: null, radius: 'default' } },
+  { key: 'minimal-clean', name: 'Minimal Clean', description: 'Flat, quiet and high contrast', patch: { preset: 'monochrome', mode: 'light', style: 'classic', backdrop: 'plain', primary: null, radius: 'sharp' } },
+  { key: 'nature-fresh', name: 'Nature Fresh', description: 'Emerald and mint', patch: { preset: 'emerald', mode: 'light', style: 'neon', backdrop: 'aurora', primary: null, radius: 'round' } },
+  { key: 'tech-futuristic', name: 'Tech Futuristic', description: 'Magenta and cyan on deep violet', patch: { preset: 'cyber', mode: 'dark', style: 'neon', backdrop: 'cosmos', primary: null, radius: 'default' } },
+];
 
 /** Partial update: any subset of fields; unknown fields are refused. */
 export const appearancePatch = appearanceSchema.partial().strict();
@@ -287,6 +312,8 @@ export function appearanceAttributes(a: Appearance): Record<string, string> {
     'data-contrast': a.contrast,
     'data-table': a.tableDensity,
     'data-sidebar-style': a.sidebarStyle,
+    'data-style': a.style,
+    'data-backdrop': a.backdrop,
     ...(a.focusMode ? { 'data-focus': 'on' } : {}),
   };
 }

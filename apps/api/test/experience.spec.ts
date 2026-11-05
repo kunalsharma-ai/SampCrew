@@ -145,6 +145,66 @@ describe('workspace experience', () => {
     });
   });
 
+  describe('module overviews', () => {
+    const tile = (o: Record<string, any>, key: string) => (o.tiles as { key: string; value: number | null }[]).find((x) => x.key === key);
+    const chart = (o: Record<string, any>, key: string) => (o.charts as { key: string }[]).find((x) => x.key === key) as Record<string, any> | undefined;
+
+    it('gives HR live workforce numbers for the whole workspace', async () => {
+      const o = ok(await as('hr').get('/dashboard/modules/employees'));
+      expect(o.module).toBe('employees');
+      expect(tile(o, 'total')?.value).toBe(3);
+      expect(tile(o, 'upcoming')?.value).toBe(0);
+      expect(chart(o, 'headcount')!.points).toHaveLength(6);
+      expect(chart(o, 'headcount')!.points.at(-1).value).toBe(3);
+      expect(chart(o, 'departments')!.slices.map((x: { label: string }) => x.label).sort()).toEqual(['Operations', 'Sales']);
+      const a = ok(await as('hr').get('/dashboard/modules/analytics'));
+      expect(tile(a, 'headcount')?.value).toBe(3);
+      expect(tile(a, 'attrition')?.value).toBe(0);
+      expect(chart(a, 'insights')!.items.length).toBeGreaterThan(0);
+    });
+
+    it('limits a department manager to their department, with the same scope as the lists', async () => {
+      const o = ok(await as('manager').get('/dashboard/modules/employees'));
+      expect(tile(o, 'total')?.value).toBe(2);
+      expect(chart(o, 'departments')!.slices).toEqual([expect.objectContaining({ label: 'Operations', value: 2 })]);
+    });
+
+    it('refuses people whose access covers only their own record', async () => {
+      for (const m of ['employees', 'leave', 'performance', 'analytics']) expect((await as('sam').get(`/dashboard/modules/${m}`)).status, m).toBe(403);
+    });
+
+    it('never counts another workspace', async () => {
+      const o = ok(await as('stranger').get('/dashboard/modules/employees'));
+      expect(tile(o, 'total')?.value).toBe(0);
+    });
+
+    it('answers every module for HR with tiles from live records', async () => {
+      for (const m of ['recruitment', 'attendance', 'leave', 'performance', 'learning']) {
+        const o = ok(await as('hr').get(`/dashboard/modules/${m}`));
+        expect(o.tiles.length, m).toBeGreaterThan(0);
+        for (const x of o.tiles) expect(['violet', 'teal', 'orange', 'blue', 'pink', 'green']).toContain(x.tone);
+      }
+      const r = ok(await as('hr').get('/dashboard/modules/recruitment'));
+      expect(tile(r, 'jobs')?.value).toBe(0);
+      const l = ok(await as('hr').get('/dashboard/modules/learning'));
+      expect(tile(l, 'completion')?.value).toBeNull();
+    });
+
+    it('rejects an unknown module', async () => {
+      expect((await as('hr').get('/dashboard/modules/secrets')).status).toBe(422);
+    });
+  });
+
+  describe('neon design preferences', () => {
+    it('defaults to the neon style and saves the style and background', async () => {
+      expect(ok(await as('manager').get('/me/preferences')).appearance).toMatchObject({ style: 'neon', backdrop: 'aurora' });
+      const p = ok(await as('manager').put('/me/preferences/appearance').send({ style: 'classic', backdrop: 'cosmos', preset: 'cyber' }));
+      expect(p.appearance).toMatchObject({ style: 'classic', backdrop: 'cosmos', preset: 'cyber' });
+      expect(ok(await as('manager').get('/me/preferences')).appearance).toMatchObject({ style: 'classic', backdrop: 'cosmos', preset: 'cyber' });
+      expect((await as('manager').put('/me/preferences/appearance').send({ backdrop: 'lava' })).status).toBe(422);
+    });
+  });
+
   describe('saved views', () => {
     const state = { filters: { status: 'active' }, sort: 'joined', dir: 'desc', columns: ['name', 'department'], density: 'compact' };
     it('saves, renames, defaults and deletes views, one default per list', async () => {

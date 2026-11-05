@@ -26,7 +26,7 @@ const BLOCKING = new Set(['serious', 'critical']);
 
 const pages = {
   public: ['/login', '/signup', '/careers/northwind-demo'],
-  'uk.hr@demo.crew.local': ['/', '/people', '/leave', '/attendance', '/approvals', '/helpdesk', '/organization', '/settings/workspace', '/settings/appearance'],
+  'uk.hr@demo.crew.local': ['/', '/people', '/employees', '/insights', '/reviews', '/learning', '/leave', '/attendance', '/approvals', '/helpdesk', '/organization', '/settings/workspace', '/settings/appearance'],
   'operator1@demo.crew.local': ['/', '/payslips', '/leave', '/attendance', '/helpdesk', '/goals'],
 };
 

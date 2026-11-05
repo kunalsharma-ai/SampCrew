@@ -51,7 +51,7 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
     // 1. Headcount adds up.
     await p.goto(BASE + '/employees');
-    await p.getByRole('link', { name: 'Workforce Universe' }).click();
+    await p.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Workforce Universe' }).click();
     await p.waitForURL(/\/insights\/universe/);
     await p.getByRole('radio', { name: '2D table' }).click();
     const table = p.getByRole('table');

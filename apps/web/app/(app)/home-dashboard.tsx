@@ -3,11 +3,12 @@ import { resolveLayout, type DashboardLayout, type DashboardWidget } from '@crew
 import { Badge, Button, Card, CardBody, CardHeader, Textarea, buttonClass, cn } from '@crew/ui';
 import {
   ArrowDown, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, CalendarClock, CheckCircle2, Circle, ClipboardCheck, Eye, EyeOff, GripVertical, History, Inbox,
-  LayoutGrid, LifeBuoy, NotebookPen, ShieldCheck, Sparkles, UserCheck, Wallet, Zap,
+  LayoutGrid, LifeBuoy, NotebookPen, Palette, ShieldCheck, Sparkles, UserCheck, Wallet, Zap, Bot, CalendarDays,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
+import { ChartPanel, DonutChart, LineChart } from '@/components/neon';
 import type { QuickAction } from '@/lib/nav';
 import { decideApprovalAction, saveDashboardAction, saveNotesAction } from './experience-actions';
 import { dateTime } from './helpdesk/labels';
@@ -50,6 +51,7 @@ export function HomeDashboard(props: {
   actions: QuickAction[];
 }) {
   const { dashboard: d } = props;
+  const { openThemes, openAssistant } = useExperience();
   const [layout, setLayout] = useState(() => resolveLayout(props.layout));
   const [editing, setEditing] = useState(false);
   const [saving, startSaving] = useTransition();
@@ -62,7 +64,7 @@ export function HomeDashboard(props: {
       case 'announcements': return Boolean(props.news?.length);
       case 'helpdesk': return Boolean(props.helpdesk);
       case 'setup': return props.steps.length > 0;
-      case 'headcount': return Boolean(d && (d.departments || d.funnel || d.attendance));
+      case 'headcount': return Boolean(d && (d.funnel || d.attendance));
       case 'attention': case 'tasks': return Boolean(d);
       default: return true;
     }
@@ -110,18 +112,20 @@ export function HomeDashboard(props: {
 
   return (
     <>
-      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between animate-fade-in">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between animate-fade-in">
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-accent">
             {props.tenantName}
             {d && <span className="inline-flex items-center gap-1 rounded-full bg-success-subtle px-2 py-0.5 text-[0.625rem] normal-case tracking-normal text-success"><span className="size-1.5 rounded-full bg-success" aria-hidden /> Live, updated {new Date(d.generatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>}
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-fg">{props.welcome ? `Welcome to CREW, ${props.firstName}` : <>{greeting}, <span className="crew-gradient-text">{props.firstName}</span></>}</h1>
+          <h1 className="crew-hero-title text-2xl font-semibold tracking-tight text-fg">{props.welcome ? `Welcome to CREW, ${props.firstName}` : <><span aria-hidden>👋 </span>{greeting}, <span className="crew-gradient-text">{props.firstName}!</span></>}</h1>
           <p className="mt-1 max-w-2xl text-sm text-fg-muted">
             {props.welcome ? 'Your workspace is ready. Start by shaping your organization, then invite your team.' : d?.attention.length ? `${d.attention.length} item${d.attention.length === 1 ? '' : 's'} need${d.attention.length === 1 ? 's' : ''} you today.` : 'You are all caught up. Here is where your workspace stands today.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {d && <span className="crew-card inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-[0.75rem] font-medium text-fg-muted"><CalendarDays className="size-3.5" aria-hidden />{new Date(`${d.today}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>}
+          {!editing && <Button variant="secondary" size="sm" onClick={openThemes}><Palette className="size-3.5" /> Themes</Button>}
           {saved && !editing && <span className="text-xs text-fg-subtle" role="status">{saved}</span>}
           {editing ? (
             <>
@@ -135,6 +139,7 @@ export function HomeDashboard(props: {
       </div>
 
       {d && d.kpis.length > 0 && <KpiStrip kpis={d.kpis} />}
+      {d && <Spotlight d={d} actions={props.actions} openAssistant={openAssistant} />}
       {!d && <Card className="mb-6 p-5 text-[0.8125rem] text-fg-muted">The dashboard could not load just now. Your pages in the menu still work.</Card>}
 
       {editing && <p className="mb-3 text-[0.8125rem] text-fg-muted">Drag widgets to reorder them, or use the arrow buttons. Hidden widgets stay here while you edit.</p>}
@@ -198,46 +203,124 @@ function formatKpi(k: Kpi, v: number) {
   return Math.round(v).toLocaleString();
 }
 
-function Sparkline({ points }: { points: number[] }) {
-  if (points.length < 2) return null;
-  const max = Math.max(...points);
-  const min = Math.min(...points);
-  const span = max - min || 1;
-  const xy = points.map((p, i) => [(i / (points.length - 1)) * 100, 28 - ((p - min) / span) * 24] as const);
-  const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  return (
-    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="h-7 w-full" aria-hidden>
-      <path d={`${line} L100,30 L0,30 Z`} className="fill-accent/10" />
-      <path d={line} className="fill-none stroke-accent" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-}
+const TONES = ['violet', 'teal', 'orange', 'blue', 'pink', 'green'] as const;
+const KPI_ICON: Record<string, string> = {
+  headcount: 'users', active: 'contact', 'new-hires': 'user-plus', attrition: 'trending-down', 'open-positions': 'briefcase', pipeline: 'user-search',
+  attendance: 'fingerprint', approvals: 'inbox', payroll: 'wallet',
+};
 
-function KpiCard({ k }: { k: Kpi }) {
+function KpiCard({ k, tone }: { k: Kpi; tone: (typeof TONES)[number] }) {
   const v = useCountUp(k.value);
+  const Icon = ICONS[KPI_ICON[k.key] ?? 'chart'] ?? Sparkles;
+  const bad = k.key === 'attrition';
   const inner = (
     <>
-      <div className="flex items-center justify-between gap-2 text-[0.75rem] text-fg-muted"><span className="truncate">{k.label}</span>{k.href && <ArrowRight className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-[1.5rem] font-semibold leading-tight tracking-tight tabular text-fg">{formatKpi(k, v)}</span>
+      <div className="relative flex items-start gap-3">
+        <span className="crew-tile-icon flex size-10 shrink-0 items-center justify-center rounded-xl"><Icon className="size-5" aria-hidden /></span>
+        <div className="flex min-w-0 flex-1 flex-col-reverse">
+          <div className="crew-tile-muted truncate text-[0.8125rem] font-medium">{k.label}</div>
+          <div className="text-[1.6rem] font-bold leading-tight tabular">{formatKpi(k, v)}</div>
+        </div>
+      </div>
+      <div className="relative mt-2 flex min-h-5 items-center justify-between gap-2 text-[0.6875rem]">
+        <span className="crew-tile-muted truncate">{k.hint}</span>
         {typeof k.delta === 'number' && k.delta !== 0 && (
-          <span className={cn('inline-flex items-center text-[0.6875rem] font-medium', k.delta > 0 ? 'text-success' : 'text-danger')}>
+          <span className="crew-tile-chip inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 font-semibold tabular" aria-label={`Change ${k.delta > 0 ? '+' : ''}${k.delta}${(k.delta > 0) !== bad ? ', better' : ', worse'}`}>
             {k.delta > 0 ? <ArrowUpRight className="size-3" aria-hidden /> : <ArrowDownRight className="size-3" aria-hidden />}{k.delta > 0 ? '+' : ''}{k.delta}
           </span>
         )}
       </div>
-      {k.trend && k.trend.length > 1 ? <Sparkline points={k.trend} /> : <div className="mt-0.5 truncate text-[0.6875rem] text-fg-subtle">{k.hint}</div>}
-      {k.trend && k.trend.length > 1 && <div className="truncate text-[0.6875rem] text-fg-subtle">{k.hint}</div>}
     </>
   );
-  const cls = 'group crew-edge block rounded-xl border border-border bg-surface px-4 py-3 shadow-card transition-colors hover:border-border-strong';
-  return k.href ? <Link href={k.href} className={cls} title={k.hint}>{inner}</Link> : <div className={cls}>{inner}</div>;
+  const cls = cn('crew-tile group block p-4 transition-transform duration-150', `crew-tile-${tone}`, k.href && 'hover:-translate-y-0.5');
+  return k.href ? <Link href={k.href} className={cls} title={k.hint}>{inner}</Link> : <div className={cls} role="group">{inner}</div>;
 }
 
 function KpiStrip({ kpis }: { kpis: Kpi[] }) {
   return (
-    <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-8" aria-label="Key figures">
-      {kpis.map((k) => <KpiCard key={k.key} k={k} />)}
+    <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Key figures">
+      {kpis.map((k, i) => <KpiCard key={k.key} k={k} tone={TONES[i % TONES.length]!} />)}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Spotlight: workforce trend, departments, today's highlights and the assistant (the neon Home layout)
+// ---------------------------------------------------------------------------------------------------------------
+
+const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function Spotlight({ d, actions, openAssistant }: { d: Dashboard; actions: QuickAction[]; openAssistant: (() => void) | null }) {
+  const head = d.kpis.find((k) => k.key === 'headcount');
+  const m = Number(d.today.slice(5, 7)) - 1;
+  const trend = head?.trend?.map((value, i, all) => ({ label: MONTH[(m - (all.length - 1 - i) + 120) % 12]!, value })) ?? [];
+  const total = d.departments?.reduce((t, x) => t + x.count, 0) ?? 0;
+  const top = d.departments?.slice(0, 5) ?? [];
+  const rest = total - top.reduce((t, x) => t + x.count, 0);
+  const slices = [...top.map((x) => ({ label: x.name, value: x.count, href: x.id ? `/employees?departmentId=${x.id}` : undefined })), ...(rest > 0 ? [{ label: 'Others', value: rest }] : [])];
+  const highlights = [
+    { label: 'Pending approvals', value: d.counts.approvals, href: '/approvals', icon: Inbox, tone: 'text-accent' },
+    ...(d.attendance ? [{ label: 'Attendance exceptions', value: d.attendance.missing + d.attendance.absent, href: '/attendance/team?status=missing_punch', icon: Zap, tone: 'text-danger' }] : []),
+    { label: 'Interviews this week', value: d.counts.interviews, href: '/recruitment/interviews', icon: CalendarClock, tone: 'text-info' },
+    { label: 'Open tasks', value: d.counts.tasks, href: '/tasks', icon: ClipboardCheck, tone: 'text-success' },
+  ];
+  return (
+    <div className="mb-6 grid gap-5">
+      {(trend.length > 1 || slices.length > 0) && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          {trend.length > 1 && head && (
+            <ChartPanel title="Workforce overview" action={<span className="text-[0.75rem] text-fg-subtle">{head.value} now{typeof head.delta === 'number' ? `, ${head.delta >= 0 ? '+' : ''}${head.delta} in 6 months` : ''}</span>}>
+              <LineChart points={trend} />
+            </ChartPanel>
+          )}
+          {slices.length > 0 && (
+            <ChartPanel title="Department wise employees" action={<Link href="/employees" className="text-[0.75rem] font-medium text-accent hover:underline">Employees</Link>}>
+              <DonutChart slices={slices} centerValue={String(total)} centerLabel="Employees" />
+            </ChartPanel>
+          )}
+        </div>
+      )}
+      <div className={cn('grid gap-5', openAssistant ? 'lg:grid-cols-3' : 'lg:grid-cols-2')}>
+        <ChartPanel title="Today's highlights" action={<Link href="/approvals" className="inline-flex items-center gap-1 text-[0.75rem] font-medium text-accent hover:underline">View all <ArrowRight className="size-3" aria-hidden /></Link>}>
+          <ul className="divide-y divide-border">
+            {highlights.map((h) => (
+              <li key={h.label}>
+                <Link href={h.href} className="flex items-center gap-3 py-2 text-[0.8125rem] hover:text-accent">
+                  <h.icon className={cn('size-4 shrink-0', h.tone)} aria-hidden />
+                  <span className="w-6 font-bold tabular">{h.value}</span>
+                  <span className="min-w-0 flex-1 truncate">{h.label}</span>
+                  <ArrowRight className="size-3.5 text-fg-subtle" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </ChartPanel>
+        <ChartPanel title="Quick actions">
+          <div className="grid grid-cols-2 gap-2">
+            {actions.slice(0, 4).map((a, i) => {
+              const Icon = ICONS[a.icon] ?? ArrowRight;
+              return (
+                <Link key={a.key} href={a.href} className="flex flex-col items-start gap-2 rounded-xl border border-border bg-bg-subtle/60 p-3 text-[0.8125rem] font-medium transition-colors hover:border-accent hover:text-accent">
+                  <span className={cn('crew-tile flex size-8 items-center justify-center rounded-lg', `crew-tile-${TONES[i % TONES.length]}`)}><Icon className="size-4" aria-hidden /></span>
+                  <span className="line-clamp-2">{a.label}</span>
+                </Link>
+              );
+            })}
+            {!actions.length && <p className="col-span-2 text-[0.8125rem] text-fg-muted">Nothing to create with your access.</p>}
+          </div>
+        </ChartPanel>
+        {openAssistant && (
+          <div className="crew-ai-card relative flex flex-col justify-between gap-4 overflow-hidden rounded-xl p-5 shadow-pop">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-bold"><Bot className="size-5" aria-hidden /> CREW IQ</h2>
+              <p className="mt-1 text-[0.8125rem] text-[#e4defc]">Your AI HR assistant. Ask about leave, attendance, hiring or your team, and get answers from your live records.</p>
+            </div>
+            <button type="button" onClick={openAssistant} className="inline-flex w-fit items-center gap-2 rounded-full bg-white px-4 py-2 text-[0.8125rem] font-semibold text-[#2a1a66] shadow-card hover:bg-[#f1ecff]">
+              Ask anything <Sparkles className="size-4" aria-hidden />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -372,13 +455,7 @@ function WorkforceWidget({ d }: { d: Dashboard }) {
   return (
     <Card>
       <CardHeader title="Workforce at a glance" description="Live from your records, limited to the people you can see." />
-      <CardBody className="grid gap-6 pt-1 lg:grid-cols-3">
-        {d.departments && (
-          <div>
-            <div className="mb-3 flex items-center justify-between text-[0.75rem] font-semibold uppercase tracking-wider text-fg-subtle">Headcount by department <Link href="/employees" className="normal-case tracking-normal text-accent hover:underline">Employees</Link></div>
-            {d.departments.length ? <Bars rows={d.departments} label="Headcount by department" /> : <p className="text-[0.8125rem] text-fg-muted">No employees yet.</p>}
-          </div>
-        )}
+      <CardBody className="grid gap-6 pt-1 lg:grid-cols-2">
         {d.funnel && (
           <div>
             <div className="mb-3 flex items-center justify-between text-[0.75rem] font-semibold uppercase tracking-wider text-fg-subtle">Recruitment pipeline <Link href="/recruitment/candidates" className="normal-case tracking-normal text-accent hover:underline">Candidates</Link></div>

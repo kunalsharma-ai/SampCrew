@@ -114,7 +114,7 @@ export function ThemeStudio() {
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="flex flex-col gap-6">
         <Card>
-          <CardHeader title="Theme" description="Twelve presets, each with a light and a dark palette checked for readable contrast." action={
+          <CardHeader title="Theme" description="Thirteen presets, each with a light and a dark palette checked for readable contrast." action={
             <div className="inline-flex gap-1 rounded-lg bg-bg-subtle p-1" role="radiogroup" aria-label="Colour mode">
               {([['light', 'Light', Sun], ['dark', 'Dark', Moon], ['system', 'System', Monitor]] as const).map(([m, label, Icon]) => (
                 <button key={m} type="button" role="radio" aria-checked={a.mode === m} onClick={() => void set({ mode: m })} className={cn('flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium', a.mode === m ? 'bg-surface text-fg shadow-card' : 'text-fg-muted hover:text-fg')}>
@@ -127,6 +127,14 @@ export function ThemeStudio() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" role="radiogroup" aria-label="Theme preset">
               {THEME_PRESETS.map((p) => <PresetCard key={p.key} p={p} mode={mode} selected={a.preset === p.key} onPick={() => void set({ preset: p.key })} />)}
             </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader title="Style and background" description="Neon is the glass and gradient design; Classic is the flat original look." />
+          <CardBody className="grid gap-5 pt-1 md:grid-cols-2">
+            <Segmented label="Visual style" value={a.style} onChange={(v) => void set({ style: v })} options={[{ value: 'neon', label: 'Neon' }, { value: 'classic', label: 'Classic' }]} />
+            <Segmented label="Background" value={a.backdrop} onChange={(v) => void set({ backdrop: v })} options={[{ value: 'aurora', label: 'Aurora' }, { value: 'cosmos', label: 'Cosmos' }, { value: 'gradient', label: 'Gradient' }, { value: 'plain', label: 'Plain' }]} describe="Shown in the Neon style. High contrast and focus mode always use a plain background." />
           </CardBody>
         </Card>
 
@@ -179,7 +187,7 @@ export function ThemeStudio() {
           </CardBody>
         </Card>
         <Button variant="secondary" onClick={() => void reset().then((r) => setMessage(r.ok ? { ok: true, text: 'Reset' } : { ok: false, text: r.message ?? 'Could not reset' }))}><RotateCcw className="size-4" /> Reset to default</Button>
-        <p className="text-xs text-fg-subtle">Default: Midnight Intelligence, system mode, comfortable density, balanced motion.</p>
+        <p className="text-xs text-fg-subtle">Default: Midnight Intelligence, Neon style with the Aurora background, system mode, comfortable density, balanced motion.</p>
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
 import { cn } from '../cn';
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('rounded-xl border border-border bg-surface shadow-card', className)} {...props} />;
+  return <div className={cn('crew-card rounded-xl border border-border bg-surface shadow-card', className)} {...props} />;
 }
 
 export function CardHeader({ title, description, action, className }: { title: ReactNode; description?: ReactNode; action?: ReactNode; className?: string }) {
@@ -26,7 +26,7 @@ export function PageHeader({ title, description, actions, eyebrow }: { title: Re
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-6 animate-fade-in">
       <div className="min-w-0">
         {eyebrow && <div className="mb-1 text-xs font-medium uppercase tracking-wide text-accent">{eyebrow}</div>}
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">{title}</h1>
+        <h1 className="crew-page-title text-2xl font-semibold tracking-tight text-fg">{title}</h1>
         {description && <p className="mt-1 text-sm text-fg-muted max-w-2xl">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

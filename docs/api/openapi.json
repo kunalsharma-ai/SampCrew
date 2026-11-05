@@ -8266,7 +8266,8 @@
                       "arctic",
                       "copper",
                       "rose",
-                      "monochrome"
+                      "monochrome",
+                      "cyber"
                     ]
                   },
                   "mode": {
@@ -8380,6 +8381,22 @@
                   },
                   "focusMode": {
                     "type": "boolean"
+                  },
+                  "style": {
+                    "type": "string",
+                    "enum": [
+                      "neon",
+                      "classic"
+                    ]
+                  },
+                  "backdrop": {
+                    "type": "string",
+                    "enum": [
+                      "aurora",
+                      "cosmos",
+                      "gradient",
+                      "plain"
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -12207,6 +12224,45 @@
         "security": [
           {
             "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/modules/{module}": {
+      "get": {
+        "tags": [
+          "Overview"
+        ],
+        "summary": "KPI tiles and charts for one module, computed from live records and limited to what your roles let you see",
+        "operationId": "Overview_get",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "module",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

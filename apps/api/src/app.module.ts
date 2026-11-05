@@ -20,6 +20,7 @@ import { LeaveService } from './modules/leave/leave.service';
 import { MembersController } from './modules/members/members.controller';
 import { MembersService } from './modules/members/members.service';
 import { DashboardController, DashboardService } from './modules/experience/dashboard.controller';
+import { OverviewController, OverviewService } from './modules/experience/overview.controller';
 import { PreferencesController } from './modules/experience/preferences.controller';
 import { ViewsController } from './modules/experience/views.controller';
 import { BidsController, ProposalsPublicController } from './modules/bids/bids.controller';
@@ -144,6 +145,7 @@ export const CONTROLLERS = [
   UniverseController,
   LensesController,
   DashboardController,
+  OverviewController,
   AttendanceController,
   KioskController,
   ShiftsController,
@@ -212,6 +214,7 @@ export const CONTROLLERS = [
     StorageService,
     ApprovalsService,
     DashboardService,
+    OverviewService,
     BidsService,
     ProposalsPublicService,
     IqService,
