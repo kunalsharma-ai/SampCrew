@@ -7,3 +7,7 @@ export * from './schemas/organization';
 export * from './schemas/access';
 export * from './schemas/billing';
 export * from './schemas/platform';
+export * from './schemas/people';
+export * from './schemas/leave';
+export * as leaveMath from './leave-math';
+export type { WorkCalendar, Hundredths } from './leave-math';

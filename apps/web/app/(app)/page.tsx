@@ -11,7 +11,6 @@ interface Overview { legalEntities: number; businessUnits: number; locations: nu
 const SCOPE_LABEL: Record<string, string> = { own: 'Yourself', team: 'Your team', department: 'Your department', entity: 'Your legal entity', tenant: 'Whole organization' };
 
 const ROADMAP = [
-  { phase: 2, title: 'Core HR', items: 'Employee records, lifecycle, onboarding, documents, leave, self-service' },
   { phase: 3, title: 'Attendance & workforce', items: 'Mobile/GPS attendance, geofencing, biometric device hub, shifts, overtime' },
   { phase: 4, title: 'Recruitment', items: 'Requisitions, candidate CRM, ATS pipeline, interviews, career pages' },
   { phase: 5, title: 'Payroll & finance', items: 'Salary structures, India payroll, payslips, expenses' },
@@ -40,7 +39,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const myAccess = Object.entries(me.permissions)
     .map(([key, scope]) => ({ def: PERMISSIONS.find((p) => p.key === key), scope }))
-    .filter((x) => x.def && x.def.phase === 1);
+    .filter((x) => x.def && x.def.phase <= 2);
 
   return (
     <>

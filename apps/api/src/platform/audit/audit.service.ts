@@ -12,7 +12,7 @@ export interface AuditInput {
   tenantId?: string | null;
 }
 
-const REDACT = /password|secret|token|hash|bank|account_number|pan|aadhaar|ssn|tax_id/i;
+const REDACT = /password|secret|token|hash|bank|account_number|pan|aadhaar|ssn|tax_?id|national_?id/i;
 
 /** Removes secrets and sensitive identifiers from change sets before they are written to the audit trail. */
 export function redact(value: unknown): unknown {

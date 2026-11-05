@@ -16,17 +16,28 @@ export interface NavGroup {
 }
 
 export const NAV: NavGroup[] = [
-  { label: 'Workspace', items: [{ href: '/', label: 'Home', icon: 'home' }] },
+  {
+    label: 'Workspace',
+    items: [
+      { href: '/', label: 'Home', icon: 'home' },
+      { href: '/approvals', label: 'Approvals', icon: 'inbox' },
+      { href: '/leave', label: 'Leave', icon: 'calendar', permission: 'leave:request' },
+      { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
+    ],
+  },
   {
     label: 'Organization',
     items: [
-      { href: '/people', label: 'People', icon: 'users', permission: 'users:read' },
+      { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read' },
+      { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read' },
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
     ],
   },
   {
     label: 'Administration',
     items: [
+      { href: '/settings/leave', label: 'Leave settings', icon: 'sliders', permission: 'leave:configure' },
+      { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create' },
       { href: '/settings/roles', label: 'Roles & permissions', icon: 'shield', permission: 'roles:read' },
       { href: '/settings/audit', label: 'Audit trail', icon: 'scroll', permission: 'audit:read' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },

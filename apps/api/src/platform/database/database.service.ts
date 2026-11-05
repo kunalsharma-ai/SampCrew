@@ -1,9 +1,12 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
-import { Pool, type PoolClient, type QueryResultRow } from 'pg';
+import { Pool, type PoolClient, type QueryResultRow, types } from 'pg';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { requestContext } from '../context/request-context';
 
 export type Tx = PoolClient;
+
+// SQL `date` has no time zone; keep it as the YYYY-MM-DD string instead of a local-midnight JS Date.
+types.setTypeParser(1082, (v) => v);
 
 /**
  * All data access goes through one of three transaction kinds:
