@@ -9,7 +9,8 @@
  * 3. Apps: the mobile app is switched off for the workspace and a mobile sign-in is refused; Leave is switched off
  *    in the mobile app only and stays on the web. Both are switched back.
  * 4. Users: the recruiter is signed out everywhere, suspended (sign-in refused) and reactivated, each with a reason.
- * 5. Activity: mobile sign-ins and the recruiter's suspension appear in the workspace's activity.
+ * 5. Activity: mobile sign-ins and the recruiter's suspension appear in the workspace's activity; the suspension opens
+ *    with its recorded contents, and that read is itself in the customer's trail.
  * 6. Attendance machines: HR registers a Hikvision face reader on the CREW device API in the Web Portal, sees its
  *    token once, and the machine sends punches. The Console sees it online, pauses it (pushes refused, HR sees
  *    "Paused by SAMPLEDGE"), resumes it, then switches the Hikvision integration off and on again.
@@ -178,6 +179,17 @@ async function userAction(page, email, action, reason) {
     await admin.getByRole('table', { name: 'Activity' }).getByText('membership.suspend_by_sampledge').first().waitFor();
     await shot(admin, 'sa-05-activity');
     ok('Activity shows mobile sign-ins and SAMPLEDGE\'s own actions in the customer\'s trail');
+
+    // Open the suspension: its recorded contents (the reason given) and the person's history, and the read is logged.
+    const suspendRow = admin.getByRole('table', { name: 'Activity' }).getByRole('row').filter({ hasText: 'membership.suspend_by_sampledge' }).first();
+    await suspendRow.getByRole('link', { name: /View changes/ }).click();
+    await admin.getByText('This view is recorded').waitFor();
+    await admin.getByRole('table', { name: 'What changed' }).getByText('E2E: customer asked us to').first().waitFor();
+    await admin.getByRole('table', { name: 'History of this record' }).getByText('membership.reactivate_by_sampledge').waitFor();
+    await shot(admin, 'sa-05b-activity-contents');
+    await admin.goto(`${tenantUrl}/activity?area=activity`);
+    await admin.getByRole('table', { name: 'Activity' }).getByText('activity.contents_viewed_by_sampledge').first().waitFor();
+    ok('Activity: an event opens with its recorded contents and history, and the read appears in the customer\'s trail');
 
     // 6. Attendance machines: HR registers a Hikvision reader on the device API.
     current = hr;

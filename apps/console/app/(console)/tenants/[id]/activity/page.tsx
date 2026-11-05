@@ -41,7 +41,7 @@ export default async function ActivityPage({ params, searchParams }: { params: P
       <PageHeader
         eyebrow={<><Link href="/tenants" className="hover:underline">Workspaces</Link> / <Link href={`/tenants/${id}`} className="hover:underline">{t.name}</Link></>}
         title="Activity"
-        description="What happened in this workspace, who did it, when and from which app. The before and after values of records stay with the customer; open them only through an approved support request."
+        description="What happened in this workspace, who did it, when and from which app. Open an event to see what changed (before and after values); each one you open is recorded in the customer's activity trail."
       />
       <WorkspaceTabs tenantId={id} current="activity" caps={[...(PLATFORM_ROLE_CAPABILITIES[me.role] ?? [])]} />
       <TileRow>
@@ -66,7 +66,7 @@ export default async function ActivityPage({ params, searchParams }: { params: P
           </CardBody>
           {data.items.length === 0 ? <EmptyState icon={<Activity className="size-6" />} title="No activity matches" /> : (
             <Table aria-label="Activity">
-              <THead><TR><TH>When</TH><TH>What</TH><TH>Who</TH><TH>From</TH></TR></THead>
+              <THead><TR><TH>When</TH><TH>What</TH><TH>Who</TH><TH>From</TH><TH><span className="sr-only">Contents</span></TH></TR></THead>
               <TBody>
                 {data.items.map((a) => (
                   <TR key={a.id}>
@@ -76,6 +76,11 @@ export default async function ActivityPage({ params, searchParams }: { params: P
                     <TD className="whitespace-nowrap text-xs text-fg-muted">
                       {a.client === 'mobile' ? <Badge tone="accent"><Smartphone className="mr-1 inline size-3" aria-hidden />Mobile</Badge> : a.client === 'web' ? <Badge><Globe className="mr-1 inline size-3" aria-hidden />Web</Badge> : null}
                       {a.ip && <div className="mt-0.5 font-mono">{a.ip}</div>}
+                    </TD>
+                    <TD className="whitespace-nowrap text-right">
+                      <Link className={buttonClass(a.hasChanges ? 'secondary' : 'ghost', 'sm')} href={`/tenants/${id}/activity/${a.id}`} aria-label={`${a.hasChanges ? 'View changes' : 'Details'}: ${a.action}, ${new Date(a.createdAt).toLocaleString()}`}>
+                        {a.hasChanges ? 'View changes' : 'Details'}
+                      </Link>
                     </TD>
                   </TR>
                 ))}

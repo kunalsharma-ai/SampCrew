@@ -45,6 +45,12 @@ This builds on Phase 14 (module, permission and per-person switches) rather than
 - The customer's audit trail as headlines: what happened, who, when, from which app and address; filters by area and
   by who (person, SAMPLEDGE, system, AI, integration); paging. Tiles: events in 7 days, active people in 7 and 30
   days, web and mobile sign-ins in 30 days. Busiest areas over 30 days.
+- **Record contents** (decided by Kunal on 2026-11-05: SAMPLEDGE sees them without the customer approving a support
+  request). **View changes** opens one event with what changed (before and after values, for example a salary
+  change), the details (app, address, browser, request) and the history of the same record with its contents.
+  Every opening is written to the customer's own trail (`activity.contents_viewed_by_sampledge`, with the admin's
+  name and the event) and the platform log (`platform.activity_contents_viewed`). Super admin only. Passwords,
+  tokens, bank account and ID numbers are never stored in the trail, so they cannot be shown.
 
 ### Attendance machines
 - **Web Portal, Settings > Devices** (workspace admins): a **Machine integrations** panel showing which makes are
@@ -69,10 +75,10 @@ This builds on Phase 14 (module, permission and per-person switches) rather than
 ## Working end to end, and not yet
 
 ### Working end to end
-- API tests: `apps/api/test/superadmin-control.spec.ts` (12 tests: app switches and per-app modules enforced on
-  sign-in, refresh and every request; people list and all five actions incl. the last-owner guard; activity without
-  record contents; device API registration, token, punches, duplicates, time zones, rotation; pause and integration
-  switch refusing pushes; subscription fields and limits merging with module switches). Full suite: 393 API tests.
+- API tests: `apps/api/test/superadmin-control.spec.ts` (13 tests: app switches and per-app modules enforced on
+  sign-in, refresh and every request; people list and all five actions incl. the last-owner guard; activity list, and
+  one event's contents with every read audited; device API registration, token, punches, duplicates, time zones, rotation; pause and integration
+  switch refusing pushes; subscription fields and limits merging with module switches). Full suite: 394 API tests.
 - Browser flow `pnpm e2e:superadmin` (`e2e/superadmin-flow.cjs`, its own CI step on a fresh database) drives the
   Console, the Web Portal and the device API: neon design, subscription, mobile app off and Leave off on phones only,
   sign out / suspend / reactivate, activity, Hikvision machine registered by HR with a one-time token sending real
@@ -80,9 +86,9 @@ This builds on Phase 14 (module, permission and per-person switches) rather than
 - Accessibility sweep (`e2e:a11y`) now also covers the new Console pages in light and dark.
 
 ### Not yet
-- **Activity shows headlines, not record contents.** Before and after values (salaries, HR fields) stay behind an
-  approved support request, as before. Say if SAMPLEDGE should see full contents without the customer's approval;
-  that is a privacy decision for the customers' contracts.
+- **Record contents come from the activity trail**, one event at a time. Browsing a workspace's live HR records (an
+  employee's current file) still goes through the support request; only what the trail recorded is shown directly.
+  Customer contracts should say that SAMPLEDGE can read record contents and that each read is logged for them.
 - **App switches follow the app the session was opened in** (the app identifies itself at sign-in). A person who
   signs in to the API pretending to be the Web Portal gets the Web Portal's rules; API keys are not affected.
 - **Vendor-native formats other than ZKTeco ADMS are not parsed.** Hikvision, Matrix, Realtime and Suprema connect

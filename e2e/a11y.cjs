@@ -119,11 +119,13 @@ async function consoleScreens(b, found, checked) {
   await p.waitForURL(`${CONSOLE}/`, { timeout: 15000 });
   await p.goto(`${CONSOLE}/tenants`);
   const tenant = await p.locator('a[href^="/tenants/"]').first().getAttribute('href');
+  await p.goto(`${CONSOLE}${tenant}/activity`);
+  const event = await p.locator('a[href*="/activity/"]').first().getAttribute('href');
   for (const theme of ['light', 'dark']) {
     await p.emulateMedia({ colorScheme: theme });
-    for (const path of ['/', '/tenants', tenant, `${tenant}/access`, `${tenant}/access?tab=permissions`, `${tenant}/access?tab=people`, `${tenant}/access?tab=apps`, `${tenant}/users`, `${tenant}/activity`, `${tenant}/devices`, '/users', '/devices', '/plans', '/integrations', '/health', '/audit', '/admins']) {
+    for (const path of ['/', '/tenants', tenant, `${tenant}/access`, `${tenant}/access?tab=permissions`, `${tenant}/access?tab=people`, `${tenant}/access?tab=apps`, `${tenant}/users`, `${tenant}/activity`, event, `${tenant}/devices`, '/users', '/devices', '/plans', '/integrations', '/health', '/audit', '/admins']) {
       await p.goto(`${CONSOLE}${path}`);
-      const label = `Console ${path.startsWith(tenant) ? path.replace(tenant, '/tenants/:id') : path} (${theme})`;
+      const label = `Console ${path === event ? '/tenants/:id/activity/:eventId' : path.startsWith(tenant) ? path.replace(tenant, '/tenants/:id') : path} (${theme})`;
       found.push(...(await check(p, label)));
       checked.push(label);
     }

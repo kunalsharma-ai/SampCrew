@@ -164,7 +164,7 @@ describe('Super Admin control of workspaces', () => {
   });
 
   describe('activity', () => {
-    it('shows what happened, who and from which app, without record contents', async () => {
+    it('lists what happened, who and from which app, with contents left to each event', async () => {
       const res = await api(app, superToken).get(`/platform/tenants/${t.id}/activity?limit=5`);
       expect(res.status).toBe(200);
       expect(res.body.items.length).toBe(5);
@@ -180,6 +180,39 @@ describe('Super Admin control of workspaces', () => {
       const next = await api(app, superToken).get(`/platform/tenants/${t.id}/activity?limit=5&before=${res.body.nextBefore}`);
       expect(Number(next.body.items[0].id)).toBeLessThan(res.body.nextBefore);
       expect((await api(app, viewerToken).get(`/platform/tenants/${t.id}/activity`)).status).toBe(403);
+    });
+
+    it('opens one event with its recorded contents and the record\'s history, and audits every read', async () => {
+      const list = await api(app, superToken).get(`/platform/tenants/${t.id}/activity?area=membership`);
+      const suspended = list.body.items.find((r: { action: string }) => r.action === 'membership.suspend_by_sampledge');
+      expect(suspended.hasChanges).toBe(true);
+
+      const res = await api(app, superToken).get(`/platform/tenants/${t.id}/activity/${suspended.id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.changes).toMatchObject({ member: rita.email, action: 'suspend', reason: 'Customer asked by email' });
+      expect(res.body.metadata.by).toBe('SAMPLEDGE');
+      // The same person's other events, with their contents, newest first.
+      const history = res.body.history.map((h: { action: string }) => h.action);
+      expect(history).toEqual(expect.arrayContaining(['membership.reactivate_by_sampledge', 'membership.sign_out_by_sampledge']));
+      expect(res.body.history.find((h: { action: string }) => h.action === 'membership.reactivate_by_sampledge').changes.reason).toBe('Customer asked by email');
+
+      // Every read is in the customer's own trail (who looked at what) and the platform log.
+      const seen = await pool.query(
+        `select tenant_id, changes, metadata from audit_events where action in ('activity.contents_viewed_by_sampledge', 'platform.activity_contents_viewed')
+          and changes->>'eventId' = $1 order by id`,
+        [suspended.id],
+      );
+      expect(seen.rows).toHaveLength(2);
+      expect(seen.rows[0]).toMatchObject({ tenant_id: t.id, metadata: { by: 'SAMPLEDGE' }, changes: { eventAction: 'membership.suspend_by_sampledge' } });
+      expect(seen.rows[0].metadata.admin).toBeTruthy();
+      expect(seen.rows[1].tenant_id).toBeNull();
+      await api(app, superToken).get(`/platform/tenants/${t.id}/activity/${suspended.id}`);
+      expect((await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'activity.contents_viewed_by_sampledge'`, [t.id])).rows[0].n).toBe(2);
+
+      // Super admins only; an event from another workspace, or a malformed id, is not found.
+      expect((await api(app, supportToken).get(`/platform/tenants/${t.id}/activity/${suspended.id}`)).status).toBe(403);
+      expect((await api(app, superToken).get(`/platform/tenants/${other.id}/activity/${suspended.id}`)).status).toBe(404);
+      expect((await api(app, superToken).get(`/platform/tenants/${t.id}/activity/1;drop`)).status).toBe(404);
     });
   });
 

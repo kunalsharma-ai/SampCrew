@@ -31,7 +31,7 @@ import {
 } from '@crew/contracts';
 import { z } from 'zod';
 import { AllowWithoutMfa, PlatformRealm, Public } from '../../platform/authz/decorators';
-import { UuidPipe, ZodPipe } from '../../platform/http/zod';
+import { IdNumberPipe, UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformService } from './platform.service';
@@ -154,9 +154,16 @@ export class PlatformController {
 
   @PlatformRealm('access:manage')
   @Get('tenants/:id/activity')
-  @Doc({ summary: 'The workspace\'s activity: what happened, who did it, when and from which app (record contents are not included)', query: activityQuery })
+  @Doc({ summary: 'The workspace\'s activity: what happened, who did it, when and from which app (contents: one event at a time, audited)', query: activityQuery })
   activity(@Param('id', UuidPipe) id: string, @Query(new ZodPipe(activityQuery)) q: z.infer<typeof activityQuery>) {
     return this.control.activity(id, q);
+  }
+
+  @PlatformRealm('access:manage')
+  @Get('tenants/:id/activity/:eventId')
+  @Doc({ summary: 'One activity event with its recorded contents (before and after values) and the history of the same record. Every read is recorded in the customer\'s audit trail and the platform log.' })
+  activityEvent(@Param('id', UuidPipe) id: string, @Param('eventId', IdNumberPipe) eventId: string) {
+    return this.control.activityEvent(id, eventId);
   }
 
   @PlatformRealm('tenants:read')
