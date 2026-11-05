@@ -4,6 +4,7 @@ import {
   Bell, Building2, CalendarDays, Check, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
   Settings, Shield, SlidersHorizontal, Sun, Users, X, Clock, CalendarClock, UsersRound, Timer, Fingerprint, Briefcase, UserSearch, MessageSquare,
   type LucideIcon,
+  Banknote, FileText, Landmark, Receipt, Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -17,6 +18,7 @@ const ICONS: Record<string, LucideIcon> = {
   inbox: Inbox, calendar: CalendarDays, 'list-checks': ListChecks, contact: Contact, sliders: SlidersHorizontal,
   clock: Clock, 'calendar-clock': CalendarClock, 'users-round': UsersRound, timer: Timer, fingerprint: Fingerprint,
   briefcase: Briefcase, 'user-search': UserSearch, 'message-square': MessageSquare,
+  'file-text': FileText, receipt: Receipt, wallet: Wallet, banknote: Banknote, landmark: Landmark,
 };
 
 export interface Notifications { unread: number; items: Notification[] }
@@ -38,6 +40,7 @@ export function Shell({ me, nav, notifications, children }: { me: Me; nav: NavGr
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const allHrefs = nav.flatMap((g) => g.items.map((i) => i.href));
   const sidebar = (
     <nav aria-label="Main" className="flex h-full flex-col gap-6 px-3 py-4">
       <div className="px-2"><CrewLogo subtitle="by Sampledge" /></div>
@@ -49,7 +52,7 @@ export function Shell({ me, nav, notifications, children }: { me: Me; nav: NavGr
             <ul className="flex flex-col gap-0.5">
               {g.items.map((item) => {
                 const Icon = ICONS[item.icon] ?? Home;
-                const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+                const active = item.href === '/' ? pathname === '/' : (pathname === item.href || pathname.startsWith(`${item.href}/`)) && !allHrefs.some((h) => h.length > item.href.length && h.startsWith(`${item.href}/`) && (pathname === h || pathname.startsWith(`${h}/`)));
                 return (
                   <li key={item.href}>
                     <Link

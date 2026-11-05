@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { leaveMath } from '@crew/contracts';
+import { DEFAULT_IN_STATUTORY, leaveMath, payrollEngine } from '@crew/contracts';
 import type { PoolClient } from 'pg';
 import { provisionTenant } from '../src/provision';
 
@@ -107,6 +107,7 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
     });
     await seedAttendance(client, { tid, puneId: pune.id, membershipByEmail });
     await seedRecruitment(client, { tid, indiaId: t.legalEntityId, puneId: pune.id, manufacturingId: manufacturing.id, membershipByEmail });
+    await seedPayroll(client, { tid, indiaId: t.legalEntityId, membershipByEmail });
 
     await client.query(
       `insert into audit_events (tenant_id, actor_type, actor_label, action, resource_type, resource_id, metadata)
@@ -443,4 +444,78 @@ async function seedRecruitment(client: PoolClient, c: { tid: string; indiaId: st
       await client.query(`insert into application_events (tenant_id, application_id, kind, detail, actor_membership_id, created_at) values ($1, $2, 'interview_scheduled', $3, $4, now() - interval '3 days')`, [tid, app.id, { interviewId: iv.id, title: 'Technical interview' }, recruiter]);
     }
   }
+}
+
+/**
+ * Phase 5 demo data: statutory settings for the India entity (the CREW starting values, saved as demo data), a
+ * salary for everyone employed by it, and two expense claims (one approved and waiting for payroll, one waiting
+ * for the supervisor). No payroll run is created, so the first run can be tried end to end. The UK entity has no
+ * payroll: CREW's statutory rules in this release cover India only.
+ */
+async function seedPayroll(client: PoolClient, c: { tid: string; indiaId: string; membershipByEmail: Map<string, string> }) {
+  const { tid } = c;
+  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
+  const today = new Date().toISOString().slice(0, 10);
+  const fy = payrollEngine.fyStart(today);
+  await client.query(
+    `insert into statutory_settings (tenant_id, legal_entity_id, effective_from, lop_source, settings) values ($1, $2, $3, 'attendance_and_leave', $4)`,
+    [tid, c.indiaId, fy, JSON.stringify(DEFAULT_IN_STATUTORY)],
+  );
+  const structure = await q(`select id from salary_structures where tenant_id = $1 and name = 'Standard'`, [tid]);
+  const lines = (await client.query<{ component_id: string; code: string; name: string; kind: 'earning' | 'deduction'; calc: payrollEngine.CalcMethod; value: string; is_basic: boolean }>(
+    `select c.id as component_id, c.code, c.name, c.kind, l.calc, l.value::text, c.is_basic from salary_structure_lines l join pay_components c on c.id = l.component_id
+      where l.structure_id = $1 order by l.position`,
+    [structure.id],
+  )).rows;
+  // Annual CTC by work email or first name (demo figures).
+  const ctc: Record<string, string> = {
+    'owner@demo.crew.local': '4800000', 'hr.admin@demo.crew.local': '2400000', 'recruiter@demo.crew.local': '1200000', 'payroll@demo.crew.local': '1500000',
+    'finance@demo.crew.local': '1800000', 'plant.head@demo.crew.local': '3000000', 'supervisor@demo.crew.local': '720000', 'operator1@demo.crew.local': '300000',
+    'operator2@demo.crew.local': '280000', 'qa.lead@demo.crew.local': '900000', 'attendance@demo.crew.local': '420000', 'auditor@demo.crew.local': '1400000',
+    Ganesh: '216000', Rekha: '264000', Sameer: '240000',
+  };
+  const employees = (await client.query<{ id: string; work_email: string | null; first_name: string; date_of_joining: string }>(
+    `select id, work_email, first_name, to_char(date_of_joining, 'YYYY-MM-DD') as date_of_joining from employees where tenant_id = $1 and current_legal_entity_id = $2`,
+    [tid, c.indiaId],
+  )).rows;
+  for (const e of employees) {
+    const annual = ctc[e.work_email ?? ''] ?? ctc[e.first_name];
+    if (!annual) continue;
+    const built = payrollEngine.buildSalary(annual, lines.map((l) => ({ code: l.code, name: l.name, kind: l.kind, calc: l.calc, value: l.value, isBasic: l.is_basic })), { pf: true, settings: DEFAULT_IN_STATUTORY });
+    const sal = await q(
+      `insert into employee_salaries (tenant_id, employee_id, effective_from, annual_ctc, currency, structure_id, employer_pf_monthly, note) values ($1, $2, $3, $4, 'INR', $5, $6, 'Demo data') returning id`,
+      [tid, e.id, e.date_of_joining, annual, structure.id, built.employerPfMonthly],
+    );
+    await client.query(
+      `insert into employee_salary_lines (tenant_id, salary_id, component_id, position, monthly) select $1, $2, x.component_id, x.pos, x.monthly from unnest($3::uuid[], $4::numeric[]) with ordinality as x(component_id, monthly, pos)`,
+      [tid, sal.id, lines.map((l) => l.component_id), built.components.map((x) => x.monthly)],
+    );
+  }
+
+  const emp = async (email: string) => (await q(`select id from employees where tenant_id = $1 and work_email = $2`, [tid, email])).id;
+  const category = async (name: string) => (await q(`select id from expense_categories where tenant_id = $1 and name = $2`, [tid, name])).id;
+  const prev = new Date();
+  prev.setUTCDate(10);
+  prev.setUTCMonth(prev.getUTCMonth() - 1);
+  const lastMonth10th = prev.toISOString().slice(0, 10); // inside last month, so the first demo run reimburses it
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  await client.query(
+    `insert into expense_claims (tenant_id, employee_id, category_id, spent_on, amount, currency, description, status, submitted_by_membership_id, decided_at)
+     values ($1, $2, $3, $4, 850, 'INR', 'Cab to the supplier audit in Chakan (demo data)', 'approved', $5, now())`,
+    [tid, await emp('operator1@demo.crew.local'), await category('Travel'), lastMonth10th, c.membershipByEmail.get('operator1@demo.crew.local')],
+  );
+  const nehaM = c.membershipByEmail.get('operator2@demo.crew.local')!;
+  const supM = c.membershipByEmail.get('supervisor@demo.crew.local')!;
+  const neha = await emp('operator2@demo.crew.local');
+  const claim = await q(
+    `insert into expense_claims (tenant_id, employee_id, category_id, spent_on, amount, currency, description, status, submitted_by_membership_id)
+     values ($1, $2, $3, $4, 640, 'INR', 'Lunch during the night-shift handover training (demo data)', 'pending', $5) returning id`,
+    [tid, neha, await category('Meals'), yesterday, nehaM],
+  );
+  const ar = await q(
+    `insert into approval_requests (tenant_id, resource_type, resource_id, subject_employee_id, requested_by_membership_id, summary) values ($1, 'expense_claim', $2, $3, $4, $5) returning id`,
+    [tid, claim.id, neha, nehaM, `Neha Deshmukh: Meals expense of INR 640.00 on ${yesterday}. Lunch during the night-shift handover training (demo data)`],
+  );
+  await client.query(`insert into approval_steps (tenant_id, request_id, seq, kind, approver_membership_id, status) values ($1, $2, 1, 'manager', $3, 'pending')`, [tid, ar.id, supM]);
+  await client.query(`update expense_claims set approval_request_id = $2 where id = $1`, [claim.id, ar.id]);
 }

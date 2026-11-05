@@ -120,3 +120,9 @@ export async function act<T>(fn: () => Promise<T>, success?: string): Promise<Ac
     throw e;
   }
 }
+
+/** An authenticated API download (CSV exports): returns the raw response so a route can stream it to the browser. */
+export async function apiDownload(path: string) {
+  const token = await accessToken();
+  return fetch(`${API_URL}/api/v1${path}`, { headers: { 'x-crew-client': 'web', ...(await clientIp()), ...(token ? { authorization: `Bearer ${token}` } : {}) }, cache: 'no-store' });
+}

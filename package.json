@@ -24,7 +24,8 @@
     "e2e:console": "node e2e/console-smoke.cjs",
     "e2e:hr": "node e2e/hr-flow.cjs",
     "e2e:attendance": "node e2e/attendance-flow.cjs",
-    "e2e:recruitment": "node e2e/recruitment-flow.cjs"
+    "e2e:recruitment": "node e2e/recruitment-flow.cjs",
+    "e2e:payroll": "node e2e/payroll-flow.cjs"
   },
   "devDependencies": {
     "typescript": "5.9.3",

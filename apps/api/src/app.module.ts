@@ -46,6 +46,12 @@ import { InterviewsService } from './modules/recruitment/interviews.service';
 import { OffersService } from './modules/recruitment/offers.service';
 import { CareersPublicController, RecruitmentController, ResumeFilesController } from './modules/recruitment/recruitment.controller';
 import { RequisitionsService } from './modules/recruitment/requisitions.service';
+import { ExpensesService } from './modules/payroll/expenses.service';
+import { PayrollConfigService } from './modules/payroll/payroll-config.service';
+import { PayrollRunsService } from './modules/payroll/payroll-runs.service';
+import { ExpensesController, PayrollController, PayslipsController, ReceiptFilesController } from './modules/payroll/payroll.controller';
+import { PayslipsService } from './modules/payroll/payslips.service';
+import { SalariesService } from './modules/payroll/salaries.service';
 import { AuditService } from './platform/audit/audit.service';
 import { AuthGuard } from './platform/auth/auth.guard';
 import { TokenService } from './platform/auth/token.service';
@@ -91,6 +97,10 @@ export const CONTROLLERS = [
   RecruitmentController,
   CareersPublicController,
   ResumeFilesController,
+  PayrollController,
+  PayslipsController,
+  ExpensesController,
+  ReceiptFilesController,
   PlatformAuthController,
   PlatformController,
 ];
@@ -136,6 +146,11 @@ export const CONTROLLERS = [
     InterviewsService,
     OffersService,
     CareersService,
+    PayrollConfigService,
+    SalariesService,
+    PayrollRunsService,
+    PayslipsService,
+    ExpensesService,
     HrJobsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },

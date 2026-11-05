@@ -151,6 +151,32 @@ export async function provisionTenant(db: PoolClient, input: ProvisionTenantInpu
      select $1, s.name, s.kind, s.position from (values ('Applied', 'new', 1), ('Screening', 'screen', 2), ('Interview', 'interview', 3), ('Offer', 'offer', 4), ('Hired', 'hired', 5)) as s(name, kind, position)`,
     [tenantId],
   );
+  // Default pay components, salary structure and expense categories. Statutory settings are not created here:
+  // payroll admins review and save them per legal entity before the first run.
+  await db.query(
+    `insert into pay_components (tenant_id, code, name, kind, taxable, prorate, pf_wage, is_basic, is_system, description)
+     select $1, c.code, c.name, 'earning', true, true, c.basic, c.basic, true, c.description
+       from (values ('BASIC', 'Basic', true, 'Basic pay. Provident Fund is calculated on it.'),
+                    ('HRA', 'House rent allowance', false, 'Taxable in full under the new tax regime.'),
+                    ('SPECIAL', 'Special allowance', false, 'Usually takes the balance of the CTC.')) as c(code, name, basic, description)`,
+    [tenantId],
+  );
+  const structure = await db.query<{ id: string }>(
+    `insert into salary_structures (tenant_id, name, description) values ($1, 'Standard', 'Basic 50% of CTC, HRA 40% of Basic, the rest as special allowance.') returning id`,
+    [tenantId],
+  );
+  await db.query(
+    `insert into salary_structure_lines (tenant_id, structure_id, component_id, position, calc, value)
+     select $1, $2, c.id, x.pos, x.calc, x.value
+       from (values ('BASIC', 1, 'percent_of_ctc', 50), ('HRA', 2, 'percent_of_basic', 40), ('SPECIAL', 3, 'balance', 0)) as x(code, pos, calc, value)
+       join pay_components c on c.tenant_id = $1 and c.code = x.code`,
+    [tenantId, structure.rows[0]!.id],
+  );
+  await db.query(
+    `insert into expense_categories (tenant_id, name, receipt_required, max_per_claim)
+     select $1, c.name, true, c.max from (values ('Travel', null::numeric), ('Meals', 5000), ('Accommodation', null), ('Internet and phone', 3000), ('Other', null)) as c(name, max)`,
+    [tenantId],
+  );
 
   return { tenantId, ownerUserId: userId, ownerMembershipId, legalEntityId, existingUser };
 }
