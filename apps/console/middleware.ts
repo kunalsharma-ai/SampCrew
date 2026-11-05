@@ -1,3 +1,4 @@
+import { contentSecurityPolicy, cspNonce } from '@crew/contracts';
 import { type NextRequest, NextResponse } from 'next/server';
 
 const ACCESS = 'crew_console_at';
@@ -20,14 +21,14 @@ function expiresSoon(token: string | undefined): boolean {
  * Gate authenticated routes and refresh the access token shortly before it expires. Refreshing here (not in
  * server components) is what lets the new httpOnly cookies be written on the response.
  */
-export async function middleware(req: NextRequest) {
+async function gate(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return NextResponse.next();
+  if (PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return NextResponse.next({ request: { headers: req.headers } });
 
   const access = req.cookies.get(ACCESS)?.value;
   const refresh = req.cookies.get(REFRESH)?.value;
   if (!refresh && !access) return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(pathname)}`, req.url));
-  if (!expiresSoon(access) || !refresh) return NextResponse.next();
+  if (!expiresSoon(access) || !refresh) return NextResponse.next({ request: { headers: req.headers } });
 
   const res = await fetch(`${API_URL}/api/v1/platform/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: refresh }) }).catch(() => null);
   if (!res?.ok) {
@@ -43,6 +44,20 @@ export async function middleware(req: NextRequest) {
   out.cookies.set(ACCESS, tokens.accessToken, { httpOnly: true, secure, sameSite: 'strict', path: '/', maxAge: tokens.expiresIn });
   out.cookies.set(REFRESH, tokens.refreshToken, { httpOnly: true, secure, sameSite: 'strict', path: '/', maxAge: 60 * 60 * 12 });
   return out;
+}
+
+/**
+ * Every page gets a fresh script nonce and the Content Security Policy that allows only scripts carrying it. Next.js
+ * reads the policy from the request headers and puts the nonce on its own scripts; layouts read `x-nonce` for theirs.
+ */
+export async function middleware(req: NextRequest) {
+  const nonce = cspNonce();
+  const csp = contentSecurityPolicy({ nonce, dev: process.env.NODE_ENV !== 'production', frameAncestors: "'none'" });
+  req.headers.set('x-nonce', nonce);
+  req.headers.set('content-security-policy', csp);
+  const res = await gate(req);
+  res.headers.set('content-security-policy', csp);
+  return res;
 }
 
 export const config = { matcher: ['/((?!_next/|favicon|icon|.*\\.(?:svg|png|jpg|ico|webp)$).*)'] };

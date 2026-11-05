@@ -762,7 +762,7 @@ export class EmployeesService {
       await this.authz.require('employees:sensitive:read', employeeAttrs(e), tx);
       const row = await one<Record<string, string | null>>(tx, 'select * from employee_sensitive where employee_id = $1', [id]);
       await this.audit.record(tx, { action: 'employee.sensitive_viewed', resourceType: 'employee', resourceId: id });
-      const dec = (v: string | null | undefined) => (v ? decryptField(v, this.config.FIELD_ENCRYPTION_KEY) : null);
+      const dec = (v: string | null | undefined) => (v ? decryptField(v, this.config.fieldKeys) : null);
       return {
         bankName: row?.bank_name ?? null,
         bankAccount: dec(row?.bank_account_enc),
@@ -780,7 +780,7 @@ export class EmployeesService {
       const e = await this.load(tx, id);
       await this.authz.require('employees:update', employeeAttrs(e), tx);
       await this.authz.require('employees:sensitive:read', employeeAttrs(e), tx);
-      const enc = (v: string | null | undefined) => (v ? encryptField(v.replace(/\s+/g, ' '), this.config.FIELD_ENCRYPTION_KEY) : null);
+      const enc = (v: string | null | undefined) => (v ? encryptField(v.replace(/\s+/g, ' '), this.config.fieldKeys) : null);
       await tx.query(`insert into employee_sensitive (employee_id, tenant_id) values ($1, app_tenant_id()) on conflict (employee_id) do nothing`, [id]);
       const sets: string[] = [];
       const vals: unknown[] = [id];

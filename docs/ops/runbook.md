@@ -134,14 +134,40 @@ minutes). Recovery time measured by the drill: seconds for the demo data size, g
 | `DATABASE_API_PASSWORD` | Change in `.env`, run `docker compose up -d --wait` (the migrate job sets the role's password before the API starts). |
 | `POSTGRES_PASSWORD` | `alter role postgres password '...'` in psql, then update `.env`. |
 | `REDIS_PASSWORD` | Change and `docker compose up -d --wait`; counters reset, which is harmless. |
-| `FIELD_ENCRYPTION_KEY` | **Do not change in place**: MFA secrets and other encrypted fields would become unreadable. Key rotation needs a re-encryption job (not built yet). |
+| `FIELD_ENCRYPTION_KEY` | In three steps, below. Never just replace it: values written with the old key (MFA secrets, bank and tax identifiers, webhook, Slack and single sign-on secrets) need it to be read. |
 | `BACKUP_PASSPHRASE` | Change for new backups; keep the old one for as long as older backups are kept. |
 | `ANTHROPIC_API_KEY`, `SMTP_URL`, `EXPO_ACCESS_TOKEN` | Change and restart the API. |
+
+**Rotating `FIELD_ENCRYPTION_KEY`** (on a schedule, or at once if the key may have leaked):
+
+1. Back up (section 4). Generate a key with `openssl rand -base64 32`. In `.env`, move the current value to
+   `FIELD_ENCRYPTION_KEYS_PREVIOUS` and put the new one in `FIELD_ENCRYPTION_KEY`, then `docker compose up -d --wait`.
+   The API now writes with the new key and still reads both, so nobody is signed out and nothing stops working.
+2. Re-encrypt everything with the new key: `docker compose exec api node dist/cli/rotate-field-key.js`. It works in
+   small batches while CREW is in use, can be run again safely, and writes `platform.field_key_rotated` to the
+   platform audit log. `node dist/cli/rotate-field-key.js --check` only counts what is left (exit code 2 while any).
+   The Console's System health page shows the current key id and how many values are still on an older key.
+3. When nothing is left, empty `FIELD_ENCRYPTION_KEYS_PREVIOUS` and `docker compose up -d --wait`. Keep the old key
+   with your backups for as long as backups made before the rotation are kept: they still need it.
+
+Download links are signed with `FILE_URL_SECRET` (or, if that is empty, a key derived from `FIELD_ENCRYPTION_KEY`),
+so links handed out in the last five minutes stop working after a rotation; people just open the file again.
+
+After upgrading from a release before key ids (Phase 13), System health counts every existing value as "on an older
+key": run step 2 once with no previous key set, and every value is rewritten in the new format.
 
 Never put secrets in the repository, an image, or a ticket. On a platform with a secret manager, inject them as
 environment variables from it instead of using `.env`.
 
 ## 7. Operating
+
+- **Virus scanning of uploads**: start ClamAV with `docker compose --profile scan up -d` and set
+  `CLAMAV_URL=tcp://clamav:3310` in `.env` (then `docker compose up -d --wait`). Every uploaded document, expense
+  receipt and CV, including CVs from the public careers page, is scanned before it is stored; a flagged file is
+  refused with a message and never written, and the log line names the signature and workspace. While `CLAMAV_URL` is
+  set and ClamAV is down, uploads are refused rather than stored unscanned, and System health shows the scanner as
+  unreachable. ClamAV needs about 1.5 GB of memory and outbound access to `database.clamav.net` for signature
+  updates. Files uploaded before scanning was switched on are not scanned retroactively.
 
 - **Logs**: the API logs JSON in production (`docker compose logs -f api`); every error has a request id that is also
   shown to the person. Caddy logs requests as JSON. Ship both to your log platform.

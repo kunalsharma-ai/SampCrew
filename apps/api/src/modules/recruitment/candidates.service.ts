@@ -523,7 +523,7 @@ export class CandidatesService {
     const key = this.storage.newKey(tenantId);
     const sha = createHash('sha256').update(file.buffer).digest('hex');
     const name = safeFileName(file.originalname, 'cv');
-    await this.storage.put(key, file.buffer);
+    await this.storage.put(key, file.buffer, { upload: true });
     return (await one<{ id: string }>(
       tx,
       `insert into candidate_files (tenant_id, candidate_id, file_name, content_type, size_bytes, sha256, storage_key, uploaded_by_membership_id)

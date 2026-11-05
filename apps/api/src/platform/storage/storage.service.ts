@@ -3,9 +3,11 @@ import { createReadStream } from 'node:fs';
 import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { safeEqual } from '../auth/crypto';
+import { Errors } from '../http/errors';
+import { scanWithClamd } from './malware-scan';
 
 export type FileLinkKind = 'files' | 'resumes' | 'receipts';
 
@@ -39,7 +41,28 @@ export class StorageService {
     return p;
   }
 
-  async put(key: string, data: Buffer) {
+  private readonly logger = new Logger('Storage');
+
+  /**
+   * Stores a file. `upload: true` marks a file that came from a person (documents, receipts, CVs): when CLAMAV_URL is
+   * set it is scanned first, and a flagged file is refused and never written. If the scanner cannot be reached the
+   * upload is refused too (fail closed), so no unscanned file is stored while scanning is switched on. Files CREW
+   * generates itself (exports, signed proposals) are not scanned.
+   */
+  async put(key: string, data: Buffer, opts: { upload?: boolean } = {}) {
+    if (opts.upload && this.config.CLAMAV_URL) {
+      let r;
+      try {
+        r = await scanWithClamd(this.config.CLAMAV_URL, data);
+      } catch (e) {
+        this.logger.error(`Upload refused, ${(e as Error).message}`);
+        throw Errors.unavailable('scanner_unavailable', 'Files cannot be checked for viruses right now, so the upload was not saved. Try again in a few minutes.');
+      }
+      if (!r.clean) {
+        this.logger.warn(`Upload refused: the virus scanner flagged it (${r.signature}), workspace ${key.split('/')[0]}`);
+        throw Errors.badRequest('malware_detected', 'The virus scanner flagged this file, so it was not saved. Check the file and try again.');
+      }
+    }
     const p = this.path(key);
     await mkdir(dirname(p), { recursive: true });
     await writeFile(p, data, { flag: 'wx' });

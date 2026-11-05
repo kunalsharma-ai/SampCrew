@@ -542,7 +542,7 @@ export class PayrollRunsService implements OnModuleInit {
           where i.run_id = $1 and i.status = 'included' and i.net > 0 order by e.employee_code`,
         [id],
       );
-      const key = this.config.FIELD_ENCRYPTION_KEY;
+      const key = this.config.fieldKeys;
       const out: unknown[][] = [['Employee code', 'Beneficiary name', 'Bank', 'Account number', 'IFSC / routing', 'Amount', 'Currency', 'Reference']];
       const missing: string[] = [];
       for (const x of rows) {

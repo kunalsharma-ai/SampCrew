@@ -5,7 +5,8 @@
  *   pnpm db:reset; start the API, web (3000), console (3001) and, optionally, the mobile browser build (8081)
  *   node e2e/a11y.cjs [--report docs/ops/a11y-latest.md]
  *
- * Every page is checked in the light and the dark theme, signed in as the person who uses it. The run fails on any
+ * Every page is checked in the light and the dark theme, signed in as the person who uses it. With
+ * CREW_BOOTSTRAP_ADMIN_EMAIL and _PASSWORD set (and a fresh database) the Console is checked signed in too. The run fails on any
  * "serious" or "critical" violation; "moderate" and "minor" ones are listed in the report. Automated rules catch
  * roughly a third to a half of accessibility problems; keyboard and screen reader passes by people are still needed.
  */
@@ -89,6 +90,47 @@ async function mobileScreens(b, theme, found, checked) {
   await ctx.close();
 }
 
+/**
+ * The Super Admin Console signed in, when CREW_BOOTSTRAP_ADMIN_EMAIL and _PASSWORD are set: enrols the admin's
+ * two-step verification as a new admin would (so it needs a fresh database), then checks every page in both themes.
+ */
+async function consoleScreens(b, found, checked) {
+  const email = process.env.CREW_BOOTSTRAP_ADMIN_EMAIL;
+  const password = process.env.CREW_BOOTSTRAP_ADMIN_PASSWORD;
+  if (!email || !password) return;
+  const { authenticator } = require('otplib');
+  const ctx = await b.newContext({ viewport: { width: 1360, height: 900 } });
+  const p = await ctx.newPage();
+  if (!(await p.goto(`${CONSOLE}/login`).then(() => true, () => false))) return ctx.close();
+  await p.fill('input[name=email]', email);
+  await p.fill('input[name=password]', password);
+  await p.click('button[type=submit]');
+  await p.waitForURL(/\/enrol$/, { timeout: 15000 });
+  for (const theme of ['light', 'dark']) {
+    await p.emulateMedia({ colorScheme: theme });
+    await p.waitForTimeout(600); // let colour transitions finish after switching theme on an open page
+    found.push(...(await check(p, `Console /enrol (${theme})`)));
+    checked.push(`Console /enrol (${theme})`);
+  }
+  await p.click('text=Show QR code');
+  const secret = (await p.locator('code').first().textContent()).trim();
+  await p.fill('input[name=code]', authenticator.generate(secret));
+  await p.click('text=Turn on and continue');
+  await p.waitForURL(`${CONSOLE}/`, { timeout: 15000 });
+  await p.goto(`${CONSOLE}/tenants`);
+  const tenant = await p.locator('a[href^="/tenants/"]').first().getAttribute('href');
+  for (const theme of ['light', 'dark']) {
+    await p.emulateMedia({ colorScheme: theme });
+    for (const path of ['/', '/tenants', tenant, '/plans', '/health', '/audit', '/admins']) {
+      await p.goto(`${CONSOLE}${path}`);
+      const label = `Console ${path === tenant ? '/tenants/:id' : path} (${theme})`;
+      found.push(...(await check(p, label)));
+      checked.push(label);
+    }
+  }
+  await ctx.close();
+}
+
 (async () => {
   const mobileServer = await serveMobile();
   const b = await chromium.launch();
@@ -125,6 +167,7 @@ async function mobileScreens(b, theme, found, checked) {
     await mobileScreens(b, theme, found, checked);
     await ctx.close();
   }
+  await consoleScreens(b, found, checked);
   await b.close();
   mobileServer?.close();
 

@@ -1,10 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { provisionTenant, readMigrations, SlugTakenError } from '@crew/db';
 import type { z } from 'zod';
 import type { platformCreateTenantRequest } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { hashPassword, randomToken, sha256 } from '../../platform/auth/crypto';
 import { requestContext } from '../../platform/context/request-context';
+import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
+import { currentKeyId, fieldKeyStatus } from '../../platform/auth/field-key-rotation';
+import { pingClamd } from '../../platform/storage/malware-scan';
 import { DatabaseService, many, one } from '../../platform/database/database.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
@@ -21,6 +24,7 @@ export class PlatformService {
     private readonly db: DatabaseService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async metrics() {
@@ -248,9 +252,27 @@ export class PlatformService {
         migrations: { applied: applied.length, pending: files.filter((f) => !applied.some((a) => a.name === f)) },
         outbox,
         platformAuditChain: { checked: Number(chain!.checked), intact: chain!.first_broken_seq === null },
-        notConfigured: ['Redis (queues and distributed rate limits)', 'Object storage', 'Error tracking (Sentry)', 'Payment provider'],
+        fieldEncryption: await this.fieldEncryption(),
+        uploadScanning: this.config.CLAMAV_URL ? { configured: true, reachable: await pingClamd(this.config.CLAMAV_URL) } : { configured: false, reachable: false },
+        notConfigured: [
+          ...(this.config.REDIS_URL ? [] : ['Redis (rate limits shared by several API servers)']),
+          ...(this.config.CLAMAV_URL ? [] : ['Virus scanning of uploads (ClamAV)']),
+          'Object storage (files are on the API server\'s disk)',
+          'Error tracking (Sentry)',
+          'Payment provider',
+        ],
       };
     });
+  }
+
+  /** Which key encrypts new values, and how many stored values still need the re-encryption job. */
+  private async fieldEncryption() {
+    const status = await fieldKeyStatus(this.db, this.config.fieldKeys);
+    return {
+      keyId: currentKeyId(this.config.fieldKeys),
+      previousKeys: this.config.fieldKeys.split(',').length - 1,
+      olderValues: status.reduce((a, r) => a + r.pending, 0),
+    };
   }
 
   async platformAudit(limit = 100) {

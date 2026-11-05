@@ -101,7 +101,7 @@ export class AuthService {
     const user = await this.db.platform((tx) => one<UserRow>(tx, 'select * from users where id = $1', [step.sub]));
     if (!user?.mfa_secret_enc || !user.mfa_enabled) throw Errors.unauthorized();
     if (user.locked_until && user.locked_until > new Date()) throw Errors.tooMany();
-    if (!verifyTotp(decryptField(user.mfa_secret_enc, this.config.FIELD_ENCRYPTION_KEY), code)) {
+    if (!verifyTotp(decryptField(user.mfa_secret_enc, this.config.fieldKeys), code)) {
       await this.recordFailedLogin(user.id);
       throw Errors.unauthorized('That code is not valid. Check your authenticator app and try again.');
     }
@@ -346,7 +346,7 @@ export class AuthService {
       const user = await one<{ email: string; mfa_enabled: boolean }>(tx, 'select email::text, mfa_enabled from users where id = $1', [actor.userId]);
       if (user!.mfa_enabled) throw Errors.conflict('mfa_already_enabled', 'Multi-factor authentication is already on');
       const secret = generateMfaSecret();
-      await tx.query('update users set mfa_secret_enc = $2 where id = $1', [actor.userId, encryptField(secret, this.config.FIELD_ENCRYPTION_KEY)]);
+      await tx.query('update users set mfa_secret_enc = $2 where id = $1', [actor.userId, encryptField(secret, this.config.fieldKeys)]);
       return { secret, otpauthUri: mfaUri(user!.email, secret) };
     });
   }
@@ -357,7 +357,7 @@ export class AuthService {
     return this.db.platform(async (tx) => {
       const user = await one<{ mfa_secret_enc: string | null; mfa_enabled: boolean }>(tx, 'select mfa_secret_enc, mfa_enabled from users where id = $1', [actor.userId]);
       if (!user?.mfa_secret_enc) throw Errors.badRequest('mfa_not_started', 'Start MFA setup first');
-      if (!verifyTotp(decryptField(user.mfa_secret_enc, this.config.FIELD_ENCRYPTION_KEY), code)) throw Errors.badRequest('invalid_code', 'That code is not valid');
+      if (!verifyTotp(decryptField(user.mfa_secret_enc, this.config.fieldKeys), code)) throw Errors.badRequest('invalid_code', 'That code is not valid');
       await tx.query('update users set mfa_enabled = true where id = $1', [actor.userId]);
       await tx.query(`update sessions set revoked_at = now(), revoked_reason = 'mfa_upgraded' where id = $1`, [actor.sessionId]);
       await this.audit.record(tx, { tenantId: actor.tenantId, action: 'auth.mfa_enabled', resourceType: 'user', resourceId: actor.userId });

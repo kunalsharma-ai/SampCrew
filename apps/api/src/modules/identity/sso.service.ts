@@ -193,7 +193,7 @@ export class SsoService {
       // Domains are claimed across workspaces, so the check needs the platform role.
       const taken = await this.db.platform((ptx) => one<{ domain: string }>(ptx, 'select domain::text from sso_domains where domain = any($1::citext[]) and tenant_id <> $2 limit 1', [input.domains, actor.tenantId]));
       if (taken) throw Errors.conflict('domain_taken', `${taken.domain} is already used for single sign-on by another workspace. Contact support if it is yours.`);
-      const secret = clientSecret ? encryptField(clientSecret, this.config.FIELD_ENCRYPTION_KEY) : null;
+      const secret = clientSecret ? encryptField(clientSecret, this.config.fieldKeys) : null;
       const identityChanged =
         !existing || existing.protocol !== input.protocol || existing.issuer !== issuer || Boolean(clientSecret)
         || (saml ? existing.saml_sso_url !== (input as { ssoUrl: string }).ssoUrl || existing.saml_cert_fingerprint !== cert!.fingerprint : existing.client_id !== clientId);
@@ -313,7 +313,7 @@ export class SsoService {
         tx.query(
           `insert into sso_login_states (state_hash, tenant_id, nonce, code_verifier_enc, purpose, client, protocol, started_by_membership_id, return_to, app_challenge, expires_at)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + make_interval(mins => $11))`,
-          [sha256(state), c.tenant_id, nonce, verifier ? encryptField(verifier, this.config.FIELD_ENCRYPTION_KEY) : null, purpose, client, c.protocol, membershipId, mobile?.returnTo ?? null, mobile?.appChallenge ?? null, STATE_TTL_MIN],
+          [sha256(state), c.tenant_id, nonce, verifier ? encryptField(verifier, this.config.fieldKeys) : null, purpose, client, c.protocol, membershipId, mobile?.returnTo ?? null, mobile?.appChallenge ?? null, STATE_TTL_MIN],
         ),
       );
     if (c.protocol === 'saml') {
@@ -449,10 +449,10 @@ export class SsoService {
   async callback(code: string, state: string): Promise<SsoResult> {
     const { st, c, fail } = await this.consume(state, 'oidc');
     const d = await this.discover(c.issuer);
-    const secret = decryptField(c.client_secret_enc!, this.config.FIELD_ENCRYPTION_KEY);
+    const secret = decryptField(c.client_secret_enc!, this.config.fieldKeys);
     const postCreds = !(d.token_endpoint_auth_methods_supported ?? ['client_secret_basic']).includes('client_secret_basic');
     const form = new URLSearchParams({
-      grant_type: 'authorization_code', code, redirect_uri: this.redirectUri, code_verifier: decryptField(st.code_verifier_enc!, this.config.FIELD_ENCRYPTION_KEY),
+      grant_type: 'authorization_code', code, redirect_uri: this.redirectUri, code_verifier: decryptField(st.code_verifier_enc!, this.config.fieldKeys),
       ...(postCreds ? { client_id: c.client_id!, client_secret: secret } : {}),
     }).toString();
     const headers: Record<string, string> = { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' };

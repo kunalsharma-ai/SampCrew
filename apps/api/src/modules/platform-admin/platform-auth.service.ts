@@ -41,7 +41,7 @@ export class PlatformAuthService {
     let mfa = false;
     if (admin.mfa_enabled) {
       if (!code) return { status: 'mfa_required' as const };
-      if (!verifyTotp(decryptField(admin.mfa_secret_enc!, this.config.FIELD_ENCRYPTION_KEY), code)) {
+      if (!verifyTotp(decryptField(admin.mfa_secret_enc!, this.config.fieldKeys), code)) {
         await this.failed(admin.id);
         throw Errors.unauthorized('That code is not valid');
       }
@@ -113,7 +113,7 @@ export class PlatformAuthService {
       const admin = (await one<{ email: string; mfa_enabled: boolean }>(tx, 'select email::text, mfa_enabled from platform_admins where id = $1', [a.adminId]))!;
       if (admin.mfa_enabled) throw Errors.conflict('mfa_already_enabled', 'MFA is already enabled');
       const secret = generateMfaSecret();
-      await tx.query('update platform_admins set mfa_secret_enc = $2 where id = $1', [a.adminId, encryptField(secret, this.config.FIELD_ENCRYPTION_KEY)]);
+      await tx.query('update platform_admins set mfa_secret_enc = $2 where id = $1', [a.adminId, encryptField(secret, this.config.fieldKeys)]);
       return { secret, otpauthUri: mfaUri(admin.email, secret, 'CREW Console (SAMPLEDGE)') };
     });
   }
@@ -123,7 +123,7 @@ export class PlatformAuthService {
     return this.db.platform(async (tx) => {
       const admin = (await one<{ mfa_secret_enc: string | null; role: string }>(tx, 'select mfa_secret_enc, role from platform_admins where id = $1', [a.adminId]))!;
       if (!admin.mfa_secret_enc) throw Errors.badRequest('mfa_not_started', 'Start MFA setup first');
-      if (!verifyTotp(decryptField(admin.mfa_secret_enc, this.config.FIELD_ENCRYPTION_KEY), code)) throw Errors.badRequest('invalid_code', 'That code is not valid');
+      if (!verifyTotp(decryptField(admin.mfa_secret_enc, this.config.fieldKeys), code)) throw Errors.badRequest('invalid_code', 'That code is not valid');
       await tx.query('update platform_admins set mfa_enabled = true where id = $1', [a.adminId]);
       await tx.query('update platform_sessions set revoked_at = now() where id = $1', [a.sessionId]);
       await this.audit.record(tx, { tenantId: null, action: 'platform.mfa_enabled', resourceType: 'platform_admin', resourceId: a.adminId });

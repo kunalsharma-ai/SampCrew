@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { headers } from 'next/headers';
 // Fonts are served from CREW itself (not Google Fonts), so no page view sends visitors' addresses to a third party.
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
@@ -19,11 +20,13 @@ export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
 
 const themeScript = `try{var t=localStorage.getItem('crew-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}`;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // The script nonce for this request (middleware.ts); the Content Security Policy runs no inline script without it.
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>{children}</body>
     </html>

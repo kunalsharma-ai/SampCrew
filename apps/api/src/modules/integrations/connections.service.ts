@@ -80,7 +80,7 @@ export class ConnectionsService {
         tx,
         `insert into integration_connections (tenant_id, provider, name, credentials_enc, display, verified_at, created_by_membership_id)
          values (app_tenant_id(), 'slack', $1, $2, $3, now(), $4) returning id`,
-        [input.name, encryptField(JSON.stringify({ webhookUrl: input.webhookUrl }), this.config.FIELD_ENCRYPTION_KEY), JSON.stringify({ webhook: `…${input.webhookUrl.slice(-6)}` }), requestContext.tenantActor().membershipId],
+        [input.name, encryptField(JSON.stringify({ webhookUrl: input.webhookUrl }), this.config.fieldKeys), JSON.stringify({ webhook: `…${input.webhookUrl.slice(-6)}` }), requestContext.tenantActor().membershipId],
       ))!;
       await tx.query(`insert into integration_logs (tenant_id, connection_id, action, ok, detail, duration_ms) values (app_tenant_id(), $1, 'connect', true, 'Confirmation message accepted by Slack', $2)`, [c.id, Date.now() - started]);
       await this.audit.record(tx, { action: 'integration.connected', resourceType: 'integration_connection', resourceId: c.id, metadata: { provider: 'slack', name: input.name } });
@@ -118,7 +118,7 @@ export class ConnectionsService {
   async post(id: string, text: string, action = 'post'): Promise<{ durationMs: number }> {
     const c = await this.db.tenant((tx) => one<{ credentials_enc: string; status: string; provider: string }>(tx, 'select credentials_enc, status, provider from integration_connections where id = $1', [id]));
     if (!c || c.status === 'disconnected') throw new ConnectorError('The Slack connection no longer exists', false);
-    const { webhookUrl } = JSON.parse(decryptField(c.credentials_enc, this.config.FIELD_ENCRYPTION_KEY)) as { webhookUrl: string };
+    const { webhookUrl } = JSON.parse(decryptField(c.credentials_enc, this.config.fieldKeys)) as { webhookUrl: string };
     const started = Date.now();
     try {
       await this.postToSlack(webhookUrl, text.slice(0, 3000));

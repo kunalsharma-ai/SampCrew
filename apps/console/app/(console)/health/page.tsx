@@ -10,6 +10,8 @@ interface Health {
   migrations: { applied: number; pending: string[] };
   outbox: { pending: number; retrying: number; oldestPendingSeconds: number | null };
   platformAuditChain: { checked: number; intact: boolean };
+  fieldEncryption: { keyId: string; previousKeys: number; olderValues: number };
+  uploadScanning: { configured: boolean; reachable: boolean };
   notConfigured: string[];
 }
 
@@ -25,6 +27,22 @@ export default async function HealthPage() {
         <Stat label="Database" value={`${h.database.latencyMs} ms`} hint={`${h.database.size} · ${h.database.connections} connections`} />
         <Stat label="Event outbox" value={h.outbox.pending} hint={h.outbox.pending ? `${h.outbox.retrying} retrying · oldest ${dur(h.outbox.oldestPendingSeconds ?? 0)}` : 'Nothing waiting'} />
         <Stat label="Platform audit chain" value={<Badge tone={h.platformAuditChain.intact ? 'success' : 'danger'} dot>{h.platformAuditChain.intact ? 'intact' : 'broken'}</Badge>} hint={`${h.platformAuditChain.checked} entries verified`} />
+      </div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <Stat
+          label="Field encryption key"
+          value={<span className="font-mono text-[1rem]">{h.fieldEncryption.keyId}</span>}
+          hint={h.fieldEncryption.olderValues
+            ? `${h.fieldEncryption.olderValues} value(s) still on an older key: run the re-encryption job`
+            : h.fieldEncryption.previousKeys
+              ? 'Every value is on the current key; the previous key can be removed'
+              : 'Every value is on the current key'}
+        />
+        <Stat
+          label="Virus scanning of uploads"
+          value={<Badge tone={!h.uploadScanning.configured ? 'neutral' : h.uploadScanning.reachable ? 'success' : 'danger'} dot>{!h.uploadScanning.configured ? 'off' : h.uploadScanning.reachable ? 'on' : 'unreachable'}</Badge>}
+          hint={!h.uploadScanning.configured ? 'Set CLAMAV_URL to scan documents, receipts and CVs' : h.uploadScanning.reachable ? 'Uploads are scanned before they are stored' : 'Uploads are being refused until the scanner answers'}
+        />
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card>

@@ -112,7 +112,7 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
       const r = (await one<{ id: string }>(
         tx,
         `insert into webhook_endpoints (tenant_id, name, url, events, secret_enc, created_by_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5) returning id`,
-        [input.name, input.url, input.events, encryptField(secret, this.config.FIELD_ENCRYPTION_KEY), requestContext.tenantActor().membershipId],
+        [input.name, input.url, input.events, encryptField(secret, this.config.fieldKeys), requestContext.tenantActor().membershipId],
       ))!;
       await this.audit.record(tx, { action: 'webhook.created', resourceType: 'webhook_endpoint', resourceId: r.id, metadata: { name: input.name, host: new URL(input.url).host, events: input.events } });
       return r.id;
@@ -147,7 +147,7 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
   async rotateSecret(id: string) {
     const secret = `whsec_${randomToken(24)}`;
     await this.db.tenant(async (tx) => {
-      const r = await tx.query('update webhook_endpoints set secret_enc = $2, updated_at = now() where id = $1', [id, encryptField(secret, this.config.FIELD_ENCRYPTION_KEY)]);
+      const r = await tx.query('update webhook_endpoints set secret_enc = $2, updated_at = now() where id = $1', [id, encryptField(secret, this.config.fieldKeys)]);
       if (!r.rowCount) throw Errors.notFound('Webhook endpoint');
       await this.audit.record(tx, { action: 'webhook.secret_rotated', resourceType: 'webhook_endpoint', resourceId: id });
     });
@@ -289,7 +289,7 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
     let durationMs = 0;
     const started = Date.now();
     try {
-      const secret = decryptField(c.secret_enc, this.config.FIELD_ENCRYPTION_KEY);
+      const secret = decryptField(c.secret_enc, this.config.fieldKeys);
       const r = await postJson(c.url, body, {
         'user-agent': 'CREW-Webhooks/1.0',
         'crew-event': c.event_type,

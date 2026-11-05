@@ -119,7 +119,7 @@ describe('core HR', () => {
       const set = await api(app, hrAdmin).put(`/employees/${people.operator!.employeeId}/sensitive`).send({ bankName: 'Demo Bank', bankAccount: '123456789012', bankRouting: 'DEMO0001234', taxId: 'ABCDE1234F' });
       expect(set.status).toBe(200);
       const raw = await pool.query(`select bank_account_enc, tax_id_enc from employee_sensitive where employee_id = $1`, [people.operator!.employeeId]);
-      expect(raw.rows[0].bank_account_enc).toMatch(/^v1\./);
+      expect(raw.rows[0].bank_account_enc).toMatch(/^v2\.[0-9a-f]{8}\./);
       expect(JSON.stringify(raw.rows[0])).not.toContain('123456789012');
       const mine = await loginWithMfa(app, pool, people.operator!.email);
       const got = await api(app, mine.accessToken).get(`/employees/${people.operator!.employeeId}/sensitive`);

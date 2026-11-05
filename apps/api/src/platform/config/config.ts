@@ -57,12 +57,31 @@ const schema = z.object({
   SLACK_WEBHOOK_BASE_URL: optional(z.string().url()),
   /** Redis for state shared by API servers (rate-limit counters). Needed when running more than one API replica. */
   REDIS_URL: optional(z.string().regex(/^rediss?:\/\//, 'REDIS_URL must start with redis:\/\/ or rediss:\/\/')),
+  /**
+   * ClamAV daemon for scanning uploaded files, e.g. tcp://clamav:3310 (infra/deploy/compose.yml, profile "scan").
+   * When set, every uploaded document, receipt and CV is scanned before it is stored, and uploads are refused while
+   * the scanner is unreachable. When unset, uploads are not scanned (System health in the Console says so).
+   */
+  CLAMAV_URL: optional(z.string().regex(/^tcp:\/\/[^\s/:]+:\d+$/, 'CLAMAV_URL must look like tcp://host:3310')),
   FIELD_ENCRYPTION_KEY: z
     .string()
     .refine((v) => Buffer.from(v, 'base64').length === 32, 'FIELD_ENCRYPTION_KEY must be 32 bytes, base64 encoded'),
+  /**
+   * Earlier field encryption keys, comma-separated, kept only to read values not yet re-encrypted after a rotation
+   * (docs/ops/runbook.md, "Secrets"). Empty when no rotation is in progress.
+   */
+  FIELD_ENCRYPTION_KEYS_PREVIOUS: z
+    .string()
+    .default('')
+    .refine((v) => v.split(',').map((k) => k.trim()).filter(Boolean).every((k) => Buffer.from(k, 'base64').length === 32), 'FIELD_ENCRYPTION_KEYS_PREVIOUS must hold 32-byte base64 keys, comma-separated'),
 });
 
-export type AppConfig = z.infer<typeof schema> & { isProductionLike: boolean; corsOrigins: string[] };
+export type AppConfig = z.infer<typeof schema> & {
+  isProductionLike: boolean;
+  corsOrigins: string[];
+  /** The field encryption key ring: the current key first, then previous ones (see platform/auth/crypto.ts). */
+  fieldKeys: string;
+};
 
 let cached: AppConfig | undefined;
 
@@ -92,6 +111,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...parsed.data,
     isProductionLike: parsed.data.CREW_ENV === 'production' || parsed.data.CREW_ENV === 'staging',
     corsOrigins: parsed.data.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
+    fieldKeys: [parsed.data.FIELD_ENCRYPTION_KEY, ...parsed.data.FIELD_ENCRYPTION_KEYS_PREVIOUS.split(',')].map((k) => k.trim()).filter(Boolean).join(','),
   };
   return cached;
 }
