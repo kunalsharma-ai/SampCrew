@@ -42,7 +42,7 @@ function Gate() {
 
   if (status === 'loading') return <Loading />;
   return (
-    <Stack screenOptions={{ headerStyle: { backgroundColor: t.card }, headerTintColor: t.fg, contentStyle: { backgroundColor: t.bg } }}>
+    <Stack screenOptions={{ headerStyle: { backgroundColor: t.neon ? t.bg : t.card }, headerShadowVisible: !t.neon, headerTitleStyle: { fontWeight: t.neon ? '700' : '600' }, headerTintColor: t.fg, contentStyle: { backgroundColor: t.bg } }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="unlock" options={{ headerShown: false }} />

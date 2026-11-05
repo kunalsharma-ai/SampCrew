@@ -1,4 +1,4 @@
-import { buildTheme, DEFAULT_APPEARANCE, THEME_PRESETS } from '@crew/contracts';
+import { buildTheme, DEFAULT_APPEARANCE, THEME_PRESETS, THEME_TEMPLATES } from '@crew/contracts';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
@@ -7,7 +7,7 @@ import { biometricEnabled, biometricSupport, type BiometricSupport, setBiometric
 import { getPushToken } from '../../src/lib/push';
 import { useSession } from '../../src/lib/session';
 import type { PayslipRow } from '../../src/lib/types';
-import { Badge, Button, Card, Choice, DemoBanner, Empty, errorText, fmt, ListItem, Notice, Row, Screen, Text, Title, useLoad, useReloadOnFocus } from '../../src/ui';
+import { Avatar, Badge, Button, Card, CardTitle, Choice, DemoBanner, Empty, errorText, fmt, gradient, ListItem, Notice, Row, Screen, Text, Title, useLoad, useReloadOnFocus } from '../../src/ui';
 
 export default function Me() {
   const { api, me, device, setDevice, signOut, can, hasFeature } = useSession();
@@ -55,14 +55,20 @@ export default function Me() {
 
   return (
     <Screen onRefresh={reload} refreshing={loading && !!data}>
-      <Title>{me?.user.fullName ?? 'Me'}</Title>
-      <Text muted>{`${me?.user.email ?? ''} · ${me?.tenant.name ?? ''}`}</Text>
+      <Row style={{ gap: 14 }} testID="me-hero">
+        <Avatar name={me?.user.fullName ?? ''} size={60} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Title>{me?.user.fullName ?? 'Me'}</Title>
+          <Text muted size={14}>{me?.membership.roles.map((r) => r.name).join(', ') || me?.user.email || ''}</Text>
+        </View>
+      </Row>
+      <Text muted size={14}>{`${me?.user.email ?? ''} · ${me?.tenant.name ?? ''}`}</Text>
       <DemoBanner show={!!me?.tenant.isDemo} />
       {msg && <Notice tone={msg.tone} testID="me-message">{msg.text}</Notice>}
 
       {payslips && (
         <Card testID="payslips">
-          <Text weight="700">Payslips</Text>
+          <CardTitle>Payslips</CardTitle>
           {error && <Notice tone="danger">{error}</Notice>}
           {data?.length === 0 && <Empty>No payslips yet.</Empty>}
           {data?.map((p) => (
@@ -72,7 +78,7 @@ export default function Me() {
       )}
 
       <Card>
-        <Text weight="700">Security</Text>
+        <CardTitle>Security</CardTitle>
         <Row style={{ justifyContent: 'space-between' }}>
           <Text>Two-step sign-in</Text>
           <Badge tone={me?.user.mfaEnabled ? 'ok' : 'neutral'}>{me?.user.mfaEnabled ? 'On' : 'Off'}</Badge>
@@ -116,8 +122,53 @@ function AppearanceCard({ onMessage }: { onMessage: (m: { tone: 'ok' | 'warn' | 
     update(patch).then(() => onMessage({ tone: 'ok', text: done }), (e) => onMessage({ tone: 'danger', text: errorText(e) }));
   return (
     <Card testID="appearance">
-      <Text weight="700">Appearance</Text>
+      <CardTitle>Appearance</CardTitle>
       <Text muted size={13}>Saved to your account, so the Web Portal uses the same theme.</Text>
+      <Text size={13} weight="600">Templates</Text>
+      <View accessibilityRole="radiogroup" accessibilityLabel="Templates" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {THEME_TEMPLATES.map((tpl) => {
+          const p = tpl.patch;
+          const on = (Object.keys(p) as (keyof typeof p)[]).every((k) => appearance[k] === p[k]);
+          const mode = p.mode === 'dark' ? 'dark' : 'light';
+          const sw = buildTheme({ ...DEFAULT_APPEARANCE, ...p }, mode);
+          return (
+            <Pressable
+              key={tpl.key}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: on }}
+              aria-checked={on}
+              accessibilityLabel={`${tpl.name}: ${tpl.description}`}
+              testID={`template-${tpl.key}`}
+              onPress={() => !on && save(p, `${tpl.name} applied.`)}
+              style={{ width: '47%', flexGrow: 1, borderWidth: on ? 2 : 1, borderColor: on ? theme.accent : theme.border, borderRadius: 12, overflow: 'hidden', backgroundColor: theme.card }}
+            >
+              <View style={[{ height: 44, padding: 8, justifyContent: 'flex-end' }, gradient(`linear-gradient(135deg, ${sw.bg}, ${sw.accent} 140%)`, sw.bg)]}>
+                <View style={{ flexDirection: 'row', gap: 4 }}>
+                  {[sw.accent, sw.ember, sw['glow-3']].map((c, i) => <View key={i} style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: c, borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)' }} />)}
+                </View>
+              </View>
+              <View style={{ padding: 8, gap: 2 }}>
+                <Text size={13} weight={on ? '700' : '600'} numberOfLines={1}>{tpl.name}</Text>
+                <Text size={12} muted numberOfLines={2}>{tpl.description}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Choice
+        label="Visual style"
+        value={appearance.style}
+        options={[{ value: 'neon', label: 'Neon' }, { value: 'classic', label: 'Classic' }]}
+        onChange={(style) => save({ style }, style === 'neon' ? 'The neon design is on.' : 'The classic design is on.')}
+      />
+      {appearance.style === 'neon' && (
+        <Choice
+          label="Background"
+          value={appearance.backdrop}
+          options={[{ value: 'aurora', label: 'Aurora' }, { value: 'cosmos', label: 'Cosmos' }, { value: 'gradient', label: 'Gradient' }, { value: 'plain', label: 'Plain' }]}
+          onChange={(backdrop) => save({ backdrop }, `Background changed to ${backdrop}.`)}
+        />
+      )}
       <Choice
         label="Mode"
         value={appearance.mode}

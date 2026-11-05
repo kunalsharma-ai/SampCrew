@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ApiError } from '../src/lib/api';
 import { useSession } from '../src/lib/session';
 import type { InboxItem } from '../src/lib/types';
-import { Button, Card, Empty, Field, fmt, Loading, Notice, Row, Screen, Text, useLoad } from '../src/ui';
+import { Button, Card, Empty, Field, fmt, Loading, Notice, Row, Screen, Text, useLoad, CardTitle } from '../src/ui';
 
 /** Requests waiting for my decision: leave, corrections, overtime, expenses and the rest. */
 export default function Approvals() {
@@ -35,7 +35,7 @@ export default function Approvals() {
       {data?.length === 0 && <Empty>Nothing is waiting for you.</Empty>}
       {data?.map((i) => (
         <Card key={i.id} testID="approval-item">
-          <Text weight="700">{i.label}</Text>
+          <CardTitle>{i.label}</CardTitle>
           <Text>{i.summary}</Text>
           <Text muted size={13}>{`${i.requestedBy} · ${fmt.dateTime(i.createdAt)}${i.stepCount > 1 ? ` · step ${i.stepSeq} of ${i.stepCount}` : ''}`}</Text>
           <Field label="Comment" value={comments[i.id] ?? ''} onChangeText={(v) => setComments((c) => ({ ...c, [i.id]: v }))} maxLength={1000} placeholder="Optional, shown to the person" />

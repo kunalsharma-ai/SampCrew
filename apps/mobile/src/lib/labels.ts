@@ -41,6 +41,7 @@ export const dayStatus: Record<string, string> = {
   weekly_off: 'Weekly off',
   incomplete: 'Incomplete',
   not_started: 'Not started',
+  in_progress: 'In progress',
 };
 
 export const riskFlag: Record<string, string> = {

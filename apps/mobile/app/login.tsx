@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Platform, View } from 'react-native';
 import { ApiError } from '../src/lib/api';
 import { type SignInStep, useSession } from '../src/lib/session';
 import { secureStorageAvailable } from '../src/lib/storage';
-import { Button, Card, Field, ListItem, Notice, Screen, Text, Title } from '../src/ui';
+import { Button, Card, Field, gradient, glow, ListItem, Notice, Row, Screen, Text, useTheme } from '../src/ui';
 
 /**
  * Sign-in: email and password, then a 6-digit code when two-step sign-in is on, then a workspace if there are several.
@@ -58,7 +58,8 @@ export default function Login() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Screen>
         <View style={{ height: 40 }} />
-        <Title>CREW</Title>
+        <Brand />
+        <Text size={26} weight="800" accessibilityRole="header" style={{ marginTop: 12, letterSpacing: -0.4 }}>Welcome back</Text>
         <Text muted>Sign in to your workspace.</Text>
         {notice && <Notice tone="warn">{notice}</Notice>}
         {!secureStorageAvailable && (
@@ -107,5 +108,21 @@ export default function Login() {
         </Card>
       </Screen>
     </KeyboardAvoidingView>
+  );
+}
+
+/** The CREW mark: a gradient square with the word mark beside it. */
+function Brand() {
+  const t = useTheme();
+  return (
+    <Row style={{ gap: 12 }} testID="brand">
+      <View style={[{ width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, gradient(`linear-gradient(135deg, ${t.gradient[0]}, ${t.gradient[1]})`, t.accent), t.neon ? glow(t.accent, 0.6, 10, 24) : {}]}>
+        <Text size={22} weight="800" style={{ color: t.accentFg }}>C</Text>
+      </View>
+      <View>
+        <Text size={20} weight="800" style={{ letterSpacing: 3 }}>CREW</Text>
+        <Text size={11} muted weight="600" style={{ letterSpacing: 2 }}>BY SAMPLEDGE</Text>
+      </View>
+    </Row>
   );
 }

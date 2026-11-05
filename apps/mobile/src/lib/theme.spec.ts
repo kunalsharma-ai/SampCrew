@@ -1,6 +1,6 @@
 import { contrast, DEFAULT_APPEARANCE, THEME_PRESETS } from '@crew/contracts';
 import { describe, expect, it } from 'vitest';
-import { cachedAppearance, mobileTheme, resolveMode } from './theme';
+import { alpha, cachedAppearance, mobileTheme, NEON_TILES, NIGHT, neonOn, resolveMode } from './theme';
 
 describe('mobile theme', () => {
   it('follows the phone for "system" and pins an explicit mode', () => {
@@ -41,5 +41,38 @@ describe('mobile theme', () => {
     expect(cachedAppearance(null)).toEqual(DEFAULT_APPEARANCE);
     expect(cachedAppearance('{not json')).toEqual(DEFAULT_APPEARANCE);
     expect(cachedAppearance(JSON.stringify({ preset: 'rose', mode: 'dark' }))).toMatchObject({ preset: 'rose', mode: 'dark' });
+  });
+
+  it('uses the neon design by default, and the plain look for Classic, high contrast and focus mode', () => {
+    expect(mobileTheme(DEFAULT_APPEARANCE, null).neon).toBe(true);
+    expect(neonOn({ ...DEFAULT_APPEARANCE, style: 'classic' })).toBe(false);
+    expect(neonOn({ ...DEFAULT_APPEARANCE, contrast: 'high' })).toBe(false);
+    expect(neonOn({ ...DEFAULT_APPEARANCE, focusMode: true })).toBe(false);
+    const classic = mobileTheme({ ...DEFAULT_APPEARANCE, style: 'classic' }, null);
+    expect(classic.glass).toBe(classic.card);
+    expect(mobileTheme({ ...DEFAULT_APPEARANCE, backdrop: 'cosmos' }, null).backdrop).toBe('cosmos');
+    expect(mobileTheme({ ...DEFAULT_APPEARANCE, radius: 'round' }, null).radius).toBeGreaterThan(mobileTheme({ ...DEFAULT_APPEARANCE, radius: 'sharp' }, null).radius);
+  });
+
+  it('keeps button text readable on both ends of the neon gradient in every preset and mode', () => {
+    for (const p of THEME_PRESETS) {
+      for (const mode of ['light', 'dark'] as const) {
+        for (const primary of [null, '#db2777', '#0d9488']) {
+          const t = mobileTheme({ ...DEFAULT_APPEARANCE, preset: p.key, mode, primary }, null);
+          expect(t.gradient[0]).toBe(t.accent);
+          expect(contrast(t.accentFg, t.gradient[1]), `${p.key} ${mode} ${primary}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
+
+  it('puts white text on KPI tiles and the night tab bar at 4.5:1 or more', () => {
+    for (const [tone, stops] of Object.entries(NEON_TILES)) for (const c of stops) expect(contrast('#ffffff', c), tone).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(NIGHT.fg, NIGHT.bg)).toBeGreaterThanOrEqual(7);
+    expect(contrast(NIGHT.muted, NIGHT.bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('writes colours with alpha for glass and glows', () => {
+    expect(alpha('#ff8000', 0.5)).toBe('rgba(255,128,0,0.5)');
   });
 });

@@ -119,7 +119,7 @@ async function signIn(p, email, { code } = {}) {
       await p.getByRole('button', { name: 'Verify' }).click();
     }
     const r = await Promise.race([
-      p.getByText(/^Hello/).waitFor({ timeout: 20000 }).then(() => 'in'),
+      p.getByText(/^Good (morning|afternoon|evening)/).waitFor({ timeout: 20000 }).then(() => 'in'),
       p.getByText('Too many attempts').waitFor({ timeout: 20000 }).then(() => 'limited'),
     ]);
     if (r === 'in') return;
@@ -300,7 +300,7 @@ function futureWeekday(taken) {
     const themeBefore = await colours();
     await card.getByRole('radio', { name: 'Emerald Command' }).click();
     await p.getByTestId('me-message').getByText('Theme changed to Emerald Command.').waitFor();
-    await card.getByRole('radio', { name: 'Dark' }).click();
+    await card.getByRole('radio', { name: 'Dark', exact: true }).click();
     await p.getByTestId('me-message').getByText('CREW now uses dark mode.').waitFor();
     const themed = await colours();
     assert(themed.card !== themeBefore.card, `the card colour changed with the theme (${themeBefore.card} -> ${themed.card})`);
@@ -318,6 +318,35 @@ function futureWeekday(taken) {
     await card.locator('[role="radio"][aria-label="Sunset Fusion"][aria-checked="true"]').waitFor();
     ok('picked Emerald in dark mode on the phone; saved to the account, kept after a reload, and a web change reaches the phone');
 
+    // 6c. Neon design: Home's KPI tiles come from live records; templates and the Classic style save to the account.
+    await p.goto(APP + '/');
+    const tileText = async (id) => (await p.getByTestId(id).textContent()).replace(/\s+/g, ' ');
+    await p.getByTestId('tile-approvals').waitFor();
+    const inboxNow = await api(qa, 'GET', '/approvals/inbox');
+    assert((await tileText('tile-approvals')).includes(`${inboxNow.length}Approvals`), `approvals tile shows ${inboxNow.length}`);
+    const notesNow = await api(qa, 'GET', '/notifications?limit=1');
+    assert((await tileText('tile-notifications')).includes(`${notesNow.unread}Unread`), `unread tile shows ${notesNow.unread}`);
+    const bal = (await api(qa, 'GET', '/leave/balances')).balances.filter((x) => x.tracked);
+    const avail = Number(bal.reduce((s, x) => s + Number(x.available), 0).toFixed(1));
+    assert((await tileText('tile-leave')).includes(`${avail}Leave days left`), `leave tile shows ${avail} days (${await tileText('tile-leave')})`);
+    await p.goto(APP + '/me');
+    await card.waitFor();
+    await card.getByRole('radio', { name: /^Tech Futuristic/ }).click();
+    await p.getByTestId('me-message').getByText('Tech Futuristic applied.').waitFor();
+    let look = (await api(qa, 'GET', '/me/preferences')).appearance;
+    assert(look.preset === 'cyber' && look.mode === 'dark' && look.style === 'neon' && look.backdrop === 'cosmos', `template saved (${JSON.stringify(look)})`);
+    assert((await card.getByRole('radio', { name: /^Tech Futuristic/ }).getAttribute('aria-checked')) === 'true', 'the template shows as chosen');
+    await card.getByRole('radio', { name: 'Gradient', exact: true }).click();
+    await p.getByTestId('me-message').getByText('Background changed to gradient.').waitFor();
+    await card.getByRole('radio', { name: 'Classic', exact: true }).click();
+    await p.getByTestId('me-message').getByText('The classic design is on.').waitFor();
+    look = (await api(qa, 'GET', '/me/preferences')).appearance;
+    assert(look.style === 'classic' && look.backdrop === 'gradient', `style and background saved (${look.style}, ${look.backdrop})`);
+    assert((await card.getByRole('radio', { name: 'Gradient', exact: true }).count()) === 0, 'background choice hidden in the classic style');
+    await card.getByRole('radio', { name: 'Neon', exact: true }).click();
+    await p.getByTestId('me-message').getByText('The neon design is on.').waitFor();
+    ok('neon Home tiles match live approvals, notifications and leave; a template, background and style save to the account');
+
     // 7. Two-step sign-in with an authenticator code.
     const ukSales = 'uk.sales@demo.crew.local';
     const us = await apiLogin(ukSales);
@@ -325,7 +354,7 @@ function futureWeekday(taken) {
     await api(us, 'POST', '/me/mfa/enable', { code: authenticator.generate(secret) });
     const two = await phone(b, 'uk.sales');
     await signIn(two.p, ukSales, { code: () => authenticator.generate(secret) });
-    await two.p.getByText('Hello, Oliver').waitFor();
+    await two.p.getByText(/^Good (morning|afternoon|evening), Oliver$/).waitFor();
     ok('an employee with two-step sign-in signed in with an authenticator code');
     await two.ctx.close();
     await mgr.ctx.close();
