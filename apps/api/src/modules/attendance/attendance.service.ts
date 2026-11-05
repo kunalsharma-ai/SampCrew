@@ -10,6 +10,8 @@ import {
   type overtimeClaimInput,
   type periodLockInput,
   type PunchInput,
+  type PunchSyncInput,
+  mobileSync,
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -174,6 +176,138 @@ export class AttendanceService implements OnModuleInit {
     });
   }
 
+  /**
+   * Punches queued by the mobile app, sent in one batch when the phone is online. Each punch is idempotent on
+   * device id and sequence. The punch time is worked out from the server clock and the app's monotonic clock
+   * where possible (see packages/contracts/src/mobile-sync.ts); offline punches, changed phone clocks and mock
+   * locations are stored with risk flags for review, never silently corrected or dropped. Punches older than
+   * 72 hours, from the future, or outside an enforced geofence are refused with a reason, so the person can
+   * ask for a correction instead.
+   */
+  async syncMobile(input: PunchSyncInput) {
+    const actor = requestContext.tenantActor();
+    const ctx = requestContext.get();
+    const now = Date.now();
+    const refusals: { employeeId: string; distanceM: number; sequence: number }[] = [];
+    const out = await this.db.tenant(async (tx) => {
+      const device = await one<{ id: string }>(tx, 'select id from mobile_devices where id = $1 and membership_id = $2 and revoked_at is null', [input.deviceId, actor.membershipId]);
+      if (!device) throw Errors.notFound('Device');
+      const e = await this.me(tx);
+      await this.authz.require('attendance:punch', attrsOf(e), tx);
+      const policy = await this.days.policy(tx, e.location_id);
+      const results: Record<string, unknown>[] = [];
+      const touched: number[] = [];
+      for (const p of [...input.punches].sort((a, b) => a.sequence - b.sequence)) {
+        const sourceEventId = mobileSync.punchEventId(device.id, p.sequence);
+        const existing = await one<{ id: string; captured_at: Date; direction: string; risk_flags: string[] }>(
+          tx, `select id, captured_at, direction, risk_flags from attendance_events where source = 'mobile' and source_event_id = $1`, [sourceEventId],
+        );
+        if (existing) {
+          results.push({ sequence: p.sequence, status: 'duplicate', punch: { id: existing.id, capturedAt: existing.captured_at, direction: existing.direction, flags: existing.risk_flags } });
+          continue;
+        }
+        const refuse = (reason: string, message: string) => results.push({ sequence: p.sequence, status: 'rejected', reason, message });
+        if (!policy.mobile_punch) {
+          refuse('mobile_off', 'Punching from the mobile app is turned off for your location.');
+          continue;
+        }
+        const capture = mobileSync.resolveCaptureTime({
+          capturedWallMs: Date.parse(p.capturedAt), capturedElapsedMs: p.capturedElapsedMs, capturedRunId: p.capturedRunId,
+          sentElapsedMs: input.sentElapsedMs, sentRunId: input.sentRunId, serverNowMs: now,
+        });
+        const at = Math.min(capture.capturedAtMs, now);
+        const age = mobileSync.checkAge(capture.capturedAtMs, now);
+        if (!age.ok) {
+          refuse(age.reason, age.reason === 'too_old'
+            ? `This punch is more than ${mobileSync.OFFLINE_MAX_AGE_HOURS} hours old. Ask for an attendance correction instead.`
+            : 'This punch is dated in the future. Check the date and time on your phone.');
+          continue;
+        }
+        const localDate = zonedTime.toLocal(at, e.tz).date;
+        if (localDate < e.date_of_joining) {
+          refuse('not_started', `Your employment starts on ${e.date_of_joining}.`);
+          continue;
+        }
+        if (e.status === 'exited' || (e.last_working_day && localDate > e.last_working_day)) {
+          refuse('employment_ended', 'Your employment had ended at the time of this punch.');
+          continue;
+        }
+        let geofence: 'inside' | 'outside' | 'unknown' | 'not_configured' | 'not_required' = 'not_required';
+        let distance: number | null = null;
+        if (policy.geofence_mode !== 'off') {
+          if (!e.fence) geofence = 'not_configured';
+          else if (p.latitude === undefined || p.longitude === undefined) {
+            if (policy.geofence_mode === 'enforce') {
+              refuse('location_required', 'Allow location access to punch: your workplace checks that you are on site.');
+              continue;
+            }
+            geofence = 'unknown';
+          } else {
+            const g = attendanceEngine.geofenceCheck(e.fence, { lat: p.latitude, lon: p.longitude, accuracyM: p.accuracyM });
+            geofence = g.result;
+            distance = g.distance;
+            if (g.result === 'outside' && policy.geofence_mode === 'enforce') {
+              refusals.push({ employeeId: e.id, distanceM: g.distance, sequence: p.sequence });
+              refuse('outside_geofence', `You were about ${g.distance} m from your workplace, outside its ${e.fence.radiusM} m area.`);
+              continue;
+            }
+          }
+        }
+        const flags = [
+          ...(p.offline ? ['offline'] : []),
+          ...(capture.flag ? [capture.flag] : []),
+          ...(p.mockLocation ? ['mock_location'] : []),
+        ];
+        const workDate = await this.days.workDateAt(tx, e, at);
+        const locked = (await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, workDate]))!.locked;
+        let direction = p.direction;
+        if (!direction) {
+          const win = await this.days.window(tx, e, workDate);
+          const last = (await this.days.punches(tx, e.id, win.from, at)).at(-1);
+          direction = last && last.direction !== 'out' ? 'out' : 'in';
+        }
+        const row = (await one<{ id: string }>(
+          tx,
+          `insert into attendance_events (tenant_id, employee_id, source, source_event_id, captured_at, device_local_time, direction, latitude, longitude, accuracy_m,
+                                          geofence_result, distance_m, recorded_by_membership_id, note, remote_ip, raw, mobile_device_id, risk_flags, arrived_after_lock)
+           values (app_tenant_id(), $1, 'mobile', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           on conflict (tenant_id, source, source_event_id) do nothing returning id`,
+          [e.id, sourceEventId, new Date(at), p.capturedAt, direction, p.latitude ?? null, p.longitude ?? null, p.accuracyM ?? null, geofence, distance,
+            actor.membershipId, p.note ?? null, ctx?.ip ?? null,
+            JSON.stringify({ timeBasis: capture.basis, phoneTime: p.capturedAt, capturedElapsedMs: p.capturedElapsedMs ?? null, sentElapsedMs: input.sentElapsedMs ?? null, sameRun: p.capturedRunId !== undefined && p.capturedRunId === input.sentRunId }),
+            device.id, flags, locked],
+        ));
+        if (!row) {
+          results.push({ sequence: p.sequence, status: 'duplicate' });
+          continue;
+        }
+        if (!locked) touched.push(at);
+        results.push({
+          sequence: p.sequence,
+          status: 'accepted',
+          punch: { id: row.id, capturedAt: new Date(at), direction, geofence, distanceM: distance, flags, arrivedAfterLock: locked },
+          ...(locked ? { message: 'Attendance for that day is locked for payroll. The punch is kept, and HR can apply it after unlocking.' } : {}),
+        });
+      }
+      if (touched.length) {
+        const dates = touched.flatMap((t) => this.days.datesFor(e, t)).sort();
+        const today = localToday(e.tz);
+        const from = dates[0]! < e.date_of_joining ? e.date_of_joining : dates[0]!;
+        const to = dates[dates.length - 1]! > today ? today : dates[dates.length - 1]!;
+        if (from <= to) await this.days.recompute(tx, e.id, from, to, now);
+      }
+      await tx.query('update mobile_devices set last_sync_at = now(), last_seen_at = now() where id = $1', [device.id]);
+      const date = await this.days.workDateAt(tx, e, now);
+      return { results, today: await this.dayRow(tx, e.id, date) };
+    });
+    if (refusals.length) {
+      await this.db.tenant(async (tx) => {
+        for (const r of refusals) await this.audit.record(tx, { action: 'attendance.punch_refused', resourceType: 'employee', resourceId: r.employeeId, metadata: { reason: 'outside_geofence', distanceM: r.distanceM, source: 'mobile', sequence: r.sequence } });
+      });
+    }
+    return out;
+  }
+
   private requireEmployed(e: EmployeeCtx, date: string) {
     if (date < e.date_of_joining) throw Errors.badRequest('not_started', `Your employment starts on ${e.date_of_joining}.`);
     if (e.status === 'exited' || (e.last_working_day && date > e.last_working_day)) throw Errors.forbidden('Your employment has ended.');
@@ -322,7 +456,7 @@ export class AttendanceService implements OnModuleInit {
         dayType: plan.dayType,
         holidayName: plan.holidayName,
         nextDirection: last && last.direction !== 'out' ? 'out' : 'in',
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id) })),
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), flags: p.risk_flags })),
         day: await this.dayRow(tx, e.id, date),
         allowed: { web: policy.web_punch, mobile: policy.mobile_punch, qr: policy.qr_punch },
         geofence: { mode: policy.geofence_mode, configured: Boolean(e.fence), radiusM: e.fence?.radiusM ?? null },
@@ -378,7 +512,7 @@ export class AttendanceService implements OnModuleInit {
         employee: { id: e.id, name: e.name, code: e.code, timeZone: e.tz },
         day: (await this.dayRow(tx, e.id, date)) ?? null,
         window: { from: new Date(win.from).toISOString(), to: new Date(win.to).toISOString() },
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, verifyMethod: p.verify_method, viaCorrection: Boolean(p.correction_id), note: p.note })),
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, verifyMethod: p.verify_method, viaCorrection: Boolean(p.correction_id), note: p.note, flags: p.risk_flags })),
         locked: (await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, date]))!.locked,
       };
     });

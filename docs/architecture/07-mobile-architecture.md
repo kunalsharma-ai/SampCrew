@@ -1,5 +1,7 @@
 # 7. Android and iOS Architecture
 
+> **As built in Phase 7:** the first version of the app follows this design with some differences (JSON outbox instead of SQLite, no device-key signing, no certificate pinning or root detection, `crew://` scheme instead of universal links). See [the Phase 7 report](../phases/phase-7.md#differences-from-the-phase-0-mobile-design).
+
 ## 7.1 Framework decision: React Native (Expo) over Flutter
 
 | Criterion | React Native + Expo | Flutter |

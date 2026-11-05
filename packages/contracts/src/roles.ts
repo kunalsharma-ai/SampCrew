@@ -32,6 +32,7 @@ const EMPLOYEE_SELF: Partial<Record<PermissionKey, Scope>> = {
   'recognition:give': 'own',
   'surveys:respond': 'own',
   'helpdesk:use': 'own',
+  'announcements:read': 'own',
   'ai:use': 'own',
   'interviews:feedback': 'own',
 };
@@ -90,7 +91,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'devices:manage': 'tenant', 'shifts:read': 'tenant', 'shifts:manage': 'tenant',
       'performance:read': 'tenant', 'performance:manage': 'tenant', 'performance:configure': 'tenant',
       'learning:read': 'tenant', 'learning:manage': 'tenant', 'learning:configure': 'tenant',
-      'engagement:manage': 'tenant', 'helpdesk:manage': 'tenant', 'reports:read': 'tenant', 'automation:manage': 'tenant',
+      'engagement:manage': 'tenant', 'helpdesk:manage': 'tenant', 'helpdesk:configure': 'tenant', 'announcements:manage': 'tenant', 'reports:read': 'tenant', 'automation:manage': 'tenant',
       'requisitions:read': 'tenant', 'requisitions:approve': 'tenant', 'candidates:read': 'tenant', 'offers:approve': 'tenant', 'recruitment:configure': 'tenant',
     },
   },
@@ -106,6 +107,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'attendance:read': 'entity', 'attendance:approve': 'entity', 'shifts:read': 'entity', 'shifts:manage': 'entity',
       'performance:read': 'entity', 'performance:manage': 'entity', 'learning:read': 'entity', 'learning:manage': 'entity',
       'requisitions:read': 'entity', 'requisitions:approve': 'entity', 'offers:approve': 'entity', 'reports:read': 'entity',
+      'helpdesk:manage': 'entity',
     },
   },
   {

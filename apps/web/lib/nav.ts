@@ -28,6 +28,8 @@ export const NAV: NavGroup[] = [
       { href: '/expenses', label: 'Expenses', icon: 'receipt', permission: 'expenses:submit', feature: 'expenses' },
       { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'interviews:feedback', feature: 'recruitment' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
+      { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'self_service' },
+      { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'self_service' },
     ],
   },
   {
@@ -64,6 +66,8 @@ export const NAV: NavGroup[] = [
       { href: '/attendance/team', label: 'Team attendance', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read' },
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
+      { href: '/helpdesk/queue', label: 'HR helpdesk queue', icon: 'headset', permission: 'helpdesk:manage', feature: 'self_service' },
+      { href: '/announcements/manage', label: 'Manage announcements', icon: 'megaphone', permission: 'announcements:manage', feature: 'self_service' },
     ],
   },
   {
@@ -74,6 +78,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/recruitment', label: 'Recruitment settings', icon: 'briefcase', permission: 'recruitment:configure', feature: 'recruitment' },
       { href: '/settings/payroll', label: 'Payroll settings', icon: 'landmark', permission: 'payroll:configure', feature: 'payroll' },
       { href: '/settings/leave', label: 'Leave settings', icon: 'sliders', permission: 'leave:configure' },
+      { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'self_service' },
       { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create' },
       { href: '/settings/roles', label: 'Roles & permissions', icon: 'shield', permission: 'roles:read' },
       { href: '/settings/audit', label: 'Audit trail', icon: 'scroll', permission: 'audit:read' },

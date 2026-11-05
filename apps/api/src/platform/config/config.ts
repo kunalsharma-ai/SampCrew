@@ -24,6 +24,14 @@ const schema = z.object({
   API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
   /** Set to true to stop background loops (outbox, email, daily HR jobs), e.g. in tests. */
   CREW_DISABLE_DISPATCHER: z.enum(['true', 'false']).default('false'),
+  /**
+   * Push notifications to the mobile app through the Expo push service. Off by default: queued pushes are then
+   * marked skipped with a reason, so CREW never claims a push was delivered when it was not.
+   */
+  EXPO_PUSH_ENABLED: z.enum(['true', 'false']).default('false'),
+  EXPO_PUSH_URL: z.string().url().default('https://exp.host/--/api/v2/push/send'),
+  /** Optional Expo access token, needed when "enhanced push security" is on for the Expo project. */
+  EXPO_ACCESS_TOKEN: optional(z.string().min(20)),
   FIELD_ENCRYPTION_KEY: z
     .string()
     .refine((v) => Buffer.from(v, 'base64').length === 32, 'FIELD_ENCRYPTION_KEY must be 32 bytes, base64 encoded'),

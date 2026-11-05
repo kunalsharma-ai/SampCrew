@@ -26,7 +26,9 @@
     "e2e:attendance": "node e2e/attendance-flow.cjs",
     "e2e:recruitment": "node e2e/recruitment-flow.cjs",
     "e2e:payroll": "node e2e/payroll-flow.cjs",
-    "e2e:talent": "node e2e/talent-flow.cjs"
+    "e2e:talent": "node e2e/talent-flow.cjs",
+    "e2e:mobile": "node e2e/mobile-flow.cjs",
+    "e2e:helpdesk": "node e2e/helpdesk-flow.cjs"
   },
   "devDependencies": {
     "typescript": "5.9.3",

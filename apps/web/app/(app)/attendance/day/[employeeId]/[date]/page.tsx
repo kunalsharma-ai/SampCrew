@@ -2,7 +2,7 @@ import { Alert, Badge, Card, CardBody, CardHeader, EmptyState, PageHeader, Statu
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load } from '@/lib/api';
-import { clock, dayLabel, hm, SOURCE_LABEL } from '@/lib/time';
+import { clock, dayLabel, hm, SOURCE_LABEL, RISK_FLAG_LABEL } from '@/lib/time';
 import type { AttendanceDay, Punch } from '@/lib/types';
 
 export const metadata: Metadata = { title: 'Attendance day' };
@@ -63,7 +63,10 @@ export default async function DayPage({ params }: { params: Promise<{ employeeId
                     <TD>{p.device ? `Device: ${p.device}` : SOURCE_LABEL[p.source] ?? p.source}</TD>
                     <TD className="text-fg-muted">{p.verifyMethod ?? '—'}</TD>
                     <TD>{p.geofence ? <Badge tone={p.geofence === 'outside' ? 'warning' : p.geofence === 'inside' || p.geofence === 'kiosk' ? 'success' : 'neutral'}>{p.geofence.replace(/_/g, ' ')}</Badge> : '—'}</TD>
-                    <TD className="text-fg-muted">{p.note ?? ''}</TD>
+                    <TD className="text-fg-muted">
+                      {p.flags?.map((f) => <Badge key={f} tone={f === 'offline' ? 'info' : 'warning'} className="mr-1">{RISK_FLAG_LABEL[f] ?? f}</Badge>)}
+                      {p.note ?? ''}
+                    </TD>
                   </TR>
                 ))}
               </TBody>

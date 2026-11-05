@@ -1,6 +1,6 @@
 import 'server-only';
 import { headers as requestHeaders } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { accessToken } from './session';
 
 const API_URL = process.env.CREW_API_URL ?? 'http://localhost:4000';
@@ -89,6 +89,8 @@ export async function load<T>(path: string): Promise<T> {
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) redirect('/login?expired=1');
     if (e instanceof ApiError && (e.status === 402 || e.status === 403)) redirect(`/no-access?reason=${encodeURIComponent(e.code)}`);
+    // A record that does not exist, or that this person may not see (the API answers both the same way), is a 404 page.
+    if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
 }

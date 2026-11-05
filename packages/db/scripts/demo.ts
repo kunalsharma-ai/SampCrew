@@ -109,6 +109,7 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
     await seedRecruitment(client, { tid, indiaId: t.legalEntityId, puneId: pune.id, manufacturingId: manufacturing.id, membershipByEmail });
     await seedPayroll(client, { tid, indiaId: t.legalEntityId, membershipByEmail });
     await seedTalent(client, { tid, assemblyId: assembly.id, manufacturingId: manufacturing.id, membershipByEmail });
+    await seedHelpdesk(client, { tid, manufacturingId: manufacturing.id, membershipByEmail });
 
     await client.query(
       `insert into audit_events (tenant_id, actor_type, actor_label, action, resource_type, resource_id, metadata)
@@ -667,4 +668,62 @@ async function seedTalent(client: PoolClient, c: { tid: string; assemblyId: stri
   await recognise(sunita, neha, 'Teamwork', 'Covered two night shifts at short notice so the Diwali order shipped on time.', 6);
   await recognise(vikram, sunita, 'Ownership', 'Rolled out the handover checklist on line 2 without being asked.', 4);
   await recognise(farhan, arjun, 'Safety', 'Stopped the press when the guard sensor failed and reported it straight away.', 1);
+}
+
+/** Phase 7 demo data: helpdesk handlers, a confidential grievance category, help articles, a few cases and announcements. */
+async function seedHelpdesk(client: PoolClient, c: { tid: string; manufacturingId: string; membershipByEmail: Map<string, string> }) {
+  const { tid } = c;
+  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
+  const m = (email: string) => c.membershipByEmail.get(email)!;
+  const emp = async (email: string) => (await q(`select id from employees where tenant_id = $1 and work_email = $2`, [tid, email])).id;
+  const category = async (name: string) => (await q(`select id from helpdesk_categories where tenant_id = $1 and name = $2`, [tid, name])).id;
+  const hr = m('hr.admin@demo.crew.local');
+
+  // HR handles pay, leave and document questions; grievances are confidential and seen only by the Head of People.
+  for (const name of ['Pay and payslips', 'Leave and attendance', 'Documents and letters']) {
+    await client.query(`insert into helpdesk_category_handlers (tenant_id, category_id, membership_id, position) values ($1, $2, $3, 1)`, [tid, await category(name), hr]);
+  }
+  const grievance = await q(
+    `insert into helpdesk_categories (tenant_id, name, description, confidential, first_response_hours, resolution_hours)
+     values ($1, 'Grievance', 'Raise a concern about treatment at work in confidence. Only the named HR handlers can see it.', true, 24, 240) returning id`,
+    [tid],
+  );
+  await client.query(`insert into helpdesk_category_handlers (tenant_id, category_id, membership_id, position) values ($1, $2, $3, 1)`, [tid, grievance.id, hr]);
+
+  const article = (cat: string, title: string, body: string) =>
+    category(cat).then((k) => client.query(`insert into helpdesk_articles (tenant_id, category_id, title, body, updated_by_membership_id) values ($1, $2, $3, $4, $5)`, [tid, k, title, `${body}\n\n(Demo data)`, hr]));
+  await article('Pay and payslips', 'How to read your payslip', 'Your payslip lists earnings, then deductions such as provident fund and professional tax, then reimbursements. Net pay is earnings minus deductions plus reimbursements. Open a payslip in CREW to see how each line was worked out.');
+  await article('Leave and attendance', 'Forgot to punch out?', 'Open Attendance, choose the day and ask for a correction with the time you left. Your manager approves it and the day is worked out again.');
+  await article('Documents and letters', 'Address proof letter for a bank', 'HR can issue a letter confirming your employment and address. Raise a case in Documents and letters with the bank name; letters are usually ready in two working days.');
+
+  // Cases (numbers continue from the workspace counter).
+  const neha = await emp('operator2@demo.crew.local');
+  const farhan = await emp('qa.lead@demo.crew.local');
+  const kase = async (o: { employee: string; requester: string; cat: string; subject: string; description: string; status: string; ageHours: number; assigned: boolean; reply?: string; resolvedHoursAgo?: number }) => {
+    const k = await q<{ id: string; confidential: boolean; first_response_hours: number; resolution_hours: number }>(`select id, confidential, first_response_hours, resolution_hours from helpdesk_categories where tenant_id = $1 and name = $2`, [tid, o.cat]);
+    const n = (await q<{ last_number: number }>(`insert into helpdesk_counters (tenant_id, last_number) values ($1, 1) on conflict (tenant_id) do update set last_number = helpdesk_counters.last_number + 1 returning last_number`, [tid])).last_number;
+    const created = `now() - make_interval(hours => ${Number(o.ageHours)})`;
+    const row = await q(
+      `insert into helpdesk_cases (tenant_id, number, employee_id, requester_membership_id, raised_by_membership_id, category_id, confidential, subject, description, status, assignee_membership_id,
+                                   first_response_due_at, resolution_due_at, first_responded_at, resolved_at, created_at, updated_at)
+       values ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9, $10, ${created} + make_interval(hours => $11), ${created} + make_interval(hours => $12),
+               case when $13::text is not null then ${created} + interval '3 hours' end, case when $14::int is not null then now() - make_interval(hours => $14) end, ${created}, now()) returning id`,
+      [tid, n, o.employee, o.requester, k.id, k.confidential, o.subject, `${o.description} (demo data)`, o.status, o.assigned ? hr : null, k.first_response_hours, k.resolution_hours, o.reply ?? null, o.resolvedHoursAgo ?? null],
+    );
+    await client.query(`insert into helpdesk_events (tenant_id, case_id, by_membership_id, action, to_value, created_at) values ($1, $2, $3, 'created', 'open', ${created})`, [tid, row.id, o.requester]);
+    if (o.reply) await client.query(`insert into helpdesk_messages (tenant_id, case_id, author_membership_id, body, created_at) values ($1, $2, $3, $4, ${created} + interval '3 hours')`, [tid, row.id, hr, o.reply]);
+  };
+  await kase({ employee: neha, requester: m('operator2@demo.crew.local'), cat: 'Documents and letters', subject: 'Address proof letter for my bank', description: 'I am opening a salary account and the bank needs a letter with my address.', status: 'in_progress', ageHours: 20, assigned: true, reply: 'Happy to help. Which bank and branch should the letter be addressed to?' });
+  await kase({ employee: farhan, requester: m('qa.lead@demo.crew.local'), cat: 'Pay and payslips', subject: 'Night shift allowance', description: 'Is the night shift allowance paid in the same month or the month after?', status: 'resolved', ageHours: 72, assigned: true, reply: 'It is paid with the next month\'s salary, once attendance for the month is locked.', resolvedHoursAgo: 40 });
+  await kase({ employee: neha, requester: m('operator2@demo.crew.local'), cat: 'Leave and attendance', subject: 'Holiday list for next year', description: 'When will next year\'s holiday calendar be published?', status: 'open', ageHours: 30, assigned: false });
+
+  // Announcements.
+  await client.query(
+    `insert into announcements (tenant_id, title, body, pinned, status, published_at, published_by_membership_id, created_by_membership_id) values ($1, $2, $3, true, 'published', now() - interval '3 days', $4, $4)`,
+    [tid, 'Welcome to the CREW app', 'You can now punch attendance, apply for leave, see payslips and ask HR from your phone. Ask your supervisor if you need help signing in. (Demo data)', hr],
+  );
+  await client.query(
+    `insert into announcements (tenant_id, title, body, department_id, requires_ack, status, published_at, published_by_membership_id, created_by_membership_id) values ($1, $2, $3, $4, true, 'published', now() - interval '1 day', $5, $5)`,
+    [tid, 'Safety shoes required on the shop floor', 'From Monday, safety shoes are required everywhere on the shop floor, including the canteen corridor. Please acknowledge that you have read this. (Demo data)', c.manufacturingId, m('plant.head@demo.crew.local')],
+  );
 }

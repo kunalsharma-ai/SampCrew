@@ -57,6 +57,11 @@ import { GoalsService } from './modules/talent/goals.service';
 import { LearningService } from './modules/talent/learning.service';
 import { ReviewsService } from './modules/talent/reviews.service';
 import { EngagementController, GoalsController, LearningController, ReviewsController } from './modules/talent/talent.controller';
+import { AnnouncementsService } from './modules/helpdesk/announcements.service';
+import { AnnouncementsController, HelpdeskController } from './modules/helpdesk/helpdesk.controller';
+import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
+import { MobileController } from './modules/mobile/mobile.controller';
+import { MobileService } from './modules/mobile/mobile.service';
 import { AuditService } from './platform/audit/audit.service';
 import { AuthGuard } from './platform/auth/auth.guard';
 import { TokenService } from './platform/auth/token.service';
@@ -70,6 +75,7 @@ import { ErrorEnvelopeFilter } from './platform/http/exception.filter';
 import { IdempotencyInterceptor } from './platform/http/idempotency.interceptor';
 import { MailerService } from './platform/notify/mailer.service';
 import { NotificationService } from './platform/notify/notification.service';
+import { PushService } from './platform/notify/push.service';
 import { StorageService } from './platform/storage/storage.service';
 
 export const CONTROLLERS = [
@@ -110,6 +116,9 @@ export const CONTROLLERS = [
   ReviewsController,
   LearningController,
   EngagementController,
+  HelpdeskController,
+  AnnouncementsController,
+  MobileController,
   PlatformAuthController,
   PlatformController,
 ];
@@ -164,6 +173,10 @@ export const CONTROLLERS = [
     ReviewsService,
     LearningService,
     EngagementService,
+    HelpdeskService,
+    AnnouncementsService,
+    MobileService,
+    PushService,
     HrJobsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },

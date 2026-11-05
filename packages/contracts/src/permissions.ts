@@ -104,8 +104,11 @@ export const PERMISSIONS = [
   { key: 'recognition:give', module: 'Engagement', description: 'Recognise colleagues on the recognition wall', phase: 6, scopes: ['own'] },
 
   // Phase 7: employee experience
-  { key: 'helpdesk:use', module: 'Helpdesk', description: 'Raise HR tickets and ask the HR assistant', phase: 7, scopes: ['own'] },
-  { key: 'helpdesk:manage', module: 'Helpdesk', description: 'Handle HR tickets and the knowledge base', phase: 7, scopes: TENANT_ONLY },
+  { key: 'helpdesk:use', module: 'Helpdesk', description: 'Raise HR helpdesk cases and read help articles', phase: 7, scopes: ['own'] },
+  { key: 'helpdesk:manage', module: 'Helpdesk', description: 'Handle HR helpdesk cases for people in scope', phase: 7, scopes: ['entity', 'tenant'] },
+  { key: 'helpdesk:configure', module: 'Helpdesk', description: 'Manage helpdesk categories, handlers, response targets and help articles', phase: 7, scopes: TENANT_ONLY },
+  { key: 'announcements:read', module: 'Announcements', description: 'Read announcements addressed to you', phase: 7, scopes: ['own'] },
+  { key: 'announcements:manage', module: 'Announcements', description: 'Publish announcements and see who has read them', phase: 7, scopes: TENANT_ONLY },
 
   // Phase 8-9: intelligence, automation, integrations
   { key: 'reports:read', module: 'Analytics', description: 'View workforce analytics and reports', phase: 8, scopes: ALL },
