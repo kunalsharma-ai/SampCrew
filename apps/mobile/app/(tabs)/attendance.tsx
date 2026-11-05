@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useSession } from '../../src/lib/session';
 import { dayStatus, riskFlag, syncReason } from '../../src/lib/labels';
 import type { Today } from '../../src/lib/types';
-import { Badge, Button, Card, Empty, fmt, ListItem, Notice, Row, Screen, Text, Title, useLoad, useReloadOnFocus } from '../../src/ui';
+import { Badge, Button, Card, CardTitle, Empty, fmt, ListItem, Notice, Screen, Text, Tile, TileGrid, Title, useLoad, useReloadOnFocus } from '../../src/ui';
 
 type Fix = { latitude: number; longitude: number; accuracyM?: number; mockLocation: boolean } | null;
 
@@ -59,11 +59,14 @@ export default function Attendance() {
     <Screen onRefresh={async () => { await sync(); await reload(); }} refreshing={loading && !!today}>
       <Title>Attendance</Title>
       {error && <Notice tone="warn">{today ? `Showing what was loaded earlier. ${error}` : error}</Notice>}
+      {today && (
+        <TileGrid>
+          <Tile testID="tile-worked" tone="violet" icon="◷" value={worked(today.day?.workedMinutes ?? 0)} label="Worked today" hint={today.shift ? `Shift ${today.shift.start} to ${today.shift.end}` : 'No shift planned'} />
+          <Tile testID="tile-punches" tone="teal" icon="⇄" value={String(today.punches.length + queue.pending.length)} label="Punches" hint={queue.pending.length ? `${queue.pending.length} not sent yet` : `Next: punch ${next}`} />
+        </TileGrid>
+      )}
       <Card testID="today-card">
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Text weight="700">{today ? fmt.date(today.date) : 'Today'}</Text>
-          {today?.day && <Badge>{dayStatus[today.day.status] ?? today.day.status}</Badge>}
-        </Row>
+        <CardTitle right={today?.day && <Badge>{dayStatus[today.day.status] ?? today.day.status}</Badge>}>{today ? fmt.date(today.date) : 'Today'}</CardTitle>
         {today && (
           <Text muted size={14}>
             {today.shift ? `${today.shift.name}, ${today.shift.start} to ${today.shift.end}` : 'No shift planned'}
@@ -79,7 +82,7 @@ export default function Attendance() {
 
       {queue.pending.length > 0 && (
         <Card testID="queue-card">
-          <Text weight="700">{`Waiting to send (${queue.pending.length})`}</Text>
+          <CardTitle>{`Waiting to send (${queue.pending.length})`}</CardTitle>
           <Text muted size={14}>Saved on this phone with the time you punched. CREW sends them as soon as you are online.</Text>
           {queue.pending.map((p) => (
             <ListItem key={p.sequence} title={`Punch ${p.direction ?? ''}`.trim()} subtitle={fmt.dateTime(p.capturedAt)} right={<Badge tone="warn">Not sent yet</Badge>} />
@@ -91,7 +94,7 @@ export default function Attendance() {
 
       {queue.refused.length > 0 && (
         <Card testID="refused-card">
-          <Text weight="700">Not recorded</Text>
+          <CardTitle>Not recorded</CardTitle>
           <Text muted size={14}>CREW refused these punches. Ask for an attendance correction if you need them on your record.</Text>
           {queue.refused.map((r) => (
             <ListItem
@@ -105,7 +108,7 @@ export default function Attendance() {
       )}
 
       <Card testID="punches-card">
-        <Text weight="700">Today&apos;s punches</Text>
+        <CardTitle>Today&apos;s punches</CardTitle>
         {today && today.punches.length === 0 && <Empty>No punches yet today.</Empty>}
         {today?.punches.map((p) => (
           <ListItem
@@ -119,4 +122,11 @@ export default function Attendance() {
       </Card>
     </Screen>
   );
+}
+
+/** Worked minutes as "7h 05m" ("0m" before the first punch). */
+function worked(min: number) {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 }

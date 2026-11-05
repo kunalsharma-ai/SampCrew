@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { caseStatus, target } from '../../src/lib/labels';
 import { useSession } from '../../src/lib/session';
 import type { CaseRow } from '../../src/lib/types';
-import { Badge, Button, Card, Choice, Empty, fmt, ListItem, Notice, Row, Screen, Text, Title, useLoad, useReloadOnFocus } from '../../src/ui';
+import { Badge, Button, Card, Choice, Empty, fmt, ListItem, Notice, Row, Screen, Text, Title, useLoad, useReloadOnFocus, CardTitle } from '../../src/ui';
 
 export default function Helpdesk() {
   const { api } = useSession();
@@ -20,7 +20,7 @@ export default function Helpdesk() {
       <Button title="New question" onPress={() => router.push('/helpdesk/new')} testID="new-case" />
       <Card testID="my-cases">
         <Row style={{ justifyContent: 'space-between' }}>
-          <Text weight="700">My cases</Text>
+          <CardTitle>My cases</CardTitle>
           <Choice value={filter} onChange={setFilter} options={[{ value: 'active', label: 'Open' }, { value: 'all', label: 'All' }]} />
         </Row>
         {data?.length === 0 && <Empty>{filter === 'active' ? 'No open cases.' : 'No cases yet.'}</Empty>}

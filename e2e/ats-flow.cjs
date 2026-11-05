@@ -92,6 +92,17 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await p.goto(jobUrl);
     await column('Interview').getByRole('link', { name: 'Rahul Verma' }).waitFor();
     ok('moved Rahul Verma to Interview from the comparison; the board agrees');
+    // The compare page opened without a pick (a bookmark or a hand-typed address) explains how to pick instead of
+    // showing "page not found"; a pick that is not on this job says so.
+    const compareUrl = jobUrl.replace(/[?#].*$/, '') + '/compare';
+    await p.goto(compareUrl);
+    await p.getByTestId('compare-pick').getByText('Pick candidates to compare').waitFor();
+    await p.getByTestId('compare-pick').getByRole('link', { name: 'Open the pipeline' }).click();
+    await column('Interview').getByRole('link', { name: 'Rahul Verma' }).waitFor();
+    await p.goto(compareUrl + '?applications=00000000-0000-4000-8000-000000000001,00000000-0000-4000-8000-000000000002');
+    await p.getByTestId('compare-pick').getByText('These candidates cannot be compared').waitFor();
+    await p.goto(jobUrl);
+    ok('the compare page opened without a valid pick says how to pick candidates');
 
     // 4. Bulk actions: email everyone in Screening, move two on together, reject one with a candidate email.
     //    How many are in Screening depends on whether e2e:recruitment ran first, so the counts are read from the board.

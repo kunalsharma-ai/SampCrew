@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { useSession } from '../../src/lib/session';
 import type { Payslip } from '../../src/lib/types';
-import { Card, fmt, Loading, Notice, Row, Screen, Text, useLoad } from '../../src/ui';
+import { Card, fmt, Loading, Notice, Row, Screen, Text, useLoad, CardTitle, Tile, TileGrid } from '../../src/ui';
 
 /** Pay details are private: screenshots and screen recording are blocked on this screen (iOS and Android). */
 function useNoCapture() {
@@ -28,7 +28,7 @@ export default function PayslipScreen() {
     if (!lines.length) return null;
     return (
       <Card>
-        <Text weight="700">{title}</Text>
+        <CardTitle>{title}</CardTitle>
         {lines.map((l) => (
           <Row key={l.code} style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <Text style={{ flex: 1 }}>{l.name}</Text>
@@ -46,6 +46,9 @@ export default function PayslipScreen() {
     <Screen>
       <Stack.Screen options={{ title: fmt.month(p.month) }} />
       {p.isDemo && <Notice tone="warn">Demo workspace: this payslip is made from sample data.</Notice>}
+      <TileGrid>
+        <Tile tone="violet" icon="◈" value={money(p.net)} label="Net pay" hint={`Paid ${fmt.date(p.payDate)}`} />
+      </TileGrid>
       <Card testID="payslip-summary">
         <Text muted size={13}>{p.legalEntityName}</Text>
         <Text size={13} muted>{`${p.name} (${p.code}) · paid ${fmt.date(p.payDate)}`}</Text>

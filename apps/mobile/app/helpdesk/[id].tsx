@@ -5,7 +5,7 @@ import { ApiError } from '../../src/lib/api';
 import { caseStatus, caseStatusHandler, moveLabel, target } from '../../src/lib/labels';
 import { useSession } from '../../src/lib/session';
 import type { CaseDetail } from '../../src/lib/types';
-import { Badge, Button, Card, Choice, Field, fmt, Loading, Notice, Row, Screen, Text, useLoad, useTheme } from '../../src/ui';
+import { Badge, Button, Card, Choice, Field, fmt, Loading, Notice, Row, Screen, Text, useLoad, useTheme, CardTitle } from '../../src/ui';
 
 export default function CaseScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -60,7 +60,7 @@ export default function CaseScreen() {
       </Card>
 
       <Card testID="conversation">
-        <Text weight="700">Conversation</Text>
+        <CardTitle>Conversation</CardTitle>
         <View style={{ gap: 4 }}>
           <Text muted size={12}>{`${c.employeeName} · ${fmt.dateTime(c.createdAt)}`}</Text>
           <Text>{c.description}</Text>
@@ -91,7 +91,7 @@ export default function CaseScreen() {
 
       {c.moves.length > 0 && (
         <Card>
-          <Text weight="700">Next step</Text>
+          <CardTitle>Next step</CardTitle>
           {c.moves.includes('resolved') && <Text muted size={13}>To resolve, write the answer in the reply box first; it is sent with the resolution.</Text>}
           {c.moves.map((s) => (
             <Button
@@ -112,7 +112,7 @@ export default function CaseScreen() {
 
       {c.can.rate && (
         <Card testID="rate-card">
-          <Text weight="700">How did HR handle this?</Text>
+          <CardTitle>How did HR handle this?</CardTitle>
           <Choice value={String(rating)} onChange={(v) => setRating(Number(v))} options={[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: `${n}` }))} />
           <Field label="Comment (optional)" value={comment} onChangeText={setComment} maxLength={1000} />
           <Button title="Send rating" disabled={!rating} busy={busy === 'rate'} onPress={() => act('rate', () => api.post(`/helpdesk/cases/${c.id}/rating`, { rating, comment: comment.trim() }), 'Thanks for the feedback.')} />

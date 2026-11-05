@@ -164,6 +164,7 @@ async function writeReview(p, rating, label) {
   await arjun.goto(BASE + '/surveys');
   await arjun.locator('tr', { hasText: 'Plant pulse' }).locator('a:has-text("Answer")').click();
   await arjun.waitForURL(/\/surveys\/[0-9a-f-]{36}$/);
+  const surveyUrl = arjun.url();
   const groups = arjun.locator('[role=radiogroup]');
   const g = await groups.count();
   for (let i = 0; i < g; i++) {
@@ -183,6 +184,28 @@ async function writeReview(p, rating, label) {
   await hr.locator('text=/eNPS/').first().waitFor();
   await hr.locator('text=By department').waitFor();
   ok('HR opened the survey results with eNPS, comments and the anonymity-safe breakdown');
+
+  // 7b. Personal pages opened directly by someone they are not for explain themselves instead of "page not found".
+  await hr.goto(surveyUrl); // HR was not invited to the pulse, and runs surveys: the results page opens instead
+  await hr.waitForURL(/\/surveys\/manage\/[0-9a-f-]{36}$/, { timeout: 10000 }).catch((e) => shot(hr, e));
+  await hr.locator('text=By department').waitFor();
+  await sup.goto(surveyUrl.replace(/[0-9a-f-]{36}$/, '00000000-0000-4000-8000-000000000000'));
+  await sup.getByTestId('survey-not-invited').getByText('This survey is not open to you').waitFor({ timeout: 10000 }).catch((e) => shot(sup, e));
+  const API = (process.env.CREW_API_URL ?? 'http://localhost:4000') + '/api/v1';
+  let token;
+  for (let attempt = 0; !token; attempt++) {
+    const r = await fetch(`${API}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'hr.admin@demo.crew.local', password: PASSWORD }) });
+    if (r.status === 429 && attempt < 5) { await new Promise((res) => setTimeout(res, 15000)); continue; }
+    const j = await r.json();
+    if (j.status !== 'ok') throw new Error(`API sign-in for HR: ${r.status} ${JSON.stringify(j)}`);
+    token = j.accessToken;
+  }
+  const review = await fetch(`${API}/reviews/${reviewUrl.split('/').pop()}`, { headers: { authorization: `Bearer ${token}` } }).then((r) => r.json());
+  const peerRequest = review.peer?.requests?.[0];
+  if (!peerRequest) throw new Error('HR sees no peer feedback requests on the review');
+  await hr.goto(BASE + `/reviews/feedback/${peerRequest.id}`); // asked of a colleague, not of HR
+  await hr.getByTestId('feedback-not-yours').getByText('This feedback request was sent to someone else').waitFor({ timeout: 10000 }).catch((e) => shot(hr, e));
+  ok('a survey or feedback request opened directly by someone else shows results (HR) or a clear explanation, not "page not found"');
 
   // 8. Recognition.
   await arjun.goto(BASE + '/recognition');

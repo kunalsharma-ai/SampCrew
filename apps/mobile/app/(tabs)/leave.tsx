@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { leaveStatus } from '../../src/lib/labels';
 import { useSession } from '../../src/lib/session';
 import type { Balance, LeaveRequest } from '../../src/lib/types';
-import { Badge, Button, Card, Empty, errorText, fmt, ListItem, Notice, Row, Screen, Text, Title, useLoad, useReloadOnFocus } from '../../src/ui';
+import { Badge, Button, Card, CardTitle, Empty, errorText, fmt, ListItem, Meter, Notice, Row, Screen, Tile, TileGrid, Title, useLoad, useReloadOnFocus } from '../../src/ui';
 
 export default function Leave() {
   const { api } = useSession();
@@ -30,19 +30,33 @@ export default function Leave() {
       <Title>Leave</Title>
       {error && <Notice tone="danger">{error}</Notice>}
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {data && (
+        <TileGrid>
+          <Tile testID="tile-available" tone="orange" icon="☼" value={days(data.balances.reduce((s, b) => s + Number(b.available), 0))} label="Available" hint={`Across ${data.balances.length} leave type${data.balances.length === 1 ? '' : 's'}`} />
+          <Tile testID="tile-pending" tone="pink" icon="…" value={String(data.requests.filter((r) => r.status === 'pending').length)} label="Waiting for approval" hint={`${data.requests.filter((r) => r.status === 'approved').length} approved`} />
+        </TileGrid>
+      )}
       <Button title="Apply for leave" onPress={() => router.push('/leave/new')} testID="apply-leave" />
       <Card testID="balances">
-        <Text weight="700">{data ? `Balances ${data.year}` : 'Balances'}</Text>
+        <CardTitle>{data ? `Balances ${data.year}` : 'Balances'}</CardTitle>
         {data?.balances.length === 0 && <Empty>No leave balances.</Empty>}
-        {data?.balances.map((b) => (
-          <Row key={b.leaveTypeId} style={{ justifyContent: 'space-between', paddingVertical: 4 }}>
-            <Text>{b.name}</Text>
-            <Text weight="600">{`${b.available} days${Number(b.pending) > 0 ? ` (${b.pending} pending)` : ''}`}</Text>
-          </Row>
-        ))}
+        {data?.balances.map((b) => {
+          // The bar shows what is left of what the person has (available plus already pending or used is the balance).
+          const total = Math.max(Number(b.balance), Number(b.available));
+          return (
+            <Meter
+              key={b.leaveTypeId}
+              label={b.name}
+              value={Number(b.available)}
+              max={total}
+              color={/^#[0-9a-fA-F]{6}$/.test(b.color) ? b.color : undefined}
+              caption={`${b.available} days${Number(b.pending) > 0 ? ` (${b.pending} pending)` : ''}`}
+            />
+          );
+        })}
       </Card>
       <Card testID="leave-requests">
-        <Text weight="700">My requests</Text>
+        <CardTitle>My requests</CardTitle>
         {data?.requests.length === 0 && <Empty>No leave requests yet.</Empty>}
         {data?.requests.map((r) => {
           const s = leaveStatus[r.status] ?? { label: r.status, tone: 'neutral' as const };
@@ -63,4 +77,9 @@ export default function Leave() {
       </Card>
     </Screen>
   );
+}
+
+function days(n: number) {
+  const v = Number(n.toFixed(1));
+  return `${v} day${v === 1 ? '' : 's'}`;
 }
