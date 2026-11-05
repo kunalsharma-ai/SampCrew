@@ -8,3 +8,7 @@ onlyBuiltDependencies:
   - sharp
   - '@tailwindcss/oxide'
   - unrs-resolver
+# Security fixes in transitive dependencies, pinned until the packages that pull them in depend on them directly.
+# Versions are taken only once they are at least two weeks old (docs/security-review.md).
+overrides:
+  multer: 2.5.0

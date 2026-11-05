@@ -55,9 +55,8 @@ the running system; it is **not** an external penetration test, which is still n
 
 ## Open items (not fixed in this phase)
 
-- **multer 2.x before 2.5 (via NestJS)**: an advisory is fixed in multer 2.5.0, released on 22 October 2026. This project only
-  takes versions at least two weeks old, so the upgrade (a `pnpm.overrides` entry) is due from 5 November 2026.
-  Uploads already have size limits and content checks.
+- ~~multer 2.x before 2.5 (via NestJS)~~: fixed on 5 November 2026 with a `multer: 2.5.0` override in
+  `pnpm-workspace.yaml`, once 2.5.0 was two weeks old.
 - **Build and mobile tooling advisories**: postcss inside Next.js (build time only, processes CREW's own CSS),
   glob, minimatch and deepmerge inside the Expo CLI (developer tooling, not shipped), decode-uri-component inside
   expo-router (patched 0.5.1 released 23 October 2026; due from 6 November 2026).
