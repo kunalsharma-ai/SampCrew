@@ -11,7 +11,6 @@ interface Overview { legalEntities: number; businessUnits: number; locations: nu
 const SCOPE_LABEL: Record<string, string> = { own: 'Yourself', team: 'Your team', department: 'Your department', entity: 'Your legal entity', tenant: 'Whole organization' };
 
 const ROADMAP = [
-  { phase: 4, title: 'Recruitment', items: 'Requisitions, candidate CRM, ATS pipeline, interviews, career pages' },
   { phase: 5, title: 'Payroll & finance', items: 'Salary structures, India payroll, payslips, expenses' },
   { phase: 8, title: 'AI & automation', items: 'Copilots, workflow studio, predictive insights' },
 ];

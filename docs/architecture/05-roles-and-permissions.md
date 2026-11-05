@@ -63,14 +63,15 @@ CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carr
 | `shifts:read` View shifts and rosters | 3 |  | A | · | A | E | O | O | O | O | A | T | O | · |
 | `shifts:manage` Create rosters, assign and swap shifts | 3 |  | A | · | A | E | · | · | · | · | A | T | · | · |
 | **Recruitment** | | |  |  |  |  |  |  |  |  |  |  |  |  |
-| `requisitions:read` View job requisitions | 4 |  | A | · | · | E | A | D | · | A | · | T | · | · |
+| `requisitions:read` View job requisitions | 4 |  | A | · | A | E | A | D | · | A | · | T | · | · |
 | `requisitions:create` Raise job requisitions | 4 |  | A | · | · | · | A | D | · | · | · | T | · | · |
-| `requisitions:approve` Approve job requisitions and budgets | 4 |  | A | · | · | E | · | · | · | A | · | · | · | · |
-| `candidates:read` View candidates and applications | 4 |  | A | · | · | · | A | D | · | · | · | · | · | · |
+| `requisitions:approve` Approve job requisitions and budgets | 4 |  | A | · | A | E | · | · | · | A | · | · | · | · |
+| `candidates:read` View candidates and applications | 4 |  | A | · | A | · | A | D | · | · | · | · | · | · |
 | `candidates:manage` Manage candidates, move pipeline stages, communicate | 4 |  | A | · | · | · | A | O | · | · | · | · | · | · |
 | `interviews:feedback` Submit interview feedback and scorecards | 4 |  | O | · | O | O | O | O | O | O | O | O | O | · |
 | `offers:manage` Draft and send offers | 4 |  | A | · | · | · | A | · | · | · | · | · | · | · |
-| `offers:approve` Approve offers | 4 | yes | A | · | · | E | · | · | · | · | · | · | · | · |
+| `offers:approve` Approve offers | 4 | yes | A | · | A | E | · | · | · | · | · | · | · | · |
+| `recruitment:configure` Configure pipeline stages, scorecards and the career site | 4 |  | A | · | A | · | A | · | · | · | · | · | · | · |
 | **Payroll** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `payroll:read` View payroll runs and reports | 5 | yes | A | · | · | · | · | · | A | A | · | · | · | · |
 | `payroll:run` Prepare and compute payroll runs | 5 | yes | A | · | · | · | · | · | A | · | · | · | · | · |

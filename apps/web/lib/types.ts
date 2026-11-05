@@ -166,3 +166,67 @@ export interface DeviceDetail extends Device {
   setup: { serverAddress: string; serverPort: number; https: boolean; path: string; serialNumber: string };
 }
 export interface DeviceMapping { id: string; deviceId: string | null; deviceName: string | null; deviceUserId: string; employeeId: string; employeeName: string; employeeCode: string; createdAt: string }
+
+// Recruitment (Phase 4) --------------------------------------------------------------------------------------
+
+export interface Requisition {
+  id: string; code: string; title: string; status: string; statusReason: string | null; legalEntityId: string; legalEntityName: string;
+  departmentId: string; departmentName: string; locationId: string | null; locationName: string | null; designationId: string | null; designationName: string | null;
+  hiringManagerMembershipId: string; hiringManagerName: string; employmentType: string; workMode: string; headcount: number; hiredCount: number;
+  reason: string; replacingEmployeeId: string | null; salaryMin: string | null; salaryMax: string | null; currency: string; targetStartDate: string | null;
+  justification: string; description: string; scorecard: string[]; approvalRequestId: string | null; createdByMembershipId: string | null; createdByName: string | null;
+  approvedAt: string | null; openedAt: string | null; closedAt: string | null; createdAt: string; postingId: string | null; postingSlug: string | null; published: boolean;
+  activeApplications: number; totalApplications: number;
+}
+export interface Posting { id: string; requisitionId: string; publicTitle: string; slug: string; summary: string; description: string; locationText: string; showSalary: boolean; publishedAt: string | null; unpublishedAt: string | null; published: boolean }
+export interface RequisitionDetail extends Requisition {
+  posting: Posting | null;
+  careerSite: { slug: string; enabled: boolean } | null;
+  can: { edit: boolean; manageCandidates: boolean; readCandidates: boolean; manageOffers: boolean };
+}
+export interface RecruitPerson { membershipId: string; name: string; title: string | null; departmentName: string | null }
+export interface Stage { id: string; name: string; kind: string; position: number; activeApplications?: number }
+export interface Application {
+  id: string; candidateId: string; candidateName: string; candidateEmail: string | null; currentTitle: string | null; currentCompany: string | null;
+  requisitionId: string; requisitionCode: string; requisitionTitle: string; stageId: string; stageName: string; stageKind: string; status: string; source: string;
+  rejectionReason: string | null; rejectionNote: string | null; coverNote: string | null; employeeId: string | null; appliedAt: string; stageEnteredAt: string;
+  decidedAt: string | null; hiredAt: string | null; interviews: number; averageScore: string | null; scorecards: number; offerStatus: string | null;
+  can?: { manage: boolean; offers: boolean };
+}
+export interface Pipeline { stages: Stage[]; applications: Application[]; counts: { active: number; rejected: number; withdrawn: number; hired: number } }
+export interface Candidate {
+  id: string; firstName: string; lastName: string; email: string | null; phone: string | null; locationText: string | null; currentTitle: string | null; currentCompany: string | null;
+  profileUrl: string | null; source: string; sourceDetail: string | null; referredByMembershipId: string | null; referredByName?: string | null; tags: string[]; consentBasis: string;
+  consentAt: string | null; lastActivityAt: string; anonymizedAt: string | null; createdAt: string; activeApplications?: number;
+  applications?: { requisitionCode: string; requisitionTitle: string; stage: string; status: string }[] | null;
+}
+export interface PanelMember { membershipId: string; name: string; submitted: boolean }
+export interface InterviewSummary { id: string; applicationId: string; title: string; startsAt: string; durationMinutes: number; mode: string; meetingUrl: string | null; locationText: string | null; status: string; panel: PanelMember[] | null }
+export interface Offer {
+  id: string; applicationId: string; jobTitle: string; designationId: string | null; baseSalary: string; currency: string; payPeriod: string; variablePay: string | null;
+  joiningDate: string; expiresOn: string; notes: string | null; status: string; aboveRange: boolean; approvalRequestId: string | null; sentAt: string | null;
+  respondedAt: string | null; responseNote: string | null; createdAt: string;
+}
+export interface CandidateDetail {
+  candidate: Candidate;
+  applications: (Application & { can: { manage: boolean; offers: boolean } })[];
+  files: { id: string; kind: string; fileName: string; contentType: string; sizeBytes: number; createdAt: string }[];
+  notes: { id: string; body: string; applicationId: string | null; createdAt: string; authorName: string | null }[];
+  timeline: { id: string; applicationId: string; kind: string; fromStage: string | null; toStage: string | null; detail: Record<string, unknown>; createdAt: string; actorName: string | null }[];
+  interviews: InterviewSummary[];
+  offers: Offer[];
+  can: { edit: boolean; erase: boolean; hire: boolean };
+}
+export interface Feedback { id: string; membershipId: string; interviewerName: string; ratings: { criterion: string; score: number; note?: string }[]; recommendation: string; summary: string; submittedAt: string }
+export interface InterviewDetail {
+  interview: InterviewSummary & { cancelReason: string | null; candidateId: string; candidateName: string; currentTitle: string | null; currentCompany: string | null; profileUrl: string | null; requisitionId: string; requisitionCode: string; requisitionTitle: string; scorecard: string[]; jobDescription: string };
+  panel: PanelMember[];
+  myFeedback: Feedback | null;
+  otherFeedback: Feedback[];
+  othersHidden: boolean;
+  files: { id: string; fileName: string }[];
+  can: { feedback: boolean; manage: boolean };
+}
+export interface MyInterview { id: string; title: string; startsAt: string; durationMinutes: number; mode: string; meetingUrl: string | null; locationText: string | null; status: string; candidateName: string; requisitionTitle: string; submitted: boolean }
+export interface CareerSiteSettings { configured?: boolean; enabled: boolean; slug: string; headline: string; intro: string; privacyNotice: string; privacyNoticeVersion: number; retentionDays: number }
+export interface PublicJob { slug: string; title: string; summary: string; locationText: string; workMode: string; employmentType: string; department: string; postedAt: string; salaryMin: string | null; salaryMax: string | null; currency: string | null; description?: string }

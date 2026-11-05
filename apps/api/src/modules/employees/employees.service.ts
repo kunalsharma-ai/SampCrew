@@ -277,7 +277,11 @@ export class EmployeesService {
   // Hiring
   // ---------------------------------------------------------------------------------------------------------
 
-  async create(input: CreateEmployeeInput) {
+  /**
+   * Hires an employee. `within` runs in the same transaction after the record exists, so a caller such as
+   * recruitment can mark its own records (application hired, opening filled) atomically with the hire.
+   */
+  async create(input: CreateEmployeeInput, within?: (tx: Tx, employeeId: string) => Promise<void>) {
     const actor = requestContext.tenantActor();
     let inviteToken: string | undefined;
     const created = await this.db.tenant(async (tx) => {
@@ -334,6 +338,7 @@ export class EmployeesService {
       // Credit leave already due (e.g. an up-front annual entitlement) so balances are right from day one.
       await this.leave.runAccruals(tx, today(), row.id);
 
+      if (within) await within(tx, row.id);
       const e = await this.load(tx, row.id);
       await this.audit.record(tx, {
         action: 'employee.created', resourceType: 'employee', resourceId: row.id,

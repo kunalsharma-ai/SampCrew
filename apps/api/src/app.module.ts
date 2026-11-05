@@ -40,6 +40,12 @@ import { AttendanceDaysService } from './modules/attendance/attendance-days.serv
 import { AttendanceService } from './modules/attendance/attendance.service';
 import { DevicesService } from './modules/attendance/devices.service';
 import { ShiftsService } from './modules/attendance/shifts.service';
+import { CandidatesService } from './modules/recruitment/candidates.service';
+import { CareersService } from './modules/recruitment/careers.service';
+import { InterviewsService } from './modules/recruitment/interviews.service';
+import { OffersService } from './modules/recruitment/offers.service';
+import { CareersPublicController, RecruitmentController, ResumeFilesController } from './modules/recruitment/recruitment.controller';
+import { RequisitionsService } from './modules/recruitment/requisitions.service';
 import { AuditService } from './platform/audit/audit.service';
 import { AuthGuard } from './platform/auth/auth.guard';
 import { TokenService } from './platform/auth/token.service';
@@ -82,6 +88,9 @@ export const CONTROLLERS = [
   ShiftsController,
   DevicesController,
   ZkPushController,
+  RecruitmentController,
+  CareersPublicController,
+  ResumeFilesController,
   PlatformAuthController,
   PlatformController,
 ];
@@ -122,6 +131,11 @@ export const CONTROLLERS = [
     AttendanceService,
     ShiftsService,
     DevicesService,
+    RequisitionsService,
+    CandidatesService,
+    InterviewsService,
+    OffersService,
+    CareersService,
     HrJobsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },

@@ -44,10 +44,15 @@ export class NotificationService {
     return active.length;
   }
 
-  async queueEmail(tx: Tx, tenantId: string | null, to: string, subject: string, text: string, template: string) {
+  /**
+   * Queues an email. `footer` replaces the default member footer, for example for job applicants, who have no
+   * CREW account.
+   */
+  async queueEmail(tx: Tx, tenantId: string | null, to: string, subject: string, text: string, template: string, footer?: string) {
+    const foot = footer ?? 'CREW by SAMPLEDGE. You received this because you have an account in a CREW workspace.';
     await tx.query(
       `insert into email_messages (tenant_id, to_email, subject, text_body, template) values ($1, $2, $3, $4, $5)`,
-      [tenantId, to, subject, `${text}\n\n--\nCREW by SAMPLEDGE. You received this because you have an account in a CREW workspace.`, template],
+      [tenantId, to, subject, `${text}\n\n--\n${foot}`, template],
     );
   }
 }

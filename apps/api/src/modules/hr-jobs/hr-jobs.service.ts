@@ -5,6 +5,7 @@ import { AttendanceService } from '../attendance/attendance.service';
 import { DevicesService } from '../attendance/devices.service';
 import { EmployeesService } from '../employees/employees.service';
 import { LeaveService } from '../leave/leave.service';
+import { CandidatesService } from '../recruitment/candidates.service';
 
 export interface HrJobResult {
   tenantId: string;
@@ -14,6 +15,7 @@ export interface HrJobResult {
   accrualsPosted: number;
   attendanceDaysComputed: number;
   devicesAlerted: number;
+  candidatesAnonymized: number;
 }
 
 /**
@@ -33,6 +35,7 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly leave: LeaveService,
     private readonly attendance: AttendanceService,
     private readonly devices: DevicesService,
+    private readonly candidates: CandidatesService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -78,6 +81,9 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     // Attendance runs in its own transactions so a problem there never holds back the HR changes above.
     const attendanceDaysComputed = await this.attendance.refreshRecent(tenantId);
     const devicesAlerted = await this.devices.alertOffline(tenantId);
-    return { ...hr, attendanceDaysComputed, devicesAlerted };
+    // Candidate data past the career site's retention period is anonymised (recruitment entitlement or not:
+    // data a workspace already holds still has to age out after a downgrade).
+    const candidatesAnonymized = await this.candidates.applyRetention(tenantId);
+    return { ...hr, attendanceDaysComputed, devicesAlerted, candidatesAnonymized };
   }
 }

@@ -81,6 +81,7 @@ export const PERMISSIONS = [
   { key: 'interviews:feedback', module: 'Recruitment', description: 'Submit interview feedback and scorecards', phase: 4, scopes: ['own'] },
   { key: 'offers:manage', module: 'Recruitment', description: 'Draft and send offers', phase: 4, scopes: ['department', 'entity', 'tenant'] },
   { key: 'offers:approve', module: 'Recruitment', description: 'Approve offers', phase: 4, scopes: ['department', 'entity', 'tenant'], requiresMfa: true },
+  { key: 'recruitment:configure', module: 'Recruitment', description: 'Configure pipeline stages, scorecards and the career site', phase: 4, scopes: ['tenant'] },
 
   // Phase 5: payroll and finance
   { key: 'payroll:read', module: 'Payroll', description: 'View payroll runs and reports', phase: 5, scopes: ['entity', 'tenant'], sensitive: true, requiresMfa: true },

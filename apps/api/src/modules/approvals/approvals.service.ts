@@ -77,14 +77,18 @@ export class ApprovalsService {
   }
 
   /** Starts an approval in the caller's transaction and notifies the first approver(s). */
-  async start(tx: Tx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string; summary: string }): Promise<string> {
+  async start(tx: Tx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string }): Promise<string> {
     const h = this.handler(input.resourceType);
     const actor = requestContext.tenantActor();
     const defs = await this.steps(tx, input.resourceType);
 
-    const subject = await one<{ manager_id: string | null; membership_id: string | null }>(
-      tx, 'select current_manager_employee_id as manager_id, membership_id from employees where id = $1', [input.subjectEmployeeId],
-    );
+    // Some requests (for example an offer to a candidate) are not about an employee; manager steps then resolve to
+    // nobody and the role steps or the fallback role decide.
+    const subject = input.subjectEmployeeId
+      ? await one<{ manager_id: string | null; membership_id: string | null }>(
+        tx, 'select current_manager_employee_id as manager_id, membership_id from employees where id = $1', [input.subjectEmployeeId],
+      )
+      : { manager_id: null, membership_id: null };
     if (!subject) throw Errors.notFound('Employee');
     const managerOf = async (employeeId: string | null) =>
       employeeId ? await one<{ id: string; membership_id: string | null; manager_id: string | null }>(

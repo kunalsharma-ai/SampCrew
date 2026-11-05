@@ -88,6 +88,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'devices:manage': 'tenant', 'shifts:read': 'tenant', 'shifts:manage': 'tenant',
       'performance:read': 'tenant', 'performance:manage': 'tenant', 'learning:read': 'tenant', 'learning:manage': 'tenant',
       'engagement:manage': 'tenant', 'helpdesk:manage': 'tenant', 'reports:read': 'tenant', 'automation:manage': 'tenant',
+      'requisitions:read': 'tenant', 'requisitions:approve': 'tenant', 'candidates:read': 'tenant', 'offers:approve': 'tenant', 'recruitment:configure': 'tenant',
     },
   },
   {
@@ -112,7 +113,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       ...EMPLOYEE_SELF,
       'org:read': 'tenant', 'users:read': 'tenant',
       'requisitions:read': 'tenant', 'requisitions:create': 'tenant', 'candidates:read': 'tenant', 'candidates:manage': 'tenant',
-      'offers:manage': 'tenant', 'reports:read': 'own',
+      'offers:manage': 'tenant', 'recruitment:configure': 'tenant', 'reports:read': 'own',
     },
   },
   {

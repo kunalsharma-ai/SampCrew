@@ -145,6 +145,12 @@ export async function provisionTenant(db: PoolClient, input: ProvisionTenantInpu
     [tenantId],
   );
   await db.query(`insert into attendance_policies (tenant_id, default_shift_id) values ($1, $2)`, [tenantId, shift.rows[0]!.id]);
+  // The default recruitment pipeline. Workspaces can rename, add and reorder stages.
+  await db.query(
+    `insert into recruitment_stages (tenant_id, name, kind, position)
+     select $1, s.name, s.kind, s.position from (values ('Applied', 'new', 1), ('Screening', 'screen', 2), ('Interview', 'interview', 3), ('Offer', 'offer', 4), ('Hired', 'hired', 5)) as s(name, kind, position)`,
+    [tenantId],
+  );
 
   return { tenantId, ownerUserId: userId, ownerMembershipId, legalEntityId, existingUser };
 }
