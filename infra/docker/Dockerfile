@@ -80,6 +80,8 @@ CMD ["node", "apps/console/server.js"]
 # Node.js copied in from the Node image (both Alpine). No packages are downloaded for this stage.
 FROM ${POSTGRES_IMAGE} AS tools
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
+# Node.js 26 also links libatomic, which the PostgreSQL image lacks; both images are the same Alpine release.
+COPY --from=base /usr/lib/libatomic.so.1 /usr/lib/libatomic.so.1
 # The database package with its migrations and scripts (and tsx to run them), nothing from the apps.
 COPY --from=build /out/db /app/db
 COPY infra/deploy/scripts /app/infra/deploy/scripts
