@@ -32,7 +32,7 @@ export default function Leave() {
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
       {data && (
         <TileGrid>
-          <Tile testID="tile-available" tone="orange" icon="☼" value={days(data.balances.reduce((s, b) => s + Number(b.available), 0))} label="Available" hint={`Across ${data.balances.length} leave type${data.balances.length === 1 ? '' : 's'}`} />
+          <Tile testID="tile-available" tone="orange" icon="☼" value={String(Number(data.balances.reduce((s, b) => s + Number(b.available), 0).toFixed(1)))} label="Days available" hint={`Across ${data.balances.length} leave type${data.balances.length === 1 ? '' : 's'}`} />
           <Tile testID="tile-pending" tone="pink" icon="…" value={String(data.requests.filter((r) => r.status === 'pending').length)} label="Waiting for approval" hint={`${data.requests.filter((r) => r.status === 'approved').length} approved`} />
         </TileGrid>
       )}
@@ -77,9 +77,4 @@ export default function Leave() {
       </Card>
     </Screen>
   );
-}
-
-function days(n: number) {
-  const v = Number(n.toFixed(1));
-  return `${v} day${v === 1 ? '' : 's'}`;
 }

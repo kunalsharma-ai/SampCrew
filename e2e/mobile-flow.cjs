@@ -328,7 +328,7 @@ function futureWeekday(taken) {
     assert((await tileText('tile-notifications')).includes(`${notesNow.unread}Unread`), `unread tile shows ${notesNow.unread}`);
     const bal = (await api(qa, 'GET', '/leave/balances')).balances.filter((x) => x.tracked);
     const avail = Number(bal.reduce((s, x) => s + Number(x.available), 0).toFixed(1));
-    assert((await tileText('tile-leave')).includes(`${avail} day`), `leave tile shows ${avail} days (${await tileText('tile-leave')})`);
+    assert((await tileText('tile-leave')).includes(`${avail}Leave days left`), `leave tile shows ${avail} days (${await tileText('tile-leave')})`);
     await p.goto(APP + '/me');
     await card.waitFor();
     await card.getByRole('radio', { name: /^Tech Futuristic/ }).click();

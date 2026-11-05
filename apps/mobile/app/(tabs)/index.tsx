@@ -69,7 +69,7 @@ export default function Home() {
           )}
           <Tile testID="tile-approvals" tone="teal" icon="✓" value={String(data.inbox.length)} label="Approvals" hint="Waiting for you" onPress={() => router.push('/approvals')} />
           {data.balances && (
-            <Tile testID="tile-leave" tone="orange" icon="☼" value={fmtDays(leaveDays ?? 0)} label="Leave available" hint={`${data.balances.length} leave type${data.balances.length === 1 ? '' : 's'}`} onPress={() => router.push('/leave')} />
+            <Tile testID="tile-leave" tone="orange" icon="☼" value={String(Number((leaveDays ?? 0).toFixed(1)))} label="Leave days left" hint={`${data.balances.length} leave type${data.balances.length === 1 ? '' : 's'}`} onPress={() => router.push('/leave')} />
           )}
           <Tile testID="tile-notifications" tone="blue" icon="♪" value={String(data.notes.unread)} label="Unread" hint="Notifications" onPress={() => router.push('/notifications')} />
         </TileGrid>
@@ -129,10 +129,4 @@ export default function Home() {
       </Card>
     </Screen>
   );
-}
-
-/** "12.5 days", "1 day": half days kept, trailing zeros dropped. */
-function fmtDays(n: number) {
-  const v = Number(n.toFixed(1));
-  return `${v} day${v === 1 ? '' : 's'}`;
 }

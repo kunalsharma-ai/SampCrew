@@ -187,7 +187,7 @@ export function Tile({ value, label, hint, tone, icon, onPress, testID }: { valu
             <RNText style={{ color: t.neon ? '#ffffff' : c1, fontSize: 16 }}>{icon}</RNText>
           </View>
         ) : null}
-        <RNText style={{ color: t.neon ? fg : c1, fontSize: 26, fontWeight: '800', letterSpacing: -0.5 }} numberOfLines={1}>{value}</RNText>
+        <RNText style={{ flexShrink: 1, color: t.neon ? fg : c1, fontSize: value.length > 7 ? 19 : 26, fontWeight: '800', letterSpacing: -0.5 }} numberOfLines={2}>{value}</RNText>
       </Row>
       <RNText style={{ color: fg, fontSize: 14, fontWeight: '600' }}>{label}</RNText>
       {hint ? <RNText style={{ color: t.neon ? 'rgba(255,255,255,0.9)' : t.muted, fontSize: 12 }} numberOfLines={2}>{hint}</RNText> : null}
