@@ -10,13 +10,20 @@
 #   docker build --secret id=ca,src=/path/to/ca.pem ...
 # No secrets are baked in: every image reads its configuration from the environment at run time.
 
-# Pin by digest in your registry for repeatable builds, e.g. --build-arg NODE_IMAGE=node:22-alpine@sha256:...
-ARG NODE_IMAGE=node:22-alpine
+# Pin by digest in your registry for repeatable builds, e.g. --build-arg NODE_IMAGE=node:26.12.1-alpine@sha256:...
+ARG NODE_IMAGE=node:26.12.1-alpine
 # Must be the same major version as the database server (PostgreSQL 16).
 ARG POSTGRES_IMAGE=postgres:16-alpine
 
 FROM ${NODE_IMAGE} AS base
-RUN corepack enable
+# Node.js 25 and later no longer ship Corepack, so install a pinned copy; it then runs the pnpm version named in
+# package.json ("packageManager"). Only the build stage uses it: the runtime images start again from NODE_IMAGE.
+ARG COREPACK_VERSION=0.36.0
+RUN --mount=type=secret,id=ca,required=false \
+    if [ -f /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca; fi; \
+    npm install --global --no-fund --no-audit corepack@${COREPACK_VERSION} \
+ && npm cache clean --force \
+ && corepack enable
 WORKDIR /app
 
 FROM base AS build
@@ -73,6 +80,8 @@ CMD ["node", "apps/console/server.js"]
 # Node.js copied in from the Node image (both Alpine). No packages are downloaded for this stage.
 FROM ${POSTGRES_IMAGE} AS tools
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
+# Node.js 26 also links libatomic, which the PostgreSQL image lacks; both images are the same Alpine release.
+COPY --from=base /usr/lib/libatomic.so.1 /usr/lib/libatomic.so.1
 # The database package with its migrations and scripts (and tsx to run them), nothing from the apps.
 COPY --from=build /out/db /app/db
 COPY infra/deploy/scripts /app/infra/deploy/scripts
