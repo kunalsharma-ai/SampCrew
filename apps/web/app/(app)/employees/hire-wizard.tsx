@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import type { Department, Designation, Employee, LegalEntity, Location, OnboardingTemplate } from '@/lib/types';
 import type { Structure } from '../payroll/types';
 import { type DeviceOption, EnrolmentRows, LoginModeChoice, OwnPassword, type ShiftOption } from './[id]/profile-extras';
-import { completeHireAction, createDepartmentAction, createDesignationAction, type DraftData, duplicateCheckAction, saveHireDraftAction } from './actions';
+import { completeHireAction, createDepartmentAction, createDesignationAction, createLocationAction, createShiftAction, type DraftData, duplicateCheckAction, saveHireDraftAction } from './actions';
 import type { HireDone } from './employees-view';
 
 export interface EmployeeDraft { id: string; step: number; data: DraftData; updatedAt: string }
@@ -38,6 +38,8 @@ type Enrolment = { deviceUserId: string; deviceId: string };
 type Match = { id: string; displayName: string; employeeCode: string; status: string; departmentName: string | null; reasons: string[] };
 type Doc = { file: File; category: string; title: string; hrOnly: boolean };
 
+type Kind = 'designation' | 'department' | 'location' | 'shift';
+
 interface Props {
   open: boolean;
   draft: EmployeeDraft | null;
@@ -56,6 +58,7 @@ interface Props {
   devices: DeviceOption[] | null;
   canManageOrg: boolean;
   canAttendance: boolean;
+  canConfigureShifts: boolean;
 }
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
@@ -86,8 +89,11 @@ export function HireWizard(p: Props) {
   // Designations and departments added from inside the wizard join the lists straight away.
   const [designations, setDesignations] = useState(p.designations);
   const [departments, setDepartments] = useState(p.departments);
-  const [adding, setAdding] = useState<null | 'designation' | 'department'>(null);
+  const [locations, setLocations] = useState(p.locations);
+  const [shifts, setShifts] = useState(p.shifts);
+  const [adding, setAdding] = useState<null | Kind>(null);
   const [newName, setNewName] = useState('');
+  const [shiftTimes, setShiftTimes] = useState({ start: '09:00', end: '18:00' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [matches, setMatches] = useState<Match[] | null>(null);
@@ -129,7 +135,7 @@ export function HireWizard(p: Props) {
       // Department and location belong to a legal entity; clear them when the entity changes.
       if (k === 'legalEntityId') {
         if (next.departmentId && !departments.some((d) => d.id === next.departmentId && (!d.legalEntityId || d.legalEntityId === val))) next.departmentId = '';
-        if (next.locationId && !p.locations.some((l) => l.id === next.locationId && l.legalEntityId === val)) next.locationId = '';
+        if (next.locationId && !locations.some((l) => l.id === next.locationId && l.legalEntityId === val)) next.locationId = '';
       }
       return next;
     });
@@ -262,28 +268,50 @@ export function HireWizard(p: Props) {
 
   const last = step === HIRE_STEPS.length - 1;
   const deptOptions = departments.filter((d) => !d.legalEntityId || d.legalEntityId === entity);
-  const locOptions = p.locations.filter((l) => l.legalEntityId === entity);
+  const locOptions = locations.filter((l) => l.legalEntityId === entity);
   const lookup = <T extends { id: string; name: string }>(list: T[], id: unknown) => list.find((x) => x.id === id)?.name ?? '—';
   const manager = p.managers.find((m) => m.id === v.managerEmployeeId);
   const structure = p.structures.find((s) => s.id === v.structureId);
-  const shift = p.shifts?.find((x) => x.id === v.defaultShiftId);
-  const addOption = (kind: 'designation' | 'department') => {
+  const shift = shifts?.find((x) => x.id === v.defaultShiftId);
+  const FIELD_OF: Record<Kind, string> = { designation: 'designationId', department: 'departmentId', location: 'locationId', shift: 'defaultShiftId' };
+  const addOption = (kind: Kind) => {
     const n = newName.trim();
     if (!n) return;
+    // A name already on the list is simply chosen, not added twice.
+    const list: { id: string; name: string }[] = kind === 'designation' ? designations : kind === 'department' ? deptOptions : kind === 'location' ? locOptions : (shifts ?? []);
+    const same = list.find((x) => x.name.trim().toLowerCase() === n.toLowerCase());
+    if (same) { set(FIELD_OF[kind], same.id); setErrors((e) => ({ ...e, [FIELD_OF[kind]]: '' })); setAdding(null); setNewName(''); return; }
     start(async () => {
-      const r = kind === 'designation' ? await createDesignationAction(n) : await createDepartmentAction(n, null);
-      if (!r.ok || !r.data) { setErrors((e) => ({ ...e, [kind === 'designation' ? 'designationId' : 'departmentId']: r.ok ? 'Could not add it' : r.message })); return; }
-      const row = r.data;
-      if (kind === 'designation') { setDesignations((d) => [...d, { id: row.id, name: row.name, code: null, level: null, employeeCount: 0 }]); set('designationId', row.id); }
-      else { setDepartments((d) => [...d, { id: row.id, name: row.name, code: null, parentId: null, legalEntityId: null, businessUnitId: null, headMembershipId: null, memberCount: 0 }]); set('departmentId', row.id); }
+      const ent = p.entities.find((x) => x.id === entity);
+      const r = kind === 'designation' ? await createDesignationAction(n)
+        : kind === 'department' ? await createDepartmentAction(n, null)
+          : kind === 'location' ? await createLocationAction(n, entity, ent?.countryCode ?? 'IN', ent?.timezone ?? 'Asia/Kolkata')
+            : await createShiftAction(n, shiftTimes.start, shiftTimes.end);
+      if (!r.ok || !r.data) { setErrors((e) => ({ ...e, [FIELD_OF[kind]]: r.ok ? 'Could not add it' : (Object.values(r.fieldErrors ?? {})[0] ?? r.message) })); return; }
+      const row = r.data as { id: string; name: string; code?: string; startTime?: string; endTime?: string };
+      if (kind === 'designation') setDesignations((d) => [...d, { id: row.id, name: row.name, code: null, level: null, employeeCount: 0 }]);
+      else if (kind === 'department') setDepartments((d) => [...d, { id: row.id, name: row.name, code: null, parentId: null, legalEntityId: null, businessUnitId: null, headMembershipId: null, memberCount: 0 }]);
+      else if (kind === 'location') setLocations((l) => [...l, { id: row.id, name: row.name, code: null, kind: 'office', legalEntityId: entity, timezone: ent?.timezone ?? '', city: null, region: null, countryCode: ent?.countryCode ?? '', latitude: null, longitude: null, geofenceRadiusM: null, addressLine: null, postalCode: null }]);
+      else setShifts((x) => [...(x ?? []), { id: row.id, name: row.name, code: row.code ?? '', startTime: row.startTime ?? shiftTimes.start, endTime: row.endTime ?? shiftTimes.end }]);
+      set(FIELD_OF[kind], row.id);
+      setErrors((e) => ({ ...e, [FIELD_OF[kind]]: '' }));
       setAdding(null);
       setNewName('');
     });
   };
-  const addInline = (kind: 'designation' | 'department') => p.canManageOrg && (adding === kind ? (
-    <div className="flex items-center gap-2 sm:col-span-2">
-      <Input aria-label={`New ${kind} name`} value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={120} placeholder={kind === 'designation' ? 'Senior Accountant' : 'Customer Success'} autoFocus
+  const PLACEHOLDER: Record<Kind, string> = { designation: 'Senior Accountant', department: 'Customer Success', location: 'Pune plant', shift: 'Morning shift' };
+  const mayAdd = (kind: Kind) => (kind === 'shift' ? p.canConfigureShifts : p.canManageOrg);
+  const addInline = (kind: Kind) => mayAdd(kind) && (adding === kind ? (
+    <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+      <Input aria-label={`New ${kind} name`} value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={kind === 'shift' ? 80 : 120} placeholder={PLACEHOLDER[kind]} autoFocus className="min-w-40 flex-1"
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOption(kind); } }} />
+      {kind === 'shift' && (
+        <>
+          <Input aria-label="Shift starts" type="time" value={shiftTimes.start} onChange={(e) => setShiftTimes((t) => ({ ...t, start: e.target.value }))} className="w-28" />
+          <span className="text-xs text-fg-subtle">to</span>
+          <Input aria-label="Shift ends" type="time" value={shiftTimes.end} onChange={(e) => setShiftTimes((t) => ({ ...t, end: e.target.value }))} className="w-28" />
+        </>
+      )}
       <Button size="sm" onClick={() => addOption(kind)} loading={pending}>Add</Button>
       <Button size="sm" variant="ghost" onClick={() => { setAdding(null); setNewName(''); }}>Cancel</Button>
     </div>
@@ -427,6 +455,7 @@ export function HireWizard(p: Props) {
             <Field label="Location" error={errors.locationId}>
               {(f) => <Select {...f} name="locationId" value={str(v.locationId)} onChange={(e) => set('locationId', e.target.value)}><option value="">None</option>{locOptions.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>}
             </Field>
+            {addInline('location')}
             <Field label="Reports to" error={errors.managerEmployeeId} className="sm:col-span-2">
               {(f) => <Select {...f} name="managerEmployeeId" value={str(v.managerEmployeeId)} onChange={(e) => set('managerEmployeeId', e.target.value)}><option value="">No manager</option>{p.managers.map((m) => <option key={m.id} value={m.id}>{m.displayName} ({m.employeeCode})</option>)}</Select>}
             </Field>
@@ -500,11 +529,12 @@ export function HireWizard(p: Props) {
             {p.canAttendance && (
               <>
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle sm:col-span-2">Attendance registration</h4>
-                {p.shifts ? (
+                {shifts ? (
                   <Field label="Usual shift" error={errors.defaultShiftId} className="sm:col-span-2" hint="Rosters and day-by-day assignments still take priority">
-                    {(f) => <Select {...f} name="defaultShiftId" value={str(v.defaultShiftId)} onChange={(e) => set('defaultShiftId', e.target.value)}><option value="">Location default</option>{p.shifts!.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.startTime} to {x.endTime})</option>)}</Select>}
+                    {(f) => <Select {...f} name="defaultShiftId" value={str(v.defaultShiftId)} onChange={(e) => set('defaultShiftId', e.target.value)}><option value="">Location default</option>{shifts.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.startTime} to {x.endTime})</option>)}</Select>}
                   </Field>
                 ) : null}
+                {shifts && addInline('shift')}
                 {p.devices ? (
                   <>
                     <EnrolmentRows rows={enrolments} setRows={setEnrolments} devices={p.devices} />
@@ -537,7 +567,7 @@ export function HireWizard(p: Props) {
             <Summary label="Work email" value={str(v.workEmail) || '—'} onEdit={() => setStep(0)} />
             <Summary label="Joining" value={`${str(v.dateOfJoining)} · ${TYPE_LABEL[str(v.employmentType)] ?? ''} · ${Number(v.probationMonths) ? `${v.probationMonths} months probation` : 'confirmed on joining'}`} onEdit={() => setStep(1)} />
             <Summary label="Entity and designation" value={`${lookup(p.entities, v.legalEntityId)} · ${lookup(designations, v.designationId)}`} onEdit={() => setStep(1)} />
-            <Summary label="Department and location" value={`${lookup(departments, v.departmentId)} · ${lookup(p.locations, v.locationId)}`} onEdit={() => setStep(2)} />
+            <Summary label="Department and location" value={`${lookup(departments, v.departmentId)} · ${lookup(locations, v.locationId)}`} onEdit={() => setStep(2)} />
             <Summary label="Reports to" value={manager?.displayName ?? 'No manager'} onEdit={() => setStep(2)} />
             <Summary label="Pay" value={structure ? `${structure.name}, ${Number(str(v.annualCtc).replace(/,/g, '')).toLocaleString()} a year` : 'Set later'} onEdit={() => setStep(3)} />
             <Summary label="Documents" value={docs.length ? docs.map((d) => d.title || d.file.name).join(', ') : 'None'} onEdit={() => setStep(4)} />

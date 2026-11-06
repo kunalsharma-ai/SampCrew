@@ -100,6 +100,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         devices={devices}
         canManageOrg={canManageOrg}
         canAttendance={canAttendance}
+        canConfigureShifts={canAttendance && can(me, 'attendance:configure')}
         setupPending={setupPending}
       />
     </>

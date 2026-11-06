@@ -180,3 +180,21 @@ export async function createDepartmentAction(name: string, legalEntityId: string
   revalidatePath('/organization');
   return r;
 }
+
+/** Adds a location for a legal entity from inside the hire wizard, using the entity's country and time zone. */
+export async function createLocationAction(name: string, legalEntityId: string, countryCode: string, timezone: string) {
+  const r = await act(() => api<{ id: string; name: string }>('/org/locations', { method: 'POST', body: { name, legalEntityId, countryCode, timezone } }));
+  revalidatePath('/organization');
+  return r;
+}
+
+/** Adds a shift from inside the hire wizard. The code is made from the name, with a number added if it is taken. */
+export async function createShiftAction(name: string, startTime: string, endTime: string) {
+  const base = name.toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 8) || 'SHIFT';
+  let r = await act(() => api<{ id: string; name: string; code: string; startTime: string; endTime: string }>('/shifts/templates', { method: 'POST', body: { code: base, name, startTime, endTime } }));
+  for (let i = 2; !r.ok && r.code === 'shift_exists' && i < 10; i++) {
+    r = await act(() => api<{ id: string; name: string; code: string; startTime: string; endTime: string }>('/shifts/templates', { method: 'POST', body: { code: `${base}${i}`, name, startTime, endTime } }));
+  }
+  revalidatePath('/attendance');
+  return r;
+}

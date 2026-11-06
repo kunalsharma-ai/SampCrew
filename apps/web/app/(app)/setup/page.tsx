@@ -38,7 +38,8 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
           ? 'Review your company details and structure. Changes apply straight away.'
           : 'A few minutes of setup before your first employee: your company, where you work, and your departments and designations.'}
       />
-      <SetupWizard key={start} initialStep={start} setup={setup} locations={locations} canManage={canManage} />
+      {/* Keyed on the address only: a refresh after saving must not remount the wizard and wipe what is being typed. */}
+      <SetupWizard key={step ?? 'resume'} initialStep={start} setup={setup} locations={locations} canManage={canManage} />
     </>
   );
 }

@@ -72,9 +72,9 @@ function leaveDay() {
   await hr.locator('dialog select[name=locationId]').selectOption({ label: 'Pune Plant' });
   await next('Compensation');
   await next('Documents');
-  await next('Access & onboarding');
-  await hr.click('dialog label:has-text("Invite them to CREW")');
-  if (!(await hr.isChecked('dialog input[type=checkbox]'))) throw new Error('clicking the invite label did not tick the box');
+  await next('Attendance & access');
+  await hr.click('dialog label:has-text("Email an invitation")');
+  if (!(await hr.isChecked('dialog input[name=loginMode][value=invite]'))) throw new Error('clicking the invitation option did not select it');
   await next('Review');
   await hr.click('dialog button[type=submit]');
   const link = (await hr.locator('code', { hasText: 'accept-invite' }).textContent({ timeout: 10000 }).catch(async (e) => { await hr.screenshot({ path: process.env.SHOT ?? '/tmp/hr-fail.png' }); throw e; })).trim();

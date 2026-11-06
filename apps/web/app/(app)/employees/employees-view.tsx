@@ -66,6 +66,7 @@ interface Props {
   devices: DeviceOption[] | null;
   canManageOrg: boolean;
   canAttendance: boolean;
+  canConfigureShifts: boolean;
   setupPending: boolean;
 }
 
