@@ -31,7 +31,7 @@ export function CrewLogo({
     return <img src="/brand/sampcrew-icon.svg" alt="SampCrew" width={h} height={h} className={cn('shrink-0', className)} style={{ width: h, height: h }} />;
   }
   const file = variant === 'lockup' ? 'logo' : 'wordmark';
-  const h = height ?? (variant === 'lockup' ? 64 : 38);
+  const h = height ?? (variant === 'lockup' ? 64 : 44);
   // Width from each artwork's view box: 296 x 78 for the lockup, 238 x 78 for the wordmark.
   const w = Math.round((h * (variant === 'lockup' ? 296 : 238)) / 78);
   const img = (t: 'light' | 'dark', cls?: string) => (

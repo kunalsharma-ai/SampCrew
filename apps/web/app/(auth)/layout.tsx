@@ -6,7 +6,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <aside className="relative hidden overflow-hidden bg-[#0f0d2e] p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="pointer-events-none absolute -left-24 -top-24 size-[520px] rounded-full bg-[radial-gradient(circle,rgba(99,102,241,0.55),transparent_65%)]" />
         <div className="pointer-events-none absolute -bottom-40 right-0 size-[520px] rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.30),transparent_65%)]" />
-        <div className="relative"><CrewLogo variant="lockup" tone="dark" height={76} /></div>
+        <div className="relative"><CrewLogo variant="lockup" tone="dark" height={96} /></div>
         <div className="relative max-w-lg">
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">One intelligent platform.<br />Your entire workforce.</h1>
           <p className="mt-4 text-[0.9375rem] leading-relaxed text-white/70">
