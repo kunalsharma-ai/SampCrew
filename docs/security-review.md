@@ -57,9 +57,11 @@ the running system; it is **not** an external penetration test, which is still n
 
 - ~~multer 2.x before 2.5 (via NestJS)~~: fixed on 5 November 2026 with a `multer: 2.5.0` override in
   `pnpm-workspace.yaml`, once 2.5.0 was two weeks old.
-- **Build and mobile tooling advisories**: postcss inside Next.js (build time only, processes SampCrew's own CSS),
-  glob, minimatch and deepmerge inside the Expo CLI (developer tooling, not shipped), decode-uri-component inside
-  expo-router (patched 0.5.1 released 23 October 2026; due from 6 November 2026).
+- ~~decode-uri-component before 0.5.1 (via expo-router's query-string)~~: fixed on 6 November 2026 with a
+  `decode-uri-component: 0.5.1` override. 0.5.1 is ESM-only and query-string 7 loads it with `require()`, so
+  `patches/query-string@7.1.3.patch` takes its default export. Without that patch the mobile app's URL parsing fails.
+- **Build tooling advisories**: postcss inside Next.js (build time only, processes SampCrew's own CSS), and glob,
+  minimatch and deepmerge inside the Expo CLI (developer tooling, not shipped).
 - ~~Content Security Policy with nonces~~, ~~field encryption key rotation~~ and ~~malware scanning of uploads~~:
   done in Phase 13 (`docs/phases/phase-13.md`).
 - **External penetration test** by an independent firm, and single sign-on and SCIM against real identity providers.

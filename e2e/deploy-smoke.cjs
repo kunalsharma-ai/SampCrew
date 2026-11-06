@@ -67,16 +67,6 @@ function expect(cond, msg) {
   const errs = [];
   p.on('pageerror', (e) => errs.push(`page error: ${e.message}`));
   p.on('console', (m) => m.type() === 'error' && errs.push(`console: ${m.text()}`));
-  // On a CI runner, Docker can add or change network interfaces while this runs. Chromium then cancels requests in
-  // flight with net::ERR_NETWORK_CHANGED, and a cancelled fetch surfaces as "network error" or "Failed to fetch".
-  // Those come from the machine, not the app: when a network change was seen, they are noted but not counted. Every
-  // other console or page error (CSP violations, script errors) still fails the test.
-  const appErrors = () => {
-    if (!errs.some((e) => /ERR_NETWORK_CHANGED/.test(e))) return errs;
-    const machine = (e) => /ERR_NETWORK_CHANGED/.test(e) || /^page error: (network error|Failed to fetch)$/.test(e);
-    for (const e of errs.filter(machine)) console.log(`note - not counted, caused by a network change on the runner: ${e}`);
-    return errs.filter((e) => !machine(e));
-  };
   const signIn = async () => {
     await p.goto(`${WEB}/login`);
     await p.fill('input[name=email]', 'uk.hr@demo.crew.local');
@@ -123,8 +113,15 @@ function expect(cond, msg) {
   await p.waitForURL((u) => u.pathname === '/' || !u.href.startsWith(WEB), { timeout: 15000 });
   expect(p.url().startsWith(WEB), `sign-in followed an outside next= address to ${p.url()}`);
   ok('sign-in ignores a next= address outside SampCrew');
-  const real = appErrors();
-  expect(!real.length, `browser errors:\n${real.join('\n')}`);
+  // On CI runners Docker can change the host's network interfaces while the stack settles. Chromium then cancels
+  // requests in flight with net::ERR_NETWORK_CHANGED, and Next.js logs that its RSC fetch fell back to a full
+  // navigation. Those are not script errors or policy violations, so only they are set aside, and only after
+  // Chromium has reported a network change. Everything else still fails the check.
+  const networkChanged = errs.some((e) => e.includes('net::ERR_NETWORK_CHANGED'));
+  const isNetworkChange = (e) => e.includes('net::ERR_NETWORK_CHANGED') || /^console: Failed to fetch RSC payload .* Falling back to browser navigation\. TypeError: Failed to fetch/.test(e) || e === 'page error: network error';
+  const browserErrors = networkChanged ? errs.filter((e) => !isNetworkChange(e)) : errs;
+  if (networkChanged) console.log(`note - the host network changed during the browser check; set aside: ${errs.filter(isNetworkChange).length} cancelled request(s)`);
+  expect(!browserErrors.length, `browser errors:\n${browserErrors.join('\n')}`);
   ok('no script errors or Content Security Policy violations');
 
   // Console: reachable from the private network the smoke test runs in, sign-in page renders
