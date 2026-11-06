@@ -37,6 +37,8 @@ import { NotificationsController } from './modules/notifications/notifications.c
 import { OnboardingController } from './modules/onboarding/onboarding.controller';
 import { OnboardingService } from './modules/onboarding/onboarding.service';
 import { SetupController } from './modules/setup/setup.controller';
+import { SignatureAgentController, SignaturesController } from './modules/signatures/signatures.controller';
+import { SignaturesService } from './modules/signatures/signatures.service';
 import { SetupService } from './modules/setup/setup.service';
 import {
   BusinessUnitsController,
@@ -137,6 +139,8 @@ export const CONTROLLERS = [
   EmployeesController,
   OnboardingController,
   SetupController,
+  SignaturesController,
+  SignatureAgentController,
   DocumentsController,
   LeaveController,
   ApprovalsController,
@@ -229,6 +233,7 @@ export const CONTROLLERS = [
     SkillCatalogueService,
     OnboardingService,
     SetupService,
+    SignaturesService,
     LeaveService,
     EmployeesService,
     DocumentsService,

@@ -108,6 +108,7 @@ jobs:
           pnpm e2e:hr
           pnpm e2e:directory
           pnpm e2e:setup
+          pnpm e2e:signature
           pnpm e2e:bids
           pnpm e2e:universe
           pnpm e2e:talent
