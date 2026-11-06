@@ -53,3 +53,4 @@ export * from './safe-path';
 export * from './csp';
 export * from './platform-integrations';
 export * from './overview';
+export * from './setup';

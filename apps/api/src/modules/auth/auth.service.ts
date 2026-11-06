@@ -29,6 +29,7 @@ interface UserRow {
   mfa_secret_enc: string | null;
   status: string;
   locked_until: Date | null;
+  must_change_password: boolean;
 }
 
 @Injectable()
@@ -119,7 +120,30 @@ export class AuthService {
     return { status: 'ok', ...pair };
   }
 
+  /**
+   * A login HR created with a temporary password: the person chooses their own password before any session is
+   * issued. The step token carries what was already proven (password, and MFA if it was asked for).
+   */
+  async setInitialPassword(changeToken: string, newPassword: string): Promise<LoginResponse> {
+    const step = await this.tokens.verifyStep(changeToken, 'password_change').catch(() => {
+      throw Errors.unauthorized('The sign-in step expired. Sign in again with your temporary password.');
+    });
+    const user = await this.db.platform((tx) => one<UserRow>(tx, 'select * from users where id = $1', [step.sub]));
+    if (!user || user.status !== 'active' || !user.must_change_password) throw Errors.unauthorized('Sign in again.');
+    if (await verifyPassword(user.password_hash, newPassword)) throw Errors.badRequest('same_password', 'Choose a password different from the temporary one');
+    const hash = await hashPassword(newPassword);
+    await this.db.platform(async (tx) => {
+      await tx.query('update users set password_hash = $2, must_change_password = false, email_verified_at = coalesce(email_verified_at, now()) where id = $1', [user.id, hash]);
+      await this.audit.record(tx, { tenantId: null, action: 'auth.initial_password_set', resourceType: 'user', resourceId: user.id });
+    });
+    return this.afterPrimaryAuth(user.id, step.tenantSlug, step.mfa ?? false, (step.client as Client) ?? 'web');
+  }
+
   private async afterPrimaryAuth(userId: string, tenantSlug: string | undefined, mfa: boolean, client: Client): Promise<LoginResponse> {
+    const pending = await this.db.platform((tx) => one<{ must_change_password: boolean }>(tx, 'select must_change_password from users where id = $1', [userId]));
+    if (pending?.must_change_password) {
+      return { status: 'password_change_required', changeToken: await this.tokens.signStep({ sub: userId, purpose: 'password_change', tenantSlug, mfa, client }) };
+    }
     const all = await this.activeMemberships(userId);
     if (!all.length) throw Errors.forbidden('Your account is not active in any workspace');
     // Workspaces that require single sign-on take members (other than owners) through their identity provider instead.
@@ -288,9 +312,9 @@ export class AuthService {
     const actor = requestContext.tenantActor();
     const data = await this.db.tenant(async (tx) => {
       const user = await one<{ id: string; email: string; full_name: string; mfa_enabled: boolean }>(tx, 'select id, email::text, full_name, mfa_enabled from users where id = $1', [actor.userId]);
-      const tenant = await one<{ id: string; name: string; slug: string; is_demo: boolean; status: string; timezone: string; currency: string; locale: string }>(
+      const tenant = await one<{ id: string; name: string; slug: string; is_demo: boolean; status: string; timezone: string; currency: string; locale: string; setup_completed_at: Date | null }>(
         tx,
-        'select id, name, slug::text, is_demo, status, timezone, currency, locale from tenants where id = $1',
+        'select id, name, slug::text, is_demo, status, timezone, currency, locale, setup_completed_at from tenants where id = $1',
         [actor.tenantId],
       );
       const membership = await one<{ id: string; status: string }>(tx, 'select id, status from memberships where id = $1', [actor.membershipId]);
@@ -311,7 +335,7 @@ export class AuthService {
     );
     return {
       user: { id: data.user!.id, email: data.user!.email, fullName: data.user!.full_name, mfaEnabled: data.user!.mfa_enabled },
-      tenant: { id: data.tenant!.id, name: data.tenant!.name, slug: data.tenant!.slug, isDemo: data.tenant!.is_demo, status: data.tenant!.status, timezone: data.tenant!.timezone, currency: data.tenant!.currency, locale: data.tenant!.locale },
+      tenant: { id: data.tenant!.id, name: data.tenant!.name, slug: data.tenant!.slug, isDemo: data.tenant!.is_demo, status: data.tenant!.status, timezone: data.tenant!.timezone, currency: data.tenant!.currency, locale: data.tenant!.locale, setupCompletedAt: data.tenant!.setup_completed_at?.toISOString() ?? null },
       membership: { id: data.membership!.id, status: data.membership!.status, roles: data.roles },
       permissions: effectivePermissions(data.subject),
       features: [...data.ent.features].sort(),
@@ -380,7 +404,7 @@ export class AuthService {
     if (!(await verifyPassword(user?.password_hash ?? null, currentPassword))) throw Errors.badRequest('wrong_password', 'Your current password is incorrect');
     const hash = await hashPassword(newPassword);
     await this.db.platform(async (tx) => {
-      await tx.query('update users set password_hash = $2 where id = $1', [actor.userId, hash]);
+      await tx.query('update users set password_hash = $2, must_change_password = false where id = $1', [actor.userId, hash]);
       // Sign out every other session.
       await tx.query(`update sessions set revoked_at = now(), revoked_reason = 'password_changed' where user_id = $1 and id <> $2 and revoked_at is null`, [actor.userId, actor.sessionId]);
       await this.audit.record(tx, { tenantId: actor.tenantId, action: 'auth.password_changed', resourceType: 'user', resourceId: actor.userId });

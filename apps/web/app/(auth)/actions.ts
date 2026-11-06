@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { act, api, type ActionResult } from '@/lib/api';
 import { setSession, type TokenPair } from '@/lib/session';
 
-type LoginStep = ({ status: 'ok' } & TokenPair) | { status: 'mfa_required'; mfaToken: string } | { status: 'select_tenant'; tenants: { id: string; name: string; slug: string }[]; selectToken: string };
+type LoginStep = ({ status: 'ok' } & TokenPair) | { status: 'mfa_required'; mfaToken: string } | { status: 'select_tenant'; tenants: { id: string; name: string; slug: string }[]; selectToken: string } | { status: 'password_change_required'; changeToken: string };
 
 async function finish(step: LoginStep): Promise<ActionResult<LoginStep>> {
   if (step.status === 'ok') {
@@ -20,6 +20,12 @@ export async function loginAction(input: { email: string; password: string; tena
 
 export async function verifyMfaAction(input: { mfaToken: string; code: string }) {
   const r = await act(() => api<LoginStep>('/auth/mfa/verify', { method: 'POST', body: input, auth: false }));
+  return r.ok ? finish(r.data!) : r;
+}
+
+/** First sign-in with a temporary password HR gave: the person sets their own, then sign-in carries on. */
+export async function initialPasswordAction(input: { changeToken: string; newPassword: string }) {
+  const r = await act(() => api<LoginStep>('/auth/initial-password', { method: 'POST', body: input, auth: false }));
   return r.ok ? finish(r.data!) : r;
 }
 

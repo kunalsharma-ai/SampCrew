@@ -1,10 +1,10 @@
 'use client';
 import { Badge, Button, Card, EmptyState, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
-import { Archive, Building2, ChevronRight, Globe2, MapPin, Network, Pencil, Plus } from 'lucide-react';
+import { Archive, BadgeCheck, Building2, ChevronRight, Globe2, MapPin, Network, Pencil, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { type FieldDef, ResourceDialog } from '@/components/resource-form';
-import type { BusinessUnit, Department, LegalEntity, Location } from '@/lib/types';
+import type { BusinessUnit, Department, Designation, LegalEntity, Location } from '@/lib/types';
 import { archiveOrgAction, type OrgResource, saveOrgAction } from './actions';
 
 const COUNTRIES = [['IN', 'India'], ['AE', 'United Arab Emirates'], ['GB', 'United Kingdom'], ['US', 'United States'], ['SG', 'Singapore'], ['DE', 'Germany'], ['AU', 'Australia'], ['SA', 'Saudi Arabia'], ['CA', 'Canada'], ['FR', 'France'], ['NL', 'Netherlands'], ['PH', 'Philippines'], ['MY', 'Malaysia'], ['ZA', 'South Africa'], ['KE', 'Kenya'], ['NG', 'Nigeria']].map(([value, label]) => ({ value: value!, label: label! }));
@@ -21,6 +21,7 @@ interface Props {
   departments: Department[];
   units: BusinessUnit[];
   tree: Department[];
+  designations: Designation[];
 }
 
 export function OrgView(props: Props) {
@@ -63,13 +64,18 @@ export function OrgView(props: Props) {
       { name: 'legalEntityId', label: 'Legal entity', type: 'select', options: entityOptions, nullable: true, half: true },
       { name: 'businessUnitId', label: 'Business unit', type: 'select', options: units.map((u) => ({ value: u.id, label: u.name })), nullable: true, half: true },
     ],
+    designations: [
+      { name: 'name', label: 'Job title', required: true, half: true },
+      { name: 'code', label: 'Code', half: true },
+      { name: 'level', label: 'Level (0 to 100)', type: 'number', hint: 'Higher is more senior. Orders titles in lists and reports.' },
+    ],
     units: [
       { name: 'name', label: 'Name', required: true, half: true },
       { name: 'code', label: 'Code', half: true },
       { name: 'description', label: 'Description', type: 'textarea' },
     ],
   };
-  const noun = { entities: 'legal entity', locations: 'location', departments: 'department', units: 'business unit' }[tab];
+  const noun = { entities: 'legal entity', locations: 'location', departments: 'department', designations: 'designation', units: 'business unit' }[tab];
 
   const archive = (id: string, name: string) => {
     if (!confirm(`Archive ${name}? It stays in history and reports but can no longer be used.`)) return;
@@ -131,6 +137,23 @@ export function OrgView(props: Props) {
     body = props.tree.length ? (
       <ul className="py-2">{props.tree.map((d) => <DeptNode key={d.id} d={d} depth={0} entityName={entityName} actions={actions} />)}</ul>
     ) : <EmptyState icon={<Network className="size-5" />} title="No departments yet" description="Build your structure top-down. Department managers' permissions follow this tree." />;
+  } else if (tab === 'designations') {
+    body = props.designations.length ? (
+      <Table>
+        <THead><tr><TH>Designation</TH><TH>Code</TH><TH>Level</TH><TH>People</TH><TH /></tr></THead>
+        <TBody>
+          {props.designations.map((d) => (
+            <TR key={d.id}>
+              <TD className="font-medium">{d.name}</TD>
+              <TD className="font-mono text-xs">{d.code ?? '—'}</TD>
+              <TD className="tabular text-fg-muted">{d.level ?? '—'}</TD>
+              <TD><Badge>{d.employeeCount} {d.employeeCount === 1 ? 'person' : 'people'}</Badge></TD>
+              <TD>{actions(d.id, d.name, { name: d.name, code: d.code, level: d.level })}</TD>
+            </TR>
+          ))}
+        </TBody>
+      </Table>
+    ) : <EmptyState icon={<BadgeCheck className="size-5" />} title="No designations yet" description="Add job titles here, or pick from a ready-made list for your industry in Company setup." />;
   } else {
     body = units.length ? (
       <Table>
@@ -165,6 +188,7 @@ export function OrgView(props: Props) {
         onSubmit={(values) => {
           const v = { ...values };
           if (tab === 'entities' && v.fiscalYearStartMonth) v.fiscalYearStartMonth = Number(v.fiscalYearStartMonth);
+          if (tab === 'designations' && v.level !== undefined && v.level !== null && v.level !== '') v.level = Number(v.level);
           // New records should not send nulls.
           if (!editing?.id) for (const k of Object.keys(v)) if (v[k] === null) delete v[k];
           return saveOrgAction(tab, editing?.id ?? null, v);

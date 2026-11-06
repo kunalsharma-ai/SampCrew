@@ -1,8 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
+import { PHOTO_MAX_BYTES, PHOTO_TYPES } from '@crew/contracts';
 import type {
+  attendanceRegistrationInput,
   confirmInput,
   CreateEmployeeInput,
+  employeeLoginInput,
   designationInput,
   duplicateCheckInput,
   EmployeeColumn,
@@ -16,7 +19,7 @@ import type {
   updateEmployeeInput,
 } from '@crew/contracts';
 import { AuditService, diff } from '../../platform/audit/audit.service';
-import { decryptField, encryptField } from '../../platform/auth/crypto';
+import { decryptField, encryptField, randomToken } from '../../platform/auth/crypto';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
@@ -27,6 +30,8 @@ import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
 import { decodeCursor, page } from '../../platform/http/pagination';
 import { NotificationService } from '../../platform/notify/notification.service';
+import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
+import { DevicesService } from '../attendance/devices.service';
 import { LeaveService } from '../leave/leave.service';
 import { MembersService } from '../members/members.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
@@ -43,7 +48,8 @@ export const EMPLOYEE_COLUMNS = `e.id, e.employee_code as "employeeCode", e.firs
   e.current_legal_entity_id as "legalEntityId", le.name as "legalEntityName", e.current_department_id as "departmentId", d.name as "departmentName",
   e.current_location_id as "locationId", l.name as "locationName", e.current_designation_id as "designationId", ds.name as "designationName",
   e.current_manager_employee_id as "managerEmployeeId", trim(coalesce(mgr.preferred_name, mgr.first_name) || ' ' || mgr.last_name) as "managerName",
-  e.current_grade as "grade", e.membership_id as "membershipId", m.status as "loginStatus", e.created_at as "createdAt"`;
+  e.current_grade as "grade", e.membership_id as "membershipId", m.status as "loginStatus", e.created_at as "createdAt",
+  e.photo_updated_at as "photoUpdatedAt", e.default_shift_id as "defaultShiftId"`;
 
 const SORT_KEYS: Record<z.infer<typeof employeeListQuery>['sort'], string> = {
   name: `lower(e.first_name || ' ' || e.last_name)`,
@@ -137,6 +143,8 @@ export class EmployeesService {
     private readonly members: MembersService,
     private readonly onboarding: OnboardingService,
     private readonly leave: LeaveService,
+    private readonly storage: StorageService,
+    private readonly devices: DevicesService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -584,6 +592,7 @@ export class EmployeesService {
   async create(input: CreateEmployeeInput, within?: (tx: Tx, employeeId: string) => Promise<void>) {
     const actor = requestContext.tenantActor();
     let inviteToken: string | undefined;
+    let temporaryPassword: string | undefined;
     const created = await this.db.tenant(async (tx) => {
       await this.authz.require('employees:create', { legalEntityId: input.legalEntityId }, tx);
       const { count } = (await one<{ count: number }>(tx, `select count(*)::int as count from employees where status <> 'exited'`))!;
@@ -614,22 +623,15 @@ export class EmployeesService {
       );
       await this.event(tx, row.id, 'hired', input.dateOfJoining, { employeeCode: code });
 
+      const loginMode = input.loginMode ?? (input.inviteToCrew ? 'invite' : 'none');
       if (input.membershipId) {
         await this.linkMembership(tx, row.id, input.membershipId);
-      } else if (input.inviteToCrew && input.workEmail) {
-        const manager = input.managerEmployeeId ? await one<{ membership_id: string | null }>(tx, 'select membership_id from employees where id = $1', [input.managerEmployeeId]) : undefined;
-        const inv = await this.members.createInvitation(tx, {
-          email: input.workEmail,
-          fullName: `${input.firstName} ${input.lastName}`.trim(),
-          roleKeys: ['employee'],
-          legalEntityId: input.legalEntityId,
-          departmentId: input.departmentId ?? null,
-          locationId: input.locationId ?? null,
-          managerMembershipId: manager?.membership_id ?? null,
-        });
-        inviteToken = inv.token;
-        await tx.query('update employees set membership_id = $2 where id = $1', [row.id, inv.membershipId]);
+      } else if (loginMode !== 'none' && input.workEmail) {
+        const login = await this.giveLogin(tx, row.id, loginMode, input.initialPassword);
+        inviteToken = login.inviteToken;
+        temporaryPassword = login.temporaryPassword;
       }
+      await this.registerAttendance(tx, row.id, { defaultShiftId: input.defaultShiftId ?? null, enrolments: input.attendanceEnrolments ?? [] }, true);
 
       const templateId = input.onboardingTemplateId === undefined
         ? (await one<{ id: string }>(tx, 'select id from onboarding_templates where is_default and archived_at is null'))?.id
@@ -658,7 +660,200 @@ export class EmployeesService {
       return e;
     });
     const invite = inviteToken && !this.config.isProductionLike ? `${this.config.WEB_PUBLIC_URL}/accept-invite?token=${inviteToken}` : undefined;
-    return { employee: created, inviteUrl: invite };
+    return { employee: created, inviteUrl: invite, ...(temporaryPassword ? { login: { email: created.workEmail, temporaryPassword } } : {}) };
+  }
+
+  /**
+   * Gives an employee a CREW login with the Employee baseline role, placed like their job record: an emailed
+   * invitation, or a login that works now with a temporary password. A password CREW generates is returned once,
+   * so HR can hand it over; one HR typed is not echoed back.
+   */
+  private async giveLogin(tx: Tx, employeeId: string, mode: 'invite' | 'password', typedPassword?: string) {
+    const e = await this.load(tx, employeeId);
+    if (!e.workEmail) throw Errors.badRequest('work_email_required', 'Add a work email first: it is the sign-in name');
+    const manager = e.managerEmployeeId ? await one<{ membership_id: string | null }>(tx, 'select membership_id from employees where id = $1', [e.managerEmployeeId]) : undefined;
+    const placement = {
+      email: e.workEmail,
+      fullName: `${e.firstName} ${e.lastName}`.trim(),
+      roleKeys: ['employee'],
+      legalEntityId: e.legalEntityId ?? undefined,
+      departmentId: e.departmentId,
+      locationId: e.locationId,
+      managerMembershipId: manager?.membership_id ?? null,
+    };
+    if (mode === 'invite') {
+      const inv = await this.members.createInvitation(tx, placement);
+      await tx.query('update employees set membership_id = $2 where id = $1', [employeeId, inv.membershipId]);
+      await this.event(tx, employeeId, 'linked_login', today(), { membershipId: inv.membershipId, via: 'invitation' });
+      return { inviteToken: inv.token, temporaryPassword: undefined };
+    }
+    const generated = typedPassword ? undefined : temporaryPasswordValue();
+    const m = await this.members.createLoginWithPassword(tx, placement, typedPassword ?? generated!);
+    await tx.query('update employees set membership_id = $2 where id = $1', [employeeId, m.membershipId]);
+    await this.onboarding.assignEmployeeTasks(tx, employeeId, m.membershipId);
+    await this.event(tx, employeeId, 'linked_login', today(), { membershipId: m.membershipId, via: 'temporary_password' });
+    return { inviteToken: undefined, temporaryPassword: generated };
+  }
+
+  /** Creates a CREW login for an employee who has none (from their profile). */
+  async createLogin(id: string, input: z.infer<typeof employeeLoginInput>) {
+    let inviteToken: string | undefined;
+    let temporaryPassword: string | undefined;
+    const employee = await this.db.tenant(async (tx) => {
+      const e = await this.load(tx, id);
+      await this.authz.require('employees:update', employeeAttrs(e), tx);
+      await this.authz.require('users:manage', { legalEntityId: e.legalEntityId, departmentId: e.departmentId, locationId: e.locationId }, tx);
+      if (e.membershipId) throw Errors.conflict('already_linked', 'This employee already has a CREW login');
+      if (e.status === 'exited') throw Errors.conflict('employee_exited', 'This person has left; they cannot be given a login');
+      const r = await this.giveLogin(tx, id, input.mode, input.initialPassword);
+      inviteToken = r.inviteToken;
+      temporaryPassword = r.temporaryPassword;
+      await this.audit.record(tx, { action: 'employee.login_created', resourceType: 'employee', resourceId: id, metadata: { mode: input.mode } });
+      return this.load(tx, id);
+    });
+    const inviteUrl = inviteToken && !this.config.isProductionLike ? `${this.config.WEB_PUBLIC_URL}/accept-invite?token=${inviteToken}` : undefined;
+    return { employee, inviteUrl, ...(temporaryPassword ? { login: { email: employee.workEmail, temporaryPassword } } : {}) };
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
+  // Attendance registration: usual shift and attendance-machine enrolment numbers
+  // ---------------------------------------------------------------------------------------------------------
+
+  async attendanceRegistration(id: string) {
+    return this.db.tenant(async (tx) => {
+      const e = await this.load(tx, id);
+      await this.authz.require('attendance:read', employeeAttrs(e), tx);
+      return this.registrationOf(tx, id);
+    });
+  }
+
+  private async registrationOf(tx: Tx, id: string) {
+    const shift = await one<{ id: string; name: string; code: string; startTime: string; endTime: string }>(
+      tx,
+      `select s.id, s.name, s.code, to_char(s.start_time, 'HH24:MI') as "startTime", to_char(s.end_time, 'HH24:MI') as "endTime"
+         from employees e join shift_templates s on s.id = e.default_shift_id where e.id = $1`,
+      [id],
+    );
+    const enrolments = await many<{ id: string; deviceUserId: string; deviceId: string | null; deviceName: string | null }>(
+      tx,
+      `select m.id, m.device_user_id as "deviceUserId", m.device_id as "deviceId", d.name as "deviceName"
+         from device_user_mappings m left join attendance_devices d on d.id = m.device_id where m.employee_id = $1 order by m.created_at`,
+      [id],
+    );
+    return { defaultShift: shift ?? null, enrolments, registered: !!shift || enrolments.length > 0 };
+  }
+
+  /** Replaces the usual shift and enrolment numbers. Punches already received from a newly mapped number are applied. */
+  async saveAttendanceRegistration(id: string, input: z.infer<typeof attendanceRegistrationInput>) {
+    return this.db.tenant(async (tx) => {
+      const e = await this.load(tx, id);
+      await this.authz.require('employees:update', employeeAttrs(e), tx);
+      const before = await this.registrationOf(tx, id);
+      // Enrolment numbers belong to the attendance machines; changing them needs the device permission.
+      const sig = (list: { deviceUserId: string; deviceId: string | null }[]) => list.map((x) => `${x.deviceId ?? '*'}:${x.deviceUserId.toLowerCase()}`).sort().join(',');
+      if (sig(before.enrolments) !== sig(input.enrolments)) await this.authz.require('devices:manage', { legalEntityId: e.legalEntityId }, tx);
+      await this.registerAttendance(tx, id, input, false);
+      const after = await this.registrationOf(tx, id);
+      await this.audit.record(tx, {
+        action: 'employee.attendance_registration_updated', resourceType: 'employee', resourceId: id,
+        changes: { defaultShift: { from: before.defaultShift?.name ?? null, to: after.defaultShift?.name ?? null }, enrolments: { from: before.enrolments.map((x) => x.deviceUserId), to: after.enrolments.map((x) => x.deviceUserId) } },
+      });
+      return after;
+    });
+  }
+
+  private async registerAttendance(tx: Tx, employeeId: string, input: z.infer<typeof attendanceRegistrationInput>, atHire: boolean) {
+    if (atHire && !input.defaultShiftId && !input.enrolments.length) return;
+    if (input.defaultShiftId && !(await one(tx, 'select 1 from shift_templates where id = $1 and archived_at is null', [input.defaultShiftId]))) {
+      throw Errors.badRequest('invalid_shift', 'Shift not found');
+    }
+    await tx.query('update employees set default_shift_id = $2 where id = $1', [employeeId, input.defaultShiftId]);
+    const seen = new Set<string>();
+    for (const x of input.enrolments) {
+      const key = `${x.deviceId ?? '*'}:${x.deviceUserId.toLowerCase()}`;
+      if (seen.has(key)) throw Errors.badRequest('duplicate_enrolment', `Enrolment number ${x.deviceUserId} is listed twice`);
+      seen.add(key);
+      if (x.deviceId && !(await one(tx, 'select 1 from attendance_devices where id = $1 and archived_at is null', [x.deviceId]))) {
+        throw Errors.badRequest('invalid_device', 'Attendance machine not found');
+      }
+    }
+    const old = await many<{ device_user_id: string; device_id: string | null }>(tx, 'delete from device_user_mappings where employee_id = $1 returning device_user_id, device_id', [employeeId]);
+    const actor = requestContext.tenantActor();
+    for (const x of input.enrolments) {
+      const taken = await one<{ name: string }>(
+        tx,
+        `select trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name from device_user_mappings m join employees e on e.id = m.employee_id
+          where m.device_user_id = $1 and (m.device_id is not distinct from $2 or m.device_id is null or $2::uuid is null) limit 1`,
+        [x.deviceUserId, x.deviceId],
+      );
+      if (taken) throw Errors.conflict('already_mapped', `Enrolment number ${x.deviceUserId} is already used by ${taken.name}`);
+      await tx.query(
+        `insert into device_user_mappings (tenant_id, device_id, device_user_id, employee_id, created_by) values (app_tenant_id(), $1, $2, $3, $4)`,
+        [x.deviceId, x.deviceUserId, employeeId, actor.userId],
+      );
+    }
+    // Days already worked are recomputed so the new shift and any punches from these numbers count.
+    if (!atHire) {
+      const touched = [...old.map((o) => ({ deviceUserId: o.device_user_id, deviceId: o.device_id })), ...input.enrolments];
+      for (const t of touched) await this.devices.recomputeMapped(tx, employeeId, t.deviceUserId, t.deviceId);
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
+  // Photo
+  // ---------------------------------------------------------------------------------------------------------
+
+  /** HR (employees:update over this person) or the employee themselves can set the photo. */
+  async setPhoto(id: string, file: { mimetype: string; size: number; buffer: Buffer } | undefined) {
+    if (!file) throw Errors.badRequest('file_required', 'Choose a photo');
+    if (!(PHOTO_TYPES as readonly string[]).includes(file.mimetype)) throw Errors.badRequest('unsupported_type', 'Use a PNG, JPEG or WebP image');
+    if (file.size <= 0 || file.size > PHOTO_MAX_BYTES) throw Errors.badRequest('file_too_large', 'Photos can be up to 5 MB');
+    if (!sniffMatches(file.mimetype, file.buffer.subarray(0, 512))) throw Errors.badRequest('content_mismatch', 'The file is not the image type it claims to be');
+    const actor = requestContext.tenantActor();
+    const key = this.storage.newKey(actor.tenantId);
+    const old = await this.db.tenant(async (tx) => {
+      const e = await this.load(tx, id);
+      await this.requirePhotoEdit(tx, e);
+      return (await one<{ photo_key: string | null }>(tx, 'select photo_key from employees where id = $1 for update', [id]))!.photo_key;
+    });
+    await this.storage.put(key, file.buffer, { upload: true });
+    const e = await this.db.tenant(async (tx) => {
+      await tx.query('update employees set photo_key = $2, photo_content_type = $3, photo_updated_at = now() where id = $1', [id, key, file.mimetype]);
+      await this.audit.record(tx, { action: 'employee.photo_updated', resourceType: 'employee', resourceId: id, metadata: { contentType: file.mimetype, sizeBytes: file.size } });
+      return this.load(tx, id);
+    });
+    if (old) await this.storage.remove(old).catch(() => undefined);
+    return { photoUpdatedAt: e.photoUpdatedAt };
+  }
+
+  async removePhoto(id: string) {
+    const old = await this.db.tenant(async (tx) => {
+      const e = await this.load(tx, id);
+      await this.requirePhotoEdit(tx, e);
+      const r = (await one<{ photo_key: string | null }>(tx, 'select photo_key from employees where id = $1 for update', [id]))!;
+      await tx.query('update employees set photo_key = null, photo_content_type = null, photo_updated_at = null where id = $1', [id]);
+      if (r.photo_key) await this.audit.record(tx, { action: 'employee.photo_removed', resourceType: 'employee', resourceId: id });
+      return r.photo_key;
+    });
+    if (old) await this.storage.remove(old).catch(() => undefined);
+  }
+
+  /** Anyone who can see the employee record can see their photo. */
+  async openPhoto(id: string) {
+    const row = await this.db.tenant(async (tx) => {
+      const e = await this.load(tx, id);
+      await this.authz.require('employees:read', employeeAttrs(e), tx);
+      return one<{ photo_key: string | null; photo_content_type: string | null }>(tx, 'select photo_key, photo_content_type from employees where id = $1', [id]);
+    });
+    if (!row?.photo_key || !row.photo_content_type) throw Errors.notFound('Photo');
+    const f = await this.storage.open(row.photo_key).catch(() => { throw Errors.notFound('Photo'); });
+    return { ...f, contentType: row.photo_content_type };
+  }
+
+  private async requirePhotoEdit(tx: Tx, e: EmployeeRow) {
+    const s = await this.authz.subject(tx);
+    if (s.employeeId === e.id) return;
+    await this.authz.require('employees:update', employeeAttrs(e), tx);
   }
 
   /** Allocates the next code from the tenant's series, skipping codes already used (e.g. by imported records). */
@@ -1030,4 +1225,19 @@ export function uniqueAs(code: string, message: string) {
     if ((err as { code?: string }).code === '23505') throw Errors.conflict(code, message);
     throw err;
   };
+}
+
+/** A temporary password that passes the password rules: 16 characters from four character groups. */
+export function temporaryPasswordValue(): string {
+  const groups = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnopqrstuvwxyz', '23456789', '!@#$%*?-'];
+  const bytes = Buffer.from(randomToken(32), 'base64url');
+  const chars = groups.map((g, i) => g[bytes[i]! % g.length]!);
+  const all = groups.join('');
+  for (let i = 4; chars.length < 16; i++) chars.push(all[bytes[i]! % all.length]!);
+  // Shuffle so the groups are not always in the same places.
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = bytes[16 + (i % 16)]! % (i + 1);
+    [chars[i], chars[j]] = [chars[j]!, chars[i]!];
+  }
+  return chars.join('');
 }

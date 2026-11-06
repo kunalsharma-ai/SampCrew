@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 import type { assignRolesRequest, inviteMemberRequest, PaginationQuery, updateMemberRequest } from '@crew/contracts';
 import { AuditService, diff } from '../../platform/audit/audit.service';
-import { randomToken, sha256 } from '../../platform/auth/crypto';
+import { hashPassword, randomToken, sha256 } from '../../platform/auth/crypto';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
@@ -136,6 +136,50 @@ export class MembersService {
     await this.audit.record(tx, { action: 'membership.invited', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, roles: input.roleKeys } });
     await this.outbox.publish(tx, actor.tenantId, 'membership.invited', { membershipId: membership.id, email: input.email });
     return { membershipId: membership.id, token };
+  }
+
+  /**
+   * Creates a working login straight away, for HR adding someone who should sign in today (for example at an
+   * attendance kiosk or on a shared phone) rather than wait for an invitation email. The password is temporary:
+   * the person must replace it at their first sign-in. An email that already has a CREW account cannot be given a
+   * password by HR; that person joins through an invitation instead.
+   */
+  async createLoginWithPassword(tx: Tx, input: z.infer<typeof inviteMemberRequest>, temporaryPassword: string): Promise<{ membershipId: string }> {
+    const actor = requestContext.tenantActor();
+    const { count } = (await one<{ count: number }>(tx, `select count(*)::int as count from memberships where status <> 'suspended'`))!;
+    await this.entitlements.requireWithinLimit('max_employees', count, tx);
+    const roles = await this.resolveRoles(tx, [...new Set(['employee', ...input.roleKeys])]);
+    await this.assertCanGrant(tx, roles.map((r) => r.key));
+    const legalEntityId = input.legalEntityId ?? (await one<{ id: string }>(tx, 'select id from legal_entities where archived_at is null order by created_at limit 1'))?.id ?? null;
+    const hash = await hashPassword(temporaryPassword);
+    const userId = await this.db.platform(async (ptx) => {
+      if (await one(ptx, 'select 1 from users where email = $1', [input.email])) {
+        throw Errors.conflict('account_exists', 'This email already has a CREW account, so HR cannot set its password. Send an invitation instead and they join with their own password.');
+      }
+      return (await one<{ id: string }>(ptx, `insert into users (email, full_name, password_hash, must_change_password) values ($1, $2, $3, true) returning id`, [input.email, input.fullName, hash]))!.id;
+    });
+    const membership = (await one<{ id: string }>(
+      tx,
+      `insert into memberships (tenant_id, user_id, status, legal_entity_id, department_id, location_id, manager_membership_id, title, invited_by, joined_at)
+       values ($1, $2, 'active', $3, $4, $5, $6, null, $7, now()) returning id`,
+      [actor.tenantId, userId, legalEntityId, input.departmentId ?? null, input.locationId ?? null, input.managerMembershipId ?? null, actor.membershipId],
+    ))!;
+    for (const r of roles) {
+      await tx.query('insert into role_assignments (tenant_id, membership_id, role_id, granted_by) values ($1, $2, $3, $4)', [actor.tenantId, membership.id, r.id, actor.membershipId]);
+    }
+    const workspace = (await one<{ name: string }>(tx, 'select name from tenants where id = app_tenant_id()'))!;
+    // The password itself is never emailed: HR hands it over in person.
+    await this.notifications.queueEmail(
+      tx,
+      actor.tenantId,
+      input.email,
+      `Your CREW login for ${workspace.name}`,
+      `${actor.label} created your CREW login for ${workspace.name}.\n\nSign in at ${this.config.WEB_PUBLIC_URL}/login with this email and the temporary password HR gave you. You will choose your own password the first time you sign in.`,
+      'login_created',
+    );
+    await this.audit.record(tx, { action: 'membership.login_created', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, roles: input.roleKeys, temporaryPassword: true } });
+    await this.outbox.publish(tx, actor.tenantId, 'membership.created', { membershipId: membership.id, email: input.email });
+    return { membershipId: membership.id };
   }
 
   private async queueInviteEmail(tx: Tx, email: string, token: string) {

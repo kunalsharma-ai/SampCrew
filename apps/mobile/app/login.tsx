@@ -10,12 +10,14 @@ import { Button, Card, Field, gradient, glow, ListItem, Notice, Row, Screen, Tex
  * Or single sign-on: the work email picks the workspace's identity provider, which opens in the system browser.
  */
 export default function Login() {
-  const { signIn, signInWithSso, verifyMfa, chooseWorkspace, notice } = useSession();
+  const { signIn, signInWithSso, verifyMfa, setInitialPassword, chooseWorkspace, notice } = useSession();
   const [sso, setSso] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [workspace, setWorkspace] = useState('');
   const [code, setCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [step, setStep] = useState<SignInStep | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +96,21 @@ export default function Login() {
               <Field label="Code" value={code} onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode" error={fieldErrors.code} />
               <Button title="Verify" disabled={code.length !== 6} busy={busy} onPress={() => run(() => verifyMfa(step.mfaToken, code))} />
               <Button title="Back" kind="secondary" onPress={() => { setStep(null); setCode(''); }} />
+            </>
+          )}
+          {step?.step === 'newPassword' && (
+            <>
+              <Text weight="600">Choose your password</Text>
+              <Text muted size={14}>You signed in with a temporary password from HR. Choose your own to carry on.</Text>
+              <Field label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoComplete="new-password" textContentType="newPassword" hint="12+ characters with three of: lowercase, uppercase, numbers, symbols" error={fieldErrors.newPassword} testID="new-password" />
+              <Field label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoComplete="new-password" textContentType="newPassword" error={fieldErrors.confirmPassword} testID="confirm-password" />
+              <Button
+                title="Save password and sign in"
+                busy={busy}
+                disabled={!newPassword}
+                onPress={() => (newPassword !== confirmPassword ? setFieldErrors({ confirmPassword: 'The two passwords do not match' }) : run(() => setInitialPassword(step.changeToken, newPassword)))}
+              />
+              <Button title="Back" kind="secondary" onPress={() => { setStep(null); setNewPassword(''); setConfirmPassword(''); }} />
             </>
           )}
           {step?.step === 'workspace' && (

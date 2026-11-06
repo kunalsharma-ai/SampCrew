@@ -255,7 +255,7 @@ export class DevicesService {
     });
   }
 
-  private async recomputeMapped(tx: Tx, employeeId: string, deviceUserId: string, deviceId: string | null) {
+  async recomputeMapped(tx: Tx, employeeId: string, deviceUserId: string, deviceId: string | null) {
     const span = await one<{ first: Date | null; last: Date | null }>(
       tx, `select min(captured_at) as first, max(captured_at) as last from attendance_events where device_user_id = $1 and ($2::uuid is null or device_id = $2) and captured_at > now() - interval '62 days'`,
       [deviceUserId, deviceId],

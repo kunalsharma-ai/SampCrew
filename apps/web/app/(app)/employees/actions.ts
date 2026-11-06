@@ -95,7 +95,7 @@ export async function completeHireAction(form: FormData) {
   } catch {
     return { ok: false as const, message: 'The form could not be read. Please try again.' };
   }
-  const hired = await act(() => api<{ employee: { id: string }; inviteUrl?: string }>('/employees', { method: 'POST', body: payload.employee, idempotencyKey: String(form.get('idempotencyKey') ?? crypto.randomUUID()) }));
+  const hired = await act(() => api<{ employee: { id: string }; inviteUrl?: string; login?: { email: string; temporaryPassword: string } }>('/employees', { method: 'POST', body: payload.employee, idempotencyKey: String(form.get('idempotencyKey') ?? crypto.randomUUID()) }));
   if (!hired.ok) return hired;
   const id = hired.data!.employee.id;
   const warnings: string[] = [];
@@ -114,7 +114,56 @@ export async function completeHireAction(form: FormData) {
     const d = await act(() => apiForm(`/employees/${id}/documents`, fd));
     if (!d.ok) warnings.push(`${file.name} was not uploaded: ${d.message}`);
   }
+  const photo = form.get('photo');
+  if (photo instanceof File && photo.size > 0) {
+    const fd = new FormData();
+    fd.set('file', photo, photo.name);
+    const ph = await act(() => apiForm(`/employees/${id}/photo`, fd, { method: 'PUT' }));
+    if (!ph.ok) warnings.push(`The photo was not saved: ${ph.message}`);
+  }
   if (payload.draftId) await act(() => api(`/employees/drafts/${payload.draftId}`, { method: 'DELETE' }));
   refresh();
-  return { ok: true as const, data: { employeeId: id, inviteUrl: hired.data!.inviteUrl ?? null, warnings } };
+  return { ok: true as const, data: { employeeId: id, inviteUrl: hired.data!.inviteUrl ?? null, warnings, login: hired.data!.login ?? null } };
+}
+
+// Photo, login and attendance registration (SAMPLEDGE feedback, 2026-11-06) -----------------------------------
+
+export async function uploadPhotoAction(id: string, form: FormData) {
+  const r = await act(() => apiForm<{ photoUpdatedAt: string }>(`/employees/${id}/photo`, form, { method: 'PUT' }), 'Photo saved');
+  refresh(id);
+  return r;
+}
+
+export async function removePhotoAction(id: string) {
+  const r = await act(() => api(`/employees/${id}/photo`, { method: 'DELETE' }), 'Photo removed');
+  refresh(id);
+  return r;
+}
+
+export type LoginResult = { inviteUrl?: string; login?: { email: string; temporaryPassword: string } };
+
+export async function createLoginAction(id: string, body: { mode: 'invite' | 'password'; initialPassword?: string }) {
+  const r = await act(() => api<LoginResult>(`/employees/${id}/login`, { method: 'POST', body }), body.mode === 'invite' ? 'Invitation sent' : 'Login created');
+  refresh(id);
+  return r;
+}
+
+export async function saveAttendanceRegistrationAction(id: string, body: { defaultShiftId: string | null; enrolments: { deviceUserId: string; deviceId: string | null }[] }) {
+  const r = await act(() => api(`/employees/${id}/attendance-registration`, { method: 'PUT', body }), 'Attendance registration saved');
+  refresh(id);
+  return r;
+}
+
+/** Adds a designation from inside the hire wizard, so HR does not have to leave it. */
+export async function createDesignationAction(name: string) {
+  const r = await act(() => api<{ id: string; name: string }>('/designations', { method: 'POST', body: { name } }));
+  revalidatePath('/organization');
+  return r;
+}
+
+/** Adds a top-level department from inside the hire wizard. */
+export async function createDepartmentAction(name: string, legalEntityId: string | null) {
+  const r = await act(() => api<{ id: string; name: string }>('/org/departments', { method: 'POST', body: { name, ...(legalEntityId ? { legalEntityId } : {}) } }));
+  revalidatePath('/organization');
+  return r;
 }

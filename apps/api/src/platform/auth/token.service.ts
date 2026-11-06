@@ -20,7 +20,7 @@ export interface PlatformClaims {
 /** Short-lived purpose tokens used between login steps (MFA challenge, tenant picker). */
 export interface StepClaims {
   sub: string;
-  purpose: 'mfa' | 'select_tenant' | 'platform_mfa';
+  purpose: 'mfa' | 'select_tenant' | 'platform_mfa' | 'password_change';
   tenantSlug?: string;
   client?: string;
   mfa?: boolean;

@@ -1,4 +1,6 @@
 import { FEATURES, PERMISSIONS, type MemberPreferences } from '@crew/contracts';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { load, loadOptional } from '@/lib/api';
 import { can, quickActions, workflowActions } from '@/lib/nav';
 import type { Me } from '@/lib/types';
@@ -12,6 +14,8 @@ const SCOPE_LABEL: Record<string, string> = { own: 'Yourself', team: 'Your team'
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const { welcome } = await searchParams;
   const me = await load<Me>('/me');
+  // First sign-in to a new workspace: its administrators set up the company before anything else (unless they chose "Finish later").
+  if (!me.tenant.setupCompletedAt && can(me, 'org:manage') && !(await cookies()).get('crew_setup_later')) redirect('/setup');
   const hasAnnouncements = me.features.includes('announcements');
   const hasHelpdesk = me.features.includes('helpdesk');
   const [overview, dashboard, prefs, news, helpdesk] = await Promise.all([
@@ -25,6 +29,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const steps = overview && isAdmin
     ? [
+        { done: !!me.tenant.setupCompletedAt, label: 'Finish the company setup', href: '/setup' },
         { done: overview.legalEntities > 0, label: 'Add your legal entities', href: '/organization?tab=entities' },
         { done: overview.locations > 0, label: 'Add offices, plants or sites', href: '/organization?tab=locations' },
         { done: overview.departments > 0, label: 'Build your department structure', href: '/organization?tab=departments' },

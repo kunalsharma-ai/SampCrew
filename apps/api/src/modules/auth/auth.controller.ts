@@ -12,6 +12,7 @@ import {
   samlCallbackInput,
   ssoCallbackInput,
   ssoExchangeInput,
+  initialPasswordRequest,
   ssoStartInput,
   switchTenantRequest,
 } from '@crew/contracts';
@@ -103,6 +104,15 @@ export class AuthController {
   @Doc({ summary: 'Complete sign-in with a 6-digit authenticator code', body: mfaVerifyRequest })
   verifyMfa(@Body(new ZodPipe(mfaVerifyRequest)) body: z.infer<typeof mfaVerifyRequest>) {
     return this.auth.verifyMfa(body.mfaToken, body.code);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('initial-password')
+  @HttpCode(200)
+  @Doc({ summary: 'First sign-in with a temporary password: choose your own password, then continue signing in', body: initialPasswordRequest })
+  initialPassword(@Body(new ZodPipe(initialPasswordRequest)) body: z.infer<typeof initialPasswordRequest>) {
+    return this.auth.setInitialPassword(body.changeToken, body.newPassword);
   }
 
   @Public()

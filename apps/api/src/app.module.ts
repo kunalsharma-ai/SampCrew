@@ -36,6 +36,8 @@ import { UniverseService } from './modules/universe/universe.service';
 import { NotificationsController } from './modules/notifications/notifications.controller';
 import { OnboardingController } from './modules/onboarding/onboarding.controller';
 import { OnboardingService } from './modules/onboarding/onboarding.service';
+import { SetupController } from './modules/setup/setup.controller';
+import { SetupService } from './modules/setup/setup.service';
 import {
   BusinessUnitsController,
   DepartmentsController,
@@ -134,6 +136,7 @@ export const CONTROLLERS = [
   DesignationsController,
   EmployeesController,
   OnboardingController,
+  SetupController,
   DocumentsController,
   LeaveController,
   ApprovalsController,
@@ -225,6 +228,7 @@ export const CONTROLLERS = [
     LensesService,
     SkillCatalogueService,
     OnboardingService,
+    SetupService,
     LeaveService,
     EmployeesService,
     DocumentsService,

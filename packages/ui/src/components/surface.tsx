@@ -71,9 +71,16 @@ export function StatusPill({ status }: { status: string }) {
   );
 }
 
-export function Avatar({ name, size = 32, className }: { name: string; size?: number; className?: string }) {
+/** A person's photo when they have one (src), otherwise their initials on a colour picked from the name. */
+export function Avatar({ name, size = 32, className, src }: { name: string; size?: number; className?: string; src?: string | null }) {
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]!.toUpperCase()).join('');
   const hue = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt="" aria-hidden width={size} height={size} loading="lazy" className={cn('inline-block shrink-0 rounded-full object-cover', className)} style={{ width: size, height: size }} />
+    );
+  }
   return (
     <span
       aria-hidden

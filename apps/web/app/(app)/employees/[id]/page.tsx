@@ -1,12 +1,13 @@
-import { Avatar, PageHeader } from '@crew/ui';
+import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
-import type { Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, OnboardingTask, Page } from '@/lib/types';
+import type { AttendanceRegistration, Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, OnboardingTask, Page } from '@/lib/types';
 import { EmployeeStatus } from '../status';
 import type { EmployeeSkill } from '@crew/contracts';
 import { ActivityTab, AtAGlance, type Summary360 } from './at-a-glance';
+import { AttendanceCard, type DeviceOption, LoginCard, PhotoAvatar, type ShiftOption } from './profile-extras';
 import { SkillsCard } from './skills-card';
 import { DocumentsTab, JobTab, LeaveTab, OnboardingTab, OverviewTab } from './tabs';
 
@@ -36,11 +37,26 @@ export default async function EmployeePage({ params, searchParams }: { params: P
 
   let content: React.ReactNode;
   if (tab === 'overview') {
-    const [summary, skills] = await Promise.all([
+    const [summary, skills, registration, shifts, devices] = await Promise.all([
       loadOptional<Summary360>(`/employees/${id}/360`),
       loadOptional<{ skills: EmployeeSkill[]; canEdit: boolean }>(`/employees/${id}/skills`),
+      loadOptional<AttendanceRegistration>(`/employees/${id}/attendance-registration`),
+      e.can.update ? loadOptional<ShiftOption[]>('/shifts/templates') : null,
+      e.can.update ? loadOptional<DeviceOption[]>('/attendance/devices') : null,
     ]);
-    content = <>{summary && <AtAGlance s={summary} />}<OverviewTab e={e} />{skills && <SkillsCard employeeId={id} initial={skills.skills} canEdit={skills.canEdit} />}</>;
+    content = (
+      <>
+        {summary && <AtAGlance s={summary} />}
+        <OverviewTab e={e} />
+        {(registration || (!e.membershipId && e.can.update)) && (
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            {registration && <AttendanceCard e={e} reg={registration} shifts={shifts} devices={devices} canEdit={e.can.update} />}
+            <LoginCard e={e} />
+          </div>
+        )}
+        {skills && <SkillsCard employeeId={id} initial={skills.skills} canEdit={skills.canEdit} />}
+      </>
+    );
   } else if (tab === 'activity') {
     content = <ActivityTab s={await load<Summary360>(`/employees/${id}/360`)} />;
   } else if (tab === 'job') {
@@ -77,7 +93,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
       <PageHeader
         title={
           <span className="flex items-center gap-3">
-            <Avatar name={e.displayName} size={44} />
+            <PhotoAvatar e={e} size={56} />
             <span>
               <span className="block">{e.displayName}</span>
               <span className="block text-sm font-normal text-fg-muted">{[e.designationName, e.departmentName, e.locationName].filter(Boolean).join(' · ') || 'No placement yet'}</span>
