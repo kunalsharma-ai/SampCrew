@@ -264,7 +264,7 @@ export function CandidateView({ detail, stages, people, openJobs, designations }
           open
           onClose={() => setDialog(null)}
           title="Record the candidate's answer"
-          description="Record what the candidate told you, for example by email or phone. CREW does not collect signatures."
+          description="Record what the candidate told you, for example by email or phone. SampCrew does not collect signatures."
           fields={[
             { name: 'response', label: 'Answer', type: 'select', required: true, options: [{ value: 'accepted', label: 'Accepted' }, { value: 'declined', label: 'Declined' }] },
             { name: 'note', label: 'Note', placeholder: 'e.g. Accepted by email on 3 October' },
@@ -284,7 +284,7 @@ export function CandidateView({ detail, stages, people, openJobs, designations }
             { name: 'dateOfJoining', label: 'Date of joining', type: 'date', required: true, half: true },
             { name: 'probationMonths', label: 'Probation (months)', type: 'number', required: true, half: true },
             { name: 'workEmail', label: 'Work email', placeholder: 'Optional' },
-            { name: 'inviteToCrew', label: 'Invite them to CREW', type: 'select', required: true, options: [{ value: 'false', label: 'Not yet' }, { value: 'true', label: 'Yes, send an invitation to the work email' }] },
+            { name: 'inviteToCrew', label: 'Invite them to SampCrew', type: 'select', required: true, options: [{ value: 'false', label: 'Not yet' }, { value: 'true', label: 'Yes, send an invitation to the work email' }] },
           ]}
           initial={{ dateOfJoining: dialog.offer.joiningDate, probationMonths: 6, inviteToCrew: 'false' }}
           submitLabel="Hire"
@@ -367,7 +367,7 @@ function InterviewDialog({ app, people, candidateHasEmail, onClose, paths }: { a
       open
       onClose={onClose}
       title={`Schedule interview: ${app.candidateName}`}
-      description="Add the meeting link from your own calendar or video tool. CREW notifies the panel and can email the candidate the details."
+      description="Add the meeting link from your own calendar or video tool. SampCrew notifies the panel and can email the candidate the details."
       size="lg"
       footer={<><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" form="interview-form" loading={pending}>Schedule</Button></>}
     >

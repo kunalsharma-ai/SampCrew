@@ -258,7 +258,7 @@ function SupportDialog({ t, onClose, onDone }: { t: TenantDetail; onClose: () =>
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
   return (
-    <Dialog open onClose={onClose} title="Request support access" description={`${t.name}'s owner or admin must approve this in CREW. Access ends automatically when the time runs out.`}
+    <Dialog open onClose={onClose} title="Request support access" description={`${t.name}'s owner or admin must approve this in SampCrew. Access ends automatically when the time runs out.`}
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={pending} onClick={() => {
         const parsed = supportAccessRequest.safeParse({ reason, durationMinutes: Number(minutes) });
         if (!parsed.success) { setErrors(Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message]))); return; }

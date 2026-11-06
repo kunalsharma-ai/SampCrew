@@ -66,7 +66,7 @@ export class AuthController {
   @Public()
   @Get('sso/saml/metadata')
   @Header('content-type', 'application/samlmetadata+xml; charset=utf-8')
-  @Doc({ summary: "CREW's SAML service provider metadata (entity ID and Assertion Consumer Service), to load into the identity provider" })
+  @Doc({ summary: "SampCrew's SAML service provider metadata (entity ID and Assertion Consumer Service), to load into the identity provider" })
   ssoSamlMetadata() {
     return this.sso.samlMetadata();
   }

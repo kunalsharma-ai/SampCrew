@@ -30,7 +30,7 @@ const effectiveStatus = `case when s.status = 'open' and s.closes_on < current_d
  *
  * Surveys store answers without the respondent. Only the department and legal entity at the time and the date are
  * kept, and results respect the anonymity threshold (see talent-math). Nobody, including admins, can see who said
- * what through CREW.
+ * what through SampCrew.
  */
 @Injectable()
 export class EngagementService {
@@ -227,7 +227,7 @@ export class EngagementService {
         [id, me ?? null],
       );
       if (!r) throw Errors.notFound('Survey');
-      return { ...r, notice: 'This survey is anonymous. CREW stores your answers without your name, keeping only your department and the date, and shows results only for groups large enough that nobody can be singled out.' };
+      return { ...r, notice: 'This survey is anonymous. SampCrew stores your answers without your name, keeping only your department and the date, and shows results only for groups large enough that nobody can be singled out.' };
     });
   }
 

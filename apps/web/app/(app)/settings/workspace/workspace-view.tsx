@@ -46,7 +46,7 @@ export function WorkspaceView({ tenant, canManage, myMfa }: { tenant: TenantSett
                 <Field label="Currency" hint="ISO 4217, e.g. INR" error={errors.currency}>{(p) => <Input {...p} value={form.currency} maxLength={3} onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} />}</Field>
                 <Field label="Locale" hint="e.g. en-IN" error={errors.locale}>{(p) => <Input {...p} value={form.locale} onChange={set('locale')} />}</Field>
               </div>
-              <Field label="Brand colour" hint="Hex colour used for accents in your workspace. Leave empty for the CREW default." error={errors.brandColor}>
+              <Field label="Brand colour" hint="Hex colour used for accents in your workspace. Leave empty for the SampCrew default." error={errors.brandColor}>
                 {(p) => (
                   <div className="flex items-center gap-2">
                     <input type="color" aria-label="Pick colour" value={form.brandColor || '#4f46e5'} onChange={set('brandColor')} className="h-9 w-12 cursor-pointer rounded-md border border-border bg-bg" />

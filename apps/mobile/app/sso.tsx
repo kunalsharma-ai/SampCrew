@@ -33,7 +33,7 @@ export default function SsoReturn() {
   return (
     <Screen>
       <View style={{ height: 40 }} />
-      <Title>CREW</Title>
+      <Title>SampCrew</Title>
       <Card>
         <Notice tone="danger" testID="sso-error">{error}</Notice>
         <Button title="Back to sign-in" onPress={() => router.replace('/login')} />

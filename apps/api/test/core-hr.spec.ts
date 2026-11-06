@@ -62,7 +62,7 @@ describe('core HR', () => {
       people.operator!.employeeId = op.id;
       const peer = await hire({ firstName: 'Pat', lastName: 'Peer', departmentId: qa, membershipId: people.peer!.membershipId });
       people.peer!.employeeId = peer.id;
-      // A shop-floor worker without a CREW login.
+      // A shop-floor worker without a SampCrew login.
       const helper = await hire({ firstName: 'Hari', lastName: 'Helper', departmentId: assembly, managerEmployeeId: sup.id, probationMonths: 6, dateOfJoining: today() });
       people.helper = { email: '', membershipId: '', employeeId: helper.id };
 

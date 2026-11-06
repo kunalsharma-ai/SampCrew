@@ -134,7 +134,7 @@ export class EmployeesController {
 
   @Post()
   @RequirePermission('employees:create')
-  @Doc({ summary: 'Hire: create the employee, job record, onboarding checklist and (optionally) a CREW invitation', body: createEmployeeInput })
+  @Doc({ summary: 'Hire: create the employee, job record, onboarding checklist and (optionally) a SampCrew invitation', body: createEmployeeInput })
   create(@Body(new ZodPipe(createEmployeeInput)) body: CreateEmployeeInput) {
     return this.employees.create(body);
   }
@@ -197,7 +197,7 @@ export class EmployeesController {
 
   @Post(':id/login')
   @RequirePermission('employees:update')
-  @Doc({ summary: 'Give an employee without a login a CREW login: an emailed invitation, or a login with a temporary password they change at first sign-in', body: employeeLoginInput })
+  @Doc({ summary: 'Give an employee without a login a SampCrew login: an emailed invitation, or a login with a temporary password they change at first sign-in', body: employeeLoginInput })
   createLogin(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(employeeLoginInput)) body: z.infer<typeof employeeLoginInput>) {
     return this.employees.createLogin(id, body);
   }

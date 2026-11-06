@@ -31,7 +31,7 @@ describe('offline punch queue', () => {
   it('keeps punches when there is no connection and marks them offline', async () => {
     const box = new Outbox(memory(), clock(), 'd');
     await box.add({ direction: 'in' });
-    const r = await box.flush(async () => { throw Object.assign(new Error('No connection to CREW.'), { status: 0 }); });
+    const r = await box.flush(async () => { throw Object.assign(new Error('No connection to SampCrew.'), { status: 0 }); });
     expect(r).toMatchObject({ accepted: 0, remaining: 1, error: { offline: true } });
     expect((await box.pending())[0]!.offline).toBe(true);
   });

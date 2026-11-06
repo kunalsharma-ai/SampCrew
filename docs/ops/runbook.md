@@ -1,6 +1,6 @@
-# CREW production runbook
+# SampCrew production runbook
 
-How to run CREW in production on one Linux host with Docker, using `infra/deploy/compose.yml`. The same images run on
+How to run SampCrew in production on one Linux host with Docker, using `infra/deploy/compose.yml`. The same images run on
 any container platform (Kubernetes, ECS, Cloud Run); the compose file is the reference for which settings each service
 needs and how the services depend on each other.
 
@@ -145,7 +145,7 @@ minutes). Recovery time measured by the drill: seconds for the demo data size, g
    `FIELD_ENCRYPTION_KEYS_PREVIOUS` and put the new one in `FIELD_ENCRYPTION_KEY`, then `docker compose up -d --wait`.
    The API now writes with the new key and still reads both, so nobody is signed out and nothing stops working.
 2. Re-encrypt everything with the new key: `docker compose exec api node dist/cli/rotate-field-key.js`. It works in
-   small batches while CREW is in use, can be run again safely, and writes `platform.field_key_rotated` to the
+   small batches while SampCrew is in use, can be run again safely, and writes `platform.field_key_rotated` to the
    platform audit log. `node dist/cli/rotate-field-key.js --check` only counts what is left (exit code 2 while any).
    The Console's System health page shows the current key id and how many values are still on an older key.
 3. When nothing is left, empty `FIELD_ENCRYPTION_KEYS_PREVIOUS` and `docker compose up -d --wait`. Keep the old key

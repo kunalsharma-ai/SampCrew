@@ -14,7 +14,7 @@
  *    outside its scope, and stops working the moment it is revoked.
  * 3. The owner adds a webhook endpoint (secret shown once) and sends a test event: the receiver gets it, the
  *    signature checks out with the secret, and the delivery log shows it as delivered with its attempt.
- * 4. The owner connects a Slack channel (CREW posts a confirmation first) and sends a test message.
+ * 4. The owner connects a Slack channel (SampCrew posts a confirmation first) and sends a test message.
  * 5. The owner builds a workflow in Automation Studio that posts to Slack and sends to the webhook when someone
  *    applies for leave, tests it and activates it. The operator applies for leave: Slack gets the message with the
  *    employee's name filled in, the receiver gets both the leave.requested event and the workflow's message, and
@@ -203,7 +203,7 @@ const until = async (what, fn, ms = 30000) => {
     await owner.click('text=Connect and post confirmation');
     await owner.getByText(/Slack connected/).waitFor({ timeout: 10000 });
     const confirm = slack.got.find((g) => g.url === '/services/T0DEMO1/B0DEMO1/e2eToken123');
-    if (!confirm || !/CREW is now connected/.test(JSON.parse(confirm.body).text)) throw new Error('Slack did not get the confirmation message');
+    if (!confirm || !/SampCrew is now connected/.test(JSON.parse(confirm.body).text)) throw new Error('Slack did not get the confirmation message');
     await owner.click('text=Send test message');
     await owner.getByText('Test message posted').waitFor();
     if (slack.got.length !== 2) throw new Error(`expected two Slack posts so far, got ${slack.got.length}`);

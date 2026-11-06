@@ -12,7 +12,7 @@ type SsoBody =
   | { protocol: 'saml'; idpEntityId: string; ssoUrl: string; certificate?: string; domains: string[]; jitProvisioning: boolean };
 
 export async function saveSsoAction(body: SsoBody) {
-  const msg = body.protocol === 'oidc' ? 'Saved. CREW reached the provider and read its settings.' : 'Saved. The certificate is valid; run a test sign-in next.';
+  const msg = body.protocol === 'oidc' ? 'Saved. SampCrew reached the provider and read its settings.' : 'Saved. The certificate is valid; run a test sign-in next.';
   return done(await act(() => api('/security/sso', { method: 'PUT', body }), msg));
 }
 export async function mapScimGroupAction(groupId: string, roleId: string | null) {

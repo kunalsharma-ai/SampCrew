@@ -37,7 +37,7 @@ export const memberAccessQuery = z.object({
 /** Why a module is unavailable to the current member; returned by /me so the apps can explain it. */
 export type FeatureBlockReason = 'not_in_plan' | 'workspace_off' | 'member_blocked' | 'channel_off';
 
-/** The two apps people use CREW through. API keys and integrations are not affected by app switches. */
+/** The two apps people use SampCrew through. API keys and integrations are not affected by app switches. */
 export const APP_CHANNELS = ['web', 'mobile'] as const;
 export type AppChannel = (typeof APP_CHANNELS)[number];
 

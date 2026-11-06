@@ -326,7 +326,7 @@ function futureWeekday(taken) {
     await card.getByRole('radio', { name: 'Emerald Command' }).click();
     await p.getByTestId('me-message').getByText('Theme changed to Emerald Command.').waitFor();
     await card.getByRole('radio', { name: 'Dark', exact: true }).click();
-    await p.getByTestId('me-message').getByText('CREW now uses dark mode.').waitFor();
+    await p.getByTestId('me-message').getByText('SampCrew now uses dark mode.').waitFor();
     const themed = await colours();
     assert(themed.card !== themeBefore.card, `the card colour changed with the theme (${themeBefore.card} -> ${themed.card})`);
     const saved = (await api(qa, 'GET', '/me/preferences')).appearance;

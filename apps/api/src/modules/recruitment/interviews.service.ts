@@ -62,7 +62,7 @@ export class InterviewsService {
         membershipIds: panel,
         kind: 'interview.scheduled',
         title: `Interview: ${a.candidate_name} for ${a.req.title}`,
-        body: `${input.title}, ${this.when(input.startsAt, tz)}, ${input.durationMinutes} minutes. ${MODE_LABEL[input.mode]}. Submit your scorecard in CREW afterwards.`,
+        body: `${input.title}, ${this.when(input.startsAt, tz)}, ${input.durationMinutes} minutes. ${MODE_LABEL[input.mode]}. Submit your scorecard in SampCrew afterwards.`,
         link: `/recruitment/interviews/${row.id}`,
         email: true,
       });

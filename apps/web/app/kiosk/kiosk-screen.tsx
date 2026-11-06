@@ -60,7 +60,7 @@ export function KioskScreen() {
           </div>
           <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-sm" aria-label="QR code to punch in or out" dangerouslySetInnerHTML={{ __html: data.svg }} />
           <p className="text-lg">Scan with your phone camera to punch in or out.</p>
-          <p className="text-sm text-fg-muted">You need to be signed in to CREW on your phone. New code in {left}s.</p>
+          <p className="text-sm text-fg-muted">You need to be signed in to SampCrew on your phone. New code in {left}s.</p>
         </>
       ) : (
         <h1 className="text-xl font-semibold">Attendance kiosk</h1>

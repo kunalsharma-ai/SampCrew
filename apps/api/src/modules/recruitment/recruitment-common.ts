@@ -113,7 +113,7 @@ export async function employeeOfMember(tx: Tx, membershipId: string | null) {
   return (await one<{ id: string }>(tx, `select id from employees where membership_id = $1 and status <> 'exited'`, [membershipId]))?.id ?? null;
 }
 
-export const CANDIDATE_FOOTER = 'Sent by CREW by SAMPLEDGE on behalf of the hiring organisation named above. You received this because you applied for a role or were put forward for one.';
+export const CANDIDATE_FOOTER = 'Sent by SampCrew by SAMPLEDGE on behalf of the hiring organisation named above. You received this because you applied for a role or were put forward for one.';
 
 /** Formats a decimal string exactly (no floating point), with Indian digit grouping for INR. */
 export function moneyText(amount: string | null, currency: string) {

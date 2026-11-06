@@ -76,7 +76,7 @@ export function BidEditor({ bid, initialMode, initialClientId, initialLine, clie
   bid: Bid | null;
   initialMode: 'quick' | 'advanced';
   initialClientId?: string;
-  /** A first role to start from, for example from CREW IQ. Nothing is saved until the person saves the bid. */
+  /** A first role to start from, for example from SampCrew IQ. Nothing is saved until the person saves the bid. */
   initialLine?: { roleTitle?: string; headcount?: number };
   clients: Client[];
   templates: BidTemplate[];
@@ -335,7 +335,7 @@ export function BidEditor({ bid, initialMode, initialClientId, initialLine, clie
           )}
           {pricing?.lossMaking && <Alert tone="danger" className="mt-3">This bid costs more than it earns.</Alert>}
           {!!pricing?.belowRateCard && <Alert tone="warning" className="mt-3">{pricing.belowRateCard} role{pricing.belowRateCard > 1 ? 's are' : ' is'} billed below the rate card.</Alert>}
-          <p className="mt-4 text-xs text-fg-subtle">Costs and margins stay inside CREW. The client&apos;s proposal shows roles, rates and totals only. Every bid is approved by Finance before it can be sent.</p>
+          <p className="mt-4 text-xs text-fg-subtle">Costs and margins stay inside SampCrew. The client&apos;s proposal shows roles, rates and totals only. Every bid is approved by Finance before it can be sent.</p>
           {showProblem && problem && <p className="mt-3 text-xs text-danger" role="alert">{problem}</p>}
           <div className="mt-4 flex flex-col gap-2">
             <Button onClick={() => save(true)} loading={pending}>Save and submit for approval</Button>

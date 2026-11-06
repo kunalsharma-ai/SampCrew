@@ -7,7 +7,7 @@ export default function ProposalLayout({ children }: { children: React.ReactNode
   return (
     <div className="min-h-dvh bg-bg">
       <main className="mx-auto max-w-3xl px-4 py-10 sm:py-14">{children}</main>
-      <footer className="mx-auto max-w-3xl px-4 pb-10 text-xs text-fg-subtle">Sent with CREW by SAMPLEDGE</footer>
+      <footer className="mx-auto max-w-3xl px-4 pb-10 text-xs text-fg-subtle">Sent with SampCrew by SAMPLEDGE</footer>
     </div>
   );
 }

@@ -16,7 +16,7 @@ const schema = z.object({
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   /** SMTP connection URL, e.g. smtp://localhost:1025 for Mailpit. Unset means email is not configured: messages are kept and marked skipped. */
   SMTP_URL: optional(z.string().regex(/^smtps?:\/\//, 'SMTP_URL must start with smtp:// or smtps://')),
-  MAIL_FROM: z.string().default('CREW <no-reply@crew.local>'),
+  MAIL_FROM: z.string().default('SampCrew <no-reply@crew.local>'),
   /** Directory for uploaded files when using the local storage driver. */
   STORAGE_DIR: z.string().default('./.data/files'),
   /** Secret for signing short-lived download links. Defaults to a key derived from FIELD_ENCRYPTION_KEY. */
@@ -26,7 +26,7 @@ const schema = z.object({
   CREW_DISABLE_DISPATCHER: z.enum(['true', 'false']).default('false'),
   /**
    * Push notifications to the mobile app through the Expo push service. Off by default: queued pushes are then
-   * marked skipped with a reason, so CREW never claims a push was delivered when it was not.
+   * marked skipped with a reason, so SampCrew never claims a push was delivered when it was not.
    */
   EXPO_PUSH_ENABLED: z.enum(['true', 'false']).default('false'),
   EXPO_PUSH_URL: z.string().url().default('https://exp.host/--/api/v2/push/send'),
@@ -34,7 +34,7 @@ const schema = z.object({
   EXPO_ACCESS_TOKEN: optional(z.string().min(20)),
   /**
    * AI provider for the copilots. 'none' (the default) means AI is not set up: every AI feature says so and no
-   * data leaves CREW. 'anthropic' calls the Claude API with ANTHROPIC_API_KEY.
+   * data leaves SampCrew. 'anthropic' calls the Claude API with ANTHROPIC_API_KEY.
    */
   AI_PROVIDER: z.enum(['none', 'anthropic']).default('none'),
   ANTHROPIC_API_KEY: optional(z.string().min(10)),

@@ -21,7 +21,7 @@ export default async function Overview() {
   const max = Math.max(1, ...m.signups.map((s) => s.count));
   return (
     <>
-      <PageHeader title="Overview" description="CREW across all customers. Demo workspaces are counted separately and excluded from revenue." />
+      <PageHeader title="Overview" description="SampCrew across all customers. Demo workspaces are counted separately and excluded from revenue." />
       <TileRow>
         <Tile tone="violet" icon={<Building2 className="size-5" />} label="Workspaces" value={m.tenants.total} href="/tenants" hint={`${m.tenants.active} active · ${m.tenants.suspended} suspended · ${m.tenants.demo} demo`} />
         <Tile tone="teal" icon={<Sparkles className="size-5" />} label="New in 30 days" value={m.tenants.newLast30Days} hint="Workspaces created" />

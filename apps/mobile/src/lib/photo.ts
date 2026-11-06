@@ -19,7 +19,7 @@ export function checkPhoto(p: { mimeType?: string | null; size?: number | null }
 export async function pickPhoto(source: 'library' | 'camera'): Promise<PickResult> {
   const perm = source === 'camera' ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
-    return { ok: false, message: source === 'camera' ? 'CREW needs camera access to take your photo. Allow it in your phone settings.' : 'CREW needs access to your photos. Allow it in your phone settings.' };
+    return { ok: false, message: source === 'camera' ? 'SampCrew needs camera access to take your photo. Allow it in your phone settings.' : 'SampCrew needs access to your photos. Allow it in your phone settings.' };
   }
   const options: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 };
   const r = source === 'camera' ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
@@ -33,7 +33,7 @@ export async function pickPhoto(source: 'library' | 'camera'): Promise<PickResul
   return { ok: true, photo: { uri: a.uri, mimeType, fileName: a.fileName ?? `photo.${ext}`, size: a.fileSize ?? null } };
 }
 
-/** Sends the photo to CREW as the employee's profile photo. */
+/** Sends the photo to SampCrew as the employee's profile photo. */
 export async function uploadPhoto(api: Api, employeeId: string, p: PickedPhoto) {
   const form = new FormData();
   if (Platform.OS === 'web') {

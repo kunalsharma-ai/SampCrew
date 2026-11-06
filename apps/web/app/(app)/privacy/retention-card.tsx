@@ -41,7 +41,7 @@ export function RetentionCard({ state }: { state: RetentionState }) {
     <Card>
       <CardHeader
         title="Retention schedule"
-        description="How long CREW keeps personal data it no longer needs. It runs once a day. Raw attendance punches, payroll and the audit trail are never deleted by it."
+        description="How long SampCrew keeps personal data it no longer needs. It runs once a day. Raw attendance punches, payroll and the audit trail are never deleted by it."
         action={<Badge tone={state.isDefault ? 'neutral' : 'success'}>{state.isDefault ? 'Defaults' : `Set by ${p.updatedBy ?? 'an admin'}`}</Badge>}
       />
       <CardBody className="grid gap-4">

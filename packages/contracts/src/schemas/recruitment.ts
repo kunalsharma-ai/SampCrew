@@ -159,7 +159,7 @@ export const interviewInput = z
     startsAt: z.iso.datetime({ offset: true, message: 'Use a date and time' }),
     durationMinutes: z.number().int().min(10).max(480).default(45),
     mode: z.enum(INTERVIEW_MODES).default('video'),
-    /** A meeting link the organiser created in their own tool; CREW does not create meetings. */
+    /** A meeting link the organiser created in their own tool; SampCrew does not create meetings. */
     meetingUrl: url.optional(),
     locationText: optionalText(200),
     panelMembershipIds: z.array(z.uuid()).min(1, 'Add at least one interviewer').max(10),

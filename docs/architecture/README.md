@@ -1,4 +1,4 @@
-# CREW by SAMPLEDGE — Architecture Pack (Phase 0)
+# SampCrew by SAMPLEDGE — Architecture Pack (Phase 0)
 
 > One Intelligent Platform. Your Entire Workforce.
 

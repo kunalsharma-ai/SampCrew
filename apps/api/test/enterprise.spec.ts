@@ -33,7 +33,7 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
     return res.body;
   };
 
-  /** Plays the browser: follow the provider's redirect, then hand code and state to CREW like the web app does. */
+  /** Plays the browser: follow the provider's redirect, then hand code and state to SampCrew like the web app does. */
   const ssoRound = async (authorizationUrl: string) => {
     const r = await fetch(authorizationUrl, { redirect: 'manual' });
     expect(r.status).toBe(302);

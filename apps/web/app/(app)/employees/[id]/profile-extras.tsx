@@ -81,7 +81,7 @@ export function PhotoAvatar({ e, size = 56 }: { e: EmployeeProfile; size?: numbe
 }
 
 /** Shows a login's temporary password once, with a copy button. */
-export function TemporaryPassword({ login, onClose, title = 'CREW login created' }: { login: { email: string; temporaryPassword: string } | null; onClose: () => void; title?: string }) {
+export function TemporaryPassword({ login, onClose, title = 'SampCrew login created' }: { login: { email: string; temporaryPassword: string } | null; onClose: () => void; title?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <Dialog open={!!login} onClose={onClose} title={title} description="Share the temporary password in person or by phone. It is shown only now and is never emailed." footer={<Button onClick={onClose}>Done</Button>}>
@@ -99,7 +99,7 @@ export function TemporaryPassword({ login, onClose, title = 'CREW login created'
   );
 }
 
-/** CREW login for an employee who has none: send an invitation, or create it now with a temporary password. */
+/** SampCrew login for an employee who has none: send an invitation, or create it now with a temporary password. */
 export function LoginCard({ e }: { e: EmployeeProfile }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -122,9 +122,9 @@ export function LoginCard({ e }: { e: EmployeeProfile }) {
   };
   return (
     <Card>
-      <CardHeader title="CREW login" />
+      <CardHeader title="SampCrew login" />
       <CardBody className="space-y-3 text-[0.8125rem]">
-        <p className="text-fg-muted">{e.displayName} has no CREW login yet, so they cannot sign in to the web portal or the mobile app.</p>
+        <p className="text-fg-muted">{e.displayName} has no SampCrew login yet, so they cannot sign in to the web portal or the mobile app.</p>
         {e.workEmail
           ? <Button size="sm" onClick={() => setOpen(true)}><KeyRound className="size-3.5" /> Create login</Button>
           : <p className="text-fg-subtle">Add a work email first: it is their sign-in name.</p>}
@@ -133,7 +133,7 @@ export function LoginCard({ e }: { e: EmployeeProfile }) {
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title={`Create a CREW login for ${e.displayName}`}
+        title={`Create a SampCrew login for ${e.displayName}`}
         description={`Sign-in email: ${e.workEmail ?? ''}`}
         footer={<><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={submit} loading={pending}>{mode === 'invite' ? 'Send invitation' : 'Create login'}</Button></>}
       >
@@ -186,8 +186,8 @@ export function LoginControlCard({ e, details }: { e: EmployeeProfile; details: 
             : { tone: 'success' as const, label: 'Active' };
   const shared = d.otherWorkspaces > 0;
   return (
-    <Card aria-label="CREW login">
-      <CardHeader title="CREW login" action={<Badge tone={status.tone}>{status.label}</Badge>} />
+    <Card aria-label="SampCrew login">
+      <CardHeader title="SampCrew login" action={<Badge tone={status.tone}>{status.label}</Badge>} />
       <CardBody className="space-y-3 text-[0.8125rem]">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
           <dt className="text-fg-subtle">Login ID</dt><dd className="font-medium" data-testid="login-id">{d.loginId}</dd>
@@ -236,7 +236,7 @@ export function LoginModeChoice({ mode, onChange, allowNone = true }: { mode: 'n
   ];
   return (
     <fieldset className="grid gap-2">
-      <legend className="mb-1 text-xs font-medium text-fg-muted">CREW login</legend>
+      <legend className="mb-1 text-xs font-medium text-fg-muted">SampCrew login</legend>
       {options.map((o) => (
         <label key={o.key} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${mode === o.key ? 'border-accent bg-accent/5' : 'border-border hover:bg-bg-subtle'}`}>
           <input type="radio" name="loginMode" value={o.key} checked={mode === o.key} onChange={() => onChange(o.key)} className="mt-0.5" />
@@ -252,7 +252,7 @@ export function OwnPassword({ own, setOwn, password, setPassword, error }: { own
   return (
     <div className="space-y-2">
       <label className="flex items-center gap-2 text-xs text-fg-muted">
-        <input type="checkbox" checked={own} onChange={(ev) => setOwn(ev.target.checked)} /> Type the temporary password myself (otherwise CREW generates a strong one)
+        <input type="checkbox" checked={own} onChange={(ev) => setOwn(ev.target.checked)} /> Type the temporary password myself (otherwise SampCrew generates a strong one)
       </label>
       {own && (
         <Field label="Temporary password" required error={error} hint="12+ characters with three of: lowercase, uppercase, numbers, symbols">

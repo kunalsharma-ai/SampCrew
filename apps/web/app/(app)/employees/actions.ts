@@ -157,7 +157,7 @@ const LOGIN_DONE: Record<LoginControlAction, string> = {
   reset_password: 'Password reset', force_password_change: 'They will choose a new password at their next sign-in', lock: 'Login locked', unlock: 'Login unlocked', sign_out: 'Signed out everywhere in this workspace',
 };
 
-/** Workspace-admin control of an employee's CREW login. A reset password comes back once and is never stored readable. */
+/** Workspace-admin control of an employee's SampCrew login. A reset password comes back once and is never stored readable. */
 export async function loginControlAction(id: string, action: LoginControlAction, initialPassword?: string) {
   const r = await act(() => api<LoginDetails>(`/employees/${id}/login/actions`, { method: 'POST', body: { action, ...(initialPassword ? { initialPassword } : {}) } }), LOGIN_DONE[action]);
   refresh(id);

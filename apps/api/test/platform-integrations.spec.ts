@@ -246,7 +246,7 @@ describe('Platform integrations (Super Admin Console)', () => {
   });
 
   describe('Email (SMTP)', () => {
-    const values = (extra: Record<string, unknown> = {}) => ({ enabled: true, host: '127.0.0.1', port: smtpPort, security: 'none', username: 'crew-mailer', password: 'smtp-secret-pass-9876', from: 'CREW Test <no-reply@crew.test>', ...extra });
+    const values = (extra: Record<string, unknown> = {}) => ({ enabled: true, host: '127.0.0.1', port: smtpPort, security: 'none', username: 'crew-mailer', password: 'smtp-secret-pass-9876', from: 'SampCrew Test <no-reply@crew.test>', ...extra });
 
     it('signs in and sends a real test email, and reports a wrong password', async () => {
       const wrong = ok(await as(superToken).post('/platform/integrations/email/test').send({ values: values({ password: 'nope' }), sendTo: 'ops@sampledge.test' }));
@@ -256,8 +256,8 @@ describe('Platform integrations (Super Admin Console)', () => {
       expect(sent.ok, sent.detail).toBe(true);
       expect(sent.detail).toContain('sent a test email to ops@sampledge.test');
       const mail = mails.find((m) => m.to === 'ops@sampledge.test');
-      expect(mail?.body).toContain('Subject: CREW test email');
-      expect(mail?.body).toContain('From: CREW Test <no-reply@crew.test>');
+      expect(mail?.body).toContain('Subject: SampCrew test email');
+      expect(mail?.body).toContain('From: SampCrew Test <no-reply@crew.test>');
     });
 
     it('needs the password when a user name is given', async () => {
@@ -291,7 +291,7 @@ describe('Platform integrations (Super Admin Console)', () => {
     it('checks the push service accepts requests, refuses a bad token, and alerts one device', async () => {
       const check = ok(await as(superToken).post('/platform/integrations/push/test').send({ values: { enabled: true } }));
       expect(check).toMatchObject({ ok: true });
-      expect(check.detail).toContain('accepted CREW\'s request');
+      expect(check.detail).toContain('accepted SampCrew\'s request');
       const bad = ok(await as(superToken).post('/platform/integrations/push/test').send({ values: { enabled: true, accessToken: 'expo-wrong-token-000000' } }));
       expect(bad.ok).toBe(false);
       expect(bad.detail).toMatch(/refused the access token \(401\)/);

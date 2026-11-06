@@ -32,7 +32,7 @@ export default async function OrganizationPage({ searchParams }: { searchParams:
     <>
       <PageHeader
         title="Organization structure"
-        description="Legal entities, sites, departments, designations and business units. Every person, policy and payroll in CREW hangs off this structure."
+        description="Legal entities, sites, departments, designations and business units. Every person, policy and payroll in SampCrew hangs off this structure."
         actions={can(me, 'org:manage') ? <Link href="/setup" className="text-[0.8125rem] font-medium text-accent hover:underline">Company setup and ready-made lists</Link> : undefined}
       />
       <nav className="mb-5 flex gap-1 overflow-x-auto border-b border-border" aria-label="Structure sections">

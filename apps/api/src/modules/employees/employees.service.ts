@@ -128,7 +128,7 @@ const LIFECYCLE_KIND: Record<string, string> = { transfer: 'transferred', promot
 const today = () => new Date().toISOString().slice(0, 10);
 
 /**
- * Employee records. The employee is the person record HR manages; a CREW login (membership) is optional and
+ * Employee records. The employee is the person record HR manages; a SampCrew login (membership) is optional and
  * linked 1:1. Job placement lives in effective-dated employment_records; employees.current_* is derived from
  * the record in effect today, and the membership (which drives access scopes) follows it.
  */
@@ -665,8 +665,8 @@ export class EmployeesService {
   }
 
   /**
-   * Gives an employee a CREW login with the Employee baseline role, placed like their job record: an emailed
-   * invitation, or a login that works now with a temporary password. A password CREW generates is returned once,
+   * Gives an employee a SampCrew login with the Employee baseline role, placed like their job record: an emailed
+   * invitation, or a login that works now with a temporary password. A password SampCrew generates is returned once,
    * so HR can hand it over; one HR typed is not echoed back.
    */
   private async giveLogin(tx: Tx, employeeId: string, mode: 'invite' | 'password', typedPassword?: string) {
@@ -696,7 +696,7 @@ export class EmployeesService {
     return { inviteToken: undefined, temporaryPassword: generated };
   }
 
-  /** Creates a CREW login for an employee who has none (from their profile). */
+  /** Creates a SampCrew login for an employee who has none (from their profile). */
   async createLogin(id: string, input: z.infer<typeof employeeLoginInput>) {
     let inviteToken: string | undefined;
     let temporaryPassword: string | undefined;
@@ -704,7 +704,7 @@ export class EmployeesService {
       const e = await this.load(tx, id);
       await this.authz.require('employees:update', employeeAttrs(e), tx);
       await this.authz.require('users:manage', { legalEntityId: e.legalEntityId, departmentId: e.departmentId, locationId: e.locationId }, tx);
-      if (e.membershipId) throw Errors.conflict('already_linked', 'This employee already has a CREW login');
+      if (e.membershipId) throw Errors.conflict('already_linked', 'This employee already has a SampCrew login');
       if (e.status === 'exited') throw Errors.conflict('employee_exited', 'This person has left; they cannot be given a login');
       const r = await this.giveLogin(tx, id, input.mode, input.initialPassword);
       inviteToken = r.inviteToken;
@@ -723,7 +723,7 @@ export class EmployeesService {
   private async loginTarget(tx: Tx, id: string) {
     const e = await this.load(tx, id);
     await this.authz.require('employees:read', employeeAttrs(e), tx);
-    if (!e.membershipId) throw Errors.notFound('CREW login');
+    if (!e.membershipId) throw Errors.notFound('SampCrew login');
     const m = (await one<{ user_id: string; status: string; owner: boolean }>(
       tx,
       `select m.user_id, m.status, exists (select 1 from role_assignments ra join roles r on r.id = ra.role_id where ra.membership_id = m.id and r.key = 'tenant_owner') as owner
@@ -776,7 +776,7 @@ export class EmployeesService {
         case 'reset_password':
         case 'force_password_change':
           // The password belongs to the person's account, which another company's workspace may also use.
-          if (shared) throw Errors.conflict('shared_account', 'This person also uses this CREW account in another company\'s workspace, so their password cannot be changed from here. They can change it themselves, or SAMPLEDGE support can reset it.');
+          if (shared) throw Errors.conflict('shared_account', 'This person also uses this SampCrew account in another company\'s workspace, so their password cannot be changed from here. They can change it themselves, or SAMPLEDGE support can reset it.');
           await this.db.platform((ptx) => ptx.query(
             input.action === 'reset_password'
               ? 'update users set password_hash = $2, must_change_password = true, failed_login_count = 0, locked_until = null where id = $1'
@@ -979,7 +979,7 @@ export class EmployeesService {
       const e = await this.load(tx, id);
       await this.authz.require('employees:update', employeeAttrs(e), tx);
       await this.authz.require('users:manage', { membershipId, legalEntityId: e.legalEntityId, departmentId: e.departmentId, locationId: e.locationId }, tx);
-      if (e.membershipId) throw Errors.conflict('already_linked', 'This employee already has a CREW login');
+      if (e.membershipId) throw Errors.conflict('already_linked', 'This employee already has a SampCrew login');
       await this.linkMembership(tx, id, membershipId);
       await this.audit.record(tx, { action: 'employee.login_linked', resourceType: 'employee', resourceId: id, metadata: { membershipId } });
       return this.load(tx, id);

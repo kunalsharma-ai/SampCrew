@@ -16,7 +16,7 @@ export default async function AllUsersPage({ searchParams }: { searchParams: Pro
   const data = await load<{ items: WorkspaceUserRow[]; total: number; summary: Record<string, number> }>(`/platform/users?${params}`);
   return (
     <>
-      <PageHeader title="All users" description="Everyone the workspace admins have added, across every CREW workspace: roles, status, sign-ins and open web and mobile sessions. Account details only; HR records stay with the customer." />
+      <PageHeader title="All users" description="Everyone the workspace admins have added, across every SampCrew workspace: roles, status, sign-ins and open web and mobile sessions. Account details only; HR records stay with the customer." />
       <UsersView data={data} query={{ q, status, page }} basePath="/users" showWorkspace pageSize={PAGE_SIZE} />
     </>
   );

@@ -20,7 +20,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Server-side call to the CREW platform API with the signed-in admin's console token. */
+/** Server-side call to the SampCrew platform API with the signed-in admin's console token. */
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json', 'x-crew-client': 'console' };
   let sessionRequest = false;

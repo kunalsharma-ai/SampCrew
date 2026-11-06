@@ -1,15 +1,15 @@
-# CREW Innovation Layer
+# SampCrew Innovation Layer
 
-The brief asks for 20 next-generation capabilities, each documented against ten points. The honest framing first: most of these ideas (digital twins, agentic AI, skills graphs, predictive planning) already exist somewhere in enterprise HR technology. CREW's advantage has to come from making them work **together** on one permission-aware data foundation, at SMB-friendly prices, with a better user experience. None of them is claimed as unique just because it uses AI.
+The brief asks for 20 next-generation capabilities, each documented against ten points. The honest framing first: most of these ideas (digital twins, agentic AI, skills graphs, predictive planning) already exist somewhere in enterprise HR technology. SampCrew's advantage has to come from making them work **together** on one permission-aware data foundation, at SMB-friendly prices, with a better user experience. None of them is claimed as unique just because it uses AI.
 
-Legend for each capability: **Problem** · **Conventional** (how typical HR software handles it) · **CREW approach** · **Data/integrations** · **AI** · **Human approval** · **UX** · **Value** · **Dependencies** · **Priority** (P1 = build in its home phase, P2 = following phase, P3 = after GA).
+Legend for each capability: **Problem** · **Conventional** (how typical HR software handles it) · **SampCrew approach** · **Data/integrations** · **AI** · **Human approval** · **UX** · **Value** · **Dependencies** · **Priority** (P1 = build in its home phase, P2 = following phase, P3 = after GA).
 
 ---
 
-### 1. CREW AI Command (multi-agent orchestration)
+### 1. SampCrew AI Command (multi-agent orchestration)
 - **Problem:** HR work spans many modules; users must know where each thing lives.
 - **Conventional:** a chatbot bolted onto one module, often FAQ-only.
-- **CREW approach:** one entry point routes to domain agents (recruitment, HR, attendance, payroll, compliance, learning, communication, analytics) that call the same permission-checked tools as the UI.
+- **SampCrew approach:** one entry point routes to domain agents (recruitment, HR, attendance, payroll, compliance, learning, communication, analytics) that call the same permission-checked tools as the UI.
 - **Data/integrations:** all module tool registries, Organisational Memory.
 - **AI:** intent routing, tool use, summarisation.
 - **Human approval:** any consequential tool creates an approval request.
@@ -21,7 +21,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 2. Digital Employee Twin
 - **Problem:** skills and aspirations are scattered and stale.
 - **Conventional:** static profile fields filled once at hiring.
-- **CREW approach:** employee-owned living profile built from roles, projects, courses, certifications, feedback and self-declared goals; the employee controls visibility of each section.
+- **SampCrew approach:** employee-owned living profile built from roles, projects, courses, certifications, feedback and self-declared goals; the employee controls visibility of each section.
 - **Data:** people, learning, performance, recruiting history.
 - **AI:** skill inference with evidence; suggestions the employee accepts or rejects.
 - **Human approval:** employee confirms inferred skills; managers can endorse.
@@ -33,7 +33,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 3. Workforce Simulator
 - **Problem:** leaders decide hiring, raises and restructuring with spreadsheets.
 - **Conventional:** offline Excel models disconnected from live data.
-- **CREW approach:** scenario sandbox over live headcount, compensation, attendance and attrition data: hire N, raise X%, open branch, change overtime policy; see cost, coverage and risk deltas.
+- **SampCrew approach:** scenario sandbox over live headcount, compensation, attendance and attrition data: hire N, raise X%, open branch, change overtime policy; see cost, coverage and risk deltas.
 - **Data:** people, payroll, time, recruiting pipeline, attrition model.
 - **AI:** forecasting, narrative explanation of drivers.
 - **Human approval:** simulations change nothing; converting a scenario to requisitions or budget follows normal approvals.
@@ -45,7 +45,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 4. Skills Intelligence Graph
 - **Problem:** skills data lives in silos (resumes, courses, job descriptions).
 - **Conventional:** flat skill tags, inconsistent naming.
-- **CREW approach:** one normalised taxonomy linking skills ↔ employees ↔ candidates ↔ roles ↔ courses ↔ certifications ↔ opportunities.
+- **SampCrew approach:** one normalised taxonomy linking skills ↔ employees ↔ candidates ↔ roles ↔ courses ↔ certifications ↔ opportunities.
 - **Data:** taxonomy (ESCO/O*NET-aligned), all modules.
 - **AI:** normalisation, adjacency ("people with skill A learn B quickly").
 - **Human approval:** taxonomy changes by HR admins.
@@ -57,7 +57,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 5. Talent Marketplace
 - **Problem:** internal talent leaves to find growth elsewhere.
 - **Conventional:** internal job board without matching.
-- **CREW approach:** internal vacancies, gigs, temporary assignments and mentoring matched by skills and aspirations, with manager release workflows.
+- **SampCrew approach:** internal vacancies, gigs, temporary assignments and mentoring matched by skills and aspirations, with manager release workflows.
 - **Data:** skills graph, twin, requisitions.
 - **AI:** explainable matching.
 - **Human approval:** manager and HR approve moves.
@@ -69,7 +69,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 6. Voice HR
 - **Problem:** frontline, factory and field workers rarely use desktop software.
 - **Conventional:** none, or IVR menus.
-- **CREW approach:** multilingual voice in the mobile app and telephony channel for balances, schedules, requests; confirmation step and re-authentication for sensitive actions.
+- **SampCrew approach:** multilingual voice in the mobile app and telephony channel for balances, schedules, requests; confirmation step and re-authentication for sensitive actions.
 - **Data:** same tools as AI Command.
 - **AI:** speech-to-text, TTS, multilingual NLU.
 - **Human approval:** explicit confirmation for any transaction; consequential ones still go to approvers.
@@ -81,7 +81,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 7. Predictive Intelligence
 - **Problem:** HR learns about problems after they become costly.
 - **Conventional:** static reports reviewed monthly.
-- **CREW approach:** early-warning feed for staffing gaps, payroll anomalies, recruitment delays, attendance exceptions, compliance deadlines and cost drift, each with evidence and suggested action.
+- **SampCrew approach:** early-warning feed for staffing gaps, payroll anomalies, recruitment delays, attendance exceptions, compliance deadlines and cost drift, each with evidence and suggested action.
 - **Data:** warehouse across modules.
 - **AI:** forecasting, anomaly detection, explanation.
 - **Human approval:** alerts only; actions follow normal approvals.
@@ -93,7 +93,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 8. Talent Radar
 - **Problem:** past applicants are forgotten; each opening starts sourcing from zero.
 - **Conventional:** keyword search over an ATS database.
-- **CREW approach:** automatic rediscovery of past candidates and silver medallists for new requisitions, talent pools with consented nurture campaigns.
+- **SampCrew approach:** automatic rediscovery of past candidates and silver medallists for new requisitions, talent pools with consented nurture campaigns.
 - **Data:** candidates, consents, communications.
 - **AI:** semantic matching with evidence.
 - **Human approval:** recruiter decides outreach; consent enforced.
@@ -105,7 +105,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 9. Self-Building Automation Studio
 - **Problem:** workflow tools require technical admins.
 - **Conventional:** fixed workflows or complex rule builders.
-- **CREW approach:** describe the automation in plain English → validated workflow graph → visual edit → dry-run → approval → versioned activation with monitoring.
+- **SampCrew approach:** describe the automation in plain English → validated workflow graph → visual edit → dry-run → approval → versioned activation with monitoring.
 - **Data:** event catalogue, tool registry.
 - **AI:** NL-to-workflow generation.
 - **Human approval:** admin activation required; consequential steps keep approval gates.
@@ -117,7 +117,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 10. Invisible HR
 - **Problem:** employees do not want another app.
 - **Conventional:** email notifications only.
-- **CREW approach:** HR services in WhatsApp Business, Slack, Teams, email and push, with identity linking and the same permissions.
+- **SampCrew approach:** HR services in WhatsApp Business, Slack, Teams, email and push, with identity linking and the same permissions.
 - **Data:** channel integrations.
 - **AI:** conversational layer from AI Command.
 - **Human approval:** as per action.
@@ -129,7 +129,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 11. Organisational Memory
 - **Problem:** policies and SOPs are hard to find and answered inconsistently.
 - **Conventional:** document folders and static FAQs.
-- **CREW approach:** permission-aware retrieval over approved documents with citations and freshness tracking.
+- **SampCrew approach:** permission-aware retrieval over approved documents with citations and freshness tracking.
 - **Data:** documents module.
 - **AI:** embeddings, grounded answering.
 - **Human approval:** only approved documents are indexed.
@@ -141,7 +141,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 12. Industrial Workforce Intelligence
 - **Problem:** plant attendance, access control and shifts live in separate systems.
 - **Conventional:** CSV exports from device software.
-- **CREW approach:** device hub with live health, shift compliance, headcount on site, and safety muster lists.
+- **SampCrew approach:** device hub with live health, shift compliance, headcount on site, and safety muster lists.
 - **Data:** devices, shifts, access events.
 - **AI:** anomaly detection (buddy punching patterns, device faults).
 - **Human approval:** corrections via approvals.
@@ -153,7 +153,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 13. Global Compliance Intelligence
 - **Problem:** statutory deadlines and rule changes are missed.
 - **Conventional:** manual calendars and consultants.
-- **CREW approach:** versioned country rules, statutory calendar per legal entity, contract/document expiry monitoring, audit trail.
+- **SampCrew approach:** versioned country rules, statutory calendar per legal entity, contract/document expiry monitoring, audit trail.
 - **Data:** country packages, documents.
 - **AI:** change summaries reviewed by experts.
 - **Human approval:** rule updates published only after expert review.
@@ -165,7 +165,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 14. Ask Anything Analytics
 - **Problem:** reports need analysts.
 - **Conventional:** fixed report library.
-- **CREW approach:** natural-language questions → governed semantic layer → SQL over the warehouse with the user's row-level permissions → chart, table, source query, export.
+- **SampCrew approach:** natural-language questions → governed semantic layer → SQL over the warehouse with the user's row-level permissions → chart, table, source query, export.
 - **Data:** warehouse, semantic model.
 - **AI:** NL-to-semantic-query (not raw SQL against OLTP).
 - **Human approval:** none for reads; scheduled distribution requires owner.
@@ -177,7 +177,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 15. Human + AI Workforce
 - **Problem:** companies deploy AI agents with no ownership or oversight.
 - **Conventional:** not addressed by HR software.
-- **CREW approach:** AI agents registered like workers: owner, role/permissions, budget, schedule, execution history, performance metrics, and kill switch.
+- **SampCrew approach:** AI agents registered like workers: owner, role/permissions, budget, schedule, execution history, performance metrics, and kill switch.
 - **Data:** ai_agents, ai_actions, usage.
 - **AI:** the agents themselves.
 - **Human approval:** owner approves permission scope; consequential actions gated.
@@ -189,7 +189,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 16. Employer Intelligence
 - **Problem:** employers do not know why candidates drop off or decline.
 - **Conventional:** source reports only.
-- **CREW approach:** candidate experience surveys, funnel drop-off analysis, campaign performance and offer-decline reasons in one view.
+- **SampCrew approach:** candidate experience surveys, funnel drop-off analysis, campaign performance and offer-decline reasons in one view.
 - **Data:** recruiting, communications, surveys.
 - **AI:** theme extraction from feedback.
 - **Human approval:** none (analytics).
@@ -201,7 +201,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 17. Workforce Wellbeing
 - **Problem:** burnout is invisible until resignation.
 - **Conventional:** annual engagement survey.
-- **CREW approach:** voluntary check-ins, workload indicators (overtime, leave not taken, shift patterns) aggregated with anonymity thresholds; resources and support routes.
+- **SampCrew approach:** voluntary check-ins, workload indicators (overtime, leave not taken, shift patterns) aggregated with anonymity thresholds; resources and support routes.
 - **Data:** time, leave, surveys.
 - **AI:** aggregate trend detection only; no individual scoring shown to managers.
 - **Human approval:** HR reviews interventions.
@@ -213,7 +213,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 18. AI Job Designer
 - **Problem:** job descriptions lag behind how work actually changes.
 - **Conventional:** JD templates.
-- **CREW approach:** analyse role responsibilities, skills and task automation potential; propose redesigned roles and learning paths.
+- **SampCrew approach:** analyse role responsibilities, skills and task automation potential; propose redesigned roles and learning paths.
 - **Data:** roles, skills graph, market taxonomies.
 - **AI:** task decomposition and skill mapping.
 - **Human approval:** HR and leaders adopt changes.
@@ -225,7 +225,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 19. Business Expansion Planner
 - **Problem:** opening a branch/country needs hiring, cost and compliance plans.
 - **Conventional:** consultants and spreadsheets.
-- **CREW approach:** templates per expansion type generating headcount plan, hiring timeline, cost projection, compliance checklist, and requisitions on approval.
+- **SampCrew approach:** templates per expansion type generating headcount plan, hiring timeline, cost projection, compliance checklist, and requisitions on approval.
 - **Data:** simulator, compliance packages, recruiting benchmarks.
 - **AI:** plan generation with assumptions.
 - **Human approval:** plan approval creates requisitions through normal flow.
@@ -237,7 +237,7 @@ Legend for each capability: **Problem** · **Conventional** (how typical HR soft
 ### 20. Global Talent Exchange
 - **Problem:** collaboration with agencies and sourcing partners is email-based.
 - **Conventional:** agency portals with CV uploads.
-- **CREW approach:** authorised partner workspaces (agencies are already modelled as users with memberships in client tenants), candidate submission with ownership and duplicate protection, fee tracking, consented candidate communities.
+- **SampCrew approach:** authorised partner workspaces (agencies are already modelled as users with memberships in client tenants), candidate submission with ownership and duplicate protection, fee tracking, consented candidate communities.
 - **Data:** recruiting, memberships, consents.
 - **AI:** matching, duplicate detection.
 - **Human approval:** client recruiter accepts submissions; candidate consent required.

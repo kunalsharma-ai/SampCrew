@@ -22,7 +22,7 @@ export function AiSettingsForm({ settings, usage }: { settings: AiSettings; usag
           Connected for every workspace by SAMPLEDGE. Personal identifiers such as email addresses, phone numbers, bank and national ID numbers are removed from everything sent. Pay, bank, tax and health fields are never included.
         </Alert>
       ) : (
-        <Alert tone="warning" title="AI is not set up for this CREW installation">
+        <Alert tone="warning" title="AI is not set up for this SampCrew installation">
           SAMPLEDGE has not connected an AI provider yet, so no AI feature works and no data is sent to any AI service. The switches below are kept for when it is.
         </Alert>
       )}
