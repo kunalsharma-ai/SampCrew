@@ -265,6 +265,19 @@ describe('SAMPLEDGE feedback', () => {
       expect(own.status, JSON.stringify(own.body)).toBe(200);
       const other = await api(app, plainToken).put(`/employees/${emp}/photo`).attach('file', PNG, { filename: 'x.png', contentType: 'image/png' });
       expect([403, 404]).toContain(other.status);
+      // /me carries the person's own record and photo version, for the top bar and the mobile app.
+      const me = await api(app, plainToken).get('/me');
+      expect(me.body.employee).toEqual({ id: self, photoUpdatedAt: own.body.photoUpdatedAt });
+      expect((await api(app, plainToken).get(`/employees/${self}/photo`)).status).toBe(200);
+      // They can change it and remove it again.
+      const again = await api(app, plainToken).put(`/employees/${self}/photo`).attach('file', PNG, { filename: 'new.png', contentType: 'image/png' });
+      expect(again.status).toBe(200);
+      expect(new Date(again.body.photoUpdatedAt).getTime()).toBeGreaterThanOrEqual(new Date(own.body.photoUpdatedAt).getTime());
+      expect((await api(app, plainToken).delete(`/employees/${self}/photo`)).status).toBeLessThan(300);
+      expect((await api(app, plainToken).get('/me')).body.employee.photoUpdatedAt).toBeNull();
+      expect([403, 404]).toContain((await api(app, plainToken).delete(`/employees/${emp}/photo`)).status);
+      // A login with no employee record has none.
+      expect((await api(app, owner).get('/me')).body.employee).toBeNull();
     });
   });
 

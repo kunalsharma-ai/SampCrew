@@ -35,7 +35,12 @@ Each item below runs against the real API and PostgreSQL. API tests are in `apps
 ### Employee photos
 - PNG, JPEG or WebP up to 5 MB. The file contents are checked against the declared type.
 - A photo can be added on the first step of the hire, or from the profile. HR can change anyone's photo; employees can change their own.
-- Photos are served through `/employee-photos/:id` behind the session. They show in the employee list and on the profile.
+- Photos are served through `/employee-photos/:id` behind the session. They show in the employee list, on the profile and in the top bar for the signed-in person (`/me` now includes `employee: { id, photoUpdatedAt }`).
+- On the profile, HR has **Change** and **Remove** under the photo as well as the camera button.
+- Employees manage their own photo:
+  - **Web**: a "Your photo" card at the top of Settings, Appearance, opened from their avatar, to upload, change or remove it.
+  - **Mobile**: a "Your photo" card on the Me tab to choose from the phone's photos, take one with the camera (not in the browser build), change or remove it. It uses `expo-image-picker` 57.0.20 with photo and camera permission texts. The photo is downloaded with the session and shown from memory.
+- Only the browser build of the mobile app was tested. The camera and native photo picker on real phones still need a check on a device.
 
 ### Attendance registration
 - At hire (step "Attendance & access") and later from the profile, HR sets two things:

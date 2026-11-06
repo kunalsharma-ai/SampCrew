@@ -1,16 +1,17 @@
 import { buildTheme, DEFAULT_APPEARANCE, THEME_PRESETS, THEME_TEMPLATES } from '@crew/contracts';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 import { useAppearance } from '../../src/lib/appearance';
 import { biometricEnabled, biometricSupport, type BiometricSupport, setBiometric } from '../../src/lib/biometric';
+import { pickPhoto, uploadPhoto } from '../../src/lib/photo';
 import { getPushToken } from '../../src/lib/push';
 import { useSession } from '../../src/lib/session';
 import type { PayslipRow } from '../../src/lib/types';
 import { Avatar, Badge, Button, Card, CardTitle, Choice, DemoBanner, Empty, errorText, fmt, gradient, ListItem, Notice, Row, Screen, Text, Title, useLoad, useReloadOnFocus } from '../../src/ui';
 
 export default function Me() {
-  const { api, me, device, setDevice, signOut, can, hasFeature } = useSession();
+  const { api, me, device, setDevice, signOut, can, hasFeature, refreshMe } = useSession();
   const router = useRouter();
   const payslips = hasFeature('payroll') && can('payslips:read');
   const { data, error, reload, loading } = useLoad(() => (payslips ? api.get<PayslipRow[]>('/payslips?mine=true') : Promise.resolve([])), [api, payslips]);
@@ -22,6 +23,47 @@ export default function Me() {
   useEffect(() => {
     void Promise.all([biometricSupport(), biometricEnabled()]).then(([support, on]) => setBio({ support, on }));
   }, []);
+
+  // The photo is behind the session, so it is downloaded with it and shown from memory.
+  const employee = me?.employee ?? null;
+  const [photo, setPhoto] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (!employee?.photoUpdatedAt) { setPhoto(null); return; }
+    void api.imageDataUrl(`/employees/${employee.id}/photo?v=${encodeURIComponent(employee.photoUpdatedAt)}`).then((u) => { if (live) setPhoto(u); });
+    return () => { live = false; };
+  }, [api, employee?.id, employee?.photoUpdatedAt]);
+
+  const changePhoto = async (source: 'library' | 'camera') => {
+    if (!employee) return;
+    setMsg(null);
+    const picked = await pickPhoto(source);
+    if (!picked.ok) { if (picked.message) setMsg({ tone: 'warn', text: picked.message }); return; }
+    setBusy('photo');
+    try {
+      await uploadPhoto(api, employee.id, picked.photo);
+      await refreshMe();
+      setMsg({ tone: 'ok', text: 'Your photo is saved. Your colleagues see it across CREW.' });
+    } catch (e) {
+      setMsg({ tone: 'danger', text: errorText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const removePhoto = async () => {
+    if (!employee) return;
+    setBusy('photo-remove');
+    try {
+      await api.delete(`/employees/${employee.id}/photo`);
+      await refreshMe();
+      setMsg({ tone: 'ok', text: 'Your photo is removed.' });
+    } catch (e) {
+      setMsg({ tone: 'danger', text: errorText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const toggleBio = async () => {
     if (!bio) return;
@@ -56,7 +98,7 @@ export default function Me() {
   return (
     <Screen onRefresh={reload} refreshing={loading && !!data}>
       <Row style={{ gap: 14 }} testID="me-hero">
-        <Avatar name={me?.user.fullName ?? ''} size={60} />
+        <Avatar name={me?.user.fullName ?? ''} size={60} uri={photo} testID="me-photo" />
         <View style={{ flex: 1, gap: 2 }}>
           <Title>{me?.user.fullName ?? 'Me'}</Title>
           <Text muted size={14}>{me?.membership.roles.map((r) => r.name).join(', ') || me?.user.email || ''}</Text>
@@ -65,6 +107,16 @@ export default function Me() {
       <Text muted size={14}>{`${me?.user.email ?? ''} · ${me?.tenant.name ?? ''}`}</Text>
       <DemoBanner show={!!me?.tenant.isDemo} />
       {msg && <Notice tone={msg.tone} testID="me-message">{msg.text}</Notice>}
+
+      {employee && (
+        <Card testID="photo-card">
+          <CardTitle>Your photo</CardTitle>
+          <Text muted size={13}>Shown on your profile and to your colleagues. PNG, JPEG or WebP, up to 5 MB.</Text>
+          <Button title={photo ? 'Change photo' : 'Choose a photo'} kind="secondary" busy={busy === 'photo'} onPress={() => void changePhoto('library')} testID="photo-choose" />
+          {Platform.OS !== 'web' && <Button title="Take a photo" kind="secondary" disabled={!!busy} onPress={() => void changePhoto('camera')} testID="photo-camera" />}
+          {employee.photoUpdatedAt && <Button title="Remove photo" kind="danger" busy={busy === 'photo-remove'} onPress={() => void removePhoto()} testID="photo-remove" />}
+        </Card>
+      )}
 
       {payslips && (
         <Card testID="payslips">

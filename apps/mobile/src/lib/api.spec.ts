@@ -18,6 +18,22 @@ describe('API client', () => {
     expect(seen[0]!.headers).toMatchObject({ authorization: 'Bearer a1', 'x-crew-client': 'mobile' });
   });
 
+  it('sends a photo upload as a form with its own content type, and downloads a protected image as a data address', async () => {
+    const seen: { url: string; init: RequestInit }[] = [];
+    const api = new Api('http://api', store({ accessToken: 'a1', refreshToken: 'r1' }), () => {}, async (url, init) => {
+      seen.push({ url, init: init! });
+      if (init!.method === 'GET') return new Response(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } });
+      return json(200, { photoUpdatedAt: '2026-11-06T00:00:00Z' });
+    });
+    const form = new FormData();
+    form.append('file', new Blob(['x'], { type: 'image/png' }), 'me.png');
+    expect(await api.upload('PUT', '/employees/e1/photo', form)).toEqual({ photoUpdatedAt: '2026-11-06T00:00:00Z' });
+    expect(seen[0]!.init.body).toBe(form);
+    expect(seen[0]!.init.headers).not.toHaveProperty('content-type');
+    expect(seen[0]!.init.headers).toMatchObject({ authorization: 'Bearer a1' });
+    expect(await api.imageDataUrl('/employees/e1/photo')).toBe('data:image/png;base64,iVBORw==');
+  });
+
   it('refreshes an expired token once for concurrent requests and retries', async () => {
     const tokens = store({ accessToken: 'old', refreshToken: 'r1' });
     let refreshes = 0;
