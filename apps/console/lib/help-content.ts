@@ -1,0 +1,151 @@
+import type { HelpContent } from '@crew/ui';
+
+/**
+ * Help text for the "i" icons in the SampCrew Super Admin Console. Edit the words here; the icons pick them up.
+ * Same shape as the Web Portal's apps/web/lib/help-content.ts: pages by route, sections by card heading, fields by
+ * label, and route overrides where a heading or label means something different on one page.
+ */
+export const CONSOLE_HELP: HelpContent = {
+  pages: {
+    '/': {
+      title: 'Overview',
+      what: 'SampCrew across all customers: workspaces, trials, subscriptions and revenue. Demo workspaces are counted separately.',
+      how: 'Check trials ending soon and new sign-ups, then open a workspace to act on it.',
+      where: 'The Sampledge team’s daily starting point.',
+    },
+    '/tenants': {
+      title: 'Workspaces',
+      what: 'Every customer workspace, with its plan, status and seats.',
+      how: 'Search for a customer and open their workspace, or create a new workspace for a customer.',
+      where: 'For Sampledge account managers and support. Opening a workspace shows account details only.',
+    },
+    '/tenants/[id]': {
+      title: 'Workspace',
+      what: 'One customer’s account: subscription, roles in use, support access and subscription history.',
+      how: 'Change the plan, seats or billing period, extend a trial, or suspend the workspace with a reason.',
+      where: 'Opened from Workspaces. Every change is recorded in the platform audit and the customer’s audit trail.',
+    },
+    '/tenants/[id]/access': {
+      title: 'Features & permissions',
+      what: 'Which modules this workspace has, which modules each app (web or mobile) shows, and module blocks for single people.',
+      how: 'Switch a module off for the whole workspace, for one app, or for one person. Roles still decide what people can do inside a module.',
+      where: 'For Super admins, when a customer’s contract or request changes what they may use.',
+    },
+    '/tenants/[id]/users': {
+      title: 'Users',
+      what: 'The people in this workspace who can sign in, with their roles, status and open sessions.',
+      how: 'Reset a password, force a password change, lock or unlock a login, or sign someone out everywhere. A reason is required.',
+      where: 'For support when a customer asks for help with a login.',
+    },
+    '/tenants/[id]/devices': {
+      title: 'Attendance machines',
+      what: 'Attendance machines connected to this workspace and their live status.',
+      how: 'Pause a machine to refuse what it sends, for example if it is sending bad data.',
+      where: 'For support handling machine issues.',
+    },
+    '/tenants/[id]/activity': {
+      title: 'Activity',
+      what: 'What has happened in this workspace: events from its audit trail and its busiest areas.',
+      how: 'Filter events and open one to see what changed. Each opening is recorded in the customer’s own audit trail.',
+      where: 'For support investigating a customer issue.',
+    },
+    '/tenants/[id]/activity/[eventId]': {
+      title: 'Activity event',
+      what: 'One event in full: what changed, by whom and the history of that record.',
+      how: 'Read it to understand the issue. Opening it is audited in the customer’s trail and the platform log.',
+      where: 'Opened from a workspace’s Activity.',
+    },
+    '/users': {
+      title: 'All users',
+      what: 'Everyone the workspace admins have added, across every SampCrew workspace: roles, status, sign-ins and sessions.',
+      how: 'Search by name or email to find which workspace a person is in, then act on their login.',
+      where: 'For Super admins. Account details only; HR records stay with the customer.',
+    },
+    '/devices': {
+      title: 'Attendance machines',
+      what: 'Every biometric, face and card machine connected to SampCrew, in every workspace, with its live status.',
+      how: 'Switch machine brands on or off, and pause a single machine with a reason shown to the workspace.',
+      where: 'For support and operations.',
+    },
+    '/plans': {
+      title: 'Plans & pricing',
+      what: 'Per-seat list prices for each plan, monthly and annual.',
+      how: 'Change a price and save. Plan contents come from the feature catalogue in code.',
+      where: 'For Sampledge billing staff.',
+    },
+    '/integrations': {
+      title: 'Integrations',
+      what: 'Platform services SampCrew uses: Claude AI, email (SMTP), mobile push, virus scanning and mobile sign-in addresses.',
+      how: 'Open a service, follow its setup steps, save, and send a test. A setting here wins over the server’s settings file.',
+      where: 'For platform admins, at setup and when a key or server changes.',
+    },
+    '/health': {
+      title: 'System health',
+      what: 'Live readings from this API instance and its database: uptime, memory, migrations and what is not configured.',
+      how: 'Refresh the page to update. Investigate anything red before customers notice.',
+      where: 'For engineers and operations.',
+    },
+    '/audit': {
+      title: 'Platform audit',
+      what: 'Actions by Sampledge staff and the platform itself, newest first.',
+      how: 'Use it to check who did what. Actions inside a customer workspace also appear in that customer’s own audit trail.',
+      where: 'For security reviews and audits.',
+    },
+    '/admins': {
+      title: 'Console admins',
+      what: 'Sampledge staff who can use this console, and their roles.',
+      how: 'Add a colleague with a role and a temporary password. Everyone must set up two-step verification.',
+      where: 'For Super admins.',
+    },
+  },
+
+  sections: {
+    'New workspaces, last 30 days': { what: 'Customers who signed up in the last month.' },
+    'Trials ending within 7 days': { what: 'Trials about to end; a good time to contact the customer.' },
+    'Subscriptions by plan': { what: 'How many workspaces are on each plan and status.' },
+    Subscription: { what: 'The workspace’s plan, status, seats, billing cycle and period.', how: 'Change any of them with a reason; the customer is told when it matters.' },
+    'Support access': { what: 'Time-limited access the customer gave Sampledge to see their HR data.', how: 'Only the customer can grant it. You see when it ends.' },
+    'Subscription history': { what: 'Every change to the subscription, who made it and why.' },
+    Modules: { what: 'Modules this workspace can use. Switching one off hides it everywhere for everyone.' },
+    'Modules in each app': { what: 'Switch a module off in the web portal or the mobile app only.' },
+    'Module access per person': { what: 'Take a module away from one person, whatever their roles allow.' },
+    Events: { what: 'Events from the workspace’s audit trail.', how: 'Open an event to see what changed.' },
+    'Busiest areas, 30 days': { what: 'Which parts of the product this workspace uses most.' },
+    'What changed': { what: 'The before and after values of the change.' },
+    Details: { what: 'Who did it, when and from where.' },
+    'History of this record': { what: 'Earlier events on the same record.' },
+    'Database migrations': { what: 'Database changes applied to this environment.' },
+    'Not configured in this environment': { what: 'Optional services that are switched off here.' },
+    'Machine integrations': { what: 'Machine brands SampCrew accepts punches from.', how: 'Switch a brand off to stop all its machines at once.' },
+    Machines: { what: 'Every machine and whether it is online.' },
+  },
+
+  fields: {
+    'Workspace address': { what: 'The web address the customer uses to reach their workspace. It cannot easily change later.' },
+    'Owner email': { what: 'The customer’s first admin. They receive the invitation to set up the workspace.' },
+    Seats: { what: 'How many people the customer pays for.' },
+    'Trial days': { what: 'How long the free trial lasts.' },
+    'Trial ends on': { what: 'The last day of the trial.' },
+    'Billing cycle': { what: 'Monthly or annual billing.' },
+    'Current period ends': { what: 'When the current paid period ends.' },
+    'At the end of the period': { what: 'Renew, cancel or move plan when the period ends.' },
+    'Reason (shown to the customer)': { what: 'The customer sees this, so keep it clear and polite.' },
+    'Reason (shown to the workspace)': { what: 'The workspace admins see this when a machine is paused.' },
+    Reason: { what: 'Why you are doing this. Kept in the audit trail.' },
+    Duration: { what: 'How long the change lasts.' },
+    'Monthly, per seat': { what: 'Price per person per month on monthly billing.' },
+    'Annual, per seat per month': { what: 'Monthly price per person when paid yearly.' },
+    'Temporary password': { what: 'A one-time password for the new admin; they choose their own at first sign-in.' },
+    Role: { what: 'What this console admin may do.' },
+    Model: { what: 'The Claude model used for AI answers.' },
+    'API key': { what: 'The secret key for the service. Stored encrypted; never shown again.' },
+    'Time limit per answer (seconds)': { what: 'How long to wait for an AI answer before giving up.' },
+    'SMTP server': { what: 'The mail server SampCrew sends email through.' },
+    'Send as': { what: 'The From address on emails.' },
+    'Access token': { what: 'The Expo access token for push notifications.' },
+    'Scanner address': { what: 'Where the ClamAV virus scanner listens.' },
+    'App addresses': { what: 'Addresses the mobile app may return to after single sign-on.' },
+    'Send a test email to': { what: 'Your address, to check email works.' },
+    '6-digit code': { what: 'The code from your authenticator app.' },
+  },
+};

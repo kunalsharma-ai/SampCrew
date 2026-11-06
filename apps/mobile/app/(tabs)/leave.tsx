@@ -38,7 +38,7 @@ export default function Leave() {
       )}
       <Button title="Apply for leave" onPress={() => router.push('/leave/new')} testID="apply-leave" />
       <Card testID="balances">
-        <CardTitle>{data ? `Balances ${data.year}` : 'Balances'}</CardTitle>
+        <CardTitle help="leave.balances">{data ? `Balances ${data.year}` : 'Balances'}</CardTitle>
         {data?.balances.length === 0 && <Empty>No leave balances.</Empty>}
         {data?.balances.map((b) => {
           // The bar shows what is left of what the person has (available plus already pending or used is the balance).
@@ -56,7 +56,7 @@ export default function Leave() {
         })}
       </Card>
       <Card testID="leave-requests">
-        <CardTitle>My requests</CardTitle>
+        <CardTitle help="leave.requests">My requests</CardTitle>
         {data?.requests.length === 0 && <Empty>No leave requests yet.</Empty>}
         {data?.requests.map((r) => {
           const s = leaveStatus[r.status] ?? { label: r.status, tone: 'neutral' as const };

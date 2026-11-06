@@ -8,7 +8,7 @@ import { appRoute } from '../src/lib/format';
 import { configureForeground } from '../src/lib/push';
 import { AppearanceProvider } from '../src/lib/appearance';
 import { SessionProvider, useSession } from '../src/lib/session';
-import { Loading, useTheme } from '../src/ui';
+import { Loading, screenHelp, useTheme } from '../src/ui';
 
 configureForeground();
 
@@ -47,14 +47,14 @@ function Gate() {
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="unlock" options={{ headerShown: false }} />
       <Stack.Screen name="sso" options={{ headerShown: false }} />
-      <Stack.Screen name="approvals" options={{ title: 'Approvals' }} />
-      <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
-      <Stack.Screen name="leave/new" options={{ title: 'Apply for leave' }} />
-      <Stack.Screen name="helpdesk/new" options={{ title: 'Ask HR' }} />
-      <Stack.Screen name="helpdesk/[id]" options={{ title: 'Case' }} />
-      <Stack.Screen name="payslips/[id]" options={{ title: 'Payslip' }} />
-      <Stack.Screen name="announcements/[id]" options={{ title: 'Announcement' }} />
-      <Stack.Screen name="devices" options={{ title: 'Signed-in devices' }} />
+      <Stack.Screen name="approvals" options={{ title: 'Approvals', ...screenHelp('approvals') }} />
+      <Stack.Screen name="notifications" options={{ title: 'Notifications', ...screenHelp('notifications') }} />
+      <Stack.Screen name="leave/new" options={{ title: 'Apply for leave', ...screenHelp('leave.new') }} />
+      <Stack.Screen name="helpdesk/new" options={{ title: 'Ask HR', ...screenHelp('helpdesk.new') }} />
+      <Stack.Screen name="helpdesk/[id]" options={{ title: 'Case', ...screenHelp('helpdesk.case') }} />
+      <Stack.Screen name="payslips/[id]" options={{ title: 'Payslip', ...screenHelp('payslip') }} />
+      <Stack.Screen name="announcements/[id]" options={{ title: 'Announcement', ...screenHelp('announcement') }} />
+      <Stack.Screen name="devices" options={{ title: 'Signed-in devices', ...screenHelp('devices') }} />
     </Stack>
   );
 }

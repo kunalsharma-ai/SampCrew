@@ -1,5 +1,6 @@
 import { forwardRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes, useId } from 'react';
 import { cn } from '../cn';
+import { AutoHelp, type HelpProp } from './help';
 
 const control =
   'w-full rounded-md border border-border bg-surface px-3 text-sm text-fg placeholder:text-fg-subtle shadow-card transition-colors hover:border-border-strong focus:border-accent focus:outline-none focus:ring-3 focus:ring-accent/15 disabled:opacity-60 aria-[invalid=true]:border-danger';
@@ -26,19 +27,24 @@ export interface FieldProps {
   error?: string;
   required?: boolean;
   className?: string;
+  /** Help for the "i" icon; by default it is looked up by the label in the app's help content. false hides it. */
+  help?: HelpProp;
   children: (props: { id: string; 'aria-invalid'?: boolean; 'aria-describedby'?: string }) => ReactNode;
 }
 
 /** Label + control + hint/error with correct ARIA wiring. */
-export function Field({ label, hint, error, required, className, children }: FieldProps) {
+export function Field({ label, hint, error, required, className, help, children }: FieldProps) {
   const id = useId();
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
-      <label htmlFor={id} className="text-[0.8125rem] font-medium text-fg">
-        {label}
-        {required && <span className="text-danger"> *</span>}
-      </label>
+      <div className="flex items-center gap-1">
+        <label id={`${id}-label`} htmlFor={id} className="text-[0.8125rem] font-medium text-fg">
+          {label}
+          {required && <span className="text-danger"> *</span>}
+        </label>
+        <AutoHelp kind="field" text={label} help={help} describedBy={`${id}-label`} />
+      </div>
       {children({ id, 'aria-invalid': error ? true : undefined, 'aria-describedby': describedBy })}
       {error ? (
         <p id={`${id}-error`} className="text-xs text-danger">{error}</p>

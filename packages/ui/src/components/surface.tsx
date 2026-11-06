@@ -1,15 +1,21 @@
-import type { HTMLAttributes, ReactNode } from 'react';
+import { type HTMLAttributes, type ReactNode, useId } from 'react';
 import { cn } from '../cn';
+import { AutoHelp, type HelpProp } from './help';
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('crew-card rounded-xl border border-border bg-surface shadow-card', className)} {...props} />;
 }
 
-export function CardHeader({ title, description, action, className }: { title: ReactNode; description?: ReactNode; action?: ReactNode; className?: string }) {
+/** A card heading. An "i" icon follows the title when the app's help content has an entry for it (or `help` gives one). */
+export function CardHeader({ title, description, action, className, help }: { title: ReactNode; description?: ReactNode; action?: ReactNode; className?: string; help?: HelpProp }) {
+  const id = useId();
   return (
     <div className={cn('flex items-start justify-between gap-4 px-5 pt-5 pb-3', className)}>
       <div className="min-w-0">
-        <h3 className="text-[0.9375rem] font-semibold text-fg">{title}</h3>
+        <div className="flex items-center gap-1">
+          <h3 id={id} className="text-[0.9375rem] font-semibold text-fg">{title}</h3>
+          <AutoHelp kind="section" text={title} help={help} describedBy={id} />
+        </div>
         {description && <p className="mt-0.5 text-[0.8125rem] text-fg-muted">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
@@ -21,12 +27,17 @@ export function CardBody({ className, ...props }: HTMLAttributes<HTMLDivElement>
   return <div className={cn('px-5 pb-5', className)} {...props} />;
 }
 
-export function PageHeader({ title, description, actions, eyebrow }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode }) {
+/** A page heading. An "i" icon explains the page when the app's help content has an entry for this route. */
+export function PageHeader({ title, description, actions, eyebrow, help }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode; help?: HelpProp }) {
+  const id = useId();
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-6 animate-fade-in">
       <div className="min-w-0">
         {eyebrow && <div className="mb-1 text-xs font-medium uppercase tracking-wide text-accent">{eyebrow}</div>}
-        <h1 className="crew-page-title text-2xl font-semibold tracking-tight text-fg">{title}</h1>
+        <div className="flex items-center gap-1.5">
+          <h1 id={id} className="crew-page-title text-2xl font-semibold tracking-tight text-fg">{title}</h1>
+          <AutoHelp kind="page" text={typeof title === 'string' ? title : undefined} help={help} describedBy={id} />
+        </div>
         {description && <p className="mt-1 text-sm text-fg-muted max-w-2xl">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

@@ -48,7 +48,8 @@
     "e2e:a11y": "node e2e/a11y.cjs",
     "e2e:deploy": "infra/deploy/smoke.sh",
     "load-test": "node e2e/load.cjs",
-    "load-test:workflows": "node e2e/load-workflows.cjs"
+    "load-test:workflows": "node e2e/load-workflows.cjs",
+    "e2e:help": "node e2e/help-flow.cjs"
   },
   "devDependencies": {
     "@types/node": "26.6.5",

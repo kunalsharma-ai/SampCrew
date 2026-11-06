@@ -38,7 +38,7 @@ export default function Approvals() {
           <CardTitle>{i.label}</CardTitle>
           <Text>{i.summary}</Text>
           <Text muted size={13}>{`${i.requestedBy} · ${fmt.dateTime(i.createdAt)}${i.stepCount > 1 ? ` · step ${i.stepSeq} of ${i.stepCount}` : ''}`}</Text>
-          <Field label="Comment" value={comments[i.id] ?? ''} onChangeText={(v) => setComments((c) => ({ ...c, [i.id]: v }))} maxLength={1000} placeholder="Optional, shown to the person" />
+          <Field label="Comment" help="field.comment" value={comments[i.id] ?? ''} onChangeText={(v) => setComments((c) => ({ ...c, [i.id]: v }))} maxLength={1000} placeholder="Optional, shown to the person" />
           <Row>
             <Button title="Approve" busy={busy === `${i.id}:approve`} onPress={() => decide(i, 'approve')} />
             <Button title="Reject" kind="secondary" busy={busy === `${i.id}:reject`} onPress={() => decide(i, 'reject')} />

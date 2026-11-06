@@ -1,6 +1,6 @@
 'use client';
 import { resolveLayout, type DashboardLayout, type DashboardWidget } from '@crew/contracts';
-import { Badge, Button, Card, CardBody, CardHeader, Textarea, buttonClass, cn } from '@crew/ui';
+import { AutoHelp, Badge, Button, Card, CardBody, CardHeader, Textarea, buttonClass, cn } from '@crew/ui';
 import {
   ArrowDown, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, CalendarClock, CheckCircle2, Circle, ClipboardCheck, Eye, EyeOff, GripVertical, History, Inbox,
   LayoutGrid, LifeBuoy, NotebookPen, Palette, ShieldCheck, Sparkles, UserCheck, Wallet, Zap, Bot, CalendarDays,
@@ -118,7 +118,10 @@ export function HomeDashboard(props: {
             {props.tenantName}
             {d && <span className="inline-flex items-center gap-1 rounded-full bg-success-subtle px-2 py-0.5 text-[0.625rem] normal-case tracking-normal text-success"><span className="size-1.5 rounded-full bg-success" aria-hidden /> Live, updated {new Date(d.generatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>}
           </div>
-          <h1 className="crew-hero-title text-2xl font-semibold tracking-tight text-fg">{props.welcome ? `Welcome to SampCrew, ${props.firstName}` : <><span aria-hidden>👋 </span>{greeting}, <span className="crew-gradient-text">{props.firstName}!</span></>}</h1>
+          <div className="flex items-center gap-1.5">
+            <h1 id="home-title" className="crew-hero-title text-2xl font-semibold tracking-tight text-fg">{props.welcome ? `Welcome to SampCrew, ${props.firstName}` : <><span aria-hidden>👋 </span>{greeting}, <span className="crew-gradient-text">{props.firstName}!</span></>}</h1>
+            <AutoHelp kind="page" describedBy="home-title" />
+          </div>
           <p className="mt-1 max-w-2xl text-sm text-fg-muted">
             {props.welcome ? 'Your workspace is ready. Start by shaping your organization, then invite your team.' : d?.attention.length ? `${d.attention.length} item${d.attention.length === 1 ? '' : 's'} need${d.attention.length === 1 ? 's' : ''} you today.` : 'You are all caught up. Here is where your workspace stands today.'}
           </p>

@@ -84,7 +84,7 @@ export default function Login() {
             <>
               <Field label="Work email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="username" error={fieldErrors.email} />
               <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" textContentType="password" error={fieldErrors.password} onSubmitEditing={submitPassword} />
-              <Field label="Workspace (optional)" value={workspace} onChangeText={setWorkspace} autoCapitalize="none" hint="Only needed if your account is in more than one workspace." error={fieldErrors.tenantSlug} />
+              <Field label="Workspace (optional)" help="field.workspace" value={workspace} onChangeText={setWorkspace} autoCapitalize="none" hint="Only needed if your account is in more than one workspace." error={fieldErrors.tenantSlug} />
               <Button title="Sign in" onPress={submitPassword} busy={busy} />
               <Button title="Sign in with single sign-on" kind="secondary" onPress={() => { setSso(true); setError(null); }} testID="sso-start" />
             </>
