@@ -90,4 +90,6 @@ export interface MeResponse {
   subscription: { plan: string; status: string; trialEndsOn: string | null } | null;
   session: { mfa: boolean };
   tenants: { id: string; name: string; slug: string }[];
+  /** This person's own employee record in the workspace, if their login is linked to one, for their photo. */
+  employee: { id: string; photoUpdatedAt: string | null } | null;
 }

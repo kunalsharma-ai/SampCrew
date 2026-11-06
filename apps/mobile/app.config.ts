@@ -31,6 +31,7 @@ const config: ExpoConfig = {
     ['expo-local-authentication', { faceIDPermission: 'CREW uses Face ID to unlock the app.' }],
     ['expo-location', { locationWhenInUsePermission: 'CREW checks your location when you punch in or out, if your workplace requires it.' }],
     'expo-notifications',
+    ['expo-image-picker', { photosPermission: 'CREW lets you choose a profile photo from your photos.', cameraPermission: 'CREW lets you take a profile photo with your camera.', microphonePermission: false }],
   ],
   extra: {
     apiUrl: process.env.EXPO_PUBLIC_CREW_API_URL ?? 'http://localhost:4000',

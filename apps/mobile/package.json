@@ -23,6 +23,7 @@
     "expo-constants": "57.0.22",
     "expo-crypto": "57.0.4",
     "expo-device": "57.0.2",
+    "expo-image-picker": "57.0.20",
     "expo-linking": "57.0.13",
     "expo-local-authentication": "57.0.3",
     "expo-location": "57.0.21",
