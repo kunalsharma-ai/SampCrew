@@ -110,7 +110,7 @@ export default function Me() {
 
       {employee && (
         <Card testID="photo-card">
-          <CardTitle>Your photo</CardTitle>
+          <CardTitle help="me.photo">Your photo</CardTitle>
           <Text muted size={13}>Shown on your profile and to your colleagues. PNG, JPEG or WebP, up to 5 MB.</Text>
           <Button title={photo ? 'Change photo' : 'Choose a photo'} kind="secondary" busy={busy === 'photo'} onPress={() => void changePhoto('library')} testID="photo-choose" />
           {Platform.OS !== 'web' && <Button title="Take a photo" kind="secondary" disabled={!!busy} onPress={() => void changePhoto('camera')} testID="photo-camera" />}
@@ -120,7 +120,7 @@ export default function Me() {
 
       {payslips && (
         <Card testID="payslips">
-          <CardTitle>Payslips</CardTitle>
+          <CardTitle help="me.payslips">Payslips</CardTitle>
           {error && <Notice tone="danger">{error}</Notice>}
           {data?.length === 0 && <Empty>No payslips yet.</Empty>}
           {data?.map((p) => (
@@ -130,7 +130,7 @@ export default function Me() {
       )}
 
       <Card>
-        <CardTitle>Security</CardTitle>
+        <CardTitle help="me.security">Security</CardTitle>
         <Row style={{ justifyContent: 'space-between' }}>
           <Text>Two-step sign-in</Text>
           <Badge tone={me?.user.mfaEnabled ? 'ok' : 'neutral'}>{me?.user.mfaEnabled ? 'On' : 'Off'}</Badge>
@@ -174,7 +174,7 @@ function AppearanceCard({ onMessage }: { onMessage: (m: { tone: 'ok' | 'warn' | 
     update(patch).then(() => onMessage({ tone: 'ok', text: done }), (e) => onMessage({ tone: 'danger', text: errorText(e) }));
   return (
     <Card testID="appearance">
-      <CardTitle>Appearance</CardTitle>
+      <CardTitle help="me.appearance">Appearance</CardTitle>
       <Text muted size={13}>Saved to your account, so the Web Portal uses the same theme.</Text>
       <Text size={13} weight="600">Templates</Text>
       <View accessibilityRole="radiogroup" accessibilityLabel="Templates" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -209,6 +209,7 @@ function AppearanceCard({ onMessage }: { onMessage: (m: { tone: 'ok' | 'warn' | 
       </View>
       <Choice
         label="Visual style"
+        help="field.style"
         value={appearance.style}
         options={[{ value: 'neon', label: 'Neon' }, { value: 'classic', label: 'Classic' }]}
         onChange={(style) => save({ style }, style === 'neon' ? 'The neon design is on.' : 'The classic design is on.')}
@@ -223,12 +224,14 @@ function AppearanceCard({ onMessage }: { onMessage: (m: { tone: 'ok' | 'warn' | 
       )}
       <Choice
         label="Mode"
+        help="field.mode"
         value={appearance.mode}
         options={[{ value: 'system', label: 'Match phone' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]}
         onChange={(mode) => save({ mode }, mode === 'system' ? 'SampCrew now follows your phone’s light or dark setting.' : `SampCrew now uses ${mode} mode.`)}
       />
       <Choice
         label="Contrast"
+        help="field.contrast"
         value={appearance.contrast}
         options={[{ value: 'standard', label: 'Standard' }, { value: 'high', label: 'High' }]}
         onChange={(contrast) => save({ contrast }, contrast === 'high' ? 'High contrast is on.' : 'Standard contrast.')}

@@ -20,6 +20,10 @@ import { ApiError } from '../lib/api';
 import { useAppearanceTheme } from '../lib/appearance';
 import { alpha, type MobileTheme, NEON_TILES, type TileTone } from '../lib/theme';
 import { money } from '../lib/format';
+import type { HelpKey } from '../lib/help';
+import { HelpTip } from './help';
+
+export { HelpTip, screenHelp } from './help';
 
 export type Theme = MobileTheme;
 /** The member's palette (see lib/theme): their saved preset and mode, or the default before sign-in. */
@@ -137,14 +141,15 @@ export function Card({ children, style, testID }: { children: ReactNode; style?:
   );
 }
 
-/** A card heading; in the neon style with a small brand bar in front, as on the Web Portal's cards. */
-export function CardTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
+/** A card heading; in the neon style with a small brand bar in front, as on the Web Portal's cards. `help` adds an "i" icon. */
+export function CardTitle({ children, right, help }: { children: ReactNode; right?: ReactNode; help?: HelpKey }) {
   const t = useTheme();
   return (
     <Row style={{ justifyContent: 'space-between' }}>
       <Row style={{ flex: 1 }}>
         {t.neon && <View style={[{ width: 4, height: 16, borderRadius: 2 }, gradient(`linear-gradient(180deg, ${t.gradient[0]}, ${t.gradient[1]})`, t.accent)]} />}
         <Text weight="700" size={t.neon ? 16 : 15} accessibilityRole="header">{children}</Text>
+        {help && <HelpTip help={help} />}
       </Row>
       {right}
     </Row>
@@ -327,13 +332,16 @@ export function Button({ title, onPress, kind = 'primary', disabled, busy, testI
   );
 }
 
-export function Field({ label, error, hint, ...props }: TextInputProps & { label: string; error?: string; hint?: string }) {
+export function Field({ label, error, hint, help, ...props }: TextInputProps & { label: string; error?: string; hint?: string; help?: HelpKey }) {
   const t = useTheme();
   return (
     <View style={{ gap: 4 }}>
-      <Text size={13} weight="600">
-        {label}
-      </Text>
+      <Row style={{ gap: 6 }}>
+        <Text size={13} weight="600">
+          {label}
+        </Text>
+        {help && <HelpTip help={help} kind="field" />}
+      </Row>
       <TextInput
         accessibilityLabel={label}
         placeholderTextColor={t.muted}
@@ -349,11 +357,16 @@ export function Field({ label, error, hint, ...props }: TextInputProps & { label
 }
 
 /** A row of choices (segmented control). */
-export function Choice<T extends string>({ label, value, options, onChange }: { label?: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+export function Choice<T extends string>({ label, value, options, onChange, help }: { label?: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; help?: HelpKey }) {
   const t = useTheme();
   return (
     <View style={{ gap: 4 }}>
-      {label ? <Text size={13} weight="600">{label}</Text> : null}
+      {label ? (
+        <Row style={{ gap: 6 }}>
+          <Text size={13} weight="600">{label}</Text>
+          {help && <HelpTip help={help} kind="field" />}
+        </Row>
+      ) : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }} accessibilityRole="radiogroup" accessibilityLabel={label}>
         {options.map((o) => {
           const on = o.value === value;
