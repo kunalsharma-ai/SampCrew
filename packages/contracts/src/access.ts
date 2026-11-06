@@ -59,7 +59,7 @@ export const deviceIntegrationUpdate = z.object({
 export const devicePauseRequest = z.object({ reason: z.string().trim().min(5, 'At least 5 characters').max(300) }).strict();
 
 /** What SAMPLEDGE can do to one person in a workspace from the Console. */
-export const MEMBER_ACTIONS = ['suspend', 'reactivate', 'sign_out', 'reset_mfa', 'resend_invite'] as const;
+export const MEMBER_ACTIONS = ['suspend', 'reactivate', 'sign_out', 'reset_mfa', 'resend_invite', 'reset_password', 'force_password_change', 'lock_account', 'unlock_account'] as const;
 export type MemberAction = (typeof MEMBER_ACTIONS)[number];
 export const memberActionRequest = z.object({
   action: z.enum(MEMBER_ACTIONS),
@@ -104,6 +104,10 @@ export interface WorkspaceUserRow {
   status: 'active' | 'invited' | 'suspended'; accountStatus: string;
   roles: string[]; blockedFeatures: string[];
   mfaEnabled: boolean; lastLoginAt: string | null; invitedAt: string | null; joinedAt: string | null;
+  /** Must choose a new password at the next sign-in (a temporary password from HR or SAMPLEDGE). */
+  mustChangePassword: boolean;
+  /** Set while sign-in is blocked after too many wrong passwords. */
+  lockedUntil: string | null;
   liveSessions: { web: number; mobile: number };
   tenantId: string; tenantName: string; tenantSlug: string;
 }

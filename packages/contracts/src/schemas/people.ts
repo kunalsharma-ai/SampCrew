@@ -32,6 +32,15 @@ export const attendanceRegistrationInput = z.object({
 export const employeeLoginInput = z.object({ mode: z.enum(['invite', 'password']), initialPassword: password.optional() })
   .refine((v) => !v.initialPassword || v.mode === 'password', { message: 'A temporary password is only used when creating the login now', path: ['initialPassword'] });
 
+/**
+ * What a workspace admin can do to an employee's CREW login. Passwords are stored only as one-way hashes, so nobody can
+ * read one back: a reset sets a new temporary password (shown once) that the person replaces at the next sign-in.
+ * Lock stops sign-in to this workspace only; the account itself may also be used in other workspaces.
+ */
+export const EMPLOYEE_LOGIN_ACTIONS = ['reset_password', 'force_password_change', 'lock', 'unlock', 'sign_out'] as const;
+export const employeeLoginActionInput = z.object({ action: z.enum(EMPLOYEE_LOGIN_ACTIONS), initialPassword: password.optional() })
+  .refine((v) => !v.initialPassword || v.action === 'reset_password', { message: 'A temporary password is only used when resetting the password', path: ['initialPassword'] });
+
 /** Employee photos: PNG, JPEG or WebP up to 5 MB. */
 export const PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;

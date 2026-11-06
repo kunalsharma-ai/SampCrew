@@ -1,11 +1,11 @@
 'use client';
 import { Alert, Avatar, Badge, Button, Card, CardBody, CardHeader, Dialog, Field, Input, Select } from '@crew/ui';
-import { Camera, Copy, Fingerprint, KeyRound, Mail, Plus, Trash2, X } from 'lucide-react';
+import { Camera, Copy, Fingerprint, KeyRound, Lock, LogOut, Mail, Plus, RotateCcw, Trash2, Unlock, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, useTransition } from 'react';
 import { photoUrl } from '@/lib/photo';
-import type { AttendanceRegistration, EmployeeProfile } from '@/lib/types';
-import { createLoginAction, type LoginResult, removePhotoAction, saveAttendanceRegistrationAction, uploadPhotoAction } from '../actions';
+import type { AttendanceRegistration, EmployeeProfile, LoginDetails } from '@/lib/types';
+import { createLoginAction, loginControlAction, type LoginControlAction, type LoginResult, removePhotoAction, saveAttendanceRegistrationAction, uploadPhotoAction } from '../actions';
 
 const PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_PHOTO = 5 * 1024 * 1024;
@@ -76,10 +76,10 @@ export function PhotoAvatar({ e, size = 56 }: { e: EmployeeProfile; size?: numbe
 }
 
 /** Shows a login's temporary password once, with a copy button. */
-export function TemporaryPassword({ login, onClose }: { login: { email: string; temporaryPassword: string } | null; onClose: () => void }) {
+export function TemporaryPassword({ login, onClose, title = 'CREW login created' }: { login: { email: string; temporaryPassword: string } | null; onClose: () => void; title?: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <Dialog open={!!login} onClose={onClose} title="CREW login created" description="Share the temporary password in person or by phone. It is shown only now and is never emailed." footer={<Button onClick={onClose}>Done</Button>}>
+    <Dialog open={!!login} onClose={onClose} title={title} description="Share the temporary password in person or by phone. It is shown only now and is never emailed." footer={<Button onClick={onClose}>Done</Button>}>
       {login && (
         <div className="space-y-3 text-[0.8125rem]">
           <p>Sign-in email: <span className="font-medium">{login.email}</span></p>
@@ -139,6 +139,86 @@ export function LoginCard({ e }: { e: EmployeeProfile }) {
         </div>
       </Dialog>
       <TemporaryPassword login={done?.login ?? null} onClose={() => setDone((d) => (d ? { ...d, login: undefined } : d))} />
+    </Card>
+  );
+}
+
+const when = (v: string | null) => (v ? new Date(v).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Never');
+
+/**
+ * Login control for workspace admins (users:manage). Passwords are stored only as hashes, so nobody can read
+ * the current one: an admin resets it instead, and the new temporary password is shown once.
+ */
+export function LoginControlCard({ e, details }: { e: EmployeeProfile; details: LoginDetails }) {
+  const router = useRouter();
+  const [d, setD] = useState(details);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [own, setOwn] = useState(false);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [shown, setShown] = useState<{ email: string; temporaryPassword: string } | null>(null);
+  const [pending, start] = useTransition();
+  const run = (action: LoginControlAction, initialPassword?: string) => {
+    setError(null); setNotice(null);
+    start(async () => {
+      const r = await loginControlAction(e.id, action, initialPassword);
+      if (!r.ok) { setError(Object.values(r.fieldErrors ?? {})[0] ?? r.message); return; }
+      const { temporaryPassword, ...rest } = r.data!;
+      setD(rest as LoginDetails);
+      setNotice(r.message ?? null);
+      setResetOpen(false); setPassword(''); setOwn(false);
+      if (temporaryPassword) setShown({ email: rest.loginId, temporaryPassword });
+      router.refresh();
+    });
+  };
+  const locked = d.membershipStatus === 'suspended' || !!d.lockedUntil;
+  const status = d.membershipStatus === 'invited' ? { tone: 'warning' as const, label: 'Invitation not accepted' }
+    : d.membershipStatus === 'suspended' ? { tone: 'danger' as const, label: 'Locked by an admin' }
+      : d.accountStatus === 'locked' ? { tone: 'danger' as const, label: 'Locked by SAMPLEDGE' }
+        : d.lockedUntil ? { tone: 'danger' as const, label: 'Locked after wrong passwords' }
+          : d.mustChangePassword ? { tone: 'warning' as const, label: 'Must choose a new password' }
+            : { tone: 'success' as const, label: 'Active' };
+  const shared = d.otherWorkspaces > 0;
+  return (
+    <Card aria-label="CREW login">
+      <CardHeader title="CREW login" action={<Badge tone={status.tone}>{status.label}</Badge>} />
+      <CardBody className="space-y-3 text-[0.8125rem]">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+          <dt className="text-fg-subtle">Login ID</dt><dd className="font-medium" data-testid="login-id">{d.loginId}</dd>
+          <dt className="text-fg-subtle">Password</dt><dd>{d.hasPassword ? 'Set (stored encrypted, not readable)' : 'Not set yet'}</dd>
+          <dt className="text-fg-subtle">Two-step sign-in</dt><dd>{d.mfaEnabled ? 'On' : 'Off'}</dd>
+          <dt className="text-fg-subtle">Last sign-in</dt><dd>{when(d.lastLoginAt)}</dd>
+          <dt className="text-fg-subtle">Signed in on</dt><dd>{d.openSessions} {d.openSessions === 1 ? 'device' : 'devices'}</dd>
+          {d.lockedUntil && <><dt className="text-fg-subtle">Locked until</dt><dd>{when(d.lockedUntil)}</dd></>}
+        </dl>
+        {shared && <p className="text-fg-subtle">This person also uses this login in another company&apos;s workspace, so only they or SAMPLEDGE support can change its password.</p>}
+        {error && <Alert tone="danger">{error}</Alert>}
+        {notice && !error && <Alert tone="success">{notice}</Alert>}
+        {d.membershipStatus !== 'invited' && (
+          <div className="flex flex-wrap gap-2">
+            {!shared && <Button size="sm" variant="secondary" disabled={pending} onClick={() => setResetOpen(true)}><KeyRound className="size-3.5" /> Reset password</Button>}
+            {!shared && !d.mustChangePassword && <Button size="sm" variant="secondary" disabled={pending} onClick={() => run('force_password_change')}><RotateCcw className="size-3.5" /> Force password change</Button>}
+            {locked
+              ? <Button size="sm" variant="secondary" disabled={pending} onClick={() => run('unlock')}><Unlock className="size-3.5" /> Unlock</Button>
+              : <Button size="sm" variant="secondary" disabled={pending} onClick={() => { if (confirm(`Lock ${e.displayName}'s login? They are signed out and cannot sign in until it is unlocked.`)) run('lock'); }}><Lock className="size-3.5" /> Lock</Button>}
+            {d.openSessions > 0 && <Button size="sm" variant="ghost" disabled={pending} onClick={() => run('sign_out')}><LogOut className="size-3.5" /> Sign out everywhere</Button>}
+          </div>
+        )}
+      </CardBody>
+      <Dialog
+        open={resetOpen}
+        onClose={() => setResetOpen(false)}
+        title={`Reset ${e.displayName}'s password`}
+        description="Their current password stops working and they are signed out. They choose their own password at the next sign-in."
+        footer={<><Button variant="secondary" onClick={() => setResetOpen(false)}>Cancel</Button><Button onClick={() => run('reset_password', own ? password : undefined)} loading={pending}>Reset password</Button></>}
+      >
+        <div className="space-y-3 text-[0.8125rem]">
+          {error && <Alert tone="danger">{error}</Alert>}
+          <OwnPassword own={own} setOwn={setOwn} password={password} setPassword={setPassword} />
+        </div>
+      </Dialog>
+      <TemporaryPassword login={shown} onClose={() => setShown(null)} title="Password reset" />
     </Card>
   );
 }

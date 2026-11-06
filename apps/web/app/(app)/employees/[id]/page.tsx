@@ -3,11 +3,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
-import type { AttendanceRegistration, Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, OnboardingTask, Page } from '@/lib/types';
+import type { AttendanceRegistration, Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, LoginDetails, OnboardingTask, Page } from '@/lib/types';
 import { EmployeeStatus } from '../status';
 import type { EmployeeSkill } from '@crew/contracts';
 import { ActivityTab, AtAGlance, type Summary360 } from './at-a-glance';
-import { AttendanceCard, type DeviceOption, LoginCard, PhotoAvatar, type ShiftOption } from './profile-extras';
+import { AttendanceCard, type DeviceOption, LoginCard, LoginControlCard, PhotoAvatar, type ShiftOption } from './profile-extras';
 import { SkillsCard } from './skills-card';
 import { DocumentsTab, JobTab, LeaveTab, OnboardingTab, OverviewTab } from './tabs';
 
@@ -37,21 +37,24 @@ export default async function EmployeePage({ params, searchParams }: { params: P
 
   let content: React.ReactNode;
   if (tab === 'overview') {
-    const [summary, skills, registration, shifts, devices] = await Promise.all([
+    const [summary, skills, registration, shifts, devices, login] = await Promise.all([
       loadOptional<Summary360>(`/employees/${id}/360`),
       loadOptional<{ skills: EmployeeSkill[]; canEdit: boolean }>(`/employees/${id}/skills`),
       loadOptional<AttendanceRegistration>(`/employees/${id}/attendance-registration`),
       e.can.update ? loadOptional<ShiftOption[]>('/shifts/templates') : null,
       e.can.update ? loadOptional<DeviceOption[]>('/attendance/devices') : null,
+      // Only people with users:manage get an answer; everyone else gets a 403 or 404 and sees no card.
+      e.membershipId && !e.isSelf ? loadOptional<LoginDetails>(`/employees/${id}/login`) : null,
     ]);
     content = (
       <>
         {summary && <AtAGlance s={summary} />}
         <OverviewTab e={e} />
-        {(registration || (!e.membershipId && e.can.update)) && (
+        {(registration || login || (!e.membershipId && e.can.update)) && (
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             {registration && <AttendanceCard e={e} reg={registration} shifts={shifts} devices={devices} canEdit={e.can.update} />}
             <LoginCard e={e} />
+            {login && <LoginControlCard e={e} details={login} />}
           </div>
         )}
         {skills && <SkillsCard employeeId={id} initial={skills.skills} canEdit={skills.canEdit} />}

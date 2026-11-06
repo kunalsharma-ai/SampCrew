@@ -3,6 +3,8 @@ import type { Pool } from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { temporaryPasswordValue } from '../src/modules/employees/employees.service';
+import { hashPassword } from '../src/platform/auth/crypto';
+import { currentTotp } from '../src/platform/auth/mfa';
 import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
 
 // A real 1x1 PNG.
@@ -263,6 +265,119 @@ describe('SAMPLEDGE feedback', () => {
       expect(own.status, JSON.stringify(own.body)).toBe(200);
       const other = await api(app, plainToken).put(`/employees/${emp}/photo`).attach('file', PNG, { filename: 'x.png', contentType: 'image/png' });
       expect([403, 404]).toContain(other.status);
+    });
+  });
+
+  describe('login control by the workspace admin and the Super Admin', () => {
+    const http = () => request(app.getHttpServer());
+    let emp: string;
+    let email: string;
+    let membershipId: string;
+    const signIn = (password: string) => http().post('/api/v1/auth/login').send({ email, password });
+    const setOwn = async (password: string, next: string) => {
+      const first = await signIn(password);
+      expect(first.body.status, JSON.stringify(first.body)).toBe('password_change_required');
+      const set = await http().post('/api/v1/auth/initial-password').send({ changeToken: first.body.changeToken, newPassword: next });
+      expect(set.body.status, JSON.stringify(set.body)).toBe('ok');
+      return set.body.accessToken as string;
+    };
+
+    beforeAll(async () => {
+      email = `meera@${t.slug}.test`;
+      const res = await api(app, owner).post('/employees').send({ firstName: 'Meera', workEmail: email, legalEntityId: t.legalEntityId, dateOfJoining: today(), loginMode: 'password' });
+      emp = res.body.employee.id;
+      membershipId = res.body.employee.membershipId;
+      await setOwn(res.body.login.temporaryPassword, 'Meera-Own-Password-1');
+    });
+
+    it('shows the admin the login ID and status, never the password', async () => {
+      const d = await api(app, owner).get(`/employees/${emp}/login`);
+      expect(d.status, JSON.stringify(d.body)).toBe(200);
+      expect(d.body).toMatchObject({ loginId: email, membershipStatus: 'active', accountStatus: 'active', mustChangePassword: false, hasPassword: true, otherWorkspaces: 0 });
+      expect(d.body.openSessions).toBeGreaterThanOrEqual(1);
+      expect(JSON.stringify(d.body)).not.toMatch(/hash|Meera-Own/);
+      expect([403, 404]).toContain((await api(app, plainToken).get(`/employees/${emp}/login`)).status);
+      expect([403, 404]).toContain((await api(app, plainToken).post(`/employees/${emp}/login/actions`).send({ action: 'lock' })).status);
+    });
+
+    it('resets the password: shown once, old one stops working, sessions end, change forced, audited', async () => {
+      const r = await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'reset_password' });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      expect(r.body.temporaryPassword).toHaveLength(16);
+      expect(r.body).toMatchObject({ mustChangePassword: true, openSessions: 0 });
+      expect((await signIn('Meera-Own-Password-1')).status).toBe(401);
+      await setOwn(r.body.temporaryPassword, 'Meera-Own-Password-2');
+      // A typed temporary password is not echoed back.
+      const typed = await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'reset_password', initialPassword: 'Meera-Temp-Pass-77' });
+      expect(typed.body.temporaryPassword).toBeUndefined();
+      await setOwn('Meera-Temp-Pass-77', 'Meera-Own-Password-3');
+      expect((await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'lock', initialPassword: 'Meera-Temp-Pass-77' })).status).toBe(422);
+      const audit = (await pool.query(`select action from audit_events where tenant_id = $1 and resource_id = $2 and action like 'employee.login_%'`, [t.id, emp])).rows.map((x) => x.action);
+      expect(audit.filter((a) => a === 'employee.login_reset_password')).toHaveLength(2);
+    });
+
+    it('forces a password change at the next sign-in', async () => {
+      const r = await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'force_password_change' });
+      expect(r.body.mustChangePassword).toBe(true);
+      await setOwn('Meera-Own-Password-3', 'Meera-Own-Password-4');
+    });
+
+    it('locks and unlocks the login, and signs it out', async () => {
+      const lock = await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'lock' });
+      expect(lock.body.membershipStatus).toBe('suspended');
+      expect((await signIn('Meera-Own-Password-4')).body.status).not.toBe('ok');
+      expect((await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'lock' })).body.error.code).toBe('not_active');
+      const unlock = await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'unlock' });
+      expect(unlock.body.membershipStatus).toBe('active');
+      const tok = (await signIn('Meera-Own-Password-4')).body.accessToken;
+      expect(tok).toBeTruthy();
+      const out = await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'sign_out' });
+      expect(out.body.openSessions).toBe(0);
+      expect((await api(app, tok).get('/me')).status).toBe(401);
+      expect((await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'unlock' })).body.error.code).toBe('not_locked');
+    });
+
+    it('refuses the admin\'s own login and passwords of accounts shared with another workspace', async () => {
+      const self = (await api(app, owner).get('/employees/me')).body.employee?.id;
+      if (self) expect((await api(app, owner).post(`/employees/${self}/login/actions`).send({ action: 'lock' })).body.error.code).toBe('own_login');
+      const other = await createTenant(pool);
+      const user = (await pool.query(`select user_id from memberships where id = $1`, [membershipId])).rows[0].user_id;
+      await pool.query(`insert into memberships (tenant_id, user_id, status) values ($1, $2, 'active')`, [other.id, user]);
+      const r = await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'reset_password' });
+      expect(r.status).toBe(409);
+      expect(r.body.error.code).toBe('shared_account');
+      expect((await api(app, owner).get(`/employees/${emp}/login`)).body.otherWorkspaces).toBe(1);
+      await pool.query(`delete from memberships where tenant_id = $1 and user_id = $2`, [other.id, user]);
+    });
+
+    it('lets the Super Admin reset, force a change, lock and unlock from the console, with a reason', async () => {
+      const opsEmail = `ops.fb.${Date.now()}@sampledge.test`;
+      await pool.query(`insert into platform_admins (email, full_name, password_hash, role) values ($1, 'Ops', $2, 'super_admin')`, [opsEmail, await hashPassword(PASSWORD)]);
+      const first = await api(app).post('/platform/auth/login').send({ email: opsEmail, password: PASSWORD });
+      const setup = await api(app, first.body.accessToken).post('/platform/auth/mfa/setup');
+      const ops = (await api(app, first.body.accessToken).post('/platform/auth/mfa/enable').send({ code: currentTotp(setup.body.secret) })).body.accessToken as string;
+      const act = (action: string) => api(app, ops).post(`/platform/tenants/${t.id}/users/${membershipId}/actions`).send({ action, reason: 'Support ticket 4411' });
+
+      const list = await api(app, ops).get(`/platform/tenants/${t.id}/users`);
+      const row = (list.body.items ?? list.body).find((u: { membershipId: string }) => u.membershipId === membershipId);
+      expect(row).toMatchObject({ email, mustChangePassword: false });
+
+      const reset = await act('reset_password');
+      expect(reset.status, JSON.stringify(reset.body)).toBe(200);
+      expect(reset.body.temporaryPassword).toHaveLength(16);
+      expect((await signIn('Meera-Own-Password-4')).status).toBe(401);
+      await setOwn(reset.body.temporaryPassword, 'Meera-Own-Password-5');
+
+      expect((await act('force_password_change')).status).toBe(200);
+      await setOwn('Meera-Own-Password-5', 'Meera-Own-Password-6');
+
+      expect((await act('lock_account')).status).toBe(200);
+      expect((await signIn('Meera-Own-Password-6')).body.status).not.toBe('ok');
+      // The workspace admin cannot lift a SAMPLEDGE lock.
+      expect((await api(app, owner).get(`/employees/${emp}/login`)).body.accountStatus).toBe('locked');
+      expect((await act('unlock_account')).status).toBe(200);
+      expect((await signIn('Meera-Own-Password-6')).body.status).toBe('ok');
+      expect((await api(app, ops).post(`/platform/tenants/${t.id}/users/${membershipId}/actions`).send({ action: 'reset_password', reason: 'x' })).status).toBe(422);
     });
   });
 

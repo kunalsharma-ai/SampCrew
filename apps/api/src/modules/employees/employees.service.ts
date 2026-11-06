@@ -5,6 +5,7 @@ import type {
   attendanceRegistrationInput,
   confirmInput,
   CreateEmployeeInput,
+  employeeLoginActionInput,
   employeeLoginInput,
   designationInput,
   duplicateCheckInput,
@@ -19,7 +20,7 @@ import type {
   updateEmployeeInput,
 } from '@crew/contracts';
 import { AuditService, diff } from '../../platform/audit/audit.service';
-import { decryptField, encryptField, randomToken } from '../../platform/auth/crypto';
+import { decryptField, encryptField, hashPassword, temporaryPasswordValue } from '../../platform/auth/crypto';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
@@ -716,6 +717,98 @@ export class EmployeesService {
   }
 
   // ---------------------------------------------------------------------------------------------------------
+  // Login details and control for workspace admins
+  // ---------------------------------------------------------------------------------------------------------
+
+  private async loginTarget(tx: Tx, id: string) {
+    const e = await this.load(tx, id);
+    await this.authz.require('employees:read', employeeAttrs(e), tx);
+    if (!e.membershipId) throw Errors.notFound('CREW login');
+    const m = (await one<{ user_id: string; status: string; owner: boolean }>(
+      tx,
+      `select m.user_id, m.status, exists (select 1 from role_assignments ra join roles r on r.id = ra.role_id where ra.membership_id = m.id and r.key = 'tenant_owner') as owner
+         from memberships m where m.id = $1`,
+      [e.membershipId],
+    ))!;
+    return { e, m };
+  }
+
+  /** The login ID (work email) and sign-in state. Never a password: only its one-way hash is stored. */
+  async loginDetails(id: string) {
+    return this.db.tenant(async (tx) => {
+      const { e, m } = await this.loginTarget(tx, id);
+      await this.authz.require('users:manage', { legalEntityId: e.legalEntityId, departmentId: e.departmentId, locationId: e.locationId }, tx);
+      const u = await this.db.platform((ptx) => one<Record<string, unknown>>(
+        ptx,
+        `select u.email::text as "loginId", u.status as "accountStatus", u.mfa_enabled as "mfaEnabled", u.last_login_at as "lastLoginAt",
+                u.must_change_password as "mustChangePassword", (u.password_hash is not null) as "hasPassword",
+                case when u.locked_until > now() then u.locked_until end as "lockedUntil",
+                (select count(*)::int from memberships o where o.user_id = u.id and o.tenant_id <> $2 and o.status = 'active') as "otherWorkspaces",
+                (select count(*)::int from sessions s where s.user_id = u.id and s.tenant_id = $2 and s.revoked_at is null and s.expires_at > now()) as "openSessions"
+           from users u where u.id = $1`,
+        [m.user_id, requestContext.tenantActor().tenantId],
+      ));
+      return { membershipId: e.membershipId, membershipStatus: m.status, ...u };
+    });
+  }
+
+  async loginAction(id: string, input: z.infer<typeof employeeLoginActionInput>) {
+    const actor = requestContext.tenantActor();
+    // Hashing is slow on purpose, so it happens before the transaction.
+    const generated = input.action === 'reset_password' && !input.initialPassword ? temporaryPasswordValue() : undefined;
+    const hash = input.action === 'reset_password' ? await hashPassword(input.initialPassword ?? generated!) : null;
+    await this.db.tenant(async (tx) => {
+      const { e, m } = await this.loginTarget(tx, id);
+      await this.authz.require('employees:update', employeeAttrs(e), tx);
+      await this.authz.require('users:manage', { legalEntityId: e.legalEntityId, departmentId: e.departmentId, locationId: e.locationId }, tx);
+      if (m.user_id === actor.userId) throw Errors.badRequest('own_login', 'Change your own password and sessions under Settings, Security.');
+      if (m.owner) {
+        const s = await this.authz.subject(tx);
+        if (!s.grants.some((g) => g.roleKey === 'tenant_owner')) throw Errors.forbidden('Only a workspace owner can change another owner\'s login');
+      }
+      if (m.status === 'invited' && input.action !== 'sign_out') throw Errors.badRequest('not_joined', 'This person has not accepted their invitation yet.');
+      const shared = (await this.db.platform((ptx) => one<{ n: number }>(ptx, `select count(*)::int as n from memberships where user_id = $1 and tenant_id <> $2 and status = 'active'`, [m.user_id, actor.tenantId])))!.n;
+      const endSessions = (reason: string, everywhere = false) => this.db.platform(async (ptx) => (await ptx.query(
+        `update sessions set revoked_at = now(), revoked_reason = $3 where user_id = $1 and ($2::uuid is null or tenant_id = $2) and revoked_at is null`, [m.user_id, everywhere ? null : actor.tenantId, reason],
+      )).rowCount ?? 0);
+      let detail: Record<string, unknown> = {};
+      switch (input.action) {
+        case 'reset_password':
+        case 'force_password_change':
+          // The password belongs to the person's account, which another company's workspace may also use.
+          if (shared) throw Errors.conflict('shared_account', 'This person also uses this CREW account in another company\'s workspace, so their password cannot be changed from here. They can change it themselves, or SAMPLEDGE support can reset it.');
+          await this.db.platform((ptx) => ptx.query(
+            input.action === 'reset_password'
+              ? 'update users set password_hash = $2, must_change_password = true, failed_login_count = 0, locked_until = null where id = $1'
+              : 'update users set must_change_password = true where id = $1',
+            input.action === 'reset_password' ? [m.user_id, hash] : [m.user_id],
+          ));
+          detail = { sessionsEnded: await endSessions(input.action === 'reset_password' ? 'password_reset_by_admin' : 'password_change_forced_by_admin', true), typedByAdmin: !!input.initialPassword };
+          break;
+        case 'lock':
+          if (m.status !== 'active') throw Errors.badRequest('not_active', 'This login is already locked.');
+          await tx.query(`update memberships set status = 'suspended' where id = $1`, [e.membershipId]);
+          detail = { sessionsEnded: await endSessions('locked_by_admin') };
+          break;
+        case 'unlock': {
+          const u = (await this.db.platform((ptx) => one<{ locked: boolean; status: string }>(ptx, 'select coalesce(locked_until > now(), false) as locked, status from users where id = $1', [m.user_id])))!;
+          if (m.status !== 'suspended' && !u.locked) throw Errors.badRequest('not_locked', 'This login is not locked.');
+          if (m.status === 'suspended') await tx.query(`update memberships set status = 'active' where id = $1`, [e.membershipId]);
+          // A lock after too many wrong passwords is cleared too. An account SAMPLEDGE locked stays locked.
+          if (u.locked) await this.db.platform((ptx) => ptx.query('update users set failed_login_count = 0, locked_until = null where id = $1', [m.user_id]));
+          detail = { accountLockedBySampledge: u.status === 'locked' };
+          break;
+        }
+        case 'sign_out':
+          detail = { sessionsEnded: await endSessions('signed_out_by_admin') };
+          break;
+      }
+      await this.audit.record(tx, { action: `employee.login_${input.action}`, resourceType: 'employee', resourceId: id, changes: { loginId: e.workEmail, ...detail } });
+    });
+    return { ...(await this.loginDetails(id)), ...(generated ? { temporaryPassword: generated } : {}) };
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
   // Attendance registration: usual shift and attendance-machine enrolment numbers
   // ---------------------------------------------------------------------------------------------------------
 
@@ -1227,17 +1320,4 @@ export function uniqueAs(code: string, message: string) {
   };
 }
 
-/** A temporary password that passes the password rules: 16 characters from four character groups. */
-export function temporaryPasswordValue(): string {
-  const groups = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnopqrstuvwxyz', '23456789', '!@#$%*?-'];
-  const bytes = Buffer.from(randomToken(32), 'base64url');
-  const chars = groups.map((g, i) => g[bytes[i]! % g.length]!);
-  const all = groups.join('');
-  for (let i = 4; chars.length < 16; i++) chars.push(all[bytes[i]! % all.length]!);
-  // Shuffle so the groups are not always in the same places.
-  for (let i = chars.length - 1; i > 0; i--) {
-    const j = bytes[16 + (i % 16)]! % (i + 1);
-    [chars[i], chars[j]] = [chars[j]!, chars[i]!];
-  }
-  return chars.join('');
-}
+export { temporaryPasswordValue };

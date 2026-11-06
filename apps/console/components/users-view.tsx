@@ -1,23 +1,31 @@
 'use client';
 import type { WorkspaceUserRow } from '@crew/contracts';
 import { Alert, Avatar, Badge, Button, Card, Dialog, EmptyState, Field, Input, Select, Table, TBody, TD, TH, THead, TR, Textarea, buttonClass } from '@crew/ui';
-import { Globe, KeyRound, LogOut, Mail, PauseCircle, PlayCircle, Search, Smartphone, ToggleRight, Users } from 'lucide-react';
+import { Globe, KeyRound, Lock, LogOut, Mail, PauseCircle, PlayCircle, RotateCcw, Search, Smartphone, ToggleRight, Unlock, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { memberAction } from '@/app/(console)/actions';
 
-type Action = 'suspend' | 'reactivate' | 'sign_out' | 'reset_mfa' | 'resend_invite';
+type Action = 'suspend' | 'reactivate' | 'sign_out' | 'reset_mfa' | 'resend_invite' | 'reset_password' | 'force_password_change' | 'lock_account' | 'unlock_account';
 const ACTIONS: Record<Action, { label: string; icon: React.ReactNode; danger?: boolean; explain: string }> = {
   sign_out: { label: 'Sign out everywhere', icon: <LogOut className="size-3.5" />, explain: 'Ends every open session of this person in this workspace, on the web and on phones. They can sign in again.' },
   suspend: { label: 'Suspend', icon: <PauseCircle className="size-3.5" />, danger: true, explain: 'Signs them out and stops them signing in to this workspace until reactivated. Their records are kept.' },
   reactivate: { label: 'Reactivate', icon: <PlayCircle className="size-3.5" />, explain: 'They can sign in to this workspace again.' },
   reset_mfa: { label: 'Reset two-step verification', icon: <KeyRound className="size-3.5" />, danger: true, explain: 'Removes their authenticator and signs them out of every workspace they are in. If a workspace requires two-step verification they set it up again at the next sign-in.' },
   resend_invite: { label: 'Resend invitation', icon: <Mail className="size-3.5" />, explain: 'Emails a new invitation link. Earlier links stop working.' },
+  reset_password: { label: 'Reset password', icon: <RotateCcw className="size-3.5" />, danger: true, explain: 'Passwords are stored only as one-way hashes, so nobody can read the current one. This sets a new temporary password, shown to you once, signs them out everywhere, and makes them choose their own at the next sign-in. It applies to every workspace this account is in.' },
+  force_password_change: { label: 'Force password change', icon: <KeyRound className="size-3.5" />, explain: 'Signs them out everywhere. At the next sign-in they must choose a new password before going on.' },
+  lock_account: { label: 'Lock account', icon: <Lock className="size-3.5" />, danger: true, explain: 'Blocks sign-in to every workspace this account is in and ends all sessions, until unlocked.' },
+  unlock_account: { label: 'Unlock account', icon: <Unlock className="size-3.5" />, explain: 'Lets them sign in again. Also clears a lock caused by too many wrong passwords.' },
 };
 
-const actionsFor = (u: WorkspaceUserRow): Action[] =>
-  u.status === 'invited' ? ['resend_invite'] : u.status === 'suspended' ? ['reactivate'] : ['sign_out', 'suspend', ...(u.mfaEnabled ? (['reset_mfa'] as const) : [])];
+const actionsFor = (u: WorkspaceUserRow): Action[] => {
+  if (u.status === 'invited') return ['resend_invite'];
+  const lock: Action[] = u.accountStatus === 'locked' || u.lockedUntil ? ['unlock_account'] : u.accountStatus === 'active' ? ['lock_account'] : [];
+  if (u.status === 'suspended') return ['reactivate', ...lock];
+  return ['sign_out', 'suspend', 'reset_password', ...(u.mustChangePassword ? [] : (['force_password_change'] as const)), ...lock, ...(u.mfaEnabled ? (['reset_mfa'] as const) : [])];
+};
 
 /** People in one workspace or all of them, with what SAMPLEDGE can do to each. Account details only. */
 export function UsersView({ data, query, basePath, showWorkspace, pageSize }: {
@@ -26,7 +34,7 @@ export function UsersView({ data, query, basePath, showWorkspace, pageSize }: {
 }) {
   const router = useRouter();
   const [dialog, setDialog] = useState<{ user: WorkspaceUserRow; action: Action } | null>(null);
-  const [flash, setFlash] = useState<{ tone: 'success' | 'danger'; text: string; url?: string } | null>(null);
+  const [flash, setFlash] = useState<{ tone: 'success' | 'danger'; text: string; url?: string; password?: string } | null>(null);
   const href = (extra: Partial<Record<'q' | 'status' | 'page', string>>) => {
     const p = new URLSearchParams(Object.entries({ q: query.q, status: query.status, page: String(query.page), ...extra }).filter(([k, v]) => v && !(k === 'page' && v === '1')));
     return `${basePath}${p.size ? `?${p}` : ''}`;
@@ -39,6 +47,12 @@ export function UsersView({ data, query, basePath, showWorkspace, pageSize }: {
         <Alert tone={flash.tone}>
           {flash.text}
           {flash.url && <code className="mt-1 block break-all font-mono text-[11px]">{flash.url}</code>}
+          {flash.password && (
+            <span className="mt-2 block">
+              Temporary password, shown only now. Hand it over by phone or in person; they choose their own at the next sign-in:
+              <code className="mt-1 block font-mono text-sm" data-testid="console-temporary-password">{flash.password}</code>
+            </span>
+          )}
         </Alert>
       )}
       <div className="flex flex-wrap gap-2 text-[13px]" aria-label="Summary">
@@ -69,7 +83,7 @@ export function UsersView({ data, query, basePath, showWorkspace, pageSize }: {
                   <TD>
                     <div className="flex items-center gap-2.5">
                       <Avatar name={u.fullName} size={30} />
-                      <div className="min-w-0"><div className="font-medium text-fg">{u.fullName}</div><div className="truncate text-xs text-fg-subtle">{u.email}</div></div>
+                      <div className="min-w-0"><div className="font-medium text-fg">{u.fullName}</div><div className="truncate text-xs text-fg-subtle"><span className="sr-only">Login ID </span>{u.email}</div></div>
                     </div>
                   </TD>
                   {showWorkspace && <TD><Link href={`/tenants/${u.tenantId}/users`} className="hover:underline">{u.tenantName}</Link><div className="font-mono text-[11px] text-fg-subtle">{u.tenantSlug}</div></TD>}
@@ -77,6 +91,8 @@ export function UsersView({ data, query, basePath, showWorkspace, pageSize }: {
                   <TD>
                     <Badge tone={u.status === 'active' ? 'success' : u.status === 'invited' ? 'accent' : 'danger'} dot>{u.status}</Badge>
                     {u.accountStatus !== 'active' && <div className="mt-1 text-[11px] text-danger">Account {u.accountStatus}</div>}
+                    {u.lockedUntil && <div className="mt-1 text-[11px] text-danger">Sign-in locked after wrong passwords</div>}
+                    {u.mustChangePassword && <div className="mt-1 text-[11px] text-warning">Must choose a new password</div>}
                   </TD>
                   <TD className="whitespace-nowrap text-xs text-fg-muted">
                     <div>{u.lastLoginAt ? `Last ${new Date(u.lastLoginAt).toLocaleString()}` : 'Never signed in'}</div>
@@ -114,7 +130,7 @@ export function UsersView({ data, query, basePath, showWorkspace, pageSize }: {
   );
 }
 
-function ActionDialog({ user, action, onClose, onDone }: { user: WorkspaceUserRow; action: Action; onClose: () => void; onDone: (f: { tone: 'success' | 'danger'; text: string; url?: string }) => void }) {
+function ActionDialog({ user, action, onClose, onDone }: { user: WorkspaceUserRow; action: Action; onClose: () => void; onDone: (f: { tone: 'success' | 'danger'; text: string; url?: string; password?: string }) => void }) {
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -126,7 +142,7 @@ function ActionDialog({ user, action, onClose, onDone }: { user: WorkspaceUserRo
         const r = await memberAction(user.tenantId, user.membershipId, action, reason.trim());
         if (!r.ok) { setError(r.message); return; }
         const ended = r.data?.sessionsEnded;
-        onDone({ tone: 'success', text: `${a.label} done for ${user.fullName}.${ended !== undefined ? ` ${ended} session(s) ended.` : ''}${r.data?.inviteUrl ? ' Local environment: the invitation link is below.' : ''}`, url: r.data?.inviteUrl });
+        onDone({ tone: 'success', text: `${a.label} done for ${user.fullName}.${ended !== undefined ? ` ${ended} session(s) ended.` : ''}${r.data?.inviteUrl ? ' Local environment: the invitation link is below.' : ''}`, url: r.data?.inviteUrl, password: r.data?.temporaryPassword });
       })}>{a.label}</Button></>}>
       <div className="grid gap-3">
         {error && <Alert tone="danger">{error}</Alert>}

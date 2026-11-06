@@ -1,6 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { act, api, apiForm } from '@/lib/api';
+import type { LoginDetails } from '@/lib/types';
 
 const refresh = (id?: string) => {
   revalidatePath('/employees');
@@ -144,6 +145,18 @@ export type LoginResult = { inviteUrl?: string; login?: { email: string; tempora
 
 export async function createLoginAction(id: string, body: { mode: 'invite' | 'password'; initialPassword?: string }) {
   const r = await act(() => api<LoginResult>(`/employees/${id}/login`, { method: 'POST', body }), body.mode === 'invite' ? 'Invitation sent' : 'Login created');
+  refresh(id);
+  return r;
+}
+
+export type LoginControlAction = 'reset_password' | 'force_password_change' | 'lock' | 'unlock' | 'sign_out';
+const LOGIN_DONE: Record<LoginControlAction, string> = {
+  reset_password: 'Password reset', force_password_change: 'They will choose a new password at their next sign-in', lock: 'Login locked', unlock: 'Login unlocked', sign_out: 'Signed out everywhere in this workspace',
+};
+
+/** Workspace-admin control of an employee's CREW login. A reset password comes back once and is never stored readable. */
+export async function loginControlAction(id: string, action: LoginControlAction, initialPassword?: string) {
+  const r = await act(() => api<LoginDetails>(`/employees/${id}/login/actions`, { method: 'POST', body: { action, ...(initialPassword ? { initialPassword } : {}) } }), LOGIN_DONE[action]);
   refresh(id);
   return r;
 }

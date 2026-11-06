@@ -244,3 +244,4 @@ export interface AttendanceRegistration {
   enrolments: { id: string; deviceUserId: string; deviceId: string | null; deviceName: string | null }[];
   registered: boolean;
 }
+export interface LoginDetails { membershipId: string; membershipStatus: string; loginId: string; accountStatus: string; mfaEnabled: boolean; lastLoginAt: string | null; mustChangePassword: boolean; hasPassword: boolean; lockedUntil: string | null; otherWorkspaces: number; openSessions: number; temporaryPassword?: string }

@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import {
   attendanceRegistrationInput,
   confirmInput,
+  employeeLoginActionInput,
   employeeLoginInput,
   PHOTO_MAX_BYTES,
   createEmployeeInput,
@@ -199,6 +200,21 @@ export class EmployeesController {
   @Doc({ summary: 'Give an employee without a login a CREW login: an emailed invitation, or a login with a temporary password they change at first sign-in', body: employeeLoginInput })
   createLogin(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(employeeLoginInput)) body: z.infer<typeof employeeLoginInput>) {
     return this.employees.createLogin(id, body);
+  }
+
+  @Get(':id/login')
+  @RequirePermission('users:manage')
+  @Doc({ summary: "The employee's login ID and sign-in state (passwords are stored only as one-way hashes and are never shown)" })
+  loginDetails(@Param('id', UuidPipe) id: string) {
+    return this.employees.loginDetails(id);
+  }
+
+  @Post(':id/login/actions')
+  @HttpCode(200)
+  @RequirePermission('users:manage')
+  @Doc({ summary: 'Reset the password (new temporary one shown once), force a change at next sign-in, lock or unlock sign-in to this workspace, or sign out (audited)', body: employeeLoginActionInput })
+  loginAction(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(employeeLoginActionInput)) body: z.infer<typeof employeeLoginActionInput>) {
+    return this.employees.loginAction(id, body);
   }
 
   @Get(':id/attendance-registration')

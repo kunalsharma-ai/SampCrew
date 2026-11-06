@@ -89,3 +89,18 @@ function open(key: Buffer, iv: string, tag: string, ct: string): string {
   decipher.setAuthTag(Buffer.from(tag, 'base64url'));
   return Buffer.concat([decipher.update(Buffer.from(ct, 'base64url')), decipher.final()]).toString('utf8');
 }
+
+/** A temporary password that passes the password rules: 16 characters from four character groups. */
+export function temporaryPasswordValue(): string {
+  const groups = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnopqrstuvwxyz', '23456789', '!@#$%*?-'];
+  const bytes = randomBytes(32);
+  const chars = groups.map((g, i) => g[bytes[i]! % g.length]!);
+  const all = groups.join('');
+  for (let i = 4; chars.length < 16; i++) chars.push(all[bytes[i]! % all.length]!);
+  // Shuffle so the groups are not always in the same places.
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = bytes[16 + (i % 16)]! % (i + 1);
+    [chars[i], chars[j]] = [chars[j]!, chars[i]!];
+  }
+  return chars.join('');
+}
