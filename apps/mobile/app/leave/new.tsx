@@ -86,6 +86,7 @@ export default function NewLeave() {
         {balances && (
           <Choice
             label="Leave type"
+            help="field.leaveType"
             value={typeId}
             options={balances.map((b) => ({ value: b.leaveTypeId, label: b.tracked ? `${b.name} (${b.available})` : b.name }))}
             onChange={setTypeId}
@@ -96,6 +97,7 @@ export default function NewLeave() {
         {start === end && type?.allowHalfDay && (
           <Choice
             label="Part of the day"
+            help="field.leaveDuration"
             value={half}
             options={[{ value: 'full', label: 'Full day' }, { value: 'first_half', label: 'First half' }, { value: 'second_half', label: 'Second half' }]}
             onChange={setHalf}

@@ -20,7 +20,7 @@ export default function Helpdesk() {
       <Button title="New question" onPress={() => router.push('/helpdesk/new')} testID="new-case" />
       <Card testID="my-cases">
         <Row style={{ justifyContent: 'space-between' }}>
-          <CardTitle>My cases</CardTitle>
+          <CardTitle help="helpdesk.cases">My cases</CardTitle>
           <Choice value={filter} onChange={setFilter} options={[{ value: 'active', label: 'Open' }, { value: 'all', label: 'All' }]} />
         </Row>
         {data?.length === 0 && <Empty>{filter === 'active' ? 'No open cases.' : 'No cases yet.'}</Empty>}

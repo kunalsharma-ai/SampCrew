@@ -6,3 +6,5 @@ export * from './components/table';
 export * from './components/dialog';
 export * from './components/brand';
 export * from './components/data-table';
+export * from './components/help';
+export { helpKey, matchRoute, resolveHelp, routeScore, allHelpEntries } from './help-resolve';

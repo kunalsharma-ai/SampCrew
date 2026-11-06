@@ -1,6 +1,6 @@
 'use client';
 import { DEFAULT_APPEARANCE, THEME_PRESETS, buildTheme, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
-import { Avatar, Badge, CrewLogo, Dialog, Kbd, cn } from '@crew/ui';
+import { AutoHelp, Avatar, Badge, CrewLogo, Dialog, HelpProvider, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronDown, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
   Settings, Shield, SlidersHorizontal, Sun, Users, X, Clock, CalendarClock, UsersRound, Timer, Fingerprint, Briefcase, UserSearch, MessageSquare,
@@ -15,9 +15,10 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useTransition } from 'react';
 import { applyAppearance } from '@/lib/appearance-client';
 import { photoUrl } from '@/lib/photo';
+import { WEB_HELP } from '@/lib/help-content';
 import { ICONS } from '@/lib/icons';
 import { accountLinks, type NavGroup, type NavItem, type QuickAction } from '@/lib/nav';
 import type { Me, Notification } from '@/lib/types';
@@ -196,6 +197,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   const sidebar = (rail: boolean) => <Sidebar me={me} nav={nav} counts={counts} rail={rail} pathname={pathname} allHrefs={allHrefs} onCollapse={() => void update({ sidebar: rail ? 'expanded' : 'collapsed' })} />;
 
   return (
+    <HelpProvider content={WEB_HELP} pathname={pathname}>
     <ExperienceContext.Provider value={experience}>
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:shadow-pop">Skip to content</a>
       <div className="flex min-h-dvh">
@@ -246,6 +248,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} nav={nav} me={me} quick={quick} workflows={workflows} />
       </div>
     </ExperienceContext.Provider>
+    </HelpProvider>
   );
 }
 
@@ -255,8 +258,11 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
 
 const GROUPS_KEY = 'crew-nav-collapsed';
 
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
 function Sidebar({ me, nav, counts, rail, pathname, allHrefs, onCollapse }: { me: Me; nav: NavGroup[]; counts: Record<string, number>; rail: boolean; pathname: string; allHrefs: string[]; onCollapse: () => void }) {
   const { favourites, toggleFavourite } = useExperience();
+  const uid = useId();
   const [filter, setFilter] = useState('');
   const [closed, setClosed] = useState<string[]>([]);
   useEffect(() => {
@@ -337,10 +343,13 @@ function Sidebar({ me, nav, counts, rail, pathname, allHrefs, onCollapse }: { me
           return (
             <div key={g.label}>
               {!rail ? (
-                <button type="button" onClick={() => toggleGroup(g.label)} aria-expanded={open} className="flex w-full items-center gap-1 rounded px-2 pb-1 text-left text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg">
-                  <span className="flex-1">{g.label}</span>
-                  <ChevronDown className={cn('size-3 transition-transform duration-150', !open && '-rotate-90')} aria-hidden />
-                </button>
+                <div className="flex items-center gap-0.5 pb-1">
+                  <button type="button" onClick={() => toggleGroup(g.label)} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-1 rounded px-2 text-left text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg">
+                    <span id={`${uid}-${slug(g.label)}`} className="flex-1">{g.label}</span>
+                    <ChevronDown className={cn('size-3 transition-transform duration-150', !open && '-rotate-90')} aria-hidden />
+                  </button>
+                  <AutoHelp kind="module" text={g.label} describedBy={`${uid}-${slug(g.label)}`} className="-mr-1 scale-90" />
+                </div>
               ) : <div className="mx-3 mb-1 border-t border-border" aria-hidden />}
               {open && <ul className="flex flex-col gap-0.5">{g.items.map((i) => link(i, i.href, true))}</ul>}
             </div>

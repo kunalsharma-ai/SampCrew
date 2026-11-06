@@ -1,9 +1,10 @@
 'use client';
-import { Avatar, Badge, CrewLogo, cn } from '@crew/ui';
+import { Avatar, Badge, CrewLogo, HelpProvider, cn } from '@crew/ui';
 import { Activity, Building2, Fingerprint, Gauge, LogOut, Menu, Moon, Palette, Plug, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
+import { CONSOLE_HELP } from '@/lib/help-content';
 import type { Admin } from '@/lib/types';
 import { logoutAction } from '../auth-actions';
 
@@ -69,6 +70,7 @@ export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; childr
   );
 
   return (
+    <HelpProvider content={CONSOLE_HELP} pathname={pathname}>
     <div className="flex min-h-dvh">
       <aside className="crew-glass crew-sidebar sticky top-0 hidden h-dvh w-60 shrink-0 border-r border-border lg:block">{sidebar}</aside>
       {open && (
@@ -88,5 +90,6 @@ export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; childr
         <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>
     </div>
+    </HelpProvider>
   );
 }

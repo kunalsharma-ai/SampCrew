@@ -66,7 +66,7 @@ export default function Attendance() {
         </TileGrid>
       )}
       <Card testID="today-card">
-        <CardTitle right={today?.day && <Badge>{dayStatus[today.day.status] ?? today.day.status}</Badge>}>{today ? fmt.date(today.date) : 'Today'}</CardTitle>
+        <CardTitle right={today?.day && <Badge>{dayStatus[today.day.status] ?? today.day.status}</Badge>} help="attendance.today">{today ? fmt.date(today.date) : 'Today'}</CardTitle>
         {today && (
           <Text muted size={14}>
             {today.shift ? `${today.shift.name}, ${today.shift.start} to ${today.shift.end}` : 'No shift planned'}
@@ -82,7 +82,7 @@ export default function Attendance() {
 
       {queue.pending.length > 0 && (
         <Card testID="queue-card">
-          <CardTitle>{`Waiting to send (${queue.pending.length})`}</CardTitle>
+          <CardTitle help="attendance.queue">{`Waiting to send (${queue.pending.length})`}</CardTitle>
           <Text muted size={14}>Saved on this phone with the time you punched. SampCrew sends them as soon as you are online.</Text>
           {queue.pending.map((p) => (
             <ListItem key={p.sequence} title={`Punch ${p.direction ?? ''}`.trim()} subtitle={fmt.dateTime(p.capturedAt)} right={<Badge tone="warn">Not sent yet</Badge>} />
@@ -94,7 +94,7 @@ export default function Attendance() {
 
       {queue.refused.length > 0 && (
         <Card testID="refused-card">
-          <CardTitle>Not recorded</CardTitle>
+          <CardTitle help="attendance.missing">Not recorded</CardTitle>
           <Text muted size={14}>SampCrew refused these punches. Ask for an attendance correction if you need them on your record.</Text>
           {queue.refused.map((r) => (
             <ListItem
@@ -108,7 +108,7 @@ export default function Attendance() {
       )}
 
       <Card testID="punches-card">
-        <CardTitle>Today&apos;s punches</CardTitle>
+        <CardTitle help="attendance.punches">Today&apos;s punches</CardTitle>
         {today && today.punches.length === 0 && <Empty>No punches yet today.</Empty>}
         {today?.punches.map((p) => (
           <ListItem

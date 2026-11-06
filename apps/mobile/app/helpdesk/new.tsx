@@ -56,7 +56,7 @@ export default function NewCase() {
       {loadError && <Notice tone="danger">{loadError}</Notice>}
       {error && <Notice tone="danger" testID="case-error">{error}</Notice>}
       <Card>
-        {categories && <Choice label="What is it about?" value={categoryId} options={categories.map((c) => ({ value: c.id, label: c.name }))} onChange={setCategoryId} />}
+        {categories && <Choice label="What is it about?" help="field.category" value={categoryId} options={categories.map((c) => ({ value: c.id, label: c.name }))} onChange={setCategoryId} />}
         {errors.categoryId && <Text size={13} style={{ color: '#b91c1c' }}>{errors.categoryId}</Text>}
         {category && (
           <Text muted size={13}>
@@ -71,7 +71,7 @@ export default function NewCase() {
           <ListItem key={a.id} title={a.title} subtitle={a.excerpt} />
         ))}
         <Field label="Your question" value={description} onChangeText={setDescription} multiline maxLength={5000} error={errors.description} />
-        <Choice label="How urgent is it?" value={priority} onChange={setPriority} options={[{ value: 'low', label: 'Low' }, { value: 'normal', label: 'Normal' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' }]} />
+        <Choice label="How urgent is it?" help="field.priority" value={priority} onChange={setPriority} options={[{ value: 'low', label: 'Low' }, { value: 'normal', label: 'Normal' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' }]} />
         <Button title="Send to HR" onPress={submit} busy={busy} testID="send-case" />
       </Card>
     </Screen>
