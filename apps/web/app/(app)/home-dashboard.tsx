@@ -118,7 +118,7 @@ export function HomeDashboard(props: {
             {props.tenantName}
             {d && <span className="inline-flex items-center gap-1 rounded-full bg-success-subtle px-2 py-0.5 text-[0.625rem] normal-case tracking-normal text-success"><span className="size-1.5 rounded-full bg-success" aria-hidden /> Live, updated {new Date(d.generatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>}
           </div>
-          <h1 className="crew-hero-title text-2xl font-semibold tracking-tight text-fg">{props.welcome ? `Welcome to CREW, ${props.firstName}` : <><span aria-hidden>👋 </span>{greeting}, <span className="crew-gradient-text">{props.firstName}!</span></>}</h1>
+          <h1 className="crew-hero-title text-2xl font-semibold tracking-tight text-fg">{props.welcome ? `Welcome to SampCrew, ${props.firstName}` : <><span aria-hidden>👋 </span>{greeting}, <span className="crew-gradient-text">{props.firstName}!</span></>}</h1>
           <p className="mt-1 max-w-2xl text-sm text-fg-muted">
             {props.welcome ? 'Your workspace is ready. Start by shaping your organization, then invite your team.' : d?.attention.length ? `${d.attention.length} item${d.attention.length === 1 ? '' : 's'} need${d.attention.length === 1 ? 's' : ''} you today.` : 'You are all caught up. Here is where your workspace stands today.'}
           </p>
@@ -312,7 +312,7 @@ function Spotlight({ d, actions, openAssistant }: { d: Dashboard; actions: Quick
         {openAssistant && (
           <div className="crew-ai-card relative flex flex-col justify-between gap-4 overflow-hidden rounded-xl p-5 shadow-pop">
             <div>
-              <h2 className="flex items-center gap-2 text-lg font-bold"><Bot className="size-5" aria-hidden /> CREW IQ</h2>
+              <h2 className="flex items-center gap-2 text-lg font-bold"><Bot className="size-5" aria-hidden /> SampCrew IQ</h2>
               <p className="mt-1 text-[0.8125rem] text-[#e4defc]">Your AI HR assistant. Ask about leave, attendance, hiring or your team, and get answers from your live records.</p>
             </div>
             <button type="button" onClick={openAssistant} className="inline-flex w-fit items-center gap-2 rounded-full bg-white px-4 py-2 text-[0.8125rem] font-semibold text-[#2a1a66] shadow-card hover:bg-[#f1ecff]">

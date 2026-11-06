@@ -16,7 +16,7 @@ export default async function DevicesPage() {
     <>
       <PageHeader
         title="Attendance devices"
-        description="Biometric, face and card machines that send punches to CREW. Devices send punches only: fingerprints and faces stay on the device and are never stored here."
+        description="Biometric, face and card machines that send punches to SampCrew. Devices send punches only: fingerprints and faces stay on the device and are never stored here."
       />
       <DevicesView devices={devices} locations={locations ?? []} integrations={integrations} />
     </>

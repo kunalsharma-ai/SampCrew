@@ -150,7 +150,7 @@ describe('SAMPLEDGE feedback', () => {
       expect((await api(app, owner).post('/employees').send({ firstName: 'W', legalEntityId: t.legalEntityId, dateOfJoining: today(), loginMode: 'password' })).status).toBe(422);
     });
 
-    it('will not set a password on an email that already has a CREW account, and the hire is rolled back', async () => {
+    it('will not set a password on an email that already has a SampCrew account, and the hire is rolled back', async () => {
       const res = await api(app, owner).post('/employees').send({ firstName: 'Dup', workEmail: plain.email, legalEntityId: t.legalEntityId, dateOfJoining: today(), loginMode: 'password' });
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe('account_exists');

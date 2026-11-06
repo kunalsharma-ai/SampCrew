@@ -32,7 +32,7 @@ export default async function AccessPage({ params, searchParams }: { params: Pro
       <PageHeader
         eyebrow={<><Link href="/tenants" className="hover:underline">Workspaces</Link> / <Link href={`/tenants/${id}`} className="hover:underline">{t.name}</Link></>}
         title="Features & permissions"
-        description="Switch CREW modules, the Web Portal and the mobile app, and permissions active or inactive for this workspace, and choose which modules each person may use. The API enforces every switch, and the web and mobile apps hide what is off."
+        description="Switch SampCrew modules, the Web Portal and the mobile app, and permissions active or inactive for this workspace, and choose which modules each person may use. The API enforces every switch, and the web and mobile apps hide what is off."
       />
       <WorkspaceTabs tenantId={id} current="access" caps={[...(PLATFORM_ROLE_CAPABILITIES[me.role] ?? [])]} />
       <AccessView tenantId={id} tab={tab} access={access} members={members} page={page} pageSize={PAGE_SIZE} q={q} canManage={canManage} />

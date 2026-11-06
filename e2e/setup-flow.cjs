@@ -8,7 +8,7 @@
  * 1. A new company signs up and is taken to company setup before anything else.
  * 2. The admin fills in the company profile, adds a location, and keeps the ready-made departments and designations.
  * 3. Finishing setup opens the guided hire. The admin adds a designation and a shift without leaving it, uploads a
- *    photo, and creates the CREW login with a temporary password, which is shown once.
+ *    photo, and creates the SampCrew login with a temporary password, which is shown once.
  * 4. The new employee signs in with the temporary password and has to choose their own before going on.
  * 5. The admin sees the login ID and status on the profile, resets the password (shown once), and locks and unlocks it.
  * Fails on any browser error.
@@ -154,7 +154,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 
     // 5. Login control on the profile.
     await admin.goto(profileUrl);
-    const card = admin.locator('[aria-label="CREW login"]');
+    const card = admin.locator('[aria-label="SampCrew login"]');
     await card.getByTestId('login-id').filter({ hasText: email }).waitFor();
     await card.getByText('Active', { exact: true }).waitFor();
     await card.getByRole('button', { name: 'Reset password' }).click();

@@ -180,7 +180,7 @@ export class OffersService implements OnModuleInit {
 
   /**
    * Marks an approved offer as sent and emails the candidate its main terms. The formal offer letter is the
-   * recruiter's to attach or send; CREW records the terms the candidate was given.
+   * recruiter's to attach or send; SampCrew records the terms the candidate was given.
    */
   async send(id: string) {
     const actor = requestContext.tenantActor();
@@ -241,7 +241,7 @@ export class OffersService implements OnModuleInit {
 
   /**
    * Creates the employee record from an accepted offer, through the same hiring path HR uses (employee code,
-   * job record, onboarding checklist, leave accruals, optional CREW invitation), and in the same transaction
+   * job record, onboarding checklist, leave accruals, optional SampCrew invitation), and in the same transaction
    * marks the application hired and counts the hire against the requisition.
    */
   async hire(applicationId: string, input: z.infer<typeof hireInput>) {

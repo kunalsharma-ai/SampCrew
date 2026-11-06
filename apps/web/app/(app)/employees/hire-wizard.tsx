@@ -181,7 +181,7 @@ export function HireWizard(p: Props) {
       if (!MONEY.test(str(v.annualCtc).replace(/,/g, ''))) e.annualCtc = 'Enter the annual CTC, such as 600000';
     }
     if (s === 4 && docBytes > MAX_UPLOAD) e.documents = 'Attach up to 10 MB here; add larger files from the profile after the hire';
-    if (s === 5 && loginMode !== 'none' && !str(v.workEmail)) e.workEmail = 'A work email is needed for a CREW login: it is their sign-in name';
+    if (s === 5 && loginMode !== 'none' && !str(v.workEmail)) e.workEmail = 'A work email is needed for a SampCrew login: it is their sign-in name';
     if (s === 5 && loginMode === 'password' && ownPassword && !strongEnough(password)) e.initialPassword = 'Use 12+ characters with three of: lowercase, uppercase, numbers, symbols';
     if (s === 5 && enrolments.some((x) => x.deviceUserId.trim() && !/^[A-Za-z0-9_-]{1,32}$/.test(x.deviceUserId.trim()))) e.attendanceEnrolments = 'Enrolment numbers use up to 32 letters, digits, - or _';
     return e;
@@ -328,7 +328,7 @@ export function HireWizard(p: Props) {
       onClose={() => close(false)}
       size="lg"
       title={name ? `Add employee: ${name}` : 'Add employee'}
-      description={savedAt ? `Draft saved ${new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. You can close this and finish later.` : 'Creates the employee record, their first job record and onboarding checklist. A CREW login is optional.'}
+      description={savedAt ? `Draft saved ${new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. You can close this and finish later.` : 'Creates the employee record, their first job record and onboarding checklist. A SampCrew login is optional.'}
       footer={
         <div className="flex w-full items-center gap-2">
           {str(v.firstName).trim() && <Button variant="ghost" onClick={() => close(true)} disabled={pending}>Save and finish later</Button>}
@@ -386,9 +386,9 @@ export function HireWizard(p: Props) {
             )}
             <Field label="First name" required error={errors.firstName}>{(f) => <Input {...f} name="firstName" value={str(v.firstName)} onChange={(e) => set('firstName', e.target.value)} maxLength={80} autoFocus />}</Field>
             <Field label="Last name" error={errors.lastName}>{(f) => <Input {...f} name="lastName" value={str(v.lastName)} onChange={(e) => set('lastName', e.target.value)} maxLength={80} />}</Field>
-            <Field label="Preferred name" hint="Shown across CREW instead of the first name">{(f) => <Input {...f} name="preferredName" value={str(v.preferredName)} onChange={(e) => set('preferredName', e.target.value)} maxLength={80} />}</Field>
+            <Field label="Preferred name" hint="Shown across SampCrew instead of the first name">{(f) => <Input {...f} name="preferredName" value={str(v.preferredName)} onChange={(e) => set('preferredName', e.target.value)} maxLength={80} />}</Field>
             <Field label="Date of birth" error={errors.dateOfBirth}>{(f) => <Input {...f} name="dateOfBirth" type="date" value={str(v.dateOfBirth)} onChange={(e) => set('dateOfBirth', e.target.value)} max={today} />}</Field>
-            <Field label="Work email" error={errors.workEmail} hint="Needed to invite them to CREW">{(f) => <Input {...f} name="workEmail" type="email" value={str(v.workEmail)} onChange={(e) => set('workEmail', e.target.value)} />}</Field>
+            <Field label="Work email" error={errors.workEmail} hint="Needed to invite them to SampCrew">{(f) => <Input {...f} name="workEmail" type="email" value={str(v.workEmail)} onChange={(e) => set('workEmail', e.target.value)} />}</Field>
             <Field label="Personal email" error={errors.personalEmail}>{(f) => <Input {...f} name="personalEmail" type="email" value={str(v.personalEmail)} onChange={(e) => set('personalEmail', e.target.value)} />}</Field>
             <Field label="Phone" error={errors.phone}>{(f) => <Input {...f} name="phone" type="tel" value={str(v.phone)} onChange={(e) => set('phone', e.target.value)} />}</Field>
             <Field label="Gender" error={errors.gender}>
@@ -574,7 +574,7 @@ export function HireWizard(p: Props) {
             <Summary label="Photo" value={photo ? photo.name : 'None'} onEdit={() => setStep(0)} />
             {p.canAttendance && <Summary label="Attendance" value={`${shift ? shift.name : 'Location default shift'} · ${enrolments.filter((x) => x.deviceUserId.trim()).map((x) => x.deviceUserId.trim()).join(', ') || 'no machine enrolment'}`} onEdit={() => setStep(5)} />}
             <Summary label="Onboarding" value={template} onEdit={() => setStep(5)} />
-            <Summary label="CREW login" value={loginMode === 'invite' ? `Invitation to ${str(v.workEmail)}` : loginMode === 'password' ? `Created now for ${str(v.workEmail)} with a temporary password` : 'No login for now'} onEdit={() => setStep(5)} />
+            <Summary label="SampCrew login" value={loginMode === 'invite' ? `Invitation to ${str(v.workEmail)}` : loginMode === 'password' ? `Created now for ${str(v.workEmail)} with a temporary password` : 'No login for now'} onEdit={() => setStep(5)} />
             {checkedKey === dupKey && matches === null && <p className="flex items-center gap-1.5 text-success sm:col-span-2"><Check className="size-3.5" /> No existing record matches this person.</p>}
             {checkedKey === dupKey && matches && (
               <p className="flex items-center gap-1.5 text-warning sm:col-span-2">

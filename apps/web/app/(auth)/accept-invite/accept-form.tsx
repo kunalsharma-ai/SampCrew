@@ -29,8 +29,8 @@ export function AcceptForm({ token, invite }: { token: string; invite: { email: 
       {error && <Alert tone="danger">{error}</Alert>}
       <Field label="Full name" error={fe.fullName} required>{(p) => <Input {...p} name="fullName" defaultValue={invite.fullName} required />}</Field>
       <Field
-        label={invite.existingAccount ? 'Your existing CREW password' : 'Choose a password'}
-        hint={invite.existingAccount ? 'You already have a CREW account; confirm it to join this workspace.' : 'At least 12 characters, mixing letters, numbers and symbols'}
+        label={invite.existingAccount ? 'Your existing SampCrew password' : 'Choose a password'}
+        hint={invite.existingAccount ? 'You already have a SampCrew account; confirm it to join this workspace.' : 'At least 12 characters, mixing letters, numbers and symbols'}
         error={fe.password}
         required
       >

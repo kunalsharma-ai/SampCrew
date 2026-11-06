@@ -13,7 +13,7 @@ export default async function ApiKeysPage() {
       <PageHeader
         eyebrow="Integrations"
         title="API keys"
-        description="Let another system read CREW data through the REST API. A key acts as the person who created it, limited to the read-only scopes you choose, and stops working if that person leaves or loses access."
+        description="Let another system read SampCrew data through the REST API. A key acts as the person who created it, limited to the read-only scopes you choose, and stops working if that person leaves or loses access."
       />
       <ApiKeysView keys={keys} scopes={cat.scopes} />
     </>

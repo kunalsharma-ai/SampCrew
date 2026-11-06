@@ -4,8 +4,8 @@ The design system lives in `packages/ui` (`@crew/ui`) and is consumed by the web
 
 ## 11.1 Identity
 
-- **Personality:** calm, confident, precise. CREW handles payroll and people's livelihoods, so the interface should feel trustworthy rather than playful, with warmth coming from typography, spacing and small moments of delight.
-- **Signature colour:** *CREW Indigo* (`#4F46E5` family) for primary actions, paired with a warm *Ember* accent (`#F97316` family) used sparingly for highlights and AI moments.
+- **Personality:** calm, confident, precise. SampCrew handles payroll and people's livelihoods, so the interface should feel trustworthy rather than playful, with warmth coming from typography, spacing and small moments of delight.
+- **Signature colour:** *SampCrew Indigo* (`#4F46E5` family) for primary actions, paired with a warm *Ember* accent (`#F97316` family) used sparingly for highlights and AI moments.
 - **Typeface:** Inter (UI) with tabular numerals enabled for every number column; JetBrains Mono for IDs and codes.
 
 ## 11.2 Tokens

@@ -12,7 +12,7 @@
 
 ```mermaid
 flowchart LR
-  UI[Web / Mobile / Slack / WhatsApp / Voice] --> CMD[CREW AI Command<br/>orchestrator]
+  UI[Web / Mobile / Slack / WhatsApp / Voice] --> CMD[SampCrew AI Command<br/>orchestrator]
   CMD --> ROUTER[Intent router]
   ROUTER --> A1[Recruitment agent]
   ROUTER --> A2[HR agent]
@@ -24,7 +24,7 @@ flowchart LR
   A1 & A2 & A3 & A4 & A5 & A6 --> RAG[Organisational Memory<br/>pgvector retrieval with ACL filter]
   A1 & A2 & A3 & A4 & A5 & A6 --> GW[AI Gateway]
   GW --> P1[Anthropic] & P2[OpenAI / Azure] & P3[Google] & P4[Self-hosted]
-  TOOLS --> API[CREW API]
+  TOOLS --> API[SampCrew API]
   TOOLS -->|consequential| APR[Approvals engine]
   GW --> LOG[(ai_usage_events)]
   CMD --> ACT[(ai_actions log)]
@@ -39,7 +39,7 @@ flowchart LR
 
 1. Upload → virus scan → text extraction (PDF/DOCX; OCR fallback).
 2. Structured extraction with a JSON schema (contacts, experience, education, skills) via the gateway; deterministic parsers validate dates, emails and phones.
-3. Skills normalised to the CREW skills taxonomy (ESCO/O*NET aligned).
+3. Skills normalised to the SampCrew skills taxonomy (ESCO/O*NET aligned).
 4. Embedding stored for semantic search.
 5. Job matching produces a score **with per-requirement evidence** ("5 yrs Java: found in roles at X and Y") and missing skills. Protected attributes (age, gender, religion, photos, names used as proxies) are excluded from matching inputs; bias monitoring compares pass-through rates across stages.
 

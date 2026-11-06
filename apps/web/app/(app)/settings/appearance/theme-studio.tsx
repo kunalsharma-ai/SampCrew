@@ -139,7 +139,7 @@ export function ThemeStudio() {
         </Card>
 
         <Card>
-          <CardHeader title="Your colours" description="Override the theme's colours. CREW adjusts them where needed so text stays readable." />
+          <CardHeader title="Your colours" description="Override the theme's colours. SampCrew adjusts them where needed so text stays readable." />
           <CardBody className="flex flex-col gap-4 pt-1">
             <ColourField label="Primary" value={a.primary} fallback={seed.primary} onChange={(v) => void set({ primary: v })} />
             <ColourField label="Secondary" value={a.secondary} fallback={seed.secondary} onChange={(v) => void set({ secondary: v })} />

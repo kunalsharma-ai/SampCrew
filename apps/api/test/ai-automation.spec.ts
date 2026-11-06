@@ -123,7 +123,7 @@ describe('AI copilots, Automation Studio and insights', () => {
       gateway.setProvider(null);
       const s = ok(await as('asha').get('/ai/status'));
       expect(s.configured).toBe(false);
-      expect(s.features.assistant).toEqual({ available: false, reason: 'AI is not set up for this CREW installation.' });
+      expect(s.features.assistant).toEqual({ available: false, reason: 'AI is not set up for this SampCrew installation.' });
       fails(await as('asha').post('/ai/assistant').send({ question: 'How is provident fund calculated?' }), 409, 'ai_not_configured');
       expect(stub.requests).toHaveLength(0);
     });

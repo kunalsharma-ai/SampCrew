@@ -329,7 +329,7 @@ export class DevicesService {
   }
 
   // ---------------------------------------------------------------------------------------------------------
-  // CREW device API (any machine, bridge or middleware; identified by its machine token)
+  // SampCrew device API (any machine, bridge or middleware; identified by its machine token)
   // ---------------------------------------------------------------------------------------------------------
 
   private async byToken(authorization: string | undefined, ip: string | null): Promise<DeviceRow> {

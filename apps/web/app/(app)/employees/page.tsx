@@ -67,7 +67,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const canManageOrg = can(me, 'org:manage');
   if (setupPending && canManageOrg && sp.create === 'employee') redirect('/setup');
   const scope = me.permissions['employees:read'];
-  const note = scope === 'tenant' ? 'Everyone in the organization.' : scope === 'entity' ? 'Employees in your legal entity.' : scope === 'department' ? 'Employees in your department.' : scope === 'team' ? 'You and the people who report to you, including staff without a CREW login.' : 'Your own record.';
+  const note = scope === 'tenant' ? 'Everyone in the organization.' : scope === 'entity' ? 'Employees in your legal entity.' : scope === 'department' ? 'Employees in your department.' : scope === 'team' ? 'You and the people who report to you, including staff without a SampCrew login.' : 'Your own record.';
   const activeView = sp.view && views.some((v) => v.id === sp.view) ? sp.view : null;
   return (
     <>

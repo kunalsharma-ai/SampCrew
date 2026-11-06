@@ -20,7 +20,7 @@ export default function Unlock() {
   return (
     <Screen>
       <View style={{ height: 60 }} />
-      <Title>CREW is locked</Title>
+      <Title>SampCrew is locked</Title>
       <Text muted>Unlock with your fingerprint or face to continue.</Text>
       {error && <Notice tone="danger">{error}</Notice>}
       <Button title="Unlock" onPress={go} busy={busy} />

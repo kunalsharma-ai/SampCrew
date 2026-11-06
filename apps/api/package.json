@@ -2,7 +2,7 @@
   "name": "@crew/api",
   "version": "0.1.0",
   "private": true,
-  "description": "CREW API: NestJS modular monolith",
+  "description": "SampCrew API: NestJS modular monolith",
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",

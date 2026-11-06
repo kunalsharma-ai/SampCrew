@@ -1,5 +1,5 @@
 /*
- * CREW design tokens. Consumed by apps via:
+ * SampCrew design tokens. Consumed by apps via:
  *   @import "tailwindcss";
  *   @import "@crew/ui/styles.css";
  *   @source "../../../packages/ui/src";
@@ -482,3 +482,12 @@
     radial-gradient(14rem 12rem at 0% 100%, color-mix(in srgb, var(--glow-1) 50%, transparent), transparent 70%),
     linear-gradient(135deg, #2a1a66, #160f3a);
 }
+
+/* SampCrew logo: show the artwork drawn for the current background (see CrewLogo in components/brand.tsx). */
+.crew-logo-on-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .crew-logo-on-light { display: none; }
+  :root:not([data-theme="light"]) .crew-logo-on-dark { display: block; }
+}
+:root[data-theme="dark"] .crew-logo-on-light { display: none; }
+:root[data-theme="dark"] .crew-logo-on-dark { display: block; }

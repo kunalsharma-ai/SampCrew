@@ -50,7 +50,7 @@ export class StorageService {
   /**
    * Stores a file. `upload: true` marks a file that came from a person (documents, receipts, CVs): when virus scanning
    * is on (Super Admin Console > Integrations, else CLAMAV_URL) it is scanned first, and a flagged file is refused and never written. If the scanner cannot be reached the
-   * upload is refused too (fail closed), so no unscanned file is stored while scanning is switched on. Files CREW
+   * upload is refused too (fail closed), so no unscanned file is stored while scanning is switched on. Files SampCrew
    * generates itself (exports, signed proposals) are not scanned.
    */
   async put(key: string, data: Buffer, opts: { upload?: boolean } = {}) {

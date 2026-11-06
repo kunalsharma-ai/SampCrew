@@ -93,8 +93,8 @@ export class PushService implements OnApplicationBootstrap, OnModuleDestroy {
             },
             body: JSON.stringify(sendable.map((m) => ({
               to: m.push_token,
-              title: 'CREW',
-              body: 'You have something new in CREW.',
+              title: 'SampCrew',
+              body: 'You have something new in SampCrew.',
               sound: 'default',
               data: { notificationId: m.notification_id, link: m.link },
             }))),

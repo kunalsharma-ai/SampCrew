@@ -13,9 +13,9 @@ flowchart LR
     EXT[Partner / customer integrations<br/>REST API + webhooks]
   end
 
-  subgraph CREW Cloud
+  subgraph SampCrew Cloud
     GW[Edge: CDN + WAF + rate limits]
-    API[CREW API<br/>NestJS modular monolith]
+    API[SampCrew API<br/>NestJS modular monolith]
     WRK[Workers<br/>same codebase, queue consumers]
     RT[Realtime gateway<br/>WebSockets]
     PG[(PostgreSQL 16<br/>RLS per tenant)]

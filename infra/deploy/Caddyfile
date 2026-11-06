@@ -1,4 +1,4 @@
-# Reverse proxy in front of CREW. Caddy gets and renews TLS certificates on its own for real domain names
+# Reverse proxy in front of SampCrew. Caddy gets and renews TLS certificates on its own for real domain names
 # (ports 80 and 443 must be reachable from the internet). Addresses come from .env:
 #   CREW_WEB_ADDRESS      e.g. crew.example.com        Web Portal (and the SAML / OpenID Connect return addresses)
 #   CREW_API_ADDRESS      e.g. api.crew.example.com    API: mobile app, SCIM, webhooks, attendance devices

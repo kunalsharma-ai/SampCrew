@@ -82,7 +82,7 @@ export class ScimController {
       changePassword: { supported: false },
       sort: { supported: false },
       etag: { supported: false },
-      authenticationSchemes: [{ type: 'oauthbearertoken', name: 'Bearer token', description: 'A SCIM token created by a workspace owner in CREW' }],
+      authenticationSchemes: [{ type: 'oauthbearertoken', name: 'Bearer token', description: 'A SCIM token created by a workspace owner in SampCrew' }],
     };
   }
 
@@ -145,7 +145,7 @@ export class ScimController {
   }
 
   @Post('Groups')
-  @Doc({ summary: 'SCIM: create a group. It grants no role until a workspace owner maps it to one in CREW.', body: scimGroupInput })
+  @Doc({ summary: 'SCIM: create a group. It grants no role until a workspace owner maps it to one in SampCrew.', body: scimGroupInput })
   async createGroup(@Body(new ZodPipe(scimGroupInput)) body: ScimGroupInput, @Req() req: Request) {
     const r = await this.groups.create(body, this.base(req));
     req.res!.status(201).type('application/scim+json');

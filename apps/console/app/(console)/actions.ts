@@ -57,7 +57,7 @@ export async function setMemberModulesAction(id: string, membershipId: string, b
 }
 
 export async function saveIntegrationAction(key: string, values: Record<string, unknown>) {
-  const r = await act(() => api(`/platform/integrations/${key}`, { method: 'PUT', body: values }), 'Saved. CREW uses these settings from now on.');
+  const r = await act(() => api(`/platform/integrations/${key}`, { method: 'PUT', body: values }), 'Saved. SampCrew uses these settings from now on.');
   revalidatePath('/integrations');
   revalidatePath('/health');
   return r;
@@ -98,7 +98,7 @@ export async function setDeviceIntegrationsAction(id: string, changes: { key: st
 export async function pauseDeviceAction(id: string, deviceId: string, reason: string | null) {
   const r = await act(
     () => api(`/platform/tenants/${id}/devices/${deviceId}/${reason === null ? 'resume' : 'pause'}`, { method: 'POST', body: reason === null ? {} : { reason } }),
-    reason === null ? 'Machine resumed. CREW accepts its punches again.' : 'Machine paused. CREW refuses what it sends until you resume it.',
+    reason === null ? 'Machine resumed. SampCrew accepts its punches again.' : 'Machine paused. SampCrew refuses what it sends until you resume it.',
   );
   revalidatePath(`/tenants/${id}/devices`);
   revalidatePath('/devices');

@@ -144,7 +144,7 @@ function AppsTab({ tenantId, access, canManage, setFlash }: { tenantId: string; 
   return (
     <div className="grid gap-5">
       <div className="grid gap-4 md:grid-cols-2">
-        {([['web', 'Web Portal', 'CREW in the browser: HR, managers and employees.', <Globe key="w" className="size-5" />], ['mobile', 'Mobile app', 'CREW on Android and iPhone: attendance, leave, Ask HR, approvals.', <Smartphone key="m" className="size-5" />]] as const).map(([key, title, text, icon]) => (
+        {([['web', 'Web Portal', 'SampCrew in the browser: HR, managers and employees.', <Globe key="w" className="size-5" />], ['mobile', 'Mobile app', 'SampCrew on Android and iPhone: attendance, leave, Ask HR, approvals.', <Smartphone key="m" className="size-5" />]] as const).map(([key, title, text, icon]) => (
           <Card key={key} className="p-5" data-testid={`app-${key}`}>
             <div className="flex items-start gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-subtle text-accent" aria-hidden>{icon}</span>

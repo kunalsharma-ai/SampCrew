@@ -82,7 +82,7 @@ export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; childr
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="crew-glass crew-topbar flex h-14 items-center gap-3 border-b border-border px-4 lg:hidden">
           <button onClick={() => setOpen(true)} aria-label="Open menu"><Menu className="size-5" /></button>
-          <CrewLogo subtitle="Console" />
+          <CrewLogo subtitle="Console" height={30} />
           <Badge tone="ember" className="ml-auto">Internal</Badge>
         </header>
         <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>

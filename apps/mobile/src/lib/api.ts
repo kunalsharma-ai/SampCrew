@@ -1,5 +1,5 @@
 /**
- * HTTP client for the CREW API. Sends the bearer access token, marks requests as coming from the mobile app,
+ * HTTP client for the SampCrew API. Sends the bearer access token, marks requests as coming from the mobile app,
  * and refreshes the token once (shared by concurrent requests) when it has expired. If the refresh fails the
  * session is over: tokens are cleared and the app returns to sign-in.
  */
@@ -63,7 +63,7 @@ export class Api {
         signal: ctrl.signal,
       });
     } catch {
-      throw new ApiError(0, 'offline', 'No connection to CREW. Check your network and try again.');
+      throw new ApiError(0, 'offline', 'No connection to SampCrew. Check your network and try again.');
     } finally {
       clearTimeout(timer);
     }

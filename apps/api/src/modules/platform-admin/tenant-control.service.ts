@@ -183,8 +183,8 @@ export class TenantControlService {
           );
           const ws = (await one<{ name: string }>(tx, 'select name from tenants where id = $1', [tenantId]))!;
           await this.notifications.queueEmail(
-            tx, tenantId, m.email, `You're invited to ${ws.name} on CREW`,
-            `You have been invited to join ${ws.name} on CREW.\n\nAccept the invitation and set your password: ${this.config.WEB_PUBLIC_URL}/accept-invite?token=${inviteToken}\n\nThe link expires in ${INVITE_TTL_DAYS} days.`,
+            tx, tenantId, m.email, `You're invited to ${ws.name} on SampCrew`,
+            `You have been invited to join ${ws.name} on SampCrew.\n\nAccept the invitation and set your password: ${this.config.WEB_PUBLIC_URL}/accept-invite?token=${inviteToken}\n\nThe link expires in ${INVITE_TTL_DAYS} days.`,
             'invitation',
           );
           break;

@@ -1,6 +1,6 @@
 # 4. Module Dependency Architecture
 
-All 34 product modules from the brief map onto a smaller set of **domain modules** in the API. Shared services (people, organisation, permissions, workflows, notifications, documents) exist once and every product module uses them, which is how CREW avoids duplicate records.
+All 34 product modules from the brief map onto a smaller set of **domain modules** in the API. Shared services (people, organisation, permissions, workflows, notifications, documents) exist once and every product module uses them, which is how SampCrew avoids duplicate records.
 
 ## 4.1 Layers
 

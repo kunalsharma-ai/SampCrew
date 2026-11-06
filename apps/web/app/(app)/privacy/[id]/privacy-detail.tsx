@@ -34,7 +34,7 @@ export function PrivacyDetail({ r }: { r: PrivacyRequest }) {
 
       {r.kind === 'access' && (
         <Card>
-          <CardHeader title="Copy of their data" description="Everything CREW holds about this person in this workspace, as one JSON file. Passwords, keys, tokens and encrypted numbers are left out; bank, tax and ID numbers show only whether one is on file." />
+          <CardHeader title="Copy of their data" description="Everything SampCrew holds about this person in this workspace, as one JSON file. Passwords, keys, tokens and encrypted numbers are left out; bank, tax and ID numbers show only whether one is on file." />
           <CardBody className="grid gap-4">
             {r.hasExport && (
               <div className="grid gap-2">

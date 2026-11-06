@@ -111,9 +111,9 @@ export const periodLockInput = z.object({
 export const DEVICE_VENDORS = ['zkteco', 'essl', 'hikvision', 'matrix', 'realtime', 'suprema', 'generic'] as const;
 export type DeviceVendor = (typeof DEVICE_VENDORS)[number];
 /**
- * How a machine sends punches to CREW:
+ * How a machine sends punches to SampCrew:
  *   push_http   the ZKTeco / eSSL "PUSH" (ADMS) protocol at /iclock/cdata, identified by serial number;
- *   device_api  CREW's own HTTPS device API (POST /api/v1/device-api/punches) with a per-machine token, for any
+ *   device_api  SampCrew's own HTTPS device API (POST /api/v1/device-api/punches) with a per-machine token, for any
  *               machine, vendor bridge or middleware that can make an HTTPS call.
  */
 export const DEVICE_PROTOCOLS = ['push_http', 'device_api'] as const;

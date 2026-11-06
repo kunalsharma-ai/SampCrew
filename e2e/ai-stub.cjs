@@ -2,7 +2,7 @@
  * TEST STUB, not an AI model. A local stand-in for the Claude Messages API, used only by e2e/ai-flow.cjs in CI
  * and locally, so the AI features can be driven end to end without a real API key or network access. It returns
  * fixed answers chosen by the kind of prompt and records every request it receives (GET /__requests) so the
- * flow can check what CREW sent, for example that personal identifiers were removed.
+ * flow can check what SampCrew sent, for example that personal identifiers were removed.
  *
  *   AI_STUB_PORT=4010 node e2e/ai-stub.cjs
  *   # then start the API with AI_PROVIDER=anthropic ANTHROPIC_API_KEY=<any test value> ANTHROPIC_BASE_URL=http://localhost:4010
@@ -22,9 +22,9 @@ const WORKFLOW = {
 
 function answer(body) {
   const system = typeof body.system === 'string' ? body.system : JSON.stringify(body.system ?? '');
-  if (system.includes('CREW workflow definition')) return JSON.stringify(WORKFLOW);
+  if (system.includes('SampCrew workflow definition')) return JSON.stringify(WORKFLOW);
   if (system.includes('You draft replies')) {
-    return 'Thanks for asking. Next year\'s holiday calendar is published in CREW once it is approved, usually in December, and you will see it on your Leave page. [check this year\'s publication date]';
+    return 'Thanks for asking. Next year\'s holiday calendar is published in SampCrew once it is approved, usually in December, and you will see it on your Leave page. [check this year\'s publication date]';
   }
   if (system.includes('HR assistant')) {
     return 'Your payslip lists your earnings first, then deductions such as provident fund and professional tax, then reimbursements [1]. Net pay is earnings minus deductions plus reimbursements [1].';

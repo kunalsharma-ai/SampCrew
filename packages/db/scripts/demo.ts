@@ -210,7 +210,7 @@ async function seedCoreHr(
     designation.set(title, (await q(`insert into designations (tenant_id, name, level) values ($1, $2, $3) returning id`, [tid, title, levels[title] ?? 5])).id);
   }
 
-  // Employee records for every demo member, plus shop-floor staff without CREW logins.
+  // Employee records for every demo member, plus shop-floor staff without SampCrew logins.
   const joining = ['2019-04-01', '2020-06-15', '2021-01-11', '2021-09-01', '2018-11-05', '2020-02-03', '2022-07-18', '2023-03-06', '2021-05-24', '2022-10-10', '2022-01-17', `${year}-08-03`, '2023-11-13', '2024-02-19'];
   const employeeByEmail = new Map<string, string>();
   let n = 1;
@@ -529,10 +529,10 @@ async function seedRecruitment(client: PoolClient, c: { tid: string; indiaId: st
 }
 
 /**
- * Phase 5 demo data: statutory settings for the India entity (the CREW starting values, saved as demo data), a
+ * Phase 5 demo data: statutory settings for the India entity (the SampCrew starting values, saved as demo data), a
  * salary for everyone employed by it, and two expense claims (one approved and waiting for payroll, one waiting
  * for the supervisor). No payroll run is created, so the first run can be tried end to end. The UK entity has no
- * payroll: CREW's statutory rules in this release cover India only.
+ * payroll: SampCrew's statutory rules in this release cover India only.
  */
 async function seedPayroll(client: PoolClient, c: { tid: string; indiaId: string; membershipByEmail: Map<string, string> }) {
   const { tid } = c;
@@ -772,7 +772,7 @@ async function seedHelpdesk(client: PoolClient, c: { tid: string; manufacturingI
 
   const article = (cat: string, title: string, body: string) =>
     category(cat).then((k) => client.query(`insert into helpdesk_articles (tenant_id, category_id, title, body, updated_by_membership_id) values ($1, $2, $3, $4, $5)`, [tid, k, title, `${body}\n\n(Demo data)`, hr]));
-  await article('Pay and payslips', 'How to read your payslip', 'Your payslip lists earnings, then deductions such as provident fund and professional tax, then reimbursements. Net pay is earnings minus deductions plus reimbursements. Open a payslip in CREW to see how each line was worked out.');
+  await article('Pay and payslips', 'How to read your payslip', 'Your payslip lists earnings, then deductions such as provident fund and professional tax, then reimbursements. Net pay is earnings minus deductions plus reimbursements. Open a payslip in SampCrew to see how each line was worked out.');
   await article('Leave and attendance', 'Forgot to punch out?', 'Open Attendance, choose the day and ask for a correction with the time you left. Your manager approves it and the day is worked out again.');
   await article('Documents and letters', 'Address proof letter for a bank', 'HR can issue a letter confirming your employment and address. Raise a case in Documents and letters with the bank name; letters are usually ready in two working days.');
 
@@ -800,7 +800,7 @@ async function seedHelpdesk(client: PoolClient, c: { tid: string; manufacturingI
   // Announcements.
   await client.query(
     `insert into announcements (tenant_id, title, body, pinned, status, published_at, published_by_membership_id, created_by_membership_id) values ($1, $2, $3, true, 'published', now() - interval '3 days', $4, $4)`,
-    [tid, 'Welcome to the CREW app', 'You can now punch attendance, apply for leave, see payslips and ask HR from your phone. Ask your supervisor if you need help signing in. (Demo data)', hr],
+    [tid, 'Welcome to the SampCrew app', 'You can now punch attendance, apply for leave, see payslips and ask HR from your phone. Ask your supervisor if you need help signing in. (Demo data)', hr],
   );
   await client.query(
     `insert into announcements (tenant_id, title, body, department_id, requires_ack, status, published_at, published_by_membership_id, created_by_membership_id) values ($1, $2, $3, $4, true, 'published', now() - interval '1 day', $5, $5)`,

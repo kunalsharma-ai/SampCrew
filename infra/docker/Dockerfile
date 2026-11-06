@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# CREW production images, one Dockerfile with a target per service. Build from the repository root:
+# SampCrew production images, one Dockerfile with a target per service. Build from the repository root:
 #
 #   docker build -f infra/docker/Dockerfile --target api     -t crew-api .
 #   docker build -f infra/docker/Dockerfile --target web     -t crew-web .

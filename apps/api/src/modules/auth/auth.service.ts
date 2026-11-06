@@ -424,7 +424,7 @@ export class AuthService {
     let newHash: string | null = null;
     if (inv.has_password) {
       const user = await this.db.platform((tx) => one<{ password_hash: string }>(tx, 'select password_hash from users where id = $1', [inv.user_id]));
-      if (!(await verifyPassword(user!.password_hash, password))) throw Errors.unauthorized('You already have a CREW account. Enter its password to join this workspace.');
+      if (!(await verifyPassword(user!.password_hash, password))) throw Errors.unauthorized('You already have a SampCrew account. Enter its password to join this workspace.');
     } else {
       newHash = await hashPassword(password);
     }

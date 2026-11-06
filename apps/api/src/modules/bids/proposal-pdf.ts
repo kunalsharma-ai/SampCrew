@@ -101,7 +101,7 @@ const ACCENT = rgb(0.31, 0.27, 0.9);
 
 /**
  * Renders the client-facing proposal. It shows roles, people, rates and totals, never costs or margins, which
- * stay internal to CREW.
+ * stay internal to SampCrew.
  */
 export async function renderProposal(d: ProposalData): Promise<Buffer> {
   const pdf = await PDFDocument.create();
@@ -109,7 +109,7 @@ export async function renderProposal(d: ProposalData): Promise<Buffer> {
   pdf.setTitle(`${d.code} ${d.title}`);
   pdf.setAuthor(d.workspace);
   pdf.setSubject('Staffing proposal');
-  pdf.setProducer('CREW by SAMPLEDGE');
+  pdf.setProducer('SampCrew by SAMPLEDGE');
   pdf.setCreationDate(new Date(`${d.issuedOn}T00:00:00Z`));
   const fonts = new Fonts(pdf);
   const regular: Weight = 400;
@@ -299,7 +299,7 @@ export async function appendAcceptance(original: Buffer, a: AcceptanceRecord): P
     ['Proposal SHA-256', a.pdfSha256],
   ];
   const intro = `${a.signerName} accepted this proposal online on behalf of ${a.clientName}, confirming they are authorised to do so, by typing their name as their signature.`;
-  await fonts.prepare(['Acceptance record', intro, a.signature, 'Signature', 'Recorded by CREW for', a.workspace, ...rows.flat()], [400, 700]);
+  await fonts.prepare(['Acceptance record', intro, a.signature, 'Signature', 'Recorded by SampCrew for', a.workspace, ...rows.flat()], [400, 700]);
   const page = pdf.addPage(A4);
   let y = A4[1] - M;
   const width = A4[0] - 2 * M;
@@ -323,6 +323,6 @@ export async function appendAcceptance(original: Buffer, a: AcceptanceRecord): P
   fonts.draw(page, a.signature, M, y, 22, 400, ACCENT);
   y -= 8;
   page.drawLine({ start: { x: M, y }, end: { x: M + 260, y }, thickness: 0.75, color: RULE });
-  fonts.draw(page, `Recorded by CREW for ${a.workspace}`, M, 28, 8, 400, MUTED);
+  fonts.draw(page, `Recorded by SampCrew for ${a.workspace}`, M, 28, 8, 400, MUTED);
   return Buffer.from(await pdf.save());
 }

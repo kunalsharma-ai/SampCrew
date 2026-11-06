@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * CREW workspace experience: theme presets, per-member appearance preferences, favourites, recent pages and the
+ * SampCrew workspace experience: theme presets, per-member appearance preferences, favourites, recent pages and the
  * Home dashboard layout. The theme builder is shared by the Web Portal and the mobile app so both render the same
  * palette from the same saved preference, and every generated palette is checked for WCAG contrast in tests.
  */
@@ -145,7 +145,7 @@ export function normaliseAppearance(raw: unknown): Appearance {
 // ---------------------------------------------------------------------------------------------------------------
 
 /** In-app path only, so a saved shortcut can never point off-site. */
-export const appPath = z.string().min(1).max(200).regex(/^\/(?!\/)[A-Za-z0-9\-._~/?=&%]*$/, 'Must be a page inside CREW');
+export const appPath = z.string().min(1).max(200).regex(/^\/(?!\/)[A-Za-z0-9\-._~/?=&%]*$/, 'Must be a page inside SampCrew');
 
 export const favouritesInput = z.object({ hrefs: z.array(appPath).max(12) }).strict();
 export const recentVisitInput = z.object({ href: appPath, label: z.string().trim().min(1).max(120) }).strict();

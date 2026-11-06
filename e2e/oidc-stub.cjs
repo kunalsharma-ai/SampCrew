@@ -3,7 +3,7 @@
  * automated tests only. It is not a real identity provider and must never be used for real sign-ins: it signs in
  * whoever was set with POST /__user, without asking for a password.
  *
- * It does what CREW relies on a real provider for: discovery, an RS256-signed ID token with iss, aud, nonce, email,
+ * It does what SampCrew relies on a real provider for: discovery, an RS256-signed ID token with iss, aud, nonce, email,
  * email_verified and amr, published keys, the authorization code flow with PKCE (S256) and client authentication
  * (client_secret_basic or client_secret_post).
  *

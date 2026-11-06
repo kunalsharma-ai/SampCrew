@@ -12,7 +12,7 @@ import { scanWithClamd } from '../src/platform/storage/malware-scan';
 import { adminPool, api, createApp, createTenant, login, PASSWORD, type TestTenant } from './helpers';
 
 /**
- * A value as CREW wrote it before key ids existed (v1.<iv>.<tag>.<ciphertext>), to check old data stays readable.
+ * A value as SampCrew wrote it before key ids existed (v1.<iv>.<tag>.<ciphertext>), to check old data stays readable.
  */
 function legacyV1(plaintext: string, keyBase64: string) {
   const iv = randomBytes(12);

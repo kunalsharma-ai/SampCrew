@@ -155,7 +155,7 @@ export class Outbox {
           out.error = { message: e.message ?? 'Could not send punches', offline: e.status === 0 || e.status === undefined };
         } else {
           // The server refused the whole request (for example a validation error): show it, keep nothing hidden.
-          const refused = batch.map((p) => ({ sequence: p.sequence, capturedAt: p.capturedAt, direction: p.direction, reason: 'refused', message: e.message ?? 'Refused by CREW' }));
+          const refused = batch.map((p) => ({ sequence: p.sequence, capturedAt: p.capturedAt, direction: p.direction, reason: 'refused', message: e.message ?? 'Refused by SampCrew' }));
           await this.settle(batch.map((p) => p.sequence), refused);
           out.refused.push(...refused);
           continue;
@@ -170,13 +170,13 @@ export class Outbox {
         done.push(r.sequence);
         if (r.status === 'accepted') out.accepted++;
         else if (r.status === 'duplicate') out.duplicates++;
-        else refused.push({ sequence: p.sequence, capturedAt: p.capturedAt, direction: p.direction, reason: r.reason ?? 'rejected', message: r.message ?? 'Refused by CREW' });
+        else refused.push({ sequence: p.sequence, capturedAt: p.capturedAt, direction: p.direction, reason: r.reason ?? 'rejected', message: r.message ?? 'Refused by SampCrew' });
       }
       await this.settle(done, refused);
       out.refused.push(...refused);
       // A server that answered for none of the batch would loop forever; stop and try again later.
       if (!done.length) {
-        out.error = { message: 'CREW did not confirm these punches. They stay on the phone and will be sent again.', offline: false };
+        out.error = { message: 'SampCrew did not confirm these punches. They stay on the phone and will be sent again.', offline: false };
         break;
       }
     }

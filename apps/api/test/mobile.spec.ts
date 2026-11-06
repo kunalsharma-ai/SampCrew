@@ -112,7 +112,7 @@ describe('mobile', () => {
       const r = await app.get(PushService).sendBatch();
       expect(r).toEqual({ sent: 1, failed: 0, skipped: 0 });
       const msg = pushed.at(-1)![0]!;
-      expect(msg).toMatchObject({ to: 'ExponentPushToken[aaaaaaaaaaaaaaaa]', title: 'CREW', body: 'You have something new in CREW.' });
+      expect(msg).toMatchObject({ to: 'ExponentPushToken[aaaaaaaaaaaaaaaa]', title: 'SampCrew', body: 'You have something new in SampCrew.' });
       expect(msg.data.link).toBe(`/helpdesk/${c.id}`);
       expect(JSON.stringify(msg)).not.toContain('Payslip');
       unregistered.add('ExponentPushToken[aaaaaaaaaaaaaaaa]');
