@@ -91,7 +91,7 @@ export default function CaseScreen() {
 
       {c.moves.length > 0 && (
         <Card>
-          <CardTitle>Next step</CardTitle>
+          <CardTitle help="helpdesk.next">Next step</CardTitle>
           {c.moves.includes('resolved') && <Text muted size={13}>To resolve, write the answer in the reply box first; it is sent with the resolution.</Text>}
           {c.moves.map((s) => (
             <Button
@@ -112,7 +112,7 @@ export default function CaseScreen() {
 
       {c.can.rate && (
         <Card testID="rate-card">
-          <CardTitle>How did HR handle this?</CardTitle>
+          <CardTitle help="helpdesk.rating">How did HR handle this?</CardTitle>
           <Choice value={String(rating)} onChange={(v) => setRating(Number(v))} options={[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: `${n}` }))} />
           <Field label="Comment (optional)" value={comment} onChangeText={setComment} maxLength={1000} />
           <Button title="Send rating" disabled={!rating} busy={busy === 'rate'} onPress={() => act('rate', () => api.post(`/helpdesk/cases/${c.id}/rating`, { rating, comment: comment.trim() }), 'Thanks for the feedback.')} />

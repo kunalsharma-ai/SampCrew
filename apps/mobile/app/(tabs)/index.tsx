@@ -86,7 +86,7 @@ export default function Home() {
 
       {data?.today && (
         <Card testID="home-today">
-          <CardTitle right={data.today.day && <Badge>{dayStatus[data.today.day.status] ?? data.today.day.status}</Badge>}>Today</CardTitle>
+          <CardTitle right={data.today.day && <Badge>{dayStatus[data.today.day.status] ?? data.today.day.status}</Badge>} help="home.today">Today</CardTitle>
           <Text muted size={14}>
             {data.today.shift ? `${data.today.shift.name}, ${data.today.shift.start} to ${data.today.shift.end}` : 'No shift planned'}
             {data.today.holidayName ? ` · ${data.today.holidayName}` : ''}
@@ -97,7 +97,7 @@ export default function Home() {
 
       {data && data.inbox.length > 0 && (
         <Card>
-          <CardTitle>Waiting for your approval</CardTitle>
+          <CardTitle help="home.approvals">Waiting for your approval</CardTitle>
           <Text muted size={14}>{`${data.inbox.length} request${data.inbox.length === 1 ? '' : 's'}`}</Text>
           <Button title="Review requests" kind="secondary" onPress={() => router.push('/approvals')} testID="home-approvals" />
         </Card>
@@ -105,7 +105,7 @@ export default function Home() {
 
       {hasNews && (
         <Card testID="home-announcements">
-          <CardTitle right={toAck > 0 ? <Badge tone="warn">{`${toAck} to acknowledge`}</Badge> : undefined}>Announcements</CardTitle>
+          <CardTitle right={toAck > 0 ? <Badge tone="warn">{`${toAck} to acknowledge`}</Badge> : undefined} help="home.announcements">Announcements</CardTitle>
           {data?.news.length === 0 && <Empty>No announcements.</Empty>}
           {data?.news.slice(0, 5).map((a) => (
             <ListItem
@@ -120,7 +120,7 @@ export default function Home() {
       )}
 
       <Card>
-        <CardTitle right={data && data.notes.unread > 0 ? <Badge tone="info">{`${data.notes.unread} unread`}</Badge> : undefined}>Notifications</CardTitle>
+        <CardTitle right={data && data.notes.unread > 0 ? <Badge tone="info">{`${data.notes.unread} unread`}</Badge> : undefined} help="home.notifications">Notifications</CardTitle>
         {data?.notes.items.length === 0 && <Empty>Nothing new.</Empty>}
         {data?.notes.items.map((n) => (
           <ListItem key={n.id} title={n.title} subtitle={fmt.dateTime(n.createdAt)} right={!n.readAt ? <Badge tone="info">New</Badge> : undefined} />

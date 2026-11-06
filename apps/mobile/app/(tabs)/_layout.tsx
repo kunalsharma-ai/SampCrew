@@ -2,7 +2,7 @@ import { Tabs } from 'expo-router';
 import { type ColorValue, Text, View } from 'react-native';
 import { useSession } from '../../src/lib/session';
 import { NIGHT } from '../../src/lib/theme';
-import { gradient, glow, useTheme } from '../../src/ui';
+import { gradient, glow, screenHelp, useTheme } from '../../src/ui';
 
 export default function TabsLayout() {
   const t = useTheme();
@@ -33,11 +33,11 @@ export default function TabsLayout() {
         tabBarLabelStyle: { fontWeight: '600', fontSize: 11 },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: glyph('⌂') }} />
-      <Tabs.Screen name="attendance" options={{ title: 'Attendance', href: attendance ? undefined : null, tabBarIcon: glyph('◷'), tabBarBadge: queue.pending.length || undefined }} />
-      <Tabs.Screen name="leave" options={{ title: 'Leave', href: leave ? undefined : null, tabBarIcon: glyph('☼') }} />
-      <Tabs.Screen name="helpdesk" options={{ title: 'Ask HR', href: helpdesk ? undefined : null, tabBarIcon: glyph('?') }} />
-      <Tabs.Screen name="me" options={{ title: 'Me', tabBarIcon: glyph('☺') }} />
+      <Tabs.Screen name="index" options={{ title: 'Home', ...screenHelp('home'), tabBarIcon: glyph('⌂') }} />
+      <Tabs.Screen name="attendance" options={{ title: 'Attendance', ...screenHelp('attendance'), href: attendance ? undefined : null, tabBarIcon: glyph('◷'), tabBarBadge: queue.pending.length || undefined }} />
+      <Tabs.Screen name="leave" options={{ title: 'Leave', ...screenHelp('leave'), href: leave ? undefined : null, tabBarIcon: glyph('☼') }} />
+      <Tabs.Screen name="helpdesk" options={{ title: 'Ask HR', ...screenHelp('helpdesk'), href: helpdesk ? undefined : null, tabBarIcon: glyph('?') }} />
+      <Tabs.Screen name="me" options={{ title: 'Me', ...screenHelp('me'), tabBarIcon: glyph('☺') }} />
     </Tabs>
   );
 }
