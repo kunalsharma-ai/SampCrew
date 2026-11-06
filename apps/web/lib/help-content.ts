@@ -574,6 +574,18 @@ export const WEB_HELP: HelpContent = {
       how: 'Pick a theme or tweak it; changes apply straight away and follow you to every device.',
       where: 'For everyone.',
     },
+    '/settings/signature': {
+      title: 'Email signature',
+      what: 'Your Outlook email signature: pick one of 20 designs, make it yours and keep it up to date in Outlook on your Windows computer.',
+      how: 'Choose a design, customise it, save, then download the setup file and open it on your computer.',
+      where: 'For everyone with an employee record. Works with Outlook 2013, 2016, 2019, 2021 and Microsoft 365 on Windows.',
+    },
+    '/settings/signature/company': {
+      title: 'Company email signature',
+      what: 'The company details, logo and colours every signature uses, the design people start from and how computers keep Outlook up to date.',
+      how: 'Fill in the details, upload a PNG or JPEG logo and save. The table shows who has the signature installed.',
+      where: 'For people who manage the organisation.',
+    },
     '/settings/security': {
       title: 'Security',
       what: 'Your two-step verification, password and where you are signed in.',
@@ -649,6 +661,14 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    // Email signature
+    'Choose a design': { what: 'The 20 signature designs, shown with your own details.', how: 'Click one to use it. If your company locked the design, only that one is shown.' },
+    Customise: { what: 'Colours, font, size, what is shown and your own text and links.', how: 'Leave a field empty to use what HR has on record. The preview updates as you type.' },
+    'Outlook on your computers': { what: 'The Windows computers that keep your signature in Outlook, and whether each one is up to date.', how: 'Download the setup file and open it on the computer. Disconnect a computer you no longer use.' },
+    'Company details': { what: 'Company name, website, phone, address, colours, disclaimer, social links, starting design and sync policy.', how: 'Empty fields fall back to the workspace details. Save to update everyone at their next sync.' },
+    'Signature logo': { what: 'The logo shown in signatures.', how: 'Upload a PNG or JPEG up to 1 MB. Outlook cannot show SVG or WebP.' },
+    'Signatures across the company': { what: 'Each person\'s design, sync choice and connected computers, with the last time the signature was installed.', how: 'Disconnect a computer that should no longer receive a signature.' },
+
     // Home
     Announcements: { what: 'The latest company announcements for you.', how: 'Open one to read it in full.' },
     'Workforce at a glance': { what: 'Key numbers about the people your access covers.', how: 'Click a number to open the list behind it.' },
@@ -916,6 +936,12 @@ export const WEB_HELP: HelpContent = {
   },
 
   routes: {
+    '/settings/signature': {
+      sections: { Preview: { what: 'Your signature exactly as Outlook will show it, and how your computers keep it up to date.', how: 'Save to send it to your computers. "Sync my computers" makes them install it again.' } },
+    },
+    '/settings/signature/company': {
+      sections: { Preview: { what: 'The starting design with sample details and your company settings.', where: 'Each person sees their own details on their signature page.' } },
+    },
     '/automation/[id]': {
       sections: { Status: { what: 'Whether the workflow is active. Only active workflows run.' } },
       fields: { Approvers: { what: 'In a test run, whether approval steps are treated as approved or rejected. Nobody is asked for real.' } },

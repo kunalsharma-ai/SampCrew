@@ -134,6 +134,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
+      { href: '/settings/signature/company', label: 'Email signatures', icon: 'mail', permission: 'org:manage' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
     ],
   },
@@ -141,6 +142,7 @@ export const NAV: NavGroup[] = [
     label: 'You',
     items: [
       { href: '/settings/appearance', label: 'Appearance', icon: 'palette' },
+      { href: '/settings/signature', label: 'Email signature', icon: 'mail' },
       { href: '/settings/security', label: 'Security', icon: 'key' },
     ],
   },

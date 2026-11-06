@@ -6938,6 +6938,1086 @@
         }
       }
     },
+    "/api/v1/signatures/me": {
+      "get": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Your signature: chosen design, your changes, the merged details, sync mode and connected computers",
+        "operationId": "Signatures_mine",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Save your design, your changes and (if your company allows it) how your computers keep it up to date",
+        "operationId": "Signatures_save",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "template": {
+                    "type": "string",
+                    "enum": [
+                      "classic",
+                      "photo-left",
+                      "one-line",
+                      "logo-top",
+                      "banner",
+                      "minimal",
+                      "bold-name",
+                      "logo-divider",
+                      "card",
+                      "centered",
+                      "two-column",
+                      "executive",
+                      "accent-border",
+                      "photo-top",
+                      "labels",
+                      "footer-band",
+                      "social",
+                      "call-to-action",
+                      "disclaimer",
+                      "warm"
+                    ]
+                  },
+                  "options": {
+                    "type": "object",
+                    "properties": {
+                      "brandColor": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^#[0-9a-fA-F]{6}$"
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "accentColor": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^#[0-9a-fA-F]{6}$"
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "font": {
+                        "default": "Arial",
+                        "type": "string",
+                        "enum": [
+                          "Arial",
+                          "Calibri",
+                          "Segoe UI",
+                          "Tahoma",
+                          "Verdana",
+                          "Georgia",
+                          "Times New Roman",
+                          "Trebuchet MS"
+                        ]
+                      },
+                      "size": {
+                        "default": "medium",
+                        "type": "string",
+                        "enum": [
+                          "small",
+                          "medium",
+                          "large"
+                        ]
+                      },
+                      "show": {
+                        "default": {},
+                        "type": "object",
+                        "properties": {
+                          "photo": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "logo": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "department": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "phone": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "mobile": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "email": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "website": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "address": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "social": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "disclaimer": {
+                            "default": true,
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "jobTitle": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 120
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "phone": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "mobile": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "pronouns": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 30
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "signOff": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 60
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "tagline": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 160
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "ctaLabel": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "ctaUrl": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 300,
+                            "pattern": "^https?:\\/\\/\\S+$"
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "social": {
+                        "default": {},
+                        "type": "object",
+                        "properties": {
+                          "linkedin": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 300,
+                                "pattern": "^https?:\\/\\/\\S+$"
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          },
+                          "x": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 300,
+                                "pattern": "^https?:\\/\\/\\S+$"
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          },
+                          "facebook": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 300,
+                                "pattern": "^https?:\\/\\/\\S+$"
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          },
+                          "instagram": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 300,
+                                "pattern": "^https?:\\/\\/\\S+$"
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          },
+                          "youtube": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 300,
+                                "pattern": "^https?:\\/\\/\\S+$"
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "syncMode": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "auto",
+                          "manual"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "template",
+                  "options"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/me/sync-request": {
+      "post": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Ask your computers to install the signature again at their next check",
+        "operationId": "Signatures_requestSync",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/me/agents": {
+      "post": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Connect a Windows computer: returns its setup file once (it contains the computer's own token)",
+        "operationId": "Signatures_addAgent",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/me/agents/{id}": {
+      "delete": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Disconnect one of your computers",
+        "operationId": "Signatures_revokeMine",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/logo": {
+      "get": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "The company logo used in signatures",
+        "operationId": "Signatures_logo",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/settings": {
+      "get": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Company signature settings",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_settings",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Save the company signature settings",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_saveSettings",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "companyName": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 160
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "website": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^https?:\\/\\/\\S+$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "phone": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "address": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "brandColor": {
+                    "default": "#1F3A93",
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "accentColor": {
+                    "default": "#E8833A",
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "defaultTemplate": {
+                    "default": "classic",
+                    "type": "string",
+                    "enum": [
+                      "classic",
+                      "photo-left",
+                      "one-line",
+                      "logo-top",
+                      "banner",
+                      "minimal",
+                      "bold-name",
+                      "logo-divider",
+                      "card",
+                      "centered",
+                      "two-column",
+                      "executive",
+                      "accent-border",
+                      "photo-top",
+                      "labels",
+                      "footer-band",
+                      "social",
+                      "call-to-action",
+                      "disclaimer",
+                      "warm"
+                    ]
+                  },
+                  "disclaimer": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "social": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "linkedin": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 300,
+                            "pattern": "^https?:\\/\\/\\S+$"
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "x": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 300,
+                            "pattern": "^https?:\\/\\/\\S+$"
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "facebook": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 300,
+                            "pattern": "^https?:\\/\\/\\S+$"
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "instagram": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 300,
+                            "pattern": "^https?:\\/\\/\\S+$"
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "youtube": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 300,
+                            "pattern": "^https?:\\/\\/\\S+$"
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "syncMode": {
+                    "default": "auto",
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "manual"
+                    ]
+                  },
+                  "allowEmployeeSyncChoice": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "lockTemplate": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/settings/logo": {
+      "put": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Set the company logo for signatures (multipart/form-data: file). PNG or JPEG up to 1 MB.",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_setLogo",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Remove the company logo from signatures",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_removeLogo",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/overview": {
+      "get": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Everyone's signature design and connected computers, with their last sync",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_overview",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/agents/{id}": {
+      "delete": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Disconnect anyone's computer",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_revoke",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signature-agent/sync": {
+      "post": {
+        "tags": [
+          "SignatureAgent"
+        ],
+        "summary": "The signature for this computer, unless it already has the current version",
+        "operationId": "SignatureAgent_sync",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "currentVersion": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "trigger": {
+                    "default": "scheduled",
+                    "type": "string",
+                    "enum": [
+                      "install",
+                      "scheduled",
+                      "manual"
+                    ]
+                  },
+                  "computerName": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "outlookVersions": {
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 10
+                    }
+                  },
+                  "agentVersion": {
+                    "type": "string",
+                    "maxLength": 20
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signature-agent/report": {
+      "post": {
+        "tags": [
+          "SignatureAgent"
+        ],
+        "summary": "Tell SampCrew whether the signature was written to Outlook",
+        "operationId": "SignatureAgent_report",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{16,64}$"
+                  },
+                  "ok": {
+                    "type": "boolean"
+                  },
+                  "error": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "outlookVersions": {
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 10
+                    }
+                  }
+                },
+                "required": [
+                  "version",
+                  "ok"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signature-agent/images/{kind}": {
+      "get": {
+        "tags": [
+          "SignatureAgent"
+        ],
+        "summary": "The photo or logo for this computer's signature",
+        "operationId": "SignatureAgent_image",
+        "security": [],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/employees/{id}/documents": {
       "get": {
         "tags": [

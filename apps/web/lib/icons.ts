@@ -1,7 +1,7 @@
 import {
   Activity, Banknote, BarChart3, Bell, BookOpen, Bot, Briefcase, Building, Building2, CalendarClock, CalendarDays, CalendarRange, Check, ClipboardList, Clock,
   Contact, CreditCard, FileStack, FileText, Fingerprint, GraduationCap, Handshake, Headset, Heart, Home, Inbox, KeyRound, Landmark, LifeBuoy, ListChecks,
-  LockKeyhole, Megaphone, MessageSquare, MessagesSquare, Orbit, Palette, Plug, Receipt, ScrollText, Settings, Shield, SlidersHorizontal, Sparkles, Tags,
+  LockKeyhole, Mail, Megaphone, MessageSquare, MessagesSquare, Orbit, Palette, Plug, Receipt, ScrollText, Settings, Shield, SlidersHorizontal, Sparkles, Tags,
   Target, Timer, TrendingDown, UserPlus, Users, UserSearch, UsersRound, UserX, Wallet, Workflow, X, type LucideIcon,
 } from 'lucide-react';
 
@@ -16,7 +16,7 @@ export const ICONS: Record<string, LucideIcon> = {
   'calendar-range': CalendarRange, 'book-open': BookOpen, chart: BarChart3,
   headset: Headset, megaphone: Megaphone,
   activity: Activity, bot: Bot, plug: Plug, sparkles: Sparkles, 'trending-down': TrendingDown, workflow: Workflow,
-  'lock-keyhole': LockKeyhole, 'user-x': UserX, palette: Palette, 'user-plus': UserPlus,
+  'lock-keyhole': LockKeyhole, mail: Mail, 'user-x': UserX, palette: Palette, 'user-plus': UserPlus,
   handshake: Handshake, 'building-office': Building, 'file-stack': FileStack, orbit: Orbit, tags: Tags,
   check: Check, x: X, bell: Bell,
 };

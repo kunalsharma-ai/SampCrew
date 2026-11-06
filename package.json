@@ -36,6 +36,7 @@
     "e2e:neon": "node e2e/neon-flow.cjs",
     "e2e:directory": "node e2e/directory-flow.cjs",
     "e2e:setup": "node e2e/setup-flow.cjs",
+    "e2e:signature": "node e2e/signature-flow.cjs",
     "e2e:bids": "node e2e/bids-flow.cjs",
     "e2e:universe": "node e2e/universe-flow.cjs",
     "e2e:ats": "node e2e/ats-flow.cjs",
