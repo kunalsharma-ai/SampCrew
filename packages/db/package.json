@@ -2,7 +2,7 @@
   "name": "@crew/db",
   "version": "0.1.0",
   "private": true,
-  "description": "CREW database: SQL migrations (with Row-Level Security), migration runner, catalogue sync, tenant provisioning, demo seed",
+  "description": "SampCrew database: SQL migrations (with Row-Level Security), migration runner, catalogue sync, tenant provisioning, demo seed",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

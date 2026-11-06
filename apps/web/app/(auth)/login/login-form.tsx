@@ -57,7 +57,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure }: { next: stri
       >
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Sign in with single sign-on</h2>
-          <p className="mt-1 text-sm text-fg-muted">Enter your work email. CREW sends you to your company's sign-in page and brings you back.</p>
+          <p className="mt-1 text-sm text-fg-muted">Enter your work email. SampCrew sends you to your company's sign-in page and brings you back.</p>
         </div>
         {step.notice && !error && <Alert tone="info">{step.notice}</Alert>}
         {error && <Alert tone="danger">{error}</Alert>}
@@ -165,7 +165,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure }: { next: stri
       className="flex flex-col gap-5"
     >
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Sign in to CREW</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Sign in to SampCrew</h2>
         <p className="mt-1 text-sm text-fg-muted">Welcome back. Use your work email.</p>
       </div>
       {expired && !error && <Alert tone="warning">Your session ended. Sign in again to continue.</Alert>}
@@ -180,7 +180,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure }: { next: stri
       <Button type="submit" size="lg" loading={pending}>Sign in</Button>
       <Button type="button" variant="secondary" size="lg" disabled={pending} onClick={() => { setError(null); setStep({ kind: 'sso', email: '' }); }}>Sign in with single sign-on</Button>
       <p className="text-center text-[0.8125rem] text-fg-muted">
-        New to CREW? <Link href="/signup" className="font-medium text-accent hover:underline">Create a workspace</Link>
+        New to SampCrew? <Link href="/signup" className="font-medium text-accent hover:underline">Create a workspace</Link>
       </p>
     </form>
   );

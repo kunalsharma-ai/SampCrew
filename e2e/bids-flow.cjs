@@ -161,7 +161,7 @@ const watch = (page) => {
     ok('proposal sent now; version 1 and its PDF are in the history');
 
     // 5. The client accepts online. The link is read from the email in the mail queue (as the client would open it
-    //    from their inbox); the browser that opens it has no CREW session.
+    //    from their inbox); the browser that opens it has no SampCrew session.
     const link = async (to) => {
       const db = new Client({ connectionString: process.env.DATABASE_ADMIN_URL });
       await db.connect();

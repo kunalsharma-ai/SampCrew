@@ -88,7 +88,7 @@ describe('workspace experience', () => {
       expect(ok(await as('asha').post('/me/preferences/appearance/reset')).appearance.preset).toBe('midnight');
     });
 
-    it('stores favourites in order, without duplicates, and only for pages inside CREW', async () => {
+    it('stores favourites in order, without duplicates, and only for pages inside SampCrew', async () => {
       const p = ok(await as('asha').put('/me/preferences/favourites').send({ hrefs: ['/leave', '/payslips', '/leave'] }));
       expect(p.favourites).toEqual(['/leave', '/payslips']);
       expect((await as('asha').put('/me/preferences/favourites').send({ hrefs: ['https://evil.test'] })).status).toBe(422);

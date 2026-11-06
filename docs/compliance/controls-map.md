@@ -1,8 +1,8 @@
 # Controls map: SOC 2 and ISO/IEC 27001
 
-**CREW is not SOC 2 attested and not ISO/IEC 27001 certified.** No auditor has assessed it. This document is a
+**SampCrew is not SOC 2 attested and not ISO/IEC 27001 certified.** No auditor has assessed it. This document is a
 readiness aid. It maps the controls built into the product to the criteria an auditor would look at, so the gaps are
-visible before anyone starts an audit. Certification covers the organisation that runs CREW, including its people,
+visible before anyone starts an audit. Certification covers the organisation that runs SampCrew, including its people,
 processes, hosting and suppliers, not only the code. Most of those organisational controls do not exist yet and are
 marked as such below.
 
@@ -17,7 +17,7 @@ Status key:
 
 ## Product controls
 
-| Area | What CREW does | Evidence in this repository | SOC 2 | ISO 27001:2022 | Status |
+| Area | What SampCrew does | Evidence in this repository | SOC 2 | ISO 27001:2022 | Status |
 |---|---|---|---|---|---|
 | Workspace isolation | PostgreSQL Row-Level Security forced on every workspace table; the API role cannot bypass it; composite foreign keys stop cross-workspace references | `packages/db/migrations/0001_foundation.sql`, `apps/api/test/tenant-isolation.spec.ts`, the restore check in `packages/db/scripts/dr-drill.ts` | CC6.1 | A.8.3, A.5.15 | Built |
 | Authentication | argon2id passwords with lockout; TOTP two-step verification, which a workspace can require for everyone; sensitive permissions need a two-step-verified session | `apps/api/src/platform/auth`, `apps/api/test/auth.spec.ts` | CC6.1 | A.8.5, A.5.17 | Built |

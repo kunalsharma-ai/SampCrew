@@ -3,7 +3,7 @@ import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 /**
- * Open-state for a "create" dialog that the Create menu, command palette and CREW IQ can open with ?create=<key>.
+ * Open-state for a "create" dialog that the Create menu, command palette and SampCrew IQ can open with ?create=<key>.
  * `prefill` names other parameters to hand to the form as starting values (for example ?title=...). The parameters
  * are removed once read, so a refresh or the back button does not reopen the dialog. The search params come from the
  * router, so this also works after a client-side navigation from another page.

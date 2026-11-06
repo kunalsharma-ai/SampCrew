@@ -138,7 +138,7 @@ async function switchOn(c, key) {
     await shot(admin, 'console-integrations-ai-test');
     await switchOn(c, 'ai');
     await c.getByRole('button', { name: 'Save' }).click();
-    await c.getByText('Saved. CREW uses these settings from now on.').waitFor({ timeout: 15000 });
+    await c.getByText('Saved. SampCrew uses these settings from now on.').waitFor({ timeout: 15000 });
     await admin.reload();
     c = admin.getByTestId('integration-ai');
     await c.getByText('Set in Console', { exact: true }).waitFor();
@@ -154,14 +154,14 @@ async function switchOn(c, key) {
     await c.getByTestId('email-host').fill('127.0.0.1');
     await c.getByTestId('email-security').selectOption('none');
     await c.getByTestId('email-port').fill(String(SMTP_PORT));
-    await c.getByTestId('email-from').fill('CREW <no-reply@sampledge.test>');
+    await c.getByTestId('email-from').fill('SampCrew <no-reply@sampledge.test>');
     await c.getByTestId('email-sendTo').fill('ops@sampledge.test');
     await c.getByRole('button', { name: 'Test connection' }).click();
     await c.getByText('Connection works').waitFor({ timeout: 20000 });
-    await waitFor(() => mails.some((m) => m.to === 'ops@sampledge.test' && m.body.includes('CREW test email')), 'the test email did not arrive');
+    await waitFor(() => mails.some((m) => m.to === 'ops@sampledge.test' && m.body.includes('SampCrew test email')), 'the test email did not arrive');
     await switchOn(c, 'email');
     await c.getByRole('button', { name: 'Save' }).click();
-    await c.getByText('Saved. CREW uses these settings from now on.').waitFor({ timeout: 15000 });
+    await c.getByText('Saved. SampCrew uses these settings from now on.').waitFor({ timeout: 15000 });
     await shot(admin, 'console-integrations-email');
     ok('Email: the SMTP test delivered a real message, and email is saved and switched on');
 

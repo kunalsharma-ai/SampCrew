@@ -141,7 +141,7 @@ export class MembersService {
   /**
    * Creates a working login straight away, for HR adding someone who should sign in today (for example at an
    * attendance kiosk or on a shared phone) rather than wait for an invitation email. The password is temporary:
-   * the person must replace it at their first sign-in. An email that already has a CREW account cannot be given a
+   * the person must replace it at their first sign-in. An email that already has a SampCrew account cannot be given a
    * password by HR; that person joins through an invitation instead.
    */
   async createLoginWithPassword(tx: Tx, input: z.infer<typeof inviteMemberRequest>, temporaryPassword: string): Promise<{ membershipId: string }> {
@@ -154,7 +154,7 @@ export class MembersService {
     const hash = await hashPassword(temporaryPassword);
     const userId = await this.db.platform(async (ptx) => {
       if (await one(ptx, 'select 1 from users where email = $1', [input.email])) {
-        throw Errors.conflict('account_exists', 'This email already has a CREW account, so HR cannot set its password. Send an invitation instead and they join with their own password.');
+        throw Errors.conflict('account_exists', 'This email already has a SampCrew account, so HR cannot set its password. Send an invitation instead and they join with their own password.');
       }
       return (await one<{ id: string }>(ptx, `insert into users (email, full_name, password_hash, must_change_password) values ($1, $2, $3, true) returning id`, [input.email, input.fullName, hash]))!.id;
     });
@@ -173,8 +173,8 @@ export class MembersService {
       tx,
       actor.tenantId,
       input.email,
-      `Your CREW login for ${workspace.name}`,
-      `${actor.label} created your CREW login for ${workspace.name}.\n\nSign in at ${this.config.WEB_PUBLIC_URL}/login with this email and the temporary password HR gave you. You will choose your own password the first time you sign in.`,
+      `Your SampCrew login for ${workspace.name}`,
+      `${actor.label} created your SampCrew login for ${workspace.name}.\n\nSign in at ${this.config.WEB_PUBLIC_URL}/login with this email and the temporary password HR gave you. You will choose your own password the first time you sign in.`,
       'login_created',
     );
     await this.audit.record(tx, { action: 'membership.login_created', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, roles: input.roleKeys, temporaryPassword: true } });
@@ -189,8 +189,8 @@ export class MembersService {
       tx,
       actor.tenantId,
       email,
-      `You're invited to ${workspace.name} on CREW`,
-      `${actor.label} invited you to join ${workspace.name} on CREW.\n\nAccept the invitation and set your password: ${this.config.WEB_PUBLIC_URL}/accept-invite?token=${token}\n\nThe link expires in ${INVITE_TTL_DAYS} days.`,
+      `You're invited to ${workspace.name} on SampCrew`,
+      `${actor.label} invited you to join ${workspace.name} on SampCrew.\n\nAccept the invitation and set your password: ${this.config.WEB_PUBLIC_URL}/accept-invite?token=${token}\n\nThe link expires in ${INVITE_TTL_DAYS} days.`,
       'invitation',
     );
   }

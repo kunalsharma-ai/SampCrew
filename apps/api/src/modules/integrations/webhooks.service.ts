@@ -178,7 +178,7 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
       if (w.status !== 'active') throw Errors.conflict('endpoint_not_active', 'Switch the endpoint on before sending a test event.');
       const tenantId = requestContext.tenantActor().tenantId;
       const eventId = randomUUID();
-      const deliveryId = await this.enqueue(tx, id, eventId, WEBHOOK_TEST_EVENT, webhookBody({ id: eventId, type: WEBHOOK_TEST_EVENT, occurredAt: new Date().toISOString(), tenantId, payload: { message: 'Test event from CREW' } }));
+      const deliveryId = await this.enqueue(tx, id, eventId, WEBHOOK_TEST_EVENT, webhookBody({ id: eventId, type: WEBHOOK_TEST_EVENT, occurredAt: new Date().toISOString(), tenantId, payload: { message: 'Test event from SampCrew' } }));
       return { deliveryId };
     });
   }
@@ -291,7 +291,7 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
     try {
       const secret = decryptField(c.secret_enc, this.config.fieldKeys);
       const r = await postJson(c.url, body, {
-        'user-agent': 'CREW-Webhooks/1.0',
+        'user-agent': 'SampCrew-Webhooks/1.0',
         'crew-event': c.event_type,
         'crew-delivery': c.id,
         'crew-signature': signWebhook(secret, ts, body),

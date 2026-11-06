@@ -223,7 +223,7 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
                   {text('username', 'User name', { hint: 'Leave empty if the server needs no sign-in.' })}
                   {secret('password', 'Password', 'Or the API key your provider gives for SMTP.')}
                 </div>
-                {text('from', 'Send as', { placeholder: 'CREW <no-reply@yourcompany.com>', required: true, hint: 'The From line people see. Use an address on your verified domain.' })}
+                {text('from', 'Send as', { placeholder: 'SampCrew <no-reply@yourcompany.com>', required: true, hint: 'The From line people see. Use an address on your verified domain.' })}
                 <Field label="Send a test email to" hint="Optional. Test connection then sends a real message here.">
                   {(p) => <Input {...p} type="email" value={extras.sendTo} disabled={!canManage} onChange={(e) => setExtras({ ...extras, sendTo: e.target.value })} data-testid="email-sendTo" />}
                 </Field>
@@ -242,7 +242,7 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
             {def.key === 'scanning' && text('url', 'Scanner address', { placeholder: 'tcp://clamav:3310', required: true })}
 
             {def.key === 'mobile_sso' && (
-              <Field label="App addresses" error={errors.redirects} hint="One per line. crew://sso is the CREW app.">
+              <Field label="App addresses" error={errors.redirects} hint="One per line. crew://sso is the SampCrew app.">
                 {(p) => <Textarea {...p} rows={3} value={String(values.redirects)} disabled={!canManage} onChange={(e) => set('redirects', e.target.value)} data-testid="mobile_sso-redirects" />}
               </Field>
             )}

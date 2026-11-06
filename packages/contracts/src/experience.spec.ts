@@ -98,7 +98,7 @@ describe('appearance preferences', () => {
 });
 
 describe('shortcuts and dashboard layout', () => {
-  it('only accepts paths inside CREW', () => {
+  it('only accepts paths inside SampCrew', () => {
     expect(appPath.safeParse('/employees?status=active').success).toBe(true);
     for (const bad of ['https://evil.test', '//evil.test', 'javascript:alert(1)', '/a b', '/<script>']) expect(appPath.safeParse(bad).success, bad).toBe(false);
   });

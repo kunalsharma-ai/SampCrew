@@ -9,7 +9,7 @@ const out = [];
 out.push('# 5. User Role and Permission Matrix', '');
 out.push('> Generated from `packages/contracts/src/permissions.ts` and `roles.ts` by `pnpm docs:permissions`. Do not edit by hand.', '');
 out.push('## 5.1 Model', '');
-out.push('CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carries a scope, assignments can carry constraints, and environmental conditions such as MFA apply):', '');
+out.push('SampCrew combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carries a scope, assignments can carry constraints, and environmental conditions such as MFA apply):', '');
 out.push('- **Permission**: `resource:action`, for example `leave:approve`.');
 out.push('- **Scope** (which records the grant covers):');
 out.push('  - `O` own: records about the member themself.');

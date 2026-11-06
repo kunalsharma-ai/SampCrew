@@ -39,7 +39,7 @@ export function webhookEvent(type: string): WebhookEventDef | undefined {
   return (WEBHOOK_EVENTS as readonly WebhookEventDef[]).find((e) => e.type === type);
 }
 
-/** The body CREW posts: { id, type, createdAt, workspaceId, data }. */
+/** The body SampCrew posts: { id, type, createdAt, workspaceId, data }. */
 export function webhookBody(e: { id: string; type: string; occurredAt: string; tenantId: string; payload: Record<string, unknown> }) {
   const def = webhookEvent(e.type);
   const data = def ? Object.fromEntries(def.dataKeys.filter((k) => k in e.payload).map((k) => [k, e.payload[k]])) : e.payload;
@@ -104,7 +104,7 @@ export interface ConnectorDef { key: string; name: string; category: string; sta
 /** What the marketplace lists. "planned" connectors have no connect button: they are not built yet. */
 export const CONNECTORS: readonly ConnectorDef[] = [
   { key: 'webhooks', name: 'Outgoing webhooks', category: 'Developer', status: 'available', description: 'Send signed events to your own systems when people join, change job, take leave, raise a case or get paid.' },
-  { key: 'api_keys', name: 'REST API keys', category: 'Developer', status: 'available', description: 'Let another system read CREW data through the API, limited to the scopes you choose.' },
+  { key: 'api_keys', name: 'REST API keys', category: 'Developer', status: 'available', description: 'Let another system read SampCrew data through the API, limited to the scopes you choose.' },
   { key: 'slack', name: 'Slack', category: 'Communication', status: 'available', description: 'Post messages to a Slack channel from Automation Studio workflows, using an incoming webhook you create in Slack.' },
   { key: 'microsoft_teams', name: 'Microsoft Teams', category: 'Communication', status: 'planned', description: 'Post to Teams channels and send approval cards.' },
   { key: 'google_workspace', name: 'Google Calendar and Gmail', category: 'Calendar and mail', status: 'planned', description: 'Book interviews in calendars and send mail from your domain.' },

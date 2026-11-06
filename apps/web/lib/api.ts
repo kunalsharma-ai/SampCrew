@@ -41,7 +41,7 @@ async function clientIp(): Promise<Record<string, string>> {
   }
 }
 
-/** Server-side call to the CREW API with the signed-in user's bearer token. */
+/** Server-side call to the SampCrew API with the signed-in user's bearer token. */
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; auth?: boolean; idempotencyKey?: string } = {}): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json', 'x-crew-client': 'web', ...(await clientIp()) };
   let sessionRequest = false;

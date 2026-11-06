@@ -11,7 +11,7 @@ type Fix = { latitude: number; longitude: number; accuracyM?: number; mockLocati
 async function currentLocation(): Promise<{ fix: Fix; note?: string }> {
   try {
     const perm = await Location.requestForegroundPermissionsAsync();
-    if (perm.status !== 'granted') return { fix: null, note: 'Location is off for CREW, so this punch has no location.' };
+    if (perm.status !== 'granted') return { fix: null, note: 'Location is off for SampCrew, so this punch has no location.' };
     const pos = await Promise.race([
       Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
       new Promise<null>((r) => setTimeout(() => r(null), 10_000)),
@@ -83,7 +83,7 @@ export default function Attendance() {
       {queue.pending.length > 0 && (
         <Card testID="queue-card">
           <CardTitle>{`Waiting to send (${queue.pending.length})`}</CardTitle>
-          <Text muted size={14}>Saved on this phone with the time you punched. CREW sends them as soon as you are online.</Text>
+          <Text muted size={14}>Saved on this phone with the time you punched. SampCrew sends them as soon as you are online.</Text>
           {queue.pending.map((p) => (
             <ListItem key={p.sequence} title={`Punch ${p.direction ?? ''}`.trim()} subtitle={fmt.dateTime(p.capturedAt)} right={<Badge tone="warn">Not sent yet</Badge>} />
           ))}
@@ -95,7 +95,7 @@ export default function Attendance() {
       {queue.refused.length > 0 && (
         <Card testID="refused-card">
           <CardTitle>Not recorded</CardTitle>
-          <Text muted size={14}>CREW refused these punches. Ask for an attendance correction if you need them on your record.</Text>
+          <Text muted size={14}>SampCrew refused these punches. Ask for an attendance correction if you need them on your record.</Text>
           {queue.refused.map((r) => (
             <ListItem
               key={r.sequence}

@@ -1,6 +1,6 @@
 /**
  * Removes personal identifiers from text before it is sent to an AI provider. This is the second line of
- * defence: the prompts CREW builds never include bank, tax, national ID, salary or health fields in the first
+ * defence: the prompts SampCrew builds never include bank, tax, national ID, salary or health fields in the first
  * place. Free text (a helpdesk question, an article) can still contain them, so every prompt passes through here.
  *
  * Patterns are deliberately broad: a false positive costs a placeholder in the prompt, a false negative leaks data.

@@ -26,7 +26,7 @@ function suggestionsFor(path: string) {
 }
 
 /**
- * CREW IQ: a side panel that answers from the workspace under the person's own permissions, says how it found the
+ * SampCrew IQ: a side panel that answers from the workspace under the person's own permissions, says how it found the
  * answer and how sure it is, links to the source pages, and for actions shows a preview and opens a prefilled form.
  */
 export function IqPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -72,7 +72,7 @@ export function IqPanel({ open, onClose }: { open: boolean; onClose: () => void 
     setHistory(null);
   });
   const forget = (id: string | null) => start(async () => {
-    if (!confirm(id ? 'Delete this conversation?' : 'Delete all your CREW IQ conversations?')) return;
+    if (!confirm(id ? 'Delete this conversation?' : 'Delete all your SampCrew IQ conversations?')) return;
     await forgetIqAction(id);
     if (!id || id === conversationId) { setTurns([]); setConversationId(null); }
     const r = await iqConversationsAction();
@@ -81,16 +81,16 @@ export function IqPanel({ open, onClose }: { open: boolean; onClose: () => void 
 
   if (!open) return null;
   return (
-    <aside role="complementary" aria-label="CREW IQ" className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-pop animate-slide-up sm:animate-none">
+    <aside role="complementary" aria-label="SampCrew IQ" className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-pop animate-slide-up sm:animate-none">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
         <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-glow-1 to-glow-2 text-white"><Sparkles className="size-4" /></span>
         <div className="flex-1">
-          <h2 className="text-sm font-semibold">CREW IQ</h2>
+          <h2 className="text-sm font-semibold">SampCrew IQ</h2>
           <p className="text-xs text-fg-subtle">Answers from your workspace, within your access</p>
         </div>
         <button type="button" onClick={showHistory} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Past conversations"><History className="size-4" /></button>
         <button type="button" onClick={fresh} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="New conversation"><Plus className="size-4" /></button>
-        <button type="button" onClick={onClose} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Close CREW IQ"><X className="size-4" /></button>
+        <button type="button" onClick={onClose} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Close SampCrew IQ"><X className="size-4" /></button>
       </header>
 
       {history && (
@@ -139,7 +139,7 @@ export function IqPanel({ open, onClose }: { open: boolean; onClose: () => void 
       <form className="flex items-end gap-2 border-t border-border p-3" onSubmit={(e) => { e.preventDefault(); ask(q); }}>
         <textarea
           ref={input}
-          aria-label="Ask CREW IQ"
+          aria-label="Ask SampCrew IQ"
           rows={2}
           maxLength={500}
           value={q}

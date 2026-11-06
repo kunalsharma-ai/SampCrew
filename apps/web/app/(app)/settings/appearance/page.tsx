@@ -11,7 +11,7 @@ export default async function AppearancePage() {
   const me = await load<Me>('/me');
   return (
     <>
-      <PageHeader eyebrow="Theme Studio" title="Appearance" description="Your photo, and how CREW looks and moves for you. Changes apply straight away and follow you to every device you sign in on." />
+      <PageHeader eyebrow="Theme Studio" title="Appearance" description="Your photo, and how SampCrew looks and moves for you. Changes apply straight away and follow you to every device you sign in on." />
       <MyPhoto employee={me.employee} name={me.user.fullName} />
       <ThemeStudio />
     </>

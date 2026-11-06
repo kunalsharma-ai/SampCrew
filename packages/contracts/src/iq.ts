@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * CREW IQ: the in-app assistant. A question is matched to one of a fixed set of intents by plain rules (no model),
+ * SampCrew IQ: the in-app assistant. A question is matched to one of a fixed set of intents by plain rules (no model),
  * so every figure it shows comes straight from the workspace, under the asker's own permissions, and the match is
  * explained. Policy questions go to the help articles (and the AI assistant, when the workspace has it on). Actions
  * are never carried out by IQ: it opens a prefilled form for a person to check and save.

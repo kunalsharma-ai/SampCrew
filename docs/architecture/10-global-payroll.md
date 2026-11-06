@@ -2,11 +2,11 @@
 
 ## 10.1 Hybrid model
 
-| Mode | What CREW does | Where |
+| Mode | What SampCrew does | Where |
 |---|---|---|
-| **Native** | CREW computes gross-to-net with its own engine and a validated country package | India first, then markets with demand and a compliance partner to validate |
-| **Integrated** | CREW prepares inputs (attendance, leave, compensation changes, one-time payments), sends them to an authorised local provider, imports results and payslips | Every other country, via provider connectors |
-| **Export-only** | CREW produces a reconciled payroll input file for the customer's existing processor | Fallback for any country |
+| **Native** | SampCrew computes gross-to-net with its own engine and a validated country package | India first, then markets with demand and a compliance partner to validate |
+| **Integrated** | SampCrew prepares inputs (attendance, leave, compensation changes, one-time payments), sends them to an authorised local provider, imports results and payslips | Every other country, via provider connectors |
+| **Export-only** | SampCrew produces a reconciled payroll input file for the customer's existing processor | Fallback for any country |
 
 All three modes share the same inputs, approvals, audit trail and reports, so a multinational sees one payroll calendar across countries.
 
@@ -45,7 +45,7 @@ packages/payroll-in/
 
 **India scope (Phase 5):** configurable CTC structures; Basic/HRA/special allowance; EPF (employee/employer, EPS split, wage ceiling, voluntary PF); ESI (eligibility threshold, contribution periods); Professional Tax by state; Labour Welfare Fund by state; TDS under old and new regimes with declarations and proof workflow; Payment of Bonus Act; gratuity accrual and payout; leave encashment; full and final settlement; statutory reports.
 
-**Validation rule:** a country package is marked **Validated** in the product only after (1) golden test cases prepared or reviewed by a qualified payroll/tax professional pass, and (2) a parallel run against a known-correct payroll matches. Until then the UI labels the package "Preview, not for statutory filing". CREW never claims compliance it has not validated.
+**Validation rule:** a country package is marked **Validated** in the product only after (1) golden test cases prepared or reviewed by a qualified payroll/tax professional pass, and (2) a parallel run against a known-correct payroll matches. Until then the UI labels the package "Preview, not for statutory filing". SampCrew never claims compliance it has not validated.
 
 ## 10.4 AI payroll auditor
 

@@ -18,7 +18,7 @@ export default async function PrivacyPage() {
     <>
       <PageHeader
         title="Privacy requests"
-        description="When someone asks for a copy of the data CREW holds about them, or for it to be erased, log it here. Each request is due 30 days after it is logged. Check the deadline that applies to you with your legal adviser."
+        description="When someone asks for a copy of the data SampCrew holds about them, or for it to be erased, log it here. Each request is due 30 days after it is logged. Check the deadline that applies to you with your legal adviser."
       />
       <div className="grid gap-6">
         <PrivacyList requests={requests} people={people.items.map((e) => ({ id: e.id, name: `${e.displayName} (${e.employeeCode})`, status: e.status }))} />

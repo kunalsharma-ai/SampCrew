@@ -14,7 +14,7 @@ export default async function IntegrationsPage() {
     <>
       <PageHeader
         title="Integrations"
-        description="Connect the services CREW uses for every workspace: Claude AI, email, mobile push, virus scanning and mobile sign-in. Settings saved here take effect within a few seconds, with no server change or restart. Keys and passwords are stored encrypted and are never shown again."
+        description="Connect the services SampCrew uses for every workspace: Claude AI, email, mobile push, virus scanning and mobile sign-in. Settings saved here take effect within a few seconds, with no server change or restart. Keys and passwords are stored encrypted and are never shown again."
       />
       <IntegrationsView defs={PLATFORM_INTEGRATIONS} list={list} canManage={hasCap(me, 'integrations:manage')} />
     </>

@@ -43,7 +43,7 @@ export default function Me() {
     try {
       await uploadPhoto(api, employee.id, picked.photo);
       await refreshMe();
-      setMsg({ tone: 'ok', text: 'Your photo is saved. Your colleagues see it across CREW.' });
+      setMsg({ tone: 'ok', text: 'Your photo is saved. Your colleagues see it across SampCrew.' });
     } catch (e) {
       setMsg({ tone: 'danger', text: errorText(e) });
     } finally {
@@ -70,7 +70,7 @@ export default function Me() {
     const r = await setBiometric(!bio.on);
     if (!r.ok) return setMsg({ tone: 'danger', text: r.message ?? 'Could not change it.' });
     setBio({ ...bio, on: !bio.on });
-    setMsg({ tone: 'ok', text: !bio.on ? `CREW now asks for your ${bio.support.label} when it opens.` : 'Biometric unlock is off.' });
+    setMsg({ tone: 'ok', text: !bio.on ? `SampCrew now asks for your ${bio.support.label} when it opens.` : 'Biometric unlock is off.' });
   };
 
   const togglePush = async () => {
@@ -225,7 +225,7 @@ function AppearanceCard({ onMessage }: { onMessage: (m: { tone: 'ok' | 'warn' | 
         label="Mode"
         value={appearance.mode}
         options={[{ value: 'system', label: 'Match phone' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]}
-        onChange={(mode) => save({ mode }, mode === 'system' ? 'CREW now follows your phone’s light or dark setting.' : `CREW now uses ${mode} mode.`)}
+        onChange={(mode) => save({ mode }, mode === 'system' ? 'SampCrew now follows your phone’s light or dark setting.' : `SampCrew now uses ${mode} mode.`)}
       />
       <Choice
         label="Contrast"

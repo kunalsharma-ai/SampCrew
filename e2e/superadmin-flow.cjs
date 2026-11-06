@@ -11,7 +11,7 @@
  * 4. Users: the recruiter is signed out everywhere, suspended (sign-in refused) and reactivated, each with a reason.
  * 5. Activity: mobile sign-ins and the recruiter's suspension appear in the workspace's activity; the suspension opens
  *    with its recorded contents, and that read is itself in the customer's trail.
- * 6. Attendance machines: HR registers a Hikvision face reader on the CREW device API in the Web Portal, sees its
+ * 6. Attendance machines: HR registers a Hikvision face reader on the SampCrew device API in the Web Portal, sees its
  *    token once, and the machine sends punches. The Console sees it online, pauses it (pushes refused, HR sees
  *    "Paused by SAMPLEDGE"), resumes it, then switches the Hikvision integration off and on again.
  */
@@ -232,7 +232,7 @@ async function userAction(page, email, action, reason) {
     await shot(hr, 'sa-06-web-token');
     await hr.click('button:has-text("Done")');
     await hr.waitForURL(/\/settings\/devices\/[0-9a-f-]{36}/);
-    await hr.getByText('Setup: CREW device API').waitFor();
+    await hr.getByText('Setup: SampCrew device API').waitFor();
     const send = (path, body) => fetch(`${API}/device-api/${path}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
     expect((await send('heartbeat', { firmware: 'V3.4.2' })).status === 200, 'heartbeat should be accepted');
     const today = new Date(Date.now() - 60 * 60_000).toISOString().slice(0, 19) + 'Z';
@@ -241,7 +241,7 @@ async function userAction(page, email, action, reason) {
     await hr.reload();
     await hr.getByText('Online').first().waitFor();
     await shot(hr, 'sa-07-web-device');
-    ok('HR registered a Hikvision reader on the CREW device API; it sent a heartbeat and a punch');
+    ok('HR registered a Hikvision reader on the SampCrew device API; it sent a heartbeat and a punch');
 
     current = admin;
     await admin.goto(`${CONSOLE}/devices`);

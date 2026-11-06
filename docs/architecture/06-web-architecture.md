@@ -1,6 +1,6 @@
 # 6. Web Application Architecture
 
-CREW ships two web applications that share the design system and contracts but have separate deployments, domains and authentication realms:
+SampCrew ships two web applications that share the design system and contracts but have separate deployments, domains and authentication realms:
 
 | App | Path | Domain (prod) | Users |
 |---|---|---|---|
@@ -43,7 +43,7 @@ The home route chooses a dashboard layout from the user's highest-level role (ex
 
 ## 6.4 Cross-cutting UI features
 
-- **Command palette** (Ctrl/Cmd+K): navigation, record search, quick actions, "Ask CREW" AI prompt.
+- **Command palette** (Ctrl/Cmd+K): navigation, record search, quick actions, "Ask SampCrew" AI prompt.
 - **Global search** across people, candidates, requisitions, documents (permission-filtered by the API).
 - **Notifications** drawer with realtime updates over WebSocket.
 - **Contextual AI** side panel per page (Phase 8).

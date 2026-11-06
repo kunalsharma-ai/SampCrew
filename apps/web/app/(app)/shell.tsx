@@ -45,7 +45,7 @@ interface Experience {
   setRecents: (r: MemberPreferences['recents']) => void;
   /** Opens the Themes & Templates panel. */
   openThemes: () => void;
-  /** Opens CREW IQ when the workspace has it. */
+  /** Opens SampCrew IQ when the workspace has it. */
   openAssistant: (() => void) | null;
 }
 const ExperienceContext = createContext<Experience | null>(null);
@@ -158,7 +158,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
         e.preventDefault();
         setPaletteOpen((v) => !v);
       }
-      // Ctrl/Cmd + J opens CREW IQ.
+      // Ctrl/Cmd + J opens SampCrew IQ.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j' && hasIq) {
         e.preventDefault();
         setIqOpen((v) => !v);
@@ -183,8 +183,8 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
     const t = setTimeout(() => {
       const item = allItems.find((i) => isActive(i.href, pathname, allHrefs));
       const exact = allItems.find((i) => i.href === pathname);
-      const title = document.title.replace(/ · CREW$/, '').trim();
-      const label = (exact?.label ?? (title && title !== 'CREW' ? title : item?.label ?? '')).slice(0, 120);
+      const title = document.title.replace(/ · SampCrew$/, '').trim();
+      const label = (exact?.label ?? (title && title !== 'SampCrew' ? title : item?.label ?? '')).slice(0, 120);
       if (!label || pathname === '/') return;
       const href = pathname + window.location.search;
       void recordVisitAction(href.length <= 200 ? href : pathname, label).then((r) => { if (r.ok) setRecents(r.data!.recents); });
@@ -224,8 +224,8 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               {me.subscription?.status === 'trialing' && me.subscription.trialEndsOn && (
                 <Badge tone="info" className="mr-1 hidden xl:inline-flex">Trial until {new Date(me.subscription.trialEndsOn).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Badge>
               )}
-              {hasIq && <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} className="crew-ai-button mr-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] font-semibold shadow-card hover:border-accent/50" title="CREW IQ, your AI HR assistant (Ctrl+J)">
-                <Sparkles className="size-4 text-accent" aria-hidden /><span className="hidden sm:inline">CREW IQ</span><span className="sr-only sm:hidden">CREW IQ</span>
+              {hasIq && <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} className="crew-ai-button mr-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] font-semibold shadow-card hover:border-accent/50" title="SampCrew IQ, your AI HR assistant (Ctrl+J)">
+                <Sparkles className="size-4 text-accent" aria-hidden /><span className="hidden sm:inline">SampCrew IQ</span><span className="sr-only sm:hidden">SampCrew IQ</span>
               </button>}
               {quick.length > 0 && <QuickCreate actions={quick} />}
               <Link href="/approvals" className="relative hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg sm:block" aria-label={counts['/approvals'] ? `Approval inbox, ${counts['/approvals']} waiting` : 'Approval inbox'} title="Approval inbox">
@@ -312,7 +312,7 @@ function Sidebar({ me, nav, counts, rail, pathname, allHrefs, onCollapse }: { me
   return (
     <nav aria-label="Main" className="flex h-full flex-col gap-4 px-3 py-4">
       <div className={cn('flex items-center gap-2 px-1', rail && 'flex-col')}>
-        {rail ? <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-glow-1 to-glow-2 text-sm font-bold text-white shadow-card" aria-label="CREW">C</span> : <div className="min-w-0 flex-1 px-1"><CrewLogo subtitle="by Sampledge" /></div>}
+        {rail ? <CrewLogo withWordmark={false} height={38} /> : <div className="min-w-0 flex-1 px-1"><CrewLogo subtitle="People, simplified." /></div>}
         <button type="button" onClick={onCollapse} className="hidden rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg lg:block" aria-label={rail ? 'Expand sidebar' : 'Collapse sidebar'} title={`${rail ? 'Expand' : 'Collapse'} sidebar (Ctrl+B)`}>
           {rail ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
         </button>
@@ -702,7 +702,7 @@ function CommandPalette({ open, onClose, nav, me, quick, workflows }: { open: bo
 
   let lastSection = '';
   return (
-    <Dialog open={open} onClose={onClose} title="Search CREW" size="lg">
+    <Dialog open={open} onClose={onClose} title="Search SampCrew" size="lg">
       <div className="relative mb-3">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden />
         <input

@@ -16,14 +16,14 @@ export interface ConsoleDevice {
 export interface ConsoleIntegration { key: string; name: string; protocols: string[]; note: string; enabled: boolean; devices: number }
 
 const STATUS_TONE: Record<string, Tone> = { online: 'success', delayed: 'warning', offline: 'danger', error: 'danger', waiting: 'neutral', simulated: 'accent', paused: 'danger' };
-const PROTOCOL: Record<string, string> = { push_http: 'ZKTeco push (ADMS)', device_api: 'CREW device API' };
+const PROTOCOL: Record<string, string> = { push_http: 'ZKTeco push (ADMS)', device_api: 'SampCrew device API' };
 
 export function IntegrationsPanel({ tenantId, integrations, canManage }: { tenantId: string; integrations: ConsoleIntegration[]; canManage: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [flash, setFlash] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const set = (key: string, enabled: boolean, name: string, devices: number) => {
-    if (!enabled && devices > 0 && !confirm(`Switch ${name} off? CREW refuses punches from this workspace's ${devices} ${name} machine(s) until it is switched back on.`)) return;
+    if (!enabled && devices > 0 && !confirm(`Switch ${name} off? SampCrew refuses punches from this workspace's ${devices} ${name} machine(s) until it is switched back on.`)) return;
     start(async () => {
       const r = await setDeviceIntegrationsAction(tenantId, [{ key, enabled }]);
       setFlash({ tone: r.ok ? 'success' : 'danger', text: r.message ?? 'Saved.' });
@@ -104,7 +104,7 @@ function PauseDialog({ device, onClose, onDone }: { device: ConsoleDevice; onClo
   const [pending, start] = useTransition();
   const short = reason.trim().length < 5;
   return (
-    <Dialog open onClose={onClose} title={`Pause ${device.name}?`} description={`CREW refuses what this machine sends until you resume it. The machine keeps its punches and resends them later. ${device.tenantName}'s admins see the reason.`}
+    <Dialog open onClose={onClose} title={`Pause ${device.name}?`} description={`SampCrew refuses what this machine sends until you resume it. The machine keeps its punches and resends them later. ${device.tenantName}'s admins see the reason.`}
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="danger" disabled={short} loading={pending} onClick={() => start(async () => {
         const r = await pauseDeviceAction(device.tenantId, device.id, reason.trim());
         if (!r.ok) { setError(r.message); return; }

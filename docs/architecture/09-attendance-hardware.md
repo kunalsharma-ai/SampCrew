@@ -5,17 +5,17 @@
 - Support many manufacturers without hardcoding any one of them.
 - Never lose a punch: raw events are stored immutably and deduplicated.
 - Work in factories with poor connectivity and devices that only speak on the local network.
-- Show honest device status: a device is "online" only if CREW has heard from it within its expected interval.
+- Show honest device status: a device is "online" only if SampCrew has heard from it within its expected interval.
 
 ## 9.2 Connection patterns
 
-| Pattern | When | How it reaches CREW |
+| Pattern | When | How it reaches SampCrew |
 |---|---|---|
 | **Device push (cloud)** | Device firmware supports pushing over HTTP(S) to a configurable server | Device → `https://ingest.crew.../devices/{protocol}/...` with per-device credentials |
-| **Vendor cloud API** | Customer already uses the vendor's cloud/server software | CREW worker polls or receives webhooks from the vendor platform with tenant-supplied API credentials |
-| **Local agent (LAN)** | Devices are reachable only inside the customer network, speak a TCP/SDK protocol, or the site is often offline | CREW Sync Agent (Go binary, Windows service / Linux systemd) on a site PC polls devices, buffers to local SQLite, pushes signed batches over mTLS |
+| **Vendor cloud API** | Customer already uses the vendor's cloud/server software | SampCrew worker polls or receives webhooks from the vendor platform with tenant-supplied API credentials |
+| **Local agent (LAN)** | Devices are reachable only inside the customer network, speak a TCP/SDK protocol, or the site is often offline | SampCrew Sync Agent (Go binary, Windows service / Linux systemd) on a site PC polls devices, buffers to local SQLite, pushes signed batches over mTLS |
 | **File import** | Legacy devices, one-off migrations | CSV/DAT upload with a mapping template; same ingestion pipeline |
-| **Mobile / web / kiosk / QR** | No hardware | CREW apps post punches directly |
+| **Mobile / web / kiosk / QR** | No hardware | SampCrew apps post punches directly |
 
 ## 9.3 Adapter architecture
 
@@ -26,7 +26,7 @@ flowchart LR
     D2[Vendor cloud platforms]
     D3[LAN devices via agent]
     D4[Files]
-    D5[CREW mobile, web, kiosk]
+    D5[SampCrew mobile, web, kiosk]
   end
   D1 --> PA[Protocol adapters]
   D2 --> CA[Cloud adapters]
@@ -96,4 +96,4 @@ Per device: manufacturer, model, serial, firmware, location, connection pattern,
 
 ## 9.7 Privacy for biometrics
 
-CREW stores **punch events, not biometric templates**, by default. Template sync between devices (where a customer needs it) is a separate, explicitly enabled feature with consent records, encryption and per-jurisdiction availability (for example, disabled by default where laws like Illinois BIPA require written consent). Facial verification in the mobile app is opt-in per tenant and per country.
+SampCrew stores **punch events, not biometric templates**, by default. Template sync between devices (where a customer needs it) is a separate, explicitly enabled feature with consent records, encryption and per-jurisdiction availability (for example, disabled by default where laws like Illinois BIPA require written consent). Facial verification in the mobile app is opt-in per tenant and per country.

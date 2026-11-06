@@ -65,7 +65,7 @@ export function SlackView({ connections }: { connections: Connection[] }) {
         </Card>
       )}
       <Card>
-        <CardHeader title="Connect a channel" description="CREW posts a confirmation message to the channel first and only saves the connection if Slack accepts it." />
+        <CardHeader title="Connect a channel" description="SampCrew posts a confirmation message to the channel first and only saves the connection if Slack accepts it." />
         <CardBody>
           <ol className="mb-4 list-decimal space-y-1 pl-5 text-[0.8125rem] text-fg-muted">
             <li>In Slack, create an app for your workspace (api.slack.com/apps) and turn on Incoming Webhooks.</li>

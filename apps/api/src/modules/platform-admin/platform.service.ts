@@ -324,7 +324,7 @@ export class PlatformService {
       ))!;
       await this.audit.record(tx, { tenantId, action: 'support_access.requested', resourceType: 'support_access_grant', resourceId: g.id, metadata: { reason, durationMinutes, by: a.label } });
       await this.audit.record(tx, { tenantId: null, action: 'platform.support_access_requested', resourceType: 'tenant', resourceId: tenantId, metadata: { reason } });
-      return { id: g.id, status: 'pending', note: 'A workspace owner or admin must approve this in CREW under Settings > Support access.' };
+      return { id: g.id, status: 'pending', note: 'A workspace owner or admin must approve this in SampCrew under Settings > Support access.' };
     });
   }
 

@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 /**
  * Push uses Expo's push service. It needs a real phone and an Expo project id in the build
  * (EAS_PROJECT_ID). The server only sends when push is turned on there too. Messages are generic
- * ("You have something new in CREW") and the app fetches the details after sign-in.
+ * ("You have something new in SampCrew") and the app fetches the details after sign-in.
  */
 export type PushTokenResult = { ok: true; token: string } | { ok: false; message: string };
 
@@ -21,11 +21,11 @@ export async function getPushToken(): Promise<PushTokenResult> {
   const id = projectId();
   if (!id) return { ok: false, message: 'Push is not set up for this build (no Expo project id).' };
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', { name: 'CREW', importance: Notifications.AndroidImportance.DEFAULT });
+    await Notifications.setNotificationChannelAsync('default', { name: 'SampCrew', importance: Notifications.AndroidImportance.DEFAULT });
   }
   let { status } = await Notifications.getPermissionsAsync();
   if (status !== 'granted') status = (await Notifications.requestPermissionsAsync()).status;
-  if (status !== 'granted') return { ok: false, message: 'Notifications are turned off for CREW in your phone settings.' };
+  if (status !== 'granted') return { ok: false, message: 'Notifications are turned off for SampCrew in your phone settings.' };
   try {
     const t = await Notifications.getExpoPushTokenAsync({ projectId: id });
     return { ok: true, token: t.data };

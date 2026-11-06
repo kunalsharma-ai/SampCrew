@@ -22,7 +22,7 @@ export function TenantsView({ page, query, canCreate }: { page: Page<TenantRow>;
     <div className="grid gap-4">
       {created && (
         <Alert tone="success" title={`${created.name} created`}>
-          {created.existing ? 'The owner already had a CREW account and can sign in now.' : created.url ? (
+          {created.existing ? 'The owner already had a SampCrew account and can sign in now.' : created.url ? (
             <span className="flex flex-wrap items-center gap-2">Local environment: email is not connected yet, so send the owner this invitation link yourself.
               <code className="max-w-full truncate rounded bg-surface px-2 py-0.5 font-mono text-[11px]">{created.url}</code>
               <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(created.url!)}><Copy className="size-3.5" /> Copy</Button>

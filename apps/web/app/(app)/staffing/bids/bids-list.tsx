@@ -92,7 +92,7 @@ export function BidsList({ bids, clients, filters }: { bids: BidSummary[]; clien
             <EmptyState
               icon={<Handshake className="size-5" />}
               title={filtered ? 'No bids match' : 'No staffing bids yet'}
-              description={filtered ? 'Try another status, client or search.' : 'Start with a Quick Bid: pick a client, the role, people and pay, and CREW works out the rate from your target margin.'}
+              description={filtered ? 'Try another status, client or search.' : 'Start with a Quick Bid: pick a client, the role, people and pay, and SampCrew works out the rate from your target margin.'}
             />
           )}
           footer={<p className="px-5 py-3 text-xs text-fg-subtle">{bids.length} {bids.length === 1 ? 'bid' : 'bids'}</p>}

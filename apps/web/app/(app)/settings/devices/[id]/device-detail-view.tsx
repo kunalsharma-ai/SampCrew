@@ -11,16 +11,16 @@ import { DEVICE_STATUS_LABEL, PROTOCOL_LABEL, TokenDialog, VENDOR_LABEL, deviceF
 const SCENARIOS: { value: string; label: string; detail: string }[] = [
   { value: 'normal_day', label: 'Normal day', detail: 'Everyone mapped punches in around 08:50 and out around 18:05.' },
   { value: 'late_and_missing_out', label: 'Late, missing out', detail: 'The first person arrives at 09:47 and never punches out.' },
-  { value: 'duplicates', label: 'Repeated punches', detail: 'Each in-punch is sent twice; CREW keeps it once.' },
+  { value: 'duplicates', label: 'Repeated punches', detail: 'Each in-punch is sent twice; SampCrew keeps it once.' },
   { value: 'unknown_user', label: 'Unknown person', detail: 'An enrolment number nobody is mapped to; it appears below to map.' },
 ];
 
 const STATUS_HELP: Record<string, string> = {
-  waiting: 'CREW has not heard from this device yet. Enter the setup values below on the device and make sure it can reach this server.',
+  waiting: 'SampCrew has not heard from this device yet. Enter the setup values below on the device and make sure it can reach this server.',
   delayed: 'The device has missed a few check-ins. Punches are kept on the device and sent when it reconnects.',
   offline: 'The device has stopped checking in. HR admins were notified. Check its power and network.',
   error: 'The last contact failed. See the error below.',
-  paused: 'SAMPLEDGE has paused this machine for your workspace, so CREW refuses what it sends. Punches stay on the machine. Contact SAMPLEDGE support to resume it.',
+  paused: 'SAMPLEDGE has paused this machine for your workspace, so SampCrew refuses what it sends. Punches stay on the machine. Contact SAMPLEDGE support to resume it.',
 };
 
 type Emp = { id: string; label: string };
@@ -88,7 +88,7 @@ export function DeviceDetailView({ device, mappings, employees, locations }: { d
       {!device.simulated && device.setup.protocol === 'device_api' ? (
         <Card>
           <CardHeader
-            title="Setup: CREW device API"
+            title="Setup: SampCrew device API"
             description="Point the machine's event forwarding, its vendor bridge or your middleware at these addresses. Each call carries the machine token."
             action={<Button size="sm" variant="secondary" loading={pending} onClick={() => {
               if (confirm('Issue a new token? The current one stops working at once.')) start(async () => {
@@ -110,7 +110,7 @@ export function DeviceDetailView({ device, mappings, employees, locations }: { d
         </Card>
       ) : !device.simulated && device.setup.protocol === 'push_http' ? (
         <Card>
-          <CardHeader title="Setup on the device" description="On the device open Comm. or Cloud Server Setting (named ADMS on some models) and enter these values. The device then pushes punches to CREW by itself." />
+          <CardHeader title="Setup on the device" description="On the device open Comm. or Cloud Server Setting (named ADMS on some models) and enter these values. The device then pushes punches to SampCrew by itself." />
           <CardBody>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
               <Stat label="Server address" value={device.setup.serverAddress} mono />
@@ -145,7 +145,7 @@ export function DeviceDetailView({ device, mappings, employees, locations }: { d
               ))}
             </TBody>
           </Table>
-        ) : <EmptyState title="Nothing received yet" description="Contacts appear here as soon as the device reaches CREW." />}
+        ) : <EmptyState title="Nothing received yet" description="Contacts appear here as soon as the device reaches SampCrew." />}
       </Card>
 
       {token && <TokenDialog token={token} onClose={() => { setToken(null); router.refresh(); }} />}

@@ -114,7 +114,7 @@ export class PlatformAuthService {
       if (admin.mfa_enabled) throw Errors.conflict('mfa_already_enabled', 'MFA is already enabled');
       const secret = generateMfaSecret();
       await tx.query('update platform_admins set mfa_secret_enc = $2 where id = $1', [a.adminId, encryptField(secret, this.config.fieldKeys)]);
-      return { secret, otpauthUri: mfaUri(admin.email, secret, 'CREW Console (SAMPLEDGE)') };
+      return { secret, otpauthUri: mfaUri(admin.email, secret, 'SampCrew Console (SAMPLEDGE)') };
     });
   }
 

@@ -16,7 +16,7 @@ Decision: **React Native with Expo (development builds, bare workflow if a vendo
 
 ## 7.2 One app, four experiences
 
-A single store app, `CREW`, whose navigation is assembled from the signed-in user's permissions:
+A single store app, `SampCrew`, whose navigation is assembled from the signed-in user's permissions:
 
 | Experience | Shown when user has | Key tabs |
 |---|---|---|
@@ -47,7 +47,7 @@ apps/mobile/
 ## 7.4 Security
 
 - Tokens in Keychain (iOS) / Keystore-backed EncryptedSharedPreferences (Android) via `expo-secure-store`; never in AsyncStorage.
-- Optional biometric unlock gates the refresh token; the device never sends biometric data to CREW.
+- Optional biometric unlock gates the refresh token; the device never sends biometric data to SampCrew.
 - Certificate pinning for the API host (with a pinned backup key) in production builds.
 - Root/jailbreak and mock-location detection signals attached to attendance punches as risk flags (not hard blocks, to avoid false positives locking employees out).
 - Screens showing payslips and bank details set `FLAG_SECURE` on Android and blur on app switch on iOS.

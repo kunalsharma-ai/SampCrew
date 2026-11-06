@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, View } from 'react-native';
 import { ApiError } from '../src/lib/api';
 import { type SignInStep, useSession } from '../src/lib/session';
 import { secureStorageAvailable } from '../src/lib/storage';
-import { Button, Card, Field, gradient, glow, ListItem, Notice, Row, Screen, Text, useTheme } from '../src/ui';
+import { Button, Card, Field, ListItem, Notice, Screen, Text, useTheme } from '../src/ui';
 
 /**
  * Sign-in: email and password, then a 6-digit code when two-step sign-in is on, then a workspace if there are several.
@@ -128,18 +128,15 @@ export default function Login() {
   );
 }
 
-/** The CREW mark: a gradient square with the word mark beside it. */
+/** The SampCrew logo ("People, simplified." by SAMPLEDGE), drawn for the light or dark theme. */
+const LOGO = { light: require('../assets/logo-light.png'), dark: require('../assets/logo-dark.png') } as const;
+
 function Brand() {
   const t = useTheme();
+  // The artwork is 1458 x 384.
   return (
-    <Row style={{ gap: 12 }} testID="brand">
-      <View style={[{ width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, gradient(`linear-gradient(135deg, ${t.gradient[0]}, ${t.gradient[1]})`, t.accent), t.neon ? glow(t.accent, 0.6, 10, 24) : {}]}>
-        <Text size={22} weight="800" style={{ color: t.accentFg }}>C</Text>
-      </View>
-      <View>
-        <Text size={20} weight="800" style={{ letterSpacing: 3 }}>CREW</Text>
-        <Text size={11} muted weight="600" style={{ letterSpacing: 2 }}>BY SAMPLEDGE</Text>
-      </View>
-    </Row>
+    <View testID="brand" accessible accessibilityRole="image" accessibilityLabel="SampCrew. People, simplified. By SAMPLEDGE">
+      <Image source={t.mode === 'dark' ? LOGO.dark : LOGO.light} style={{ width: 243, height: 64 }} resizeMode="contain" />
+    </View>
   );
 }

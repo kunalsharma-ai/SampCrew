@@ -13,7 +13,7 @@
  *   node e2e/hardening-flow.cjs
  *
  * 1. SAMPLEDGE moves the demo workspace to Enterprise. The owner enrols two-step verification, picks SAML 2.0, copies
- *    CREW's entity ID and ACS URL, pastes the provider's certificate (CREW shows its fingerprint and expiry), runs a
+ *    SampCrew's entity ID and ACS URL, pastes the provider's certificate (SampCrew shows its fingerprint and expiry), runs a
  *    test sign-in through the provider and switches single sign-on on.
  * 2. A forged response (signed with another key) is refused with the reason. HR then signs in through SAML.
  * 3. On the phone app, a member chooses single sign-on: the provider signs them in and the app gets its session
@@ -156,14 +156,14 @@ const post = (url, body) => fetch(url, { method: 'POST', body: JSON.stringify(bo
     await owner.waitForSelector('text=The certificate is valid', { timeout: 15000 });
     expect(/SHA-256 [0-9A-F:]{95}/.test(await owner.locator('[data-testid=saml-cert]').textContent()), 'certificate fingerprint shown');
     expect((await owner.locator('[data-testid=sso-protocol]').textContent()) === 'SAML 2.0', 'protocol shown');
-    ok('owner connected a SAML 2.0 provider; CREW checked the certificate and shows its fingerprint and expiry');
+    ok('owner connected a SAML 2.0 provider; SampCrew checked the certificate and shows its fingerprint and expiry');
 
     await post(`${idp.base}/__user`, { email: 'owner@demo.crew.local', name: 'Aarav Mehta', authnContext: 'http://schemas.microsoft.com/claims/multipleauthn' });
     await owner.click('button:has-text("Test sign-in")');
     await owner.waitForURL((u) => u.pathname === '/settings/single-sign-on' && u.searchParams.get('tested') === '1', { timeout: 20000 });
     await owner.waitForSelector('text=Test sign-in passed');
     const req = (await (await fetch(`${idp.base}/__requests`)).json()).requests.at(-1);
-    expect(req.acs === acs && req.issuer === entityId, 'the AuthnRequest named CREW and its ACS');
+    expect(req.acs === acs && req.issuer === entityId, 'the AuthnRequest named SampCrew and its ACS');
     await owner.click('button:has-text("Switch on")');
     await owner.waitForSelector('text=Single sign-on switched on');
     ok('test sign-in went through the SAML provider and back (HTTP-Redirect, then HTTP-POST), then single sign-on was switched on');

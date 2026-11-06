@@ -14,7 +14,7 @@ export default async function AutomationPage() {
     <>
       <PageHeader
         title="Automation Studio"
-        description="Workflows start when something happens in CREW and run their steps in order: check a condition, notify people, wait, ask for approval or assign a course. Each version is tested before it goes live, and every run is traced."
+        description="Workflows start when something happens in SampCrew and run their steps in order: check a condition, notify people, wait, ask for approval or assign a course. Each version is tested before it goes live, and every run is traced."
         actions={<div className="flex gap-2"><Link className={buttonClass('secondary')} href="/automation/runs">Runs</Link><Link className={buttonClass()} href="/automation/new">New workflow</Link></div>}
       />
       <Card>

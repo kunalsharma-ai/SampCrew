@@ -173,7 +173,7 @@ export class PayrollConfigService {
           countryCode: 'IN',
           settings: DEFAULT_IN_STATUTORY,
           notice:
-            'Starting values for India from commonly published figures. CREW does not certify them as current law. Check every rate, ceiling and slab for the period you pay, and change them where needed, before saving.',
+            'Starting values for India from commonly published figures. SampCrew does not certify them as current law. Check every rate, ceiling and slab for the period you pay, and change them where needed, before saving.',
         },
       };
     });

@@ -34,7 +34,7 @@ export async function selectTenantAction(input: { selectToken: string; tenantId:
   return r.ok ? finish(r.data!) : r;
 }
 
-/** Asks the API where to send the browser for single sign-on. The browser then leaves CREW for the identity provider. */
+/** Asks the API where to send the browser for single sign-on. The browser then leaves SampCrew for the identity provider. */
 export async function ssoStartAction(email: string) {
   return act(() => api<{ authorizationUrl: string }>('/auth/sso/start', { method: 'POST', body: { email }, auth: false }));
 }

@@ -7,12 +7,12 @@ import { loadConfig } from './platform/config/config';
 
 async function main() {
   const config = loadConfig();
-  const logger = new ConsoleLogger({ json: config.isProductionLike, prefix: 'CREW' });
+  const logger = new ConsoleLogger({ json: config.isProductionLike, prefix: 'SampCrew' });
   const app = await NestFactory.create(AppModule, { logger, bodyParser: true });
   configureApp(app);
   app.enableShutdownHooks();
   await app.listen(config.API_PORT);
-  logger.log(`CREW API listening on :${config.API_PORT} (${config.CREW_ENV}). OpenAPI at /api/v1/openapi.json`);
+  logger.log(`SampCrew API listening on :${config.API_PORT} (${config.CREW_ENV}). OpenAPI at /api/v1/openapi.json`);
 }
 
 main().catch((err) => {

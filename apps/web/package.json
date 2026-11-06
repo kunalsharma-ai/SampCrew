@@ -2,7 +2,7 @@
   "name": "@crew/web",
   "version": "0.1.0",
   "private": true,
-  "description": "CREW Web Portal for tenant users (HR, recruiters, managers, employees)",
+  "description": "SampCrew Web Portal for tenant users (HR, recruiters, managers, employees)",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",

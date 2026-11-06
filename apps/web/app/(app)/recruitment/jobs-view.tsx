@@ -11,7 +11,7 @@ import { saveRequisitionAction } from './actions';
 import { range, REQ_STATUS, REQ_TONE, WORK_MODE } from './labels';
 import { requisitionFields, type RequisitionRefs } from './requisition-form';
 
-/** Starting values another page may pass, such as a draft from CREW IQ. */
+/** Starting values another page may pass, such as a draft from SampCrew IQ. */
 const PREFILL = ['title', 'description'] as const;
 
 const FILTERS = [

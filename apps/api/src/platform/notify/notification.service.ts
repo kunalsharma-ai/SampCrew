@@ -44,7 +44,7 @@ export class NotificationService {
       );
       if (notice.email) {
         const url = notice.link ? `${this.config.WEB_PUBLIC_URL}${notice.link}` : this.config.WEB_PUBLIC_URL;
-        await this.queueEmail(tx, r.tenant_id, r.email, notice.title, `${notice.body ? `${notice.body}\n\n` : ''}Open CREW: ${url}`, notice.kind);
+        await this.queueEmail(tx, r.tenant_id, r.email, notice.title, `${notice.body ? `${notice.body}\n\n` : ''}Open SampCrew: ${url}`, notice.kind);
       }
     }
     return active.length;
@@ -52,10 +52,10 @@ export class NotificationService {
 
   /**
    * Queues an email. `footer` replaces the default member footer, for example for job applicants, who have no
-   * CREW account.
+   * SampCrew account.
    */
   async queueEmail(tx: Tx, tenantId: string | null, to: string, subject: string, text: string, template: string, footer?: string) {
-    const foot = footer ?? 'CREW by SAMPLEDGE. You received this because you have an account in a CREW workspace.';
+    const foot = footer ?? 'SampCrew by SAMPLEDGE. You received this because you have an account in a SampCrew workspace.';
     await tx.query(
       `insert into email_messages (tenant_id, to_email, subject, text_body, template) values ($1, $2, $3, $4, $5)`,
       [tenantId, to, subject, `${text}\n\n--\n${foot}`, template],

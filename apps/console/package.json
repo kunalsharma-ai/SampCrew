@@ -2,7 +2,7 @@
   "name": "@crew/console",
   "version": "0.1.0",
   "private": true,
-  "description": "CREW Super Admin Console for SAMPLEDGE staff (tenants, plans, support access, platform health)",
+  "description": "SampCrew Super Admin Console for SAMPLEDGE staff (tenants, plans, support access, platform health)",
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",

@@ -17,7 +17,7 @@ export default async function DevicesPage() {
   const c = data.counts;
   return (
     <>
-      <PageHeader title="Attendance machines" description="Every biometric, face and card machine connected to CREW, in every workspace, with its live status. Pause a machine to refuse what it sends." />
+      <PageHeader title="Attendance machines" description="Every biometric, face and card machine connected to SampCrew, in every workspace, with its live status. Pause a machine to refuse what it sends." />
       <TileRow>
         <Tile tone="violet" icon={<Fingerprint className="size-5" />} label="Machines" value={data.total} testId="tile-machines" />
         <Tile tone="green" icon={<Wifi className="size-5" />} label="Online" value={c.online ?? 0} hint={`${c.delayed ?? 0} delayed · ${c.waiting ?? 0} waiting`} />

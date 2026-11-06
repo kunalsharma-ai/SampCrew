@@ -242,8 +242,8 @@ export class ScimService {
   private async apply(tx: Tx, r: MemberRow, next: { active: boolean; givenName: string; familyName: string; externalId: string | null }, method: string, detail?: string, keepName = false) {
     const actor = requestContext.tenantActor();
     const owner = await one(tx, `select 1 from role_assignments ra join roles ro on ro.id = ra.role_id where ra.membership_id = $1 and ro.key = 'tenant_owner'`, [r.id]);
-    if (owner && !next.active) throw new ScimError(400, 'mutability', 'Workspace owners are not deactivated by provisioning. Change owners in CREW.');
-    if (r.status === 'invited' && !next.active) throw new ScimError(400, 'mutability', 'This person has a pending invitation; revoke it in CREW');
+    if (owner && !next.active) throw new ScimError(400, 'mutability', 'Workspace owners are not deactivated by provisioning. Change owners in SampCrew.');
+    if (r.status === 'invited' && !next.active) throw new ScimError(400, 'mutability', 'This person has a pending invitation; revoke it in SampCrew');
     const status = r.status === 'invited' ? 'invited' : next.active ? 'active' : 'suspended';
     if (status === 'active' && r.status === 'suspended') {
       const { n } = (await one<{ n: number }>(tx, `select count(*)::int as n from memberships where status <> 'suspended'`))!;

@@ -28,7 +28,7 @@ const COLUMNS: DataColumn<Employee>[] = [
         <Avatar name={e.displayName} size={32} src={photoUrl(e)} />
         <span>
           <span className="block font-medium">{e.displayName}</span>
-          <span className="block text-xs text-fg-subtle">{e.designationName ?? 'No designation'}{e.membershipId ? '' : ' · no CREW login'}</span>
+          <span className="block text-xs text-fg-subtle">{e.designationName ?? 'No designation'}{e.membershipId ? '' : ' · no SampCrew login'}</span>
         </span>
       </Link>
     ),

@@ -8,7 +8,7 @@ export function SecretOnce({ label, value, onDone }: { label: string; value: str
   const [copied, setCopied] = useState(false);
   return (
     <Alert tone="warning" title={`Copy the ${label} now`}>
-      <p>CREW stores only a hash or an encrypted copy and will not show it again. If you lose it, create a new one.</p>
+      <p>SampCrew stores only a hash or an encrypted copy and will not show it again. If you lose it, create a new one.</p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <code data-testid="secret-value" className="break-all rounded bg-surface px-2 py-1 font-mono text-[0.75rem] text-fg">{value}</code>
         <Button size="sm" variant="secondary" type="button" onClick={() => { void navigator.clipboard?.writeText(value).catch(() => undefined); setCopied(true); }}>

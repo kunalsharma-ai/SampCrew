@@ -49,7 +49,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 const money = (v: string | number, currency: string) => new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(v));
 
 /**
- * CREW IQ answers. Every data answer is a query run as the asker, narrowed by the same permission scopes as the
+ * SampCrew IQ answers. Every data answer is a query run as the asker, narrowed by the same permission scopes as the
  * pages it links to, so IQ never shows more than the person could open themselves. Nothing is changed by IQ.
  */
 @Injectable()

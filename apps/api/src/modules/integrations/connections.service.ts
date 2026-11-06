@@ -39,7 +39,7 @@ export class ConnectionsService {
   private async postToSlack(url: string, text: string) {
     let r;
     try {
-      r = await postJson(this.slackUrl(url), JSON.stringify({ text }), { 'user-agent': 'CREW/1.0' }, { allowPrivate: Boolean(this.config.SLACK_WEBHOOK_BASE_URL) || this.config.INTEGRATIONS_ALLOW_PRIVATE_URLS === 'true' });
+      r = await postJson(this.slackUrl(url), JSON.stringify({ text }), { 'user-agent': 'SampCrew/1.0' }, { allowPrivate: Boolean(this.config.SLACK_WEBHOOK_BASE_URL) || this.config.INTEGRATIONS_ALLOW_PRIVATE_URLS === 'true' });
     } catch (err) {
       throw new ConnectorError(`Could not reach Slack: ${(err as Error).message}`, true);
     }
@@ -71,7 +71,7 @@ export class ConnectionsService {
     const workspace = await this.db.tenant((tx) => one<{ name: string }>(tx, 'select name from tenants where id = app_tenant_id()'));
     const started = Date.now();
     try {
-      await this.postToSlack(input.webhookUrl, `CREW is now connected to this channel as "${input.name}" for ${workspace!.name}. Workflows can post here.`);
+      await this.postToSlack(input.webhookUrl, `SampCrew is now connected to this channel as "${input.name}" for ${workspace!.name}. Workflows can post here.`);
     } catch (err) {
       throw Errors.badRequest('slack_not_verified', `${(err as Error).message}. Check the webhook URL in Slack and try again; nothing was saved.`);
     }
@@ -89,7 +89,7 @@ export class ConnectionsService {
   }
 
   async testSlack(id: string) {
-    const r = await this.post(id, 'Test message from CREW. If you can read this, the connection works.', 'test');
+    const r = await this.post(id, 'Test message from SampCrew. If you can read this, the connection works.', 'test');
     return { ok: true, durationMs: r.durationMs };
   }
 

@@ -81,7 +81,7 @@ export class PlatformIntegrationsService {
   ) {}
 
   // ---------------------------------------------------------------------------------------------------------------
-  // What the rest of CREW uses
+  // What the rest of SampCrew uses
   // ---------------------------------------------------------------------------------------------------------------
 
   async resolve(key: PlatformIntegrationKey): Promise<ResolvedIntegration> {
@@ -269,8 +269,8 @@ export class PlatformIntegrationsService {
           await t.verify();
           if (!extras.sendTo) return `Signed in to ${settings.host}:${settings.port}`;
           const info = await t.sendMail({
-            from: settings.from as string, to: extras.sendTo, subject: 'CREW test email',
-            text: 'This is a test email from the CREW Super Admin Console. If you can read it, CREW can send email with these settings.',
+            from: settings.from as string, to: extras.sendTo, subject: 'SampCrew test email',
+            text: 'This is a test email from the SampCrew Super Admin Console. If you can read it, SampCrew can send email with these settings.',
           });
           return `Signed in to ${settings.host}:${settings.port} and sent a test email to ${extras.sendTo}${info.response ? ` (server said: ${String(info.response).slice(0, 120)})` : ''}`;
         } catch (e) {
@@ -286,7 +286,7 @@ export class PlatformIntegrationsService {
           res = await fetch(this.config.EXPO_PUSH_URL, {
             method: 'POST',
             headers: { 'content-type': 'application/json', accept: 'application/json', ...(secrets.accessToken ? { authorization: `Bearer ${secrets.accessToken}` } : {}) },
-            body: JSON.stringify([{ to, title: 'CREW', body: 'Test notification from the CREW Super Admin Console.', data: { test: true } }]),
+            body: JSON.stringify([{ to, title: 'SampCrew', body: 'Test notification from the SampCrew Super Admin Console.', data: { test: true } }]),
             signal: AbortSignal.timeout(10_000),
           });
         } catch (e) {
@@ -296,7 +296,7 @@ export class PlatformIntegrationsService {
         if (res.status === 401 || res.status === 403) throw new Error(`Expo refused the access token (${res.status})${body.errors?.[0]?.message ? `: ${body.errors[0].message}` : ''}`);
         if (!res.ok) throw new Error(`Expo push service answered ${res.status}${body.errors?.[0]?.message ? `: ${body.errors[0].message}` : ''}`);
         const ticket = Array.isArray(body.data) ? body.data[0] : undefined;
-        if (!extras.pushToken) return 'The Expo push service accepted CREW\'s request. Paste a device\'s push token to send it a real test alert';
+        if (!extras.pushToken) return 'The Expo push service accepted SampCrew\'s request. Paste a device\'s push token to send it a real test alert';
         if (ticket?.status === 'ok') return 'Expo accepted the test alert for that device';
         throw new Error(`Expo did not accept the test alert: ${ticket?.details?.error ?? ticket?.message ?? 'no ticket returned'}`);
       }

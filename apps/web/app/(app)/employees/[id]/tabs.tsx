@@ -88,7 +88,7 @@ export function OverviewTab({ e }: { e: EmployeeProfile }) {
             <Detail label="Phone">{e.phone}</Detail>
             <Detail label="Date of birth">{e.dateOfBirth}</Detail>
             <Detail label="Gender">{e.gender ? humanize(e.gender) : null}</Detail>
-            <Detail label="CREW login">{e.membershipId ? humanize(e.loginStatus ?? 'linked') : 'No login (records only)'}</Detail>
+            <Detail label="SampCrew login">{e.membershipId ? humanize(e.loginStatus ?? 'linked') : 'No login (records only)'}</Detail>
           </dl>
         </CardBody>
       </Card>
@@ -202,7 +202,7 @@ function SensitiveCard({ e }: { e: EmployeeProfile }) {
 
 const EVENT_LABEL: Record<string, string> = {
   hired: 'Hired', confirmed: 'Confirmed', probation_extended: 'Probation extended', transferred: 'Job changed', promoted: 'Promoted', manager_changed: 'Manager changed',
-  resigned: 'Resigned', exit_scheduled: 'Exit scheduled', exit_withdrawn: 'Exit withdrawn', exited: 'Left', rehired: 'Rehired', linked_login: 'CREW login linked',
+  resigned: 'Resigned', exit_scheduled: 'Exit scheduled', exit_withdrawn: 'Exit withdrawn', exited: 'Left', rehired: 'Rehired', linked_login: 'SampCrew login linked',
 };
 
 export function JobTab({ e, history, reports, departments, entities, locations, designations, managers }: {
@@ -321,7 +321,7 @@ export function JobTab({ e, history, reports, departments, entities, locations, 
         open={dialog === 'exit'}
         onClose={() => setDialog(null)}
         title="Record exit"
-        description="They keep access until the last working day. After it, their CREW login is suspended and pending leave is cancelled."
+        description="They keep access until the last working day. After it, their SampCrew login is suspended and pending leave is cancelled."
         submit="Record exit"
         danger
         run={(f) => lifecycleAction(e.id, 'exit', pick(f, ['exitType', 'resignationDate', 'lastWorkingDay', 'reason']))}
