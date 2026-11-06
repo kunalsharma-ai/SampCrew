@@ -67,11 +67,28 @@ function expect(cond, msg) {
   const errs = [];
   p.on('pageerror', (e) => errs.push(`page error: ${e.message}`));
   p.on('console', (m) => m.type() === 'error' && errs.push(`console: ${m.text()}`));
-  await p.goto(`${WEB}/login`);
-  await p.fill('input[name=email]', 'uk.hr@demo.crew.local');
-  await p.fill('input[name=password]', PASSWORD);
-  await p.click('button[type=submit]');
-  await p.waitForURL(`${WEB}/`, { timeout: 30000 }).catch(async (e) => {
+  // On a CI runner, Docker can add or change network interfaces while this runs. Chromium then cancels requests in
+  // flight with net::ERR_NETWORK_CHANGED, and a cancelled fetch surfaces as "network error" or "Failed to fetch".
+  // Those come from the machine, not the app: when a network change was seen, they are noted but not counted. Every
+  // other console or page error (CSP violations, script errors) still fails the test.
+  const appErrors = () => {
+    if (!errs.some((e) => /ERR_NETWORK_CHANGED/.test(e))) return errs;
+    const machine = (e) => /ERR_NETWORK_CHANGED/.test(e) || /^page error: (network error|Failed to fetch)$/.test(e);
+    for (const e of errs.filter(machine)) console.log(`note - not counted, caused by a network change on the runner: ${e}`);
+    return errs.filter((e) => !machine(e));
+  };
+  const signIn = async () => {
+    await p.goto(`${WEB}/login`);
+    await p.fill('input[name=email]', 'uk.hr@demo.crew.local');
+    await p.fill('input[name=password]', PASSWORD);
+    await p.click('button[type=submit]');
+    await p.waitForURL(`${WEB}/`, { timeout: 30000 });
+  };
+  // A network change on the runner can cancel the sign-in request itself; sign in once more if that is what happened.
+  await signIn().catch(async (e) => {
+    if (errs.some((x) => /ERR_NETWORK_CHANGED/.test(x))) return signIn();
+    throw e;
+  }).catch(async (e) => {
     const text = (await p.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 600);
     throw new Error(`sign-in did not reach Home (at ${p.url()}): ${e.message.split('\n')[0]}\npage: ${text}\nbrowser: ${errs.join(' | ')}`);
   });
@@ -106,7 +123,8 @@ function expect(cond, msg) {
   await p.waitForURL((u) => u.pathname === '/' || !u.href.startsWith(WEB), { timeout: 15000 });
   expect(p.url().startsWith(WEB), `sign-in followed an outside next= address to ${p.url()}`);
   ok('sign-in ignores a next= address outside SampCrew');
-  expect(!errs.length, `browser errors:\n${errs.join('\n')}`);
+  const real = appErrors();
+  expect(!real.length, `browser errors:\n${real.join('\n')}`);
   ok('no script errors or Content Security Policy violations');
 
   // Console: reachable from the private network the smoke test runs in, sign-in page renders
