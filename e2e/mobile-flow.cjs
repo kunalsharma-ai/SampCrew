@@ -16,7 +16,7 @@
  * 4. Asks HR a question. HR replies and asks for more, the employee answers, HR resolves, the employee rates
  *    the answer and confirms. Case text never appears in the audit trail.
  * 5. Reads and acknowledges an announcement that HR published.
- * 6. Opens a payslip, when payroll has published one.
+ * 6. Opens a payslip, when payroll has published one, and chooses, changes and removes their profile photo.
  * 7. Another employee with two-step sign-in signs in with an authenticator code.
  * 8. Signs this phone out from the devices screen; the server refuses its old refresh token afterwards.
  * Between 6 and 7: the QA lead picks the Emerald theme in dark mode on the phone. It is saved to their account (the
@@ -291,6 +291,31 @@ function futureWeekday(taken) {
       assert(shown.replace(/[^\d.]/g, '') === slips[0].net, `net pay shown exactly (${shown} vs ${slips[0].net})`);
       ok('opened a payslip; net pay shown to the paisa');
     } else ok('# skip payslip: no published payslip for the QA lead yet (run after e2e:payroll)');
+
+    // 6a. Profile photo: choose one from the phone, change it, remove it. It is saved to their employee record.
+    const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    await p.goto(APP + '/me');
+    const photoCard = p.getByTestId('photo-card');
+    await photoCard.waitFor();
+    const choose = async () => {
+      const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.getByTestId('photo-choose').click()]);
+      await chooser.setFiles({ name: 'me.png', mimeType: 'image/png', buffer: PNG });
+      await p.getByTestId('me-message').getByText('Your photo is saved').waitFor({ timeout: 15000 });
+    };
+    await choose();
+    // The photo is downloaded with the session and shown from a data: address.
+    await p.waitForFunction(() => (document.querySelector('[data-testid="me-photo"]')?.outerHTML ?? '').includes('data:image/png'), null, { timeout: 15000 });
+    const photo1 = (await api(qa, 'GET', '/me')).employee;
+    assert(photo1 && photo1.photoUpdatedAt, 'the photo is saved on the employee record');
+    await p.getByTestId('photo-choose').getByText('Change photo').waitFor();
+    await choose();
+    const photo2 = (await api(qa, 'GET', '/me')).employee;
+    assert(new Date(photo2.photoUpdatedAt) >= new Date(photo1.photoUpdatedAt), 'changing the photo saves a new one');
+    await p.getByTestId('photo-remove').click();
+    await p.getByTestId('me-message').getByText('Your photo is removed').waitFor();
+    assert((await api(qa, 'GET', '/me')).employee.photoUpdatedAt === null, 'the photo is removed from the record');
+    await p.getByTestId('photo-choose').getByText('Choose a photo').waitFor();
+    ok('chose a profile photo on the phone, changed it and removed it; the employee record follows');
 
     // 6b. Theme: saved to the account and shared with the Web Portal.
     await p.goto(APP + '/me');

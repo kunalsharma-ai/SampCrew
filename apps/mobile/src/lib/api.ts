@@ -55,11 +55,12 @@ export class Api {
         headers: {
           accept: 'application/json',
           'x-crew-client': 'mobile',
-          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+          // A form (file upload) sets its own multipart content type.
+          ...(body !== undefined && !(body instanceof FormData) ? { 'content-type': 'application/json' } : {}),
           ...(access ? { authorization: `Bearer ${access}` } : {}),
           ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}),
         },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        body: body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
         signal: ctrl.signal,
       });
     } catch {
@@ -112,6 +113,24 @@ export class Api {
   put<T>(path: string, body: unknown) {
     return this.request<T>('PUT', path, body);
   }
+  delete<T>(path: string) {
+    return this.request<T>('DELETE', path);
+  }
+  /** Uploads a form with a file, for example a photo. */
+  upload<T>(method: 'POST' | 'PUT', path: string, form: FormData) {
+    return this.request<T>(method, path, form);
+  }
+
+  /** Downloads a protected image as a data: address the Image component can show on phones and on the web. */
+  async imageDataUrl(path: string): Promise<string | null> {
+    const t = await this.tokens.get();
+    if (!t) return null;
+    let res = await this.raw('GET', path, undefined, t.accessToken);
+    if (res.status === 401 && (await this.refresh())) res = await this.raw('GET', path, undefined, (await this.tokens.get())!.accessToken);
+    if (!res.ok) return null;
+    const type = (res.headers.get('content-type') ?? 'application/octet-stream').split(';')[0]!.trim();
+    return `data:${type};base64,${base64(new Uint8Array(await res.arrayBuffer()))}`;
+  }
 
   /** Rotates the refresh token. Concurrent callers share one refresh. */
   refresh(): Promise<boolean> {
@@ -136,4 +155,15 @@ export class Api {
     })();
     return this.refreshing;
   }
+}
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+/** Base64 without btoa or FileReader, which not every JavaScript engine the app runs on has. */
+export function base64(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i]!, b = bytes[i + 1], c = bytes[i + 2];
+    out += B64[a >> 2]! + B64[((a & 3) << 4) | ((b ?? 0) >> 4)]! + (b === undefined ? '=' : B64[((b & 15) << 2) | ((c ?? 0) >> 6)]!) + (c === undefined ? '=' : B64[c & 63]!);
+  }
+  return out;
 }

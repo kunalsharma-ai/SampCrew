@@ -60,15 +60,20 @@ export function PhotoAvatar({ e, size = 56 }: { e: EmployeeProfile; size?: numbe
           onChange={(ev) => { const f = ev.target.files?.[0]; ev.target.value = ''; if (f) upload(f); }}
         />
       )}
-      {canEdit && src && (
-        <button
-          type="button"
-          className="mt-1 text-[0.6875rem] font-normal text-fg-subtle hover:text-danger"
-          disabled={pending}
-          onClick={() => { if (confirm('Remove this photo?')) start(async () => { await removePhotoAction(e.id); router.refresh(); }); }}
-        >
-          Remove photo
-        </button>
+      {canEdit && (
+        <span className="mt-1 flex gap-2 text-[0.6875rem] font-normal">
+          <button type="button" className="text-accent hover:underline" disabled={pending} onClick={() => input.current?.click()}>{src ? 'Change' : 'Add photo'}</button>
+          {src && (
+            <button
+              type="button"
+              className="text-fg-subtle hover:text-danger"
+              disabled={pending}
+              onClick={() => { if (confirm('Remove this photo?')) start(async () => { await removePhotoAction(e.id); router.refresh(); }); }}
+            >
+              Remove
+            </button>
+          )}
+        </span>
       )}
       {error && <span role="alert" className="absolute top-full mt-5 w-48 text-xs font-normal text-danger">{error}</span>}
     </span>

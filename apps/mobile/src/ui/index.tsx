@@ -2,6 +2,7 @@ import { useFocusEffect } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Platform,
   Pressable,
   RefreshControl,
@@ -250,8 +251,9 @@ export function QuickActions({ actions }: { actions: { label: string; icon: stri
 }
 
 /** Initials in a gradient circle (the person on Me, the greeting on Home). */
-export function Avatar({ name, size = 48 }: { name: string; size?: number }) {
+export function Avatar({ name, size = 48, uri, testID }: { name: string; size?: number; uri?: string | null; testID?: string }) {
   const t = useTheme();
+  if (uri) return <Image testID={testID} source={{ uri }} accessibilityIgnoresInvertColors style={{ width: size, height: size, borderRadius: size / 2 }} />;
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
   return (
     <View accessibilityElementsHidden importantForAccessibility="no" style={[{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' }, t.neon ? { ...gradient(`linear-gradient(135deg, ${t.gradient[0]}, ${t.gradient[1]})`, t.accent), ...glow(t.accent, 0.5, 8, 18) } : { backgroundColor: t.accent }]}>

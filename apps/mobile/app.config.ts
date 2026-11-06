@@ -35,6 +35,7 @@ const config: ExpoConfig = {
     ['expo-local-authentication', { faceIDPermission: 'SampCrew uses Face ID to unlock the app.' }],
     ['expo-location', { locationWhenInUsePermission: 'SampCrew checks your location when you punch in or out, if your workplace requires it.' }],
     'expo-notifications',
+    ['expo-image-picker', { photosPermission: 'SampCrew lets you choose a profile photo from your photos.', cameraPermission: 'SampCrew lets you take a profile photo with your camera.', microphonePermission: false }],
   ],
   extra: {
     apiUrl: process.env.EXPO_PUBLIC_CREW_API_URL ?? 'http://localhost:4000',

@@ -17,6 +17,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { applyAppearance } from '@/lib/appearance-client';
+import { photoUrl } from '@/lib/photo';
 import { ICONS } from '@/lib/icons';
 import type { NavGroup, NavItem, QuickAction } from '@/lib/nav';
 import type { Me, Notification } from '@/lib/types';
@@ -369,7 +370,7 @@ function HeaderUser({ me }: { me: Me }) {
   const role = me.membership.roles.find((r) => r.key !== 'employee') ?? me.membership.roles[0];
   return (
     <Link href="/settings/appearance" className="ml-1 hidden items-center gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-bg-subtle xl:flex" title="Your appearance and profile">
-      <Avatar name={me.user.fullName} size={32} />
+      <Avatar name={me.user.fullName} size={32} src={me.employee ? photoUrl(me.employee) : null} />
       <span className="flex flex-col leading-tight">
         <span className="text-[0.8125rem] font-semibold">Hi, {me.user.fullName.split(' ')[0]}</span>
         <span className="text-[0.6875rem] text-fg-subtle">{role?.name}</span>
@@ -425,7 +426,7 @@ function UserMenu({ me, rail }: { me: Me; rail: boolean }) {
   const primaryRole = me.membership.roles.find((r) => r.key !== 'employee') ?? me.membership.roles[0];
   return (
     <div className={cn('flex items-center gap-2.5 rounded-lg border border-border px-2.5 py-2', rail && 'flex-col border-0 px-0')}>
-      <Link href="/settings/appearance" title="Your appearance and profile" className="shrink-0"><Avatar name={me.user.fullName} size={30} /></Link>
+      <Link href="/settings/appearance" title="Your appearance and profile" className="shrink-0"><Avatar name={me.user.fullName} size={30} src={me.employee ? photoUrl(me.employee) : null} /></Link>
       {!rail && (
         <div className="min-w-0 flex-1">
           <div className="truncate text-[0.8125rem] font-medium">{me.user.fullName}</div>

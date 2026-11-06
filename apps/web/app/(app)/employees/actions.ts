@@ -132,12 +132,15 @@ export async function completeHireAction(form: FormData) {
 export async function uploadPhotoAction(id: string, form: FormData) {
   const r = await act(() => apiForm<{ photoUpdatedAt: string }>(`/employees/${id}/photo`, form, { method: 'PUT' }), 'Photo saved');
   refresh(id);
+  // The top bar shows the signed-in person's own photo.
+  revalidatePath('/', 'layout');
   return r;
 }
 
 export async function removePhotoAction(id: string) {
   const r = await act(() => api(`/employees/${id}/photo`, { method: 'DELETE' }), 'Photo removed');
   refresh(id);
+  revalidatePath('/', 'layout');
   return r;
 }
 
