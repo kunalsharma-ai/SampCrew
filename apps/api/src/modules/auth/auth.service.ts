@@ -322,7 +322,8 @@ export class AuthService {
       const subject = await this.authz.subject(tx);
       const ent = await this.entitlements.current(tx);
       const controls = await one<{ disabled_permissions: string[] }>(tx, 'select disabled_permissions from tenant_access_controls');
-      return { user, tenant, membership, roles, subject, ent, disabledPermissions: controls?.disabled_permissions ?? [] };
+      const employee = await one<{ id: string; photo_updated_at: Date | null }>(tx, 'select id, photo_updated_at from employees where membership_id = $1', [actor.membershipId]);
+      return { user, tenant, membership, roles, subject, ent, employee, disabledPermissions: controls?.disabled_permissions ?? [] };
     });
     // Workspace switcher: runs outside the tenant so RLS shows only this user's own memberships.
     const tenants = await this.db.user(actor.userId, (tx) =>
@@ -346,6 +347,7 @@ export class AuthService {
       session: { mfa: actor.mfa },
       client: actor.client ?? 'web',
       tenants,
+      employee: data.employee ? { id: data.employee.id, photoUpdatedAt: data.employee.photo_updated_at?.toISOString() ?? null } : null,
     };
   }
 

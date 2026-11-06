@@ -10,7 +10,8 @@
  * 3. Finishing setup opens the guided hire. The admin adds a designation and a shift without leaving it, uploads a
  *    photo, and creates the CREW login with a temporary password, which is shown once.
  * 4. The new employee signs in with the temporary password and has to choose their own before going on.
- * 5. The admin sees the login ID and status on the profile, resets the password (shown once), and locks and unlocks it.
+ * 5. The employee changes, removes and re-uploads their own photo; the admin changes and removes it from the profile.
+ * 6. The admin sees the login ID and status on the profile, resets the password (shown once), and locks and unlocks it.
  * Fails on any browser error.
  */
 const fs = require('node:fs');
@@ -151,6 +152,34 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     };
     await chooseOwn(temp, 'Ravi-Own-Password-2026');
     ok('the employee signed in with the temporary password and had to choose their own first');
+
+    // The employee manages their own photo from their settings; the top bar follows.
+    const shot2 = path.join(path.dirname(shot), 'ravi-new.png');
+    fs.writeFileSync(shot2, PNG);
+    await emp.goto(BASE + '/settings/appearance');
+    const mine = emp.locator('[aria-label="Your photo"]');
+    await mine.getByRole('button', { name: 'Change photo' }).waitFor();
+    const topBefore = await emp.locator('header img[src*="/employee-photos/"], a[title="Your appearance and profile"] img').first().getAttribute('src');
+    await mine.getByLabel('Choose your photo').setInputFiles(shot2);
+    await mine.getByText('Your photo is saved').waitFor({ timeout: 15000 });
+    await emp.waitForFunction((before) => [...document.querySelectorAll('a[title="Your appearance and profile"] img')].some((i) => i.getAttribute('src') !== before), topBefore, { timeout: 15000 });
+    await mine.getByRole('button', { name: 'Remove' }).click();
+    await mine.getByText('Your photo is removed').waitFor();
+    await mine.getByRole('button', { name: 'Upload photo' }).waitFor();
+    expect((await emp.locator('a[title="Your appearance and profile"] img').count()) === 0, 'the top bar still shows a removed photo');
+    await mine.getByLabel('Choose your photo').setInputFiles(shot2);
+    await mine.getByText('Your photo is saved').waitFor({ timeout: 15000 });
+    ok('the employee changed, removed and re-uploaded their own photo, and the top bar followed');
+
+    // The admin changes and removes it from the profile.
+    await admin.goto(profileUrl);
+    await admin.getByRole('button', { name: 'Change', exact: true }).waitFor();
+    await admin.getByLabel('Choose a photo').setInputFiles(shot);
+    await admin.waitForLoadState('networkidle');
+    admin.once('dialog', (d) => d.accept());
+    await admin.getByRole('button', { name: 'Remove', exact: true }).click();
+    await admin.getByRole('button', { name: 'Add photo', exact: true }).waitFor({ timeout: 15000 });
+    ok('the admin changed and removed the employee\'s photo from the profile');
 
     // 5. Login control on the profile.
     await admin.goto(profileUrl);
