@@ -98,7 +98,15 @@ function expect(cond, msg) {
   await p.waitForURL((u) => u.pathname === '/' || !u.href.startsWith(WEB), { timeout: 15000 });
   expect(p.url().startsWith(WEB), `sign-in followed an outside next= address to ${p.url()}`);
   ok('sign-in ignores a next= address outside CREW');
-  expect(!errs.length, `browser errors:\n${errs.join('\n')}`);
+  // On CI runners Docker can change the host's network interfaces while the stack settles. Chromium then cancels
+  // requests in flight with net::ERR_NETWORK_CHANGED, and Next.js logs that its RSC fetch fell back to a full
+  // navigation. Those are not script errors or policy violations, so only they are set aside, and only after
+  // Chromium has reported a network change. Everything else still fails the check.
+  const networkChanged = errs.some((e) => e.includes('net::ERR_NETWORK_CHANGED'));
+  const isNetworkChange = (e) => e.includes('net::ERR_NETWORK_CHANGED') || /^console: Failed to fetch RSC payload .* Falling back to browser navigation\. TypeError: Failed to fetch/.test(e) || e === 'page error: network error';
+  const browserErrors = networkChanged ? errs.filter((e) => !isNetworkChange(e)) : errs;
+  if (networkChanged) console.log(`note - the host network changed during the browser check; set aside: ${errs.filter(isNetworkChange).length} cancelled request(s)`);
+  expect(!browserErrors.length, `browser errors:\n${browserErrors.join('\n')}`);
   ok('no script errors or Content Security Policy violations');
 
   // Console: reachable from the private network the smoke test runs in, sign-in page renders
