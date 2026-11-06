@@ -45,9 +45,9 @@ export const NAV: NavGroup[] = [
   {
     label: 'Employee management',
     items: [
-      { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read' },
+      { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
-      { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read' },
+      { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
       { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create' },
     ],
   },
@@ -173,6 +173,18 @@ export function workflowActions(me: Me): QuickAction[] {
   if (has('insights:attrition', 'workforce_analytics')) out.push({ key: 'report', label: 'Open attrition report', href: '/insights/attrition', icon: 'trending-down', keywords: 'hr report analytics' });
   out.push({ key: 'theme', label: 'Open Theme Studio', href: '/settings/appearance', icon: 'palette', keywords: 'appearance theme dark light colour density' });
   return out;
+}
+
+/**
+ * The member's own pages, shown in the avatar menu for everyone. Regular employees reach their own record and sign-in
+ * settings here, since Employees and Logins & access are hidden from them when they can only see themselves.
+ */
+export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: string; href: string }[] {
+  return [
+    ...(me.employee ? [{ key: 'profile', label: 'My profile', href: `/employees/${me.employee.id}` }] : []),
+    { key: 'security', label: 'Password & sign-in', href: '/settings/security' },
+    { key: 'appearance', label: 'Appearance', href: '/settings/appearance' },
+  ];
 }
 
 export function visibleNav(me: Me): NavGroup[] {

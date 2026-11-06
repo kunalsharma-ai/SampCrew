@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { memberAction } from '@/app/(console)/actions';
+import { LocalTime } from '@/components/local-time';
 
 type Action = 'suspend' | 'reactivate' | 'sign_out' | 'reset_mfa' | 'resend_invite' | 'reset_password' | 'force_password_change' | 'lock_account' | 'unlock_account';
 const ACTIONS: Record<Action, { label: string; icon: React.ReactNode; danger?: boolean; explain: string }> = {
@@ -95,7 +96,7 @@ export function UsersView({ data, query, basePath, showWorkspace, pageSize }: {
                     {u.mustChangePassword && <div className="mt-1 text-[11px] text-warning">Must choose a new password</div>}
                   </TD>
                   <TD className="whitespace-nowrap text-xs text-fg-muted">
-                    <div>{u.lastLoginAt ? `Last ${new Date(u.lastLoginAt).toLocaleString()}` : 'Never signed in'}</div>
+                    <div>{u.lastLoginAt ? <>Last <LocalTime value={u.lastLoginAt} /></> : 'Never signed in'}</div>
                     <div className="mt-0.5 flex items-center gap-2" aria-label={`${u.liveSessions.web} web and ${u.liveSessions.mobile} mobile sessions open`}>
                       <span className="inline-flex items-center gap-0.5"><Globe className="size-3" aria-hidden />{u.liveSessions.web}</span>
                       <span className="inline-flex items-center gap-0.5"><Smartphone className="size-3" aria-hidden />{u.liveSessions.mobile}</span>

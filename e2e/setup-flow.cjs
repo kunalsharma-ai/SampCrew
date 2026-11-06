@@ -153,20 +153,39 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await chooseOwn(temp, 'Ravi-Own-Password-2026');
     ok('the employee signed in with the temporary password and had to choose their own first');
 
+    // A regular employee's menu leaves out the organization pages; their own record and sign-in sit behind their avatar.
+    const empNav = emp.getByRole('navigation', { name: 'Main' });
+    await empNav.getByRole('link', { name: 'Leave', exact: true }).waitFor();
+    expect((await empNav.getByRole('link', { name: 'Employees', exact: true }).count()) === 0, 'a regular employee still sees Employees in the menu');
+    expect((await empNav.getByRole('link', { name: 'Logins & access', exact: true }).count()) === 0, 'a regular employee still sees Logins & access in the menu');
+    const adminNav = admin.getByRole('navigation', { name: 'Main' });
+    await adminNav.getByRole('link', { name: 'Employees', exact: true }).waitFor();
+    await adminNav.getByRole('link', { name: 'Logins & access', exact: true }).waitFor();
+    for (const trigger of ['account-menu-header', 'account-menu-sidebar']) {
+      await emp.getByTestId(trigger).click();
+      await emp.getByRole('menu', { name: 'Your account' }).getByRole('menuitem', { name: 'My profile' }).click();
+      await emp.waitForURL(/\/employees\/[0-9a-f-]{36}/);
+      await emp.getByRole('heading', { name: 'Ravi Kale' }).waitFor();
+    }
+    await emp.getByTestId('account-menu-header').click();
+    await emp.getByRole('menu', { name: 'Your account' }).getByRole('menuitem', { name: 'Password & sign-in' }).click();
+    await emp.waitForURL((u) => u.pathname === '/settings/security');
+    ok('the employee menu hides Employees and Logins & access, and the avatar menu opens their own profile and sign-in settings');
+
     // The employee manages their own photo from their settings; the top bar follows.
     const shot2 = path.join(path.dirname(shot), 'ravi-new.png');
     fs.writeFileSync(shot2, PNG);
     await emp.goto(BASE + '/settings/appearance');
     const mine = emp.locator('[aria-label="Your photo"]');
     await mine.getByRole('button', { name: 'Change photo' }).waitFor();
-    const topBefore = await emp.locator('header img[src*="/employee-photos/"], a[title="Your appearance and profile"] img').first().getAttribute('src');
+    const topBefore = await emp.locator('header img[src*="/employee-photos/"], [data-testid="account-menu-header"] img').first().getAttribute('src');
     await mine.getByLabel('Choose your photo').setInputFiles(shot2);
     await mine.getByText('Your photo is saved').waitFor({ timeout: 15000 });
-    await emp.waitForFunction((before) => [...document.querySelectorAll('a[title="Your appearance and profile"] img')].some((i) => i.getAttribute('src') !== before), topBefore, { timeout: 15000 });
+    await emp.waitForFunction((before) => [...document.querySelectorAll('[data-testid="account-menu-header"] img')].some((i) => i.getAttribute('src') !== before), topBefore, { timeout: 15000 });
     await mine.getByRole('button', { name: 'Remove' }).click();
     await mine.getByText('Your photo is removed').waitFor();
     await mine.getByRole('button', { name: 'Upload photo' }).waitFor();
-    expect((await emp.locator('a[title="Your appearance and profile"] img').count()) === 0, 'the top bar still shows a removed photo');
+    expect((await emp.locator('[data-testid="account-menu-header"] img').count()) === 0, 'the top bar still shows a removed photo');
     await mine.getByLabel('Choose your photo').setInputFiles(shot2);
     await mine.getByText('Your photo is saved').waitFor({ timeout: 15000 });
     ok('the employee changed, removed and re-uploaded their own photo, and the top bar followed');

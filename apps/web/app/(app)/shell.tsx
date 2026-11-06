@@ -10,7 +10,7 @@ import {
   Headset, Megaphone,
   Activity, Bot, Plug, Sparkles, TrendingDown, Workflow,
   LockKeyhole, UserX,
-  Palette, PanelLeftClose, PanelLeftOpen, Plus, Star, UserPlus, Focus, History, ArrowRight, CornerDownLeft,
+  Palette, UserRound, PanelLeftClose, PanelLeftOpen, Plus, Star, UserPlus, Focus, History, ArrowRight, CornerDownLeft,
   Handshake, Building, FileStack, Tags, Orbit,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -20,7 +20,7 @@ import { applyAppearance } from '@/lib/appearance-client';
 import { photoUrl } from '@/lib/photo';
 import { WEB_HELP } from '@/lib/help-content';
 import { ICONS } from '@/lib/icons';
-import type { NavGroup, NavItem, QuickAction } from '@/lib/nav';
+import { accountLinks, type NavGroup, type NavItem, type QuickAction } from '@/lib/nav';
 import type { Me, Notification } from '@/lib/types';
 import { paletteSearchAction, recordVisitAction, resetAppearanceAction, saveAppearanceAction, saveFavouritesAction, syncAppearanceCookieAction } from './experience-actions';
 import { IqPanel } from './iq-panel';
@@ -374,17 +374,58 @@ function UpgradeCard({ me }: { me: Me }) {
   );
 }
 
-/** Greeting chip on the right of the top bar (wide screens), linking to the member's appearance and profile. */
+/** Greeting chip on the right of the top bar (wide screens); opens the member's account menu. */
 function HeaderUser({ me }: { me: Me }) {
   const role = me.membership.roles.find((r) => r.key !== 'employee') ?? me.membership.roles[0];
   return (
-    <Link href="/settings/appearance" className="ml-1 hidden items-center gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-bg-subtle xl:flex" title="Your appearance and profile">
+    <AccountMenu me={me} wrapperClassName="ml-1 hidden shrink-0 xl:block" buttonClassName="flex items-center whitespace-nowrap gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-bg-subtle" testId="account-menu-header">
       <Avatar name={me.user.fullName} size={32} src={me.employee ? photoUrl(me.employee) : null} />
-      <span className="flex flex-col leading-tight">
+      <span className="flex flex-col text-left leading-tight">
         <span className="text-[0.8125rem] font-semibold">Hi, {me.user.fullName.split(' ')[0]}</span>
         <span className="text-[0.6875rem] text-fg-subtle">{role?.name}</span>
       </span>
-    </Link>
+    </AccountMenu>
+  );
+}
+
+const ACCOUNT_ICONS: Record<string, LucideIcon> = { profile: UserRound, security: KeyRound, appearance: Palette };
+
+/** The member's own pages (profile, password and sign-in, appearance) and sign out, behind their avatar. */
+function AccountMenu({ me, children, wrapperClassName, buttonClassName, up, testId }: { me: Me; children: React.ReactNode; wrapperClassName?: string; buttonClassName?: string; up?: boolean; testId?: string }) {
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const close = useCallback(() => setOpen(false), []);
+  return (
+    <div className={cn('relative', wrapperClassName)}>
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-haspopup="menu" title="Your account" data-testid={testId} className={buttonClassName}>
+        {children}
+        {/* Named after its visible content plus this, so the accessible name keeps the visible text. */}
+        <span className="sr-only">Your account</span>
+      </button>
+      <Popover open={open} onClose={close} up={up} className="w-56 p-1">
+        <div className="border-b border-border px-2.5 pb-2 pt-1.5">
+          <div className="truncate text-[0.8125rem] font-medium">{me.user.fullName}</div>
+          <div className="truncate text-[0.6875rem] text-fg-subtle">{me.user.email}</div>
+        </div>
+        <ul role="menu" aria-label="Your account" className="pt-1">
+          {accountLinks(me).map((a) => {
+            const Icon = ACCOUNT_ICONS[a.key] ?? UserRound;
+            return (
+              <li key={a.key} role="none">
+                <Link role="menuitem" href={a.href} onClick={close} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.8125rem] text-fg-muted hover:bg-bg-subtle hover:text-fg">
+                  <Icon className="size-4 text-accent" /> {a.label}
+                </Link>
+              </li>
+            );
+          })}
+          <li role="none">
+            <button role="menuitem" type="button" disabled={pending} onClick={() => start(() => logoutAction())} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[0.8125rem] text-fg-muted hover:bg-bg-subtle hover:text-fg">
+              <LogOut className="size-4 text-accent" /> Sign out
+            </button>
+          </li>
+        </ul>
+      </Popover>
+    </div>
   );
 }
 
@@ -435,7 +476,7 @@ function UserMenu({ me, rail }: { me: Me; rail: boolean }) {
   const primaryRole = me.membership.roles.find((r) => r.key !== 'employee') ?? me.membership.roles[0];
   return (
     <div className={cn('flex items-center gap-2.5 rounded-lg border border-border px-2.5 py-2', rail && 'flex-col border-0 px-0')}>
-      <Link href="/settings/appearance" title="Your appearance and profile" className="shrink-0"><Avatar name={me.user.fullName} size={30} src={me.employee ? photoUrl(me.employee) : null} /></Link>
+      <AccountMenu me={me} up wrapperClassName="shrink-0" buttonClassName="block rounded-full" testId="account-menu-sidebar"><Avatar name={me.user.fullName} size={30} src={me.employee ? photoUrl(me.employee) : null} /></AccountMenu>
       {!rail && (
         <div className="min-w-0 flex-1">
           <div className="truncate text-[0.8125rem] font-medium">{me.user.fullName}</div>
@@ -453,7 +494,7 @@ function UserMenu({ me, rail }: { me: Me; rail: boolean }) {
 // Top bar menus
 // ---------------------------------------------------------------------------------------------------------------
 
-function Popover({ open, onClose, children, className }: { open: boolean; onClose: () => void; children: React.ReactNode; className?: string }) {
+function Popover({ open, onClose, children, className, up }: { open: boolean; onClose: () => void; children: React.ReactNode; className?: string; up?: boolean }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -464,7 +505,7 @@ function Popover({ open, onClose, children, className }: { open: boolean; onClos
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className={cn('absolute right-0 top-full z-50 mt-2 rounded-xl border border-border bg-surface-raised shadow-pop animate-fade-in', className)}>{children}</div>
+      <div className={cn('absolute z-50 rounded-xl border border-border bg-surface-raised shadow-pop animate-fade-in', up ? 'bottom-full left-0 mb-2' : 'right-0 top-full mt-2', className)}>{children}</div>
     </>
   );
 }

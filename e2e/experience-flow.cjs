@@ -139,17 +139,20 @@ function leaveDay() {
 
     // 5. Command palette: a person on the team, then a theme by name.
     const search = sup.getByRole('combobox', { name: 'Search pages' });
-    // Right after a reload the shortcut can land before the page is hydrated, so press again until it opens.
-    for (let i = 0; i < 10 && !(await search.isVisible()); i++) {
-      await sup.keyboard.press('Control+k');
-      await search.waitFor({ timeout: 1000 }).catch(() => {});
-    }
+    // Right after a navigation the shortcut can land before the page is hydrated, so press again until it opens.
+    const openPalette = async () => {
+      for (let i = 0; i < 10 && !(await search.isVisible()); i++) {
+        await sup.keyboard.press('Control+k');
+        await search.waitFor({ timeout: 1000 }).catch(() => {});
+      }
+    };
+    await openPalette();
     await search.fill('Arjun');
     const person = sup.getByRole('option', { name: /Arjun/ }).first();
     await person.waitFor({ timeout: 10000 });
     await person.click();
     await sup.waitForURL(/\/employees\/[0-9a-f-]{36}/);
-    await sup.keyboard.press('Control+k');
+    await openPalette();
     await search.fill('Aurora');
     await sup.getByRole('option', { name: /Theme: Aurora Glass/ }).waitFor();
     await sup.keyboard.press('Enter');

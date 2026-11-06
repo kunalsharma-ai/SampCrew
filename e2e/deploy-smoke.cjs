@@ -67,20 +67,35 @@ function expect(cond, msg) {
   const errs = [];
   p.on('pageerror', (e) => errs.push(`page error: ${e.message}`));
   p.on('console', (m) => m.type() === 'error' && errs.push(`console: ${m.text()}`));
-  await p.goto(`${WEB}/login`);
-  await p.fill('input[name=email]', 'uk.hr@demo.crew.local');
-  await p.fill('input[name=password]', PASSWORD);
-  await p.click('button[type=submit]');
-  await p.waitForURL(`${WEB}/`, { timeout: 30000 }).catch(async (e) => {
+  const signIn = async () => {
+    await p.goto(`${WEB}/login`);
+    await p.fill('input[name=email]', 'uk.hr@demo.crew.local');
+    await p.fill('input[name=password]', PASSWORD);
+    await p.click('button[type=submit]');
+    await p.waitForURL(`${WEB}/`, { timeout: 30000 });
+  };
+  // A network change on the runner can cancel the sign-in request itself; sign in once more if that is what happened.
+  await signIn().catch(async (e) => {
+    if (errs.some((x) => /ERR_NETWORK_CHANGED/.test(x))) return signIn();
+    throw e;
+  }).catch(async (e) => {
     const text = (await p.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 600);
     throw new Error(`sign-in did not reach Home (at ${p.url()}): ${e.message.split('\n')[0]}\npage: ${text}\nbrowser: ${errs.join(' | ')}`);
   });
+  // The sign-in redirect finishes with a client-side navigation; let it settle so the next goto does not cancel it
+  // (Chromium then reports net::ERR_NETWORK_CHANGED or ERR_ABORTED and the proxy logs a 499).
+  await p.waitForLoadState('networkidle');
   const cookies = await ctx.cookies(WEB);
   const session = cookies.filter((c) => c.name === 'crew_at' || c.name === 'crew_rt');
   expect(session.length === 2 && session.every((c) => c.secure && c.httpOnly), `session cookies must be Secure and HttpOnly: ${JSON.stringify(session.map((c) => [c.name, c.secure, c.httpOnly]))}`);
   ok('signed in over TLS; session cookies are Secure and HttpOnly');
   for (const path of ['/people', '/leave', '/attendance', '/approvals', '/payroll', '/settings/workspace']) {
-    const r = await p.goto(`${WEB}${path}`);
+    // A navigation still running from the previous page can cancel this one; try once more if that happens.
+    const r = await p.goto(`${WEB}${path}`).catch(async (e) => {
+      if (!/ERR_NETWORK_CHANGED|ERR_ABORTED|interrupted by another navigation/.test(e.message)) throw e;
+      await p.waitForLoadState('networkidle');
+      return p.goto(`${WEB}${path}`);
+    });
     expect(r && r.status() < 400, `${path} -> ${r && r.status()}`);
     await p.waitForLoadState('networkidle');
     expect(!p.url().includes('/login'), `${path} sent the signed-in user back to sign-in`);

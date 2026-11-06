@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { z } from 'zod';
 import { createAdminAction } from '../actions';
+import { LocalTime } from '@/components/local-time';
 
 export interface AdminRow { id: string; email: string; fullName: string; role: string; mfaEnabled: boolean; status: string; lastLoginAt: string | null }
 
@@ -33,7 +34,7 @@ export function AdminsView({ rows }: { rows: AdminRow[] }) {
                 <TD title={(PLATFORM_ROLE_CAPABILITIES as Record<string, readonly string[]>)[a.role]?.join(', ')}>{a.role.replace('_', ' ')}</TD>
                 <TD>{a.mfaEnabled ? <Badge tone="success">On</Badge> : <Badge tone="warning">Not enrolled</Badge>}</TD>
                 <TD><Badge tone={a.status === 'active' ? 'success' : 'neutral'}>{a.status}</Badge></TD>
-                <TD className="text-fg-muted">{a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleString() : 'Never'}</TD>
+                <TD className="text-fg-muted">{a.lastLoginAt ? <LocalTime value={a.lastLoginAt} /> : 'Never'}</TD>
               </TR>
             ))}
           </TBody>
