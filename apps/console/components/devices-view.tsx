@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { pauseDeviceAction, setDeviceIntegrationsAction } from '@/app/(console)/actions';
+import { LocalTime } from '@/components/local-time';
 
 export interface ConsoleDevice {
   id: string; name: string; vendor: string; model: string | null; serialNumber: string; protocol: string; simulated: boolean; firmware: string | null;
@@ -76,7 +77,7 @@ export function DevicesTable({ devices, showWorkspace, canManage }: { devices: C
                   {d.status === 'paused' && <div className="mt-1 max-w-[14rem] text-[11px] text-fg-subtle">{d.pausedReason ?? 'Integration switched off'}</div>}
                   {d.lastError && d.status !== 'paused' && <div className="mt-1 max-w-[14rem] truncate text-[11px] text-danger" title={d.lastError}>{d.lastError}</div>}
                 </TD>
-                <TD className="whitespace-nowrap text-xs text-fg-muted">{d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'Never'}</TD>
+                <TD className="whitespace-nowrap text-xs text-fg-muted">{d.lastSeenAt ? <LocalTime value={d.lastSeenAt} /> : 'Never'}</TD>
                 <TD className="text-right tabular-nums">{d.punches7d}<div className="text-[11px] text-fg-subtle">{d.recordsAccepted} total{d.recordsRejected ? `, ${d.recordsRejected} rejected` : ''}</div></TD>
                 <TD className="text-right">
                   {canManage && (d.pausedAt

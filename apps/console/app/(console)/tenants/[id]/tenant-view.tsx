@@ -8,6 +8,7 @@ import { useState, useTransition } from 'react';
 import { Tile, TileRow } from '@/components/neon';
 import type { HistoryRow, PlanSummary, TenantDetail } from '@/lib/types';
 import { overrideSubscriptionAction, requestSupportAccessAction, setTenantStatusAction } from '../../actions';
+import { LocalTime } from '@/components/local-time';
 
 export interface SupportSnapshot {
   grantId: string;
@@ -65,7 +66,7 @@ export function TenantView({ t, plans, history, snapshot, caps }: { t: TenantDet
         <Tile tone="violet" icon={<CreditCard className="size-5" />} label="Plan" value={s?.planName ?? 'None'} hint={s ? `${s.status}${s.trialEndsOn ? ` to ${s.trialEndsOn}` : ''} · ${s.billingCycle}` : undefined} testId="tile-plan" />
         <Tile tone="teal" icon={<Users className="size-5" />} label="Members" value={`${t.activeMembers} / ${s?.seats ?? '—'}`} hint={`${t.pendingInvites} pending invitations`} href={`/tenants/${t.id}/users`} />
         <Tile tone="orange" icon={<ToggleRight className="size-5" />} label="Module switches" value={Object.values(s?.featureOverrides ?? {}).filter((v) => typeof v === 'boolean').length} hint="Set by SAMPLEDGE" href={`/tenants/${t.id}/access`} />
-        <Tile tone="blue" icon={<Activity className="size-5" />} label="Last activity" value={t.lastActivityAt ? new Date(t.lastActivityAt).toLocaleDateString() : 'Never'} hint={`${t.aiCreditsThisMonth} AI credits this month`} href={`/tenants/${t.id}/activity`} />
+        <Tile tone="blue" icon={<Activity className="size-5" />} label="Last activity" value={t.lastActivityAt ? <LocalTime value={t.lastActivityAt} dateOnly /> : 'Never'} hint={`${t.aiCreditsThisMonth} AI credits this month`} href={`/tenants/${t.id}/activity`} />
       </TileRow>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -100,9 +101,9 @@ export function TenantView({ t, plans, history, snapshot, caps }: { t: TenantDet
                   const st = expired ? 'expired' : g.status;
                   return (
                     <TR key={g.id} title={g.reason}>
-                      <TD><div className="whitespace-nowrap">{new Date(g.createdAt).toLocaleString()}</div><div className="text-xs text-fg-subtle">{g.requestedBy}</div></TD>
+                      <TD><div className="whitespace-nowrap"><LocalTime value={g.createdAt} /></div><div className="text-xs text-fg-subtle">{g.requestedBy}</div></TD>
                       <TD><Badge tone={st === 'approved' ? 'success' : st === 'pending' ? 'warning' : 'neutral'}>{st}</Badge></TD>
-                      <TD className="whitespace-nowrap text-fg-muted">{g.expiresAt ? new Date(g.expiresAt).toLocaleString() : '—'}</TD>
+                      <TD className="whitespace-nowrap text-fg-muted">{g.expiresAt ? <LocalTime value={g.expiresAt} /> : '—'}</TD>
                     </TR>
                   );
                 })}
@@ -120,7 +121,7 @@ export function TenantView({ t, plans, history, snapshot, caps }: { t: TenantDet
             <TBody>
               {history.slice(0, 15).map((h) => (
                 <TR key={h.id}>
-                  <TD className="whitespace-nowrap text-fg-muted">{new Date(h.createdAt).toLocaleString()}</TD>
+                  <TD className="whitespace-nowrap text-fg-muted"><LocalTime value={h.createdAt} /></TD>
                   <TD>{HISTORY_LABEL[h.action] ?? h.action}</TD>
                   <TD className="text-fg-muted">{h.actorLabel ?? 'System'}</TD>
                   <TD className="max-w-md truncate text-xs text-fg-muted" title={describe(h.changes)}>{describe(h.changes) || '—'}</TD>
@@ -148,7 +149,7 @@ export function TenantView({ t, plans, history, snapshot, caps }: { t: TenantDet
               </div>
               <div className="min-w-0">
                 <h3 className="mb-2 text-sm font-semibold">Recent activity</h3>
-                <ul className="grid gap-2 text-[13px]">{snapshot.recentAudit.slice(0, 12).map((a, i) => <li key={i} className="min-w-0"><code className="text-xs">{a.action}</code><div className="truncate text-xs text-fg-subtle">{a.actorLabel ?? 'System'} · {new Date(a.createdAt).toLocaleString()}</div></li>)}</ul>
+                <ul className="grid gap-2 text-[13px]">{snapshot.recentAudit.slice(0, 12).map((a, i) => <li key={i} className="min-w-0"><code className="text-xs">{a.action}</code><div className="truncate text-xs text-fg-subtle">{a.actorLabel ?? 'System'} · <LocalTime value={a.createdAt} /></div></li>)}</ul>
               </div>
             </div>
           </CardBody>

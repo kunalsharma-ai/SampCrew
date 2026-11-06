@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import { setMemberModulesAction, switchAppsAction, switchModulesAction, switchPermissionsAction } from '../../../actions';
+import { LocalTime } from '@/components/local-time';
 
 export type AccessTab = 'modules' | 'apps' | 'permissions' | 'people';
 type Feature = WorkspaceAccess['features'][number];
@@ -37,7 +38,7 @@ export function AccessView({ tenantId, tab, access, members, page, pageSize, q, 
         <span>Plan: <strong className="text-fg">{access.plan?.name ?? 'None'}</strong></span>
         <span data-testid="modules-on"><strong className="text-fg">{on}</strong> of {access.features.length} modules active</span>
         <span data-testid="permissions-off"><strong className="text-fg">{off}</strong> permissions switched off</span>
-        {access.updatedAt && <span>Permissions last changed {new Date(access.updatedAt).toLocaleString()}</span>}
+        {access.updatedAt && <span>Permissions last changed <LocalTime value={access.updatedAt} /></span>}
       </div>
       <nav aria-label="Access sections" className="flex gap-1 border-b border-border">
         {TABS.map((t) => (

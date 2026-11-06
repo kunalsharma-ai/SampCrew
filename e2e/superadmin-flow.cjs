@@ -92,7 +92,9 @@ async function userAction(page, email, action, reason) {
 
 (async () => {
   const b = await chromium.launch();
-  const admin = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  // A time zone and locale unlike the server's, so a date the server and browser format differently shows up as a
+  // hydration error (React #418) instead of passing by luck.
+  const admin = await (await b.newContext({ viewport: { width: 1440, height: 900 }, timezoneId: 'Asia/Kolkata', locale: 'en-IN' })).newPage();
   const hr = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   for (const p of [admin, hr]) watch(p);
   let current = admin;

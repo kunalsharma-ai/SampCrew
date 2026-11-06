@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Page, TenantRow } from '@/lib/types';
 import { createTenantAction } from '../actions';
+import { LocalTime } from '@/components/local-time';
 
 export function TenantsView({ page, query, canCreate }: { page: Page<TenantRow>; query: { q: string; status: string }; canCreate: boolean }) {
   const router = useRouter();
@@ -55,7 +56,7 @@ export function TenantsView({ page, query, canCreate }: { page: Page<TenantRow>;
                   <TD className="capitalize">{t.plan ?? '—'}{t.subscriptionStatus && t.subscriptionStatus !== 'active' && <span className="ml-1 text-xs text-fg-subtle">({t.subscriptionStatus}{t.trialEndsOn ? ` to ${t.trialEndsOn}` : ''})</span>}</TD>
                   <TD className="text-right tabular">{t.activeMembers}{t.seats ? <span className="text-fg-subtle"> / {t.seats}</span> : null}</TD>
                   <TD>{t.region} · {t.countryCode}</TD>
-                  <TD className="whitespace-nowrap text-fg-muted">{new Date(t.createdAt).toLocaleDateString()}</TD>
+                  <TD className="whitespace-nowrap text-fg-muted"><LocalTime value={t.createdAt} dateOnly /></TD>
                 </TR>
               ))}
             </TBody>

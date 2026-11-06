@@ -5,6 +5,7 @@ import { BellRing, Bot, ChevronDown, ExternalLink, Mail, ShieldCheck, Smartphone
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { resetIntegrationAction, saveIntegrationAction, testIntegrationAction } from '../actions';
+import { LocalTime } from '@/components/local-time';
 
 type Values = Record<string, unknown>;
 type Flash = { tone: 'success' | 'danger' | 'warning'; text: string } | null;
@@ -167,9 +168,9 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
                 Currently read from the server&apos;s settings file ({def.envFallback.join(', ')}). Saving here takes over; those values are then ignored.
               </p>
             )}
-            {view.updatedAt && <p className="mt-4 text-xs text-fg-subtle">Last saved {new Date(view.updatedAt).toLocaleString()}{view.updatedBy ? ` by ${view.updatedBy}` : ''}.</p>}
+            {view.updatedAt && <p className="mt-4 text-xs text-fg-subtle">Last saved <LocalTime value={view.updatedAt} />{view.updatedBy ? ` by ${view.updatedBy}` : ''}.</p>}
             {view.lastTest && (
-              <p className="mt-1 text-xs text-fg-subtle">Last test of the saved settings, {new Date(view.lastTest.at).toLocaleString()}: {view.lastTest.detail}</p>
+              <p className="mt-1 text-xs text-fg-subtle">Last test of the saved settings, <LocalTime value={view.lastTest.at} />: {view.lastTest.detail}</p>
             )}
           </section>
 
