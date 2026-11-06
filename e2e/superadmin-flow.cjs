@@ -38,6 +38,12 @@ const watch = (page) => {
 const stamp = Date.now();
 
 /** Signs in through the API as one app, the way the Web Portal and the mobile app identify themselves. Waits out the rate limit. */
+/** A public API call (sign-in steps), as the web client. */
+async function api(_token, method, path, body) {
+  const res = await fetch(`${API}${path}`, { method, headers: { 'content-type': 'application/json', 'x-crew-client': 'web' }, body: JSON.stringify(body) });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
 async function apiSignIn(email, client) {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${API}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-crew-client': client }, body: JSON.stringify({ email, password: PASSWORD }) });
@@ -78,7 +84,7 @@ async function userAction(page, email, action, reason) {
   await page.getByTestId(`act-${action}-${email}`).click();
   const d = page.locator('dialog[open]');
   await d.locator('textarea').fill(reason);
-  await d.locator('footer button, button').filter({ hasText: /Sign out everywhere|Suspend|Reactivate|Reset two-step|Resend invitation/ }).last().click();
+  await d.locator('footer button, button').filter({ hasText: /Sign out everywhere|Suspend|Reactivate|Reset two-step|Resend invitation|Reset password|Force password change|Lock account|Unlock account/ }).last().click();
   await page.locator('[role=alert], .crew-alert').filter({ hasText: 'done for' }).first().waitFor({ timeout: 15000 }).catch(async () => {
     await page.getByText('done for').first().waitFor({ timeout: 5000 });
   });
@@ -167,6 +173,22 @@ async function userAction(page, email, action, reason) {
     await userAction(admin, rec, 'reactivate', 'E2E: customer asked us to');
     expect((await apiSignIn(rec, 'web')).body.status === 'ok', 'reactivated recruiter should sign in');
     ok('Users: recruiter signed out everywhere, suspended (sign-in refused) and reactivated, each with a reason');
+
+    // Password control: passwords are hashed, so the Console resets them; the new one is shown once.
+    await userAction(admin, rec, 'reset_password', 'E2E: ticket 1002, forgot password');
+    const temp = (await admin.getByTestId('console-temporary-password').textContent()).trim();
+    expect(temp.length === 16, `temporary password looks wrong: ${temp}`);
+    expect((await apiSignIn(rec, 'web')).status === 401, 'the old password should stop working after a reset');
+    const first = await api(null, 'POST', '/auth/login', { email: rec, password: temp });
+    expect(first.body.status === 'password_change_required', `expected a forced password change, got ${first.body.status}`);
+    const chosen = 'Recruiter-New-Pass-2026';
+    expect((await api(null, 'POST', '/auth/initial-password', { changeToken: first.body.changeToken, newPassword: chosen })).body.status === 'ok', 'could not choose a new password');
+    await admin.reload();
+    await userAction(admin, rec, 'lock_account', 'E2E: ticket 1003, suspicious sign-ins');
+    expect((await api(null, 'POST', '/auth/login', { email: rec, password: chosen })).body.status !== 'ok', 'a locked account should not sign in');
+    await userAction(admin, rec, 'unlock_account', 'E2E: ticket 1003 closed');
+    expect((await api(null, 'POST', '/auth/login', { email: rec, password: chosen })).body.status === 'ok', 'an unlocked account should sign in');
+    ok('Users: password reset shown once (old one refused, new one forced at sign-in), account locked and unlocked');
 
     await admin.goto(`${CONSOLE}/users?q=demo.crew.local`);
     await admin.getByTestId(`user-${rec}`).getByRole('link', { name: /Northwind/ }).waitFor();

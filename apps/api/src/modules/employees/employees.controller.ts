@@ -1,7 +1,12 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
+  attendanceRegistrationInput,
   confirmInput,
+  employeeLoginActionInput,
+  employeeLoginInput,
+  PHOTO_MAX_BYTES,
   createEmployeeInput,
   type CreateEmployeeInput,
   designationInput,
@@ -16,7 +21,7 @@ import {
   updateEmployeeInput,
 } from '@crew/contracts';
 import { z } from 'zod';
-import { RequirePermission } from '../../platform/authz/decorators';
+import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { sendFile } from '../../platform/export/tabular';
@@ -188,6 +193,72 @@ export class EmployeesController {
   @Doc({ summary: 'Link an existing workspace member to this employee record', body: linkInput })
   link(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(linkInput)) body: z.infer<typeof linkInput>) {
     return this.employees.link(id, body.membershipId);
+  }
+
+  @Post(':id/login')
+  @RequirePermission('employees:update')
+  @Doc({ summary: 'Give an employee without a login a CREW login: an emailed invitation, or a login with a temporary password they change at first sign-in', body: employeeLoginInput })
+  createLogin(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(employeeLoginInput)) body: z.infer<typeof employeeLoginInput>) {
+    return this.employees.createLogin(id, body);
+  }
+
+  @Get(':id/login')
+  @RequirePermission('users:manage')
+  @Doc({ summary: "The employee's login ID and sign-in state (passwords are stored only as one-way hashes and are never shown)" })
+  loginDetails(@Param('id', UuidPipe) id: string) {
+    return this.employees.loginDetails(id);
+  }
+
+  @Post(':id/login/actions')
+  @HttpCode(200)
+  @RequirePermission('users:manage')
+  @Doc({ summary: 'Reset the password (new temporary one shown once), force a change at next sign-in, lock or unlock sign-in to this workspace, or sign out (audited)', body: employeeLoginActionInput })
+  loginAction(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(employeeLoginActionInput)) body: z.infer<typeof employeeLoginActionInput>) {
+    return this.employees.loginAction(id, body);
+  }
+
+  @Get(':id/attendance-registration')
+  @RequireFeature('attendance_basic')
+  @RequirePermission('attendance:read')
+  @Doc({ summary: "The employee's usual shift and attendance-machine enrolment numbers" })
+  attendanceRegistration(@Param('id', UuidPipe) id: string) {
+    return this.employees.attendanceRegistration(id);
+  }
+
+  @Put(':id/attendance-registration')
+  @RequireFeature('attendance_basic')
+  @RequirePermission('employees:update')
+  @Doc({ summary: 'Register the employee for attendance: usual shift and enrolment numbers (replaces both; punches already received are applied)', body: attendanceRegistrationInput })
+  saveAttendanceRegistration(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(attendanceRegistrationInput)) body: z.infer<typeof attendanceRegistrationInput>) {
+    return this.employees.saveAttendanceRegistration(id, body);
+  }
+
+  @Get(':id/photo')
+  @RequirePermission('employees:read')
+  @Doc({ summary: "The employee's photo (PNG, JPEG or WebP)" })
+  async photo(@Param('id', UuidPipe) id: string, @Res() res: Response) {
+    const f = await this.employees.openPhoto(id);
+    res.setHeader('content-type', f.contentType);
+    res.setHeader('content-length', String(f.size));
+    res.setHeader('cache-control', 'private, max-age=300');
+    res.setHeader('x-content-type-options', 'nosniff');
+    f.stream.pipe(res);
+  }
+
+  @Put(':id/photo')
+  @RequirePermission('employees:read')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: PHOTO_MAX_BYTES, files: 1 } }))
+  @Doc({ summary: 'Set the photo (multipart/form-data: file). PNG, JPEG or WebP up to 5 MB. HR, or the employee for themselves.' })
+  setPhoto(@Param('id', UuidPipe) id: string, @UploadedFile() file?: { mimetype: string; size: number; buffer: Buffer }) {
+    return this.employees.setPhoto(id, file);
+  }
+
+  @Delete(':id/photo')
+  @HttpCode(204)
+  @RequirePermission('employees:read')
+  @Doc({ summary: 'Remove the photo' })
+  async removePhoto(@Param('id', UuidPipe) id: string) {
+    await this.employees.removePhoto(id);
   }
 
   @Post(':id/job-changes')

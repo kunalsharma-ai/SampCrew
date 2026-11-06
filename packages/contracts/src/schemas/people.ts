@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { password } from './auth';
 import { email, name } from './common';
 
 /** Calendar date as YYYY-MM-DD (no time zone; dates are local to the employee's entity). */
@@ -11,6 +12,38 @@ export const EXIT_TYPES = ['resignation', 'termination', 'retirement', 'contract
 
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 const phone = z.string().trim().regex(/^\+?[0-9 ()-]{6,20}$/, 'Enter a phone number with digits, spaces or +');
+
+export const LOGIN_MODES = ['none', 'invite', 'password'] as const;
+export type LoginMode = (typeof LOGIN_MODES)[number];
+
+/** An enrolment number on attendance machines. No device means the number is used on every machine in the workspace. */
+export const attendanceEnrolment = z.object({
+  deviceUserId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,32}$/, 'Use up to 32 letters, digits, - or _'),
+  deviceId: z.uuid().nullable().default(null),
+});
+
+/** Attendance registration for an existing employee: replaces their usual shift and enrolment numbers. */
+export const attendanceRegistrationInput = z.object({
+  defaultShiftId: z.uuid().nullable(),
+  enrolments: z.array(attendanceEnrolment).max(5),
+});
+
+/** Create a CREW login for an employee who has none. */
+export const employeeLoginInput = z.object({ mode: z.enum(['invite', 'password']), initialPassword: password.optional() })
+  .refine((v) => !v.initialPassword || v.mode === 'password', { message: 'A temporary password is only used when creating the login now', path: ['initialPassword'] });
+
+/**
+ * What a workspace admin can do to an employee's CREW login. Passwords are stored only as one-way hashes, so nobody can
+ * read one back: a reset sets a new temporary password (shown once) that the person replaces at the next sign-in.
+ * Lock stops sign-in to this workspace only; the account itself may also be used in other workspaces.
+ */
+export const EMPLOYEE_LOGIN_ACTIONS = ['reset_password', 'force_password_change', 'lock', 'unlock', 'sign_out'] as const;
+export const employeeLoginActionInput = z.object({ action: z.enum(EMPLOYEE_LOGIN_ACTIONS), initialPassword: password.optional() })
+  .refine((v) => !v.initialPassword || v.action === 'reset_password', { message: 'A temporary password is only used when resetting the password', path: ['initialPassword'] });
+
+/** Employee photos: PNG, JPEG or WebP up to 5 MB. */
+export const PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
 export const designationInput = z.object({ name, code: z.string().trim().max(20).optional(), level: z.number().int().min(0).max(100).optional() });
 
@@ -39,13 +72,23 @@ export const createEmployeeInput = placementInput
     probationMonths: z.number().int().min(0).max(24).default(6),
     /** Instantiate this onboarding checklist (defaults to the workspace's default template). Null skips onboarding. */
     onboardingTemplateId: z.uuid().nullable().optional(),
-    /** Send a CREW login invitation to the work email. */
+    /** Send a CREW login invitation to the work email. Same as loginMode 'invite'. */
     inviteToCrew: z.boolean().default(false),
+    /**
+     * How this person signs in to CREW: no login yet, an emailed invitation, or a login created now with a temporary
+     * password (typed by HR or generated) that they must change at first sign-in.
+     */
+    loginMode: z.enum(LOGIN_MODES).optional(),
+    initialPassword: password.optional(),
     /** Link to an existing workspace member instead of inviting. */
     membershipId: z.uuid().optional(),
+    /** Attendance registration: their usual shift and the enrolment number(s) they punch with on attendance machines. */
+    defaultShiftId: z.uuid().nullable().optional(),
+    attendanceEnrolments: z.array(attendanceEnrolment).max(5).optional(),
   })
-  .refine((v) => !v.inviteToCrew || !!v.workEmail, { message: 'A work email is needed to invite this person to CREW', path: ['workEmail'] })
-  .refine((v) => !(v.inviteToCrew && v.membershipId), { message: 'Choose either an invitation or an existing member', path: ['membershipId'] });
+  .refine((v) => !(v.inviteToCrew || v.loginMode === 'invite' || v.loginMode === 'password') || !!v.workEmail, { message: 'A work email is needed to give this person a CREW login', path: ['workEmail'] })
+  .refine((v) => !((v.inviteToCrew || (v.loginMode && v.loginMode !== 'none')) && v.membershipId), { message: 'Choose either a new login or an existing member', path: ['membershipId'] })
+  .refine((v) => !v.initialPassword || v.loginMode === 'password', { message: 'A temporary password is only used when creating the login now', path: ['initialPassword'] });
 export type CreateEmployeeInput = z.infer<typeof createEmployeeInput>;
 
 /** Fields HR may change on the profile. Placement changes go through lifecycle actions so history is kept. */

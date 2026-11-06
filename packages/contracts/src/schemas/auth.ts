@@ -59,13 +59,21 @@ export interface TokenPair {
 export type LoginResponse =
   | ({ status: 'ok' } & TokenPair)
   | { status: 'mfa_required'; mfaToken: string }
-  | { status: 'select_tenant'; tenants: { id: string; name: string; slug: string }[]; selectToken: string };
+  | { status: 'select_tenant'; tenants: { id: string; name: string; slug: string }[]; selectToken: string }
+  /** HR created this login with a temporary password: the person chooses their own before going on. */
+  | { status: 'password_change_required'; changeToken: string };
+
+export const initialPasswordRequest = z.object({ changeToken: z.string().min(10), newPassword: password });
 
 export const selectTenantRequest = z.object({ selectToken: z.string().min(10), tenantId: z.uuid() });
 
 export interface MeResponse {
   user: { id: string; email: string; fullName: string; mfaEnabled: boolean };
-  tenant: { id: string; name: string; slug: string; isDemo: boolean; status: string; timezone: string; currency: string; locale: string };
+  tenant: {
+    id: string; name: string; slug: string; isDemo: boolean; status: string; timezone: string; currency: string; locale: string;
+    /** When the first-login company setup was finished (null: not yet, so admins are taken through it). */
+    setupCompletedAt: string | null;
+  };
   membership: { id: string; status: string; roles: { key: string; name: string }[] };
   permissions: Record<string, string>;
   features: string[];

@@ -6,9 +6,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { SavedViews } from '@/components/saved-views';
+import { photoUrl } from '@/lib/photo';
 import { useCreateParam } from '@/lib/use-create-param';
 import type { Department, Designation, Employee, LegalEntity, Location, OnboardingTemplate, Page } from '@/lib/types';
 import type { Structure } from '../payroll/types';
+import type { DeviceOption, ShiftOption } from './[id]/profile-extras';
+import { TemporaryPassword } from './[id]/profile-extras';
 import { discardHireDraftAction } from './actions';
 import { type EmployeeDraft, HIRE_STEPS, HireWizard } from './hire-wizard';
 import { EmployeeStatus } from './status';
@@ -22,7 +25,7 @@ const COLUMNS: DataColumn<Employee>[] = [
     key: 'name', label: 'Name', sort: 'name', required: true,
     render: (e) => (
       <Link href={`/employees/${e.id}`} className="flex items-center gap-3" onClick={(ev) => ev.stopPropagation()}>
-        <Avatar name={e.displayName} size={32} />
+        <Avatar name={e.displayName} size={32} src={photoUrl(e)} />
         <span>
           <span className="block font-medium">{e.displayName}</span>
           <span className="block text-xs text-fg-subtle">{e.designationName ?? 'No designation'}{e.membershipId ? '' : ' · no CREW login'}</span>
@@ -59,14 +62,23 @@ interface Props {
   canHire: boolean;
   canPay: boolean;
   canDocs: boolean;
+  shifts: ShiftOption[] | null;
+  devices: DeviceOption[] | null;
+  canManageOrg: boolean;
+  canAttendance: boolean;
+  canConfigureShifts: boolean;
+  setupPending: boolean;
 }
+
+export type HireDone = { inviteUrl: string | null; warnings: string[]; name: string; login?: { email: string; temporaryPassword: string } | null };
 
 export function EmployeesView(props: Props) {
   const { page, state, departments, canHire, drafts } = props;
   const router = useRouter();
   const [hireOpen, setHireOpen] = useCreateParam('employee');
   const [draft, setDraft] = useState<EmployeeDraft | null>(null);
-  const [done, setDone] = useState<{ inviteUrl: string | null; warnings: string[]; name: string } | null>(null);
+  const [done, setDone] = useState<HireDone | null>(null);
+  const [login, setLogin] = useState<{ email: string; temporaryPassword: string } | null>(null);
   const [, start] = useTransition();
   const filters = state.filters ?? {};
   // Every change keeps the active view selected; the menu shows when it no longer matches what is saved.
@@ -77,6 +89,13 @@ export function EmployeesView(props: Props) {
   const shown = page.items.length;
   return (
     <>
+      {props.setupPending && (
+        <Alert tone="info" title="Finish your company setup first" className="mb-4">
+          {props.canManageOrg
+            ? <>Add your company details, departments and designations so every new employee can be placed properly. <Link className="font-medium text-accent hover:underline" href="/setup">Open company setup</Link></>
+            : 'Your workspace administrator has not finished the company setup yet, so departments and designations may be missing.'}
+        </Alert>
+      )}
       {done?.inviteUrl && (
         <Alert tone="info" title="Invitation queued" className="mb-4">
           An invitation email has been queued. If email delivery is not configured in this environment, share this one-time link instead:
@@ -163,7 +182,9 @@ export function EmployeesView(props: Props) {
               <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}&format=xlsx`} download>
                 <Download className="size-3.5" /> Export Excel
               </a>
-              {canHire && <Button size="sm" onClick={() => { setDraft(null); setHireOpen(true); }}><UserPlus className="size-4" /> Add employee</Button>}
+              {canHire && (props.setupPending && props.canManageOrg
+                ? <Link className={buttonClass('primary', 'sm')} href="/setup"><UserPlus className="size-4" /> Add employee</Link>
+                : <Button size="sm" onClick={() => { setDraft(null); setHireOpen(true); }}><UserPlus className="size-4" /> Add employee</Button>)}
             </>
           }
           empty={<EmptyState icon={<Contact className="size-5" />} title={filtered ? 'No one matches these filters' : 'No employee records yet'} description={canHire ? 'Add employees one by one with the guided hire. Bulk import arrives with the data migration tools.' : undefined} />}
@@ -184,9 +205,10 @@ export function EmployeesView(props: Props) {
           open={hireOpen}
           draft={draft}
           onClose={() => { setHireOpen(false); setDraft(null); }}
-          onDone={setDone}
+          onDone={(d) => { setDone(d); if (d.login) setLogin(d.login); }}
         />
       )}
+      <TemporaryPassword login={login} onClose={() => setLogin(null)} />
     </>
   );
 }

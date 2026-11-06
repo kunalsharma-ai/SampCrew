@@ -63,6 +63,9 @@ export interface Employee {
   grade: string | null;
   membershipId: string | null;
   loginStatus: string | null;
+  /** Set when the employee has a photo; also used to refresh cached copies. */
+  photoUpdatedAt?: string | null;
+  defaultShiftId?: string | null;
 }
 export interface EmployeeProfile extends Employee {
   isSelf: boolean;
@@ -235,3 +238,10 @@ export interface InterviewDetail {
 export interface MyInterview { id: string; title: string; startsAt: string; durationMinutes: number; mode: string; meetingUrl: string | null; locationText: string | null; status: string; candidateName: string; requisitionTitle: string; submitted: boolean }
 export interface CareerSiteSettings { configured?: boolean; enabled: boolean; slug: string; headline: string; intro: string; privacyNotice: string; privacyNoticeVersion: number; retentionDays: number }
 export interface PublicJob { slug: string; title: string; summary: string; locationText: string; workMode: string; employmentType: string; department: string; postedAt: string; salaryMin: string | null; salaryMax: string | null; currency: string | null; description?: string }
+
+export interface AttendanceRegistration {
+  defaultShift: { id: string; name: string; code: string; startTime: string; endTime: string } | null;
+  enrolments: { id: string; deviceUserId: string; deviceId: string | null; deviceName: string | null }[];
+  registered: boolean;
+}
+export interface LoginDetails { membershipId: string; membershipStatus: string; loginId: string; accountStatus: string; mfaEnabled: boolean; lastLoginAt: string | null; mustChangePassword: boolean; hasPassword: boolean; lockedUntil: string | null; otherWorkspaces: number; openSessions: number; temporaryPassword?: string }

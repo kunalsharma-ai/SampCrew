@@ -1,17 +1,19 @@
 'use client';
 import { DOCUMENT_CATEGORIES } from '@crew/contracts';
 import { Alert, Button, Checkbox, Dialog, Field, Input, Select, cn } from '@crew/ui';
-import { AlertTriangle, Check, FileUp, X } from 'lucide-react';
+import { AlertTriangle, Camera, Check, FileUp, Plus, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import type { Department, Designation, Employee, LegalEntity, Location, OnboardingTemplate } from '@/lib/types';
 import type { Structure } from '../payroll/types';
-import { completeHireAction, type DraftData, duplicateCheckAction, saveHireDraftAction } from './actions';
+import { type DeviceOption, EnrolmentRows, LoginModeChoice, OwnPassword, type ShiftOption } from './[id]/profile-extras';
+import { completeHireAction, createDepartmentAction, createDesignationAction, createLocationAction, createShiftAction, type DraftData, duplicateCheckAction, saveHireDraftAction } from './actions';
+import type { HireDone } from './employees-view';
 
 export interface EmployeeDraft { id: string; step: number; data: DraftData; updatedAt: string }
 
-export const HIRE_STEPS = ['Personal details', 'Employment', 'Department & reporting', 'Compensation', 'Documents', 'Access & onboarding', 'Review'] as const;
+export const HIRE_STEPS = ['Personal details', 'Employment', 'Department & reporting', 'Compensation', 'Documents', 'Attendance & access', 'Review'] as const;
 
 /** Which step holds each field, so a server error can take HR straight to it. */
 const FIELD_STEP: Record<string, number> = {
@@ -19,7 +21,7 @@ const FIELD_STEP: Record<string, number> = {
   dateOfJoining: 1, legalEntityId: 1, employmentType: 1, designationId: 1, grade: 1, probationMonths: 1,
   departmentId: 2, locationId: 2, managerEmployeeId: 2,
   structureId: 3, annualCtc: 3, salaryFrom: 3,
-  inviteToCrew: 5, onboardingTemplateId: 5, membershipId: 5,
+  inviteToCrew: 5, loginMode: 5, initialPassword: 5, defaultShiftId: 5, attendanceEnrolments: 5, onboardingTemplateId: 5, membershipId: 5,
 };
 const EMPLOYEE_FIELDS = ['firstName', 'lastName', 'preferredName', 'workEmail', 'personalEmail', 'phone', 'dateOfBirth', 'gender', 'dateOfJoining', 'legalEntityId', 'employmentType', 'designationId', 'grade', 'departmentId', 'locationId', 'managerEmployeeId'];
 const CATEGORY_LABEL: Record<string, string> = { id_proof: 'ID proof', address_proof: 'Address proof', contract: 'Contract', offer_letter: 'Offer letter', policy: 'Policy', certificate: 'Certificate', tax: 'Tax', other: 'Other' };
@@ -27,15 +29,22 @@ const TYPE_LABEL: Record<string, string> = { full_time: 'Full time', part_time: 
 const MAX_UPLOAD = 10 * 1024 * 1024;
 const MONEY = /^\d{1,12}(\.\d{1,2})?$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const MAX_PHOTO = 5 * 1024 * 1024;
+const strongEnough = (pw: string) => pw.length >= 12 && [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length >= 3;
+type LoginMode = 'none' | 'invite' | 'password';
+type Enrolment = { deviceUserId: string; deviceId: string };
 
 type Match = { id: string; displayName: string; employeeCode: string; status: string; departmentName: string | null; reasons: string[] };
 type Doc = { file: File; category: string; title: string; hrOnly: boolean };
+
+type Kind = 'designation' | 'department' | 'location' | 'shift';
 
 interface Props {
   open: boolean;
   draft: EmployeeDraft | null;
   onClose: () => void;
-  onDone: (r: { inviteUrl: string | null; warnings: string[]; name: string }) => void;
+  onDone: (r: HireDone) => void;
   entities: LegalEntity[];
   departments: Department[];
   locations: Location[];
@@ -45,6 +54,11 @@ interface Props {
   structures: Structure[];
   canPay: boolean;
   canDocs: boolean;
+  shifts: ShiftOption[] | null;
+  devices: DeviceOption[] | null;
+  canManageOrg: boolean;
+  canAttendance: boolean;
+  canConfigureShifts: boolean;
 }
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
@@ -59,7 +73,7 @@ export function HireWizard(p: Props) {
   const today = new Date().toISOString().slice(0, 10);
   const blank = (): DraftData => ({
     dateOfJoining: today, legalEntityId: p.entities[0]?.id ?? '', employmentType: 'full_time', probationMonths: 6,
-    onboardingTemplateId: p.templates.find((t) => t.isDefault)?.id ?? '', inviteToCrew: false,
+    onboardingTemplateId: p.templates.find((t) => t.isDefault)?.id ?? '', loginMode: 'none',
   });
   const [v, setV] = useState<DraftData>(blank);
   const [step, setStep] = useState(0);
@@ -67,6 +81,19 @@ export function HireWizard(p: Props) {
   const [draftId, setDraftId] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [docs, setDocs] = useState<Doc[]>([]);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  // The temporary password is never saved in a draft.
+  const [ownPassword, setOwnPassword] = useState(false);
+  const [password, setPassword] = useState('');
+  // Designations and departments added from inside the wizard join the lists straight away.
+  const [designations, setDesignations] = useState(p.designations);
+  const [departments, setDepartments] = useState(p.departments);
+  const [locations, setLocations] = useState(p.locations);
+  const [shifts, setShifts] = useState(p.shifts);
+  const [adding, setAdding] = useState<null | Kind>(null);
+  const [newName, setNewName] = useState('');
+  const [shiftTimes, setShiftTimes] = useState({ start: '09:00', end: '18:00' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [matches, setMatches] = useState<Match[] | null>(null);
@@ -78,12 +105,22 @@ export function HireWizard(p: Props) {
   useEffect(() => {
     if (!p.open) return;
     const d = p.draft;
-    setV(d ? { ...blank(), ...d.data } : blank());
+    // Drafts saved before login choices existed carry inviteToCrew instead of loginMode.
+    const restored = d ? { ...blank(), ...d.data } : blank();
+    if (d && d.data.loginMode === undefined) restored.loginMode = d.data.inviteToCrew ? 'invite' : 'none';
+    setV(restored);
     setStep(d ? Math.min(d.step, HIRE_STEPS.length - 1) : 0);
     setReached(d ? Math.min(d.step, HIRE_STEPS.length - 1) : 0);
     setDraftId(d?.id ?? null);
     setSavedAt(d ? d.updatedAt : null);
     setDocs([]);
+    setPhoto(null);
+    setPhotoPreview(null);
+    setOwnPassword(false);
+    setPassword('');
+    setDesignations(p.designations);
+    setDepartments(p.departments);
+    setAdding(null);
     setErrors({});
     setError(null);
     setMatches(null);
@@ -97,14 +134,17 @@ export function HireWizard(p: Props) {
       const next = { ...cur, [k]: val };
       // Department and location belong to a legal entity; clear them when the entity changes.
       if (k === 'legalEntityId') {
-        if (next.departmentId && !p.departments.some((d) => d.id === next.departmentId && (!d.legalEntityId || d.legalEntityId === val))) next.departmentId = '';
-        if (next.locationId && !p.locations.some((l) => l.id === next.locationId && l.legalEntityId === val)) next.locationId = '';
+        if (next.departmentId && !departments.some((d) => d.id === next.departmentId && (!d.legalEntityId || d.legalEntityId === val))) next.departmentId = '';
+        if (next.locationId && !locations.some((l) => l.id === next.locationId && l.legalEntityId === val)) next.locationId = '';
       }
       return next;
     });
     setErrors((e) => (e[k] ? { ...e, [k]: '' } : e));
   };
   const entity = str(v.legalEntityId);
+  const loginMode = (str(v.loginMode) || 'none') as LoginMode;
+  const enrolments: Enrolment[] = (() => { try { return JSON.parse(str(v.enrolments) || '[]') as Enrolment[]; } catch { return []; } })();
+  const setEnrolments = (rows: Enrolment[]) => set('enrolments', JSON.stringify(rows));
   const name = [str(v.firstName), str(v.lastName)].filter(Boolean).join(' ');
   const dupKey = JSON.stringify([v.firstName, v.lastName, v.workEmail, v.personalEmail, v.phone, v.dateOfBirth].map((x) => str(x).trim().toLowerCase()));
   const docBytes = docs.reduce((n, d) => n + d.file.size, 0);
@@ -141,7 +181,9 @@ export function HireWizard(p: Props) {
       if (!MONEY.test(str(v.annualCtc).replace(/,/g, ''))) e.annualCtc = 'Enter the annual CTC, such as 600000';
     }
     if (s === 4 && docBytes > MAX_UPLOAD) e.documents = 'Attach up to 10 MB here; add larger files from the profile after the hire';
-    if (s === 5 && v.inviteToCrew && !str(v.workEmail)) e.workEmail = 'A work email is needed to invite this person to CREW';
+    if (s === 5 && loginMode !== 'none' && !str(v.workEmail)) e.workEmail = 'A work email is needed for a CREW login: it is their sign-in name';
+    if (s === 5 && loginMode === 'password' && ownPassword && !strongEnough(password)) e.initialPassword = 'Use 12+ characters with three of: lowercase, uppercase, numbers, symbols';
+    if (s === 5 && enrolments.some((x) => x.deviceUserId.trim() && !/^[A-Za-z0-9_-]{1,32}$/.test(x.deviceUserId.trim()))) e.attendanceEnrolments = 'Enrolment numbers use up to 32 letters, digits, - or _';
     return e;
   }
 
@@ -189,7 +231,11 @@ export function HireWizard(p: Props) {
       const e = validate(s);
       if (Object.keys(e).length) { setErrors(e); setStep(Math.min(...Object.keys(e).map((k) => FIELD_STEP[k] ?? s))); return; }
     }
-    const employee: Record<string, unknown> = { inviteToCrew: Boolean(v.inviteToCrew), probationMonths: Number(v.probationMonths ?? 6) };
+    const employee: Record<string, unknown> = { loginMode, probationMonths: Number(v.probationMonths ?? 6) };
+    if (loginMode === 'password' && ownPassword) employee.initialPassword = password;
+    if (str(v.defaultShiftId)) employee.defaultShiftId = str(v.defaultShiftId);
+    const enrol = enrolments.filter((x) => x.deviceUserId.trim()).map((x) => ({ deviceUserId: x.deviceUserId.trim(), deviceId: x.deviceId || null }));
+    if (enrol.length) employee.attendanceEnrolments = enrol;
     for (const k of EMPLOYEE_FIELDS) { const x = str(v[k]).trim(); if (x) employee[k] = x; }
     const tpl = str(v.onboardingTemplateId);
     employee.onboardingTemplateId = tpl === 'none' ? null : tpl || undefined;
@@ -200,6 +246,7 @@ export function HireWizard(p: Props) {
     fd.set('payload', JSON.stringify({ employee, salary, draftId, documents: docs.map((d) => ({ category: d.category, title: d.title.trim() || d.file.name, visibility: d.hrOnly ? 'hr_only' : 'employee' })) }));
     fd.set('idempotencyKey', idem.current);
     for (const d of docs) fd.append('documents', d.file, d.file.name);
+    if (photo) fd.set('photo', photo, photo.name);
     setError(null);
     start(async () => {
       const r = await completeHireAction(fd);
@@ -211,20 +258,68 @@ export function HireWizard(p: Props) {
         if (steps.length) setStep(Math.min(...steps));
         return;
       }
-      const { employeeId, inviteUrl, warnings } = r.data;
+      const { employeeId, inviteUrl, warnings, login } = r.data;
       p.onClose();
-      // With an invitation link to share or something left to finish, stay here; otherwise open the new profile.
-      if (inviteUrl || warnings.length) { p.onDone({ inviteUrl, warnings, name }); router.refresh(); }
+      // With an invitation link or a temporary password to hand over, or something left to finish, stay here; otherwise open the new profile.
+      if (inviteUrl || login || warnings.length) { p.onDone({ inviteUrl, warnings, name, login }); router.refresh(); }
       else router.push(`/employees/${employeeId}`);
     });
   };
 
   const last = step === HIRE_STEPS.length - 1;
-  const deptOptions = p.departments.filter((d) => !d.legalEntityId || d.legalEntityId === entity);
-  const locOptions = p.locations.filter((l) => l.legalEntityId === entity);
+  const deptOptions = departments.filter((d) => !d.legalEntityId || d.legalEntityId === entity);
+  const locOptions = locations.filter((l) => l.legalEntityId === entity);
   const lookup = <T extends { id: string; name: string }>(list: T[], id: unknown) => list.find((x) => x.id === id)?.name ?? '—';
   const manager = p.managers.find((m) => m.id === v.managerEmployeeId);
   const structure = p.structures.find((s) => s.id === v.structureId);
+  const shift = shifts?.find((x) => x.id === v.defaultShiftId);
+  const FIELD_OF: Record<Kind, string> = { designation: 'designationId', department: 'departmentId', location: 'locationId', shift: 'defaultShiftId' };
+  const addOption = (kind: Kind) => {
+    const n = newName.trim();
+    if (!n) return;
+    // A name already on the list is simply chosen, not added twice.
+    const list: { id: string; name: string }[] = kind === 'designation' ? designations : kind === 'department' ? deptOptions : kind === 'location' ? locOptions : (shifts ?? []);
+    const same = list.find((x) => x.name.trim().toLowerCase() === n.toLowerCase());
+    if (same) { set(FIELD_OF[kind], same.id); setErrors((e) => ({ ...e, [FIELD_OF[kind]]: '' })); setAdding(null); setNewName(''); return; }
+    start(async () => {
+      const ent = p.entities.find((x) => x.id === entity);
+      const r = kind === 'designation' ? await createDesignationAction(n)
+        : kind === 'department' ? await createDepartmentAction(n, null)
+          : kind === 'location' ? await createLocationAction(n, entity, ent?.countryCode ?? 'IN', ent?.timezone ?? 'Asia/Kolkata')
+            : await createShiftAction(n, shiftTimes.start, shiftTimes.end);
+      if (!r.ok || !r.data) { setErrors((e) => ({ ...e, [FIELD_OF[kind]]: r.ok ? 'Could not add it' : (Object.values(r.fieldErrors ?? {})[0] ?? r.message) })); return; }
+      const row = r.data as { id: string; name: string; code?: string; startTime?: string; endTime?: string };
+      if (kind === 'designation') setDesignations((d) => [...d, { id: row.id, name: row.name, code: null, level: null, employeeCount: 0 }]);
+      else if (kind === 'department') setDepartments((d) => [...d, { id: row.id, name: row.name, code: null, parentId: null, legalEntityId: null, businessUnitId: null, headMembershipId: null, memberCount: 0 }]);
+      else if (kind === 'location') setLocations((l) => [...l, { id: row.id, name: row.name, code: null, kind: 'office', legalEntityId: entity, timezone: ent?.timezone ?? '', city: null, region: null, countryCode: ent?.countryCode ?? '', latitude: null, longitude: null, geofenceRadiusM: null, addressLine: null, postalCode: null }]);
+      else setShifts((x) => [...(x ?? []), { id: row.id, name: row.name, code: row.code ?? '', startTime: row.startTime ?? shiftTimes.start, endTime: row.endTime ?? shiftTimes.end }]);
+      set(FIELD_OF[kind], row.id);
+      setErrors((e) => ({ ...e, [FIELD_OF[kind]]: '' }));
+      setAdding(null);
+      setNewName('');
+    });
+  };
+  const PLACEHOLDER: Record<Kind, string> = { designation: 'Senior Accountant', department: 'Customer Success', location: 'Pune plant', shift: 'Morning shift' };
+  const mayAdd = (kind: Kind) => (kind === 'shift' ? p.canConfigureShifts : p.canManageOrg);
+  const addInline = (kind: Kind) => mayAdd(kind) && (adding === kind ? (
+    <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+      <Input aria-label={`New ${kind} name`} value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={kind === 'shift' ? 80 : 120} placeholder={PLACEHOLDER[kind]} autoFocus className="min-w-40 flex-1"
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOption(kind); } }} />
+      {kind === 'shift' && (
+        <>
+          <Input aria-label="Shift starts" type="time" value={shiftTimes.start} onChange={(e) => setShiftTimes((t) => ({ ...t, start: e.target.value }))} className="w-28" />
+          <span className="text-xs text-fg-subtle">to</span>
+          <Input aria-label="Shift ends" type="time" value={shiftTimes.end} onChange={(e) => setShiftTimes((t) => ({ ...t, end: e.target.value }))} className="w-28" />
+        </>
+      )}
+      <Button size="sm" onClick={() => addOption(kind)} loading={pending}>Add</Button>
+      <Button size="sm" variant="ghost" onClick={() => { setAdding(null); setNewName(''); }}>Cancel</Button>
+    </div>
+  ) : (
+    <button type="button" className="inline-flex items-center gap-1 justify-self-start text-xs font-medium text-accent hover:underline sm:col-span-2" onClick={() => { setAdding(kind); setNewName(''); }}>
+      <Plus className="size-3.5" /> New {kind}
+    </button>
+  ));
   const template = str(v.onboardingTemplateId) === 'none' ? 'No checklist' : lookup(p.templates, v.onboardingTemplateId || p.templates.find((t) => t.isDefault)?.id);
 
   return (
@@ -303,6 +398,32 @@ export function HireWizard(p: Props) {
                 </Select>
               )}
             </Field>
+            <div className="flex items-center gap-3 sm:col-span-2">
+              {photoPreview
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={photoPreview} alt="" className="size-14 rounded-full object-cover" />
+                : <span className="flex size-14 items-center justify-center rounded-full border border-dashed border-border text-fg-subtle"><Camera className="size-5" /></span>}
+              <label className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-[0.8125rem] hover:bg-bg-subtle">
+                {photo ? 'Change photo' : 'Add photo'}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="sr-only"
+                  aria-label="Employee photo"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!file) return;
+                    if (!PHOTO_TYPES.includes(file.type) || file.size > MAX_PHOTO) { setErrors((x) => ({ ...x, photo: 'Use a PNG, JPEG or WebP image up to 5 MB' })); return; }
+                    setErrors((x) => ({ ...x, photo: '' }));
+                    setPhoto(file);
+                    setPhotoPreview(URL.createObjectURL(file));
+                  }}
+                />
+              </label>
+              {photo && <button type="button" className="text-xs text-fg-subtle hover:text-danger" onClick={() => { setPhoto(null); setPhotoPreview(null); }}>Remove</button>}
+              <span className="text-xs text-fg-subtle">{errors.photo ? <span className="text-danger">{errors.photo}</span> : 'Optional. PNG, JPEG or WebP up to 5 MB. Saved when the hire is completed.'}</span>
+            </div>
           </>
         )}
 
@@ -313,8 +434,10 @@ export function HireWizard(p: Props) {
               {(f) => <Select {...f} name="legalEntityId" value={entity} onChange={(e) => set('legalEntityId', e.target.value)}>{p.entities.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select>}
             </Field>
             <Field label="Designation" error={errors.designationId}>
-              {(f) => <Select {...f} name="designationId" value={str(v.designationId)} onChange={(e) => set('designationId', e.target.value)}><option value="">None</option>{p.designations.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}
+              {(f) => <Select {...f} name="designationId" value={str(v.designationId)} onChange={(e) => set('designationId', e.target.value)}><option value="">None</option>{designations.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}
             </Field>
+            {!designations.length && <p className="text-xs text-fg-muted sm:col-span-2">No designations yet.{p.canManageOrg ? ' Add one here, or pick a ready-made list in Organization structure, Designations.' : ' Ask an administrator to add them in Organization structure.'}</p>}
+            {addInline('designation')}
             <Field label="Employment type">
               {(f) => <Select {...f} name="employmentType" value={str(v.employmentType)} onChange={(e) => set('employmentType', e.target.value)}>{Object.entries(TYPE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>}
             </Field>
@@ -328,9 +451,11 @@ export function HireWizard(p: Props) {
             <Field label="Department" error={errors.departmentId}>
               {(f) => <Select {...f} name="departmentId" value={str(v.departmentId)} onChange={(e) => set('departmentId', e.target.value)}><option value="">None</option>{deptOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}
             </Field>
+            {addInline('department')}
             <Field label="Location" error={errors.locationId}>
               {(f) => <Select {...f} name="locationId" value={str(v.locationId)} onChange={(e) => set('locationId', e.target.value)}><option value="">None</option>{locOptions.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>}
             </Field>
+            {addInline('location')}
             <Field label="Reports to" error={errors.managerEmployeeId} className="sm:col-span-2">
               {(f) => <Select {...f} name="managerEmployeeId" value={str(v.managerEmployeeId)} onChange={(e) => set('managerEmployeeId', e.target.value)}><option value="">No manager</option>{p.managers.map((m) => <option key={m.id} value={m.id}>{m.displayName} ({m.employeeCode})</option>)}</Select>}
             </Field>
@@ -401,6 +526,30 @@ export function HireWizard(p: Props) {
 
         {step === 5 && (
           <>
+            {p.canAttendance && (
+              <>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle sm:col-span-2">Attendance registration</h4>
+                {shifts ? (
+                  <Field label="Usual shift" error={errors.defaultShiftId} className="sm:col-span-2" hint="Rosters and day-by-day assignments still take priority">
+                    {(f) => <Select {...f} name="defaultShiftId" value={str(v.defaultShiftId)} onChange={(e) => set('defaultShiftId', e.target.value)}><option value="">Location default</option>{shifts.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.startTime} to {x.endTime})</option>)}</Select>}
+                  </Field>
+                ) : null}
+                {shifts && addInline('shift')}
+                {p.devices ? (
+                  <>
+                    <EnrolmentRows rows={enrolments} setRows={setEnrolments} devices={p.devices} />
+                    {errors.attendanceEnrolments && <p className="text-xs text-danger sm:col-span-2">{errors.attendanceEnrolments}</p>}
+                  </>
+                ) : (
+                  <p className="text-xs text-fg-muted sm:col-span-2">Web and mobile punching work from the joining date. Attendance machine enrolment numbers are added by someone who manages the machines.</p>
+                )}
+              </>
+            )}
+            <div className="sm:col-span-2">
+              <LoginModeChoice mode={loginMode} onChange={(m) => set('loginMode', m)} />
+              {loginMode === 'password' && <div className="mt-3"><OwnPassword own={ownPassword} setOwn={setOwnPassword} password={password} setPassword={(x) => { setPassword(x); setErrors((e) => ({ ...e, initialPassword: '' })); }} error={errors.initialPassword} /></div>}
+              {errors.workEmail && <p className="mt-1 text-xs text-danger">{errors.workEmail} <button type="button" className="text-accent hover:underline" onClick={() => setStep(0)}>Add it</button></p>}
+            </div>
             <Field label="Onboarding checklist" className="sm:col-span-2">
               {(f) => (
                 <Select {...f} name="onboardingTemplateId" value={str(v.onboardingTemplateId)} onChange={(e) => set('onboardingTemplateId', e.target.value)}>
@@ -409,10 +558,6 @@ export function HireWizard(p: Props) {
                 </Select>
               )}
             </Field>
-            <div className="sm:col-span-2">
-              <Checkbox label="Invite them to CREW" description="Sends a sign-in invitation to the work email with Employee self-service access." checked={Boolean(v.inviteToCrew)} onChange={(e) => set('inviteToCrew', e.target.checked)} />
-              {errors.workEmail && <p className="mt-1 text-xs text-danger">{errors.workEmail} <button type="button" className="text-accent hover:underline" onClick={() => setStep(0)}>Add it</button></p>}
-            </div>
           </>
         )}
 
@@ -421,13 +566,15 @@ export function HireWizard(p: Props) {
             <Summary label="Name" value={name || '—'} onEdit={() => setStep(0)} />
             <Summary label="Work email" value={str(v.workEmail) || '—'} onEdit={() => setStep(0)} />
             <Summary label="Joining" value={`${str(v.dateOfJoining)} · ${TYPE_LABEL[str(v.employmentType)] ?? ''} · ${Number(v.probationMonths) ? `${v.probationMonths} months probation` : 'confirmed on joining'}`} onEdit={() => setStep(1)} />
-            <Summary label="Entity and designation" value={`${lookup(p.entities, v.legalEntityId)} · ${lookup(p.designations, v.designationId)}`} onEdit={() => setStep(1)} />
-            <Summary label="Department and location" value={`${lookup(p.departments, v.departmentId)} · ${lookup(p.locations, v.locationId)}`} onEdit={() => setStep(2)} />
+            <Summary label="Entity and designation" value={`${lookup(p.entities, v.legalEntityId)} · ${lookup(designations, v.designationId)}`} onEdit={() => setStep(1)} />
+            <Summary label="Department and location" value={`${lookup(departments, v.departmentId)} · ${lookup(locations, v.locationId)}`} onEdit={() => setStep(2)} />
             <Summary label="Reports to" value={manager?.displayName ?? 'No manager'} onEdit={() => setStep(2)} />
             <Summary label="Pay" value={structure ? `${structure.name}, ${Number(str(v.annualCtc).replace(/,/g, '')).toLocaleString()} a year` : 'Set later'} onEdit={() => setStep(3)} />
             <Summary label="Documents" value={docs.length ? docs.map((d) => d.title || d.file.name).join(', ') : 'None'} onEdit={() => setStep(4)} />
+            <Summary label="Photo" value={photo ? photo.name : 'None'} onEdit={() => setStep(0)} />
+            {p.canAttendance && <Summary label="Attendance" value={`${shift ? shift.name : 'Location default shift'} · ${enrolments.filter((x) => x.deviceUserId.trim()).map((x) => x.deviceUserId.trim()).join(', ') || 'no machine enrolment'}`} onEdit={() => setStep(5)} />}
             <Summary label="Onboarding" value={template} onEdit={() => setStep(5)} />
-            <Summary label="CREW login" value={v.inviteToCrew ? `Invitation to ${str(v.workEmail)}` : 'No invitation'} onEdit={() => setStep(5)} />
+            <Summary label="CREW login" value={loginMode === 'invite' ? `Invitation to ${str(v.workEmail)}` : loginMode === 'password' ? `Created now for ${str(v.workEmail)} with a temporary password` : 'No login for now'} onEdit={() => setStep(5)} />
             {checkedKey === dupKey && matches === null && <p className="flex items-center gap-1.5 text-success sm:col-span-2"><Check className="size-3.5" /> No existing record matches this person.</p>}
             {checkedKey === dupKey && matches && (
               <p className="flex items-center gap-1.5 text-warning sm:col-span-2">

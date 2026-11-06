@@ -26,6 +26,8 @@ export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<
       plan: { key: 'business', seats: 120, billingCycle: 'annual', trialDays: 30 },
     });
     const tid = t.tenantId;
+    // The demo workspace comes fully set up, so its admins are not taken through the first-login company setup.
+    await client.query(`update tenants set industry = 'manufacturing', company_size = '201-500', setup_step = 4, setup_completed_at = now() where id = $1`, [tid]);
     const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
 
     const uk = await q(

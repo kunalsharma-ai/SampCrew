@@ -1,6 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { act, api, apiForm } from '@/lib/api';
+import type { LoginDetails } from '@/lib/types';
 
 const refresh = (id?: string) => {
   revalidatePath('/employees');
@@ -95,7 +96,7 @@ export async function completeHireAction(form: FormData) {
   } catch {
     return { ok: false as const, message: 'The form could not be read. Please try again.' };
   }
-  const hired = await act(() => api<{ employee: { id: string }; inviteUrl?: string }>('/employees', { method: 'POST', body: payload.employee, idempotencyKey: String(form.get('idempotencyKey') ?? crypto.randomUUID()) }));
+  const hired = await act(() => api<{ employee: { id: string }; inviteUrl?: string; login?: { email: string; temporaryPassword: string } }>('/employees', { method: 'POST', body: payload.employee, idempotencyKey: String(form.get('idempotencyKey') ?? crypto.randomUUID()) }));
   if (!hired.ok) return hired;
   const id = hired.data!.employee.id;
   const warnings: string[] = [];
@@ -114,7 +115,86 @@ export async function completeHireAction(form: FormData) {
     const d = await act(() => apiForm(`/employees/${id}/documents`, fd));
     if (!d.ok) warnings.push(`${file.name} was not uploaded: ${d.message}`);
   }
+  const photo = form.get('photo');
+  if (photo instanceof File && photo.size > 0) {
+    const fd = new FormData();
+    fd.set('file', photo, photo.name);
+    const ph = await act(() => apiForm(`/employees/${id}/photo`, fd, { method: 'PUT' }));
+    if (!ph.ok) warnings.push(`The photo was not saved: ${ph.message}`);
+  }
   if (payload.draftId) await act(() => api(`/employees/drafts/${payload.draftId}`, { method: 'DELETE' }));
   refresh();
-  return { ok: true as const, data: { employeeId: id, inviteUrl: hired.data!.inviteUrl ?? null, warnings } };
+  return { ok: true as const, data: { employeeId: id, inviteUrl: hired.data!.inviteUrl ?? null, warnings, login: hired.data!.login ?? null } };
+}
+
+// Photo, login and attendance registration (SAMPLEDGE feedback, 2026-11-06) -----------------------------------
+
+export async function uploadPhotoAction(id: string, form: FormData) {
+  const r = await act(() => apiForm<{ photoUpdatedAt: string }>(`/employees/${id}/photo`, form, { method: 'PUT' }), 'Photo saved');
+  refresh(id);
+  return r;
+}
+
+export async function removePhotoAction(id: string) {
+  const r = await act(() => api(`/employees/${id}/photo`, { method: 'DELETE' }), 'Photo removed');
+  refresh(id);
+  return r;
+}
+
+export type LoginResult = { inviteUrl?: string; login?: { email: string; temporaryPassword: string } };
+
+export async function createLoginAction(id: string, body: { mode: 'invite' | 'password'; initialPassword?: string }) {
+  const r = await act(() => api<LoginResult>(`/employees/${id}/login`, { method: 'POST', body }), body.mode === 'invite' ? 'Invitation sent' : 'Login created');
+  refresh(id);
+  return r;
+}
+
+export type LoginControlAction = 'reset_password' | 'force_password_change' | 'lock' | 'unlock' | 'sign_out';
+const LOGIN_DONE: Record<LoginControlAction, string> = {
+  reset_password: 'Password reset', force_password_change: 'They will choose a new password at their next sign-in', lock: 'Login locked', unlock: 'Login unlocked', sign_out: 'Signed out everywhere in this workspace',
+};
+
+/** Workspace-admin control of an employee's CREW login. A reset password comes back once and is never stored readable. */
+export async function loginControlAction(id: string, action: LoginControlAction, initialPassword?: string) {
+  const r = await act(() => api<LoginDetails>(`/employees/${id}/login/actions`, { method: 'POST', body: { action, ...(initialPassword ? { initialPassword } : {}) } }), LOGIN_DONE[action]);
+  refresh(id);
+  return r;
+}
+
+export async function saveAttendanceRegistrationAction(id: string, body: { defaultShiftId: string | null; enrolments: { deviceUserId: string; deviceId: string | null }[] }) {
+  const r = await act(() => api(`/employees/${id}/attendance-registration`, { method: 'PUT', body }), 'Attendance registration saved');
+  refresh(id);
+  return r;
+}
+
+/** Adds a designation from inside the hire wizard, so HR does not have to leave it. */
+export async function createDesignationAction(name: string) {
+  const r = await act(() => api<{ id: string; name: string }>('/designations', { method: 'POST', body: { name } }));
+  revalidatePath('/organization');
+  return r;
+}
+
+/** Adds a top-level department from inside the hire wizard. */
+export async function createDepartmentAction(name: string, legalEntityId: string | null) {
+  const r = await act(() => api<{ id: string; name: string }>('/org/departments', { method: 'POST', body: { name, ...(legalEntityId ? { legalEntityId } : {}) } }));
+  revalidatePath('/organization');
+  return r;
+}
+
+/** Adds a location for a legal entity from inside the hire wizard, using the entity's country and time zone. */
+export async function createLocationAction(name: string, legalEntityId: string, countryCode: string, timezone: string) {
+  const r = await act(() => api<{ id: string; name: string }>('/org/locations', { method: 'POST', body: { name, legalEntityId, countryCode, timezone } }));
+  revalidatePath('/organization');
+  return r;
+}
+
+/** Adds a shift from inside the hire wizard. The code is made from the name, with a number added if it is taken. */
+export async function createShiftAction(name: string, startTime: string, endTime: string) {
+  const base = name.toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 8) || 'SHIFT';
+  let r = await act(() => api<{ id: string; name: string; code: string; startTime: string; endTime: string }>('/shifts/templates', { method: 'POST', body: { code: base, name, startTime, endTime } }));
+  for (let i = 2; !r.ok && r.code === 'shift_exists' && i < 10; i++) {
+    r = await act(() => api<{ id: string; name: string; code: string; startTime: string; endTime: string }>('/shifts/templates', { method: 'POST', body: { code: `${base}${i}`, name, startTime, endTime } }));
+  }
+  revalidatePath('/attendance');
+  return r;
 }

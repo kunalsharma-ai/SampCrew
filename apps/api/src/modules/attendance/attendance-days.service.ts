@@ -19,6 +19,7 @@ export interface ShiftRow {
   overtime_enabled: boolean;
   overtime_min_minutes: number;
   color: string;
+  archived_at?: Date | null;
 }
 
 export interface PolicyRow {
@@ -45,6 +46,8 @@ export interface EmployeeCtx {
   legal_entity_id: string | null;
   department_id: string | null;
   location_id: string | null;
+  /** The person's own usual shift, set when they were registered for attendance; used before the policy's shift. */
+  default_shift_id: string | null;
   tz: string;
   fence: { lat: number; lon: number; radiusM: number } | null;
 }
@@ -90,7 +93,7 @@ export class AttendanceDaysService {
       tx,
       `select e.id, e.membership_id, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name, e.employee_code as code, e.status,
               e.date_of_joining, e.last_working_day, e.current_legal_entity_id as legal_entity_id, e.current_department_id as department_id,
-              e.current_location_id as location_id, coalesce(l.timezone, le.timezone, t.timezone) as tz,
+              e.current_location_id as location_id, e.default_shift_id, coalesce(l.timezone, le.timezone, t.timezone) as tz,
               l.latitude as lat, l.longitude as lon, l.geofence_radius_m as radius
          from employees e join tenants t on t.id = e.tenant_id
          left join locations l on l.id = e.current_location_id left join legal_entities le on le.id = e.current_legal_entity_id
@@ -138,7 +141,8 @@ export class AttendanceDaysService {
     const holidays = cal.id
       ? new Map((await many<{ d: string; name: string }>(tx, 'select holiday_date as d, name from holidays where calendar_id = $1 and not is_optional and holiday_date between $2 and $3', [cal.id, from, to])).map((h) => [h.d, h.name]))
       : new Map<string, string>();
-    const fallback = policy.default_shift_id ? shifts.get(policy.default_shift_id) ?? null : null;
+    const ownShift = e.default_shift_id ? shifts.get(e.default_shift_id) : undefined;
+    const fallback = ownShift && !ownShift.archived_at ? ownShift : policy.default_shift_id ? shifts.get(policy.default_shift_id) ?? null : null;
     const out = new Map<string, PlannedDay>();
     for (let d = from; d <= to; d = addDays(d, 1)) {
       const holidayName = holidays.get(d) ?? null;

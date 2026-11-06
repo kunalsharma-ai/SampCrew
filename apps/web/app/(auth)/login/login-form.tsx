@@ -4,9 +4,9 @@ import { Building2, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { loginAction, selectTenantAction, ssoStartAction, verifyMfaAction } from '../actions';
+import { initialPasswordAction, loginAction, selectTenantAction, ssoStartAction, verifyMfaAction } from '../actions';
 
-type Step = { kind: 'password' } | { kind: 'sso'; email: string; notice?: string } | { kind: 'mfa'; mfaToken: string } | { kind: 'tenant'; selectToken: string; tenants: { id: string; name: string; slug: string }[] };
+type Step = { kind: 'password' } | { kind: 'sso'; email: string; notice?: string } | { kind: 'mfa'; mfaToken: string } | { kind: 'newPassword'; changeToken: string } | { kind: 'tenant'; selectToken: string; tenants: { id: string; name: string; slug: string }[] };
 
 export function LoginForm({ next, expired, workspace, ssoFailure }: { next: string; expired: boolean; workspace?: string; ssoFailure?: string | null }) {
   const router = useRouter();
@@ -30,6 +30,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure }: { next: stri
     const d = r.data!;
     if (d.status === 'ok') router.replace(next);
     else if (d.status === 'mfa_required') setStep({ kind: 'mfa', mfaToken: d.mfaToken });
+    else if (d.status === 'password_change_required') setStep({ kind: 'newPassword', changeToken: d.changeToken });
     else setStep({ kind: 'tenant', selectToken: d.selectToken, tenants: d.tenants });
   };
 
@@ -88,6 +89,35 @@ export function LoginForm({ next, expired, workspace, ssoFailure }: { next: stri
           {(p) => <Input {...p} name="code" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} autoFocus className="text-center text-lg tracking-[0.5em] tabular h-11" />}
         </Field>
         <Button type="submit" size="lg" loading={pending}>Verify</Button>
+        <button type="button" className="text-[0.8125rem] text-fg-muted hover:text-fg" onClick={() => setStep({ kind: 'password' })}>Use a different account</button>
+      </form>
+    );
+  }
+
+  if (step.kind === 'newPassword') {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const f = new FormData(e.currentTarget);
+          const newPassword = String(f.get('newPassword') ?? '');
+          if (newPassword !== String(f.get('confirmPassword') ?? '')) { setError(null); setFieldErrors({ confirmPassword: 'The two passwords do not match' }); return; }
+          submit(() => initialPasswordAction({ changeToken: step.changeToken, newPassword }));
+        }}
+        className="flex flex-col gap-5"
+      >
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Choose your password</h2>
+          <p className="mt-1 text-sm text-fg-muted">You signed in with a temporary password from HR. Choose your own to carry on; the temporary one stops working.</p>
+        </div>
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Field label="New password" error={fieldErrors.newPassword} hint="12+ characters with three of: lowercase, uppercase, numbers, symbols" required>
+          {(p) => <Input {...p} name="newPassword" type="password" autoComplete="new-password" required autoFocus />}
+        </Field>
+        <Field label="Confirm new password" error={fieldErrors.confirmPassword} required>
+          {(p) => <Input {...p} name="confirmPassword" type="password" autoComplete="new-password" required />}
+        </Field>
+        <Button type="submit" size="lg" loading={pending}>Save password and sign in</Button>
         <button type="button" className="text-[0.8125rem] text-fg-muted hover:text-fg" onClick={() => setStep({ kind: 'password' })}>Use a different account</button>
       </form>
     );

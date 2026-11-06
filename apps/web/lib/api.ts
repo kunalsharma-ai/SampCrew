@@ -62,10 +62,10 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
 }
 
 /** Multipart upload (documents). The browser never talks to the API directly; this runs on the server. */
-export async function apiForm<T = unknown>(path: string, form: FormData, opts: { auth?: boolean } = {}): Promise<T> {
+export async function apiForm<T = unknown>(path: string, form: FormData, opts: { auth?: boolean; method?: 'POST' | 'PUT' } = {}): Promise<T> {
   const token = opts.auth === false ? undefined : await accessToken();
   const res = await fetch(`${API_URL}/api/v1${path}`, {
-    method: 'POST',
+    method: opts.method ?? 'POST',
     headers: { 'x-crew-client': 'web', ...(await clientIp()), ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: form,
     cache: 'no-store',

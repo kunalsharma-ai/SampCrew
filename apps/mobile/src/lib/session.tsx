@@ -33,6 +33,7 @@ export type SignInStep =
   | { step: 'redirected' }
   | { step: 'cancelled' }
   | { step: 'mfa'; mfaToken: string }
+  | { step: 'newPassword'; changeToken: string }
   | { step: 'workspace'; selectToken: string; workspaces: { id: string; name: string; slug: string }[] };
 
 export interface Device {
@@ -65,6 +66,8 @@ interface SessionValue {
   /** Browser preview: finishes single sign-on when the tab comes back to /sso with the code. */
   finishSso(code: string): Promise<SignInStep>;
   verifyMfa(mfaToken: string, code: string): Promise<SignInStep>;
+  /** First sign-in with a temporary password from HR: set your own, then sign-in carries on. */
+  setInitialPassword(changeToken: string, newPassword: string): Promise<SignInStep>;
   chooseWorkspace(selectToken: string, tenantId: string): Promise<SignInStep>;
   signOut(): Promise<void>;
   unlock(): Promise<{ ok: boolean; message?: string }>;
@@ -158,6 +161,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const finishSignIn = useCallback(
     async (r: LoginResponse): Promise<SignInStep> => {
       if (r.status === 'mfa_required') return { step: 'mfa', mfaToken: r.mfaToken };
+      if (r.status === 'password_change_required') return { step: 'newPassword', changeToken: r.changeToken };
       if (r.status === 'select_tenant') return { step: 'workspace', selectToken: r.selectToken, workspaces: r.tenants };
       await tokenStore.set(r);
       await start();
@@ -255,6 +259,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/sso/exchange', { code, verifier }));
     },
     verifyMfa: async (mfaToken, code) => finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/mfa/verify', { mfaToken, code })),
+    setInitialPassword: async (changeToken, newPassword) => finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/initial-password', { changeToken, newPassword })),
     chooseWorkspace: async (selectToken, tenantId) => finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/select-tenant', { selectToken, tenantId })),
     async signOut() {
       // Signing the device out ends this sign-in on the server and stops push to this phone.

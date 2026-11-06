@@ -83,7 +83,7 @@ export async function switchAppsAction(id: string, body: { web?: boolean; mobile
 }
 
 export async function memberAction(id: string, membershipId: string, action: string, reason: string) {
-  const r = await act(() => api<{ sessionsEnded?: number; inviteUrl?: string }>(`/platform/tenants/${id}/users/${membershipId}/actions`, { method: 'POST', body: { action, reason } }));
+  const r = await act(() => api<{ sessionsEnded?: number; inviteUrl?: string; temporaryPassword?: string }>(`/platform/tenants/${id}/users/${membershipId}/actions`, { method: 'POST', body: { action, reason } }));
   revalidatePath(`/tenants/${id}/users`);
   revalidatePath('/users');
   return r;

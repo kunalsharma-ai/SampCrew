@@ -8,12 +8,13 @@ import { can } from '@/lib/nav';
 import type { Department, Designation, Employee, LegalEntity, Location, Me, OnboardingTemplate, Page } from '@/lib/types';
 import type { Structure } from '../payroll/types';
 import { type EmployeeDraft, EmployeesView } from './employees-view';
+import type { DeviceOption, ShiftOption } from './[id]/profile-extras';
 import { DEFAULT_COLUMNS, viewUrl } from './view-url';
 
 export const metadata: Metadata = { title: 'Employees' };
 
 const STATUSES = ['pre_boarding', 'probation', 'active', 'notice', 'exited'];
-type Search = { q?: string; status?: string; departmentId?: string; cursor?: string; sort?: string; dir?: string; cols?: string; density?: string; view?: string };
+type Search = { create?: string; q?: string; status?: string; departmentId?: string; cursor?: string; sort?: string; dir?: string; cols?: string; density?: string; view?: string };
 
 /** The table state lives in the address bar, so a view can be bookmarked, shared and restored after a reload. */
 function stateFrom(sp: Search): ViewState {
@@ -47,7 +48,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const canHire = can(me, 'employees:create');
   const canPay = can(me, 'payroll:run');
   const canDocs = can(me, 'documents:manage');
-  const [page, departments, entities, locations, designations, managers, templates, drafts, structures] = await Promise.all([
+  const canAttendance = me.features.includes('attendance_basic');
+  const [page, departments, entities, locations, designations, managers, templates, drafts, structures, shifts, devices] = await Promise.all([
     load<Page<Employee> & { total?: number }>(`/employees?${qs}`),
     loadOptional<Department[]>('/org/departments'),
     loadOptional<LegalEntity[]>('/org/legal-entities'),
@@ -57,7 +59,13 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     canHire ? loadOptional<OnboardingTemplate[]>('/onboarding/templates') : null,
     canHire ? loadOptional<EmployeeDraft[]>('/employees/drafts') : null,
     canHire && canPay ? loadOptional<Structure[]>('/payroll/structures') : null,
+    canHire && canAttendance ? loadOptional<ShiftOption[]>('/shifts/templates') : null,
+    canHire && canAttendance && can(me, 'devices:manage') ? loadOptional<DeviceOption[]>('/attendance/devices') : null,
   ]);
+  // A new workspace finishes company setup before its first hire; admins are sent there from Add employee.
+  const setupPending = !me.tenant.setupCompletedAt;
+  const canManageOrg = can(me, 'org:manage');
+  if (setupPending && canManageOrg && sp.create === 'employee') redirect('/setup');
   const scope = me.permissions['employees:read'];
   const note = scope === 'tenant' ? 'Everyone in the organization.' : scope === 'entity' ? 'Employees in your legal entity.' : scope === 'department' ? 'Employees in your department.' : scope === 'team' ? 'You and the people who report to you, including staff without a CREW login.' : 'Your own record.';
   const activeView = sp.view && views.some((v) => v.id === sp.view) ? sp.view : null;
@@ -88,6 +96,12 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         canHire={canHire}
         canPay={canPay}
         canDocs={canDocs}
+        shifts={shifts}
+        devices={devices}
+        canManageOrg={canManageOrg}
+        canAttendance={canAttendance}
+        canConfigureShifts={canAttendance && can(me, 'attendance:configure')}
+        setupPending={setupPending}
       />
     </>
   );

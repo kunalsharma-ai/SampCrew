@@ -139,7 +139,7 @@ let current;
     await dialog.getByLabel('Attach documents').setInputFiles(doc);
     await dialog.getByRole('combobox', { name: 'Category for offer-letter.txt' }).waitFor();
     expect((await dialog.getByRole('combobox', { name: 'Category for offer-letter.txt' }).inputValue()) === 'offer_letter', 'category not guessed from the file name');
-    await dialog.getByRole('button', { name: 'Next: Access & onboarding' }).click();
+    await dialog.getByRole('button', { name: 'Next: Attendance & access' }).click();
     await dialog.getByRole('button', { name: 'Next: Review' }).click();
     await dialog.getByText('No existing record matches this person.').waitFor();
     await dialog.getByText('Assembly Line ·').waitFor();

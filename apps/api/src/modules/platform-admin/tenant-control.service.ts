@@ -8,7 +8,7 @@ import {
   type WorkspaceUserRow,
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
-import { randomToken, sha256 } from '../../platform/auth/crypto';
+import { hashPassword, randomToken, sha256, temporaryPasswordValue } from '../../platform/auth/crypto';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
@@ -27,6 +27,7 @@ const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 const USER_COLUMNS = `m.id as "membershipId", u.id as "userId", u.full_name as "fullName", u.email::text as email, m.status, u.status as "accountStatus",
   coalesce((select array_agg(r.name order by r.name) from role_assignments ra join roles r on r.id = ra.role_id where ra.membership_id = m.id), '{}') as roles,
   coalesce(a.blocked_features, '{}') as "blockedFeatures", u.mfa_enabled as "mfaEnabled", u.last_login_at as "lastLoginAt",
+  u.must_change_password as "mustChangePassword", case when u.locked_until > now() then u.locked_until end as "lockedUntil",
   (select max(i.created_at) from invitations i where i.membership_id = m.id) as "invitedAt", m.joined_at as "joinedAt",
   json_build_object(
     'web', (select count(*)::int from sessions s where s.user_id = u.id and s.tenant_id = m.tenant_id and s.client = 'web' and s.revoked_at is null and s.expires_at > now()),
@@ -97,6 +98,10 @@ export class TenantControlService {
   async userAction(tenantId: string, membershipId: string, action: MemberAction, reason: string) {
     const admin = requestContext.platformActor();
     let inviteToken: string | null = null;
+    let temporaryPassword: string | null = null;
+    // Hashing is slow on purpose, so it happens before the transaction.
+    const prepared = action === 'reset_password' ? temporaryPasswordValue() : null;
+    const preparedHash = prepared ? await hashPassword(prepared) : null;
     const result = await this.db.platform(async (tx) => {
       await this.requireTenant(tx, tenantId);
       const m = await one<{ id: string; user_id: string; status: string; email: string; full_name: string; owner: boolean }>(
@@ -139,6 +144,35 @@ export class TenantControlService {
           detail = { sessionsEnded: await this.endSessions(tx, m.user_id, null, 'mfa_reset_by_sampledge') };
           break;
         }
+        // Passwords are stored only as one-way hashes, so nobody (SAMPLEDGE included) can read one back. SAMPLEDGE can
+        // set a new temporary password, shown once, which the person must replace at their next sign-in. The account
+        // can be in several workspaces, so these apply to all of them and every session ends.
+        case 'reset_password': {
+          if (m.status === 'invited') throw Errors.badRequest('not_joined', 'This person has not joined yet. Resend the invitation instead.');
+          await tx.query('update users set password_hash = $2, must_change_password = true, failed_login_count = 0, locked_until = null where id = $1', [m.user_id, preparedHash]);
+          temporaryPassword = prepared;
+          detail = { sessionsEnded: await this.endSessions(tx, m.user_id, null, 'password_reset_by_sampledge') };
+          break;
+        }
+        case 'force_password_change':
+          if (m.status === 'invited') throw Errors.badRequest('not_joined', 'This person has not joined yet.');
+          await tx.query('update users set must_change_password = true where id = $1', [m.user_id]);
+          detail = { sessionsEnded: await this.endSessions(tx, m.user_id, null, 'password_change_forced_by_sampledge') };
+          break;
+        case 'lock_account': {
+          const u = (await one<{ status: string }>(tx, 'select status from users where id = $1', [m.user_id]))!;
+          if (u.status !== 'active') throw Errors.badRequest('not_active', 'This account is already locked.');
+          await tx.query(`update users set status = 'locked' where id = $1`, [m.user_id]);
+          detail = { sessionsEnded: await this.endSessions(tx, m.user_id, null, 'account_locked_by_sampledge') };
+          break;
+        }
+        case 'unlock_account': {
+          const u = (await one<{ status: string; locked: boolean }>(tx, 'select status, coalesce(locked_until > now(), false) as locked from users where id = $1', [m.user_id]))!;
+          if (u.status === 'active' && !u.locked) throw Errors.badRequest('not_locked', 'This account is not locked.');
+          if (u.status === 'disabled') throw Errors.badRequest('account_disabled', 'This account was closed (for example by an erasure request) and cannot be unlocked.');
+          await tx.query(`update users set status = 'active', failed_login_count = 0, locked_until = null where id = $1`, [m.user_id]);
+          break;
+        }
         case 'resend_invite': {
           if (m.status !== 'invited') throw Errors.badRequest('not_invited', 'This person has already joined.');
           inviteToken = randomToken(32);
@@ -162,7 +196,7 @@ export class TenantControlService {
       return { membershipId: m.id, action, ...detail };
     });
     const inviteUrl = inviteToken && !this.config.isProductionLike ? `${this.config.WEB_PUBLIC_URL}/accept-invite?token=${inviteToken}` : undefined;
-    return { ...result, inviteUrl };
+    return { ...result, inviteUrl, ...(temporaryPassword ? { temporaryPassword } : {}) };
   }
 
   private async endSessions(tx: Tx, userId: string, tenantId: string | null, reason: string) {
