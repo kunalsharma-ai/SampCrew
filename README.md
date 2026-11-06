@@ -38,7 +38,9 @@ Not connected yet, and labelled as such in the product: payment collection (invo
 
 ## Getting started
 
-Requirements: Node 22, pnpm 10, PostgreSQL 16 (or Docker).
+Requirements: Node.js 26 (the current Active LTS; the exact version CI and the Docker images use is in `.nvmrc`), pnpm 10, PostgreSQL 16 (or Docker).
+
+Node.js 25 and later no longer include Corepack, so install it once with `npm install --global corepack && corepack enable`; it then runs the pnpm version pinned in `package.json`.
 
 ```bash
 pnpm install
