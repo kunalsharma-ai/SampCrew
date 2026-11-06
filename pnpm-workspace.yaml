@@ -11,4 +11,9 @@ onlyBuiltDependencies:
 # Security fixes in transitive dependencies, pinned until the packages that pull them in depend on them directly.
 # Versions are taken only once they are at least two weeks old (docs/security-review.md).
 overrides:
+  decode-uri-component: 0.5.1
   multer: 2.5.0
+# decode-uri-component 0.5 is ESM-only. query-string 7 (used by expo-router) loads it with require(), so the patch
+# takes the module's default export. Remove both when expo-router moves to a query-string that imports it directly.
+patchedDependencies:
+  query-string@7.1.3: patches/query-string@7.1.3.patch
