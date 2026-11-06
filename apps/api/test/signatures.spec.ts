@@ -207,4 +207,78 @@ describe('email signatures', () => {
       expect((await api(app, owner2).delete(`/signatures/agents/${agentId}`)).status).toBe(404);
     });
   });
+
+  describe('festival, celebration and company banners', () => {
+    const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    // A real 4x2 GIF (GIF89a header with logical screen 4x2).
+    const GIF = Buffer.from('R0lGODlhBAACAIAAAP///wAAACH5BAEAAAAALAAAAAAEAAIAAAIChF8AOw==', 'base64');
+    let token: string;
+    let bannerId: string;
+
+    it('reads GIF sizes and lets only admins manage banners', async () => {
+      expect(imageSize(GIF, 'image/gif')).toEqual({ width: 4, height: 2 });
+      const body = { title: 'Product launch', message: 'Our new range is here!', icon: '🚀', bgColor: '#7E22CE', startsOn: day(-1), endsOn: day(1), linkUrl: 'https://acme.example/new' };
+      expect([403, 404]).toContain((await api(app, meToken).post('/signatures/banners').send(body)).status);
+      expect((await api(app, owner).post('/signatures/banners').send({ title: 'x', message: 'y' })).status).toBe(422);
+      const r = await api(app, owner).post('/signatures/banners').send(body);
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      expect(r.body).toMatchObject({ title: 'Product launch', startsOn: day(-1), endsOn: day(1), position: 'below', enabled: true, image: null });
+      bannerId = r.body.id;
+      // A festival from the library follows its own dates; the same festival cannot be added twice.
+      const diwali = await api(app, owner).post('/signatures/banners').send({ occasionKey: 'diwali', title: 'Diwali', message: 'Happy Diwali from Acme!', icon: '🪔' });
+      expect(diwali.status, JSON.stringify(diwali.body)).toBe(201);
+      expect((await api(app, owner).post('/signatures/banners').send({ occasionKey: 'diwali', title: 'Diwali', message: 'Again' })).status).toBe(409);
+      expect((await api(app, owner).get('/signatures/banners')).body).toHaveLength(2);
+    });
+
+    it('puts today\'s company banner in the signature, with its image, and updates the computer when it changes', async () => {
+      token = tokenOf((await api(app, meToken).post('/signatures/me/agents').send({ name: 'Banner PC' })).body.installer);
+      const mine = (await api(app, meToken).get('/signatures/me')).body;
+      expect(mine.banners.map((b: { title: string }) => b.title)).toContain('Product launch');
+      expect(mine.data.banner).toMatchObject({ message: 'Our new range is here!', icon: '🚀', bgColor: '#7E22CE' });
+      let r = await agent(token).sync({ trigger: 'install' });
+      expect(r.body.html).toContain('Our new range is here!');
+      expect(r.body.html).toContain('href="https://acme.example/new"');
+      expect(r.body.text).toContain('🚀 Our new range is here!');
+      await agent(token).report({ version: r.body.version, ok: true });
+      // An animated GIF banner: the computer downloads it next to the signature.
+      expect((await api(app, owner).put(`/signatures/banners/${bannerId}/image`).attach('file', Buffer.from('GIF89a nope'), { filename: 'x.gif', contentType: 'image/webp' })).status).toBe(400);
+      const img = await api(app, owner).put(`/signatures/banners/${bannerId}/image`).attach('file', GIF, { filename: 'launch.gif', contentType: 'image/gif' });
+      expect(img.status, JSON.stringify(img.body)).toBe(200);
+      expect(img.body.image).toMatchObject({ width: 4, height: 2, contentType: 'image/gif' });
+      const prev = r.body.version;
+      r = await agent(token).sync({ currentVersion: prev, trigger: 'scheduled' });
+      expect(r.body.status).toBe('update');
+      const name = `banner-${bannerId.slice(0, 8)}.gif`;
+      expect(r.body.html).toContain(`src="SampCrew_files/${name}" width="4" height="2"`);
+      expect(r.body.images).toContainEqual({ name, path: '/signature-agent/images/banner' });
+      const file = await agent(token).image('banner');
+      expect(file.status).toBe(200);
+      expect(file.headers['content-type']).toBe('image/gif');
+      expect((await api(app, meToken).get(`/signatures/banners/${bannerId}/image`)).status).toBe(200);
+      await agent(token).report({ version: r.body.version, ok: true });
+    });
+
+    it('lets each person turn company banners off and use their own festivals and message', async () => {
+      const current = (await api(app, meToken).get('/signatures/me')).body;
+      const save = (wishes: Record<string, unknown>) => api(app, meToken).put('/signatures/me').send({ template: current.template, options: { ...current.options, wishes }, syncMode: current.ownSyncMode });
+      let r = await save({ showCompany: false, message: 'On leave until Monday', icon: '🌴', from: day(-1), to: day(2) });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      expect(r.body.data.banner).toMatchObject({ message: 'On leave until Monday', icon: '🌴' });
+      const sync = await agent(token).sync({ trigger: 'scheduled' });
+      expect(sync.body.html).toContain('On leave until Monday');
+      expect(sync.body.html).not.toContain('Our new range');
+      expect(sync.body.images.some((i: { name: string }) => i.name.startsWith('banner-'))).toBe(false);
+      expect((await agent(token).image('banner')).status).toBe(404);
+      expect((await save({ occasions: ['not-real'] })).status).toBe(422);
+      // Disabling the company banner and clearing the message leaves no banner.
+      r = await save({ showCompany: true });
+      expect(r.body.data.banner.message).toBe('Our new range is here!');
+      const b = (await api(app, owner).get('/signatures/banners')).body.find((x: { id: string }) => x.id === bannerId);
+      expect((await api(app, owner).put(`/signatures/banners/${bannerId}`).send({ ...b, image: undefined, id: undefined, createdAt: undefined, updatedAt: undefined, enabled: false })).status).toBe(200);
+      expect((await api(app, meToken).get('/signatures/me')).body.data.banner?.message ?? null).not.toBe('Our new range is here!');
+      expect((await api(app, owner).delete(`/signatures/banners/${bannerId}`)).status).toBe(204);
+      expect((await api(app, owner).get('/signatures/banners')).body.some((x: { id: string }) => x.id === bannerId)).toBe(false);
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import type { SignatureBase, SignatureOptions, SignatureSyncMode, SignatureTemplateKey, SocialNetwork } from '@crew/contracts';
+import type { CompanyBanner, SignatureBase, SignatureOptions, SignatureSyncMode, SignatureTemplateKey, SocialNetwork } from '@crew/contracts';
 
 export interface SignatureAgent {
   id: string; name: string; tokenHint: string; computerName: string | null; outlookVersions: string[] | null; agentVersion: string | null;
@@ -15,7 +15,7 @@ export interface CompanySignature {
 export interface MySignature {
   employeeId: string; saved: boolean; template: SignatureTemplateKey; options: SignatureOptions; syncMode: SignatureSyncMode; ownSyncMode: SignatureSyncMode | null;
   syncRequestedAt: string | null; updatedAt: string | null; base: SignatureBase; canUsePhoto: boolean; canUseLogo: boolean; photoUpdatedAt: string | null;
-  photoNotForOutlook: boolean; version: string; company: CompanySignature; agents: SignatureAgent[];
+  photoNotForOutlook: boolean; today: string; banners: CompanyBanner[]; version: string; company: CompanySignature; agents: SignatureAgent[];
 }
 
 /** Image addresses for the preview in SampCrew (Outlook gets the same images as files next to the signature). */
@@ -25,3 +25,6 @@ export function previewImages(s: Pick<MySignature, 'employeeId' | 'canUsePhoto' 
     logoSrc: s.canUseLogo && show.logo && s.company.logo ? `/signature-logo?v=${encodeURIComponent(new Date(s.company.logo.updatedAt).getTime())}` : null,
   };
 }
+
+/** A company banner's image for the preview; the version makes a new image show at once. */
+export const bannerImageUrl = (b: Pick<CompanyBanner, 'id' | 'image'>) => (b.image ? `/signature-banner/${b.id}?v=${encodeURIComponent(new Date(b.image.updatedAt).getTime())}` : null);

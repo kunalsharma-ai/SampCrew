@@ -47,3 +47,38 @@ Each item below runs against the real API and PostgreSQL (migration `0025_email_
 - The photo is shown square, as uploaded. There is no cropping tool.
 - WebP photos are left out of the Outlook signature because Outlook 2013 cannot show them. The page tells the person to upload a PNG or JPEG.
 - "Sync my computers" reaches an automatic-mode computer within 30 minutes. A manual-mode computer updates when its person clicks the desktop shortcut.
+
+## Follow-up: festival and celebration wishes (Kunal, 6 November 2026)
+
+Kunal asked for festival and celebration wishes from around the world, or any message, in signatures, with icons, images, GIFs and banners.
+
+### Working end to end
+- **Festival library** (`packages/contracts/src/signature-occasions.ts`): 31 festivals and days, each with an icon, a default wish and colours. Examples are Diwali, Holi, Eid al-Fitr, Eid al-Adha, Ramadan, Lunar New Year, Mid-Autumn, Christmas, Hanukkah, Kwanzaa, Easter, Rosh Hashanah, Nowruz, Thanksgiving, New Year, national days for India, the US and Canada, and awareness days.
+  - Dates are worked out each year: fixed dates, "nth weekday" (Thanksgiving, Mother's and Father's Day) and Easter by calculation.
+  - Moon-calendar festivals are listed for 2026 to 2028.
+  - Each wish shows a few days before and through the festival.
+- **Company banners** (Administration, Email signatures, "Festivals and celebrations"; migration `0026_signature_banners.sql`):
+  - Add a festival from the library in your own words, or a new banner with its own dates (up to 3 months).
+  - Each banner has a message, icon, colours, an optional link, and a position above or below the signature.
+  - An optional PNG, JPEG or GIF image (up to 1 MB). Its real size is read from the file so Outlook keeps the proportions, and it is scaled to a 480 px width.
+  - Each banner can be turned on or off.
+- **Each person** (Settings, Email signature, "Festival and celebration wishes"):
+  - Keep company banners on or turn them off.
+  - Tick festivals to wish people for.
+  - Write their own message with an icon and optional dates.
+  - Preview any festival with the eye button.
+- **One banner at a time**, in this order: custom company banners, company festivals, the person's own festivals, then their own message. `pickBanner` is shared by the preview and the sync, using the workspace's time zone for "today".
+- **Outlook:**
+  - A text banner is a coloured table cell, so it shows even when Outlook blocks images.
+  - An image banner is written to `SampCrew_files/banner-….gif|png|jpg` and fetched by the computer from `/signature-agent/images/banner`.
+  - The signature's version changes when the banner changes. A computer in automatic mode switches banners within 30 minutes of the day changing.
+- **Tests:**
+  - Library dates, windows, priority and rendering: `signature-occasions.spec.ts` (6 tests).
+  - API: 3 new tests in `test/signatures.spec.ts` covering the GIF upload, sync and image download, and people's own choices.
+  - Browser flow: HR adds a GIF banner and Diwali; the employee sees the banner, previews Christmas and writes their own message; the computer gets the GIF.
+
+### Not yet
+- Outlook 2013 and 2016 show only the first frame of an animated GIF. Outlook for Microsoft 365 plays it.
+- Icons are emoji. Windows 10 and 11 show them in colour in Outlook. Older Windows shows them in black and white.
+- Moon-calendar dates after 2028 need adding to the library, or a company can set its own dates.
+- Banners go to everyone. They cannot yet be aimed at one department or country.

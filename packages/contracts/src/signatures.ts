@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { type SignatureBannerView, signatureWishesInput } from './signature-occasions';
 
 /**
  * Email signatures for Outlook. One renderer turns a person's details and their chosen design into the HTML and plain
@@ -79,6 +80,8 @@ export const signatureOptionsInput = z.object({
   ctaLabel: optional(short(40)),
   ctaUrl: optional(url),
   social: socialInput.prefault({}),
+  /** Festival and celebration wishes: company banners, the person's own festival picks and their own message. */
+  wishes: signatureWishesInput,
 }).strict();
 export type SignatureOptions = z.infer<typeof signatureOptionsInput>;
 
@@ -151,6 +154,8 @@ export interface SignatureData {
   signOff?: string | null;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
+  /** Today's festival wish or message, if any. */
+  banner?: SignatureBannerView | null;
   brandColor: string;
   accentColor: string;
   font: SignatureFont;
@@ -243,6 +248,25 @@ function cta(c: Ctx) {
   if (!u) return '';
   return table(`<tr><td bgcolor="${c.d.accentColor}" style="background-color:${c.d.accentColor};padding:7px 14px;">${a(c, u, c.d.ctaLabel || 'Book a meeting', '#ffffff', `font-family:${c.font};font-size:${c.base}px;font-weight:bold;`)}</td></tr>`, 'margin-top:8px;');
 }
+/** Today's wish: the banner image (a GIF plays in Outlook for Microsoft 365) or a coloured strip with an icon. */
+function banner(c: Ctx) {
+  const b = c.d.banner;
+  if (!b || !b.message) return '';
+  const link = safeUrl(b.linkUrl);
+  const src = safeImg(b.imageSrc);
+  if (src) {
+    const w0 = b.imageWidth ?? 480, h0 = b.imageHeight ?? 120;
+    const w = Math.min(480, w0), h = Math.max(1, Math.round((h0 * w) / w0));
+    const img = `<img src="${esc(src)}" width="${w}" height="${h}" alt="${esc(b.message)}" style="display:block;width:${w}px;height:${h}px;border:0;">`;
+    return link ? `<a href="${esc(link)}" style="text-decoration:none;">${img}</a>` : img;
+  }
+  const bg = /^#[0-9a-fA-F]{6}$/.test(b.bgColor) ? b.bgColor : c.d.brandColor;
+  const fg = /^#[0-9a-fA-F]{6}$/.test(b.fgColor) ? b.fgColor : '#FFFFFF';
+  const icon = b.icon ? `<span style="font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif;font-size:${c.base + 5}px;">${esc(b.icon)}</span>&nbsp;&nbsp;` : '';
+  const text = `${icon}<span style="font-family:${c.font};font-size:${c.base}px;font-weight:bold;color:${fg};">${esc(b.message)}</span>`;
+  return table(`<tr><td bgcolor="${bg}" style="background-color:${bg};padding:8px 14px;">${link ? a(c, link, '', fg).replace('></a>', `>${text}</a>`) : text}</td></tr>`, 'max-width:480px;');
+}
+
 /** Joins non-empty parts with line breaks. */
 const lines = (...parts: string[]) => parts.filter(Boolean).join('<br>');
 const block = (...parts: string[]) => parts.filter(Boolean).map((p) => `<div style="margin-top:6px;">${p}</div>`).join('');
@@ -314,7 +338,9 @@ const TEMPLATES: Record<SignatureTemplateKey, (c: Ctx) => string> = {
 /** The signature as Outlook stores it: a full HTML document and the plain-text version. */
 export function renderSignature(template: SignatureTemplateKey, d: SignatureData): { html: string; text: string; body: string } {
   const c = ctx(d);
-  const body = `<div style="${t(c)}">${(TEMPLATES[template] ?? TEMPLATES.classic)(c)}</div>`;
+  const b = banner(c);
+  const above = b && d.banner?.position === 'above';
+  const body = `<div style="${t(c)}">${above ? `<div style="margin-bottom:10px;">${b}</div>` : ''}${(TEMPLATES[template] ?? TEMPLATES.classic)(c)}${b && !above ? `<div style="margin-top:12px;">${b}</div>` : ''}</div>`;
   const html = `<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><meta name="Generator" content="SampCrew"></head><body>${body}</body></html>`;
   return { html, text: renderSignatureText(template, d), body };
 }
@@ -332,6 +358,7 @@ export function renderSignatureText(template: SignatureTemplateKey, d: Signature
   out.push(...social);
   if (template === 'call-to-action' && safeUrl(d.ctaUrl)) out.push(`${d.ctaLabel || 'Book a meeting'}: ${d.ctaUrl}`);
   if (d.tagline) out.push('', d.tagline);
+  if (d.banner?.message) out.push('', [d.banner.icon, d.banner.message].filter(Boolean).join(' ') + (safeUrl(d.banner.linkUrl) ? ` ${d.banner.linkUrl}` : ''));
   if (d.disclaimer) out.push('', d.disclaimer);
   return out.join('\r\n');
 }

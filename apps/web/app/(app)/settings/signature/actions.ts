@@ -1,5 +1,5 @@
 'use server';
-import type { SaveSignatureInput, SignatureSettingsInput } from '@crew/contracts';
+import type { CompanyBanner, SaveSignatureInput, SignatureBannerInput, SignatureSettingsInput } from '@crew/contracts';
 import { revalidatePath } from 'next/cache';
 import { act, api, apiForm } from '@/lib/api';
 
@@ -53,6 +53,30 @@ export async function removeSignatureLogoAction() {
 
 export async function adminRevokeComputerAction(id: string) {
   const r = await act(() => api(`/signatures/agents/${id}`, { method: 'DELETE' }), 'Computer disconnected.');
+  refresh();
+  return r;
+}
+
+export async function saveBannerAction(id: string | null, body: SignatureBannerInput) {
+  const r = await act(() => api<CompanyBanner>(id ? `/signatures/banners/${id}` : '/signatures/banners', { method: id ? 'PUT' : 'POST', body }), id ? 'Banner saved.' : 'Banner added.');
+  refresh();
+  return r;
+}
+
+export async function deleteBannerAction(id: string) {
+  const r = await act(() => api(`/signatures/banners/${id}`, { method: 'DELETE' }), 'Banner deleted.');
+  refresh();
+  return r;
+}
+
+export async function uploadBannerImageAction(id: string, form: FormData) {
+  const r = await act(() => apiForm<CompanyBanner>(`/signatures/banners/${id}/image`, form, { method: 'PUT' }), 'Banner image saved.');
+  refresh();
+  return r;
+}
+
+export async function removeBannerImageAction(id: string) {
+  const r = await act(() => api(`/signatures/banners/${id}/image`, { method: 'DELETE' }), 'Banner image removed.');
   refresh();
   return r;
 }

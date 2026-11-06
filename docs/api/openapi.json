@@ -7274,6 +7274,106 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "wishes": {
+                        "default": {},
+                        "type": "object",
+                        "properties": {
+                          "showCompany": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "occasions": {
+                            "default": [],
+                            "maxItems": 31,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "new-year",
+                                "makar-sankranti",
+                                "republic-day-in",
+                                "lunar-new-year",
+                                "ramadan",
+                                "womens-day",
+                                "holi",
+                                "nowruz",
+                                "eid-al-fitr",
+                                "easter",
+                                "earth-day",
+                                "labour-day",
+                                "mothers-day",
+                                "eid-al-adha",
+                                "environment-day",
+                                "pride",
+                                "fathers-day",
+                                "yoga-day",
+                                "canada-day",
+                                "independence-day-us",
+                                "independence-day-in",
+                                "rosh-hashanah",
+                                "mid-autumn",
+                                "gandhi-jayanti",
+                                "halloween",
+                                "diwali",
+                                "thanksgiving",
+                                "hanukkah",
+                                "christmas",
+                                "season",
+                                "kwanzaa"
+                              ]
+                            }
+                          },
+                          "message": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          },
+                          "icon": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 16
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          },
+                          "from": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          },
+                          "to": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          }
+                        },
+                        "additionalProperties": false
                       }
                     },
                     "additionalProperties": false
@@ -7794,6 +7894,543 @@
         "security": [
           {
             "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/banners": {
+      "get": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Company festival, celebration and custom banners for signatures",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_banners",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Add a festival from the library (in your own words) or a custom banner with its own dates",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_createBanner",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "occasionKey": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "new-year",
+                          "makar-sankranti",
+                          "republic-day-in",
+                          "lunar-new-year",
+                          "ramadan",
+                          "womens-day",
+                          "holi",
+                          "nowruz",
+                          "eid-al-fitr",
+                          "easter",
+                          "earth-day",
+                          "labour-day",
+                          "mothers-day",
+                          "eid-al-adha",
+                          "environment-day",
+                          "pride",
+                          "fathers-day",
+                          "yoga-day",
+                          "canada-day",
+                          "independence-day-us",
+                          "independence-day-in",
+                          "rosh-hashanah",
+                          "mid-autumn",
+                          "gandhi-jayanti",
+                          "halloween",
+                          "diwali",
+                          "thanksgiving",
+                          "hanukkah",
+                          "christmas",
+                          "season",
+                          "kwanzaa"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "icon": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 16
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "bgColor": {
+                    "default": "#1F3A93",
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "fgColor": {
+                    "default": "#FFFFFF",
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "linkUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^https?:\\/\\/\\S+$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "startsOn": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "endsOn": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "position": {
+                    "default": "below",
+                    "type": "string",
+                    "enum": [
+                      "above",
+                      "below"
+                    ]
+                  },
+                  "enabled": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "title",
+                  "message"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/banners/{id}": {
+      "put": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Change a banner",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_updateBanner",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "occasionKey": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "new-year",
+                          "makar-sankranti",
+                          "republic-day-in",
+                          "lunar-new-year",
+                          "ramadan",
+                          "womens-day",
+                          "holi",
+                          "nowruz",
+                          "eid-al-fitr",
+                          "easter",
+                          "earth-day",
+                          "labour-day",
+                          "mothers-day",
+                          "eid-al-adha",
+                          "environment-day",
+                          "pride",
+                          "fathers-day",
+                          "yoga-day",
+                          "canada-day",
+                          "independence-day-us",
+                          "independence-day-in",
+                          "rosh-hashanah",
+                          "mid-autumn",
+                          "gandhi-jayanti",
+                          "halloween",
+                          "diwali",
+                          "thanksgiving",
+                          "hanukkah",
+                          "christmas",
+                          "season",
+                          "kwanzaa"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "icon": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 16
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "bgColor": {
+                    "default": "#1F3A93",
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "fgColor": {
+                    "default": "#FFFFFF",
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "linkUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^https?:\\/\\/\\S+$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "startsOn": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "endsOn": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "position": {
+                    "default": "below",
+                    "type": "string",
+                    "enum": [
+                      "above",
+                      "below"
+                    ]
+                  },
+                  "enabled": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "title",
+                  "message"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Delete a banner",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_deleteBanner",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/signatures/banners/{id}/image": {
+      "put": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Set a banner image (multipart/form-data: file). PNG, JPEG or GIF up to 1 MB.",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_setBannerImage",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "Remove a banner image (the banner shows as a coloured strip instead)",
+        "description": "Requires permission `org:manage`.",
+        "operationId": "Signatures_removeBannerImage",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Signatures"
+        ],
+        "summary": "A banner image, for the signature preview",
+        "operationId": "Signatures_bannerImage",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

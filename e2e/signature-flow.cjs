@@ -4,8 +4,10 @@
  *   pnpm db:reset            # demo workspace
  *   API on :4000, Web Portal on :3000, then: pnpm e2e:signature
  *
- * 1. HR sets the company signature details, uploads the logo and checks the company preview.
- * 2. An employee sees the 20 designs with their own details, picks one, customises it and sees the live preview.
+ * 1. HR sets the company signature details, uploads the logo and checks the company preview, then adds a company
+ *    banner with a GIF that shows today and a festival from the library.
+ * 2. An employee sees the 20 designs with their own details, picks one, customises it and sees the live preview,
+ *    with today's company banner, previews a festival and writes their own message.
  * 3. They save it and download the setup file for their computer.
  * 4. The setup file's token is used exactly as the Windows sync uses it: install, report, check again (unchanged),
  *    then a change in SampCrew reaches the computer at its next check.
@@ -90,6 +92,29 @@ const agent = (token) => ({
     await company.locator('img').first().waitFor();
     ok('HR saves company details and a logo, and the company preview uses them');
 
+    // 1b. A company banner with a GIF for today, and Diwali from the festival library.
+    const GIF = Buffer.from('R0lGODlhBAACAIAAAP///wAAACH5BAEAAAAALAAAAAAEAAIAAAIChF8AOw==', 'base64');
+    const launch = `Our new range is here ${stamp}`;
+    await hr.getByRole('button', { name: 'New banner' }).click();
+    const dlg = hr.getByRole('dialog');
+    await dlg.getByLabel('Banner name').fill('Product launch');
+    await dlg.getByLabel('Message').fill(launch);
+    await dlg.getByRole('radio', { name: 'Icon 🚀' }).click();
+    await dlg.getByLabel('Link').fill('https://northwind.example/new');
+    await dlg.getByLabel('Choose banner image').setInputFiles({ name: 'launch.gif', mimeType: 'image/gif', buffer: GIF });
+    await dlg.getByRole('img', { name: 'Chosen banner image' }).waitFor();
+    await dlg.getByRole('button', { name: 'Add banner' }).click();
+    await hr.getByText('Banner added.').waitFor();
+    const launchRow = hr.getByTestId('banner-row').filter({ hasText: 'Product launch' });
+    await launchRow.getByText('Showing now').waitFor();
+    await launchRow.getByText('GIF').waitFor();
+    await hr.getByRole('button', { name: 'Add Diwali' }).click();
+    await hr.getByRole('dialog').getByLabel('Message').fill('Happy Diwali from all of us at Northwind!');
+    await hr.getByRole('dialog').getByRole('button', { name: 'Add banner' }).click();
+    await hr.getByText('Banner added.').waitFor();
+    await hr.getByTestId('banner-row').filter({ hasText: 'Diwali' }).waitFor();
+    ok('HR adds a company banner with a GIF for today and Diwali from the festival library');
+
     // 2. Employee: 20 designs with their own details, pick and customise.
     const empCtx = await b.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
     const emp = await empCtx.newPage();
@@ -122,6 +147,20 @@ const agent = (token) => ({
     expect((await preview.innerText()).includes(tagline), 'preview survives a half-typed link');
     await emp.getByLabel('X', { exact: true }).fill('https://x.com/arjun');
     await emp.getByText('Start the address with https://').waitFor({ state: 'detached' });
+    // Today's company banner is in the preview, with its GIF; a festival can be previewed; an own message waits its turn.
+    await preview.locator('img[src^="/signature-banner/"]').waitFor();
+    expect((await preview.locator('img[src^="/signature-banner/"]').getAttribute('alt')) === launch, 'company banner image carries the message');
+    await emp.getByRole('button', { name: 'Preview Christmas' }).click();
+    await emp.waitForFunction(() => document.querySelector('[aria-label="Your signature"]')?.textContent?.includes('Merry Christmas'));
+    await emp.getByRole('button', { name: "Show today's signature" }).click();
+    await emp.getByRole('checkbox', { name: /New Year/ }).first().check();
+    await emp.getByRole('radio', { name: 'Icon 🏆' }).click();
+    await emp.getByRole('group', { name: 'Festival library' }).waitFor();
+    await emp.getByLabel('Message', { exact: true }).fill('Winner of the 2026 quality award');
+    await emp.getByLabel("Show my company's banners").uncheck();
+    await emp.waitForFunction(() => /Winner of the 2026 quality award/.test(document.querySelector('[aria-label="Your signature"]')?.textContent ?? ''));
+    await emp.getByLabel("Show my company's banners").check();
+    await preview.locator('img[src^="/signature-banner/"]').waitFor();
     await emp.getByText('Only when I click "Sync SampCrew signature" on my desktop').click();
     ok('employee picks one of 20 designs, customises it and sees the live preview');
 
@@ -151,6 +190,10 @@ const agent = (token) => ({
     expect(body.html.includes(tagline) && Number(w) === Number(h) * 3, `Outlook HTML has the tagline and the logo file at its 3:1 proportions: ${logoTag}`);
     expect(body.text.includes('Arjun Kulkarni') && body.text.includes('\r\n'), 'plain-text version for Outlook');
     expect(body.images.some((i) => i.name === 'logo.png'), 'logo is listed for download');
+    const gifName = body.images.find((i) => i.name.startsWith('banner-'))?.name;
+    expect(gifName?.endsWith('.gif') && body.html.includes(`SampCrew_files/${gifName}`) && body.html.includes('href="https://northwind.example/new"'), 'today\'s GIF banner and its link are in the Outlook signature');
+    const gif = await pc.image('/signature-agent/images/banner');
+    expect(gif.status === 200 && gif.headers.get('content-type') === 'image/gif', 'computer downloads the banner GIF');
     const logo = await pc.image(body.images.find((i) => i.name === 'logo.png').path);
     expect(logo.status === 200 && logo.headers.get('content-type') === 'image/png', 'computer downloads the logo');
     r = await pc.report({ version: body.version, ok: true, outlookVersions: ['15.0'] });
