@@ -491,3 +491,6 @@
 }
 :root[data-theme="dark"] .crew-logo-on-light { display: none; }
 :root[data-theme="dark"] .crew-logo-on-dark { display: block; }
+/* The neon sidebar is always a night panel, so it takes the dark-background artwork in light mode too. */
+:root[data-style="neon"] .crew-sidebar .crew-logo-on-light { display: none; }
+:root[data-style="neon"] .crew-sidebar .crew-logo-on-dark { display: block; }
