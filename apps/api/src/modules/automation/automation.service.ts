@@ -316,7 +316,7 @@ export class AutomationService {
   async draft(description: string) {
     const cat = await this.catalogue();
     const system = [
-      'You turn a description of an HR automation into a CREW workflow definition. Reply with one JSON object only, no prose, no code fences.',
+      'You turn a description of an HR automation into a SampCrew workflow definition. Reply with one JSON object only, no prose, no code fences.',
       'Shape: {"trigger":{"event":EVENT},"steps":[STEP,...]}. Step ids are short lower_case words, unique.',
       'Step types:',
       '- {"id","type":"condition","field":FIELD,"op":"eq|neq|gt|gte|lt|lte|contains|in","value":string|number|string[]} continue only if true',

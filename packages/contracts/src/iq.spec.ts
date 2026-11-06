@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { draftJobDescription, IQ_SUGGESTIONS, matchInContext, matchIq } from './iq';
 
-describe('CREW IQ intent matching', () => {
+describe('SampCrew IQ intent matching', () => {
   it('routes the example commands from the design to the right intent', () => {
     const cases: [string, string][] = [
       ['Show pending onboarding tasks.', 'onboarding_tasks'],
@@ -42,7 +42,7 @@ describe('CREW IQ intent matching', () => {
   });
 });
 
-describe('CREW IQ: more subjects and follow-ups', () => {
+describe('SampCrew IQ: more subjects and follow-ups', () => {
   it('routes the new kinds of question', () => {
     const cases: [string, string][] = [
       ['What did the last payroll cost?', 'payroll_summary'],

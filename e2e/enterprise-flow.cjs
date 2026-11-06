@@ -13,7 +13,7 @@
  * 2. The owner enrols two-step verification and connects the provider in Settings. Switching on is refused until a
  *    test sign-in passes; the test goes to the provider and back, then single sign-on is switched on.
  * 3. HR signs in with single sign-on from the sign-in page. A tampered ID token (wrong nonce) is refused with the
- *    reason, and someone new to CREW gets an account on first sign-in.
+ *    reason, and someone new to SampCrew gets an account on first sign-in.
  * 4. The owner requires single sign-on: a member's password sign-in is turned into the single sign-on step, and
  *    the member's open session ends.
  * 5. The owner creates a SCIM token; the "provider" creates a person, finds them, deactivates them, and every call
@@ -138,7 +138,7 @@ const tamper = (idp, t) => fetch(`${idp.issuer}/__tamper`, { method: 'POST', bod
     await owner.fill('input[name=domains]', 'demo.crew.local');
     await owner.click('text=Create accounts on first sign-in');
     await owner.click('text=Save and check provider');
-    await owner.waitForSelector('text=CREW reached the provider', { timeout: 15000 });
+    await owner.waitForSelector('text=SampCrew reached the provider', { timeout: 15000 });
     expect(await owner.locator('[data-testid=sso-verified]').textContent() === 'Not tested yet', 'connection starts untested');
     expect(await owner.locator('button:has-text("Switch on")').isDisabled(), 'switching on is refused before a test');
     ok('owner connected the provider; switching on waits for a test sign-in');

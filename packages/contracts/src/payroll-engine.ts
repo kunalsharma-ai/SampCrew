@@ -3,7 +3,7 @@
  * for every amount. The API feeds it one employee-month; nothing here touches a database or a clock.
  *
  * India statutory defaults (`DEFAULT_IN_STATUTORY`) are starting values that each workspace reviews and edits,
- * stored with an effective date. CREW does not claim they are current law for any period; see
+ * stored with an effective date. SampCrew does not claim they are current law for any period; see
  * docs/phases/phase-5.md.
  *
  * Rules (each covered by golden tests in payroll-engine.spec.ts):

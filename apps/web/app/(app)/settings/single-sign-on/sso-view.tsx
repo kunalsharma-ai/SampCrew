@@ -114,7 +114,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
 
   return (
     <div className="grid gap-6">
-      {tested && <Alert tone="success" title="Test sign-in passed">The provider signed you in and CREW verified the ID token. You can switch single sign-on on now.</Alert>}
+      {tested && <Alert tone="success" title="Test sign-in passed">The provider signed you in and SampCrew verified the ID token. You can switch single sign-on on now.</Alert>}
       {failure && <Alert tone="danger" title="Test sign-in failed">{failure}</Alert>}
       {notice && !token && <Alert tone={notice.tone}>{notice.text}</Alert>}
 
@@ -136,15 +136,15 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
             </Field>
           )}
           <div className="grid gap-1">
-            <p className="text-[0.8125rem] font-medium text-fg">1. Register CREW in your identity provider</p>
+            <p className="text-[0.8125rem] font-medium text-fg">1. Register SampCrew in your identity provider</p>
             {(editing ? protocol : c?.protocol ?? 'oidc') === 'oidc' ? (
               <>
-                <p className="text-[0.8125rem] text-fg-muted">Create a web application with the authorization code flow and this redirect URI, then assign it to the people who should use CREW.</p>
+                <p className="text-[0.8125rem] text-fg-muted">Create a web application with the authorization code flow and this redirect URI, then assign it to the people who should use SampCrew.</p>
                 <CopyValue value={sso.redirectUri} testId="redirect-uri" />
               </>
             ) : (
               <>
-                <p className="text-[0.8125rem] text-fg-muted">Create a SAML application with these values (or load the metadata URL), send the email address as the NameID, and assign it to the people who should use CREW. Sign the assertion.</p>
+                <p className="text-[0.8125rem] text-fg-muted">Create a SAML application with these values (or load the metadata URL), send the email address as the NameID, and assign it to the people who should use SampCrew. Sign the assertion.</p>
                 <dl className="grid gap-x-6 gap-y-2 text-[0.8125rem] sm:grid-cols-[14rem_1fr]">
                   <dt className="text-fg-muted">Entity ID (audience)</dt><dd><CopyValue value={sso.saml.entityId} testId="saml-entity-id" /></dd>
                   <dt className="text-fg-muted">Assertion Consumer Service URL</dt><dd><CopyValue value={sso.saml.acsUrl} testId="saml-acs-url" /></dd>
@@ -190,7 +190,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
               {error && <Alert tone="danger">{error}</Alert>}
               {protocol === 'oidc' ? (
                 <>
-                  <Field label="Issuer URL" hint="From the provider, for example https://login.microsoftonline.com/<tenant>/v2.0. CREW reads its settings from /.well-known/openid-configuration." required>
+                  <Field label="Issuer URL" hint="From the provider, for example https://login.microsoftonline.com/<tenant>/v2.0. SampCrew reads its settings from /.well-known/openid-configuration." required>
                     {(p) => <Input {...p} name="issuer" value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="https://" />}
                   </Field>
                   <Field label="Client ID" required>
@@ -208,7 +208,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
                   <Field label="Single sign-on URL" hint="Where people are sent to sign in (HTTP-Redirect binding)." required>
                     {(p) => <Input {...p} name="ssoUrl" value={ssoUrl} onChange={(e) => setSsoUrl(e.target.value)} placeholder="https://" />}
                   </Field>
-                  <Field label="Signing certificate" hint={samlCertNeeded ? 'Paste the X.509 certificate (PEM, or the base64 from the metadata). CREW checks every response is signed with it.' : 'Leave blank to keep the stored certificate.'} required={samlCertNeeded}>
+                  <Field label="Signing certificate" hint={samlCertNeeded ? 'Paste the X.509 certificate (PEM, or the base64 from the metadata). SampCrew checks every response is signed with it.' : 'Leave blank to keep the stored certificate.'} required={samlCertNeeded}>
                     {(p) => <Textarea {...p} name="certificate" rows={5} className="font-mono text-[0.6875rem]" value={certificate} onChange={(e) => setCertificate(e.target.value)} placeholder="-----BEGIN CERTIFICATE-----" />}
                   </Field>
                 </>
@@ -216,7 +216,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
               <Field label="Email domains" hint="Comma-separated. People with these addresses are sent to your provider. A domain can belong to one workspace only." required>
                 {(p) => <Input {...p} name="domains" value={domains} onChange={(e) => setDomains(e.target.value)} placeholder="example.com" />}
               </Field>
-              <Checkbox label="Create accounts on first sign-in" description="Someone your provider signs in who has no CREW account yet gets one, with the Employee role only. Off: they must be invited or provisioned with SCIM first." checked={jit} onChange={(e) => setJit(e.target.checked)} />
+              <Checkbox label="Create accounts on first sign-in" description="Someone your provider signs in who has no SampCrew account yet gets one, with the Employee role only. Off: they must be invited or provisioned with SCIM first." checked={jit} onChange={(e) => setJit(e.target.checked)} />
               {c && <Alert tone="warning">Changing the protocol, provider, client or certificate switches single sign-on off until a new test sign-in passes.</Alert>}
               <div className="flex gap-2">
                 <Button loading={pending} disabled={!valid} onClick={save}>{protocol === 'oidc' ? 'Save and check provider' : 'Save and check certificate'}</Button>
@@ -240,7 +240,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
                 <Button variant="danger" disabled={pending} onClick={() => { if (confirm('Remove the connection? Single sign-on stops and the email domains are released.')) run(() => removeSsoAction()); }}>Remove</Button>
               </div>
               {!c.verifiedAt && <p className="text-xs text-fg-subtle">Switching on needs a passing test sign-in first.</p>}
-              <p className="text-xs text-fg-subtle">The CREW mobile app signs in through the same provider: people choose “Sign in with single sign-on” in the app.</p>
+              <p className="text-xs text-fg-subtle">The SampCrew mobile app signs in through the same provider: people choose “Sign in with single sign-on” in the app.</p>
             </div>
           )}
         </CardBody>
@@ -249,7 +249,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
       <Card>
         <CardHeader
           title="User provisioning (SCIM 2.0)"
-          description="Your identity provider creates, updates and deactivates CREW accounts, and pushes groups. Deactivating someone signs them out at once. You choose below which role each group grants."
+          description="Your identity provider creates, updates and deactivates SampCrew accounts, and pushes groups. Deactivating someone signs them out at once. You choose below which role each group grants."
           action={<Badge tone={scim.token ? 'success' : 'neutral'}>{scim.provisioned} provisioned</Badge>}
         />
         <CardBody className="grid gap-4">
@@ -288,7 +288,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
       <Card>
         <CardHeader
           title="Groups from your identity provider"
-          description="Members of a group hold the role you choose while they are in the group. Your provider decides who is in each group; a group grants nothing until you pick a role here. The owner role cannot be granted by a group, and roles given by hand in CREW are never removed by a group."
+          description="Members of a group hold the role you choose while they are in the group. Your provider decides who is in each group; a group grants nothing until you pick a role here. The owner role cannot be granted by a group, and roles given by hand in SampCrew are never removed by a group."
         />
         {groups.length ? (
           <Table>

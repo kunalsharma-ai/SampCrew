@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   const { token } = (await req.json().catch(() => ({}))) as { token?: unknown };
   if (typeof token !== 'string' || token.length < 20 || token.length > 100) return NextResponse.json({ message: 'This kiosk link is incomplete.' }, { status: 400 });
   const res = await fetch(`${API_URL}/api/v1/kiosk/qr`, { headers: { 'x-kiosk-token': token }, cache: 'no-store' }).catch(() => null);
-  if (!res) return NextResponse.json({ message: 'Cannot reach CREW. Retrying.' }, { status: 503 });
+  if (!res) return NextResponse.json({ message: 'Cannot reach SampCrew. Retrying.' }, { status: 503 });
   const data = (await res.json().catch(() => ({}))) as { code?: string; error?: { message?: string }; kiosk?: string; location?: string; workspace?: string; expiresAt?: string; refreshSeconds?: number };
   if (!res.ok || !data.code) return NextResponse.json({ message: data.error?.message ?? 'This kiosk link is not valid.' }, { status: res.status === 401 ? 401 : 502 });
   const origin = process.env.WEB_PUBLIC_URL ?? req.nextUrl.origin;

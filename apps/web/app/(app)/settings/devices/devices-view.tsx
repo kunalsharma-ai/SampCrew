@@ -10,7 +10,7 @@ import type { Device, DeviceIntegration, Location } from '@/lib/types';
 import { createDeviceAction } from '../../attendance/actions';
 
 export const VENDOR_LABEL: Record<string, string> = Object.fromEntries(DEVICE_INTEGRATIONS.map((i) => [i.key, i.name]));
-export const PROTOCOL_LABEL: Record<string, string> = { push_http: 'ZKTeco push (ADMS)', device_api: 'CREW device API (HTTPS + token)' };
+export const PROTOCOL_LABEL: Record<string, string> = { push_http: 'ZKTeco push (ADMS)', device_api: 'SampCrew device API (HTTPS + token)' };
 export const DEVICE_STATUS_LABEL: Record<string, string> = {
   simulated: 'Simulated', waiting: 'Waiting for first contact', online: 'Online', delayed: 'Delayed', offline: 'Offline', error: 'Error', paused: 'Paused by SAMPLEDGE',
 };
@@ -23,7 +23,7 @@ export function deviceFields(locations: Location[], creating: boolean, integrati
     ...(creating ? [
       { name: 'vendor', label: 'Make', type: 'select' as const, required: true, half: true, options: allowed.map((i) => ({ value: i.key, label: i.name })) },
       { name: 'protocol', label: 'Connection', type: 'select' as const, half: true, options: [{ value: '', label: 'Usual for this make' }, ...Object.entries(PROTOCOL_LABEL).map(([value, label]) => ({ value, label }))], hint: 'ZKTeco and eSSL push by themselves; other makes connect through the device API with a token.' },
-      { name: 'serialNumber', label: 'Serial number', required: true, half: true, hint: 'Shown under the device menu (System info). CREW identifies push devices by it.' },
+      { name: 'serialNumber', label: 'Serial number', required: true, half: true, hint: 'Shown under the device menu (System info). SampCrew identifies push devices by it.' },
     ] : []),
     { name: 'model', label: 'Model', half: true, placeholder: 'e.g. K40, uFace 302' },
     { name: 'locationId', label: 'Location', type: 'select', required: true, half: true, options: locations.map((l) => ({ value: l.id, label: l.name })), hint: 'Its time zone is used unless you set one' },
@@ -44,7 +44,7 @@ export function DevicesView({ devices, locations, integrations }: { devices: Dev
     <div className="grid gap-6">
       <Alert tone="info" title="Preview">
         The ZKTeco and eSSL push (ADMS) connection follows the vendors' published push protocol but has not yet been certified against every model and firmware.
-        Other makes connect through the CREW device API from their event forwarding or a bridge. Test with one device before rolling out, and use the ingest log on each device to confirm punches arrive.
+        Other makes connect through the SampCrew device API from their event forwarding or a bridge. Test with one device before rolling out, and use the ingest log on each device to confirm punches arrive.
       </Alert>
       <Card>
         <CardHeader title="Machine integrations" description="The attendance machines this workspace can connect. SAMPLEDGE chooses which ones are available." />
@@ -83,7 +83,7 @@ export function DevicesView({ devices, locations, integrations }: { devices: Dev
               ))}
             </TBody>
           </Table>
-        ) : <EmptyState title="No devices registered" description={locations.length ? 'Register a device by its serial number, then point it at CREW using the setup values on its page. Or register a simulated device to try the flow.' : 'Add a location under Organization first.'} />}
+        ) : <EmptyState title="No devices registered" description={locations.length ? 'Register a device by its serial number, then point it at SampCrew using the setup values on its page. Or register a simulated device to try the flow.' : 'Add a location under Organization first.'} />}
       </Card>
       <ResourceDialog
         open={open}
@@ -111,7 +111,7 @@ export function DevicesView({ devices, locations, integrations }: { devices: Dev
 export function TokenDialog({ token, onClose }: { token: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   return (
-    <Dialog open onClose={onClose} title="Machine token" description="Copy it into the machine's event forwarding or bridge now. CREW keeps only a fingerprint of it and cannot show it again."
+    <Dialog open onClose={onClose} title="Machine token" description="Copy it into the machine's event forwarding or bridge now. SampCrew keeps only a fingerprint of it and cannot show it again."
       footer={<><Button variant="secondary" onClick={() => { void navigator.clipboard?.writeText(token).then(() => setCopied(true)); }}>{copied ? 'Copied' : 'Copy'}</Button><Button onClick={onClose}>Done</Button></>}>
       <code className="block break-all rounded-md bg-bg-subtle p-3 font-mono text-[13px]" data-testid="device-token">{token}</code>
       <p className="mt-3 text-xs text-fg-muted">Send it as <span className="font-mono">Authorization: Bearer &lt;token&gt;</span>. Anyone with it can send punches for this machine; issue a new one from the machine&apos;s page if it leaks.</p>

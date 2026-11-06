@@ -118,7 +118,7 @@ export function scimFullName(u: Pick<ScimUserInput, 'name' | 'displayName' | 'us
 }
 
 /**
- * Applies a SCIM PATCH to the fields CREW keeps (active, name, displayName, externalId, emails). Returns the
+ * Applies a SCIM PATCH to the fields SampCrew keeps (active, name, displayName, externalId, emails). Returns the
  * changed values and the operations it could not apply.
  */
 export function applyScimPatch(current: { active: boolean; givenName: string; familyName: string; externalId: string | null }, ops: ScimPatchInput['Operations']) {
@@ -150,7 +150,7 @@ export function applyScimPatch(current: { active: boolean; givenName: string; fa
 }
 
 /**
- * SCIM filters CREW answers: `<attr> eq "x"` for userName and externalId on users, displayName and externalId on
+ * SCIM filters SampCrew answers: `<attr> eq "x"` for userName and externalId on users, displayName and externalId on
  * groups (what Okta and Entra ID send).
  */
 export function parseScimFilter<A extends string = 'userName' | 'externalId'>(
@@ -205,7 +205,7 @@ export function applyScimGroupPatch(ops: ScimPatchInput['Operations']) {
   return out;
 }
 
-/** Roles a provisioning group may grant: never the owner role, which only an owner can give in CREW. */
+/** Roles a provisioning group may grant: never the owner role, which only an owner can give in SampCrew. */
 export const SCIM_UNMAPPABLE_ROLES = ['tenant_owner'] as const;
 export const scimGroupRoleInput = z.object({ roleId: z.uuid().nullable() });
 

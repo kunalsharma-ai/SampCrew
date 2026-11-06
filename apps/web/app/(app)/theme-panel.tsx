@@ -194,7 +194,7 @@ export function ThemePanel({ open, onClose, appearance, update }: { open: boolea
                       className={cn('size-8 rounded-full ring-2 ring-transparent ring-offset-2 ring-offset-surface-raised', draft.primary === c && 'ring-accent')} style={{ background: c }} />
                   ))}
                 </div>
-                <p className="text-[0.75rem] text-fg-subtle">CREW adjusts a colour where needed so text on it stays readable.</p>
+                <p className="text-[0.75rem] text-fg-subtle">SampCrew adjusts a colour where needed so text on it stays readable.</p>
               </Section>
               <Section title="UI mode">
                 <Segments label="UI mode" value={draft.mode} onChange={(v) => stage({ mode: v })} options={[{ value: 'light', label: 'Light', icon: Sun }, { value: 'dark', label: 'Dark', icon: Moon }, { value: 'system', label: 'Auto', icon: Monitor }]} />
@@ -238,7 +238,7 @@ export function ThemePanel({ open, onClose, appearance, update }: { open: boolea
               <Section title="Density"><Segments label="Density" value={draft.density} onChange={(v) => stage({ density: v })} options={[{ value: 'compact', label: 'Compact' }, { value: 'comfortable', label: 'Comfortable' }, { value: 'spacious', label: 'Spacious' }]} /></Section>
               <Section title="Corners"><Segments label="Corners" value={draft.radius} onChange={(v) => stage({ radius: v })} options={[{ value: 'sharp', label: 'Sharp' }, { value: 'default', label: 'Default' }, { value: 'round', label: 'Round' }]} /></Section>
               <Section title="Motion"><Segments label="Motion" value={draft.motion} onChange={(v) => stage({ motion: v })} options={[{ value: 'cinematic', label: 'Cinematic' }, { value: 'balanced', label: 'Balanced' }, { value: 'focus', label: 'None' }]} /></Section>
-              <button type="button" onClick={() => stage({ ...DEFAULT_APPEARANCE })} className="self-start text-[0.8125rem] font-medium text-accent hover:underline">Back to the CREW default look</button>
+              <button type="button" onClick={() => stage({ ...DEFAULT_APPEARANCE })} className="self-start text-[0.8125rem] font-medium text-accent hover:underline">Back to the SampCrew default look</button>
             </>
           )}
         </div>

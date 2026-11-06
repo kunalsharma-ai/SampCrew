@@ -5,7 +5,7 @@
  *   pnpm dev:api & pnpm dev:web &
  *   node e2e/hr-flow.cjs
  *
- * 1. The demo HR admin adds an employee reporting to the assembly supervisor and invites them to CREW.
+ * 1. The demo HR admin adds an employee reporting to the assembly supervisor and invites them to SampCrew.
  * 2. The new joiner accepts the invitation, sees their onboarding tasks and completes one.
  * 3. They apply for a day of casual leave, with a live preview of the days and balance.
  * 4. The supervisor approves it from the Approvals inbox.

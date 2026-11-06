@@ -1,7 +1,7 @@
 /**
  * AI copilots, Automation Studio and insights end-to-end flow in the Web Portal, against the demo workspace and the
  * local AI TEST STUB (e2e/ai-stub.cjs). No real AI model is called: the stub returns fixed answers. This proves
- * CREW's side of every AI feature (settings, redaction, grounding, logging, review before use) works end to end.
+ * SampCrew's side of every AI feature (settings, redaction, grounding, logging, review before use) works end to end.
  *
  *   pnpm db:reset                          # fresh demo workspace (owner and hr.ops must not have MFA yet)
  *   node e2e/ai-stub.cjs &                 # test stub on 4010

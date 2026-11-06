@@ -98,7 +98,7 @@ export function SetupWizard({ initialStep, setup, locations, canManage }: Props)
                 <Summary ok={setup.counts.departments > 0} label="Departments" value={`${setup.counts.departments} added`} onEdit={() => go(2)} />
                 <Summary ok={setup.counts.designations > 0} label="Designations" value={`${setup.counts.designations} added`} onEdit={() => go(3)} />
               </ul>
-              <p className="text-[0.8125rem] text-fg-muted">You can change all of this later under Organization structure. Next, the guided hire takes you through the first employee: photo, job, attendance registration and their CREW login.</p>
+              <p className="text-[0.8125rem] text-fg-muted">You can change all of this later under Organization structure. Next, the guided hire takes you through the first employee: photo, job, attendance registration and their SampCrew login.</p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={() => go(3)}>Back</Button>
                 <Button

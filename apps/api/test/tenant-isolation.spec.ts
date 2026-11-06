@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addMember, adminPool, api, createApp, createTenant, department, login, type TestTenant } from './helpers';
 
 /**
- * Tenant isolation is the most important property of CREW. These tests check it at two layers:
+ * Tenant isolation is the most important property of SampCrew. These tests check it at two layers:
  * directly against PostgreSQL Row-Level Security, and through the HTTP API.
  */
 describe('tenant isolation', () => {

@@ -35,7 +35,7 @@ export async function setBiometric(on: boolean): Promise<{ ok: boolean; message?
   return { ok: true };
 }
 
-export async function unlockWithBiometric(promptMessage = 'Unlock CREW'): Promise<{ ok: boolean; message?: string }> {
+export async function unlockWithBiometric(promptMessage = 'Unlock SampCrew'): Promise<{ ok: boolean; message?: string }> {
   const r = await LocalAuthentication.authenticateAsync({ promptMessage, cancelLabel: 'Cancel', disableDeviceFallback: false });
   if (r.success) return { ok: true };
   return { ok: false, message: r.error === 'user_cancel' || r.error === 'system_cancel' ? 'Cancelled.' : 'Could not confirm it is you.' };

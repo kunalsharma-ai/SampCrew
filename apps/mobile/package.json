@@ -2,7 +2,7 @@
   "name": "@crew/mobile",
   "version": "0.1.0",
   "private": true,
-  "description": "CREW mobile app (Expo, React Native) for employees and managers: attendance with an offline queue, leave, payslips, approvals, helpdesk and announcements",
+  "description": "SampCrew mobile app (Expo, React Native) for employees and managers: attendance with an offline queue, leave, payslips, approvals, helpdesk and announcements",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -31,6 +31,7 @@
     "expo-router": "57.0.28",
     "expo-screen-capture": "57.0.4",
     "expo-secure-store": "57.0.4",
+    "expo-splash-screen": "57.0.10",
     "expo-status-bar": "57.0.1",
     "expo-web-browser": "57.0.3",
     "react": "19.2.3",

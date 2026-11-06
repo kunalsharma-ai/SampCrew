@@ -25,7 +25,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   const scopeNote = scope === 'tenant' ? 'Everyone in the workspace.' : scope === 'entity' ? 'People in your legal entity.' : scope === 'department' ? 'People in your department.' : scope === 'team' ? 'You and the people who report to you.' : 'Only you.';
   return (
     <>
-      <PageHeader title="Logins & access" description={`CREW logins and what each person can access. Employee records live under Employees. Showing: ${scopeNote}`} />
+      <PageHeader title="Logins & access" description={`SampCrew logins and what each person can access. Employee records live under Employees. Showing: ${scopeNote}`} />
       <PeopleView
         me={me}
         page={members}

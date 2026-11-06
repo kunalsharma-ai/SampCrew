@@ -71,7 +71,7 @@ export class IdentityController {
   }
 
   @Get('scim/groups')
-  @Doc({ summary: 'Groups your identity provider pushed with SCIM, and the CREW role each one grants' })
+  @Doc({ summary: 'Groups your identity provider pushed with SCIM, and the SampCrew role each one grants' })
   scimGroups() {
     return this.groups.overview();
   }

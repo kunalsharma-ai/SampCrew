@@ -55,7 +55,7 @@ export function readCertificate(text: string) {
 /**
  * Single sign-on. Each workspace connects one identity provider (Okta, Microsoft Entra ID, Google Workspace, Auth0,
  * Keycloak, ADFS, ...) with either protocol:
- *   - OpenID Connect (authorization code flow with PKCE, RFC 7636): CREW checks the ID token's signature against
+ *   - OpenID Connect (authorization code flow with PKCE, RFC 7636): SampCrew checks the ID token's signature against
  *     the provider's published keys, its issuer, audience, expiry and nonce, and needs a verified email.
  *   - SAML 2.0 (HTTP-Redirect request, HTTP-POST response): node-saml checks the assertion's XML signature against
  *     the certificate the owner pasted, the issuer, audience, recipient, time limits and InResponseTo.
@@ -79,7 +79,7 @@ export class SsoService {
     return `${this.config.WEB_PUBLIC_URL.replace(/\/$/, '')}/sso/callback`;
   }
 
-  /** SAML: CREW's entity ID (also where its metadata is published) and the Assertion Consumer Service URL. */
+  /** SAML: SampCrew's entity ID (also where its metadata is published) and the Assertion Consumer Service URL. */
   get samlSp() {
     const entityId = `${this.config.API_PUBLIC_URL.replace(/\/$/, '')}/api/v1/auth/sso/saml/metadata`;
     return { entityId, acsUrl: `${this.config.WEB_PUBLIC_URL.replace(/\/$/, '')}/sso/saml`, metadataUrl: entityId };
@@ -109,7 +109,7 @@ export class SsoService {
     });
   }
 
-  /** CREW's SAML service provider metadata, to upload to the identity provider. */
+  /** SampCrew's SAML service provider metadata, to upload to the identity provider. */
   samlMetadata() {
     const noCache: CacheProvider = { saveAsync: async () => null, getAsync: async () => null, removeAsync: async () => null };
     return this.saml({ saml_sso_url: 'https://example.invalid', saml_idp_cert: 'unused', issuer: 'unused' } as ConnectionRow, noCache).generateServiceProviderMetadata(null, null);
@@ -171,7 +171,7 @@ export class SsoService {
     const saml = input.protocol === 'saml';
     let cert = input.protocol === 'saml' && input.certificate ? readCertificate(input.certificate) : null;
     if (input.protocol === 'saml') {
-      // The browser goes there, CREW never calls it; plain http only for local tests.
+      // The browser goes there, SampCrew never calls it; plain http only for local tests.
       if (!this.allowPrivate && !input.ssoUrl.startsWith('https://')) throw Errors.validation([{ path: 'ssoUrl', message: 'Use the https address of your identity provider.' }]);
     } else await this.discover(input.issuer);
     const issuer = input.protocol === 'saml' ? input.idpEntityId : input.issuer;

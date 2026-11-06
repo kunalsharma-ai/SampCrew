@@ -40,7 +40,7 @@ try {
     readSync(fd, head, 0, head.length, 0);
     readSync(fd, tag, 0, 16, size - 16);
     closeSync(fd);
-    if (!head.subarray(0, MAGIC.length).equals(MAGIC)) throw new Error('not a CREW encrypted backup');
+    if (!head.subarray(0, MAGIC.length).equals(MAGIC)) throw new Error('not a SampCrew encrypted backup');
     const salt = head.subarray(MAGIC.length, MAGIC.length + 16);
     const iv = head.subarray(MAGIC.length + 16);
     const decipher = createDecipheriv('aes-256-gcm', key(salt), iv);

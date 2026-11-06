@@ -140,7 +140,7 @@ export function CaseView({ c, handlers, categories, aiDrafts }: { c: CaseDetail;
             <ul className="divide-y divide-border text-xs">
               {c.history.map((h, i) => (
                 <li key={i} className="px-5 py-2">
-                  <span className="font-medium">{h.byName ?? 'CREW'}</span> {HISTORY[h.action] ?? h.action}
+                  <span className="font-medium">{h.byName ?? 'SampCrew'}</span> {HISTORY[h.action] ?? h.action}
                   {h.action === 'status' && h.to ? `: ${STATUS[h.from ?? ''] ?? h.from} → ${STATUS[h.to] ?? h.to}` : ''}
                   {h.action === 'assigned' ? ` to ${h.toName ?? 'nobody'}` : ''}
                   {h.action === 'priority' && h.to ? `: ${PRIORITY[h.to] ?? h.to}` : ''}

@@ -20,9 +20,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * SCIM 2.0 Groups (RFC 7643 section 4.2). The identity provider owns the groups and who is in them; a workspace
- * owner decides in CREW which role, if any, each group grants. Members of a mapped group hold that role while they
+ * owner decides in SampCrew which role, if any, each group grants. Members of a mapped group hold that role while they
  * are in it (role_assignments.source = 'scim'). Removing someone from a group removes only a role that came from a
- * group, and only when no other group they are in grants it. Roles given by hand in CREW are never touched, and no
+ * group, and only when no other group they are in grants it. Roles given by hand in SampCrew are never touched, and no
  * group can grant the owner role.
  */
 @Injectable()
@@ -69,7 +69,7 @@ export class ScimGroupsService {
   private async memberIds(tx: Tx, values: string[]) {
     const ids = [...new Set(values)];
     const bad = ids.find((v) => !UUID.test(v));
-    if (bad) throw new ScimError(400, 'invalidValue', `Unknown member "${bad.slice(0, 60)}": members must be CREW user ids from /Users`);
+    if (bad) throw new ScimError(400, 'invalidValue', `Unknown member "${bad.slice(0, 60)}": members must be SampCrew user ids from /Users`);
     if (!ids.length) return ids;
     const found = await many<{ id: string }>(tx, 'select id from memberships where id = any($1::uuid[])', [ids]);
     const missing = ids.filter((v) => !found.some((f) => f.id === v));
@@ -237,7 +237,7 @@ export class ScimGroupsService {
         role = (await one<{ id: string; key: string; name: string }>(tx, 'select id, key, name from roles where id = $1', [roleId])) ?? null;
         if (!role) throw Errors.notFound('Role');
         if ((SCIM_UNMAPPABLE_ROLES as readonly string[]).includes(role.key)) {
-          throw Errors.badRequest('role_not_mappable', 'A provisioning group cannot grant the owner role. Owners are added by another owner in CREW.');
+          throw Errors.badRequest('role_not_mappable', 'A provisioning group cannot grant the owner role. Owners are added by another owner in SampCrew.');
         }
       }
       if ((g.role_id ?? null) === (role?.id ?? null)) return this.overview(tx);

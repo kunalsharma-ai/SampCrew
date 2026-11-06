@@ -26,7 +26,7 @@ export interface CompleteResult { interactionId: string; text: string; model: st
 export interface AiSettingsRow { features: Partial<Record<AiFeature, boolean>>; prompt_log_days: number }
 
 /**
- * The only way CREW talks to an AI model. It checks that AI is set up and the feature is switched on for the
+ * The only way SampCrew talks to an AI model. It checks that AI is set up and the feature is switched on for the
  * workspace, keeps the workspace within its monthly AI credits, removes personal identifiers from everything it
  * sends, and records each call (what was sent, the answer, the sources, tokens, credits and time) in
  * ai_interactions. No database transaction is held open while the model answers.
@@ -80,9 +80,9 @@ export class AiGatewayService {
 
   /** Whether a feature can be used right now, and why not. */
   async availability(tx: Tx, feature: AiFeature): Promise<{ available: boolean; reason: string | null }> {
-    if (!(await this.provider())) return { available: false, reason: 'AI is not set up for this CREW installation.' };
+    if (!(await this.provider())) return { available: false, reason: 'AI is not set up for this SampCrew installation.' };
     const e = await this.entitlements.current(tx);
-    if (!e.features.has('ai_copilot')) return { available: false, reason: 'Your plan does not include CREW AI.' };
+    if (!e.features.has('ai_copilot')) return { available: false, reason: 'Your plan does not include SampCrew AI.' };
     const s = await this.settings(tx);
     if (!s.features[feature]) return { available: false, reason: 'Your workspace has not switched this AI feature on.' };
     const u = await this.usage(tx);
@@ -113,15 +113,15 @@ export class AiGatewayService {
   async assertAvailable(feature: AiFeature) {
     const provider = await this.provider();
     await this.db.tenant(async (tx) => {
-      if (!provider) throw Errors.conflict('ai_not_configured', 'AI is not set up for this CREW installation. SAMPLEDGE sets it up in the Super Admin Console (Integrations); until then CREW does not send data to any AI service.');
+      if (!provider) throw Errors.conflict('ai_not_configured', 'AI is not set up for this SampCrew installation. SAMPLEDGE sets it up in the Super Admin Console (Integrations); until then SampCrew does not send data to any AI service.');
       const e = await this.entitlements.current(tx);
-      if (!e.features.has('ai_copilot')) throw Errors.featureNotInPlan('CREW AI Copilots');
+      if (!e.features.has('ai_copilot')) throw Errors.featureNotInPlan('SampCrew AI Copilots');
       const s = await this.settings(tx);
       if (!s.features[feature]) throw Errors.conflict('ai_feature_off', `This AI feature is switched off for your workspace (${AI_FEATURE_LABEL[feature].split(':')[0]}).`);
     });
   }
 
-  /** Records an answer CREW gave without calling a model (for example: no help article matched). */
+  /** Records an answer SampCrew gave without calling a model (for example: no help article matched). */
   async recordWithoutModel(input: { feature: AiFeature; promptVersion: string; question: string; response: string; subject?: { type: string; id: string } }) {
     return this.db.tenant(async (tx) => {
       const q = redact(input.question);
@@ -139,9 +139,9 @@ export class AiGatewayService {
 
     // 1. Checks, in their own short transaction.
     await this.db.tenant(async (tx) => {
-      if (!provider) throw Errors.conflict('ai_not_configured', 'AI is not set up for this CREW installation. SAMPLEDGE sets it up in the Super Admin Console (Integrations); until then CREW does not send data to any AI service.');
+      if (!provider) throw Errors.conflict('ai_not_configured', 'AI is not set up for this SampCrew installation. SAMPLEDGE sets it up in the Super Admin Console (Integrations); until then SampCrew does not send data to any AI service.');
       const e = await this.entitlements.current(tx);
-      if (!e.features.has('ai_copilot')) throw Errors.featureNotInPlan('CREW AI Copilots');
+      if (!e.features.has('ai_copilot')) throw Errors.featureNotInPlan('SampCrew AI Copilots');
       const s = await this.settings(tx);
       if (!s.features[input.feature]) throw Errors.conflict('ai_feature_off', `This AI feature is switched off for your workspace (${AI_FEATURE_LABEL[input.feature].split(':')[0]}).`);
       const u = await this.usage(tx);

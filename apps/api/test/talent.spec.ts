@@ -225,7 +225,7 @@ describe('talent', () => {
       fails(blocked, 409, 'manager_reviews_missing');
       expect(blocked.body.error.message).toMatch(/Eve Test, Manu Test/);
       ok(await as('hr').post(`/reviews/${ids.review_eve}/exclude`).send({ reason: 'On long leave for most of the period' }), 201);
-      // Manu has no manager in CREW, so HR writes that review.
+      // Manu has no manager in SampCrew, so HR writes that review.
       const manu = (ok(await as('hr').get(`/review-cycles/${ids.cycle}`)).reviews as any[]).find((r) => r.employeeName === 'Manu Test');
       expect(ok(await as('hr').get(`/reviews/${manu.id}`)).can.writeManager).toBe(true);
       ok(await as('hr').put(`/reviews/${manu.id}/manager`).send({ answers: { achievements: 'Built the team', growth: 'Hire a lead' }, rating: 4, submit: true }));

@@ -187,7 +187,7 @@ function CalendarsCard({ calendars, entities, locations, run }: Props & { run: R
     <Card>
       <CardHeader
         title="Holiday calendars"
-        description="Leave days skip each calendar's weekly offs and holidays. Holidays are entered by you: CREW does not claim an official list for any country."
+        description="Leave days skip each calendar's weekly offs and holidays. Holidays are entered by you: SampCrew does not claim an official list for any country."
         action={<Button size="sm" onClick={() => setEditing('new')}><Plus className="size-3.5" /> Add calendar</Button>}
       />
       <CardBody className="grid gap-4">

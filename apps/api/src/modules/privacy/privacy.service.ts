@@ -128,7 +128,7 @@ export class PrivacyService {
     });
   }
 
-  /** Everything CREW holds about the person in this workspace, by table. */
+  /** Everything SampCrew holds about the person in this workspace, by table. */
   private async collect(tx: Tx, employeeId: string) {
     const employee = (await one<Record<string, unknown>>(tx, 'select * from employees where id = $1', [employeeId]))!;
     const tables = await many<{ table_name: string }>(
@@ -167,7 +167,7 @@ export class PrivacyService {
       format: 'crew-personal-data-export/1',
       generatedAt: new Date().toISOString(),
       workspace: workspace.name,
-      about: 'A copy of the personal data this workspace holds about you in CREW, by record type. Dates are ISO 8601; amounts are in the currency of the record.',
+      about: 'A copy of the personal data this workspace holds about you in SampCrew, by record type. Dates are ISO 8601; amounts are in the currency of the record.',
       employee: Object.fromEntries(Object.entries(employee).filter(([k]) => !SECRET_COLUMNS.test(k))),
       account,
       sensitive: sensitive ?? null,
@@ -216,7 +216,7 @@ export class PrivacyService {
         [r.employee_id],
       ))!;
       if (e.status !== 'exited' || !e.past) {
-        throw Errors.conflict('still_employed', 'Only people who have left (after their last working day) can be erased. While someone works here, CREW needs their details to employ and pay them.');
+        throw Errors.conflict('still_employed', 'Only people who have left (after their last working day) can be erased. While someone works here, SampCrew needs their details to employ and pay them.');
       }
       if (await one(tx, `select 1 from payroll_items i join payroll_runs pr on pr.id = i.run_id where i.employee_id = $1 and pr.status not in ('finalised', 'cancelled') limit 1`, [r.employee_id])) {
         throw Errors.conflict('payroll_open', 'This person is in a payroll run that is not finalised. Finish or cancel it first.');

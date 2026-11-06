@@ -82,7 +82,7 @@ export function PrivacyList({ requests, people }: { requests: PrivacyRequestRow[
           <Field label="How the request arrived" hint="For example: Email to hr@ on 3 March, identity checked against their ID" required>
             {(p) => <Input {...p} name="source" value={source} maxLength={300} onChange={(e) => setSource(e.target.value)} />}
           </Field>
-          {kind === 'erasure' && <Alert tone="info">Erasure is possible only after the person&apos;s last working day. While someone works here, CREW needs their details to employ and pay them.</Alert>}
+          {kind === 'erasure' && <Alert tone="info">Erasure is possible only after the person&apos;s last working day. While someone works here, SampCrew needs their details to employ and pay them.</Alert>}
         </div>
       </Dialog>
     </div>

@@ -468,7 +468,7 @@ export class ZkPushController {
 }
 
 /**
- * CREW device API: for attendance machines that do not speak the ZKTeco push protocol (Hikvision, Matrix, Realtime,
+ * SampCrew device API: for attendance machines that do not speak the ZKTeco push protocol (Hikvision, Matrix, Realtime,
  * Suprema...) through their event forwarding, a vendor bridge or any middleware that can make an HTTPS call. The
  * machine is identified by its token (Settings > Devices shows it once), sent as a Bearer token.
  */
@@ -488,7 +488,7 @@ export class DeviceApiController {
   @Post('heartbeat')
   @HttpCode(200)
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
-  @Doc({ summary: 'Tell CREW the machine is online (and optionally its firmware and counts)', body: deviceApiHeartbeat })
+  @Doc({ summary: 'Tell SampCrew the machine is online (and optionally its firmware and counts)', body: deviceApiHeartbeat })
   heartbeat(@Headers('authorization') authorization: string | undefined, @Body(new ZodPipe(deviceApiHeartbeat)) body: z.infer<typeof deviceApiHeartbeat>, @Req() req: { ip?: string }) {
     return this.devices.apiHeartbeat(authorization, body, req.ip ?? null);
   }

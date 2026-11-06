@@ -1,8 +1,8 @@
 /**
- * CREW IQ, end to end in the Web Portal, against the demo workspace:
+ * SampCrew IQ, end to end in the Web Portal, against the demo workspace:
  *   pnpm db:reset; API on :4000, Web Portal on :3000, then: pnpm e2e:iq
  *
- * 1. The recruiter opens CREW IQ from the top bar and asks for the recruitment summary: a table read from their
+ * 1. The recruiter opens SampCrew IQ from the top bar and asks for the recruitment summary: a table read from their
  *    requisitions, marked "From your records", with how it was answered and a link to the source.
  * 2. Headcount covers only what their own access covers, which for a recruiter is just themselves.
  * 3. They ask IQ to start a staffing proposal for five recruiters: IQ shows a preview, nothing is saved, and the
@@ -42,11 +42,11 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
       if (attempt >= 4) throw new Error('sign-in stayed rate limited');
       await p.waitForTimeout(20000);
     }
-    const panel = p.getByRole('complementary', { name: 'CREW IQ' });
+    const panel = p.getByRole('complementary', { name: 'SampCrew IQ' });
     /** Asks a question and returns its answer card, once it has arrived. */
     const ask = async (q) => {
       const n = await panel.locator('article').count();
-      await panel.getByLabel('Ask CREW IQ').fill(q);
+      await panel.getByLabel('Ask SampCrew IQ').fill(q);
       await panel.getByRole('button', { name: 'Send question' }).click();
       await panel.locator('article').nth(n).waitFor();
       return panel.locator('article').nth(n);
@@ -54,7 +54,7 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
     // 1. Recruitment summary from the person's own records.
     await p.goto(BASE + '/recruitment');
-    await p.getByRole('button', { name: 'CREW IQ' }).click();
+    await p.getByRole('button', { name: 'SampCrew IQ' }).click();
     await panel.getByRole('list', { name: 'Suggested questions' }).getByRole('button', { name: 'Summarize recruitment performance this quarter' }).click();
     const summary = panel.locator('article').last();
     await summary.getByText('From your records').waitFor();

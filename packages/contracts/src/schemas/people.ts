@@ -28,12 +28,12 @@ export const attendanceRegistrationInput = z.object({
   enrolments: z.array(attendanceEnrolment).max(5),
 });
 
-/** Create a CREW login for an employee who has none. */
+/** Create a SampCrew login for an employee who has none. */
 export const employeeLoginInput = z.object({ mode: z.enum(['invite', 'password']), initialPassword: password.optional() })
   .refine((v) => !v.initialPassword || v.mode === 'password', { message: 'A temporary password is only used when creating the login now', path: ['initialPassword'] });
 
 /**
- * What a workspace admin can do to an employee's CREW login. Passwords are stored only as one-way hashes, so nobody can
+ * What a workspace admin can do to an employee's SampCrew login. Passwords are stored only as one-way hashes, so nobody can
  * read one back: a reset sets a new temporary password (shown once) that the person replaces at the next sign-in.
  * Lock stops sign-in to this workspace only; the account itself may also be used in other workspaces.
  */
@@ -72,10 +72,10 @@ export const createEmployeeInput = placementInput
     probationMonths: z.number().int().min(0).max(24).default(6),
     /** Instantiate this onboarding checklist (defaults to the workspace's default template). Null skips onboarding. */
     onboardingTemplateId: z.uuid().nullable().optional(),
-    /** Send a CREW login invitation to the work email. Same as loginMode 'invite'. */
+    /** Send a SampCrew login invitation to the work email. Same as loginMode 'invite'. */
     inviteToCrew: z.boolean().default(false),
     /**
-     * How this person signs in to CREW: no login yet, an emailed invitation, or a login created now with a temporary
+     * How this person signs in to SampCrew: no login yet, an emailed invitation, or a login created now with a temporary
      * password (typed by HR or generated) that they must change at first sign-in.
      */
     loginMode: z.enum(LOGIN_MODES).optional(),
@@ -86,7 +86,7 @@ export const createEmployeeInput = placementInput
     defaultShiftId: z.uuid().nullable().optional(),
     attendanceEnrolments: z.array(attendanceEnrolment).max(5).optional(),
   })
-  .refine((v) => !(v.inviteToCrew || v.loginMode === 'invite' || v.loginMode === 'password') || !!v.workEmail, { message: 'A work email is needed to give this person a CREW login', path: ['workEmail'] })
+  .refine((v) => !(v.inviteToCrew || v.loginMode === 'invite' || v.loginMode === 'password') || !!v.workEmail, { message: 'A work email is needed to give this person a SampCrew login', path: ['workEmail'] })
   .refine((v) => !((v.inviteToCrew || (v.loginMode && v.loginMode !== 'none')) && v.membershipId), { message: 'Choose either a new login or an existing member', path: ['membershipId'] })
   .refine((v) => !v.initialPassword || v.loginMode === 'password', { message: 'A temporary password is only used when creating the login now', path: ['initialPassword'] });
 export type CreateEmployeeInput = z.infer<typeof createEmployeeInput>;

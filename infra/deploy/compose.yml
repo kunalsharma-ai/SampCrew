@@ -1,4 +1,4 @@
-# CREW production stack on one host: PostgreSQL, Redis, the API, the Web Portal, the Super Admin Console, a TLS
+# SampCrew production stack on one host: PostgreSQL, Redis, the API, the Web Portal, the Super Admin Console, a TLS
 # reverse proxy, daily backups, and a one-shot migration job that runs before the API starts.
 #
 #   cp env.production.example .env && ./gen-secrets.sh >> .env    # then fill in the addresses and email settings

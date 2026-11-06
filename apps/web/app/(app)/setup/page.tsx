@@ -33,7 +33,7 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader
-        title={setup.company.setupCompletedAt ? 'Company setup' : `Welcome to CREW, ${me.user.fullName.split(' ')[0]}`}
+        title={setup.company.setupCompletedAt ? 'Company setup' : `Welcome to SampCrew, ${me.user.fullName.split(' ')[0]}`}
         description={setup.company.setupCompletedAt
           ? 'Review your company details and structure. Changes apply straight away.'
           : 'A few minutes of setup before your first employee: your company, where you work, and your departments and designations.'}

@@ -5,8 +5,8 @@ import { addMember, adminPool, api, createApp, createTenant, department, loginWi
 
 const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
-/** CREW IQ: answers from the workspace under the asker's permissions; actions only open prefilled forms. */
-describe('CREW IQ', () => {
+/** SampCrew IQ: answers from the workspace under the asker's permissions; actions only open prefilled forms. */
+describe('SampCrew IQ', () => {
   let app: INestApplication;
   let pool: Pool;
   let t: TestTenant;

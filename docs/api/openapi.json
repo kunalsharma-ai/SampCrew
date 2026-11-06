@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "CREW API",
+    "title": "SampCrew API",
     "version": "1.0.0",
-    "description": "CREW by SAMPLEDGE REST API. All tenant routes are scoped to the tenant in the bearer token and protected by PostgreSQL Row-Level Security. Send `Idempotency-Key` on POST requests you may retry. Lists use cursor pagination (`limit`, `cursor`)."
+    "description": "SampCrew by SAMPLEDGE REST API. All tenant routes are scoped to the tenant in the bearer token and protected by PostgreSQL Row-Level Security. Send `Idempotency-Key` on POST requests you may retry. Lists use cursor pagination (`limit`, `cursor`)."
   },
   "servers": [
     {
@@ -266,7 +266,7 @@
         "tags": [
           "Auth"
         ],
-        "summary": "CREW's SAML service provider metadata (entity ID and Assertion Consumer Service), to load into the identity provider",
+        "summary": "SampCrew's SAML service provider metadata (entity ID and Assertion Consumer Service), to load into the identity provider",
         "operationId": "Auth_ssoSamlMetadata",
         "security": [],
         "responses": {
@@ -4055,7 +4055,7 @@
         "tags": [
           "Employees"
         ],
-        "summary": "Hire: create the employee, job record, onboarding checklist and (optionally) a CREW invitation",
+        "summary": "Hire: create the employee, job record, onboarding checklist and (optionally) a SampCrew invitation",
         "description": "Requires permission `employees:create`.",
         "operationId": "Employees_create",
         "security": [
@@ -5374,7 +5374,7 @@
         "tags": [
           "Employees"
         ],
-        "summary": "Give an employee without a login a CREW login: an emailed invitation, or a login with a temporary password they change at first sign-in",
+        "summary": "Give an employee without a login a SampCrew login: an emailed invitation, or a login with a temporary password they change at first sign-in",
         "description": "Requires permission `employees:update`.",
         "operationId": "Employees_createLogin",
         "security": [
@@ -11829,7 +11829,7 @@
         "tags": [
           "Iq"
         ],
-        "summary": "Ask CREW IQ. Answers come from your workspace under your own permissions, with how they were found and links to the source pages; actions open prefilled forms and change nothing. Saved to your conversation; pass conversationId to ask a follow-up.",
+        "summary": "Ask SampCrew IQ. Answers come from your workspace under your own permissions, with how they were found and links to the source pages; actions open prefilled forms and change nothing. Saved to your conversation; pass conversationId to ask a follow-up.",
         "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_ask",
         "security": [
@@ -11891,7 +11891,7 @@
         "tags": [
           "Iq"
         ],
-        "summary": "Your CREW IQ conversations, newest first (only your own)",
+        "summary": "Your SampCrew IQ conversations, newest first (only your own)",
         "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_conversations",
         "security": [
@@ -11919,7 +11919,7 @@
         "tags": [
           "Iq"
         ],
-        "summary": "Delete all your CREW IQ conversations",
+        "summary": "Delete all your SampCrew IQ conversations",
         "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_forgetAll",
         "security": [
@@ -11949,7 +11949,7 @@
         "tags": [
           "Iq"
         ],
-        "summary": "One of your CREW IQ conversations with every question and answer",
+        "summary": "One of your SampCrew IQ conversations with every question and answer",
         "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_conversation",
         "security": [
@@ -11987,7 +11987,7 @@
         "tags": [
           "Iq"
         ],
-        "summary": "Delete one of your CREW IQ conversations",
+        "summary": "Delete one of your SampCrew IQ conversations",
         "description": "Requires plan feature `crew_iq`.",
         "operationId": "Iq_forget",
         "security": [
@@ -16049,7 +16049,7 @@
         "tags": [
           "DeviceApi"
         ],
-        "summary": "Tell CREW the machine is online (and optionally its firmware and counts)",
+        "summary": "Tell SampCrew the machine is online (and optionally its firmware and counts)",
         "operationId": "DeviceApi_heartbeat",
         "security": [],
         "requestBody": {
@@ -31433,7 +31433,7 @@
         "tags": [
           "Identity"
         ],
-        "summary": "Groups your identity provider pushed with SCIM, and the CREW role each one grants",
+        "summary": "Groups your identity provider pushed with SCIM, and the SampCrew role each one grants",
         "description": "Requires plan feature `sso`.",
         "operationId": "Identity_scimGroups",
         "security": [
@@ -32095,7 +32095,7 @@
         "tags": [
           "Scim"
         ],
-        "summary": "SCIM: create a group. It grants no role until a workspace owner maps it to one in CREW.",
+        "summary": "SCIM: create a group. It grants no role until a workspace owner maps it to one in SampCrew.",
         "operationId": "Scim_createGroup",
         "security": [
           {

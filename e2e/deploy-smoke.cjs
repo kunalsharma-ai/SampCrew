@@ -88,7 +88,7 @@ function expect(cond, msg) {
   ok('People, Leave, Attendance, Approvals, Payroll and Settings open');
   const fonts = await p.evaluate(() => [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family));
   expect(fonts.some((f) => /Inter/.test(f)), `self-hosted Inter font not loaded: ${fonts.join(', ')}`);
-  ok('fonts load from CREW itself');
+  ok('fonts load from SampCrew itself');
   // Open redirect guard on sign-in
   await ctx.clearCookies();
   await p.goto(`${WEB}/login?next=${encodeURIComponent('/\\evil.example')}`);
@@ -97,7 +97,7 @@ function expect(cond, msg) {
   await p.click('button[type=submit]');
   await p.waitForURL((u) => u.pathname === '/' || !u.href.startsWith(WEB), { timeout: 15000 });
   expect(p.url().startsWith(WEB), `sign-in followed an outside next= address to ${p.url()}`);
-  ok('sign-in ignores a next= address outside CREW');
+  ok('sign-in ignores a next= address outside SampCrew');
   // On CI runners Docker can change the host's network interfaces while the stack settles. Chromium then cancels
   // requests in flight with net::ERR_NETWORK_CHANGED, and Next.js logs that its RSC fetch fell back to a full
   // navigation. Those are not script errors or policy violations, so only they are set aside, and only after

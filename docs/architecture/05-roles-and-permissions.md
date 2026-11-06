@@ -4,7 +4,7 @@
 
 ## 5.1 Model
 
-CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carries a scope, assignments can carry constraints, and environmental conditions such as MFA apply):
+SampCrew combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carries a scope, assignments can carry constraints, and environmental conditions such as MFA apply):
 
 - **Permission**: `resource:action`, for example `leave:approve`.
 - **Scope** (which records the grant covers):
@@ -106,7 +106,7 @@ CREW combines **RBAC** (roles bundle permissions) with **ABAC** (each grant carr
 | **Automation** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `automation:manage` Build, test and activate workflows | 8 | yes | A | A | A | · | · | · | · | · | · | · | · | · |
 | **AI** | | |  |  |  |  |  |  |  |  |  |  |  |  |
-| `ai:use` Use CREW AI assistants (always limited to the user's own permissions) | 8 |  | O | · | O | O | O | O | O | O | O | O | O | · |
+| `ai:use` Use SampCrew AI assistants (always limited to the user's own permissions) | 8 |  | O | · | O | O | O | O | O | O | O | O | O | · |
 | `ai:configure` Configure AI providers, features and limits | 8 | yes | A | A | · | · | · | · | · | · | · | · | · | · |
 | **Integrations** | | |  |  |  |  |  |  |  |  |  |  |  |  |
 | `integrations:manage` Connect and disconnect integrations | 9 | yes | A | A | · | · | · | · | · | · | · | · | · | · |
@@ -122,7 +122,7 @@ Legend: O own, T team, D department, E legal entity, A all (tenant), · not gran
 
 ## 5.3 Role descriptions
 
-- **Workspace Owner** (`tenant_owner`): Owns the CREW workspace, its subscription and every setting. Cannot be removed while they are the last owner.
+- **Workspace Owner** (`tenant_owner`): Owns the SampCrew workspace, its subscription and every setting. Cannot be removed while they are the last owner.
 - **Organization Admin** (`org_admin`): Administers organisation structure, members, roles and settings. No payroll data by default.
 - **HR Admin** (`hr_admin`): Runs day-to-day HR operations across the organisation.
 - **HR Manager** (`hr_manager`): HR business partner for one legal entity: people, leave, attendance and talent within that entity.

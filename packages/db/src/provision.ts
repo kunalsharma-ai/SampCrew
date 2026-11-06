@@ -19,7 +19,7 @@ export interface ProvisionedTenant {
   ownerUserId: string;
   ownerMembershipId: string;
   legalEntityId: string;
-  /** True when the owner already had a CREW identity (for example a consultant joining a second tenant). */
+  /** True when the owner already had a SampCrew identity (for example a consultant joining a second tenant). */
   existingUser: boolean;
 }
 

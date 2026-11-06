@@ -24,7 +24,7 @@ export function MyPhoto({ employee, name }: { employee: { id: string; photoUpdat
     fd.set('file', file, file.name);
     start(async () => {
       const r = await uploadPhotoAction(employee.id, fd);
-      setMsg(r.ok ? { tone: 'success', text: 'Your photo is saved. Your colleagues see it across CREW.' } : { tone: 'danger', text: r.message });
+      setMsg(r.ok ? { tone: 'success', text: 'Your photo is saved. Your colleagues see it across SampCrew.' } : { tone: 'danger', text: r.message });
       router.refresh();
     });
   };

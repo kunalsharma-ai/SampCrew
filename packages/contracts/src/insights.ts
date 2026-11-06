@@ -100,7 +100,7 @@ export function payrollAnomalies(i: PayCheckInput): PayAnomaly[] {
   const lop = Number(i.lopDays);
   if (lop > i.daysInPeriod / 2) out.push({ code: 'high_lop', severity: 'warning', message: `${i.lopDays} unpaid days out of ${i.daysInPeriod}.` });
   if (!i.history.length) {
-    out.push({ code: 'no_history', severity: 'info', message: 'First month in CREW payroll, so there is nothing to compare with.' });
+    out.push({ code: 'no_history', severity: 'info', message: 'First month in SampCrew payroll, so there is nothing to compare with.' });
     return out;
   }
   const baseGross = median(i.history.slice(0, 3).map((h) => toMinor(h.gross)));

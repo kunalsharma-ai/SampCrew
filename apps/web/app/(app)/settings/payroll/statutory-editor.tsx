@@ -62,7 +62,7 @@ export function StatutoryEditor({ statutory, entities }: { statutory: StatutoryR
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Effective from" required>{(p) => <Input {...p} type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />}</Field>
-          <Field label="Loss-of-pay days come from" hint="Use unpaid leave only if this entity does not record attendance in CREW">
+          <Field label="Loss-of-pay days come from" hint="Use unpaid leave only if this entity does not record attendance in SampCrew">
             {(p) => (
               <Select {...p} value={lopSource} onChange={(e) => setLopSource(e.target.value)}>
                 <option value="attendance_and_leave">Attendance (absences, half days) and unpaid leave</option>
@@ -139,7 +139,7 @@ export function StatutoryEditor({ statutory, entities }: { statutory: StatutoryR
 
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
           <Button loading={pending} disabled={!entityId} onClick={() => run(() => saveStatutoryAction({ legalEntityId: entityId, effectiveFrom, lopSource, settings: s }))}>I have checked these values. Save.</Button>
-          {saved.length === 0 && <span className="text-xs text-fg-muted">Starting values are filled in; CREW does not certify them as current law.</span>}
+          {saved.length === 0 && <span className="text-xs text-fg-muted">Starting values are filled in; SampCrew does not certify them as current law.</span>}
         </div>
       </CardBody>
     </Card>

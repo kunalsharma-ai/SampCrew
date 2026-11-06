@@ -3,7 +3,7 @@ import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import { fontRuns, renderProposal } from '../src/modules/bids/proposal-pdf';
 
-/** The proposal PDF prints names in the scripts CREW customers use, not just Western European ones. */
+/** The proposal PDF prints names in the scripts SampCrew customers use, not just Western European ones. */
 describe('proposal PDF fonts', () => {
   it('picks a face per script and marks only what no face has', () => {
     const runs = fontRuns('Meera राहुल शर्मा Ωμέγα Жуков Nguyễn ₹ 中', 400);

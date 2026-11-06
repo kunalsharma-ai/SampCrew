@@ -19,7 +19,7 @@ export default async function IntegrationsPage() {
   const planned = cat.connectors.filter((c) => c.status === 'planned');
   return (
     <>
-      <PageHeader title="Integrations" description="Connect CREW to your other systems. Only workspace owners can change these, and every change is in the audit trail." />
+      <PageHeader title="Integrations" description="Connect SampCrew to your other systems. Only workspace owners can change these, and every change is in the audit trail." />
       <h2 className="mb-3 text-sm font-semibold text-fg">Available now</h2>
       <div className="mb-8 grid gap-4 md:grid-cols-3">
         {available.map((c) => (
@@ -51,7 +51,7 @@ export default async function IntegrationsPage() {
         </Link>
       </div>
       <h2 className="mb-1 text-sm font-semibold text-fg">Provided by SAMPLEDGE</h2>
-      <p className="mb-3 text-[0.8125rem] text-fg-muted">Services CREW runs for every workspace. SAMPLEDGE connects these, so there is nothing for you to set up; this shows which are on.</p>
+      <p className="mb-3 text-[0.8125rem] text-fg-muted">Services SampCrew runs for every workspace. SAMPLEDGE connects these, so there is nothing for you to set up; this shows which are on.</p>
       <div className="mb-8 grid gap-4 md:grid-cols-3" data-testid="platform-services">
         {cat.platformServices.map((s) => (
           <Card key={s.key} data-testid={`platform-${s.key}`}>

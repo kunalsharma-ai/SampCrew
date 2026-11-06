@@ -3,7 +3,7 @@
  * automated tests only. It is not a real identity provider and must never be used for real sign-ins: it signs in
  * whoever was set with POST /__user, without asking for a password.
  *
- * It does what CREW relies on a real provider for: it reads the SP's AuthnRequest from the HTTP-Redirect binding,
+ * It does what SampCrew relies on a real provider for: it reads the SP's AuthnRequest from the HTTP-Redirect binding,
  * and answers through the HTTP-POST binding with a Response whose Assertion is signed (RSA-SHA256, exclusive C14N)
  * with a key and self-signed certificate created at start (with openssl), carrying InResponseTo, Audience,
  * Recipient, time limits, the email as NameID and an AuthnContextClassRef.
@@ -27,7 +27,7 @@ const id = () => `_${randomBytes(16).toString('hex')}`;
 function keyPair() {
   const dir = mkdtempSync(join(tmpdir(), 'crew-saml-stub-'));
   try {
-    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '2', '-subj', '/CN=CREW SAML TEST STUB', '-keyout', join(dir, 'key.pem'), '-out', join(dir, 'cert.pem')], { stdio: 'ignore' });
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '2', '-subj', '/CN=SampCrew SAML TEST STUB', '-keyout', join(dir, 'key.pem'), '-out', join(dir, 'cert.pem')], { stdio: 'ignore' });
     return { key: readFileSync(join(dir, 'key.pem'), 'utf8'), cert: readFileSync(join(dir, 'cert.pem'), 'utf8') };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -36,7 +36,7 @@ function keyPair() {
 
 function start({ port = 0, host = '127.0.0.1', issuerHost = host } = {}) {
   const { key, cert } = keyPair();
-  const other = keyPair(); // for the bad_signature tamper: a valid signature by a key CREW does not trust
+  const other = keyPair(); // for the bad_signature tamper: a valid signature by a key SampCrew does not trust
   const state = {
     user: { email: 'someone@example.com', name: 'Test Person', authnContext: 'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport' },
     /** For negative tests: 'bad_signature' | 'wrong_audience' | 'wrong_in_response_to' | 'unsigned' | 'expired' | 'altered' | null */

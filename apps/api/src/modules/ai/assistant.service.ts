@@ -69,7 +69,7 @@ export class AssistantService {
       return { interactionId, answered: false, answer, sources: [], model: null };
     }
     const system = [
-      `You are the HR assistant for ${workspace}, answering an employee's question inside CREW, their HR system.`,
+      `You are the HR assistant for ${workspace}, answering an employee's question inside SampCrew, their HR system.`,
       'Answer only from the numbered help articles below. Cite the articles you use like [1] or [2].',
       'If the articles do not answer the question, say that you could not find it and suggest asking HR. Do not guess or use outside knowledge about laws or policies.',
       'You cannot see the employee\'s records and cannot make or promise decisions about their pay, leave or employment; say HR can help with anything specific to them.',

@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { finishSso, isSignedIn, ssoFailed } from '@/lib/sso-finish';
 
 /**
- * OpenID Connect: the identity provider sends the browser here with a code and the state CREW issued. The API checks
+ * OpenID Connect: the identity provider sends the browser here with a code and the state SampCrew issued. The API checks
  * both and verifies the ID token; see finishSso for where the browser goes next.
  */
 export async function GET(req: NextRequest) {

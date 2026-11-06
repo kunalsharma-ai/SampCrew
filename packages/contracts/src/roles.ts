@@ -61,7 +61,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
   {
     key: 'tenant_owner',
     name: 'Workspace Owner',
-    description: 'Owns the CREW workspace, its subscription and every setting. Cannot be removed while they are the last owner.',
+    description: 'Owns the SampCrew workspace, its subscription and every setting. Cannot be removed while they are the last owner.',
     grants: everything('tenant'),
   },
   {

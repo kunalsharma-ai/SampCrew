@@ -38,7 +38,7 @@ export function ApiKeysView({ keys, scopes }: { keys: ApiKey[]; scopes: { key: s
       {notice && !created && <Alert tone={notice.tone}>{notice.text}</Alert>}
       {created && <SecretOnce label="API key" value={created} onDone={() => setCreated(null)} />}
       <Alert tone="info" title="How to call the API">
-        Send the key as <code className="font-mono">Authorization: Bearer crew_…</code>. Keys can only read, and only from routes covered by their scopes; anything else is refused. The API reference is in the OpenAPI file shipped with CREW.
+        Send the key as <code className="font-mono">Authorization: Bearer crew_…</code>. Keys can only read, and only from routes covered by their scopes; anything else is refused. The API reference is in the OpenAPI file shipped with SampCrew.
       </Alert>
       <Card>
         <CardHeader title="Keys" action={<Button size="sm" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Create key</Button>} />
@@ -65,7 +65,7 @@ export function ApiKeysView({ keys, scopes }: { keys: ApiKey[]; scopes: { key: s
               ))}
             </TBody>
           </Table>
-        ) : <EmptyState title="No API keys yet" description="Create a key for each system that needs to read CREW data, with only the scopes it needs." />}
+        ) : <EmptyState title="No API keys yet" description="Create a key for each system that needs to read SampCrew data, with only the scopes it needs." />}
       </Card>
       <Dialog
         open={open}

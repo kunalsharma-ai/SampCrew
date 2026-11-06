@@ -37,7 +37,7 @@ export default async function AttritionPersonPage({ params }: { params: Promise<
             </CardBody>
           </Card>
           <Card>
-            <CardHeader title="Inputs used" description="Taken from CREW records on the day of calculation." />
+            <CardHeader title="Inputs used" description="Taken from SampCrew records on the day of calculation." />
             <CardBody className="grid gap-1 text-[0.8125rem]">
               {Object.entries(latest.inputs).map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-3"><span className="text-fg-muted">{INPUT_TEXT[k] ?? k}</span><span className="tabular-nums">{v === null ? 'None' : v}</span></div>

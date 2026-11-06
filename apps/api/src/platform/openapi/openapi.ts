@@ -79,10 +79,10 @@ export function buildOpenApi(controllers: (new (...args: never[]) => unknown)[],
   return {
     openapi: '3.1.0',
     info: {
-      title: 'CREW API',
+      title: 'SampCrew API',
       version: '1.0.0',
       description:
-        'CREW by SAMPLEDGE REST API. All tenant routes are scoped to the tenant in the bearer token and protected by PostgreSQL Row-Level Security. ' +
+        'SampCrew by SAMPLEDGE REST API. All tenant routes are scoped to the tenant in the bearer token and protected by PostgreSQL Row-Level Security. ' +
         'Send `Idempotency-Key` on POST requests you may retry. Lists use cursor pagination (`limit`, `cursor`).',
     },
     servers: [{ url: '/' }],

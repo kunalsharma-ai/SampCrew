@@ -43,7 +43,7 @@ describe('Phase 11 hardening', () => {
     return res.body;
   };
 
-  /** Plays the browser: the provider's auto-post page, posted on to CREW like the Web Portal's /sso/saml route does. */
+  /** Plays the browser: the provider's auto-post page, posted on to SampCrew like the Web Portal's /sso/saml route does. */
   const samlRound = async (authorizationUrl: string) => {
     const r = await fetch(authorizationUrl);
     expect(r.status).toBe(200);
@@ -82,7 +82,7 @@ describe('Phase 11 hardening', () => {
   const samlSettings = (over: Record<string, unknown> = {}) => ({ protocol: 'saml', idpEntityId: idp.entityId, ssoUrl: idp.ssoUrl, certificate: idp.cert, domains: [domain()], ...over });
 
   describe('SAML 2.0 single sign-on', () => {
-    it("publishes CREW's service provider metadata", async () => {
+    it("publishes SampCrew's service provider metadata", async () => {
       const r = await api(app).get('/auth/sso/saml/metadata');
       expect(r.status).toBe(200);
       expect(r.headers['content-type']).toContain('application/samlmetadata+xml');
@@ -231,7 +231,7 @@ describe('Phase 11 hardening', () => {
       fails(await mobile().post('/auth/sso/exchange').send({ code, verifier }), 401);
     });
   });
-  describe('SCIM Groups mapped to CREW roles', () => {
+  describe('SCIM Groups mapped to SampCrew roles', () => {
     const scim = (token: string) => {
       const r = () => request(app.getHttpServer());
       const auth = <T extends { set: (k: string, v: string) => T }>(x: T) => x.set('authorization', `Bearer ${token}`);
@@ -306,7 +306,7 @@ describe('Phase 11 hardening', () => {
       // Still in Finance, so the worker keeps it; the manager keeps the one given by hand.
       expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual', 'payroll_admin:scim']);
       expect(await rolesOf(people.manager.membershipId)).toEqual(['department_manager:manual', 'employee:manual', 'payroll_admin:manual']);
-      // Editing roles by hand in CREW leaves the group's role in place.
+      // Editing roles by hand in SampCrew leaves the group's role in place.
       ok(await as('owner').put(`/members/${people.worker.membershipId}/roles`).send({ assignments: [{ roleKey: 'employee' }, { roleKey: 'recruiter' }] }));
       expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual', 'payroll_admin:scim', 'recruiter:manual']);
       // Replacing the member list (PUT) and renaming.
