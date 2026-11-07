@@ -18,7 +18,7 @@ const LOGO_TYPES = ['image/png', 'image/jpeg'];
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '');
 const templateName = (k: string | null) => SIGNATURE_TEMPLATES.find((t) => t.key === k)?.name ?? null;
 
-export function CompanySignatureView({ settings, people, agents }: { settings: CompanySignature; people: SignaturePerson[]; agents: Array<SignatureAgent & { employeeId: string }> }) {
+export function CompanySignatureView({ settings, people, agents, banners }: { settings: CompanySignature; people: SignaturePerson[]; agents: Array<SignatureAgent & { employeeId: string }>; banners: React.ReactNode }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const input = useRef<HTMLInputElement>(null);
@@ -148,6 +148,8 @@ export function CompanySignatureView({ settings, people, agents }: { settings: C
           </Card>
         </div>
       </div>
+
+      {banners}
 
       <Card aria-label="Signatures across the company">
         <CardHeader title="Signatures across the company" description={`${synced} of ${people.length} people have the signature installed on at least one computer.`} />

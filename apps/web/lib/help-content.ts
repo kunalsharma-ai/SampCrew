@@ -666,6 +666,8 @@ export const WEB_HELP: HelpContent = {
     Customise: { what: 'Colours, font, size, what is shown and your own text and links.', how: 'Leave a field empty to use what HR has on record. The preview updates as you type.' },
     'Outlook on your computers': { what: 'The Windows computers that keep your signature in Outlook, and whether each one is up to date.', how: 'Download the setup file and open it on the computer. Disconnect a computer you no longer use.' },
     'Company details': { what: 'Company name, website, phone, address, colours, disclaimer, social links, starting design and sync policy.', how: 'Empty fields fall back to the workspace details. Save to update everyone at their next sync.' },
+    'Festival and celebration wishes': { what: 'A banner under your signature for festivals, celebrations or your own message, shown on its dates.', how: 'Keep company banners on, tick the festivals you want to wish people for, or write your own message with dates. The eye button previews one.' },
+    'Festivals and celebrations': { what: 'Banners under everyone\'s signature: festivals from around the world in your words, and your own banners with an image, GIF or link.', how: 'Add a festival from the library or a new banner, then set its words, colours, dates and image.', where: 'One banner shows at a time; company banners come before people\'s own.' },
     'Signature logo': { what: 'The logo shown in signatures.', how: 'Upload a PNG or JPEG up to 1 MB. Outlook cannot show SVG or WebP.' },
     'Signatures across the company': { what: 'Each person\'s design, sync choice and connected computers, with the last time the signature was installed.', how: 'Disconnect a computer that should no longer receive a signature.' },
 

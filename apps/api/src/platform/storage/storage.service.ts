@@ -119,6 +119,8 @@ export function sniffMatches(contentType: string, head: Buffer): boolean {
       return starts(0x89, 0x50, 0x4e, 0x47);
     case 'image/jpeg':
       return starts(0xff, 0xd8, 0xff);
+    case 'image/gif':
+      return head.subarray(0, 6).toString('ascii') === 'GIF87a' || head.subarray(0, 6).toString('ascii') === 'GIF89a';
     case 'image/webp':
       return starts(0x52, 0x49, 0x46, 0x46) && head.subarray(8, 12).toString('ascii') === 'WEBP';
     case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':

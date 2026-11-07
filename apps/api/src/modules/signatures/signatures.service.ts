@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  composeSignatureData, renderSignature, type SaveSignatureInput, type SignatureBase, type SignatureOptions, signatureOptionsInput, type SignatureSettingsInput,
+  type CompanyBanner, composeSignatureData, pickBanner, renderSignature, type SignatureBannerInput, todayIn, type SaveSignatureInput, type SignatureBase, type SignatureOptions, signatureOptionsInput, type SignatureSettingsInput,
   type SignatureSyncMode, SIGNATURE_TEMPLATE_KEYS, type SignatureTemplateKey, type signatureAgentReport, type signatureAgentSyncInput,
 } from '@crew/contracts';
 import type { z } from 'zod';
@@ -17,6 +17,9 @@ import { buildInstaller, SIGNATURE_NAME } from './installer';
 export const AGENT_TOKEN_PREFIX = 'scsig_';
 export const LOGO_TYPES = ['image/png', 'image/jpeg'] as const;
 export const LOGO_MAX_BYTES = 1024 * 1024;
+export const BANNER_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif'] as const;
+export const MAX_BANNERS = 100;
+const BANNER_EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif' };
 /** Outlook 2013 cannot show WebP, so only these photo types go into the signature. */
 const OUTLOOK_IMAGE_TYPES = ['image/png', 'image/jpeg'];
 
@@ -29,8 +32,21 @@ interface SettingsRow {
 interface PersonRow {
   id: string; display_name: string; work_email: string | null; phone: string | null; designation: string | null; department: string | null;
   photo_key: string | null; photo_content_type: string | null; photo_updated_at: Date | null; tenant_name: string; tenant_website: string | null;
-  tenant_phone: string | null; entity_address: string | null; entity_legal_name: string | null;
+  tenant_phone: string | null; entity_address: string | null; entity_legal_name: string | null; timezone: string | null;
 }
+interface BannerRow {
+  id: string; occasion_key: string | null; title: string; message: string; icon: string | null; bg_color: string; fg_color: string; link_url: string | null;
+  starts_on: string | null; ends_on: string | null; position: 'above' | 'below'; enabled: boolean; image_key: string | null; image_content_type: string | null;
+  image_width: number | null; image_height: number | null; image_updated_at: Date | null; created_at: Date; updated_at: Date;
+}
+const BANNER_COLUMNS = `id, occasion_key, title, message, icon, bg_color, fg_color, link_url, to_char(starts_on, 'YYYY-MM-DD') as starts_on, to_char(ends_on, 'YYYY-MM-DD') as ends_on,
+  position, enabled, image_key, image_content_type, image_width, image_height, image_updated_at, created_at, updated_at`;
+const bannerView = (b: BannerRow): CompanyBanner & { createdAt: Date; updatedAt: Date } => ({
+  id: b.id, occasionKey: b.occasion_key, title: b.title, message: b.message, icon: b.icon, bgColor: b.bg_color, fgColor: b.fg_color, linkUrl: b.link_url,
+  startsOn: b.starts_on, endsOn: b.ends_on, position: b.position, enabled: b.enabled,
+  image: b.image_key && b.image_content_type && b.image_updated_at ? { updatedAt: b.image_updated_at.toISOString(), width: b.image_width ?? 480, height: b.image_height ?? 120, contentType: b.image_content_type } : null,
+  createdAt: b.created_at, updatedAt: b.updated_at,
+});
 interface SignatureRow { template: string; options: unknown; sync_mode: SignatureSyncMode | null; sync_requested_at: Date | null; updated_at: Date }
 interface AgentRow { id: string; tenant_id: string; employee_id: string; name: string; revoked_at: Date | null }
 
@@ -46,8 +62,9 @@ const AGENT_COLUMNS = `id, name, token_hint as "tokenHint", computer_name as "co
 
 const isTemplate = (k: string): k is SignatureTemplateKey => (SIGNATURE_TEMPLATE_KEYS as readonly string[]).includes(k);
 
-/** Width and height of a PNG or JPEG, read from its header, so Outlook gets the logo's real proportions. */
+/** Width and height of a PNG, JPEG or GIF, read from its header, so Outlook gets the image's real proportions. */
 export function imageSize(buf: Buffer, type: string): { width: number; height: number } | null {
+  if (type === 'image/gif' && buf.length >= 10 && buf.toString('ascii', 0, 4) === 'GIF8') return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
   if (type === 'image/png' && buf.length >= 24 && buf.toString('ascii', 12, 16) === 'IHDR') return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
   if (type === 'image/jpeg') {
     let i = 2;
@@ -197,7 +214,8 @@ export class SignaturesService {
       tx,
       `select e.id, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as display_name, e.work_email::text as work_email, e.phone,
               ds.name as designation, d.name as department, e.photo_key, e.photo_content_type, e.photo_updated_at,
-              t.name as tenant_name, t.website as tenant_website, t.contact_phone as tenant_phone, le.address as entity_address, le.legal_name as entity_legal_name
+              t.name as tenant_name, t.website as tenant_website, t.contact_phone as tenant_phone, le.address as entity_address, le.legal_name as entity_legal_name,
+              t.timezone
          from employees e join tenants t on t.id = e.tenant_id
          left join designations ds on ds.id = e.current_designation_id left join departments d on d.id = e.current_department_id
          left join legal_entities le on le.id = e.current_legal_entity_id
@@ -216,7 +234,7 @@ export class SignaturesService {
    * The person's details merged with the company's, as the renderer needs them. Images are given as `images`:
    * the caller decides their addresses (web links for the preview, files next to the .htm for Outlook).
    */
-  private compose(p: PersonRow, s: SettingsRow, sig: SignatureRow | null | undefined) {
+  private compose(p: PersonRow, s: SettingsRow, sig: SignatureRow | null | undefined, banners: CompanyBanner[] = []) {
     const options: SignatureOptions = signatureOptionsInput.parse(sig?.options ?? {});
     const template: SignatureTemplateKey = s.lock_template ? (isTemplate(s.default_template) ? s.default_template : 'classic') : sig && isTemplate(sig.template) ? sig.template : isTemplate(s.default_template) ? s.default_template : 'classic';
     const show = options.show;
@@ -227,11 +245,15 @@ export class SignaturesService {
       phone: s.phone ?? p.tenant_phone, mobile: p.phone, website: s.website ?? p.tenant_website, address: s.address ?? p.entity_address, disclaimer: s.disclaimer,
       social: s.social ?? {}, brandColor: s.brand_color, accentColor: s.accent_color, logoWidth: s.logo_width, logoHeight: s.logo_height,
     };
-    const data = composeSignatureData(base, options);
+    const today = todayIn(p.timezone ?? 'UTC');
+    const picked = pickBanner(today, banners, options.wishes);
+    const bannerImage = picked?.source.kind === 'company' && picked.source.banner.image ? { id: picked.source.banner.id, ...picked.source.banner.image } : null;
+    const data = { ...composeSignatureData(base, options), banner: picked?.view ?? null };
     const syncMode: SignatureSyncMode = s.allow_employee_sync_choice && sig?.sync_mode ? sig.sync_mode : s.sync_mode;
     return {
-      template, options, base, data, syncMode,
+      template, options, base, data, syncMode, today,
       images: {
+        banner: bannerImage ? { id: bannerImage.id, ext: BANNER_EXT[bannerImage.contentType] ?? 'png', updatedAt: bannerImage.updatedAt } : null,
         photo: photoOk ? { ext: p.photo_content_type === 'image/png' ? 'png' : 'jpg', updatedAt: p.photo_updated_at } : null,
         logo: logoOk ? { ext: s.logo_content_type === 'image/png' ? 'png' : 'jpg', updatedAt: s.logo_updated_at } : null,
       },
@@ -243,20 +265,135 @@ export class SignaturesService {
   private forOutlook(c: ReturnType<SignaturesService['compose']>) {
     const photoName = c.images.photo ? `photo.${c.images.photo.ext}` : null;
     const logoName = c.images.logo ? `logo.${c.images.logo.ext}` : null;
-    const r = renderSignature(c.template, { ...c.data, photoSrc: photoName ? `${SIGNATURE_NAME}_files/${photoName}` : null, logoSrc: logoName ? `${SIGNATURE_NAME}_files/${logoName}` : null });
-    const version = sha256([r.html, r.text, c.images.photo?.updatedAt?.toISOString() ?? '', c.images.logo?.updatedAt?.toISOString() ?? ''].join('\n')).slice(0, 32);
+    const bannerName = c.images.banner ? `banner-${c.images.banner.id.slice(0, 8)}.${c.images.banner.ext}` : null;
+    const banner = c.data.banner ? { ...c.data.banner, imageSrc: bannerName ? `${SIGNATURE_NAME}_files/${bannerName}` : null } : null;
+    const r = renderSignature(c.template, { ...c.data, banner, photoSrc: photoName ? `${SIGNATURE_NAME}_files/${photoName}` : null, logoSrc: logoName ? `${SIGNATURE_NAME}_files/${logoName}` : null });
+    const version = sha256([r.html, r.text, c.images.photo?.updatedAt?.toISOString() ?? '', c.images.logo?.updatedAt?.toISOString() ?? '', c.images.banner?.updatedAt ?? ''].join('\n')).slice(0, 32);
     const images = [
+      ...(bannerName ? [{ name: bannerName, path: '/signature-agent/images/banner' }] : []),
       ...(photoName ? [{ name: photoName, path: '/signature-agent/images/photo' }] : []),
       ...(logoName ? [{ name: logoName, path: '/signature-agent/images/logo' }] : []),
     ];
     return { version, html: r.html, text: r.text, images };
   }
 
+  private async composeFor(tx: Tx, employeeId: string) {
+    const [p, s, sig, banners] = [await this.person(tx, employeeId), await this.settingsRow(tx), await this.signatureRow(tx, employeeId), await this.bannerList(tx)];
+    return this.compose(p, s, sig, banners);
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
+  // Festival, celebration and company banners (org:manage to change; everyone sees the enabled ones)
+  // ---------------------------------------------------------------------------------------------------------
+
+  private async bannerList(tx: Tx) {
+    return (await many<BannerRow>(tx, `select ${BANNER_COLUMNS} from signature_banners order by starts_on nulls last, created_at`)).map(bannerView);
+  }
+
+  async banners() {
+    return this.db.tenant((tx) => this.bannerList(tx));
+  }
+
+  private bannerParams(input: SignatureBannerInput) {
+    return [input.occasionKey, input.title, input.message, input.icon ?? null, input.bgColor, input.fgColor, input.linkUrl ?? null, input.startsOn ?? null, input.endsOn ?? null, input.position, input.enabled];
+  }
+
+  async createBanner(input: SignatureBannerInput) {
+    const actor = requestContext.tenantActor();
+    return this.db.tenant(async (tx) => {
+      if ((await one<{ n: number }>(tx, 'select count(*)::int as n from signature_banners'))!.n >= MAX_BANNERS) throw Errors.badRequest('too_many_banners', `A company can keep up to ${MAX_BANNERS} banners. Delete old ones first.`);
+      if (input.occasionKey && (await one(tx, 'select 1 from signature_banners where occasion_key = $1', [input.occasionKey]))) throw Errors.conflict('banner_exists', 'This festival is already on your list. Edit it instead.');
+      const row = (await one<BannerRow>(
+        tx,
+        `insert into signature_banners (tenant_id, occasion_key, title, message, icon, bg_color, fg_color, link_url, starts_on, ends_on, position, enabled, created_by)
+         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning ${BANNER_COLUMNS}`,
+        [...this.bannerParams(input), actor.membershipId],
+      ))!;
+      await this.audit.record(tx, { action: 'signature.banner_created', resourceType: 'signature_banner', resourceId: row.id, changes: { ...input } });
+      return bannerView(row);
+    });
+  }
+
+  async updateBanner(id: string, input: SignatureBannerInput) {
+    return this.db.tenant(async (tx) => {
+      const prev = await one<{ occasion_key: string | null }>(tx, 'select occasion_key from signature_banners where id = $1 for update', [id]);
+      if (!prev) throw Errors.notFound('Banner');
+      if (input.occasionKey && input.occasionKey !== prev.occasion_key && (await one(tx, 'select 1 from signature_banners where occasion_key = $1', [input.occasionKey]))) throw Errors.conflict('banner_exists', 'This festival is already on your list.');
+      const row = (await one<BannerRow>(
+        tx,
+        `update signature_banners set occasion_key = $1, title = $2, message = $3, icon = $4, bg_color = $5, fg_color = $6, link_url = $7, starts_on = $8, ends_on = $9,
+                position = $10, enabled = $11, updated_at = now() where id = $12 returning ${BANNER_COLUMNS}`,
+        [...this.bannerParams(input), id],
+      ))!;
+      await this.audit.record(tx, { action: 'signature.banner_updated', resourceType: 'signature_banner', resourceId: id, changes: { ...input } });
+      return bannerView(row);
+    });
+  }
+
+  async deleteBanner(id: string) {
+    const key = await this.db.tenant(async (tx) => {
+      const row = await one<{ image_key: string | null; title: string }>(tx, 'delete from signature_banners where id = $1 returning image_key, title', [id]);
+      if (!row) throw Errors.notFound('Banner');
+      await this.audit.record(tx, { action: 'signature.banner_deleted', resourceType: 'signature_banner', resourceId: id, metadata: { title: row.title } });
+      return row.image_key;
+    });
+    if (key) await this.storage.remove(key).catch(() => undefined);
+  }
+
+  async setBannerImage(id: string, file: { mimetype: string; size: number; buffer: Buffer } | undefined) {
+    if (!file) throw Errors.badRequest('file_required', 'Choose an image');
+    if (!(BANNER_IMAGE_TYPES as readonly string[]).includes(file.mimetype)) throw Errors.badRequest('unsupported_type', 'Use a PNG, JPEG or GIF image: Outlook cannot show other types');
+    if (file.size <= 0 || file.size > LOGO_MAX_BYTES) throw Errors.badRequest('file_too_large', 'Banner images can be up to 1 MB');
+    if (!sniffMatches(file.mimetype, file.buffer.subarray(0, 512))) throw Errors.badRequest('content_mismatch', 'The file is not the image type it claims to be');
+    const size = imageSize(file.buffer, file.mimetype);
+    if (!size || size.width < 1 || size.height < 1 || size.width > 10000 || size.height > 10000) throw Errors.badRequest('unreadable_image', 'The image could not be read');
+    const actor = requestContext.tenantActor();
+    const key = this.storage.newKey(actor.tenantId);
+    await this.storage.put(key, file.buffer, { upload: true });
+    try {
+      const { old, row } = await this.db.tenant(async (tx) => {
+        const prev = await one<{ image_key: string | null }>(tx, 'select image_key from signature_banners where id = $1 for update', [id]);
+        if (!prev) throw Errors.notFound('Banner');
+        const updated = (await one<BannerRow>(
+          tx,
+          `update signature_banners set image_key = $2, image_content_type = $3, image_width = $4, image_height = $5, image_updated_at = now(), updated_at = now()
+            where id = $1 returning ${BANNER_COLUMNS}`,
+          [id, key, file.mimetype, size.width, size.height],
+        ))!;
+        await this.audit.record(tx, { action: 'signature.banner_image_updated', resourceType: 'signature_banner', resourceId: id, metadata: { contentType: file.mimetype, ...size } });
+        return { old: prev.image_key, row: updated };
+      });
+      if (old) await this.storage.remove(old).catch(() => undefined);
+      return bannerView(row);
+    } catch (e) {
+      await this.storage.remove(key).catch(() => undefined);
+      throw e;
+    }
+  }
+
+  async removeBannerImage(id: string) {
+    const old = await this.db.tenant(async (tx) => {
+      const prev = await one<{ image_key: string | null }>(tx, 'select image_key from signature_banners where id = $1 for update', [id]);
+      if (!prev) throw Errors.notFound('Banner');
+      await tx.query('update signature_banners set image_key = null, image_content_type = null, image_width = null, image_height = null, image_updated_at = null, updated_at = now() where id = $1', [id]);
+      await this.audit.record(tx, { action: 'signature.banner_image_removed', resourceType: 'signature_banner', resourceId: id });
+      return prev.image_key;
+    });
+    if (old) await this.storage.remove(old).catch(() => undefined);
+  }
+
+  async openBannerImage(id: string, tenantId?: string) {
+    const row = await this.db.tenant((tx) => one<{ image_key: string | null; image_content_type: string | null }>(tx, 'select image_key, image_content_type from signature_banners where id = $1', [id]), tenantId ? { tenantId } : undefined);
+    if (!row?.image_key || !row.image_content_type) throw Errors.notFound('Banner image');
+    const f = await this.storage.open(row.image_key).catch(() => { throw Errors.notFound('Banner image'); });
+    return { ...f, contentType: row.image_content_type };
+  }
+
   async mine() {
     return this.db.tenant(async (tx) => {
       const employeeId = await this.myEmployeeId(tx);
-      const [p, s, sig] = [await this.person(tx, employeeId), await this.settingsRow(tx), await this.signatureRow(tx, employeeId)];
-      const c = this.compose(p, s, sig);
+      const [p, s, sig, banners] = [await this.person(tx, employeeId), await this.settingsRow(tx), await this.signatureRow(tx, employeeId), await this.bannerList(tx)];
+      const c = this.compose(p, s, sig, banners);
       const outlook = this.forOutlook(c);
       const agents = await many(tx, `select ${AGENT_COLUMNS} from signature_agents where employee_id = $1 and revoked_at is null order by created_at`, [employeeId]);
       return {
@@ -275,6 +412,8 @@ export class SignaturesService {
         photoUpdatedAt: p.photo_updated_at,
         images: { photo: c.images.photo ? { updatedAt: c.images.photo.updatedAt } : null, logo: c.images.logo ? { updatedAt: c.images.logo.updatedAt } : null },
         photoNotForOutlook: c.photoNotForOutlook,
+        today: c.today,
+        banners: banners.filter((b) => b.enabled),
         version: outlook.version,
         company: { ...this.settingsView(s), companyName: s.company_name ?? p.tenant_name },
         agents: agents.map((a) => ({ ...a, upToDate: (a as { lastAppliedVersion: string | null }).lastAppliedVersion === outlook.version })),
@@ -361,8 +500,8 @@ export class SignaturesService {
   async agentSync(authorization: string | undefined, input: z.infer<typeof signatureAgentSyncInput>, ip: string | null) {
     const a = await this.agentByToken(authorization);
     return this.db.tenant(async (tx) => {
-      const [p, s, sig] = [await this.person(tx, a.employee_id), await this.settingsRow(tx), await this.signatureRow(tx, a.employee_id)];
-      const c = this.compose(p, s, sig);
+      const c = await this.composeFor(tx, a.employee_id);
+      const sig = await this.signatureRow(tx, a.employee_id);
       const out = this.forOutlook(c);
       await tx.query(
         `update signature_agents set last_seen_at = now(), last_trigger = $2, computer_name = coalesce($3, computer_name), outlook_versions = coalesce($4, outlook_versions),
@@ -389,9 +528,15 @@ export class SignaturesService {
     return { ok: true };
   }
 
-  async agentImage(authorization: string | undefined, kind: 'photo' | 'logo') {
+  async agentImage(authorization: string | undefined, kind: 'photo' | 'logo' | 'banner') {
     const a = await this.agentByToken(authorization);
     if (kind === 'logo') return this.openLogo(a.tenant_id);
+    if (kind === 'banner') {
+      // Today's banner for this person, the same one the last sync wrote into the signature.
+      const c = await this.db.tenant((tx) => this.composeFor(tx, a.employee_id), { tenantId: a.tenant_id });
+      if (!c.images.banner) throw Errors.notFound('Banner');
+      return this.openBannerImage(c.images.banner.id, a.tenant_id);
+    }
     const row = await this.db.tenant((tx) => one<{ photo_key: string | null; photo_content_type: string | null }>(tx, 'select photo_key, photo_content_type from employees where id = $1', [a.employee_id]), { tenantId: a.tenant_id });
     if (!row?.photo_key || !OUTLOOK_IMAGE_TYPES.includes(row.photo_content_type ?? '')) throw Errors.notFound('Photo');
     const f = await this.storage.open(row.photo_key).catch(() => { throw Errors.notFound('Photo'); });

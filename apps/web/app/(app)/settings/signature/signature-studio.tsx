@@ -1,6 +1,6 @@
 'use client';
 import {
-  composeSignatureData, SIGNATURE_FONTS, SIGNATURE_SIZES, SIGNATURE_TEMPLATES, type SignatureOptions, signatureOptionsInput, type SignatureSyncMode,
+  composeSignatureData, occasionByKey, pickBanner, SIGNATURE_FONTS, SIGNATURE_SIZES, SIGNATURE_TEMPLATES, type SignatureOptions, signatureOptionsInput, type SignatureSyncMode,
   type SignatureTemplateKey, SOCIAL_NETWORKS, type SocialNetwork,
 } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, Select } from '@crew/ui';
@@ -9,7 +9,8 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState, useTransition } from 'react';
 import { addComputerAction, requestSyncAction, revokeComputerAction, saveSignatureAction } from './actions';
 import { SignaturePreview } from './preview';
-import { type MySignature, previewImages, type SignatureAgent } from './types';
+import { bannerImageUrl, type MySignature, previewImages, type SignatureAgent } from './types';
+import { WishesCard, type WishesDraft } from './wishes-card';
 
 const SHOW: Array<{ key: keyof SignatureOptions['show']; label: string }> = [
   { key: 'photo', label: 'My photo' }, { key: 'logo', label: 'Company logo' }, { key: 'department', label: 'Department' }, { key: 'phone', label: 'Office phone' },
@@ -19,13 +20,14 @@ const SHOW: Array<{ key: keyof SignatureOptions['show']; label: string }> = [
 const SOCIAL_LABEL: Record<SocialNetwork, string> = { linkedin: 'LinkedIn', x: 'X', facebook: 'Facebook', instagram: 'Instagram', youtube: 'YouTube' };
 const TEXT_FIELDS = ['jobTitle', 'phone', 'mobile', 'pronouns', 'signOff', 'tagline', 'ctaLabel', 'ctaUrl', 'brandColor', 'accentColor'] as const;
 type TextField = (typeof TEXT_FIELDS)[number];
-type Draft = Record<TextField, string> & { font: SignatureOptions['font']; size: SignatureOptions['size']; show: SignatureOptions['show']; social: Record<SocialNetwork, string> };
+type Draft = Record<TextField, string> & { font: SignatureOptions['font']; size: SignatureOptions['size']; show: SignatureOptions['show']; social: Record<SocialNetwork, string>; wishes: WishesDraft };
 
 function toDraft(o: SignatureOptions): Draft {
   return {
     ...(Object.fromEntries(TEXT_FIELDS.map((k) => [k, (o[k] as string | undefined) ?? ''])) as Record<TextField, string>),
     font: o.font, size: o.size, show: { ...o.show },
     social: Object.fromEntries(SOCIAL_NETWORKS.map((n) => [n, o.social?.[n] ?? ''])) as Record<SocialNetwork, string>,
+    wishes: { showCompany: o.wishes.showCompany, occasions: [...o.wishes.occasions], message: o.wishes.message ?? '', icon: o.wishes.icon ?? '', from: o.wishes.from ?? '', to: o.wishes.to ?? '' },
   };
 }
 
@@ -49,7 +51,14 @@ export function SignatureStudio({ initial }: { initial: MySignature }) {
   if (parsed.success) lastGood.current = parsed.data;
   const options = lastGood.current;
 
-  const data = { ...composeSignatureData(initial.base, options), ...previewImages(initial, options.show) };
+  // Today's wish, as the computers will get it, unless the person is previewing a festival.
+  const [previewOccasion, setPreviewOccasion] = useState<string | null>(null);
+  const picked = pickBanner(initial.today, initial.banners, options.wishes);
+  const previewing = previewOccasion ? occasionByKey(previewOccasion) : null;
+  const banner = previewing
+    ? { message: previewing.message, icon: previewing.icon, bgColor: previewing.bgColor, fgColor: previewing.fgColor, position: 'below' as const }
+    : picked ? { ...picked.view, imageSrc: picked.source.kind === 'company' && picked.source.banner.image ? bannerImageUrl(picked.source.banner) : null } : null;
+  const data = { ...composeSignatureData(initial.base, options), ...previewImages(initial, options.show), banner };
   const savedKey = JSON.stringify({ t: initial.template, o: initial.options, s: initial.ownSyncMode });
   const dirty = !initial.saved || JSON.stringify({ t: template, o: options, s: syncChoice }) !== savedKey;
   const effectiveMode = initial.company.allowEmployeeSyncChoice ? (syncChoice ?? initial.company.syncMode) : initial.company.syncMode;
@@ -190,12 +199,28 @@ export function SignatureStudio({ initial }: { initial: MySignature }) {
             </fieldset>
           </CardBody>
         </Card>
+
+        <WishesCard
+          wishes={draft.wishes}
+          onChange={(wishes) => setDraft({ ...draft, wishes })}
+          errors={errors}
+          today={initial.today}
+          banners={initial.banners}
+          active={picked}
+          previewOccasion={previewOccasion}
+          onPreview={setPreviewOccasion}
+        />
       </div>
 
       <div className="min-w-0 space-y-6 xl:sticky xl:top-4 xl:self-start">
         <Card aria-label="Preview">
           <CardHeader title="Preview" description="Exactly what Outlook will show under your messages." action={dirty ? <Badge tone="warning">Not saved</Badge> : <Badge tone="success">Saved</Badge>} />
           <CardBody className="space-y-4">
+            {previewing && (
+              <Alert tone="info">
+                Previewing {previewing.name}. <button type="button" className="font-medium underline" onClick={() => setPreviewOccasion(null)}>Show today&apos;s signature</button>
+              </Alert>
+            )}
             <SignaturePreview template={template} data={data} label="Your signature" />
             {initial.company.allowEmployeeSyncChoice ? (
               <fieldset>

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Put, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
-import { saveSignatureInput, type SaveSignatureInput, signatureAgentReport, signatureAgentSyncInput, signatureSettingsInput, type SignatureSettingsInput } from '@crew/contracts';
+import { saveSignatureInput, signatureBannerInput, type SignatureBannerInput, type SaveSignatureInput, signatureAgentReport, signatureAgentSyncInput, signatureSettingsInput, type SignatureSettingsInput } from '@crew/contracts';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { Public, RequirePermission } from '../../platform/authz/decorators';
@@ -99,6 +99,57 @@ export class SignaturesController {
     return this.signatures.overview();
   }
 
+  @Get('banners')
+  @RequirePermission('org:manage')
+  @Doc({ summary: 'Company festival, celebration and custom banners for signatures' })
+  banners() {
+    return this.signatures.banners();
+  }
+
+  @Post('banners')
+  @RequirePermission('org:manage')
+  @Doc({ summary: 'Add a festival from the library (in your own words) or a custom banner with its own dates', body: signatureBannerInput })
+  createBanner(@Body(new ZodPipe(signatureBannerInput)) body: SignatureBannerInput) {
+    return this.signatures.createBanner(body);
+  }
+
+  @Put('banners/:id')
+  @RequirePermission('org:manage')
+  @Doc({ summary: 'Change a banner', body: signatureBannerInput })
+  updateBanner(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(signatureBannerInput)) body: SignatureBannerInput) {
+    return this.signatures.updateBanner(id, body);
+  }
+
+  @Delete('banners/:id')
+  @HttpCode(204)
+  @RequirePermission('org:manage')
+  @Doc({ summary: 'Delete a banner' })
+  async deleteBanner(@Param('id', UuidPipe) id: string) {
+    await this.signatures.deleteBanner(id);
+  }
+
+  @Put('banners/:id/image')
+  @RequirePermission('org:manage')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: LOGO_MAX_BYTES, files: 1 } }))
+  @Doc({ summary: 'Set a banner image (multipart/form-data: file). PNG, JPEG or GIF up to 1 MB.' })
+  setBannerImage(@Param('id', UuidPipe) id: string, @UploadedFile() file?: { mimetype: string; size: number; buffer: Buffer }) {
+    return this.signatures.setBannerImage(id, file);
+  }
+
+  @Delete('banners/:id/image')
+  @HttpCode(204)
+  @RequirePermission('org:manage')
+  @Doc({ summary: 'Remove a banner image (the banner shows as a coloured strip instead)' })
+  async removeBannerImage(@Param('id', UuidPipe) id: string) {
+    await this.signatures.removeBannerImage(id);
+  }
+
+  @Get('banners/:id/image')
+  @Doc({ summary: 'A banner image, for the signature preview' })
+  async bannerImage(@Param('id', UuidPipe) id: string, @Res() res: Response) {
+    sendFile(res, await this.signatures.openBannerImage(id));
+  }
+
   @Delete('agents/:id')
   @HttpCode(204)
   @RequirePermission('org:manage')
@@ -136,7 +187,7 @@ export class SignatureAgentController {
   @Get('images/:kind')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Doc({ summary: 'The photo or logo for this computer\'s signature' })
-  async image(@Headers('authorization') authorization: string | undefined, @Param('kind', new ZodPipe(z.enum(['photo', 'logo']))) kind: 'photo' | 'logo', @Res() res: Response) {
+  async image(@Headers('authorization') authorization: string | undefined, @Param('kind', new ZodPipe(z.enum(['photo', 'logo', 'banner']))) kind: 'photo' | 'logo' | 'banner', @Res() res: Response) {
     sendFile(res, await this.signatures.agentImage(authorization, kind));
   }
 }
