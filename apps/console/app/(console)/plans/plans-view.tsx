@@ -55,7 +55,7 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
       {plans.map((p) => {
         const included = new Set(p.features.filter((f) => f.limitValue === null).map((f) => f.key));
         return (
-          <Card key={p.key} data-testid={`plan-${p.key}`} className={cn(p.archivedAt && 'opacity-80')}>
+          <Card key={p.key} data-testid={`plan-${p.key}`}>
             <CardHeader
               title={
                 <span className="flex flex-wrap items-center gap-2">
@@ -116,7 +116,7 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
                 <div className="mb-2 text-xs text-fg-subtle">{included.size} of {MODULES.length} modules included</div>
                 <div className="flex flex-wrap content-start gap-1.5" data-testid={`plan-${p.key}-modules`}>
                   {MODULES.map((f) => (
-                    <Badge key={f.key} tone={included.has(f.key) ? 'accent' : 'neutral'} className={cn(!included.has(f.key) && 'line-through opacity-60')}>
+                    <Badge key={f.key} tone={included.has(f.key) ? 'accent' : 'neutral'} className={cn(!included.has(f.key) && 'line-through')}>
                       {f.name}
                     </Badge>
                   ))}
