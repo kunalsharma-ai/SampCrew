@@ -69,9 +69,9 @@ export const CONSOLE_HELP: HelpContent = {
     },
     '/plans': {
       title: 'Plans & pricing',
-      what: 'Per-seat list prices for each plan, monthly and annual.',
-      how: 'Change a price and save. Plan contents come from the feature catalogue in code.',
-      where: 'For Sampledge billing staff.',
+      what: 'Every plan SampCrew sells: the modules and limits it includes, its per-seat prices, and requests from workspace admins.',
+      how: 'Open Modules & limits to choose what a plan includes, create a plan from a copy, archive one, and approve plan requests.',
+      where: 'For Sampledge billing staff and Super admins. Changes apply at once to every workspace on the plan.',
     },
     '/integrations': {
       title: 'Integrations',
@@ -100,6 +100,7 @@ export const CONSOLE_HELP: HelpContent = {
   },
 
   sections: {
+    'Plan requests': { what: 'Requests from workspace admins for a plan they cannot buy themselves, such as Enterprise.', how: 'Approve to move the workspace onto the plan with the seats asked for, or decline with a reason they will see.' },
     'New workspaces, last 30 days': { what: 'Customers who signed up in the last month.' },
     'Trials ending within 7 days': { what: 'Trials about to end; a good time to contact the customer.' },
     'Subscriptions by plan': { what: 'How many workspaces are on each plan and status.' },

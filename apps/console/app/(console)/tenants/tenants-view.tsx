@@ -9,7 +9,7 @@ import type { Page, TenantRow } from '@/lib/types';
 import { createTenantAction } from '../actions';
 import { LocalTime } from '@/components/local-time';
 
-export function TenantsView({ page, query, canCreate }: { page: Page<TenantRow>; query: { q: string; status: string }; canCreate: boolean }) {
+export function TenantsView({ page, query, canCreate, plans }: { page: Page<TenantRow>; query: { q: string; status: string }; canCreate: boolean; plans: { key: string; name: string }[] }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<{ name: string; url?: string; existing: boolean } | null>(null);
@@ -64,12 +64,12 @@ export function TenantsView({ page, query, canCreate }: { page: Page<TenantRow>;
         )}
       </Card>
       {page.nextCursor && <div className="flex justify-end"><Link className={buttonClass('secondary', 'sm')} href={href({ cursor: page.nextCursor })}>Next page</Link></div>}
-      {creating && <CreateTenantDialog onClose={() => setCreating(false)} onCreated={(c) => { setCreated(c); setCreating(false); router.refresh(); }} />}
+      {creating && <CreateTenantDialog plans={plans} onClose={() => setCreating(false)} onCreated={(c) => { setCreated(c); setCreating(false); router.refresh(); }} />}
     </div>
   );
 }
 
-function CreateTenantDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (c: { name: string; url?: string; existing: boolean }) => void }) {
+function CreateTenantDialog({ plans, onClose, onCreated }: { plans: { key: string; name: string }[]; onClose: () => void; onCreated: (c: { name: string; url?: string; existing: boolean }) => void }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -102,7 +102,7 @@ function CreateTenantDialog({ onClose, onCreated }: { onClose: () => void; onCre
         <Field label="Owner name" error={errors.ownerName} required className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="ownerName" required />}</Field>
         <Field label="Owner email" error={errors.ownerEmail} required className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="ownerEmail" type="email" required />}</Field>
         <Field label="Plan" error={errors.planKey} required className="col-span-2 sm:col-span-1">{(p) => (
-          <Select {...p} name="planKey" defaultValue="professional"><option value="starter">Starter</option><option value="professional">Professional</option><option value="business">Business</option><option value="enterprise">Enterprise</option></Select>
+          <Select {...p} name="planKey" defaultValue={plans.some((x) => x.key === 'professional') ? 'professional' : plans[0]?.key}>{plans.map((x) => <option key={x.key} value={x.key}>{x.name}</option>)}</Select>
         )}</Field>
         <Field label="Seats" error={errors.seats} required className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="seats" type="number" min={1} defaultValue={25} required />}</Field>
         <Field label="Country" hint="ISO code, e.g. IN" error={errors.countryCode} required className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="countryCode" defaultValue="IN" maxLength={2} required />}</Field>

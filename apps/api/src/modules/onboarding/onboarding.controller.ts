@@ -1,12 +1,13 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put } from '@nestjs/common';
 import { onboardingTaskUpdate, onboardingTemplateInput } from '@crew/contracts';
 import type { z } from 'zod';
-import { RequirePermission } from '../../platform/authz/decorators';
+import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { OnboardingService } from './onboarding.service';
 
 @Controller('onboarding')
+@RequireFeature('onboarding')
 export class OnboardingController {
   constructor(private readonly onboarding: OnboardingService) {}
 

@@ -4,7 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { saveSignatureInput, signatureBannerInput, type SignatureBannerInput, type SaveSignatureInput, signatureAgentReport, signatureAgentSyncInput, signatureSettingsInput, type SignatureSettingsInput } from '@crew/contracts';
 import type { Response } from 'express';
 import { z } from 'zod';
-import { Public, RequirePermission } from '../../platform/authz/decorators';
+import { Public, RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { LOGO_MAX_BYTES, SignaturesService } from './signatures.service';
@@ -21,6 +21,7 @@ function sendFile(res: Response, f: { stream: NodeJS.ReadableStream; size: numbe
 
 /** Email signatures for Outlook: company settings, each person's own signature and the computers that install it. */
 @Controller('signatures')
+@RequireFeature('email_signatures')
 export class SignaturesController {
   constructor(private readonly signatures: SignaturesService) {}
 

@@ -19,6 +19,7 @@ import { grantCovers, grantsFor } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService, type ApprovalRequestRow } from '../approvals/approvals.service';
@@ -430,6 +431,8 @@ export class AttendanceService implements OnModuleInit {
       ),
     );
     if (!k) throw Errors.unauthorized('This kiosk link is not valid or was revoked');
+    // Kiosks are part of advanced attendance; the screen stops showing codes when the plan no longer includes it.
+    if (!(await this.db.tenant((tx) => loadEntitlements(tx), { tenantId: k.tenant_id })).features.has('attendance_advanced')) throw Errors.featureNotInPlan('Geofencing, kiosks, biometric devices');
     await this.db.platform((tx) => tx.query('update attendance_kiosks set last_seen_at = now() where id = $1 and (last_seen_at is null or last_seen_at < now() - interval \'1 minute\')', [k.id]));
     const window = Math.floor(Date.now() / QR_WINDOW_MS);
     return { kiosk: k.name, location: k.location, workspace: k.tenant, code: this.qrCode(k.id, window), expiresAt: new Date((window + 1) * QR_WINDOW_MS).toISOString(), refreshSeconds: QR_WINDOW_MS / 1000 };

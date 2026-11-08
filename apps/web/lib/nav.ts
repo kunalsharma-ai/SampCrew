@@ -27,7 +27,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/', label: 'Home', icon: 'home' },
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
-      { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
+      { href: '/tasks', label: 'My tasks', icon: 'list-checks', feature: 'onboarding' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
       { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'helpdesk' },
     ],
@@ -48,7 +48,7 @@ export const NAV: NavGroup[] = [
       { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
-      { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create' },
+      { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
     ],
   },
   {
@@ -89,19 +89,19 @@ export const NAV: NavGroup[] = [
   {
     label: 'Performance & learning',
     items: [
-      { href: '/goals', label: 'Goals', icon: 'target', permission: 'performance:read', feature: 'talent' },
-      { href: '/reviews', label: 'Reviews', icon: 'messages-square', permission: 'performance:read', feature: 'talent' },
-      { href: '/reviews/cycles', label: 'Review cycles', icon: 'calendar-range', permission: 'performance:configure', feature: 'talent' },
-      { href: '/learning', label: 'Learning', icon: 'graduation-cap', permission: 'learning:read', feature: 'talent' },
-      { href: '/learning/catalogue', label: 'Course catalogue', icon: 'book-open', permission: 'learning:configure', feature: 'talent' },
+      { href: '/goals', label: 'Goals', icon: 'target', permission: 'performance:read', feature: 'performance' },
+      { href: '/reviews', label: 'Reviews', icon: 'messages-square', permission: 'performance:read', feature: 'performance' },
+      { href: '/reviews/cycles', label: 'Review cycles', icon: 'calendar-range', permission: 'performance:configure', feature: 'performance' },
+      { href: '/learning', label: 'Learning', icon: 'graduation-cap', permission: 'learning:read', feature: 'learning' },
+      { href: '/learning/catalogue', label: 'Course catalogue', icon: 'book-open', permission: 'learning:configure', feature: 'learning' },
     ],
   },
   {
     label: 'Engagement & relations',
     items: [
-      { href: '/recognition', label: 'Recognition', icon: 'heart', permission: 'recognition:give', feature: 'talent' },
-      { href: '/surveys', label: 'Surveys', icon: 'clipboard-list', permission: 'surveys:respond', feature: 'talent' },
-      { href: '/surveys/manage', label: 'Survey results', icon: 'chart', permission: 'engagement:manage', feature: 'talent' },
+      { href: '/recognition', label: 'Recognition', icon: 'heart', permission: 'recognition:give', feature: 'engagement' },
+      { href: '/surveys', label: 'Surveys', icon: 'clipboard-list', permission: 'surveys:respond', feature: 'engagement' },
+      { href: '/surveys/manage', label: 'Survey results', icon: 'chart', permission: 'engagement:manage', feature: 'engagement' },
       { href: '/announcements/manage', label: 'Manage announcements', icon: 'megaphone', permission: 'announcements:manage', feature: 'announcements' },
       { href: '/helpdesk/queue', label: 'HR helpdesk queue', icon: 'headset', permission: 'helpdesk:manage', feature: 'helpdesk' },
       { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'helpdesk' },
@@ -134,7 +134,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
-      { href: '/settings/signature/company', label: 'Email signatures', icon: 'mail', permission: 'org:manage' },
+      { href: '/settings/signature/company', label: 'Email signatures', icon: 'mail', permission: 'org:manage', feature: 'email_signatures' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
     ],
   },
@@ -142,7 +142,7 @@ export const NAV: NavGroup[] = [
     label: 'You',
     items: [
       { href: '/settings/appearance', label: 'Appearance', icon: 'palette' },
-      { href: '/settings/signature', label: 'Email signature', icon: 'mail' },
+      { href: '/settings/signature', label: 'Email signature', icon: 'mail', feature: 'email_signatures' },
       { href: '/settings/security', label: 'Security', icon: 'key' },
     ],
   },
@@ -159,7 +159,7 @@ export function quickActions(me: Me): QuickAction[] {
   if (has('requisitions:create', 'recruitment')) out.push({ key: 'requisition', label: 'Create job requisition', href: '/recruitment?create=requisition', icon: 'briefcase', keywords: 'job opening hiring position' });
   if (has('bids:manage', 'staffing_bids')) out.push({ key: 'bid', label: 'Create staffing bid', href: '/staffing/bids/new?mode=quick', icon: 'handshake', keywords: 'proposal quote client staffing rate margin' });
   if (has('leave:request', 'leave')) out.push({ key: 'leave', label: 'Request time off', href: '/leave?create=leave', icon: 'calendar', keywords: 'leave holiday vacation apply' });
-  if (has('performance:read', 'talent')) out.push({ key: 'goal', label: 'Set a goal', href: '/goals?create=goal', icon: 'target', keywords: 'okr objective' });
+  if (has('performance:read', 'performance')) out.push({ key: 'goal', label: 'Set a goal', href: '/goals?create=goal', icon: 'target', keywords: 'okr objective' });
   if (has('expenses:submit', 'expenses')) out.push({ key: 'expense', label: 'Claim an expense', href: '/expenses', icon: 'receipt', keywords: 'reimbursement receipt' });
   if (has('helpdesk:use', 'helpdesk')) out.push({ key: 'ask', label: 'Ask HR a question', href: '/helpdesk', icon: 'life-buoy', keywords: 'helpdesk case ticket' });
   return out;

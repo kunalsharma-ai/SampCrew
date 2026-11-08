@@ -50,6 +50,18 @@ export async function changePlanAction(body: { planKey: string; billingCycle: st
   return r;
 }
 
+export async function requestPlanAction(body: { planKey: string; seats: number; billingCycle: 'monthly' | 'annual'; message?: string }) {
+  const r = await act(() => api<{ note: string }>('/billing/plan-requests', { method: 'POST', body }));
+  revalidatePath('/settings/billing');
+  return r;
+}
+
+export async function withdrawPlanRequestAction(id: string) {
+  const r = await act(() => api(`/billing/plan-requests/${id}/withdraw`, { method: 'POST' }), 'Request withdrawn');
+  revalidatePath('/settings/billing');
+  return r;
+}
+
 export async function saveWorkspaceAction(body: Record<string, unknown>) {
   const r = await act(() => api('/tenant', { method: 'PATCH', body }), 'Settings saved');
   revalidatePath('/', 'layout');

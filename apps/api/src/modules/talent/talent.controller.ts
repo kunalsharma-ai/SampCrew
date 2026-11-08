@@ -32,6 +32,7 @@ import {
 } from '@crew/contracts';
 import { z } from 'zod';
 import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
+import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { EngagementService } from './engagement.service';
@@ -55,7 +56,7 @@ const reasonInput = z.object({ reason: z.string().trim().min(3).max(500) });
 const feedQuery = z.object({ employeeId: z.uuid().optional(), before: z.iso.datetime({ offset: true }).optional() });
 
 @Controller('goals')
-@RequireFeature('talent')
+@RequireFeature('performance')
 export class GoalsController {
   constructor(private readonly goals: GoalsService) {}
 
@@ -118,7 +119,7 @@ export class GoalsController {
 }
 
 @Controller()
-@RequireFeature('talent')
+@RequireFeature('performance')
 export class ReviewsController {
   constructor(private readonly reviews: ReviewsService) {}
 
@@ -281,17 +282,24 @@ export class ReviewsController {
   colleagues(@Query(new ZodPipe(colleagueQuery)) q: z.infer<typeof colleagueQuery>) {
     return this.reviews.colleagues(q.q);
   }
+}
 
-  @Get('talent/people')
+/** Shared by the performance and learning pages, so it checks whichever of the two modules was asked for. */
+@Controller('talent')
+export class TalentPeopleController {
+  constructor(private readonly reviews: ReviewsService, private readonly entitlements: EntitlementsService) {}
+
+  @Get('people')
   @RequirePermission('performance:read')
-  @Doc({ summary: 'People the caller manages for performance or learning (empty without that permission)', query: managedQuery })
-  managed(@Query(new ZodPipe(managedQuery)) q: z.infer<typeof managedQuery>) {
+  @Doc({ summary: 'People the caller manages for performance or learning (empty without that permission). Needs the module asked for.', query: managedQuery })
+  async managed(@Query(new ZodPipe(managedQuery)) q: z.infer<typeof managedQuery>) {
+    await this.entitlements.requireFeature(q.for);
     return this.reviews.managed(q.for);
   }
 }
 
 @Controller('learning')
-@RequireFeature('talent')
+@RequireFeature('learning')
 export class LearningController {
   constructor(private readonly learning: LearningService) {}
 
@@ -397,7 +405,7 @@ export class LearningController {
 }
 
 @Controller()
-@RequireFeature('talent')
+@RequireFeature('engagement')
 export class EngagementController {
   constructor(private readonly engagement: EngagementService) {}
 

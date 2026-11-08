@@ -152,8 +152,8 @@ export class IqService {
       case 'probation': return this.gated('core_hr', 'employees:read', 'employee records', (tx) => this.probationAnswer(tx, m, how('probation endings')));
       case 'anniversaries': return this.gated('core_hr', 'employees:read', 'employee records', (tx) => this.anniversaryAnswer(tx, m, how('work anniversaries')));
       case 'attendance_today': return this.gated('attendance_basic', 'attendance:read', 'attendance', (tx) => this.attendanceTodayAnswer(tx, m, how('today’s attendance')));
-      case 'goals': return this.gated('talent', 'performance:read', 'goals', (tx) => this.goalsAnswer(tx, m, how('goals')));
-      case 'learning': return this.gated('talent', 'learning:read', 'learning', (tx) => this.learningAnswer(tx, m, how('training')));
+      case 'goals': return this.gated('performance', 'performance:read', 'goals', (tx) => this.goalsAnswer(tx, m, how('goals')));
+      case 'learning': return this.gated('learning', 'learning:read', 'learning', (tx) => this.learningAnswer(tx, m, how('training')));
       case 'cases': return this.gated('helpdesk', 'helpdesk:use', 'the helpdesk', (_tx, s) => this.casesAnswer(s, how('helpdesk cases')));
       case 'recruitment_summary': return this.gated('recruitment', 'requisitions:read', 'recruitment', (tx, s) => this.recruitmentAnswer(tx, s, m, how('the recruitment summary')));
       case 'draft_bid': return this.gated('staffing_bids', 'bids:manage', 'staffing bids', () => this.bidAction(m, how('a new staffing bid')));
