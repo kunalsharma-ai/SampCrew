@@ -40,6 +40,8 @@ jobs:
       - run: pnpm build:packages
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Outlook signature test kit builds
+        run: pnpm signature:test-kit
       - name: Build apps
         run: pnpm --filter @crew/api --filter @crew/web --filter @crew/console run build
         env:

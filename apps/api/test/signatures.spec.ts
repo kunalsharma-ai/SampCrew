@@ -117,6 +117,17 @@ describe('email signatures', () => {
       expect(file).toContain("$Api = 'http");
       expect(file).toContain('Microsoft\\Signatures');
       expect(file).toContain('Office\\$v\\Common\\MailSettings');
+      // Windows details that only show on a real PC: the path reaches PowerShell through a variable (an apostrophe in
+      // a folder name cannot break it), the task is a definition that runs on battery and catches up after sleep, it
+      // starts with no window, and no native error output is redirected while errors stop the script.
+      expect(file).toContain('set "SAMPCREW_SETUP=%~f0"');
+      expect(file).toContain('ReadAllText($env:SAMPCREW_SETUP)');
+      expect(file).toContain('/XML $TaskXmlPath');
+      expect(file).toContain('<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>');
+      expect(file).toContain('<StartWhenAvailable>true</StartWhenAvailable>');
+      expect(file).toContain('<Command>wscript.exe</Command>');
+      expect(file).toContain("if ($Trigger -eq 'uninstall')");
+      expect(file).not.toMatch(/schtasks\.exe [^\r\n]*2>\$null/);
       token = tokenOf(file);
       agentId = r.body.id;
       // Only a hash is stored.

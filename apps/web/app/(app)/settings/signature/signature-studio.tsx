@@ -228,7 +228,7 @@ export function SignatureStudio({ initial }: { initial: MySignature }) {
                 <div className="grid gap-2 text-[0.8125rem]">
                   {([
                     [null, `Company default (${initial.company.syncMode === 'auto' ? 'automatically' : 'when I choose'})`],
-                    ['auto', 'Automatically: every 30 minutes and when I sign in to Windows'],
+                    ['auto', 'Automatically: every 30 minutes, and soon after the computer starts or wakes'],
                     ['manual', 'Only when I click "Sync SampCrew signature" on my desktop'],
                   ] as Array<[SignatureSyncMode | null, string]>).map(([v, label]) => (
                     <label key={String(v)} className="flex items-start gap-2"><input type="radio" name="syncMode" checked={syncChoice === v} onChange={() => setSyncChoice(v)} className="mt-0.5" /> {label}</label>

@@ -35,7 +35,8 @@ Each item below runs against the real API and PostgreSQL (migration `0025_email_
 - It asks SampCrew for the signature (`POST /signature-agent/sync`), downloads the photo and logo, and writes `SampCrew.htm`, `SampCrew.txt` and `SampCrew_files` into `%APPDATA%\Microsoft\Signatures`.
 - It makes the signature Outlook's default for new messages and replies. This works for Outlook 2010, 2013 and 2016 or later, for every mail profile and account.
 - It reports success or the error back to SampCrew (`POST /signature-agent/report`).
-- Automatic mode runs a scheduled task every 30 minutes. Manual mode uses only the "Sync SampCrew signature" shortcut on the desktop. The mode is read from SampCrew on every run, so a change made in SampCrew reaches the computer at its next sync.
+- Automatic mode runs a scheduled task every 30 minutes. The task is registered from a full task definition, so it also runs on battery, catches up as soon as it can after the PC was off or asleep, never runs twice at once and stops after 10 minutes. It starts through a small hidden launcher (`run-hidden.vbs`), so no window flashes. Manual mode uses only the "Sync SampCrew signature" shortcut on the desktop. The mode is read from SampCrew on every run, so a change made in SampCrew reaches the computer at its next sync.
+- `sync.ps1 -Trigger uninstall` removes the task, the shortcut, the signature files and any Outlook default that still names the SampCrew signature, without contacting SampCrew.
 - Each computer has its own token (`scsig_…`), stored in the database only as a SHA-256 hash.
 - The token stops working when the computer is disconnected or the employee leaves. The computer then removes its scheduled task and shortcut and tells the person.
 - The three `/signature-agent` routes are public, so the computer can reach them without a session. They are throttled and listed in `REVIEWED_PUBLIC`.
@@ -82,3 +83,27 @@ Kunal asked for festival and celebration wishes from around the world, or any me
 - Icons are emoji. Windows 10 and 11 show them in colour in Outlook. Older Windows shows them in black and white.
 - Moon-calendar dates after 2028 need adding to the library, or a company can set its own dates.
 - Banners go to everyone. They cannot yet be aimed at one department or country.
+
+## Follow-up: setup file review and Windows test kit (Kunal, 8 November 2026)
+
+Kunal asked to go ahead with the signature setup file, which had not been run on a real Windows PC. PowerShell could not be installed in the build sandbox, so the script was reviewed line by line for behaviour that only shows on Windows. Five problems were fixed (sync version 1.1.0):
+
+- **Manual mode crashed after writing the signature.** Windows PowerShell 5.1 turns a native program's error output into a stopping error when it is redirected and `$ErrorActionPreference` is `Stop`. `schtasks /Query` for a task that does not exist writes to its error output, so in manual mode (and on disconnect) the script stopped before saving its state or removing the shortcut. schtasks now always runs through `Invoke-Schtasks`, which never stops on error output and checks the exit code instead.
+- **Laptops on battery never synced.** Tasks made with `schtasks /SC MINUTE` only start on mains power. The task is now created from a definition (`schtasks /XML`) that runs on battery and catches up after sleep.
+- **A console window flashed every 30 minutes.** `-WindowStyle Hidden` still shows a window for a moment. The task and the shortcut now start through `run-hidden.vbs`.
+- **A folder name with an apostrophe broke the setup file.** The file's own path is now passed to PowerShell through a variable instead of inside a quoted string.
+- **Old banner images piled up** in `SampCrew_files`. Files the current signature does not use are removed on each update.
+- The "every 30 minutes and when I sign in to Windows" choice promised a sign-in trigger that never existed (a non-administrator cannot create one). It now says "every 30 minutes, and soon after the computer starts or wakes", which is what the task does.
+- Also added: `-Trigger uninstall`.
+
+### Windows test kit (`pnpm signature:test-kit`)
+`e2e/signature-test-kit/build.cjs` builds a folder and zip that anyone can run on a Windows PC with desktop Outlook before SampCrew is hosted:
+- `SampCrew-Outlook-Signature-Setup.cmd` is the real setup file from `buildInstaller`, pointed at a test server on 127.0.0.1:47800.
+- `kit/test-server.ps1` answers the three `/signature-agent` calls like the API does, with a signature from the real renderer (logo, photo, festival banner). It needs no administrator rights.
+- `1-Start-Test.cmd` saves the person's Outlook signature settings (`reg export`), starts the server and runs the setup file.
+- `2-Check-Result.cmd` checks the files, encodings, images, Outlook defaults per version and account, the task settings, and starts the task once to prove the background sync works. It writes `SampCrew-signature-test-result.txt`.
+- `3-Remove-Test.cmd` runs the setup file's own uninstall, checks that nothing was left, and puts the saved settings back.
+
+### Still not done
+- The kit itself has not been run on Windows yet, for the same reason. It is the way to do the real-PC test listed above.
+- Computers set up with sync 1.0.0 keep the old script until the setup file is downloaded again. There is no self-update yet. No real computers use 1.0.0, because SampCrew is not hosted yet.

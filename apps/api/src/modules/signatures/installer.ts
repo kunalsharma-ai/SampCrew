@@ -7,13 +7,17 @@
  * %APPDATA%\Microsoft\Signatures (an .htm, a .txt and the images) and makes it Outlook's default for new messages and
  * replies, for Outlook 2010 (14.0), 2013 (15.0) and 2016 or later (16.0).
  *
- * Automatic mode: a scheduled task runs it every 30 minutes and at sign-in. Manual mode: only the "Sync SampCrew
- * signature" shortcut on the desktop runs it. The mode comes from SampCrew on every run, so a change made there
- * reaches the computer at its next sync.
+ * Automatic mode: a scheduled task runs it every 30 minutes, on battery too, and catches up as soon as it can after the
+ * computer was off or asleep. It starts through a small hidden launcher (run-hidden.vbs) so no window flashes. Manual
+ * mode: only the "Sync SampCrew signature" shortcut on the desktop runs it. The mode comes from SampCrew on every run,
+ * so a change made there reaches the computer at its next sync.
+ *
+ * `-Trigger uninstall` removes everything it set up on this computer (task, shortcut, signature files, Outlook
+ * defaults that still name the SampCrew signature) without contacting SampCrew.
  */
 
 export const SIGNATURE_NAME = 'SampCrew';
-export const AGENT_VERSION = '1.0.0';
+export const AGENT_VERSION = '1.1.0';
 
 const PS = String.raw`##PS-BEGIN SampCrew signature sync
 param([string]$Trigger = 'install')
@@ -25,11 +29,14 @@ $Token = '__TOKEN__'
 $SigName = '__SIGNAME__'
 $AppDir = Join-Path $env:LOCALAPPDATA 'SampCrew\Signature'
 $ScriptPath = Join-Path $AppDir 'sync.ps1'
+$LauncherPath = Join-Path $AppDir 'run-hidden.vbs'
+$TaskXmlPath = Join-Path $AppDir 'task.xml'
 $StateFile = Join-Path $AppDir 'state.json'
 $LogFile = Join-Path $AppDir 'sync.log'
 $TaskName = 'SampCrew signature sync'
 $ShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Sync SampCrew signature.lnk'
 $Headers = @{ Authorization = "Bearer $Token" }
+$SigDir = Join-Path $env:APPDATA 'Microsoft\Signatures'
 
 function Write-Log($Message) {
   try { Add-Content -Path $LogFile -Value ("{0:yyyy-MM-dd HH:mm:ss}  {1}" -f (Get-Date), $Message) } catch { }
@@ -68,35 +75,122 @@ function Set-DefaultSignature($Versions) {
     }
   }
 }
+# Windows PowerShell turns a native program's error output into a terminating error while $ErrorActionPreference is
+# 'Stop' and the output is redirected, so schtasks.exe is always run through here.
+function Invoke-Schtasks {
+  $ErrorActionPreference = 'Continue'
+  $out = (& schtasks.exe @args 2>&1 | Out-String).Trim()
+  return @{ Code = $LASTEXITCODE; Output = $out }
+}
+function Test-Task { return (Invoke-Schtasks /Query /TN $TaskName).Code -eq 0 }
+function Write-Launcher {
+  # Starts the sync with no window at all; powershell.exe -WindowStyle Hidden alone still flashes a console.
+  $crlf = [string][char]13 + [char]10
+  $vbs = 'Set sh = CreateObject("WScript.Shell")' + $crlf +
+    'sh.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""' + $ScriptPath + '"" -Trigger " & WScript.Arguments(0), 0, False' + $crlf
+  [IO.File]::WriteAllText($LauncherPath, $vbs, [Text.Encoding]::Unicode)
+}
+function Register-Task {
+  # A task definition (not schtasks /SC) so that it also runs on battery, catches up after sleep and never overlaps.
+  $esc = { param($v) [Security.SecurityElement]::Escape([string]$v) }
+  $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Keeps your Outlook signature up to date from SampCrew.</Description></RegistrationInfo>
+  <Triggers>
+    <TimeTrigger>
+      <Repetition><Interval>PT30M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>
+      <StartBoundary>$((Get-Date).AddMinutes(1).ToString('yyyy-MM-ddTHH:mm:ss'))</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>
+  </Triggers>
+  <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
+    <IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>
+    <ExecutionTimeLimit>PT10M</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>wscript.exe</Command><Arguments>$(& $esc ('"' + $LauncherPath + '" scheduled'))</Arguments></Exec></Actions>
+</Task>
+"@
+  [IO.File]::WriteAllText($TaskXmlPath, $xml, [Text.Encoding]::Unicode)
+  $r = Invoke-Schtasks /Create /F /TN $TaskName /XML $TaskXmlPath
+  if ($r.Code -ne 0) { throw ('Windows did not create the scheduled task: ' + $r.Output) }
+}
 function Set-Schedule($Mode) {
-  $command = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $ScriptPath + '" -Trigger scheduled'
   if ($Mode -eq 'auto') {
-    schtasks.exe /Create /F /SC MINUTE /MO 30 /TN $TaskName /TR $command | Out-Null
-  } else {
-    schtasks.exe /Query /TN $TaskName 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { schtasks.exe /Delete /F /TN $TaskName | Out-Null }
+    # Re-register when set up or synced by hand (picks up a new launcher or settings); a scheduled run leaves it alone.
+    if ($Trigger -ne 'scheduled' -or -not (Test-Task)) { Register-Task }
+  } elseif (Test-Task) {
+    Invoke-Schtasks /Delete /F /TN $TaskName | Out-Null
   }
 }
 function Set-Shortcut {
   $shell = New-Object -ComObject WScript.Shell
   $lnk = $shell.CreateShortcut($ShortcutPath)
-  $lnk.TargetPath = 'powershell.exe'
-  $lnk.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $ScriptPath + '" -Trigger manual'
+  $lnk.TargetPath = 'wscript.exe'
+  $lnk.Arguments = '"' + $LauncherPath + '" manual'
+  $lnk.IconLocation = (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') + ',0'
   $lnk.Description = 'Update your Outlook signature from SampCrew now'
   $lnk.Save()
 }
 function Remove-Setup {
-  Set-Schedule 'manual'
+  if (Test-Task) { Invoke-Schtasks /Delete /F /TN $TaskName | Out-Null }
   if (Test-Path $ShortcutPath) { Remove-Item $ShortcutPath -Force }
   if (Test-Path $StateFile) { Remove-Item $StateFile -Force }
+}
+function Remove-Signature {
+  foreach ($f in ($SigName + '.htm'), ($SigName + '.txt'), ($SigName + '.rtf'), ($SigName + '_files')) {
+    $p = Join-Path $SigDir $f
+    if (Test-Path $p) { Remove-Item $p -Recurse -Force }
+  }
+  foreach ($v in '14.0', '15.0', '16.0') {
+    $mail = "HKCU:\Software\Microsoft\Office\$v\Common\MailSettings"
+    if (Test-Path $mail) {
+      $item = Get-Item $mail
+      foreach ($n in 'NewSignature', 'ReplySignature') { if ($item.GetValue($n) -eq $SigName) { Remove-ItemProperty -Path $mail -Name $n } }
+    }
+  }
+  # Per-account values: clear them only where they still name the SampCrew signature.
+  $bytes = [Text.Encoding]::Unicode.GetBytes($SigName + [char]0)
+  $roots = @('HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles', 'HKCU:\Software\Microsoft\Office\15.0\Outlook\Profiles', 'HKCU:\Software\Microsoft\Office\16.0\Outlook\Profiles')
+  foreach ($root in $roots) {
+    if (-not (Test-Path $root)) { continue }
+    Get-ChildItem -Path $root | ForEach-Object {
+      $accounts = Join-Path $_.PSPath '9375CFF0413111d3B88A00104B2A6676'
+      if (Test-Path $accounts) {
+        Get-ChildItem -Path $accounts | ForEach-Object {
+          foreach ($n in 'New Signature', 'Reply-Forward Signature') {
+            $val = $_.GetValue($n)
+            if ($val -is [byte[]] -and [Convert]::ToBase64String($val) -eq [Convert]::ToBase64String($bytes)) { Remove-ItemProperty -Path $_.PSPath -Name $n }
+          }
+        }
+      }
+    }
+  }
+}
+
+if ($Trigger -eq 'uninstall') {
+  Remove-Setup
+  Remove-Signature
+  Write-Log 'SampCrew signature removed from this computer.'
+  Show-Message 'The SampCrew signature and its automatic updates are removed from this computer.'
+  exit 0
 }
 
 if ($Trigger -eq 'install') {
   New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
   # Keep a copy of this script (with this computer's token) where only this Windows user can read it.
   [IO.File]::WriteAllText($ScriptPath, $env:SAMPCREW_SCRIPT, (New-Object Text.UTF8Encoding $true))
+  Write-Launcher
   Set-Shortcut
 }
+if (-not (Test-Path $LauncherPath)) { Write-Launcher }
 
 $state = $null
 if (Test-Path $StateFile) { try { $state = Get-Content -Path $StateFile -Raw | ConvertFrom-Json } catch { $state = $null } }
@@ -121,9 +215,12 @@ try {
 
 if ($r.status -eq 'update') {
   try {
-    $dir = Join-Path $env:APPDATA 'Microsoft\Signatures'
+    $dir = $SigDir
     $files = Join-Path $dir ($SigName + '_files')
     New-Item -ItemType Directory -Force -Path $files | Out-Null
+    # Images from an earlier version (an old banner, say) would otherwise pile up here.
+    $keep = @($r.images | ForEach-Object { $_.name })
+    Get-ChildItem -Path $files -File | Where-Object { $keep -notcontains $_.Name } | Remove-Item -Force
     foreach ($img in $r.images) {
       Invoke-WebRequest -Uri ($Api + '/api/v1' + $img.path) -Headers $Headers -OutFile (Join-Path $files $img.name) -UseBasicParsing
     }
@@ -151,7 +248,12 @@ if ($r.status -eq 'update') {
   Show-Message 'Your Outlook signature is already up to date.'
 }
 
-Set-Schedule $r.mode
+try {
+  Set-Schedule $r.mode
+} catch {
+  Write-Log ('Could not set up automatic updates: ' + $_.Exception.Message)
+  Show-Message ('Your signature is in Outlook, but automatic updates could not be switched on: ' + $_.Exception.Message + [Environment]::NewLine + 'Use Sync SampCrew signature on the desktop to update it.') 48
+}
 New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
 ($state | ConvertTo-Json -Compress) | Set-Content -Path $StateFile -Encoding UTF8
 exit 0
@@ -167,7 +269,9 @@ export function buildInstaller(opts: { apiUrl: string; token: string }): string 
     'rem SampCrew: installs your email signature in Outlook on this computer and keeps it up to date.',
     'rem Double-click to run. Nothing needs administrator rights.',
     'echo Setting up your SampCrew signature for Outlook...',
-    `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$s=[IO.File]::ReadAllText('%~f0'); $i=$s.IndexOf('#'+'#PS-BEGIN'); $env:SAMPCREW_SCRIPT=$s.Substring($i); Invoke-Expression ('& {' + $env:SAMPCREW_SCRIPT + '} -Trigger install')"`,
+    // The path goes through a variable so that a folder name with an apostrophe cannot break the PowerShell line.
+    'set "SAMPCREW_SETUP=%~f0"',
+    `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$s=[IO.File]::ReadAllText($env:SAMPCREW_SETUP); $i=$s.IndexOf('#'+'#PS-BEGIN'); $env:SAMPCREW_SCRIPT=$s.Substring($i); Invoke-Expression ('& {' + $env:SAMPCREW_SCRIPT + '} -Trigger install')"`,
     'exit /b %errorlevel%',
   ].join('\r\n');
   return `${cmd}\r\n${ps.replace(/\r?\n/g, '\r\n')}`;
