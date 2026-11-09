@@ -5,7 +5,7 @@ import {
 } from '@crew/contracts';
 import { z } from 'zod';
 import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
-import { DatabaseService, one } from '../../platform/database/database.service';
+import { MongoService as DatabaseService } from '../../platform/database/mongo.service';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
@@ -30,14 +30,11 @@ export class IntegrationsController {
   @Get('catalogue')
   @Doc({ summary: 'Connectors (available and planned), webhook events, API key scopes, how many of each this workspace has, and which installation-wide services are on' })
   async catalogue() {
-    const counts = await this.db.tenant((tx) =>
-      one<{ keys: number; endpoints: number; slack: number }>(
-        tx,
-        `select (select count(*) from api_keys where revoked_at is null and (expires_at is null or expires_at > now()))::int as keys,
-                (select count(*) from webhook_endpoints)::int as endpoints,
-                (select count(*) from integration_connections where provider = 'slack' and status <> 'disconnected')::int as slack`,
-      ),
-    );
+    const counts = await this.db.tenant(async (tx) => ({
+      keys: await tx.collection('api_keys').count({ revoked_at: null, $or: [{ expires_at: null }, { expires_at: { $gt: new Date() } }] }),
+      endpoints: await tx.collection('webhook_endpoints').count({}),
+      slack: await tx.collection('integration_connections').count({ provider: 'slack', status: { $ne: 'disconnected' } }),
+    }));
     const perm = new Map(PERMISSIONS.map((p) => [p.key as string, p.description]));
     return {
       connectors: CONNECTORS.map((c) => ({ ...c, count: c.key === 'api_keys' ? counts!.keys : c.key === 'webhooks' ? counts!.endpoints : c.key === 'slack' ? counts!.slack : 0 })),

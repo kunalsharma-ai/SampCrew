@@ -166,6 +166,19 @@ const surveyResponsesAnonymous: RowGuard = async (ctx, op, _before, after) => {
 };
 
 /** Guards by trigger name (TableSpec.triggers). Triggers without one here are enforced in the owning service. */
+/** workflow_versions_guard: a saved workflow version is fixed; changes are saved as a new version. */
+const workflowVersionsGuard: RowGuard = async (ctx, op, before, after) => {
+  if (op !== 'update' || !before || !after) return;
+  if (changed(before, after, ['definition', 'version', 'workflow_id'])) throw frozenError('a saved workflow version cannot be changed; save a new version', ctx.table);
+};
+
+/** api_keys_guard: a revoked key is final, and a key's scopes, owner and secret never change. */
+const apiKeysGuard: RowGuard = async (ctx, op, before, after) => {
+  if (op !== 'update' || !before || !after) return;
+  if (before.revoked_at) throw frozenError('api key is revoked', ctx.table);
+  if (changed(before, after, ['scopes', 'created_by_membership_id', 'secret_hash', 'prefix'])) throw frozenError('api key scopes, owner and secret cannot change', ctx.table);
+};
+
 export const ROW_GUARDS: Record<string, RowGuard> = {
   payroll_frozen: payrollFrozen,
   helpdesk_cases_guard: helpdeskCasesGuard,
@@ -177,4 +190,6 @@ export const ROW_GUARDS: Record<string, RowGuard> = {
   review_feedback_guard: reviewFeedbackGuard,
   course_assignments_guard: courseAssignmentsGuard,
   survey_responses_anonymous: surveyResponsesAnonymous,
+  workflow_versions_guard: workflowVersionsGuard,
+  api_keys_guard: apiKeysGuard,
 };

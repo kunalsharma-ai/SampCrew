@@ -7,16 +7,27 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { decryptField, encryptField, randomToken } from '../../platform/auth/crypto';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx as Tx } from '../../platform/database/mongo.service';
 import { type DomainEvent, OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
-import { BY, WHO } from './common';
+import { activeWorkflowUsing, membershipNames } from './common';
 import { checkUrlShape, postJson } from './safe-http';
 
 /** The signature header: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>" with the endpoint's secret>. */
 export function signWebhook(secret: string, timestamp: number, body: string) {
   return `t=${timestamp},v1=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
+
+async function endpointViews(tx: Tx, list: Doc[]) {
+  const names = await membershipNames(tx, list.map((w) => w.created_by_membership_id));
+  return list.map((w) => ({
+    id: w.id, name: w.name, url: w.url, events: w.events, status: w.status, statusReason: w.status_reason ?? null, consecutiveFailures: w.consecutive_failures,
+    createdAt: w.created_at, updatedAt: w.updated_at, createdBy: names.get(w.created_by_membership_id)?.name ?? null,
+  }));
 }
 
 interface Claimed {
@@ -78,30 +89,29 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
   }
 
   async list() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select w.id, w.name, w.url, w.events, w.status, w.status_reason as "statusReason", w.consecutive_failures as "consecutiveFailures",
-                w.created_at as "createdAt", ${WHO('cu', 'ce')} as "createdBy",
-                (select count(*) from webhook_deliveries d where d.endpoint_id = w.id and d.created_at > now() - interval '7 days')::int as "deliveries7d",
-                (select count(*) from webhook_deliveries d where d.endpoint_id = w.id and d.status = 'failed' and d.created_at > now() - interval '7 days')::int as "failed7d",
-                (select max(d.delivered_at) from webhook_deliveries d where d.endpoint_id = w.id) as "lastDeliveredAt"
-           from webhook_endpoints w ${BY('w.created_by_membership_id', 'c')} order by w.name`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const list = (await tx.collection('webhook_endpoints').find({})).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      const ids = list.map((w) => w.id);
+      const week = new Date(Date.now() - 7 * 86_400_000);
+      const recent = await tx.collection('webhook_deliveries').find({ endpoint_id: { $in: ids }, created_at: { $gt: week } }, { projection: { endpoint_id: 1, status: 1 } });
+      const last = await tx.collection('webhook_deliveries').aggregate<{ _id: string; at: Date }>([
+        { $match: { endpoint_id: { $in: ids }, delivered_at: { $ne: null } } }, { $group: { _id: '$endpoint_id', at: { $max: '$delivered_at' } } },
+      ]);
+      const lastAt = new Map(last.map((x) => [x._id, x.at]));
+      return (await endpointViews(tx, list)).map(({ updatedAt: _u, ...w }) => ({
+        ...w,
+        deliveries7d: recent.filter((d) => d.endpoint_id === w.id).length,
+        failed7d: recent.filter((d) => d.endpoint_id === w.id && d.status === 'failed').length,
+        lastDeliveredAt: lastAt.get(w.id) ?? null,
+      }));
+    });
   }
 
   async get(id: string) {
     return this.db.tenant(async (tx) => {
-      const w = await one(
-        tx,
-        `select w.id, w.name, w.url, w.events, w.status, w.status_reason as "statusReason", w.consecutive_failures as "consecutiveFailures",
-                w.created_at as "createdAt", w.updated_at as "updatedAt", ${WHO('cu', 'ce')} as "createdBy"
-           from webhook_endpoints w ${BY('w.created_by_membership_id', 'c')} where w.id = $1`,
-        [id],
-      );
+      const w = await tx.collection('webhook_endpoints').findOne({ id });
       if (!w) throw Errors.notFound('Webhook endpoint');
-      return w;
+      return (await endpointViews(tx, [w]))[0]!;
     });
   }
 
@@ -109,11 +119,9 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
     this.checkUrl(input.url);
     const secret = `whsec_${randomToken(24)}`;
     const id = await this.db.tenant(async (tx) => {
-      const r = (await one<{ id: string }>(
-        tx,
-        `insert into webhook_endpoints (tenant_id, name, url, events, secret_enc, created_by_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5) returning id`,
-        [input.name, input.url, input.events, encryptField(secret, this.config.fieldKeys), requestContext.tenantActor().membershipId],
-      ))!;
+      const r = (await tx.collection('webhook_endpoints').insert({
+        name: input.name, url: input.url, events: input.events, secret_enc: encryptField(secret, this.config.fieldKeys), created_by_membership_id: requestContext.tenantActor().membershipId,
+      })) as { id: string };
       await this.audit.record(tx, { action: 'webhook.created', resourceType: 'webhook_endpoint', resourceId: r.id, metadata: { name: input.name, host: new URL(input.url).host, events: input.events } });
       return r.id;
     });
@@ -124,9 +132,9 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
   async update(id: string, input: WebhookEndpointInput) {
     this.checkUrl(input.url);
     await this.db.tenant(async (tx) => {
-      const w = await one<{ url: string }>(tx, 'select url from webhook_endpoints where id = $1', [id]);
+      const w = await tx.collection('webhook_endpoints').findOne({ id });
       if (!w) throw Errors.notFound('Webhook endpoint');
-      await tx.query('update webhook_endpoints set name = $2, url = $3, events = $4, updated_at = now() where id = $1', [id, input.name, input.url, input.events]);
+      await tx.collection('webhook_endpoints').updateOne({ id }, { $set: { name: input.name, url: input.url, events: input.events, updated_at: new Date() } });
       await this.audit.record(tx, { action: 'webhook.updated', resourceType: 'webhook_endpoint', resourceId: id, metadata: { name: input.name, host: new URL(input.url).host, events: input.events, urlChanged: w.url !== input.url } });
     });
     return this.get(id);
@@ -134,11 +142,11 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
 
   async setStatus(id: string, status: 'active' | 'paused') {
     await this.db.tenant(async (tx) => {
-      const w = await one<{ status: string }>(tx, 'select status from webhook_endpoints where id = $1', [id]);
+      const w = await tx.collection('webhook_endpoints').findOne({ id });
       if (!w) throw Errors.notFound('Webhook endpoint');
-      await tx.query(`update webhook_endpoints set status = $2, status_reason = null, consecutive_failures = case when $2 = 'active' then 0 else consecutive_failures end, updated_at = now() where id = $1`, [id, status]);
+      await tx.collection('webhook_endpoints').updateOne({ id }, { $set: { status, status_reason: null, updated_at: new Date(), ...(status === 'active' ? { consecutive_failures: 0 } : {}) } });
       // Deliveries that were waiting resume from now when the endpoint is switched back on.
-      if (status === 'active') await tx.query(`update webhook_deliveries set next_attempt_at = now() where endpoint_id = $1 and status = 'pending'`, [id]);
+      if (status === 'active') await tx.collection('webhook_deliveries').update({ endpoint_id: id, status: 'pending' }, { $set: { next_attempt_at: new Date() } });
       await this.audit.record(tx, { action: status === 'active' ? 'webhook.enabled' : 'webhook.paused', resourceType: 'webhook_endpoint', resourceId: id });
     });
     return this.get(id);
@@ -147,8 +155,8 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
   async rotateSecret(id: string) {
     const secret = `whsec_${randomToken(24)}`;
     await this.db.tenant(async (tx) => {
-      const r = await tx.query('update webhook_endpoints set secret_enc = $2, updated_at = now() where id = $1', [id, encryptField(secret, this.config.fieldKeys)]);
-      if (!r.rowCount) throw Errors.notFound('Webhook endpoint');
+      const n = await tx.collection('webhook_endpoints').update({ id }, { $set: { secret_enc: encryptField(secret, this.config.fieldKeys), updated_at: new Date() } });
+      if (!n) throw Errors.notFound('Webhook endpoint');
       await this.audit.record(tx, { action: 'webhook.secret_rotated', resourceType: 'webhook_endpoint', resourceId: id });
     });
     return { secret };
@@ -156,16 +164,11 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
 
   async remove(id: string) {
     await this.db.tenant(async (tx) => {
-      const w = await one<{ name: string }>(tx, 'select name from webhook_endpoints where id = $1', [id]);
+      const w = await tx.collection('webhook_endpoints').findOne({ id });
       if (!w) throw Errors.notFound('Webhook endpoint');
-      const used = await one<{ name: string }>(
-        tx,
-        `select w.name from workflows w join workflow_versions v on v.id = w.active_version_id
-          where w.status = 'active' and exists (select 1 from jsonb_array_elements(v.definition->'steps') s where s->>'endpointId' = $1::text) limit 1`,
-        [id],
-      );
-      if (used) throw Errors.conflict('endpoint_in_use', `The active workflow "${used.name}" sends to this endpoint. Pause it or change that step first.`);
-      await tx.query('delete from webhook_endpoints where id = $1', [id]);
+      const used = await activeWorkflowUsing(tx, 'endpointId', id);
+      if (used) throw Errors.conflict('endpoint_in_use', `The active workflow "${used}" sends to this endpoint. Pause it or change that step first.`);
+      await tx.collection('webhook_endpoints').deleteOne({ id });
       await this.audit.record(tx, { action: 'webhook.deleted', resourceType: 'webhook_endpoint', resourceId: id, metadata: { name: w.name } });
     });
     return { ok: true };
@@ -173,7 +176,7 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
 
   async test(id: string) {
     return this.db.tenant(async (tx) => {
-      const w = await one<{ status: string }>(tx, 'select status from webhook_endpoints where id = $1', [id]);
+      const w = await tx.collection('webhook_endpoints').findOne({ id });
       if (!w) throw Errors.notFound('Webhook endpoint');
       if (w.status !== 'active') throw Errors.conflict('endpoint_not_active', 'Switch the endpoint on before sending a test event.');
       const tenantId = requestContext.tenantActor().tenantId;
@@ -186,43 +189,39 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
   // Deliveries -----------------------------------------------------------------------------------------------------
 
   async deliveries(endpointId: string, q: { status?: string }) {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select id, event_id as "eventId", event_type as "eventType", status, attempts, next_attempt_at as "nextAttemptAt", last_status_code as "lastStatusCode",
-                last_error as "lastError", last_duration_ms as "lastDurationMs", delivered_at as "deliveredAt", created_at as "createdAt"
-           from webhook_deliveries where endpoint_id = $1 and ($2::text is null or status = $2) order by created_at desc limit 200`,
-        [endpointId, q.status ?? null],
-      ),
+    return this.db.tenant(async (tx) =>
+      (await tx.collection('webhook_deliveries').find({ endpoint_id: endpointId, ...(q.status ? { status: q.status } : {}) }, { sort: { created_at: -1 }, limit: 200 })).map((d) => ({
+        id: d.id, eventId: d.event_id, eventType: d.event_type, status: d.status, attempts: d.attempts, nextAttemptAt: d.next_attempt_at ?? null,
+        lastStatusCode: d.last_status_code ?? null, lastError: d.last_error ?? null, lastDurationMs: d.last_duration_ms ?? null, deliveredAt: d.delivered_at ?? null, createdAt: d.created_at,
+      })),
     );
   }
 
   async delivery(id: string) {
     return this.db.tenant(async (tx) => {
-      const d = await one(
-        tx,
-        `select d.id, d.endpoint_id as "endpointId", w.name as "endpointName", w.url, d.event_id as "eventId", d.event_type as "eventType", d.payload, d.status, d.attempts,
-                d.next_attempt_at as "nextAttemptAt", d.delivered_at as "deliveredAt", d.created_at as "createdAt", d.last_error as "lastError"
-           from webhook_deliveries d join webhook_endpoints w on w.id = d.endpoint_id where d.id = $1`,
-        [id],
-      );
-      if (!d) throw Errors.notFound('Delivery');
-      const attemptLog = await many(
-        tx,
-        `select attempt, status_code as "statusCode", ok, error, response, duration_ms as "durationMs", created_at as "createdAt" from webhook_attempts where delivery_id = $1 order by attempt`,
-        [id],
-      );
+      const doc = await tx.collection('webhook_deliveries').findOne({ id });
+      const w = doc && (await tx.collection('webhook_endpoints').findOne({ id: doc.endpoint_id }));
+      if (!doc || !w) throw Errors.notFound('Delivery');
+      const d = {
+        id: doc.id, endpointId: doc.endpoint_id, endpointName: w.name, url: w.url, eventId: doc.event_id, eventType: doc.event_type, payload: doc.payload, status: doc.status,
+        attempts: doc.attempts, nextAttemptAt: doc.next_attempt_at ?? null, deliveredAt: doc.delivered_at ?? null, createdAt: doc.created_at, lastError: doc.last_error ?? null,
+      };
+      const attemptLog = (await tx.collection('webhook_attempts').find({ delivery_id: id }, { sort: { attempt: 1 } })).map((a) => ({
+        attempt: a.attempt, statusCode: a.status_code ?? null, ok: a.ok, error: a.error ?? null, response: a.response ?? null, durationMs: a.duration_ms ?? null, createdAt: a.created_at,
+      }));
       return { ...d, attemptLog, maxAttempts: WEBHOOK_MAX_ATTEMPTS };
     });
   }
 
   async redeliver(id: string) {
     await this.db.tenant(async (tx) => {
-      const d = await one<{ status: string; endpoint_status: string }>(tx, `select d.status, w.status as endpoint_status from webhook_deliveries d join webhook_endpoints w on w.id = d.endpoint_id where d.id = $1`, [id]);
-      if (!d) throw Errors.notFound('Delivery');
+      const d = await tx.collection('webhook_deliveries').findOne({ id });
+      const w = d && (await tx.collection('webhook_endpoints').findOne({ id: d.endpoint_id }));
+      if (!d || !w) throw Errors.notFound('Delivery');
       if (d.status === 'pending' || d.status === 'sending') throw Errors.conflict('delivery_pending', 'This delivery is still being tried.');
-      if (d.endpoint_status !== 'active') throw Errors.conflict('endpoint_not_active', 'Switch the endpoint on before sending again.');
-      await tx.query(`update webhook_deliveries set status = 'pending', next_attempt_at = now(), locked_until = null, updated_at = now() where id = $1`, [id]);
+      if (w.status !== 'active') throw Errors.conflict('endpoint_not_active', 'Switch the endpoint on before sending again.');
+      const now = new Date();
+      await tx.collection('webhook_deliveries').updateOne({ id }, { $set: { status: 'pending', next_attempt_at: now, locked_until: null, updated_at: now } });
       await this.audit.record(tx, { action: 'webhook.redelivered', resourceType: 'webhook_delivery', resourceId: id });
     });
     return this.delivery(id);
@@ -230,25 +229,18 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
 
   /** Queues one delivery (once per endpoint and event). Used for catalogue events, tests and workflow steps. */
   async enqueue(tx: Tx, endpointId: string, eventId: string, type: string, payload: Record<string, unknown>): Promise<string | null> {
-    const r = await one<{ id: string }>(
-      tx,
-      `insert into webhook_deliveries (tenant_id, endpoint_id, event_id, event_type, payload) values (app_tenant_id(), $1, $2, $3, $4)
-       on conflict (endpoint_id, event_id) do nothing returning id`,
-      [endpointId, eventId, type, JSON.stringify(payload)],
-    );
-    return r?.id ?? null;
+    const deliveries = tx.collection('webhook_deliveries');
+    if (await deliveries.exists({ endpoint_id: endpointId, event_id: eventId })) return null;
+    const r = await deliveries.insert({ endpoint_id: endpointId, event_id: eventId, event_type: type, payload: JSON.parse(JSON.stringify(payload)) });
+    return r.id as string;
   }
 
   async onEvent(e: DomainEvent) {
     if (!e.tenantId) return;
     const tenantId = e.tenantId;
     await this.db.tenant(async (tx) => {
-      const endpoints = await many<{ id: string }>(
-        tx,
-        // An endpoint only receives events that happened after it was created.
-        `select id from webhook_endpoints where status = 'active' and $1 = any(events) and created_at <= $2::timestamptz`,
-        [e.type, e.occurredAt],
-      );
+      // An endpoint only receives events that happened after it was created.
+      const endpoints = await tx.collection('webhook_endpoints').find({ status: 'active', events: e.type, created_at: { $lte: new Date(e.occurredAt) } }, { projection: { _id: 1 } });
       if (!endpoints.length) return;
       const body = webhookBody({ ...e, tenantId });
       for (const w of endpoints) await this.enqueue(tx, w.id, e.id, e.type, body);
@@ -260,19 +252,29 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
     if (this.ticking) return 0;
     this.ticking = true;
     try {
-      const claimed = await this.db.platform((tx) =>
-        many<Claimed>(
-          tx,
-          `update webhook_deliveries d set status = 'sending', locked_until = now() + interval '60 seconds', attempts = d.attempts + 1, updated_at = now()
-             from webhook_endpoints w
-            where d.id in (select x.id from webhook_deliveries x join webhook_endpoints y on y.id = x.endpoint_id
-                            where y.status = 'active' and ((x.status = 'pending' and x.next_attempt_at <= now()) or (x.status = 'sending' and x.locked_until < now()))
-                            order by x.next_attempt_at limit $1 for update of x skip locked)
-              and w.id = d.endpoint_id
-          returning d.id, d.tenant_id, d.endpoint_id, d.event_type, d.payload, d.attempts, w.url, w.secret_enc, w.name, w.created_by_membership_id`,
-          [limit],
-        ),
-      );
+      const due = () => ({ $or: [{ status: 'pending', next_attempt_at: { $lte: new Date() } }, { status: 'sending', locked_until: { $lt: new Date() } }] });
+      const candidates = await this.db.platform(async (tx) => {
+        const list = await tx.collection('webhook_deliveries').find(due(), { sort: { next_attempt_at: 1 }, limit: limit * 5, projection: { endpoint_id: 1 } });
+        const active = new Set(await tx.collection('webhook_endpoints').distinct<string>('id', { id: { $in: [...new Set(list.map((d) => d.endpoint_id as string))] }, status: 'active' }));
+        return list.filter((d) => active.has(d.endpoint_id)).slice(0, limit);
+      });
+      // Each delivery is claimed on its own: one another worker took first no longer matches and is skipped.
+      const claimed: Claimed[] = [];
+      for (const c of candidates) {
+        const got = await this.db.platform(async (tx) => {
+          const d = await tx.collection('webhook_deliveries').updateAndGet(
+            { id: c.id, ...due() },
+            { $set: { status: 'sending', locked_until: new Date(Date.now() + 60_000), updated_at: new Date() }, $inc: { attempts: 1 } },
+          );
+          if (!d) return null;
+          const w = (await tx.collection('webhook_endpoints').findOne({ id: d.endpoint_id }))!;
+          return {
+            id: d.id, tenant_id: d.tenant_id, endpoint_id: d.endpoint_id, event_type: d.event_type, payload: d.payload, attempts: d.attempts,
+            url: w.url, secret_enc: w.secret_enc, name: w.name, created_by_membership_id: w.created_by_membership_id,
+          } as Claimed;
+        }).catch(() => null);
+        if (got) claimed.push(got);
+      }
       await Promise.all(claimed.map((c) => this.send(c)));
       return claimed.length;
     } finally {
@@ -306,32 +308,28 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
     }
     const ok = error === null;
     await this.db.tenant(async (tx) => {
-      await tx.query(
-        `insert into webhook_attempts (tenant_id, delivery_id, attempt, status_code, ok, error, response, duration_ms) values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7)
-         on conflict (delivery_id, attempt) do nothing`,
-        [c.id, c.attempts, status, ok, error, response || null, durationMs],
-      );
+      if (!(await tx.collection('webhook_attempts').exists({ delivery_id: c.id, attempt: c.attempts }))) {
+        await tx.collection('webhook_attempts').insert({ delivery_id: c.id, attempt: c.attempts, status_code: status, ok, error, response: response || null, duration_ms: durationMs });
+      }
+      const now = new Date();
       if (ok) {
-        await tx.query(
-          `update webhook_deliveries set status = 'succeeded', delivered_at = now(), locked_until = null, next_attempt_at = null, last_status_code = $2, last_error = null,
-                  last_response = $3, last_duration_ms = $4, updated_at = now() where id = $1`,
-          [c.id, status, response || null, durationMs],
-        );
-        await tx.query('update webhook_endpoints set consecutive_failures = 0 where id = $1', [c.endpoint_id]);
+        await tx.collection('webhook_deliveries').updateOne({ id: c.id }, { $set: {
+          status: 'succeeded', delivered_at: now, locked_until: null, next_attempt_at: null, last_status_code: status, last_error: null,
+          last_response: response || null, last_duration_ms: durationMs, updated_at: now,
+        } });
+        await tx.collection('webhook_endpoints').updateOne({ id: c.endpoint_id }, { $set: { consecutive_failures: 0 } });
         return;
       }
       const final = c.attempts >= WEBHOOK_MAX_ATTEMPTS;
-      await tx.query(
-        `update webhook_deliveries set status = $2, locked_until = null, next_attempt_at = case when $2 = 'pending' then now() + make_interval(secs => $3) end,
-                last_status_code = $4, last_error = $5, last_response = $6, last_duration_ms = $7, updated_at = now() where id = $1`,
-        [c.id, final ? 'failed' : 'pending', WEBHOOK_RETRY_DELAYS_S[Math.min(c.attempts, WEBHOOK_RETRY_DELAYS_S.length) - 1] ?? 0, status, error, response || null, durationMs],
-      );
-      const w = (await one<{ consecutive_failures: number; status: string }>(
-        tx, 'update webhook_endpoints set consecutive_failures = consecutive_failures + 1 where id = $1 returning consecutive_failures, status', [c.endpoint_id],
-      ))!;
+      const delayS = WEBHOOK_RETRY_DELAYS_S[Math.min(c.attempts, WEBHOOK_RETRY_DELAYS_S.length) - 1] ?? 0;
+      await tx.collection('webhook_deliveries').updateOne({ id: c.id }, { $set: {
+        status: final ? 'failed' : 'pending', locked_until: null, next_attempt_at: final ? null : new Date(now.getTime() + delayS * 1000),
+        last_status_code: status, last_error: error, last_response: response || null, last_duration_ms: durationMs, updated_at: now,
+      } });
+      const w = (await tx.collection('webhook_endpoints').updateAndGet({ id: c.endpoint_id }, { $inc: { consecutive_failures: 1 } }))! as { consecutive_failures: number; status: string };
       if (w.status === 'active' && w.consecutive_failures >= WEBHOOK_DISABLE_AFTER) {
         const reason = `Switched off after ${w.consecutive_failures} failed attempts in a row. Last error: ${error}`.slice(0, 500);
-        await tx.query(`update webhook_endpoints set status = 'disabled', status_reason = $2, updated_at = now() where id = $1`, [c.endpoint_id, reason]);
+        await tx.collection('webhook_endpoints').updateOne({ id: c.endpoint_id }, { $set: { status: 'disabled', status_reason: reason, updated_at: new Date() } });
         await this.audit.record(tx, { action: 'webhook.disabled', resourceType: 'webhook_endpoint', resourceId: c.endpoint_id, metadata: { failures: w.consecutive_failures }, tenantId: c.tenant_id });
         await this.notifications.notify(tx, {
           membershipIds: [c.created_by_membership_id], kind: 'webhook.disabled', title: `Webhook "${c.name}" was switched off`,

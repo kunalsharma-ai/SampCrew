@@ -1,12 +1,7 @@
 import { type PlatformTx, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 
-/** Display name for a membership (employee name, else the login's full name). Needs m, u, e aliases. */
-export const WHO = (u: string, e: string) => `coalesce(nullif(trim(coalesce(${e}.preferred_name, ${e}.first_name) || ' ' || ${e}.last_name), ''), ${u}.full_name)`;
-export const BY = (col: string, alias: string) =>
-  `left join memberships ${alias}m on ${alias}m.id = ${col} left join users ${alias}u on ${alias}u.id = ${alias}m.user_id left join employees ${alias}e on ${alias}e.id = ${alias}m.employee_id`;
-
 /**
- * The MongoDB form of WHO/BY: display names for memberships (employee name, else the login's full name), with
+ * Display names for memberships (employee name, else the login's full name), with
  * each membership's status. Missing ids are left out.
  */
 export async function membershipNames(tx: TenantTx | PlatformTx, ids: (string | null | undefined)[]): Promise<Map<string, { name: string; status: string }>> {
@@ -24,4 +19,13 @@ export async function membershipNames(tx: TenantTx | PlatformTx, ids: (string | 
       return [m.id as string, { name: fromEmployee || users.get(m.user_id) || '', status: m.status as string }];
     }),
   );
+}
+
+/** The name of an active workflow whose active version has a step pointing at this endpoint or connection, if any. */
+export async function activeWorkflowUsing(tx: TenantTx, key: 'endpointId' | 'connectionId', id: string): Promise<string | null> {
+  const flows = await tx.collection('workflows').find({ status: 'active', active_version_id: { $ne: null } }, { projection: { name: 1, active_version_id: 1 } });
+  if (!flows.length) return null;
+  const versions = await tx.collection('workflow_versions').find({ id: { $in: flows.map((f) => f.active_version_id) } }, { projection: { definition: 1 } });
+  const using = new Set(versions.filter((v) => ((v.definition?.steps ?? []) as Record<string, unknown>[]).some((s) => s[key] === id)).map((v) => v.id as string));
+  return (flows.find((f) => using.has(f.active_version_id))?.name as string | undefined) ?? null;
 }
