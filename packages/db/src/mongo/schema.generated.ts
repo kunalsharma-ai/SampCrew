@@ -4634,7 +4634,12 @@ export const TABLES: Record<string, TableSpec> = {
     ],
   },
   support_access_grants: {
-    access: "tenant", grants: ["select"],
+    // A workspace answers SAMPLEDGE's requests: it may change only the decision (column grant in PostgreSQL).
+    access: "tenant", grants: ["select", "update"],
+    tenantColumns: {
+      select: ["created_at", "decided_at", "decided_by", "duration_minutes", "expires_at", "id", "platform_admin_id", "reason", "status", "tenant_id"],
+      update: ["decided_at", "decided_by", "expires_at", "status"],
+    },
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       decided_at: {"type": "timestamp"},

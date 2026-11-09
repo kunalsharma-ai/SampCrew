@@ -1,11 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
 import { parseDeviceApi } from '../src/modules/attendance/devices.service';
-import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestTenant, type TestDb } from './helpers';
 
 /**
  * Phase 16: SAMPLEDGE Super Admin control of a workspace: the Web Portal and mobile app per workspace and per
@@ -13,7 +12,7 @@ import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, PASSW
  */
 describe('Super Admin control of workspaces', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let superToken: string;
@@ -25,7 +24,7 @@ describe('Super Admin control of workspaces', () => {
 
   async function platformToken(role: string) {
     const email = `${role}.ctl.${stamp}@sampledge.test`;
-    await pool.query(`insert into platform_admins (email, full_name, password_hash, role) values ($1, $2, $3, $4)`, [email, role, await hashPassword(PASSWORD), role]);
+    await pool.insert('platform_admins', { email, full_name: role, password_hash: await hashPassword(PASSWORD), role });
     const res = await api(app).post('/platform/auth/login').send({ email, password: PASSWORD });
     const setup = await api(app, res.body.accessToken).post('/platform/auth/mfa/setup');
     return (await api(app, res.body.accessToken).post('/platform/auth/mfa/enable').send({ code: currentTotp(setup.body.secret) })).body.accessToken as string;
@@ -41,10 +40,7 @@ describe('Super Admin control of workspaces', () => {
     t = await createTenant(pool, { plan: 'business' });
     other = await createTenant(pool, { plan: 'business' });
     rita = await addMember(pool, t, { roles: ['recruiter'], name: 'Rita Recruiter' });
-    pune = (await pool.query<{ id: string }>(
-      `insert into locations (tenant_id, legal_entity_id, name, kind, timezone, country_code) values ($1, $2, 'Pune Plant', 'factory', 'Asia/Kolkata', 'IN') returning id`,
-      [t.id, t.legalEntityId],
-    )).rows[0]!.id;
+    pune = (await pool.insert('locations', { tenant_id: t.id, legal_entity_id: t.legalEntityId, name: 'Pune Plant', kind: 'factory', timezone: 'Asia/Kolkata', country_code: 'IN' })).id as string;
     superToken = await platformToken('super_admin');
     supportToken = await platformToken('support');
     viewerToken = await platformToken('viewer');
@@ -100,9 +96,9 @@ describe('Super Admin control of workspaces', () => {
     it('only Super admins switch apps, and every change is in both audit trails', async () => {
       expect((await api(app, viewerToken).put(`/platform/tenants/${t.id}/access/apps`).send({ mobile: false })).status).toBe(403);
       expect((await api(app, superToken).put(`/platform/tenants/${t.id}/access/apps`).send({})).status).toBe(422);
-      const audit = await pool.query(`select tenant_id from audit_events where action in ('access.apps_switched', 'platform.access_apps_switched') and (tenant_id = $1::uuid or (tenant_id is null and resource_id = $1::text))`, [t.id]);
-      expect(audit.rows.some((r) => r.tenant_id === t.id)).toBe(true);
-      expect(audit.rows.some((r) => r.tenant_id === null)).toBe(true);
+      const audit = await pool.find('audit_events', { action: { $in: ['access.apps_switched', 'platform.access_apps_switched'] }, $or: [{ tenant_id: t.id }, { tenant_id: null, resource_id: t.id }] });
+      expect(audit.some((r) => r.tenant_id === t.id)).toBe(true);
+      expect(audit.some((r) => r.tenant_id === null)).toBe(true);
     });
   });
 
@@ -137,28 +133,28 @@ describe('Super Admin control of workspaces', () => {
       expect((await api(app, superToken).post(`/platform/tenants/${t.id}/users/${rita.membershipId}/actions`).send({ action: 'reactivate', reason: 'Customer asked by email' })).status).toBe(200);
       expect((await signIn(rita.email, 'web')).body.status).toBe('ok');
 
-      const trail = await pool.query(`select action, metadata from audit_events where tenant_id = $1 and action like 'membership.%_by_sampledge' order by id`, [t.id]);
-      expect(trail.rows.map((r) => r.action)).toEqual(['membership.sign_out_by_sampledge', 'membership.suspend_by_sampledge', 'membership.reactivate_by_sampledge']);
-      expect(trail.rows[0].metadata.by).toBe('SAMPLEDGE');
+      const trail = await pool.find('audit_events', { tenant_id: t.id, action: /^membership\..*_by_sampledge$/ }, { sort: { chain_seq: 1 } });
+      expect(trail.map((r) => r.action)).toEqual(['membership.sign_out_by_sampledge', 'membership.suspend_by_sampledge', 'membership.reactivate_by_sampledge']);
+      expect(trail[0]!.metadata.by).toBe('SAMPLEDGE');
     });
 
     it('will not suspend the only owner, and resets two-step verification', async () => {
-      const owner = await pool.query<{ id: string; user_id: string }>(`select id, user_id from memberships where tenant_id = $1 and id = $2`, [t.id, t.ownerMembershipId]);
+      const owner = (await pool.one('memberships', { tenant_id: t.id, id: t.ownerMembershipId }))!;
       const r = await api(app, superToken).post(`/platform/tenants/${t.id}/users/${t.ownerMembershipId}/actions`).send({ action: 'suspend', reason: 'Testing the guard' });
       expect(r.body.error.code).toBe('last_owner');
       expect((await api(app, superToken).post(`/platform/tenants/${t.id}/users/${t.ownerMembershipId}/actions`).send({ action: 'reset_mfa', reason: 'Lost their phone' })).body.error.code).toBe('mfa_not_enabled');
-      await pool.query(`update users set mfa_enabled = true, mfa_secret_enc = 'x' where id = $1`, [owner.rows[0]!.user_id]);
+      await pool.update('users', { id: owner.user_id }, { $set: { mfa_enabled: true, mfa_secret_enc: 'x' } });
       expect((await api(app, superToken).post(`/platform/tenants/${t.id}/users/${t.ownerMembershipId}/actions`).send({ action: 'reset_mfa', reason: 'Lost their phone' })).status).toBe(200);
-      expect((await pool.query(`select mfa_enabled, mfa_secret_enc from users where id = $1`, [owner.rows[0]!.user_id])).rows[0]).toEqual({ mfa_enabled: false, mfa_secret_enc: null });
+      expect(await pool.one('users', { id: owner.user_id })).toMatchObject({ mfa_enabled: false, mfa_secret_enc: null });
     });
 
     it('resends an invitation to someone who has not joined', async () => {
-      const u = await pool.query<{ id: string }>(`insert into users (email, full_name) values ($1, 'Ivy Invited') returning id`, [`ivy.${stamp}@${t.slug}.test`]);
-      const m = await pool.query<{ id: string }>(`insert into memberships (tenant_id, user_id, status) values ($1, $2, 'invited') returning id`, [t.id, u.rows[0]!.id]);
-      const res = await api(app, superToken).post(`/platform/tenants/${t.id}/users/${m.rows[0]!.id}/actions`).send({ action: 'resend_invite', reason: 'Invitation expired' });
+      const u = await pool.insert('users', { email: `ivy.${stamp}@${t.slug}.test`, full_name: 'Ivy Invited' });
+      const m = await pool.insert('memberships', { tenant_id: t.id, user_id: u.id, status: 'invited' });
+      const res = await api(app, superToken).post(`/platform/tenants/${t.id}/users/${m.id}/actions`).send({ action: 'resend_invite', reason: 'Invitation expired' });
       expect(res.status).toBe(200);
       expect(res.body.inviteUrl).toContain('/accept-invite?token=');
-      expect((await pool.query(`select count(*)::int as n from email_messages where to_email = $1`, [`ivy.${stamp}@${t.slug}.test`])).rows[0].n).toBe(1);
+      expect(await pool.count('email_messages', { to_email: `ivy.${stamp}@${t.slug}.test` })).toBe(1);
       expect((await api(app, superToken).post(`/platform/tenants/${t.id}/users/${rita.membershipId}/actions`).send({ action: 'resend_invite', reason: 'Invitation expired' })).body.error.code).toBe('not_invited');
     });
   });
@@ -197,17 +193,14 @@ describe('Super Admin control of workspaces', () => {
       expect(res.body.history.find((h: { action: string }) => h.action === 'membership.reactivate_by_sampledge').changes.reason).toBe('Customer asked by email');
 
       // Every read is in the customer's own trail (who looked at what) and the platform log.
-      const seen = await pool.query(
-        `select tenant_id, changes, metadata from audit_events where action in ('activity.contents_viewed_by_sampledge', 'platform.activity_contents_viewed')
-          and changes->>'eventId' = $1 order by id`,
-        [suspended.id],
-      );
-      expect(seen.rows).toHaveLength(2);
-      expect(seen.rows[0]).toMatchObject({ tenant_id: t.id, metadata: { by: 'SAMPLEDGE' }, changes: { eventAction: 'membership.suspend_by_sampledge' } });
-      expect(seen.rows[0].metadata.admin).toBeTruthy();
-      expect(seen.rows[1].tenant_id).toBeNull();
+      const seen = (await pool.find('audit_events', { action: { $in: ['activity.contents_viewed_by_sampledge', 'platform.activity_contents_viewed'] }, 'changes.eventId': suspended.id }))
+        .sort((a, b) => Number(a.tenant_id === null) - Number(b.tenant_id === null));
+      expect(seen).toHaveLength(2);
+      expect(seen[0]).toMatchObject({ tenant_id: t.id, metadata: { by: 'SAMPLEDGE' }, changes: { eventAction: 'membership.suspend_by_sampledge' } });
+      expect(seen[0]!.metadata.admin).toBeTruthy();
+      expect(seen[1]!.tenant_id).toBeNull();
       await api(app, superToken).get(`/platform/tenants/${t.id}/activity/${suspended.id}`);
-      expect((await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'activity.contents_viewed_by_sampledge'`, [t.id])).rows[0].n).toBe(2);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'activity.contents_viewed_by_sampledge' })).toBe(2);
 
       // Super admins only; an event from another workspace, or a malformed id, is not found.
       expect((await api(app, supportToken).get(`/platform/tenants/${t.id}/activity/${suspended.id}`)).status).toBe(403);
@@ -247,8 +240,8 @@ describe('Super Admin control of workspaces', () => {
 
       const detail = (await api(app, owner).get(`/attendance/devices/${deviceId}`)).body;
       expect(detail).toMatchObject({ status: 'online', firmware: 'V3.2', reportedUserCount: 40, setup: { protocol: 'device_api', tokenHint: token.slice(-4) } });
-      const stored = await pool.query(`select device_local_time, verify_method from attendance_events where device_id = $1 order by captured_at`, [deviceId]);
-      expect(stored.rows.map((r) => r.device_local_time)).toEqual(['2026-01-05 09:01:00', '2026-01-05 18:01:00']);
+      const stored = await pool.find('attendance_events', { device_id: deviceId }, { sort: { captured_at: 1 } });
+      expect(stored.map((r) => r.device_local_time)).toEqual(['2026-01-05 09:01:00', '2026-01-05 18:01:00']);
 
       const rotated = await api(app, owner).post(`/attendance/devices/${deviceId}/token`);
       expect((await device('heartbeat').send({})).status).toBe(401);
@@ -266,7 +259,7 @@ describe('Super Admin control of workspaces', () => {
       const refused = await device('heartbeat').send({});
       expect(refused.status).toBe(403);
       expect((await api(app, owner).get(`/attendance/devices/${deviceId}`)).body).toMatchObject({ status: 'paused', pausedReason: 'Suspicious traffic' });
-      expect((await pool.query(`select detail from device_ingest_log where device_id = $1 and kind = 'rejected' order by id desc limit 1`, [deviceId])).rows[0].detail).toBe('machine paused by SAMPLEDGE');
+      expect((await pool.one('device_ingest_log', { device_id: deviceId, kind: 'rejected' }, { sort: { id: -1 } }))!.detail).toBe('machine paused by SAMPLEDGE');
       await api(app, superToken).post(`/platform/tenants/${t.id}/devices/${deviceId}/resume`);
       expect((await device('heartbeat').send({})).status).toBe(200);
 

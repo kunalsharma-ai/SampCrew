@@ -17,7 +17,7 @@ const passwordHash = async () => (cachedHash ??= await hashPassword(PASSWORD));
 
 export async function createApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication({ logger: false });
+  const app = moduleRef.createNestApplication({ logger: process.env.TEST_LOGS ? ['error'] : false });
   configureApp(app);
   await app.init();
   return app;

@@ -1,10 +1,9 @@
 import type { INestApplication } from '@nestjs/common';
-import { syncCatalogue } from '@crew/db';
-import type { Pool } from 'pg';
+import { mongo } from '@crew/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
-import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
+import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestTenant, type TestDb } from './helpers';
 
 /**
  * The plan builder: SAMPLEDGE sets what each plan includes in the Console, and a workspace's subscription decides
@@ -12,7 +11,7 @@ import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type T
  */
 describe('Plan builder and subscription entitlements', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let buyer: TestTenant;
   let superToken: string;
@@ -23,7 +22,7 @@ describe('Plan builder and subscription entitlements', () => {
 
   async function platformToken(role: string) {
     const email = `plans.${role}.${stamp}@sampledge.test`;
-    await pool.query(`insert into platform_admins (email, full_name, password_hash, role) values ($1, $2, $3, $4)`, [email, `Plans ${role}`, await hashPassword(PASSWORD), role]);
+    await pool.insert('platform_admins', { email, full_name: `Plans ${role}`, password_hash: await hashPassword(PASSWORD), role });
     const res = await api(app).post('/platform/auth/login').send({ email, password: PASSWORD });
     const setup = await api(app, res.body.accessToken).post('/platform/auth/mfa/setup');
     return (await api(app, res.body.accessToken).post('/platform/auth/mfa/enable').send({ code: currentTotp(setup.body.secret) })).body.accessToken as string;
@@ -122,7 +121,7 @@ describe('Plan builder and subscription entitlements', () => {
   });
 
   it('plan limits set in the builder apply to the workspace', async () => {
-    const members = Number((await pool.query(`select count(*) from memberships where tenant_id = $1 and status <> 'suspended'`, [t.id])).rows[0].count);
+    const members = await pool.count('memberships', { tenant_id: t.id, status: { $ne: 'suspended' } });
     const features = await modules(pilot);
     await api(app, superToken).put(`/platform/plans/${pilot}/entitlements`).send({ features, limits: { max_employees: members } });
     const res = await api(app, owner).post('/members/invite').send({ email: `over.${stamp}@example.test`, fullName: 'Over Limit', roleKeys: ['employee'] });
@@ -133,12 +132,13 @@ describe('Plan builder and subscription entitlements', () => {
 
   it('the deploy-time catalogue sync keeps a plan SAMPLEDGE changed, and resets one it did not', async () => {
     const before = await modules('starter');
-    await pool.query(`update plans set customised_at = now() where key = 'starter'`);
-    await pool.query(`delete from plan_features where feature_key = 'announcements' and plan_id = (select id from plans where key = 'starter')`);
-    await syncCatalogue(pool);
+    const starter = (await pool.one('plans', { key: 'starter' }))!;
+    await pool.update('plans', { id: starter.id }, { $set: { customised_at: new Date() } });
+    await pool.delete('plan_features', { feature_key: 'announcements', plan_id: starter.id });
+    await pool.platform((tx) => mongo.syncCatalogueMongo(tx));
     expect(await modules('starter')).not.toContain('announcements');
-    await pool.query(`update plans set customised_at = null where key = 'starter'`);
-    await syncCatalogue(pool);
+    await pool.update('plans', { key: 'starter' }, { $set: { customised_at: null } });
+    await pool.platform((tx) => mongo.syncCatalogueMongo(tx));
     expect((await modules('starter')).sort()).toEqual(before.sort());
   });
 
