@@ -95,7 +95,7 @@ export interface TableOptions {
   workspaceColumns?: boolean;
 }
 
-type Row = Document;
+export type Row = Document;
 
 /**
  * One collection seen through a transaction. It applies the PostgreSQL rules (defaults, types, NOT NULL, enums,

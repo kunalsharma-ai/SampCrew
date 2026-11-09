@@ -7,3 +7,4 @@ export * from './engine';
 export * from './table';
 export { TABLES } from './schema.generated';
 export { MONGO_MIGRATIONS } from './migrations';
+export * from './provision';
