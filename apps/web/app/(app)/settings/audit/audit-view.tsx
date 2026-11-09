@@ -26,7 +26,7 @@ export interface AuditEvent {
 
 const RESOURCE_TYPES = ['tenant', 'membership', 'invitation', 'role', 'legal_entity', 'business_unit', 'location', 'department', 'subscription', 'support_access_grant', 'user'];
 
-export function AuditView({ page, query, hasCursor }: { page: Page<AuditEvent>; query: { q: string; action: string; resourceType: string }; hasCursor: boolean }) {
+export function AuditView({ page, query, hasCursor, canExport }: { page: Page<AuditEvent>; query: { q: string; action: string; resourceType: string }; hasCursor: boolean; canExport: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -44,10 +44,15 @@ export function AuditView({ page, query, hasCursor }: { page: Page<AuditEvent>; 
           <ShieldCheck className="size-5 text-accent" />
           <span>Check that no entry has been altered or removed since it was written.</span>
         </div>
-        <Button variant="secondary" size="sm" loading={pending} onClick={() => start(async () => {
-          const r = await verifyAuditAction();
-          setVerify(r.ok ? r.data! : { error: r.message });
-        })}>Verify integrity</Button>
+        <div className="flex flex-wrap gap-2">
+          {canExport
+            ? <a className={buttonClass('secondary', 'sm')} href={`/audit-export?${new URLSearchParams(Object.entries(query).filter(([, v]) => v))}`} download data-testid="audit-export">Download CSV</a>
+            : <span className="self-center text-xs text-fg-subtle">CSV export is in plans with Audit log export</span>}
+          <Button variant="secondary" size="sm" loading={pending} onClick={() => start(async () => {
+            const r = await verifyAuditAction();
+            setVerify(r.ok ? r.data! : { error: r.message });
+          })}>Verify integrity</Button>
+        </div>
         {verify && (
           <div className="w-full">
             {'error' in verify ? <Alert tone="danger">{verify.error}</Alert>

@@ -56,7 +56,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     loadOptional<Location[]>('/org/locations'),
     loadOptional<Designation[]>('/designations'),
     canHire ? loadOptional<Page<Employee>>('/employees?limit=200') : null,
-    canHire ? loadOptional<OnboardingTemplate[]>('/onboarding/templates') : null,
+    canHire && me.features.includes('onboarding') ? loadOptional<OnboardingTemplate[]>('/onboarding/templates') : null,
     canHire ? loadOptional<EmployeeDraft[]>('/employees/drafts') : null,
     canHire && canPay ? loadOptional<Structure[]>('/payroll/structures') : null,
     canHire && canAttendance ? loadOptional<ShiftOption[]>('/shifts/templates') : null,

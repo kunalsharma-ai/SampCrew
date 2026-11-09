@@ -58,7 +58,9 @@ export class OrganizationService {
     return this.db.tenant(async (tx) => {
       if (table === 'legal_entities') {
         const { count } = (await one<{ count: number }>(tx, 'select count(*)::int as count from legal_entities where archived_at is null'))!;
+        // A second legal entity needs the multi-entity module as well as room under the plan's entity limit.
         await this.entitlements.requireWithinLimit('max_legal_entities', count, tx);
+        if (count >= 1) await this.entitlements.requireFeature('multi_entity', tx);
       }
       if (table === 'departments') await this.checkDepartmentRefs(tx, input as DepartmentInput);
       const cols = COLUMNS[table]!;

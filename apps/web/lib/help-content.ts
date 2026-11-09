@@ -552,8 +552,8 @@ export const WEB_HELP: HelpContent = {
     },
     '/settings/billing': {
       title: 'Plan & billing',
-      what: 'Your subscription, seats in use, invoices and the plans you can move to.',
-      how: 'Compare plans and change your billing cycle or seats.',
+      what: 'Your subscription decides which SampCrew modules your workspace can use. Seats in use, invoices and every plan you can buy.',
+      how: 'Compare plans, switch plan or change seats and billing cycle. Quote-only plans such as Enterprise are requested from SAMPLEDGE.',
       where: 'For workspace owners and finance.',
     },
     '/settings/workspace': {
@@ -820,6 +820,7 @@ export const WEB_HELP: HelpContent = {
     'Motion and focus': { what: 'Reduce animation and use focus mode.' },
     Preview: { what: 'How your choices look before you leave the page.' },
     Invoices: { what: 'Your past invoices.' },
+    'Compare plans': { what: 'Every module and limit, and which plans include it. Your workspace can use only what your plan includes.', how: 'Switch plan above to get a module your plan does not include.' },
     'Machine integrations': { what: 'Which machine brands can send punches to SampCrew.' },
     Devices: { what: 'Attendance machines in your workspace.' },
     'Setup: SampCrew device API': { what: 'The address and token the machine or its software uses to send punches.', how: 'Copy them into the machine’s push settings.' },

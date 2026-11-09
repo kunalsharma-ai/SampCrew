@@ -10,6 +10,7 @@ import { AuthzService } from '../../platform/authz/authz.service';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
 import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
 import { buildInstaller, SIGNATURE_NAME } from './installer';
@@ -494,6 +495,8 @@ export class SignaturesService {
       [sha256(token)],
     ));
     if (!a || a.revoked_at) throw Errors.unauthorized('This computer is not connected to SampCrew');
+    // Email signatures are a plan module: computers stop syncing when the workspace's plan no longer includes it.
+    if (!(await this.db.tenant((tx) => loadEntitlements(tx), { tenantId: a.tenant_id })).features.has('email_signatures')) throw Errors.featureNotInPlan('Email signatures');
     return a;
   }
 

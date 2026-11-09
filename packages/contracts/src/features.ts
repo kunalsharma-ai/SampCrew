@@ -13,6 +13,11 @@ export interface FeatureDefinition {
   unit?: string;
   /** Foundation every workspace needs (employee records). It cannot be switched off. */
   core?: boolean;
+  /**
+   * A commercial entitlement SAMPLEDGE can sell and record on a plan before the in-app function ships
+   * (for example, an SLA). Shown as "planned" in the Console and in plan comparisons.
+   */
+  planned?: boolean;
 }
 
 export const FEATURES = [
@@ -20,15 +25,19 @@ export const FEATURES = [
   { key: 'leave', name: 'Leave management', module: 'Leave', kind: 'boolean', phase: 2 },
   { key: 'self_service', name: 'Employee and manager self-service', module: 'People', kind: 'boolean', phase: 2 },
   { key: 'documents', name: 'Documents and e-signatures', module: 'Documents', kind: 'boolean', phase: 2 },
+  { key: 'onboarding', name: 'Onboarding checklists for new joiners', module: 'People', kind: 'boolean', phase: 2 },
   { key: 'attendance_basic', name: 'Web and mobile attendance', module: 'Attendance', kind: 'boolean', phase: 3 },
   { key: 'attendance_advanced', name: 'Geofencing, kiosks, biometric devices', module: 'Attendance', kind: 'boolean', phase: 3 },
   { key: 'shift_scheduling', name: 'Shift and roster management', module: 'Scheduling', kind: 'boolean', phase: 3 },
   { key: 'recruitment', name: 'Recruitment CRM and ATS', module: 'Recruitment', kind: 'boolean', phase: 4 },
   { key: 'payroll', name: 'Payroll', module: 'Payroll', kind: 'boolean', phase: 5 },
   { key: 'expenses', name: 'Expenses and reimbursements', module: 'Expenses', kind: 'boolean', phase: 5 },
-  { key: 'talent', name: 'Performance, learning and engagement', module: 'Talent', kind: 'boolean', phase: 6 },
+  { key: 'performance', name: 'Goals, performance reviews and feedback', module: 'Performance', kind: 'boolean', phase: 6 },
+  { key: 'learning', name: 'Learning, courses and learning paths', module: 'Learning', kind: 'boolean', phase: 6 },
+  { key: 'engagement', name: 'Recognition wall, company values and surveys', module: 'Engagement', kind: 'boolean', phase: 6 },
   { key: 'helpdesk', name: 'HR helpdesk (Ask HR) and help articles', module: 'Helpdesk', kind: 'boolean', phase: 7 },
   { key: 'announcements', name: 'Announcements with read receipts', module: 'Announcements', kind: 'boolean', phase: 7 },
+  { key: 'email_signatures', name: 'Email signatures, Outlook sync and festival wishes', module: 'Communication', kind: 'boolean', phase: 18 },
   { key: 'automation', name: 'Workflow Automation Studio', module: 'Automation', kind: 'boolean', phase: 8 },
   { key: 'ai_copilot', name: 'SampCrew AI Copilots', module: 'AI', kind: 'boolean', phase: 8 },
   { key: 'workforce_analytics', name: 'Workforce analytics and Ask Anything', module: 'Analytics', kind: 'boolean', phase: 8 },
@@ -36,12 +45,12 @@ export const FEATURES = [
   { key: 'workforce_universe', name: 'Workforce Universe, skills and scenario planning', module: 'Analytics', kind: 'boolean', phase: 11 },
   { key: 'staffing_bids', name: 'Staffing bids, clients, rate cards and proposals', module: 'Staffing bids', kind: 'boolean', phase: 11 },
   { key: 'integrations_advanced', name: 'Advanced integrations and webhooks', module: 'Integrations', kind: 'boolean', phase: 9 },
-  { key: 'global_payroll', name: 'Global payroll provider integrations', module: 'Payroll', kind: 'boolean', phase: 9 },
+  { key: 'global_payroll', name: 'Global payroll provider integrations', module: 'Payroll', kind: 'boolean', phase: 9, planned: true },
   { key: 'multi_entity', name: 'Multiple legal entities and countries', module: 'Organization', kind: 'boolean', phase: 1 },
   { key: 'custom_roles', name: 'Custom roles', module: 'Administration', kind: 'boolean', phase: 1 },
   { key: 'audit_export', name: 'Audit log export', module: 'Administration', kind: 'boolean', phase: 1 },
   { key: 'sso', name: 'Single sign-on (OpenID Connect) and user provisioning (SCIM)', module: 'Security', kind: 'boolean', phase: 10 },
-  { key: 'enterprise_support', name: 'Enterprise support and SLA', module: 'Support', kind: 'boolean', phase: 1 },
+  { key: 'enterprise_support', name: 'Enterprise support and SLA', module: 'Support', kind: 'boolean', phase: 1, planned: true },
   { key: 'max_employees', name: 'Employees included', module: 'Billing', kind: 'limit', phase: 1, unit: 'employees' },
   { key: 'max_legal_entities', name: 'Legal entities', module: 'Organization', kind: 'limit', phase: 1, unit: 'entities' },
   { key: 'ai_credits_monthly', name: 'AI credits per month', module: 'AI', kind: 'limit', phase: 8, unit: 'credits' },
@@ -54,6 +63,9 @@ export type LimitFeatureKey = Extract<(typeof FEATURES)[number], { kind: 'limit'
 
 /** -1 means unlimited. */
 export const UNLIMITED = -1;
+
+/** Plan keys: the four launch plans and any plan SAMPLEDGE creates in the Console. */
+export const PLAN_KEY_PATTERN = /^[a-z][a-z0-9_]{1,39}$/;
 
 export interface PlanTemplate {
   key: 'starter' | 'professional' | 'business' | 'enterprise';
@@ -68,9 +80,9 @@ export interface PlanTemplate {
   limits: Record<LimitFeatureKey, number>;
 }
 
-const STARTER: BooleanFeatureKey[] = ['core_hr', 'leave', 'self_service', 'documents', 'attendance_basic', 'helpdesk', 'announcements', 'crew_iq', 'workforce_universe'];
+const STARTER: BooleanFeatureKey[] = ['core_hr', 'leave', 'self_service', 'documents', 'onboarding', 'attendance_basic', 'helpdesk', 'announcements', 'email_signatures', 'crew_iq', 'workforce_universe'];
 const PROFESSIONAL: BooleanFeatureKey[] = [...STARTER, 'recruitment', 'staffing_bids', 'attendance_advanced', 'shift_scheduling', 'automation', 'custom_roles'];
-const BUSINESS: BooleanFeatureKey[] = [...PROFESSIONAL, 'payroll', 'expenses', 'talent', 'ai_copilot', 'workforce_analytics', 'integrations_advanced', 'multi_entity', 'audit_export'];
+const BUSINESS: BooleanFeatureKey[] = [...PROFESSIONAL, 'payroll', 'expenses', 'performance', 'learning', 'engagement', 'ai_copilot', 'workforce_analytics', 'integrations_advanced', 'multi_entity', 'audit_export'];
 const ENTERPRISE: BooleanFeatureKey[] = [...BUSINESS, 'global_payroll', 'sso', 'enterprise_support'];
 
 export const PLAN_TEMPLATES: readonly PlanTemplate[] = [
@@ -113,9 +125,9 @@ export const PERMISSION_MODULE_FEATURE: Record<string, BooleanFeatureKey> = {
   Recruitment: 'recruitment',
   Payroll: 'payroll',
   Expenses: 'expenses',
-  Performance: 'talent',
-  Learning: 'talent',
-  Engagement: 'talent',
+  Performance: 'performance',
+  Learning: 'learning',
+  Engagement: 'engagement',
   Helpdesk: 'helpdesk',
   Announcements: 'announcements',
   Analytics: 'workforce_analytics',
@@ -130,3 +142,11 @@ export const BOOLEAN_FEATURES = FEATURES.filter((f) => f.kind === 'boolean') as 
 export function isCoreFeature(key: string): boolean {
   return FEATURES.some((f) => f.key === key && 'core' in f && f.core === true);
 }
+
+export const LIMIT_FEATURES = FEATURES.filter((f) => f.kind === 'limit') as readonly Extract<(typeof FEATURES)[number], { kind: 'limit' }>[];
+export const LIMIT_KEYS = LIMIT_FEATURES.map((f) => f.key) as LimitFeatureKey[];
+
+export function isPlannedFeature(key: string): boolean {
+  return FEATURES.some((f) => f.key === key && 'planned' in f && f.planned === true);
+}
+

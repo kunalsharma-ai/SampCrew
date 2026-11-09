@@ -20,7 +20,13 @@ import {
   name,
   paginationQuery,
   password,
+  planCreate,
+  planEntitlementsUpdate,
   planPriceUpdate,
+  planRequestDecision,
+  planUpdate,
+  planKey,
+  LIMIT_KEYS,
   platformCreateTenantRequest,
   platformLoginRequest,
   platformTenantStatusRequest,
@@ -36,6 +42,7 @@ import { Doc } from '../../platform/openapi/openapi';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformService } from './platform.service';
 import { AccessControlsService } from './access-controls.service';
+import { PlansService } from './plans.service';
 import { TenantControlService } from './tenant-control.service';
 import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
 
@@ -44,10 +51,11 @@ const integrationKey = z.enum(PLATFORM_INTEGRATION_KEYS);
 const integrationValues = z.record(z.string(), z.unknown());
 const integrationTest = integrationTestExtras.extend({ values: integrationValues });
 
+const planRequestsQuery = z.object({ status: z.enum(['pending', 'approved', 'declined', 'withdrawn']).optional() });
 const tenantsQuery = paginationQuery.extend({ status: z.enum(['active', 'suspended', 'closed']).optional() });
 const subscriptionOverride = z
   .object({
-    planKey: z.enum(['starter', 'professional', 'business', 'enterprise']).optional(),
+    planKey: planKey.optional(),
     status: z.enum(SUBSCRIPTION_STATUSES).optional(),
     seats: z.number().int().min(1).optional(),
     trialEndsOn: z.iso.date().nullable().optional(),
@@ -58,7 +66,7 @@ const subscriptionOverride = z
     currentPeriodEnd: z.iso.date().optional(),
     cancelAtPeriodEnd: z.boolean().optional(),
     /** Plan limits for this customer only (-1 is unlimited); null goes back to the plan's limit. Merged with the module switches. */
-    limits: z.partialRecord(z.enum(['max_employees', 'max_legal_entities', 'ai_credits_monthly', 'storage_gb']), z.number().int().min(-1).max(10_000_000).nullable()).optional(),
+    limits: z.partialRecord(z.enum(LIMIT_KEYS as [string, ...string[]]), z.number().int().min(-1).max(10_000_000).nullable()).optional(),
   })
   .strict();
 const createAdmin = z.object({ email, fullName: name, role: z.enum(PLATFORM_ROLES), password });
@@ -121,7 +129,12 @@ export class PlatformAuthController {
 
 @Controller('platform')
 export class PlatformController {
-  constructor(private readonly platform: PlatformService, private readonly access: AccessControlsService, private readonly control: TenantControlService) {}
+  constructor(
+    private readonly platform: PlatformService,
+    private readonly access: AccessControlsService,
+    private readonly control: TenantControlService,
+    private readonly plansService: PlansService,
+  ) {}
 
   @PlatformRealm('access:manage')
   @Put('tenants/:id/access/apps')
@@ -304,9 +317,69 @@ export class PlatformController {
 
   @PlatformRealm('billing:read')
   @Get('plans')
-  @Doc({ summary: 'Plans with prices, entitlements and tenant counts' })
+  @Doc({ summary: 'Plans with prices, the modules and limits each includes, workspace counts and open requests' })
   plans() {
-    return this.platform.plans();
+    return this.plansService.list();
+  }
+
+  @PlatformRealm('plans:manage')
+  @Post('plans')
+  @Doc({ summary: 'Create a plan, empty (foundation only, zero limits) or as a copy of another plan', body: planCreate })
+  createPlan(@Body(new ZodPipe(planCreate)) body: z.infer<typeof planCreate>) {
+    return this.plansService.create(body);
+  }
+
+  @PlatformRealm('plans:manage')
+  @Patch('plans/:key')
+  @Doc({ summary: 'Change a plan\'s name, tagline, minimum seats, quote-only or whether workspace admins can see it', body: planUpdate })
+  updatePlan(@Param('key') key: string, @Body(new ZodPipe(planUpdate)) body: z.infer<typeof planUpdate>) {
+    return this.plansService.update(key, body);
+  }
+
+  @PlatformRealm('plans:manage')
+  @Put('plans/:key/entitlements')
+  @Doc({ summary: 'Set the modules and limits a plan includes. Applies at once to every workspace on the plan.', body: planEntitlementsUpdate })
+  planEntitlements(@Param('key') key: string, @Body(new ZodPipe(planEntitlementsUpdate)) body: z.infer<typeof planEntitlementsUpdate>) {
+    return this.plansService.setEntitlements(key, body);
+  }
+
+  @PlatformRealm('plans:manage')
+  @Post('plans/:key/archive')
+  @HttpCode(200)
+  @Doc({ summary: 'Stop offering a plan (workspaces on it keep it; open requests for it are declined)' })
+  archivePlan(@Param('key') key: string) {
+    return this.plansService.setArchived(key, true);
+  }
+
+  @PlatformRealm('plans:manage')
+  @Post('plans/:key/restore')
+  @HttpCode(200)
+  @Doc({ summary: 'Offer an archived plan again' })
+  restorePlan(@Param('key') key: string) {
+    return this.plansService.setArchived(key, false);
+  }
+
+  @PlatformRealm('plans:manage')
+  @Delete('plans/:key')
+  @HttpCode(204)
+  @Doc({ summary: 'Delete a plan no workspace has ever been on' })
+  async deletePlan(@Param('key') key: string) {
+    await this.plansService.remove(key);
+  }
+
+  @PlatformRealm('billing:read')
+  @Get('plan-requests')
+  @Doc({ summary: 'Plan requests from workspace admins (pending first)', query: planRequestsQuery })
+  planRequests(@Query(new ZodPipe(planRequestsQuery)) q: z.infer<typeof planRequestsQuery>) {
+    return this.plansService.requests(q.status);
+  }
+
+  @PlatformRealm('plans:manage')
+  @Post('plan-requests/:id/decision')
+  @HttpCode(200)
+  @Doc({ summary: 'Approve (the plan is applied to the workspace) or decline a plan request', body: planRequestDecision })
+  decidePlanRequest(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(planRequestDecision)) body: z.infer<typeof planRequestDecision>) {
+    return this.plansService.decide(id, body.decision, body.note);
   }
 
   @PlatformRealm('plans:manage')

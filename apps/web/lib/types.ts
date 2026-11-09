@@ -69,7 +69,7 @@ export interface Employee {
 }
 export interface EmployeeProfile extends Employee {
   isSelf: boolean;
-  can: { update: boolean; updateOwn: boolean; viewSensitive: boolean; lifecycle: boolean; readDocuments: boolean; manageDocuments: boolean; readLeave: boolean };
+  can: { update: boolean; updateOwn: boolean; viewSensitive: boolean; lifecycle: boolean; readDocuments: boolean; manageDocuments: boolean; readLeave: boolean; onboarding?: boolean };
 }
 export interface Designation { id: string; name: string; code: string | null; level: number | null; employeeCount: number }
 export interface JobRecord { id: string; effectiveFrom: string; effectiveTo: string | null; reason: string; note: string | null; legalEntityName: string | null; departmentName: string | null; locationName: string | null; designationName: string | null; managerName: string | null; grade: string | null; employmentType: string; scheduled: boolean }

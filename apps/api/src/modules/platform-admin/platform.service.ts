@@ -226,21 +226,6 @@ export class PlatformService {
     });
   }
 
-  plans() {
-    return this.db.platform(async (tx) => {
-      const plans = await many<{ id: string }>(tx, 'select id, key, name, tagline, quote_only as "quoteOnly", minimum_seats as "minimumSeats", is_public as "isPublic" from plans order by sort_order');
-      const prices = await many<{ plan_id: string }>(tx, 'select plan_id, currency, monthly_per_seat::text as monthly, annual_per_seat_month::text as "annualPerMonth" from plan_prices order by currency');
-      const features = await many<{ plan_id: string }>(tx, 'select plan_id, feature_key as key, limit_value as "limitValue" from plan_features order by feature_key');
-      const counts = await many<{ plan_id: string; n: number }>(tx, 'select plan_id, count(*)::int as n from subscriptions group by plan_id');
-      return plans.map((p) => ({
-        ...p,
-        prices: prices.filter((x) => x.plan_id === p.id).map(({ plan_id: _p, ...rest }) => rest),
-        features: features.filter((x) => x.plan_id === p.id).map(({ plan_id: _p, ...rest }) => rest),
-        tenants: counts.find((c) => c.plan_id === p.id)?.n ?? 0,
-      }));
-    });
-  }
-
   async setPrice(planKey: string, input: { currency: string; monthly: string; annualPerMonth: string }) {
     return this.db.platform(async (tx) => {
       const plan = await one<{ id: string }>(tx, 'select id from plans where key = $1', [planKey]);

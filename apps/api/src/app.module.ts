@@ -52,6 +52,7 @@ import { PlatformAuthController, PlatformController, PlatformIntegrationsControl
 import { PlatformAuthService } from './modules/platform-admin/platform-auth.service';
 import { PlatformService } from './modules/platform-admin/platform.service';
 import { AccessControlsService } from './modules/platform-admin/access-controls.service';
+import { PlansService } from './modules/platform-admin/plans.service';
 import { TenantControlService } from './modules/platform-admin/tenant-control.service';
 import { RolesController } from './modules/roles/roles.controller';
 import { RolesService } from './modules/roles/roles.service';
@@ -77,7 +78,7 @@ import { EngagementService } from './modules/talent/engagement.service';
 import { GoalsService } from './modules/talent/goals.service';
 import { LearningService } from './modules/talent/learning.service';
 import { ReviewsService } from './modules/talent/reviews.service';
-import { EngagementController, GoalsController, LearningController, ReviewsController } from './modules/talent/talent.controller';
+import { EngagementController, GoalsController, LearningController, ReviewsController, TalentPeopleController } from './modules/talent/talent.controller';
 import { AnnouncementsService } from './modules/helpdesk/announcements.service';
 import { AnnouncementsController, HelpdeskController } from './modules/helpdesk/helpdesk.controller';
 import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
@@ -169,6 +170,7 @@ export const CONTROLLERS = [
   ReceiptFilesController,
   GoalsController,
   ReviewsController,
+  TalentPeopleController,
   LearningController,
   EngagementController,
   HelpdeskController,
@@ -217,6 +219,7 @@ export const CONTROLLERS = [
     PlatformAuthService,
     PlatformService,
     AccessControlsService,
+    PlansService,
     TenantControlService,
     NotificationService,
     PlatformIntegrationsService,

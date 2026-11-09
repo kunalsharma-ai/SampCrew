@@ -32,7 +32,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
     if (err instanceof ApiError && err.status === 404) notFound();
     return load<never>(`/employees/${id}`);
   }
-  const tabs = TABS.filter((t) => (t.key === 'documents' ? e.can.readDocuments : t.key === 'leave' ? e.can.readLeave : true));
+  const tabs = TABS.filter((t) => (t.key === 'documents' ? e.can.readDocuments : t.key === 'leave' ? e.can.readLeave : t.key === 'onboarding' ? e.can.onboarding !== false : true));
   const tab = tabs.find((t) => t.key === rawTab)?.key ?? 'overview';
 
   let content: React.ReactNode;

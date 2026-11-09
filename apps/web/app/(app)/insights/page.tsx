@@ -23,7 +23,7 @@ export default async function InsightsPage() {
       <ModuleOverview module="analytics" actions={allowed(me, [
         { label: 'Attrition risk', href: '/insights/attrition', icon: 'trending-down', permission: 'insights:attrition', feature: 'workforce_analytics' },
         { label: 'Workforce Universe', href: '/insights/universe', icon: 'orbit', permission: 'employees:read', feature: 'workforce_universe' },
-        { label: 'Survey results', href: '/surveys/manage', icon: 'chart', permission: 'engagement:manage', feature: 'talent' },
+        { label: 'Survey results', href: '/surveys/manage', icon: 'chart', permission: 'engagement:manage', feature: 'engagement' },
         { label: 'Automation Studio', href: '/automation', icon: 'workflow', permission: 'automation:manage', feature: 'automation' },
       ])} />
     </>

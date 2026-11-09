@@ -74,8 +74,8 @@ export class OverviewService {
         case 'recruitment': need('recruitment', 'requisitions:read'); return done(...(await this.recruitment(tx, today)));
         case 'leave': need('leave', 'leave:read'); return done(...(await this.leave(tx, today)));
         case 'payroll': need('payroll', 'payroll:read'); return done(...(await this.payroll(tx, today)));
-        case 'performance': need('talent', 'performance:read'); return done(...(await this.performance(tx, today)));
-        case 'learning': need('talent', 'learning:read'); return done(...(await this.learning(tx, today)));
+        case 'performance': need('performance', 'performance:read'); return done(...(await this.performance(tx, today)));
+        case 'learning': need('learning', 'learning:read'); return done(...(await this.learning(tx, today)));
         case 'analytics': need(null, 'employees:read'); return done(...(await this.analytics(tx, s, features, today)));
         default: throw Errors.notFound('Overview');
       }

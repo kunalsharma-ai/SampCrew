@@ -4,8 +4,13 @@ import type { Pool, PoolClient } from 'pg';
 /**
  * Upserts the feature catalogue and default plans. Safe to run on every deploy.
  * Prices are only inserted when missing so that changes made in the Super Admin Console are kept.
+ * A plan SAMPLEDGE changed in the Console (plans.customised_at) keeps its name, contents and limits; it only
+ * receives the template's modules that are new to the catalogue in this sync, so a new module still reaches
+ * the plans it is meant for. Plans created in the Console are never touched.
  */
 export async function syncCatalogue(db: Pool | PoolClient): Promise<void> {
+  const known = new Set((await db.query<{ key: string }>('select key from features')).rows.map((r) => r.key));
+  const fresh = new Set(FEATURES.map((f) => f.key as string).filter((k) => !known.has(k)));
   for (const f of FEATURES) {
     await db.query(
       `insert into features (key, name, module, kind, unit) values ($1, $2, $3, $4, $5)
@@ -14,6 +19,16 @@ export async function syncCatalogue(db: Pool | PoolClient): Promise<void> {
     );
   }
   for (const p of PLAN_TEMPLATES) {
+    const existing = (await db.query<{ id: string; customised: boolean }>('select id, customised_at is not null as customised from plans where key = $1', [p.key])).rows[0];
+    if (existing?.customised) {
+      for (const key of p.features.filter((k) => fresh.has(k))) {
+        await db.query('insert into plan_features (plan_id, feature_key) values ($1, $2) on conflict do nothing', [existing.id, key]);
+      }
+      for (const [key, value] of Object.entries(p.limits).filter(([k]) => fresh.has(k))) {
+        await db.query('insert into plan_features (plan_id, feature_key, limit_value) values ($1, $2, $3) on conflict do nothing', [existing.id, key, value]);
+      }
+      continue;
+    }
     const { rows } = await db.query<{ id: string }>(
       `insert into plans (key, name, tagline, sort_order, minimum_seats, quote_only) values ($1, $2, $3, $4, $5, $6)
        on conflict (key) do update set name = excluded.name, tagline = excluded.tagline, sort_order = excluded.sort_order,

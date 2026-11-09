@@ -364,6 +364,7 @@ export class EmployeesService {
           readDocuments: features.has('documents') && covers('documents:read'),
           manageDocuments: features.has('documents') && covers('documents:manage'),
           readLeave: features.has('leave') && covers('leave:read'),
+          onboarding: features.has('onboarding'),
         },
       };
     });
@@ -448,7 +449,7 @@ export class EmployeesService {
       }
 
       let performance = null;
-      if (f.has('talent') && covers('performance:read')) {
+      if (f.has('performance') && covers('performance:read')) {
         const goals = await many<{ title: string; status: string; progress: string; confidence: string | null; periodEnd: string; updatedAt: string }>(
           tx,
           `select title, status, progress::text, confidence, to_char(period_end, 'YYYY-MM-DD') as "periodEnd", updated_at as "updatedAt" from goals
@@ -476,7 +477,7 @@ export class EmployeesService {
       }
 
       let learning = null;
-      if (f.has('talent') && covers('learning:read')) {
+      if (f.has('learning') && covers('learning:read')) {
         const r = (await one<Record<string, number>>(
           tx,
           `select count(*) filter (where status in ('assigned', 'in_progress'))::int as open, count(*) filter (where status = 'completed')::int as completed,
@@ -494,7 +495,7 @@ export class EmployeesService {
 
       // Recognition is posted to the whole workspace, so anyone who may see the employee may see what they received.
       let recognition = null;
-      if (f.has('talent')) {
+      if (f.has('engagement')) {
         const recent = await many<{ from: string; value: string | null; message: string; createdAt: string }>(
           tx,
           `select coalesce(f.preferred_name, f.first_name) || ' ' || f.last_name as "from", v.name as value, r.message, r.created_at as "createdAt"
@@ -634,7 +635,9 @@ export class EmployeesService {
       }
       await this.registerAttendance(tx, row.id, { defaultShiftId: input.defaultShiftId ?? null, enrolments: input.attendanceEnrolments ?? [] }, true);
 
-      const templateId = input.onboardingTemplateId === undefined
+      // Onboarding checklists are a plan module: without it the joiner is hired with no checklist.
+      const onboardingOn = (await this.entitlements.current(tx)).features.has('onboarding');
+      const templateId = !onboardingOn ? undefined : input.onboardingTemplateId === undefined
         ? (await one<{ id: string }>(tx, 'select id from onboarding_templates where is_default and archived_at is null'))?.id
         : input.onboardingTemplateId;
       if (templateId) await this.onboarding.instantiate(tx, row.id, templateId);

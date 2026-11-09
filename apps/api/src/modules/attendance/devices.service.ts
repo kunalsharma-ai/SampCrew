@@ -8,6 +8,7 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
 import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { AttendanceDaysService, EVENT_EMPLOYEE } from './attendance-days.service';
@@ -319,6 +320,11 @@ export class DevicesService {
     if (!ipAllowed(d.allowed_ips, ip)) {
       await refuse('address not on the allowed list', 'Connection from an address not on the allowed list');
       throw Errors.forbidden('Address not allowed for this device');
+    }
+    // Biometric and machine integrations are a plan module (attendance_advanced).
+    if (!(await this.db.tenant((tx) => loadEntitlements(tx), { tenantId: d.tenant_id })).features.has('attendance_advanced')) {
+      await refuse('attendance devices are not in the workspace plan', 'Refused: attendance devices are not included in the workspace plan');
+      throw Errors.featureNotInPlan('Geofencing, kiosks, biometric devices');
     }
     if (d.paused_at || d.vendor_off) {
       const why = d.paused_at ? 'machine paused by SAMPLEDGE' : 'machine integration switched off by SAMPLEDGE';

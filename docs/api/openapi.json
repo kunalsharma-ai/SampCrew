@@ -3528,6 +3528,124 @@
         }
       }
     },
+    "/api/v1/audit-events/export.csv": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Download the audit trail as CSV with the same filters as the search (newest first, up to 50,000 events; the export itself is audited)",
+        "description": "Requires permission `audit:read`.\n\nRequires plan feature `audit_export`.",
+        "operationId": "Audit_exportCsv",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "resourceType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "actorId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/audit-events/verify": {
       "get": {
         "tags": [
@@ -3638,12 +3756,7 @@
                 "properties": {
                   "planKey": {
                     "type": "string",
-                    "enum": [
-                      "starter",
-                      "professional",
-                      "business",
-                      "enterprise"
-                    ]
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
                   },
                   "billingCycle": {
                     "type": "string",
@@ -3674,6 +3787,143 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/plan-requests": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Requests this workspace sent SAMPLEDGE for a quote-only plan, with their answers",
+        "description": "Requires permission `billing:read`.",
+        "operationId": "Billing_planRequests",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Ask SAMPLEDGE for a quote-only plan (such as Enterprise). SAMPLEDGE approves it in the Console and the plan is applied.",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_requestPlan",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "planKey": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  },
+                  "seats": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000
+                  },
+                  "billingCycle": {
+                    "type": "string",
+                    "enum": [
+                      "monthly",
+                      "annual"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "planKey",
+                  "seats",
+                  "billingCycle"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/plan-requests/{id}/withdraw": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Withdraw a plan request SAMPLEDGE has not answered yet",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_withdrawPlanRequest",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
@@ -6206,7 +6456,7 @@
           "Onboarding"
         ],
         "summary": "Onboarding checklist templates",
-        "description": "Requires permission `employees:create`.",
+        "description": "Requires permission `employees:create`.\n\nRequires plan feature `onboarding`.",
         "operationId": "Onboarding_templates",
         "security": [
           {
@@ -6234,7 +6484,7 @@
           "Onboarding"
         ],
         "summary": "Create an onboarding template",
-        "description": "Requires permission `employees:create`.",
+        "description": "Requires permission `employees:create`.\n\nRequires plan feature `onboarding`.",
         "operationId": "Onboarding_create",
         "security": [
           {
@@ -6332,7 +6582,7 @@
           "Onboarding"
         ],
         "summary": "Replace an onboarding template (existing checklists are not changed)",
-        "description": "Requires permission `employees:create`.",
+        "description": "Requires permission `employees:create`.\n\nRequires plan feature `onboarding`.",
         "operationId": "Onboarding_update",
         "security": [
           {
@@ -6438,7 +6688,7 @@
           "Onboarding"
         ],
         "summary": "Archive an onboarding template",
-        "description": "Requires permission `employees:create`.",
+        "description": "Requires permission `employees:create`.\n\nRequires plan feature `onboarding`.",
         "operationId": "Onboarding_archive",
         "security": [
           {
@@ -6478,6 +6728,7 @@
           "Onboarding"
         ],
         "summary": "An employee's onboarding checklist",
+        "description": "Requires plan feature `onboarding`.",
         "operationId": "Onboarding_forEmployee",
         "security": [
           {
@@ -6517,6 +6768,7 @@
           "Onboarding"
         ],
         "summary": "Open onboarding tasks assigned to you",
+        "description": "Requires plan feature `onboarding`.",
         "operationId": "Onboarding_mine",
         "security": [
           {
@@ -6546,6 +6798,7 @@
           "Onboarding"
         ],
         "summary": "Complete, skip or reopen a task (assignee, or someone who manages the employee)",
+        "description": "Requires plan feature `onboarding`.",
         "operationId": "Onboarding_setStatus",
         "security": [
           {
@@ -6944,6 +7197,7 @@
           "Signatures"
         ],
         "summary": "Your signature: chosen design, your changes, the merged details, sync mode and connected computers",
+        "description": "Requires plan feature `email_signatures`.",
         "operationId": "Signatures_mine",
         "security": [
           {
@@ -6971,6 +7225,7 @@
           "Signatures"
         ],
         "summary": "Save your design, your changes and (if your company allows it) how your computers keep it up to date",
+        "description": "Requires plan feature `email_signatures`.",
         "operationId": "Signatures_save",
         "security": [
           {
@@ -7426,6 +7681,7 @@
           "Signatures"
         ],
         "summary": "Ask your computers to install the signature again at their next check",
+        "description": "Requires plan feature `email_signatures`.",
         "operationId": "Signatures_requestSync",
         "security": [
           {
@@ -7455,6 +7711,7 @@
           "Signatures"
         ],
         "summary": "Connect a Windows computer: returns its setup file once (it contains the computer's own token)",
+        "description": "Requires plan feature `email_signatures`.",
         "operationId": "Signatures_addAgent",
         "security": [
           {
@@ -7506,6 +7763,7 @@
           "Signatures"
         ],
         "summary": "Disconnect one of your computers",
+        "description": "Requires plan feature `email_signatures`.",
         "operationId": "Signatures_revokeMine",
         "security": [
           {
@@ -7545,6 +7803,7 @@
           "Signatures"
         ],
         "summary": "The company logo used in signatures",
+        "description": "Requires plan feature `email_signatures`.",
         "operationId": "Signatures_logo",
         "security": [
           {
@@ -7574,7 +7833,7 @@
           "Signatures"
         ],
         "summary": "Company signature settings",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_settings",
         "security": [
           {
@@ -7602,7 +7861,7 @@
           "Signatures"
         ],
         "summary": "Save the company signature settings",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_saveSettings",
         "security": [
           {
@@ -7831,7 +8090,7 @@
           "Signatures"
         ],
         "summary": "Set the company logo for signatures (multipart/form-data: file). PNG or JPEG up to 1 MB.",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_setLogo",
         "security": [
           {
@@ -7859,7 +8118,7 @@
           "Signatures"
         ],
         "summary": "Remove the company logo from signatures",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_removeLogo",
         "security": [
           {
@@ -7889,7 +8148,7 @@
           "Signatures"
         ],
         "summary": "Everyone's signature design and connected computers, with their last sync",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_overview",
         "security": [
           {
@@ -7919,7 +8178,7 @@
           "Signatures"
         ],
         "summary": "Company festival, celebration and custom banners for signatures",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_banners",
         "security": [
           {
@@ -7947,7 +8206,7 @@
           "Signatures"
         ],
         "summary": "Add a festival from the library (in your own words) or a custom banner with its own dates",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_createBanner",
         "security": [
           {
@@ -8120,7 +8379,7 @@
           "Signatures"
         ],
         "summary": "Change a banner",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_updateBanner",
         "security": [
           {
@@ -8301,7 +8560,7 @@
           "Signatures"
         ],
         "summary": "Delete a banner",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_deleteBanner",
         "security": [
           {
@@ -8341,7 +8600,7 @@
           "Signatures"
         ],
         "summary": "Set a banner image (multipart/form-data: file). PNG, JPEG or GIF up to 1 MB.",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_setBannerImage",
         "security": [
           {
@@ -8379,7 +8638,7 @@
           "Signatures"
         ],
         "summary": "Remove a banner image (the banner shows as a coloured strip instead)",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_removeBannerImage",
         "security": [
           {
@@ -8417,6 +8676,7 @@
           "Signatures"
         ],
         "summary": "A banner image, for the signature preview",
+        "description": "Requires plan feature `email_signatures`.",
         "operationId": "Signatures_bannerImage",
         "security": [
           {
@@ -8456,7 +8716,7 @@
           "Signatures"
         ],
         "summary": "Disconnect anyone's computer",
-        "description": "Requires permission `org:manage`.",
+        "description": "Requires permission `org:manage`.\n\nRequires plan feature `email_signatures`.",
         "operationId": "Signatures_revoke",
         "security": [
           {
@@ -24031,7 +24291,7 @@
           "Goals"
         ],
         "summary": "Goals: the caller's own (with weighted progress), one person's, or their team's",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Goals_list",
         "security": [
           {
@@ -24097,7 +24357,7 @@
           "Goals"
         ],
         "summary": "Set a goal for yourself, or for someone you manage",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Goals_create",
         "security": [
           {
@@ -24226,7 +24486,7 @@
           "Goals"
         ],
         "summary": "Active goals a new goal can support (the owner's and their managers')",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Goals_alignable",
         "security": [
           {
@@ -24268,7 +24528,7 @@
           "Goals"
         ],
         "summary": "A goal with key results, check-ins and the goals it supports or is supported by",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Goals_get",
         "security": [
           {
@@ -24306,7 +24566,7 @@
           "Goals"
         ],
         "summary": "Change an active goal and its key results",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Goals_update",
         "security": [
           {
@@ -24443,7 +24703,7 @@
           "Goals"
         ],
         "summary": "Delete a goal that has no check-ins and supports nothing",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Goals_remove",
         "security": [
           {
@@ -24483,7 +24743,7 @@
           "Goals"
         ],
         "summary": "Record progress: new key result values (or overall progress) and confidence",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Goals_checkin",
         "security": [
           {
@@ -24580,7 +24840,7 @@
           "Goals"
         ],
         "summary": "Complete, cancel or reopen a goal",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Goals_status",
         "security": [
           {
@@ -24649,7 +24909,7 @@
           "Reviews"
         ],
         "summary": "Review cycles with progress",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_cycles",
         "security": [
           {
@@ -24677,7 +24937,7 @@
           "Reviews"
         ],
         "summary": "Create a draft review cycle",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_createCycle",
         "security": [
           {
@@ -24849,7 +25109,7 @@
           "Reviews"
         ],
         "summary": "A review cycle: every review, rating distributions, and (for a draft) who it would include",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_cycle",
         "security": [
           {
@@ -24887,7 +25147,7 @@
           "Reviews"
         ],
         "summary": "Change a draft review cycle",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_updateCycle",
         "security": [
           {
@@ -25067,7 +25327,7 @@
           "Reviews"
         ],
         "summary": "Delete a draft review cycle",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_removeCycle",
         "security": [
           {
@@ -25107,7 +25367,7 @@
           "Reviews"
         ],
         "summary": "Launch a cycle: creates a review for everyone it includes and notifies them and their managers",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_launch",
         "security": [
           {
@@ -25147,7 +25407,7 @@
           "Reviews"
         ],
         "summary": "Close writing and start calibration (every manager review must be in)",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_calibration",
         "security": [
           {
@@ -25187,7 +25447,7 @@
           "Reviews"
         ],
         "summary": "Release results to employees. Released reviews cannot change.",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_release",
         "security": [
           {
@@ -25227,7 +25487,7 @@
           "Reviews"
         ],
         "summary": "The caller's reviews, the reviews they write as a manager, or feedback requested from them",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_list",
         "security": [
           {
@@ -25273,7 +25533,7 @@
           "Reviews"
         ],
         "summary": "A review, showing only what the caller may see at this stage",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_get",
         "security": [
           {
@@ -25313,7 +25573,7 @@
           "Reviews"
         ],
         "summary": "Save or submit your self review",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_writeSelf",
         "security": [
           {
@@ -25395,7 +25655,7 @@
           "Reviews"
         ],
         "summary": "Save or submit the manager review (the reviewing manager only)",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_writeManager",
         "security": [
           {
@@ -25477,7 +25737,7 @@
           "Reviews"
         ],
         "summary": "Ask colleagues for 360 feedback",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_requestFeedback",
         "security": [
           {
@@ -25543,7 +25803,7 @@
           "Reviews"
         ],
         "summary": "Withdraw a feedback request that has not been answered",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_withdrawFeedback",
         "security": [
           {
@@ -25591,7 +25851,7 @@
           "Reviews"
         ],
         "summary": "Change the final rating during calibration, with a reason",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_calibrate",
         "security": [
           {
@@ -25658,7 +25918,7 @@
           "Reviews"
         ],
         "summary": "Leave someone out of a cycle, with a reason (for example a long leave)",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_exclude",
         "security": [
           {
@@ -25719,7 +25979,7 @@
           "Reviews"
         ],
         "summary": "Change who writes the manager review",
-        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:configure`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_reviewer",
         "security": [
           {
@@ -25787,7 +26047,7 @@
           "Reviews"
         ],
         "summary": "Acknowledge your released review, with an optional comment",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_acknowledge",
         "security": [
           {
@@ -25845,7 +26105,7 @@
           "Reviews"
         ],
         "summary": "A feedback request addressed to the caller",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_feedback",
         "security": [
           {
@@ -25883,7 +26143,7 @@
           "Reviews"
         ],
         "summary": "Save or submit feedback on a colleague",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_writeFeedback",
         "security": [
           {
@@ -25952,7 +26212,7 @@
           "Reviews"
         ],
         "summary": "Decline a feedback request",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_declineFeedback",
         "security": [
           {
@@ -25992,7 +26252,7 @@
           "Reviews"
         ],
         "summary": "Find current colleagues by name (name and department only), to ask for feedback or recognise them",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `performance:read`.\n\nRequires plan feature `performance`.",
         "operationId": "Reviews_colleagues",
         "security": [
           {
@@ -26031,11 +26291,11 @@
     "/api/v1/talent/people": {
       "get": {
         "tags": [
-          "Reviews"
+          "TalentPeople"
         ],
-        "summary": "People the caller manages for performance or learning (empty without that permission)",
-        "description": "Requires permission `performance:read`.\n\nRequires plan feature `talent`.",
-        "operationId": "Reviews_managed",
+        "summary": "People the caller manages for performance or learning (empty without that permission). Needs the module asked for.",
+        "description": "Requires permission `performance:read`.",
+        "operationId": "TalentPeople_managed",
         "security": [
           {
             "bearer": []
@@ -26078,7 +26338,7 @@
           "Learning"
         ],
         "summary": "The course catalogue, with the caller's own status for each course",
-        "description": "Requires permission `learning:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_courses",
         "security": [
           {
@@ -26120,7 +26380,7 @@
           "Learning"
         ],
         "summary": "Add a course to the catalogue",
-        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_createCourse",
         "security": [
           {
@@ -26234,7 +26494,7 @@
           "Learning"
         ],
         "summary": "Change a course",
-        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_updateCourse",
         "security": [
           {
@@ -26356,7 +26616,7 @@
           "Learning"
         ],
         "summary": "Archive a course (existing records are kept)",
-        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_archiveCourse",
         "security": [
           {
@@ -26396,7 +26656,7 @@
           "Learning"
         ],
         "summary": "Enrol yourself in a course open for self-enrolment",
-        "description": "Requires permission `learning:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_enrol",
         "security": [
           {
@@ -26436,7 +26696,7 @@
           "Learning"
         ],
         "summary": "Learning paths and their courses",
-        "description": "Requires permission `learning:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_paths",
         "security": [
           {
@@ -26464,7 +26724,7 @@
           "Learning"
         ],
         "summary": "Create a learning path",
-        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_createPath",
         "security": [
           {
@@ -26531,7 +26791,7 @@
           "Learning"
         ],
         "summary": "Change a learning path",
-        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_updatePath",
         "security": [
           {
@@ -26606,7 +26866,7 @@
           "Learning"
         ],
         "summary": "Archive a learning path",
-        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:configure`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_archivePath",
         "security": [
           {
@@ -26646,7 +26906,7 @@
           "Learning"
         ],
         "summary": "The caller's learning, or their team's (with overdue and expired flags)",
-        "description": "Requires permission `learning:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_assignments",
         "security": [
           {
@@ -26714,7 +26974,7 @@
           "Learning"
         ],
         "summary": "Assign a course or learning path to people in your scope",
-        "description": "Requires permission `learning:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:manage`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_assign",
         "security": [
           {
@@ -26793,7 +27053,7 @@
           "Learning"
         ],
         "summary": "Start an assigned course",
-        "description": "Requires permission `learning:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_start",
         "security": [
           {
@@ -26833,7 +27093,7 @@
           "Learning"
         ],
         "summary": "Record completion (classroom courses are confirmed by a manager or HR)",
-        "description": "Requires permission `learning:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_complete",
         "security": [
           {
@@ -26896,7 +27156,7 @@
           "Learning"
         ],
         "summary": "Remove an assignment that is not complete",
-        "description": "Requires permission `learning:read`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
         "operationId": "Learning_cancel",
         "security": [
           {
@@ -26957,7 +27217,7 @@
           "Engagement"
         ],
         "summary": "Surveys with invitation and response counts",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_surveys",
         "security": [
           {
@@ -26985,7 +27245,7 @@
           "Engagement"
         ],
         "summary": "Create a draft anonymous survey",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_createSurvey",
         "security": [
           {
@@ -27119,7 +27379,7 @@
           "Engagement"
         ],
         "summary": "A survey and its questions",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_survey",
         "security": [
           {
@@ -27157,7 +27417,7 @@
           "Engagement"
         ],
         "summary": "Change a draft survey",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_updateSurvey",
         "security": [
           {
@@ -27299,7 +27559,7 @@
           "Engagement"
         ],
         "summary": "Delete a draft survey",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_removeSurvey",
         "security": [
           {
@@ -27339,7 +27599,7 @@
           "Engagement"
         ],
         "summary": "Open a survey: invites its audience (which must be at least the anonymity threshold)",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_open",
         "security": [
           {
@@ -27379,7 +27639,7 @@
           "Engagement"
         ],
         "summary": "Close a survey",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_close",
         "security": [
           {
@@ -27419,7 +27679,7 @@
           "Engagement"
         ],
         "summary": "Anonymous results, withheld below the threshold; small groups are merged or withheld",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_results",
         "security": [
           {
@@ -27459,7 +27719,7 @@
           "Engagement"
         ],
         "summary": "Surveys the caller is invited to",
-        "description": "Requires permission `surveys:respond`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `surveys:respond`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_mySurveys",
         "security": [
           {
@@ -27489,7 +27749,7 @@
           "Engagement"
         ],
         "summary": "The questions of a survey the caller is invited to",
-        "description": "Requires permission `surveys:respond`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `surveys:respond`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_form",
         "security": [
           {
@@ -27529,7 +27789,7 @@
           "Engagement"
         ],
         "summary": "Answer a survey once. The answer is stored without your name.",
-        "description": "Requires permission `surveys:respond`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `surveys:respond`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_respond",
         "security": [
           {
@@ -27605,7 +27865,7 @@
           "Engagement"
         ],
         "summary": "The recognition wall, newest first (50 at a time)",
-        "description": "Requires permission `recognition:give`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `recognition:give`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_feed",
         "security": [
           {
@@ -27655,7 +27915,7 @@
           "Engagement"
         ],
         "summary": "Recognise a colleague",
-        "description": "Requires permission `recognition:give`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `recognition:give`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_give",
         "security": [
           {
@@ -27725,7 +27985,7 @@
           "Engagement"
         ],
         "summary": "Hide a recognition from the wall, with a reason",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_hide",
         "security": [
           {
@@ -27786,7 +28046,7 @@
           "Engagement"
         ],
         "summary": "Company values used to tag recognition",
-        "description": "Requires permission `recognition:give`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `recognition:give`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_values",
         "security": [
           {
@@ -27828,7 +28088,7 @@
           "Engagement"
         ],
         "summary": "Add a company value",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_createValue",
         "security": [
           {
@@ -27884,7 +28144,7 @@
           "Engagement"
         ],
         "summary": "Change a company value",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_updateValue",
         "security": [
           {
@@ -27948,7 +28208,7 @@
           "Engagement"
         ],
         "summary": "Archive a company value",
-        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `talent`.",
+        "description": "Requires permission `engagement:manage`.\n\nRequires plan feature `engagement`.",
         "operationId": "Engagement_archiveValue",
         "security": [
           {
@@ -36397,12 +36657,7 @@
                   },
                   "planKey": {
                     "type": "string",
-                    "enum": [
-                      "starter",
-                      "professional",
-                      "business",
-                      "enterprise"
-                    ]
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
                   },
                   "seats": {
                     "type": "integer",
@@ -36602,12 +36857,7 @@
                 "properties": {
                   "planKey": {
                     "type": "string",
-                    "enum": [
-                      "starter",
-                      "professional",
-                      "business",
-                      "enterprise"
-                    ]
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
                   },
                   "status": {
                     "type": "string",
@@ -36833,7 +37083,7 @@
         "tags": [
           "Platform: "
         ],
-        "summary": "Plans with prices, entitlements and tenant counts",
+        "summary": "Plans with prices, the modules and limits each includes, workspace counts and open requests",
         "description": "SAMPLEDGE platform realm (console token, MFA required).",
         "operationId": "Platform_plans",
         "security": [
@@ -36841,6 +37091,479 @@
             "platformBearer": []
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Create a plan, empty (foundation only, zero limits) or as a copy of another plan",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_createPlan",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                  },
+                  "tagline": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "minimumSeats": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  "quoteOnly": {
+                    "type": "boolean"
+                  },
+                  "isPublic": {
+                    "type": "boolean"
+                  },
+                  "sortOrder": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000
+                  },
+                  "copyFrom": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  }
+                },
+                "required": [
+                  "key",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plans/{key}": {
+      "patch": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Change a plan's name, tagline, minimum seats, quote-only or whether workspace admins can see it",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_updatePlan",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                  },
+                  "tagline": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "minimumSeats": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  "quoteOnly": {
+                    "type": "boolean"
+                  },
+                  "isPublic": {
+                    "type": "boolean"
+                  },
+                  "sortOrder": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Delete a plan no workspace has ever been on",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_deletePlan",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plans/{key}/entitlements": {
+      "put": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Set the modules and limits a plan includes. Applies at once to every workspace on the plan.",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_planEntitlements",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "features": {
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]*$"
+                    }
+                  },
+                  "limits": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "max_employees",
+                        "max_legal_entities",
+                        "ai_credits_monthly",
+                        "storage_gb"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": -1,
+                      "maximum": 10000000
+                    }
+                  }
+                },
+                "required": [
+                  "features",
+                  "limits"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plans/{key}/archive": {
+      "post": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Stop offering a plan (workspaces on it keep it; open requests for it are declined)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_archivePlan",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plans/{key}/restore": {
+      "post": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Offer an archived plan again",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_restorePlan",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plan-requests": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Plan requests from workspace admins (pending first)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_planRequests",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "declined",
+                "withdrawn"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plan-requests/{id}/decision": {
+      "post": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Approve (the plan is applied to the workspace) or decline a plan request",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_decidePlanRequest",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approved",
+                      "declined"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "decision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Success"

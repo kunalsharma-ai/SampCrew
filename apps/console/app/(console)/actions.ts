@@ -32,6 +32,42 @@ export async function setPriceAction(planKey: string, body: { currency: string; 
   return r;
 }
 
+export async function createPlanAction(body: Record<string, unknown>) {
+  const r = await act(() => api<{ key: string }>('/platform/plans', { method: 'POST', body }), 'Plan created. Choose its modules and limits, then make it visible to workspaces.');
+  revalidatePath('/plans');
+  return r;
+}
+
+export async function updatePlanAction(planKey: string, body: Record<string, unknown>) {
+  const r = await act(() => api(`/platform/plans/${planKey}`, { method: 'PATCH', body }), 'Plan details saved.');
+  revalidatePath('/plans');
+  return r;
+}
+
+export async function setPlanEntitlementsAction(planKey: string, body: { features: string[]; limits: Record<string, number> }) {
+  const r = await act(() => api<{ added: string[]; removed: string[]; workspaces: number }>(`/platform/plans/${planKey}/entitlements`, { method: 'PUT', body }));
+  revalidatePath('/plans');
+  return r;
+}
+
+export async function archivePlanAction(planKey: string, archived: boolean) {
+  const r = await act(() => api<{ note: string }>(`/platform/plans/${planKey}/${archived ? 'archive' : 'restore'}`, { method: 'POST' }));
+  revalidatePath('/plans');
+  return r;
+}
+
+export async function deletePlanAction(planKey: string) {
+  const r = await act(() => api(`/platform/plans/${planKey}`, { method: 'DELETE' }), 'Plan deleted.');
+  revalidatePath('/plans');
+  return r;
+}
+
+export async function decidePlanRequestAction(id: string, decision: 'approved' | 'declined', note?: string) {
+  const r = await act(() => api(`/platform/plan-requests/${id}/decision`, { method: 'POST', body: { decision, note: note || undefined } }), decision === 'approved' ? 'Request approved. The workspace is on its new plan.' : 'Request declined. The workspace admin was told.');
+  revalidatePath('/plans');
+  return r;
+}
+
 export async function createAdminAction(body: { email: string; fullName: string; role: string; password: string }) {
   const r = await act(() => api(`/platform/admins`, { method: 'POST', body }), 'Admin created. They must set up two-step verification at first sign-in.');
   revalidatePath('/admins');

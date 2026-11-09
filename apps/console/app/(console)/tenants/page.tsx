@@ -13,11 +13,11 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
   if (sp.q) qs.set('q', sp.q);
   if (sp.status && ['active', 'suspended', 'closed'].includes(sp.status)) qs.set('status', sp.status);
   if (sp.cursor) qs.set('cursor', sp.cursor);
-  const [me, page] = await Promise.all([load<Admin>('/platform/auth/me'), load<Page<TenantRow>>(`/platform/tenants?${qs}`)]);
+  const [me, page, plans] = await Promise.all([load<Admin>('/platform/auth/me'), load<Page<TenantRow>>(`/platform/tenants?${qs}`), load<{ key: string; name: string; archivedAt: string | null }[]>('/platform/plans')]);
   return (
     <>
       <PageHeader title="Workspaces" description="Customer workspaces. Opening a workspace shows account details only; its HR data needs an approved support request." />
-      <TenantsView page={page} query={{ q: sp.q ?? '', status: sp.status ?? '' }} canCreate={hasCap(me, 'tenants:manage')} />
+      <TenantsView page={page} query={{ q: sp.q ?? '', status: sp.status ?? '' }} canCreate={hasCap(me, 'tenants:manage')} plans={plans.filter((p) => !p.archivedAt).map((p) => ({ key: p.key, name: p.name }))} />
     </>
   );
 }
