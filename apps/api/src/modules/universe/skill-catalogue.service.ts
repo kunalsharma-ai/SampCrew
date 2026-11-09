@@ -5,9 +5,10 @@ import {
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor } from '../../platform/authz/policy';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { ieq, MongoService as DatabaseService, type TenantTx as Tx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
-import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
+import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
+import { displayName, fieldById } from '../employees/employee-view';
 import { loadRequisition, reqAttrs } from '../recruitment/recruitment-common';
 
 /**
@@ -24,17 +25,16 @@ export class SkillCatalogueService {
 
   async catalogue(): Promise<{ skills: SkillCatalogueEntry[]; canManage: boolean }> {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
-      const skills = await many<SkillCatalogueEntry>(
-        tx,
-        `select k.id, k.name::text as name, k.category,
-                (select count(*)::int from employee_skills es join employees e on e.id = es.employee_id
-                  where es.skill_id = k.id and e.status not in ('exited', 'pre_boarding') and ${scope}) as people,
-                (select count(*)::int from requisition_skills rs where rs.skill_id = k.id) as requisitions
-           from skills k order by k.category nulls last, k.name`,
-        params,
-      );
+      const visible = new Set((await this.visibleEmployees(tx)).map((e) => e.id as string));
+      const people = new Map<string, number>();
+      for (const es of await tx.collection('employee_skills').find({}, { projection: { skill_id: 1, employee_id: 1 } })) {
+        if (visible.has(es.employee_id)) people.set(es.skill_id, (people.get(es.skill_id) ?? 0) + 1);
+      }
+      const reqs = new Map<string, number>();
+      for (const rs of await tx.collection('requisition_skills').find({}, { projection: { skill_id: 1 } })) reqs.set(rs.skill_id, (reqs.get(rs.skill_id) ?? 0) + 1);
+      const skills: SkillCatalogueEntry[] = (await tx.collection('skills').find({}))
+        .map((k) => ({ id: k.id, name: k.name, category: k.category ?? null, people: people.get(k.id) ?? 0, requisitions: reqs.get(k.id) ?? 0 }))
+        .sort((a, b) => (a.category === b.category ? 0 : a.category === null ? 1 : b.category === null ? -1 : a.category.localeCompare(b.category)) || a.name.localeCompare(b.name));
       return { skills, canManage: this.manager(await this.authz.subject(tx)) };
     });
   }
@@ -42,10 +42,8 @@ export class SkillCatalogueService {
   async create(input: SkillCreateInput) {
     return this.db.tenant(async (tx) => {
       this.requireManager(await this.authz.subject(tx));
-      const row = await one<{ id: string }>(
-        tx, `insert into skills (tenant_id, name, category) values (app_tenant_id(), $1, $2) on conflict (tenant_id, name) do nothing returning id`,
-        [input.name.replace(/\s+/g, ' '), input.category || null],
-      );
+      const name = input.name.replace(/\s+/g, ' ');
+      const row = (await tx.collection('skills').exists({ name: ieq(name) })) ? undefined : await tx.collection('skills').insert({ name, category: input.category || null });
       if (!row) throw Errors.validation([{ path: ['name'], message: 'There is already a skill with this name' }]);
       await this.audit.record(tx, { action: 'skill.created', resourceType: 'skill', resourceId: row.id, changes: input });
       return this.entry(tx, row.id);
@@ -55,14 +53,17 @@ export class SkillCatalogueService {
   async update(id: string, input: SkillUpdateInput) {
     return this.db.tenant(async (tx) => {
       this.requireManager(await this.authz.subject(tx));
-      const before = await one<{ name: string; category: string | null }>(tx, `select name::text as name, category from skills where id = $1 for update`, [id]);
-      if (!before) throw Errors.notFound('Skill');
+      const skills = tx.collection('skills');
+      await skills.lock({ id });
+      const found = await skills.findOne({ id });
+      if (!found) throw Errors.notFound('Skill');
+      const before = { name: found.name as string, category: (found.category as string | null) ?? null };
       const name = input.name?.replace(/\s+/g, ' ') ?? before.name;
-      if (name.toLowerCase() !== before.name.toLowerCase() && await one(tx, `select 1 from skills where name = $1 and id <> $2`, [name, id])) {
+      if (name.toLowerCase() !== before.name.toLowerCase() && await skills.exists({ name: ieq(name), id: { $ne: id } })) {
         throw Errors.validation([{ path: ['name'], message: 'There is already a skill with this name: merge them instead' }]);
       }
       const category = input.category === undefined ? before.category : (input.category || null);
-      await tx.query(`update skills set name = $2, category = $3 where id = $1`, [id, name, category]);
+      await skills.updateOne({ id }, { $set: { name, category } });
       await this.audit.record(tx, { action: 'skill.updated', resourceType: 'skill', resourceId: id, changes: { before, after: { name, category } } });
       return this.entry(tx, id);
     });
@@ -73,25 +74,28 @@ export class SkillCatalogueService {
     if (id === intoId) throw Errors.validation([{ path: ['intoId'], message: 'Choose a different skill' }]);
     return this.db.tenant(async (tx) => {
       this.requireManager(await this.authz.subject(tx));
-      const both = await many<{ id: string; name: string }>(tx, `select id, name::text as name from skills where id = any($1::uuid[]) for update`, [[id, intoId]]);
+      await tx.collection('skills').lock({ id: { $in: [id, intoId] } });
+      const both = (await tx.collection('skills').find({ id: { $in: [id, intoId] } })) as { id: string; name: string }[];
       const from = both.find((s) => s.id === id);
       const into = both.find((s) => s.id === intoId);
       if (!from) throw Errors.notFound('Skill');
       if (!into) throw Errors.validation([{ path: ['intoId'], message: 'Unknown skill' }]);
-      const moved = await tx.query(
-        `insert into employee_skills (tenant_id, employee_id, skill_id, level, updated_by_membership_id, updated_at)
-         select tenant_id, employee_id, $2, level, updated_by_membership_id, updated_at from employee_skills where skill_id = $1
-         on conflict (tenant_id, employee_id, skill_id) do update set level = greatest(employee_skills.level, excluded.level)`,
-        [id, intoId],
-      );
-      await tx.query(
-        `insert into requisition_skills (tenant_id, requisition_id, skill_id, min_level)
-         select tenant_id, requisition_id, $2, min_level from requisition_skills where skill_id = $1
-         on conflict (tenant_id, requisition_id, skill_id) do update set min_level = greatest(requisition_skills.min_level, excluded.min_level)`,
-        [id, intoId],
-      );
-      await tx.query(`delete from skills where id = $1`, [id]);
-      await this.audit.record(tx, { action: 'skill.merged', resourceType: 'skill', resourceId: intoId, changes: { from: from.name, into: into.name, holders: moved.rowCount } });
+      const es = tx.collection('employee_skills');
+      const holders = await es.find({ skill_id: id });
+      for (const h of holders) {
+        const values = { level: h.level, updated_by_membership_id: h.updated_by_membership_id ?? null, updated_at: h.updated_at };
+        const existing = await es.findOne({ employee_id: h.employee_id, skill_id: intoId });
+        if (!existing) await es.insert({ employee_id: h.employee_id, skill_id: intoId, ...values });
+        else if (h.level > existing.level) await es.updateOne({ employee_id: h.employee_id, skill_id: intoId }, { $set: { level: h.level } });
+      }
+      const rs = tx.collection('requisition_skills');
+      for (const q of await rs.find({ skill_id: id })) {
+        const existing = await rs.findOne({ requisition_id: q.requisition_id, skill_id: intoId });
+        if (!existing) await rs.insert({ requisition_id: q.requisition_id, skill_id: intoId, min_level: q.min_level });
+        else if (q.min_level > existing.min_level) await rs.updateOne({ requisition_id: q.requisition_id, skill_id: intoId }, { $set: { min_level: q.min_level } });
+      }
+      await tx.collection('skills').deleteOne({ id });
+      await this.audit.record(tx, { action: 'skill.merged', resourceType: 'skill', resourceId: intoId, changes: { from: from.name, into: into.name, holders: holders.length } });
       return this.entry(tx, intoId);
     });
   }
@@ -99,11 +103,10 @@ export class SkillCatalogueService {
   async remove(id: string) {
     return this.db.tenant(async (tx) => {
       this.requireManager(await this.authz.subject(tx));
-      const s = await one<{ name: string; holders: number }>(
-        tx, `select k.name::text as name, (select count(*)::int from employee_skills where skill_id = k.id) as holders from skills k where k.id = $1`, [id],
-      );
-      if (!s) throw Errors.notFound('Skill');
-      await tx.query(`delete from skills where id = $1`, [id]);
+      const k = await tx.collection('skills').findOne({ id });
+      if (!k) throw Errors.notFound('Skill');
+      const s = { name: k.name as string, holders: await tx.collection('employee_skills').count({ skill_id: id }) };
+      await tx.collection('skills').deleteOne({ id });
       await this.audit.record(tx, { action: 'skill.deleted', resourceType: 'skill', resourceId: id, changes: s });
       return { ok: true };
     });
@@ -126,14 +129,13 @@ export class SkillCatalogueService {
       const r = await loadRequisition(tx, requisitionId, true);
       await this.authz.require('requisitions:create', reqAttrs(r), tx);
       if (['filled', 'closed', 'cancelled'].includes(r.status)) throw Errors.conflict('requisition_locked', `A requisition that is ${r.status} cannot be changed`);
-      const known = new Set((await many<{ id: string }>(tx, `select id from skills where id = any($1::uuid[])`, [input.skills.map((x) => x.skillId)])).map((x) => x.id));
+      const known = new Set((await tx.collection('skills').find({ id: { $in: input.skills.map((x) => x.skillId) } }, { projection: { _id: 1 } })).map((x) => x.id as string));
       const bad = input.skills.findIndex((x) => !known.has(x.skillId));
       if (bad >= 0) throw Errors.validation([{ path: ['skills', bad, 'skillId'], message: 'Unknown skill' }]);
-      const before = await many<{ skillId: string; minLevel: number }>(tx, `select skill_id as "skillId", min_level as "minLevel" from requisition_skills where requisition_id = $1`, [requisitionId]);
-      await tx.query(`delete from requisition_skills where requisition_id = $1`, [requisitionId]);
-      for (const x of input.skills) {
-        await tx.query(`insert into requisition_skills (tenant_id, requisition_id, skill_id, min_level) values (app_tenant_id(), $1, $2, $3)`, [requisitionId, x.skillId, x.minLevel]);
-      }
+      const rs = tx.collection('requisition_skills');
+      const before = (await rs.find({ requisition_id: requisitionId })).map((x) => ({ skillId: x.skill_id as string, minLevel: x.min_level as number }));
+      await rs.delete({ requisition_id: requisitionId });
+      if (input.skills.length) await rs.insertMany(input.skills.map((x) => ({ requisition_id: requisitionId, skill_id: x.skillId, min_level: x.minLevel })));
       await this.audit.record(tx, { action: 'requisition.skills_updated', resourceType: 'job_requisition', resourceId: requisitionId, changes: { before, after: input.skills } });
       return { ...(await this.matches(tx, requisitionId)), canEdit: true };
     });
@@ -141,23 +143,24 @@ export class SkillCatalogueService {
 
   /** People the viewer can see, ranked by how well their skills cover the job's; the best 20 with any overlap. */
   private async matches(tx: Tx, requisitionId: string) {
-    const skills = await many<{ skillId: string; name: string; minLevel: number }>(
-      tx, `select rs.skill_id as "skillId", k.name::text as name, rs.min_level as "minLevel" from requisition_skills rs join skills k on k.id = rs.skill_id
-            where rs.requisition_id = $1 order by rs.min_level desc, k.name`, [requisitionId],
-    );
+    const wanted = await tx.collection('requisition_skills').find({ requisition_id: requisitionId });
+    const names = await fieldById(tx, 'skills', wanted.map((x) => x.skill_id));
+    const skills = wanted
+      .map((x) => ({ skillId: x.skill_id as string, name: names.get(x.skill_id) ?? '', minLevel: x.min_level as number }))
+      .sort((a, b) => b.minLevel - a.minLevel || a.name.localeCompare(b.name));
     if (!skills.length) return { skills, matches: [] as SkillMatch[] };
-    const params: unknown[] = [skills.map((x) => x.skillId)];
-    const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
-    const rows = await many<{ employeeId: string; name: string; title: string | null; departmentName: string | null; skillId: string; level: number }>(
-      tx,
-      `select e.id as "employeeId", trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name, g.name as title, d.name as "departmentName",
-              es.skill_id as "skillId", es.level
-         from employee_skills es join employees e on e.id = es.employee_id
-         left join departments d on d.id = e.current_department_id
-         left join designations g on g.id = e.current_designation_id
-        where es.skill_id = any($1::uuid[]) and e.status not in ('exited', 'pre_boarding') and ${scope}`,
-      params,
-    );
+    const held = await tx.collection('employee_skills').find({ skill_id: { $in: skills.map((x) => x.skillId) } });
+    const employees = await this.visibleEmployees(tx, { id: { $in: [...new Set(held.map((h) => h.employee_id as string))] } });
+    const byId = new Map(employees.map((e) => [e.id as string, e]));
+    const departments = await fieldById(tx, 'departments', employees.map((e) => e.current_department_id));
+    const titles = await fieldById(tx, 'designations', employees.map((e) => e.current_designation_id));
+    const rows = held.filter((h) => byId.has(h.employee_id)).map((h) => {
+      const e = byId.get(h.employee_id)!;
+      return {
+        employeeId: e.id as string, name: displayName(e as never), title: titles.get(e.current_designation_id) ?? null,
+        departmentName: departments.get(e.current_department_id) ?? null, skillId: h.skill_id as string, level: h.level as number,
+      };
+    });
     const people = new Map<string, { info: (typeof rows)[number]; held: Map<string, number> }>();
     for (const r of rows) {
       const p = people.get(r.employeeId) ?? { info: r, held: new Map() };
@@ -173,7 +176,14 @@ export class SkillCatalogueService {
   }
 
   private async entry(tx: Tx, id: string) {
-    return one<{ id: string; name: string; category: string | null }>(tx, `select id, name::text as name, category from skills where id = $1`, [id]);
+    const k = await tx.collection('skills').findOne({ id });
+    return k ? { id: k.id as string, name: k.name as string, category: (k.category as string | null) ?? null } : undefined;
+  }
+
+  /** Current employees (not exited or pre-boarding) the viewer may see in the directory. */
+  private async visibleEmployees(tx: Tx, extra: Record<string, unknown> = {}) {
+    const scope = await this.authz.filter('employees:read', EMPLOYEE_FIELDS, tx);
+    return tx.collection('employees').find({ $and: [scope, extra, { status: { $nin: ['exited', 'pre_boarding'] } }] });
   }
 
   /** Looking after the skill list is for people who may update every employee record. */

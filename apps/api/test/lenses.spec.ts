@@ -1,12 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 /** Workforce Universe lenses: skills people hold, and saved headcount scenarios. */
 describe('universe lenses', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   const tokens: Record<string, string> = {};
@@ -38,9 +37,9 @@ describe('universe lenses', () => {
     ids.olu = await hire({ firstName: 'Olu', lastName: 'Operator', departmentId: ids.ops, membershipId: people.olu.membershipId });
     ids.ada = await hire({ firstName: 'Ada', lastName: 'Ops', departmentId: ids.ops });
     ids.pia = await hire({ firstName: 'Pia', lastName: 'Peer', departmentId: ids.sales, membershipId: people.peer.membershipId });
-    const st = await pool.query<{ id: string }>(`insert into salary_structures (tenant_id, name) values ($1, 'Lenses') returning id`, [t.id]);
+    const st = await pool.insert('salary_structures', { tenant_id: t.id, name: 'Lenses' });
     for (const [emp, ctc] of [[ids.olu, 360000], [ids.ada, 480000], [ids.pia, 600000]] as const) {
-      await pool.query(`insert into employee_salaries (tenant_id, employee_id, effective_from, annual_ctc, currency, structure_id) values ($1, $2, '2023-01-02', $3, 'INR', $4)`, [t.id, emp, ctc, st.rows[0]!.id]);
+      await pool.insert('employee_salaries', { tenant_id: t.id, employee_id: emp, effective_from: '2023-01-02', annual_ctc: ctc, currency: 'INR', structure_id: st.id });
     }
   });
 
@@ -58,10 +57,10 @@ describe('universe lenses', () => {
       const own = await as('olu').put(`/employees/${ids.olu}/skills`).send({ skills: [{ name: 'forklift', level: 4 }, { name: 'First aid', level: 1 }] });
       expect(own.status, JSON.stringify(own.body)).toBe(200);
       expect(own.body.skills.map((s: { name: string }) => s.name)).toEqual(['Forklift', 'First aid']);
-      expect((await pool.query(`select count(*)::int as n from skills where tenant_id = $1`, [t.id])).rows[0].n).toBe(3);
+      expect((await pool.count('skills', { tenant_id: t.id }))).toBe(3);
       await as('hr').put(`/employees/${ids.ada}/skills`).send({ skills: [{ name: 'Forklift', level: 2 }] });
-      const audit = await pool.query(`select changes from audit_events where tenant_id = $1 and action = 'employee.skills_updated' and resource_id = $2 order by created_at`, [t.id, ids.olu]);
-      expect(audit.rows.at(-1)!.changes).toMatchObject({ before: ['Forklift:3', 'Six Sigma:2'], after: ['Forklift:4', 'First aid:1'] });
+      const audit = await pool.find('audit_events', { tenant_id: t.id, action: 'employee.skills_updated', resource_id: ids.olu }, { sort: { created_at: 1 } });
+      expect(audit.at(-1)!.changes).toMatchObject({ before: ['Forklift:3', 'Six Sigma:2'], after: ['Forklift:4', 'First aid:1'] });
     });
 
     it('refuses people outside the caller’s access and bad input', async () => {
@@ -137,8 +136,7 @@ describe('universe lenses', () => {
       const again = await as('talent').post(`/insights/scenarios/${made.body.id}/requisitions`).send({});
       expect(again.status).toBe(422);
       expect((await as('hr').get('/insights/scenarios')).body.scenarios[0].requisitions).toHaveLength(1);
-      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'scenario.requisition_raised' and resource_id = $2`, [t.id, made.body.id]);
-      expect(audit.rows[0].n).toBe(1);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'scenario.requisition_raised', resource_id: made.body.id })).toBe(1);
       expect((await as('stranger').get('/insights/scenarios')).body.scenarios).toEqual([]);
     });
   });
@@ -165,9 +163,9 @@ describe('universe lenses', () => {
       const merged = await as('hr').post(`/skills/${dup.body.id}/merge`).send({ intoId: id('Forklift') });
       expect(merged.status, JSON.stringify(merged.body)).toBe(201);
       expect((await as('hr').get(`/employees/${ids.ada}/skills`)).body.skills).toEqual([expect.objectContaining({ name: 'Forklift', level: 3 })]);
-      expect((await pool.query(`select count(*)::int as n from skills where tenant_id = $1 and name = 'Fork-lift truck'`, [t.id])).rows[0].n).toBe(0);
-      const audit = await pool.query(`select action from audit_events where tenant_id = $1 and resource_type = 'skill' order by created_at`, [t.id]);
-      expect(audit.rows.map((r: { action: string }) => r.action)).toEqual(['skill.updated', 'skill.created', 'skill.merged']);
+      expect((await pool.count('skills', { tenant_id: t.id, name: 'Fork-lift truck' }))).toBe(0);
+      const audit = await pool.find('audit_events', { tenant_id: t.id, resource_type: 'skill' }, { sort: { created_at: 1 } });
+      expect(audit.map((r: { action: string }) => r.action)).toEqual(['skill.updated', 'skill.created', 'skill.merged']);
       ids.forklift = id('Forklift');
       ids.firstAid = id('First aid');
     });

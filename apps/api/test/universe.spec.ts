@@ -1,7 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plus = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
@@ -9,7 +8,7 @@ const plus = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z
 /** Workforce Universe: placement history for replaying the organization over time, scoped like the directory. */
 describe('workforce universe', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let assembly = '';

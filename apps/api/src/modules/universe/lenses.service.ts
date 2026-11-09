@@ -7,18 +7,30 @@ import type {
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor } from '../../platform/authz/policy';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { ieq, membershipUserNames, MongoService as DatabaseService, type TenantTx as Tx } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
-import { EMPLOYEE_SCOPE, employeeAttrs } from '../employees/employee-attrs';
+import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
+import { displayName, fieldById } from '../employees/employee-view';
 import { EmployeesService } from '../employees/employees.service';
-import { REQ_SCOPE } from '../recruitment/recruitment-common';
+import { REQ_FIELDS, visibleRequisitionIds } from '../recruitment/recruitment-common';
 import { RequisitionsService } from '../recruitment/requisitions.service';
 
-const SCENARIO_COLS = `s.id, s.name, s.notes, s.changes, s.assumptions,
-  coalesce((select json_agg(json_build_object('id', r.id, 'code', r.code, 'title', r.title, 'status', r.status, 'departmentId', r.department_id, 'headcount', r.headcount) order by r.created_at)
-     from job_requisitions r where r.source_scenario_id = s.id), '[]') as requisitions,
-  u.full_name as "createdBy", s.created_at as "createdAt", s.updated_at as "updatedAt"`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
+const CURRENT = { status: { $nin: ['exited', 'pre_boarding'] } };
+
+/** Scenarios as the API returns them: with the requisitions raised from each and who made it. */
+async function scenarioViews(tx: Tx, docs: Doc[]): Promise<Scenario[]> {
+  const reqs = docs.length ? await tx.collection('job_requisitions').find({ source_scenario_id: { $in: docs.map((d) => d.id) } }, { sort: { created_at: 1 } }) : [];
+  const names = await membershipUserNames(tx, docs.map((d) => d.created_by_membership_id));
+  return docs.map((d) => ({
+    id: d.id, name: d.name, notes: d.notes, changes: d.changes, assumptions: scenarioAssumptions.parse(d.assumptions ?? {}),
+    requisitions: reqs.filter((r) => r.source_scenario_id === d.id)
+      .map((r) => ({ id: r.id, code: r.code, title: r.title, status: r.status, departmentId: r.department_id ?? null, headcount: r.headcount })),
+    createdBy: names.get(d.created_by_membership_id) ?? null, createdAt: d.created_at, updatedAt: d.updated_at,
+  }) as Scenario);
+}
 
 /**
  * Data for the Workforce Universe lenses. Every list is narrowed by the same permission scopes as the pages it
@@ -39,21 +51,17 @@ export class LensesService {
 
   async network(): Promise<SkillsNetwork> {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
-      const people = await many<SkillsNetwork['people'][number]>(
-        tx,
-        `select e.id, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name, e.current_department_id as "departmentId"
-           from employees e where ${scope} and e.status not in ('exited', 'pre_boarding') order by 2`,
-        params,
-      );
+      const scope = await this.authz.filter('employees:read', EMPLOYEE_FIELDS, tx);
+      const people: SkillsNetwork['people'] = (await tx.collection('employees').find({ $and: [scope, CURRENT] }))
+        .map((e) => ({ id: e.id, name: displayName(e as never), departmentId: e.current_department_id ?? null }))
+        .sort((a, b) => a.name.localeCompare(b.name));
       const ids = people.map((p) => p.id);
-      const links = await many<SkillsNetwork['links'][number]>(
-        tx, `select employee_id as "employeeId", skill_id as "skillId", level from employee_skills where employee_id = any($1::uuid[])`, [ids],
-      );
+      const links: SkillsNetwork['links'] = (await tx.collection('employee_skills').find({ employee_id: { $in: ids } }))
+        .map((l) => ({ employeeId: l.employee_id, skillId: l.skill_id, level: l.level }));
       const used = [...new Set(links.map((l) => l.skillId))];
-      const skills = await many<SkillsNetwork['skills'][number]>(tx, `select id, name::text as name, category from skills where id = any($1::uuid[]) order by name`, [used]);
-      const departments = await many<SkillsNetwork['departments'][number]>(tx, `select id, name from departments where archived_at is null order by name`);
+      const skills: SkillsNetwork['skills'] = (await tx.collection('skills').find({ id: { $in: used } }))
+        .map((k) => ({ id: k.id, name: k.name, category: k.category ?? null })).sort((a, b) => a.name.localeCompare(b.name));
+      const departments: SkillsNetwork['departments'] = (await tx.collection('departments').find({ archived_at: null }, { sort: { name: 1 } })).map((d) => ({ id: d.id, name: d.name }));
       return { skills, people, departments, links };
     });
   }
@@ -72,21 +80,17 @@ export class LensesService {
       if (!canEdit) throw Errors.forbidden('You cannot change this person’s skills');
       const before = await this.list(tx, employeeId);
       const ids: string[] = [];
+      const skills = tx.collection('skills');
+      const held = tx.collection('employee_skills');
       for (const s of input.skills) {
-        const row = await one<{ id: string }>(
-          tx,
-          `insert into skills (tenant_id, name) values (app_tenant_id(), $1) on conflict (tenant_id, name) do update set name = skills.name returning id`,
-          [s.name.replace(/\s+/g, ' ')],
-        );
-        ids.push(row!.id);
-        await tx.query(
-          `insert into employee_skills (tenant_id, employee_id, skill_id, level, updated_by_membership_id) values (app_tenant_id(), $1, $2, $3, $4)
-           on conflict (tenant_id, employee_id, skill_id) do update set level = excluded.level, updated_by_membership_id = excluded.updated_by_membership_id,
-             updated_at = case when employee_skills.level = excluded.level then employee_skills.updated_at else now() end`,
-          [employeeId, row!.id, s.level, membershipId],
-        );
+        const name = s.name.replace(/\s+/g, ' ');
+        const skill = (await skills.findOne({ name: ieq(name) })) ?? (await skills.insert({ name }));
+        ids.push(skill.id as string);
+        const existing = await held.findOne({ employee_id: employeeId, skill_id: skill.id });
+        if (!existing) await held.insert({ employee_id: employeeId, skill_id: skill.id, level: s.level, updated_by_membership_id: membershipId });
+        else await held.updateOne({ employee_id: employeeId, skill_id: skill.id }, { $set: { level: s.level, updated_by_membership_id: membershipId, ...(existing.level === s.level ? {} : { updated_at: new Date() }) } });
       }
-      await tx.query(`delete from employee_skills where employee_id = $1 and not (skill_id = any($2::uuid[]))`, [employeeId, ids]);
+      await held.delete({ employee_id: employeeId, skill_id: { $nin: ids } });
       const after = await this.list(tx, employeeId);
       await this.audit.record(tx, {
         action: 'employee.skills_updated', resourceType: 'employee', resourceId: employeeId,
@@ -96,13 +100,12 @@ export class LensesService {
     });
   }
 
-  private list(tx: Tx, employeeId: string) {
-    return many<EmployeeSkill>(
-      tx,
-      `select k.id as "skillId", k.name::text as name, es.level, es.updated_at as "updatedAt" from employee_skills es join skills k on k.id = es.skill_id
-        where es.employee_id = $1 order by es.level desc, k.name`,
-      [employeeId],
-    );
+  private async list(tx: Tx, employeeId: string): Promise<EmployeeSkill[]> {
+    const held = await tx.collection('employee_skills').find({ employee_id: employeeId });
+    const names = await fieldById(tx, 'skills', held.map((h) => h.skill_id));
+    return held
+      .map((h) => ({ skillId: h.skill_id as string, name: names.get(h.skill_id) ?? '', level: h.level as number, updatedAt: h.updated_at }) as EmployeeSkill)
+      .sort((a, b) => b.level - a.level || a.name.localeCompare(b.name));
   }
 
   private async access(tx: Tx, employeeId: string) {
@@ -121,38 +124,34 @@ export class LensesService {
       const y = now.getUTCFullYear();
       const from = period === 'all' ? null : period === 'year' ? `${y}-01-01` : new Date(Date.UTC(y, Math.floor(now.getUTCMonth() / 3) * 3, 1)).toISOString().slice(0, 10);
       const to = now.toISOString().slice(0, 10);
-      const params: unknown[] = [from];
-      const scope = await this.authz.predicate('requisitions:read', REQ_SCOPE, params, tx);
+      const visible = await visibleRequisitionIds(tx, await this.authz.filter('requisitions:read', REQ_FIELDS, tx));
       // The cohort: applications made in the period on jobs the viewer can see.
-      const cohort = `select a.id, a.stage_id, a.status from applications a join job_requisitions r on r.id = a.requisition_id
-                       where ($1::date is null or a.applied_at::date >= $1) and ${scope}`;
-      const stages = await many<{ id: string; name: string; kind: string; position: number }>(
-        tx, `select id, name, kind, position from recruitment_stages where archived_at is null order by position`,
+      const cohort = await tx.collection('applications').find(
+        { ...(visible ? { requisition_id: { $in: visible } } : {}), ...(from ? { applied_at: { $gte: new Date(`${from}T00:00:00Z`) } } : {}) },
+        { projection: { id: 1, stage_id: 1, status: 1 } },
       );
-      const total = (await one<{ n: number }>(tx, `select count(*)::int as n from (${cohort}) c`, params))!.n;
+      const stages = (await tx.collection('recruitment_stages').find({ archived_at: null }, { sort: { position: 1 } }))
+        .map((x) => ({ id: x.id as string, name: x.name as string, kind: x.kind as string, position: x.position as number }));
+      const total = cohort.length;
+      const events = total ? await tx.collection('application_events').find({ application_id: { $in: cohort.map((c) => c.id) }, to_stage_id: { $ne: null } }) : [];
       // Stage moves (including into Hired), then rejections and withdrawals from the stage the application stopped in.
-      const moves = await many<{ from: string; to: string; count: number }>(
-        tx,
-        `with c as (${cohort})
-         select e.from_stage_id::text as "from", e.to_stage_id::text as "to", count(*)::int as count
-           from application_events e join c on c.id = e.application_id
-          where e.kind in ('stage_changed', 'hired') and e.from_stage_id is not null and e.to_stage_id is not null and e.from_stage_id <> e.to_stage_id
-          group by 1, 2
-         union all
-         select c.stage_id::text, c.status, count(*)::int from c where c.status in ('rejected', 'withdrawn') group by 1, 2`,
-        params,
-      );
-      const reached = await many<{ stage: string; n: number }>(
-        tx,
-        `with c as (${cohort}),
-              s as (select e.application_id, e.to_stage_id as stage from application_events e join c on c.id = e.application_id where e.to_stage_id is not null
-                    union select c.id, c.stage_id from c)
-         select stage::text, count(distinct application_id)::int as n from s group by 1`,
-        params,
-      );
-      const now2 = await many<{ stage: string; n: number }>(
-        tx, `with c as (${cohort}) select stage_id::text as stage, count(*)::int as n from c where status in ('active', 'hired') group by 1`, params,
-      );
+      const moveCount = new Map<string, number>();
+      const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
+      for (const e of events) {
+        if (['stage_changed', 'hired'].includes(e.kind) && e.from_stage_id && e.from_stage_id !== e.to_stage_id) bump(moveCount, `${e.from_stage_id}|${e.to_stage_id}`);
+      }
+      const moves = [...moveCount].map(([k, count]) => { const [f, t] = k.split('|'); return { from: f!, to: t!, count }; });
+      const stopped = new Map<string, number>();
+      for (const c of cohort) if (['rejected', 'withdrawn'].includes(c.status)) bump(stopped, `${c.stage_id}|${c.status}`);
+      moves.push(...[...stopped].map(([k, count]) => { const [f, t] = k.split('|'); return { from: f!, to: t!, count }; }));
+      const reachedBy = new Map<string, Set<string>>();
+      const reach = (stage: string, app: string) => reachedBy.set(stage, (reachedBy.get(stage) ?? new Set()).add(app));
+      for (const e of events) reach(e.to_stage_id, e.application_id);
+      for (const c of cohort) reach(c.stage_id, c.id);
+      const reached = [...reachedBy].map(([stage, apps]) => ({ stage, n: apps.size }));
+      const nowCount = new Map<string, number>();
+      for (const c of cohort) if (['active', 'hired'].includes(c.status)) bump(nowCount, c.stage_id);
+      const now2 = [...nowCount].map(([stage, n]) => ({ stage, n }));
       const r = new Map(reached.map((x) => [x.stage, x.n]));
       const n = new Map(now2.map((x) => [x.stage, x.n]));
       return {
@@ -167,37 +166,35 @@ export class LensesService {
   async scenarios(): Promise<{ baseline: ScenarioBaseline; scenarios: Scenario[] }> {
     return this.db.tenant(async (tx) => {
       const baseline = await this.baseline(tx);
-      const scenarios = (await many<Scenario>(
-        tx, `select ${SCENARIO_COLS} from workforce_scenarios s left join memberships m on m.id = s.created_by_membership_id left join users u on u.id = m.user_id order by s.updated_at desc limit 50`,
-      )).map((x) => ({ ...x, assumptions: scenarioAssumptions.parse(x.assumptions ?? {}) }));
+      const scenarios = await scenarioViews(tx, await tx.collection('workforce_scenarios').find({}, { sort: { updated_at: -1 }, limit: 50 }));
       return { baseline, scenarios };
     });
   }
 
   async saveScenario(id: string | null, input: ScenarioInput): Promise<Scenario> {
     return this.db.tenant(async (tx) => {
-      const known = new Set((await many<{ id: string }>(tx, `select id from departments where archived_at is null`)).map((d) => d.id));
+      const known = new Set(await tx.collection('departments').distinct<string>('id', { archived_at: null }));
       const bad = input.changes.findIndex((c) => !known.has(c.departmentId));
       if (bad >= 0) throw Errors.validation([{ path: ['changes', bad, 'departmentId'], message: 'Unknown department' }]);
       const s = await this.authz.subject(tx);
       this.planner(s);
-      const changes = JSON.stringify(input.changes.filter((c) => c.delta !== 0 || c.monthlyCostPerHead != null));
-      const assumptions = JSON.stringify(input.assumptions ?? DEFAULT_ASSUMPTIONS);
+      const values = {
+        name: input.name, notes: input.notes, changes: input.changes.filter((c) => c.delta !== 0 || c.monthlyCostPerHead != null),
+        assumptions: input.assumptions ?? DEFAULT_ASSUMPTIONS,
+      };
+      const scenarios = tx.collection('workforce_scenarios');
       const row = id
-        ? await one<{ id: string }>(tx, `update workforce_scenarios set name = $2, notes = $3, changes = $4, assumptions = $5, updated_at = now() where id = $1 returning id`, [id, input.name, input.notes, changes, assumptions])
-        : await one<{ id: string }>(
-          tx, `insert into workforce_scenarios (tenant_id, name, notes, changes, assumptions, created_by_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5) returning id`,
-          [input.name, input.notes, changes, assumptions, s.membershipId],
-        );
+        ? await scenarios.updateAndGet({ id }, { $set: { ...values, updated_at: new Date() } })
+        : await scenarios.insert({ ...values, created_by_membership_id: s.membershipId });
       if (!row) throw Errors.notFound('Scenario');
       await this.audit.record(tx, { action: id ? 'scenario.updated' : 'scenario.created', resourceType: 'workforce_scenario', resourceId: row.id });
-      return (await this.loadScenario(tx, row.id))!;
+      return (await this.loadScenario(tx, row.id as string))!;
     });
   }
 
   private async loadScenario(tx: Tx, id: string) {
-    const s = await one<Scenario>(tx, `select ${SCENARIO_COLS} from workforce_scenarios s left join memberships m on m.id = s.created_by_membership_id left join users u on u.id = m.user_id where s.id = $1`, [id]);
-    return s && { ...s, assumptions: scenarioAssumptions.parse(s.assumptions ?? {}) };
+    const d = await tx.collection('workforce_scenarios').findOne({ id });
+    return d ? (await scenarioViews(tx, [d]))[0] : undefined;
   }
 
   /**
@@ -214,11 +211,11 @@ export class LensesService {
       const done = new Set(sc.requisitions.map((r) => r.departmentId));
       const wanted = sc.changes.filter((c) => c.delta > 0 && !done.has(c.departmentId) && (!departmentIds || departmentIds.includes(c.departmentId)));
       if (!wanted.length) throw Errors.validation([{ path: ['departmentIds'], message: done.size ? 'Requisitions were already raised for these departments' : 'This scenario adds nobody' }]);
-      const depts = await many<{ id: string; name: string; legalEntityId: string | null; head: string | null }>(
-        tx, `select id, name, legal_entity_id as "legalEntityId", head_membership_id as head from departments where id = any($1::uuid[])`, [wanted.map((c) => c.departmentId)],
-      );
-      const fallback = await one<{ id: string; currency: string }>(tx, `select id, currency from legal_entities order by created_at limit 1`);
-      const entities = new Map((await many<{ id: string; currency: string }>(tx, `select id, currency from legal_entities`)).map((e) => [e.id, e.currency]));
+      const depts = (await tx.collection('departments').find({ id: { $in: wanted.map((c) => c.departmentId) } }))
+        .map((d) => ({ id: d.id as string, name: d.name as string, legalEntityId: (d.legal_entity_id as string | null) ?? null, head: (d.head_membership_id as string | null) ?? null }));
+      const all = await tx.collection('legal_entities').find({}, { sort: { created_at: 1 } });
+      const fallback = all[0] && { id: all[0].id as string, currency: all[0].currency as string };
+      const entities = new Map(all.map((e) => [e.id as string, e.currency as string]));
       const me = (await this.authz.subject(tx)).membershipId;
       const start = sc.assumptions.startMonth ?? new Date().toISOString().slice(0, 7);
       const out: { departmentId: string; input: RequisitionInput }[] = [];
@@ -246,7 +243,7 @@ export class LensesService {
       const r = (await this.requisitions.create(p.input)) as { id: string };
       raised.push(r);
       await this.db.tenant(async (tx) => {
-        await tx.query(`update job_requisitions set source_scenario_id = $2 where id = $1`, [r.id, id]);
+        await tx.collection('job_requisitions').updateOne({ id: r.id }, { $set: { source_scenario_id: id } });
         await this.audit.record(tx, { action: 'scenario.requisition_raised', resourceType: 'workforce_scenario', resourceId: id, changes: { requisitionId: r.id, departmentId: p.departmentId, headcount: p.input.headcount } });
       });
     }
@@ -256,8 +253,7 @@ export class LensesService {
   async deleteScenario(id: string) {
     return this.db.tenant(async (tx) => {
       this.planner(await this.authz.subject(tx));
-      const r = await tx.query(`delete from workforce_scenarios where id = $1`, [id]);
-      if (!r.rowCount) throw Errors.notFound('Scenario');
+      if (!(await tx.collection('workforce_scenarios').deleteOne({ id }))) throw Errors.notFound('Scenario');
       await this.audit.record(tx, { action: 'scenario.deleted', resourceType: 'workforce_scenario', resourceId: id });
       return { ok: true };
     });
@@ -274,24 +270,26 @@ export class LensesService {
    * view never passes for a total.
    */
   private async baseline(tx: Tx): Promise<ScenarioBaseline> {
-    const params: unknown[] = [];
-    const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
+    const scope = await this.authz.filter('employees:read', EMPLOYEE_FIELDS, tx);
     const f = (await this.entitlements.current(tx)).features;
     const s = await this.authz.subject(tx);
     let costs = f.has('payroll') && grantsFor(s, 'payroll:read').some((g) => g.scope !== 'own');
-    let payScope = 'false';
-    if (costs) payScope = await this.authz.predicate('payroll:read', EMPLOYEE_SCOPE, params, tx);
-    const rows = await many<{ id: string; name: string; headcount: number; paid: number; monthly: string | null; currency: string | null }>(
-      tx,
-      `select d.id, d.name, count(e.id)::int as headcount, count(e.id) filter (where ${payScope})::int as paid,
-              (sum(sal.annual_ctc) filter (where ${payScope}) / 12)::text as monthly, min(sal.currency) as currency
-         from departments d
-         left join employees e on e.current_department_id = d.id and e.status not in ('exited', 'pre_boarding') and ${scope}
-         left join lateral (select annual_ctc, currency from employee_salaries x where x.employee_id = e.id and x.effective_from <= current_date order by effective_from desc limit 1) sal on true
-        where d.archived_at is null
-        group by d.id, d.name order by d.name`,
-      params,
-    );
+    const people = await tx.collection('employees').find({ $and: [scope, CURRENT] }, { projection: { id: 1, current_department_id: 1 } });
+    const paid = new Set(costs ? await tx.collection('employees').distinct<string>('id', { $and: [await this.authz.filter('payroll:read', EMPLOYEE_FIELDS, tx), CURRENT] }) : []);
+    // Each person's salary in force today (the latest that has started).
+    const today = new Date().toISOString().slice(0, 10);
+    const salary = new Map<string, Doc>();
+    if (costs && paid.size) {
+      for (const x of await tx.collection('employee_salaries').find({ employee_id: { $in: [...paid] }, effective_from: { $lte: today } }, { sort: { effective_from: 1 } })) salary.set(x.employee_id, x);
+    }
+    const rows = (await tx.collection('departments').find({ archived_at: null }, { sort: { name: 1 } })).map((d) => {
+      const here = people.filter((e) => e.current_department_id === d.id);
+      const covered = here.filter((e) => paid.has(e.id));
+      const sal = covered.map((e) => salary.get(e.id)).filter((x): x is Doc => !!x);
+      const annual = sal.reduce((sum, x) => sum + Number(x.annual_ctc), 0);
+      const currencies = sal.map((x) => x.currency as string).sort();
+      return { id: d.id as string, name: d.name as string, headcount: here.length, paid: covered.length, monthly: sal.length ? String(annual / 12) : null, currency: currencies[0] ?? null };
+    });
     if (costs && rows.some((r) => r.paid !== r.headcount)) costs = false;
     return {
       asOf: new Date().toISOString().slice(0, 10),

@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import type { UniverseData as Universe, UniversePerson, UniverseRecord } from '@crew/contracts';
 import { AuthzService } from '../../platform/authz/authz.service';
-import { DatabaseService, many } from '../../platform/database/database.service';
-import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
+import { MongoService as DatabaseService } from '../../platform/database/mongo.service';
+import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
+import { displayName, fieldById } from '../employees/employee-view';
+
+const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
 /**
  * The data behind the Workforce Universe: everyone the viewer may see, with their full placement history
@@ -14,42 +17,26 @@ export class UniverseService {
 
   async load(): Promise<Universe> {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
-      const people = await many<UniversePerson>(
-        tx,
-        `select e.id, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name, e.employee_code as code, d.name as designation,
-                to_char(e.date_of_joining, 'YYYY-MM-DD') as joined,
-                case when e.status = 'exited' then to_char(coalesce(e.last_working_day, e.updated_at::date), 'YYYY-MM-DD') end as "leftOn",
-                e.status, e.current_department_id as "departmentId", e.current_manager_employee_id as "managerId", e.membership_id is not null as "hasLogin"
-           from employees e
-           left join designations d on d.id = e.current_designation_id
-          where ${scope} and e.status <> 'pre_boarding'
-          order by e.date_of_joining, e.employee_code`,
-        params,
-      );
+      const scope = await this.authz.filter('employees:read', EMPLOYEE_FIELDS, tx);
+      const employees = await tx.collection('employees').find({ $and: [scope, { status: { $ne: 'pre_boarding' } }] }, { sort: { date_of_joining: 1, employee_code: 1 } });
+      const titles = await fieldById(tx, 'designations', employees.map((e) => e.current_designation_id));
+      const people: UniversePerson[] = employees.map((e) => ({
+        id: e.id, name: displayName(e as never), code: e.employee_code, designation: titles.get(e.current_designation_id) ?? null,
+        joined: e.date_of_joining,
+        leftOn: e.status === 'exited' ? (e.last_working_day ?? (e.updated_at as Date).toISOString().slice(0, 10)) : null,
+        status: e.status, departmentId: e.current_department_id ?? null, managerId: e.current_manager_employee_id ?? null, hasLogin: e.membership_id != null,
+      }) as UniversePerson);
       const ids = people.map((p) => p.id);
-      const records = ids.length
-        ? await many<UniverseRecord>(
-          tx,
-          `select r.employee_id as "employeeId", to_char(r.effective_from, 'YYYY-MM-DD') as "from", to_char(r.effective_to, 'YYYY-MM-DD') as "to",
-                  r.department_id as "departmentId", r.location_id as "locationId", r.manager_employee_id as "managerId", d.name as designation,
-                  r.change_reason as reason
-             from employment_records r
-             left join designations d on d.id = r.designation_id
-            where r.employee_id = any($1::uuid[])
-            order by r.employee_id, r.effective_from`,
-          [ids],
-        )
-        : [];
-      const departments = await many<Universe['departments'][number]>(
-        tx,
-        `select id, name, parent_id as "parentId", archived_at is not null as archived from departments order by name`,
-      );
-      const locations = await many<Universe['locations'][number]>(
-        tx,
-        `select id, name, city, country_code as "countryCode", latitude::float8 as latitude, longitude::float8 as longitude from locations order by name`,
-      );
+      const recs = ids.length ? await tx.collection('employment_records').find({ employee_id: { $in: ids } }, { sort: { employee_id: 1, effective_from: 1 } }) : [];
+      const recTitles = await fieldById(tx, 'designations', recs.map((r) => r.designation_id));
+      const records: UniverseRecord[] = recs.map((r) => ({
+        employeeId: r.employee_id, from: r.effective_from, to: r.effective_to ?? null, departmentId: r.department_id ?? null, locationId: r.location_id ?? null,
+        managerId: r.manager_employee_id ?? null, designation: recTitles.get(r.designation_id) ?? null, reason: r.change_reason ?? null,
+      }) as UniverseRecord);
+      const departments = (await tx.collection('departments').find({}, { sort: { name: 1 } }))
+        .map((d) => ({ id: d.id, name: d.name, parentId: d.parent_id ?? null, archived: d.archived_at != null })) as Universe['departments'];
+      const locations = (await tx.collection('locations').find({}, { sort: { name: 1 } }))
+        .map((l) => ({ id: l.id, name: l.name, city: l.city ?? null, countryCode: l.country_code ?? null, latitude: num(l.latitude), longitude: num(l.longitude) })) as Universe['locations'];
       const asOf = new Date().toISOString().slice(0, 10);
       const start = people.reduce((m, p) => (p.joined < m ? p.joined : m), asOf);
       return { asOf, start, departments, locations, people, records };

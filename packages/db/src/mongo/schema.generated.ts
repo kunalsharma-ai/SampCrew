@@ -4372,12 +4372,13 @@ export const TABLES: Record<string, TableSpec> = {
       category: {"type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
-      name: {"required": true, "type": "citext"},
+      // Kept as typed ("SQL", "TypeScript"); unique without regard to case.
+      name: {"required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "skills_pkey", "primary": true},
-      {"cols": [{"col": "tenant_id"}, {"col": "name"}], "name": "skills_tenant_id_name_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "name", "fold": "lower"}], "name": "skills_tenant_id_name_key"},
       {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "skills_tenant_id_id_key"},
     ],
     fks: [

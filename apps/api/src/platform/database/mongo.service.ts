@@ -289,3 +289,8 @@ export async function membershipUserNames(tx: TenantTx | PlatformTx, ids: unknow
 export function ilike(q: string): { $regex: string; $options: 'i' } {
   return { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
 }
+
+/** Matches the whole value without regard to case (PostgreSQL's citext equality). */
+export function ieq(q: string): { $regex: string; $options: 'i' } {
+  return { $regex: `^${ilike(q).$regex}$`, $options: 'i' };
+}
