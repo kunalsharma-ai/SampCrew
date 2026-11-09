@@ -11,7 +11,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned: mongo:8.0 refuses to start on Linux 6.19+ (SERVER-121912), which ubuntu-latest now runs.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
