@@ -406,7 +406,8 @@ export async function wrapErrors<R>(table: string, fn: () => Promise<R>): Promis
       throw new ConstraintError('23505', `A ${table} row with these details already exists`, index, table);
     }
     if (err instanceof MongoServerError && err.code === 121) {
-      throw new ConstraintError('23514', `A ${table} row breaks the collection's rules`, undefined, table);
+      // The validator's explanation goes to the server log through `cause`, never to the client.
+      throw Object.assign(new ConstraintError('23514', `A ${table} row breaks the collection's rules`, undefined, table), { cause: err });
     }
     throw err;
   }

@@ -177,7 +177,8 @@ export function prepareInsert(table: string, spec: TableSpec, row: Document): Do
     doc[col === 'id' ? '_id' : col] = stored;
   }
   // Tables without an id column (join tables) still need a document id.
-  if (doc._id === undefined) doc._id = randomUUID();
+  // An identity id is numbered by the table on insert.
+  if (doc._id === undefined && !spec.columns.id?.identity) doc._id = randomUUID();
   return doc;
 }
 

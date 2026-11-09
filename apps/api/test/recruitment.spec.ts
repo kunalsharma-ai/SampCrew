@@ -1,9 +1,8 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CandidatesService } from '../src/modules/recruitment/candidates.service';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, expectHiddenFrom, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n');
 const PRIVACY = 'We use the details you send only to consider you for this job and similar roles. We keep them for a year and you can ask us to delete them.';
@@ -12,7 +11,7 @@ const day = (n: number) => new Date(Date.now() + n * 86400000).toISOString().sli
 /** Phase 4 through the HTTP API: requisitions, the career site, the pipeline, interviews, offers and hiring. */
 describe('recruitment', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let engineering: string;
@@ -25,10 +24,9 @@ describe('recruitment', () => {
   let siteSlug: string;
 
   const emails = async (to: string, template?: string) =>
-    (await pool.query<{ subject: string; text_body: string; template: string }>(
-      `select subject, text_body, template from email_messages where tenant_id = $1 and to_email = $2 ${template ? 'and template = $3' : ''} order by created_at`,
-      template ? [t.id, to, template] : [t.id, to],
-    )).rows;
+    (await pool.find('email_messages', { tenant_id: t.id, to_email: to, ...(template ? { template } : {}) }, { sort: { created_at: 1 } })).map((m) => ({
+      subject: m.subject as string, text_body: m.text_body as string, template: m.template as string,
+    }));
   const approveAll = async (who: string, type: string) => {
     const inbox = await as(who).get('/approvals/inbox');
     expect(inbox.status, JSON.stringify(inbox.body)).toBe(200);
@@ -58,9 +56,11 @@ describe('recruitment', () => {
     if (file) r = r.attach('cv', file, { filename: name, contentType: type });
     return r;
   };
-  const candidateByEmail = async (email: string) => (await pool.query<{ id: string }>('select id from candidates where tenant_id = $1 and email = $2', [t.id, email])).rows[0]?.id;
-  const applicationOf = async (candidateId: string, requisitionId: string) =>
-    (await pool.query<{ id: string; status: string }>('select id, status from applications where candidate_id = $1 and requisition_id = $2', [candidateId, requisitionId])).rows[0]!;
+  const candidateByEmail = async (email: string) => (await pool.one('candidates', { tenant_id: t.id, email }))?.id as string | undefined;
+  const applicationOf = async (candidateId: string, requisitionId: string) => {
+    const a = (await pool.one('applications', { candidate_id: candidateId, requisition_id: requisitionId }))!;
+    return { id: a.id as string, status: a.status as string };
+  };
 
   beforeAll(async () => {
     app = await createApp();
@@ -104,8 +104,8 @@ describe('recruitment', () => {
       expect((await as('manager').patch(`/recruitment/requisitions/${reqId}`).send({ salaryMax: '9000000' })).status).toBe(409);
       expect((await as('manager').patch(`/recruitment/requisitions/${reqId}`).send({ description: 'Build and run the payments platform.' })).status).toBe(200);
       expect((await as('recruiter').post(`/recruitment/requisitions/${reqId}/status`).send({ action: 'open' })).body).toEqual({ status: 'open' });
-      const audit = await pool.query(`select action from audit_events where tenant_id = $1 and resource_id = $2 order by chain_seq`, [t.id, reqId]);
-      expect(audit.rows.map((r) => r.action)).toEqual(expect.arrayContaining(['requisition.created', 'requisition.submitted', 'requisition.approved', 'requisition.open']));
+      const audit = await pool.find('audit_events', { tenant_id: t.id, resource_id: reqId }, { sort: { chain_seq: 1 } });
+      expect(audit.map((r) => r.action)).toEqual(expect.arrayContaining(['requisition.created', 'requisition.submitted', 'requisition.approved', 'requisition.open']));
     });
 
     it('are scoped: a hiring manager sees their department only, a recruiter sees all, an employee none', async () => {
@@ -176,8 +176,9 @@ describe('recruitment', () => {
       expect((await publicApply('backend-engineer', fields)).body).toEqual({ received: true });
       const cid = await candidateByEmail('asha.rao@example.com');
       expect(cid).toBeTruthy();
-      expect((await pool.query('select count(*)::int as n from applications where candidate_id = $1', [cid])).rows[0].n).toBe(1);
-      const c = (await pool.query('select consent_basis, privacy_notice_version, source from candidates where id = $1', [cid])).rows[0];
+      expect(await pool.count('applications', { candidate_id: cid })).toBe(1);
+      const cd = (await pool.one('candidates', { id: cid }))!;
+      const c = { consent_basis: cd.consent_basis, privacy_notice_version: cd.privacy_notice_version, source: cd.source };
       expect(c).toEqual({ consent_basis: 'candidate_consent', privacy_notice_version: 1, source: 'career_site' });
       expect((await emails('asha.rao@example.com', 'candidate.received')).length).toBe(1);
       // A bot filling the hidden field gets the same answer and nothing is stored.
@@ -186,8 +187,7 @@ describe('recruitment', () => {
       expect(bot.body).toEqual({ received: true });
       expect(await candidateByEmail('bot@example.com')).toBeUndefined();
       // The hiring manager and the recruiter who raised it are told.
-      const n = await pool.query(`select count(*)::int as n from notifications where tenant_id = $1 and kind = 'application.received' and membership_id = $2`, [t.id, people.manager!.membershipId]);
-      expect(n.rows[0].n).toBe(1);
+      expect(await pool.count('notifications', { tenant_id: t.id, kind: 'application.received', membership_id: people.manager!.membershipId })).toBe(1);
     });
 
     it('stops taking applications when the requisition is put on hold, and when the site is switched off', async () => {
@@ -222,7 +222,7 @@ describe('recruitment', () => {
       const dup = await as('recruiter').post('/recruitment/candidates').send({ ...body, lawfulBasisConfirmed: true });
       expect(dup.status).toBe(409);
       expect(dup.body.error.code).toBe('candidate_exists');
-      expect((await pool.query('select consent_basis from candidates where id = $1', [vikramId])).rows[0].consent_basis).toBe('recruiter_confirmed');
+      expect((await pool.one('candidates', { id: vikramId }))!.consent_basis).toBe('recruiter_confirmed');
     });
 
     it('shows the board to people in scope only', async () => {
@@ -269,7 +269,7 @@ describe('recruitment', () => {
       // Out of scope people export nothing, and the export is audited.
       const none = await as('salesManager').get('/recruitment/candidates/export.csv');
       expect(none.text.trim().split(/\r?\n/)).toHaveLength(1);
-      expect((await pool.query("select count(*)::int as n from audit_events where action = 'candidate.list_exported'")).rows[0].n).toBeGreaterThanOrEqual(3);
+      expect(await pool.count('audit_events', { action: 'candidate.list_exported' })).toBeGreaterThanOrEqual(3);
     });
 
     it('moves candidates between stages but never straight to Hired', async () => {
@@ -280,19 +280,10 @@ describe('recruitment', () => {
       expect(hired.status).toBe(400);
       expect(hired.body.error.code).toBe('use_hire');
       expect((await as('recruiter').post(`/recruitment/applications/${ashaApp}/move`).send({ stageId: stage('interview') })).status).toBe(200);
-      const events = await pool.query(`select kind from application_events where application_id = $1 order by id`, [ashaApp]);
-      expect(events.rows.filter((r) => r.kind === 'stage_changed')).toHaveLength(2);
-      // History is append-only, even for the app role.
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        await client.query('set local role crew_app');
-        await client.query(`select set_config('app.tenant_id', $1, true)`, [t.id]);
-        await expect(client.query(`update application_events set kind = 'hired' where application_id = $1`, [ashaApp])).rejects.toThrow();
-        await client.query('rollback');
-      } finally {
-        client.release();
-      }
+      const events = await pool.find('application_events', { application_id: ashaApp }, { sort: { id: 1 } });
+      expect(events.filter((r) => r.kind === 'stage_changed')).toHaveLength(2);
+      // History is append-only, even from a workspace transaction.
+      await expect(pool.tenant(t.id, (tx) => tx.collection('application_events').update({ application_id: ashaApp }, { $set: { kind: 'hired' } }))).rejects.toThrow();
     });
 
     it('signs CV links for people who may see the candidate', async () => {
@@ -371,7 +362,7 @@ describe('recruitment', () => {
       expect(asha).not.toHaveProperty('offer');
       // One candidate, five, or someone from another job are refused; people outside the job's scope cannot compare.
       expect((await as('manager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp}`)).status).toBe(422);
-      const salesApp = (await pool.query<{ id: string }>(`select id from applications where requisition_id = $1 limit 1`, [salesReqId])).rows[0]?.id ?? '00000000-0000-4000-8000-000000000000';
+      const salesApp = ((await pool.one('applications', { requisition_id: salesReqId }))?.id as string | undefined) ?? '00000000-0000-4000-8000-000000000000';
       expect((await as('manager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${salesApp}`)).status).toBe(400);
       expect((await as('salesManager').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`)).status).toBe(404);
       expect((await as('employee').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`)).status).toBe(403);
@@ -393,7 +384,7 @@ describe('recruitment', () => {
       const vApp = (await applicationOf(vikramId, reqId)).id;
       const res = await as('manager').post(`/recruitment/applications/${vApp}/reject`).send({ reason: 'better_candidate', note: 'Asha is further along', notifyCandidate: true });
       expect(res.status, JSON.stringify(res.body)).toBe(200);
-      expect((await pool.query(`select status from interviews where application_id = $1`, [vApp])).rows.map((r) => r.status)).toEqual(['cancelled']);
+      expect((await pool.find('interviews', { application_id: vApp })).map((r) => r.status)).toEqual(['cancelled']);
       const mail = await emails('vikram@example.com', 'candidate.rejected');
       expect(mail).toHaveLength(1);
       // The email never includes the internal reason or note.
@@ -414,8 +405,8 @@ describe('recruitment', () => {
         expect(res.status, JSON.stringify(res.body)).toBe(201);
         offerId = res.body.id;
         expect((await as('recruiter').post(`/recruitment/applications/${ashaApp}/offers`).send(offer)).status).toBe(409);
-        const app1 = await pool.query(`select s.kind from applications a join recruitment_stages s on s.id = a.stage_id where a.id = $1`, [ashaApp]);
-        expect(app1.rows[0].kind).toBe('offer');
+        const app1 = (await pool.one('applications', { id: ashaApp }))!;
+        expect((await pool.one('recruitment_stages', { id: app1.stage_id }))!.kind).toBe('offer');
         expect((await as('recruiter').post(`/recruitment/offers/${offerId}/send`).send({})).status).toBe(409); // not approved yet
         expect((await as('recruiter').post(`/recruitment/offers/${offerId}/submit`).send({})).body).toEqual({ status: 'pending_approval' });
         const inbox = (await as('hr').get('/approvals/inbox')).body as { id: string; resourceType: string; summary: string }[];
@@ -425,7 +416,7 @@ describe('recruitment', () => {
         const noMfa = (await login(app, people.hr!.email)).accessToken;
         expect((await api(app, noMfa).post(`/approvals/${item.id}/approve`).send({})).status).toBe(403);
         expect((await as('hr').post(`/approvals/${item.id}/approve`).send({})).status).toBe(200);
-        expect((await pool.query('select status, above_range from offers where id = $1', [offerId])).rows[0]).toEqual({ status: 'approved', above_range: true });
+        expect(await pool.one('offers', { id: offerId })).toMatchObject({ status: 'approved', above_range: true });
         // The recruiter, who makes offers on this job, sees the amount and the approved range when comparing.
         const vApp = (await applicationOf(vikramId, reqId)).id;
         const cmp = await as('recruiter').get(`/recruitment/requisitions/${reqId}/compare?applications=${ashaApp},${vApp}`);
@@ -450,8 +441,7 @@ describe('recruitment', () => {
         expect(res.status, JSON.stringify(res.body)).toBe(201);
         const emp = res.body.employee as { id: string; firstName: string; departmentId: string };
         expect(emp).toMatchObject({ firstName: 'Asha', departmentId: engineering });
-        const a = await pool.query('select status, employee_id from applications where id = $1', [ashaApp]);
-        expect(a.rows[0]).toEqual({ status: 'hired', employee_id: emp.id });
+        expect(await pool.one('applications', { id: ashaApp })).toMatchObject({ status: 'hired', employee_id: emp.id });
         const r = (await as('recruiter').get(`/recruitment/requisitions/${reqId}`)).body;
         expect(r).toMatchObject({ status: 'filled', hiredCount: 1, published: false });
         expect((await request(app.getHttpServer()).get(`/api/v1/public/careers/${siteSlug}/jobs/backend-engineer`)).status).toBe(404);
@@ -465,8 +455,8 @@ describe('recruitment', () => {
         const o = await as('recruiter').post(`/recruitment/applications/${kApp}/offers`).send({ ...offer, baseSalary: '2000000' });
         expect((await as('recruiter').post(`/recruitment/offers/${o.body.id}/submit`).send({})).status).toBe(200);
         expect((await as('recruiter').post(`/recruitment/applications/${kApp}/reject`).send({ reason: 'salary' })).status).toBe(200);
-        const row = (await pool.query('select o.status, r.status as approval from offers o join approval_requests r on r.id = o.approval_request_id where o.id = $1', [o.body.id])).rows[0];
-        expect(row).toEqual({ status: 'withdrawn', approval: 'cancelled' });
+        const od = (await pool.one('offers', { id: o.body.id }))!;
+        expect({ status: od.status, approval: (await pool.one('approval_requests', { id: od.approval_request_id }))!.status }).toEqual({ status: 'withdrawn', approval: 'cancelled' });
         expect(((await as('hr').get('/approvals/inbox')).body as { resourceId: string }[]).some((i) => i.resourceId === o.body.id)).toBe(false);
       });
     });
@@ -479,25 +469,25 @@ describe('recruitment', () => {
       expect((await as('manager').post(`/recruitment/candidates/${vikram}/erase`).send({ reason: 'Asked by email' })).status).toBe(404);
       const res = await as('recruiter').post(`/recruitment/candidates/${vikram}/erase`).send({ reason: 'Candidate asked by email' });
       expect(res.body).toEqual({ erased: true });
-      const c = (await pool.query('select first_name, email, phone, anonymized_at from candidates where id = $1', [vikram])).rows[0];
+      const c = (await pool.one('candidates', { id: vikram }))!;
       expect(c.email).toBeNull();
       expect(c.first_name).not.toBe('Vikram');
       expect(c.anonymized_at).not.toBeNull();
-      expect((await pool.query('select count(*)::int as n from candidate_notes where candidate_id = $1', [vikram])).rows[0].n).toBe(0);
-      expect((await pool.query(`select count(*)::int as n from application_events e join applications a on a.id = e.application_id where a.candidate_id = $1`, [vikram])).rows[0].n).toBeGreaterThan(0);
+      expect(await pool.count('candidate_notes', { candidate_id: vikram })).toBe(0);
+      const vikramApps = (await pool.find('applications', { candidate_id: vikram })).map((a) => a.id);
+      expect(await pool.count('application_events', { application_id: { $in: vikramApps } })).toBeGreaterThan(0);
       expect((await as('recruiter').post(`/recruitment/candidates/${vikram}/erase`).send({ reason: 'Again' })).body).toEqual({ erased: false });
-      const audit = await pool.query(`select metadata from audit_events where tenant_id = $1 and action = 'candidate.erased' and resource_id = $2`, [t.id, vikram]);
-      expect(audit.rows).toHaveLength(1);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'candidate.erased', resource_id: vikram })).toBe(1);
     });
 
     it('anonymises candidates past the retention period with no open application', async () => {
       const stale = (await as('recruiter').post('/recruitment/candidates').send({ firstName: 'Old', lastName: 'Lead', email: 'old.lead@example.com', lawfulBasisConfirmed: true })).body.id;
       const active = (await as('recruiter').post('/recruitment/candidates').send({ firstName: 'Busy', email: 'busy@example.com', requisitionId: salesReqId, lawfulBasisConfirmed: true })).body.id;
-      await pool.query(`update candidates set last_activity_at = now() - interval '400 days' where id = any($1::uuid[])`, [[stale, active]]);
+      await pool.update('candidates', { id: { $in: [stale, active] } }, { $set: { last_activity_at: new Date(Date.now() - 400 * 86_400_000) } });
       const n = await app.get(CandidatesService).applyRetention(t.id);
       expect(n).toBe(1);
-      expect((await pool.query('select email from candidates where id = $1', [stale])).rows[0].email).toBeNull();
-      expect((await pool.query('select email from candidates where id = $1', [active])).rows[0].email).toBe('busy@example.com');
+      expect((await pool.one('candidates', { id: stale }))!.email).toBeNull();
+      expect((await pool.one('candidates', { id: active }))!.email).toBe('busy@example.com');
       expect(await app.get(CandidatesService).applyRetention(t.id)).toBe(0);
     });
   });
@@ -550,8 +540,8 @@ describe('recruitment', () => {
       expect(nehaMail).toEqual([expect.objectContaining({ subject: 'Next steps for QA Engineer' })]);
       expect(nehaMail[0]!.text_body).toMatch(/^Dear Neha,/);
       expect((await emails('karan.bulk@example.com', 'candidate.message'))[0]!.text_body).toMatch(/^Dear Karan,/);
-      const events = await pool.query(`select kind from application_events where application_id = $1 order by id`, [karan]);
-      expect(events.rows.map((r) => r.kind)).toEqual(expect.arrayContaining(['stage_changed', 'email_queued']));
+      const events = await pool.find('application_events', { application_id: karan }, { sort: { id: 1 } });
+      expect(events.map((r) => r.kind)).toEqual(expect.arrayContaining(['stage_changed', 'email_queued']));
 
       const rejected = await bulk('recruiter', { action: 'reject', applicationIds: [neha, karan], reason: 'position_closed', notifyCandidate: true });
       expect(rejected.body).toMatchObject({ done: 2, skipped: 0 });
@@ -559,15 +549,15 @@ describe('recruitment', () => {
       expect((await applicationOf((await candidateByEmail('karan.bulk@example.com'))!, job)).status).toBe('rejected');
 
       // Candidates from another job, people outside the job's scope, and bad input are refused before anything changes.
-      const otherApp = (await pool.query<{ id: string }>(`select id from applications where requisition_id <> $1 and tenant_id = $2 limit 1`, [job, t.id])).rows[0]!.id;
+      const otherApp = (await pool.one('applications', { requisition_id: { $ne: job }, tenant_id: t.id }))!.id as string;
       expect((await bulk('recruiter', { action: 'move', applicationIds: [omar, otherApp], stageId: stage('screen') })).status).toBe(400);
       expect((await bulk('salesManager', { action: 'move', applicationIds: [neha], stageId: stage('screen') })).status).toBe(404);
       expect((await bulk('employee', { action: 'move', applicationIds: [neha], stageId: stage('screen') })).status).toBe(403);
       expect((await bulk('recruiter', { action: 'email', applicationIds: [neha], subject: 'Hi', message: 'short' })).status).toBe(422);
       expect((await bulk('recruiter', { action: 'move', applicationIds: [] , stageId: stage('screen') })).status).toBe(422);
-      const audit = await pool.query(`select action, changes from audit_events where tenant_id = $1 and resource_id = $2 and action like 'applications.bulk_%' order by created_at`, [t.id, job]);
-      expect(audit.rows.map((r) => r.action)).toEqual(['applications.bulk_move', 'applications.bulk_move', 'applications.bulk_email', 'applications.bulk_reject']);
-      expect(audit.rows[0].changes).toMatchObject({ done: 2, skipped: 1 });
+      const audit = await pool.find('audit_events', { tenant_id: t.id, resource_id: job, action: { $regex: '^applications\\.bulk_' } }, { sort: { chain_seq: 1 } });
+      expect(audit.map((r) => r.action)).toEqual(['applications.bulk_move', 'applications.bulk_move', 'applications.bulk_email', 'applications.bulk_reject']);
+      expect(audit[0]!.changes).toMatchObject({ done: 2, skipped: 1 });
     });
   });
 
@@ -576,14 +566,14 @@ describe('recruitment', () => {
       const r = await as('recruiter').get('/insights/recruitment-flow?period=all');
       expect(r.status, JSON.stringify(r.body)).toBe(200);
       const f = r.body as { applications: number; stages: { id: string; kind: string; reached: number; now: number }[]; moves: { from: string; to: string; count: number }[] };
-      const total = (await pool.query(`select count(*)::int as n from applications where tenant_id = $1`, [t.id])).rows[0].n;
+      const total = await pool.count('applications', { tenant_id: t.id });
       expect(f.applications).toBe(total);
       const id = (kind: string) => f.stages.find((s) => s.kind === kind)!.id;
       // Every application reached the first stage; the bulk test moved two on to screening and rejected them there.
       expect(f.stages.find((s) => s.kind === 'new')!.reached).toBe(total);
       expect(f.moves.find((m) => m.from === id('new') && m.to === id('screen'))!.count).toBeGreaterThanOrEqual(2);
       expect(f.moves.find((m) => m.from === id('screen') && m.to === 'rejected')!.count).toBeGreaterThanOrEqual(2);
-      const live = (await pool.query(`select count(*)::int as n from applications where tenant_id = $1 and status in ('active', 'hired')`, [t.id])).rows[0].n;
+      const live = await pool.count('applications', { tenant_id: t.id, status: { $in: ['active', 'hired'] } });
       expect(f.stages.reduce((a, s) => a + s.now, 0)).toBe(live);
       // A department-scoped manager sees only their department's jobs; an employee none.
       const dept = (await as('salesManager').get('/insights/recruitment-flow?period=all')).body;
@@ -597,20 +587,8 @@ describe('recruitment', () => {
     it('keeps every Phase 4 record inside its workspace', async () => {
       const tables = ['recruitment_stages', 'job_requisitions', 'job_postings', 'career_sites', 'candidates', 'candidate_files', 'candidate_notes', 'applications',
         'application_events', 'interviews', 'interview_panelists', 'interview_feedback', 'offers'];
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        await client.query('set local role crew_app');
-        await client.query(`select set_config('app.tenant_id', $1, true)`, [other.id]);
-        for (const table of tables) {
-          const r = await client.query(`select count(*)::int as n from ${table} where tenant_id = $1`, [t.id]);
-          expect(r.rows[0].n, table).toBe(0);
-        }
-        await expect(client.query(`insert into candidates (tenant_id, first_name, email, source, consent_basis) values ($1, 'X', 'x@example.com', 'manual', 'recruiter_confirmed')`, [t.id])).rejects.toThrow();
-        await client.query('rollback');
-      } finally {
-        client.release();
-      }
+      await expectHiddenFrom(pool, t, other, tables);
+      await expect(pool.tenant(other.id, (tx) => tx.collection('candidates').insert({ tenant_id: t.id, first_name: 'X', email: 'x@example.com', source: 'manual', consent_basis: 'recruiter_confirmed' }))).rejects.toThrow();
       const otherOwner = (await login(app, other.ownerEmail)).accessToken;
       const asha = (await candidateByEmail('asha.rao@example.com'))!;
       expect((await api(app, otherOwner).get(`/recruitment/requisitions/${reqId}`)).status).toBe(404);
