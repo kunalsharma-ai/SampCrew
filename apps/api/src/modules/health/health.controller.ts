@@ -2,13 +2,17 @@ import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../../platform/authz/decorators';
 import { DatabaseService } from '../../platform/database/database.service';
+import { MongoService } from '../../platform/database/mongo.service';
 import { Doc } from '../../platform/openapi/openapi';
 
 @Controller('health')
 @Public()
 @SkipThrottle()
 export class HealthController {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly mongo: MongoService,
+  ) {}
 
   @Get('live')
   @Doc({ summary: 'Liveness probe' })
@@ -27,6 +31,13 @@ export class HealthController {
       // database error itself is not shown to whoever asked.
       throw new ServiceUnavailableException({ code: 'not_ready', message: 'The database cannot be reached' });
     }
-    return { status: 'ok', database: { latencyMs: Date.now() - started } };
+    const database = { latencyMs: Date.now() - started };
+    // MongoDB counts towards readiness once it is configured (MONGODB_URL), as modules move onto it.
+    if (!this.mongo.configured) return { status: 'ok', database };
+    const mongoStarted = Date.now();
+    if (!(await this.mongo.ping())) {
+      throw new ServiceUnavailableException({ code: 'not_ready', message: 'The database cannot be reached' });
+    }
+    return { status: 'ok', database, mongodb: { latencyMs: Date.now() - mongoStarted } };
   }
 }

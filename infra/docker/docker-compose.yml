@@ -14,6 +14,17 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       retries: 10
+  # Single-node replica set: SampCrew needs MongoDB transactions, which a standalone mongod does not offer.
+  # The health check initiates the replica set on first start.
+  mongo:
+    image: mongo:8.0
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports: ["27017:27017"]
+    volumes: [mongodata:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }"]
+      interval: 5s
+      retries: 20
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
@@ -30,4 +41,5 @@ services:
     ports: ["1025:1025", "8025:8025"]
 volumes:
   pgdata:
+  mongodata:
   minio:

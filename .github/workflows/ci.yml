@@ -40,6 +40,17 @@ jobs:
       - run: pnpm build:packages
       - run: pnpm typecheck
       - run: pnpm test
+      # MongoDB data layer (replacing PostgreSQL module by module). A replica set, because it relies on transactions.
+      - name: Start MongoDB replica set
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 60); do docker exec mongo mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' >/dev/null 2>&1 && break; sleep 1; done
+          docker exec mongo mongosh --quiet --eval 'rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] })'
+          for i in $(seq 1 60); do [ "$(docker exec mongo mongosh --quiet --eval 'db.hello().isWritablePrimary')" = "true" ] && break; sleep 1; done
+      - name: MongoDB tests
+        run: pnpm test:mongo
+        env:
+          TEST_MONGODB_URL: mongodb://localhost:27017/crew_test?replicaSet=rs0
       - name: Outlook signature test kit builds
         run: pnpm signature:test-kit
       - name: Build apps

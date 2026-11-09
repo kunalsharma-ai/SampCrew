@@ -9,6 +9,7 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:mongo": "vitest run -c vitest.mongo.config.ts",
     "openapi": "node dist/openapi-export.js > ../../docs/api/openapi.json"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
     "helmet": "8.3.0",
     "ioredis": "5.11.1",
     "jose": "5.10.0",
+    "mongodb": "7.7.0",
     "nodemailer": "8.0.11",
     "otplib": "12.0.1",
     "pdf-lib": "1.17.1",
