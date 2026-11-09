@@ -1,4 +1,4 @@
-import { mongo, SlugTakenError } from '@crew/db';
+import { mongo } from '@crew/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { MongoService } from '../../src/platform/database/mongo.service';
 import { id, mongoService } from './helpers';
@@ -80,6 +80,6 @@ describe('MongoDB catalogue sync and workspace provisioning', () => {
     // The same owner joining a second workspace keeps one identity; the same address is refused.
     const second = await db.platform((tx) => mongo.provisionTenantMongo(tx, { ...input, slug: `${slug}-2` }));
     expect(second).toMatchObject({ existingUser: true, ownerUserId: t.ownerUserId });
-    await expect(db.platform((tx) => mongo.provisionTenantMongo(tx, input))).rejects.toBeInstanceOf(SlugTakenError);
+    await expect(db.platform((tx) => mongo.provisionTenantMongo(tx, input))).rejects.toBeInstanceOf(mongo.SlugTakenError);
   });
 });
