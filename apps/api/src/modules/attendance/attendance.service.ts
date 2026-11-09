@@ -18,22 +18,70 @@ import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService, type ApprovalRequestRow } from '../approvals/approvals.service';
-import { EMPLOYEE_SCOPE, employeeAttrs } from '../employees/employee-attrs';
-import { AttendanceDaysService, type EmployeeCtx } from './attendance-days.service';
+import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
+import { employeeNames, fieldById } from '../employees/employee-view';
+import { AttendanceDaysService, type EmployeeCtx, isLocked } from './attendance-days.service';
 
 const { addDays, fromLocal, hhmm, localToday } = zonedTime;
 const QR_WINDOW_MS = 30_000;
 
-const DAY_COLUMNS = `d.employee_id as "employeeId", d.work_date as "workDate", d.status, d.day_type as "dayType", d.leave_part as "leavePart",
-  d.first_in as "firstIn", d.last_out as "lastOut", d.worked_minutes as "workedMinutes", d.break_minutes as "breakMinutes",
-  d.late_minutes as "lateMinutes", d.early_leave_minutes as "earlyLeaveMinutes", d.overtime_minutes as "overtimeMinutes",
-  d.approved_overtime_minutes as "approvedOvertimeMinutes", d.flags, d.explanation, d.punch_count as "punchCount", d.computed_at as "computedAt",
-  st.code as "shiftCode", st.name as "shiftName", to_char(st.start_time, 'HH24:MI') as "shiftStart", to_char(st.end_time, 'HH24:MI') as "shiftEnd", st.color as "shiftColor"`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
+
+/** Computed days as the API shows them, with their shift (the PostgreSQL DAY_COLUMNS view). */
+async function dayViews(tx: TenantTx, days: Doc[]) {
+  const shifts = new Map((await tx.collection('shift_templates').find({ id: { $in: [...new Set(days.map((d) => d.shift_template_id).filter(Boolean))] } })).map((x) => [x.id as string, x]));
+  return days.map((d) => {
+    const st = d.shift_template_id ? shifts.get(d.shift_template_id) : undefined;
+    return {
+      employeeId: d.employee_id as string,
+      workDate: d.work_date as string,
+      status: d.status as string,
+      dayType: d.day_type,
+      leavePart: d.leave_part ?? null,
+      firstIn: (d.first_in as Date | null) ?? null,
+      lastOut: (d.last_out as Date | null) ?? null,
+      workedMinutes: d.worked_minutes as number,
+      breakMinutes: d.break_minutes as number,
+      lateMinutes: d.late_minutes as number,
+      earlyLeaveMinutes: d.early_leave_minutes as number,
+      overtimeMinutes: d.overtime_minutes as number,
+      approvedOvertimeMinutes: d.approved_overtime_minutes as number,
+      flags: d.flags,
+      explanation: d.explanation,
+      punchCount: d.punch_count,
+      computedAt: d.computed_at,
+      shiftCode: st?.code ?? null,
+      shiftName: st?.name ?? null,
+      shiftStart: st ? String(st.start_time).slice(0, 5) : null,
+      shiftEnd: st ? String(st.end_time).slice(0, 5) : null,
+      shiftColor: st?.color ?? null,
+    };
+  });
+}
+
+/** Attendance corrections as the API shows them, with the employee's name. */
+async function correctionViews(tx: TenantTx, rows: Doc[]) {
+  const people = await employeeNames(tx, rows.map((c) => c.employee_id));
+  return rows
+    .filter((c) => people.has(c.employee_id))
+    .map((c) => ({
+      id: c.id,
+      employeeId: c.employee_id,
+      workDate: c.work_date,
+      punches: c.punches,
+      reason: c.reason,
+      status: c.status,
+      createdAt: c.created_at,
+      approvalId: c.approval_request_id ?? null,
+      employeeName: people.get(c.employee_id)!.name,
+    }));
+}
 
 const attrsOf = (e: EmployeeCtx) =>
   employeeAttrs({ id: e.id, membershipId: e.membership_id, legalEntityId: e.legal_entity_id, departmentId: e.department_id, locationId: e.location_id });
@@ -46,9 +94,21 @@ const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
  */
 /** How long a computed day for today or yesterday is reused by read views before it is refreshed. */
 const TEAM_REFRESH_SECONDS = 30;
-/** SQL that is true when employee `e`'s computed day `d` for date $1 can be reused (see TEAM_REFRESH_SECONDS). */
-const freshDay = (secondsParam: string) => `d.computed_at > now() - make_interval(secs => ${secondsParam}::int)
-          and not exists (select 1 from leave_requests lr where lr.employee_id = e.id and lr.updated_at > d.computed_at and lr.start_date <= $1 and lr.end_date >= $1)`;
+
+/**
+ * True when a stored day can be reused by a read view: computed in the last TEAM_REFRESH_SECONDS, and no leave
+ * request covering the date changed after it was computed.
+ */
+async function freshDays(tx: TenantTx, date: string, days: Doc[]): Promise<Set<string>> {
+  const since = Date.now() - TEAM_REFRESH_SECONDS * 1000;
+  const recent = days.filter((d) => d.computed_at && d.computed_at.getTime() > since);
+  if (!recent.length) return new Set();
+  const changed = await tx.collection('leave_requests').find(
+    { employee_id: { $in: recent.map((d) => d.employee_id) }, start_date: { $lte: date }, end_date: { $gte: date } },
+    { projection: { employee_id: 1, updated_at: 1 } },
+  );
+  return new Set(recent.filter((d) => !changed.some((l) => l.employee_id === d.employee_id && l.updated_at > d.computed_at)).map((d) => d.employee_id as string));
+}
 
 @Injectable()
 export class AttendanceService implements OnModuleInit {
@@ -80,7 +140,7 @@ export class AttendanceService implements OnModuleInit {
       attributes: async (tx, id) => attrsOf((await this.employeeFor(tx, 'attendance_corrections', id))!),
       onApproved: (tx, req) => this.correctionApproved(tx, req),
       onRejected: async (tx, req) => {
-        await tx.query(`update attendance_corrections set status = 'rejected', decided_at = now() where id = $1 and status = 'pending'`, [req.resource_id]);
+        await tx.collection('attendance_corrections').updateOne({ id: req.resource_id, status: 'pending' }, { $set: { status: 'rejected', decided_at: new Date() } });
         await this.audit.record(tx, { action: 'attendance_correction.rejected', resourceType: 'attendance_correction', resourceId: req.resource_id });
       },
     });
@@ -90,31 +150,31 @@ export class AttendanceService implements OnModuleInit {
       link: () => '/attendance',
       attributes: async (tx, id) => attrsOf((await this.employeeFor(tx, 'overtime_claims', id))!),
       onApproved: async (tx, req) => {
-        const c = (await one<{ employee_id: string; work_date: string; minutes: number }>(tx, `update overtime_claims set status = 'approved', decided_at = now() where id = $1 and status = 'pending' returning employee_id, work_date, minutes`, [req.resource_id]));
+        const c = await tx.collection('overtime_claims').updateAndGet({ id: req.resource_id, status: 'pending' }, { $set: { status: 'approved', decided_at: new Date() } });
         if (!c) return;
         await this.days.recompute(tx, c.employee_id, c.work_date, c.work_date);
         await this.audit.record(tx, { action: 'overtime_claim.approved', resourceType: 'overtime_claim', resourceId: req.resource_id, metadata: { minutes: c.minutes, workDate: c.work_date } });
       },
       onRejected: async (tx, req) => {
-        await tx.query(`update overtime_claims set status = 'rejected', decided_at = now() where id = $1 and status = 'pending'`, [req.resource_id]);
+        await tx.collection('overtime_claims').updateOne({ id: req.resource_id, status: 'pending' }, { $set: { status: 'rejected', decided_at: new Date() } });
         await this.audit.record(tx, { action: 'overtime_claim.rejected', resourceType: 'overtime_claim', resourceId: req.resource_id });
       },
     });
   }
 
-  private async employeeFor(tx: Tx, table: 'attendance_corrections' | 'overtime_claims', id: string) {
-    const r = await one<{ employee_id: string }>(tx, `select employee_id from ${table} where id = $1`, [id]);
+  private async employeeFor(tx: TenantTx, table: 'attendance_corrections' | 'overtime_claims', id: string) {
+    const r = await tx.collection(table).findOne({ id });
     return r ? this.days.employee(tx, r.employee_id) : undefined;
   }
 
-  private async me(tx: Tx): Promise<EmployeeCtx> {
+  private async me(tx: TenantTx): Promise<EmployeeCtx> {
     const s = await this.authz.subject(tx);
     if (!s.employeeId) throw Errors.badRequest('no_employee_record', 'Your login is not linked to an employee record yet. Ask HR to link it.');
     return (await this.days.employee(tx, s.employeeId))!;
   }
 
   /** The employee a request is about: the caller, or someone they may act for with the given permission. */
-  private async target(tx: Tx, employeeId: string | undefined, permission: string): Promise<{ e: EmployeeCtx; onBehalf: boolean }> {
+  private async target(tx: TenantTx, employeeId: string | undefined, permission: string): Promise<{ e: EmployeeCtx; onBehalf: boolean }> {
     if (!employeeId) {
       const e = await this.me(tx);
       await this.authz.require(permission, attrsOf(e), tx);
@@ -197,7 +257,7 @@ export class AttendanceService implements OnModuleInit {
     const now = Date.now();
     const refusals: { employeeId: string; distanceM: number; sequence: number }[] = [];
     const out = await this.db.tenant(async (tx) => {
-      const device = await one<{ id: string }>(tx, 'select id from mobile_devices where id = $1 and membership_id = $2 and revoked_at is null', [input.deviceId, actor.membershipId]);
+      const device = await tx.collection('mobile_devices').findOne({ id: input.deviceId, membership_id: actor.membershipId, revoked_at: null });
       if (!device) throw Errors.notFound('Device');
       const e = await this.me(tx);
       await this.authz.require('attendance:punch', attrsOf(e), tx);
@@ -206,9 +266,7 @@ export class AttendanceService implements OnModuleInit {
       const touched: number[] = [];
       for (const p of [...input.punches].sort((a, b) => a.sequence - b.sequence)) {
         const sourceEventId = mobileSync.punchEventId(device.id, p.sequence);
-        const existing = await one<{ id: string; captured_at: Date; direction: string; risk_flags: string[] }>(
-          tx, `select id, captured_at, direction, risk_flags from attendance_events where source = 'mobile' and source_event_id = $1`, [sourceEventId],
-        );
+        const existing = await tx.collection('attendance_events').findOne({ source: 'mobile', source_event_id: sourceEventId });
         if (existing) {
           results.push({ sequence: p.sequence, status: 'duplicate', punch: { id: existing.id, capturedAt: existing.captured_at, direction: existing.direction, flags: existing.risk_flags } });
           continue;
@@ -266,24 +324,33 @@ export class AttendanceService implements OnModuleInit {
           ...(p.mockLocation ? ['mock_location'] : []),
         ];
         const workDate = await this.days.workDateAt(tx, e, at);
-        const locked = (await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, workDate]))!.locked;
+        const locked = await isLocked(tx, e.id, workDate);
         let direction = p.direction;
         if (!direction) {
           const win = await this.days.window(tx, e, workDate);
           const last = (await this.days.punches(tx, e.id, win.from, at)).at(-1);
           direction = last && last.direction !== 'out' ? 'out' : 'in';
         }
-        const row = (await one<{ id: string }>(
-          tx,
-          `insert into attendance_events (tenant_id, employee_id, source, source_event_id, captured_at, device_local_time, direction, latitude, longitude, accuracy_m,
-                                          geofence_result, distance_m, recorded_by_membership_id, note, remote_ip, raw, mobile_device_id, risk_flags, arrived_after_lock)
-           values (app_tenant_id(), $1, 'mobile', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-           on conflict (tenant_id, source, source_event_id) do nothing returning id`,
-          [e.id, sourceEventId, new Date(at), p.capturedAt, direction, p.latitude ?? null, p.longitude ?? null, p.accuracyM ?? null, geofence, distance,
-            actor.membershipId, p.note ?? null, ctx?.ip ?? null,
-            JSON.stringify({ timeBasis: capture.basis, phoneTime: p.capturedAt, capturedElapsedMs: p.capturedElapsedMs ?? null, sentElapsedMs: input.sentElapsedMs ?? null, sameRun: p.capturedRunId !== undefined && p.capturedRunId === input.sentRunId }),
-            device.id, flags, locked],
-        ));
+        const row = await tx.collection('attendance_events').insert({
+          employee_id: e.id,
+          source: 'mobile',
+          source_event_id: sourceEventId,
+          captured_at: new Date(at),
+          device_local_time: p.capturedAt,
+          direction,
+          latitude: p.latitude ?? null,
+          longitude: p.longitude ?? null,
+          accuracy_m: p.accuracyM ?? null,
+          geofence_result: geofence,
+          distance_m: distance,
+          recorded_by_membership_id: actor.membershipId,
+          note: p.note ?? null,
+          remote_ip: ctx?.ip ?? null,
+          raw: { timeBasis: capture.basis, phoneTime: p.capturedAt, capturedElapsedMs: p.capturedElapsedMs ?? null, sentElapsedMs: input.sentElapsedMs ?? null, sameRun: p.capturedRunId !== undefined && p.capturedRunId === input.sentRunId },
+          mobile_device_id: device.id,
+          risk_flags: flags,
+          arrived_after_lock: locked,
+        });
         if (!row) {
           results.push({ sequence: p.sequence, status: 'duplicate' });
           continue;
@@ -303,7 +370,7 @@ export class AttendanceService implements OnModuleInit {
         const to = dates[dates.length - 1]! > today ? today : dates[dates.length - 1]!;
         if (from <= to) await this.days.recompute(tx, e.id, from, to, now);
       }
-      await tx.query('update mobile_devices set last_sync_at = now(), last_seen_at = now() where id = $1', [device.id]);
+      await tx.collection('mobile_devices').updateOne({ id: device.id }, { $set: { last_sync_at: new Date(), last_seen_at: new Date() } });
       const date = await this.days.workDateAt(tx, e, now);
       return { results, today: await this.dayRow(tx, e.id, date) };
     });
@@ -322,17 +389,17 @@ export class AttendanceService implements OnModuleInit {
 
   /** Writes one live punch (web, mobile, QR), then recomputes the affected days. Retries return the first punch. */
   private async record(
-    tx: Tx,
+    tx: TenantTx,
     e: EmployeeCtx,
     p: { source: 'web' | 'mobile' | 'qr'; sourceEventId: string; direction?: 'in' | 'out'; latitude: number | null; longitude: number | null; accuracy: number | null; geofence: string; distance: number | null; note: string | null; ip: string | null; kioskId?: string },
   ) {
     const actor = requestContext.tenantActor();
     const now = Date.now();
     const today = await this.days.workDateAt(tx, e, now);
-    if ((await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, today]))!.locked) {
+    if (await isLocked(tx, e.id, today)) {
       throw Errors.conflict('period_locked', 'Attendance for today is locked for payroll. Ask HR to unlock it.');
     }
-    const existing = await one<{ id: string }>(tx, 'select id from attendance_events where source = $1 and source_event_id = $2', [p.source, p.sourceEventId]);
+    const existing = await tx.collection('attendance_events').findOne({ source: p.source, source_event_id: p.sourceEventId });
     let id = existing?.id;
     let direction = p.direction;
     if (!existing) {
@@ -342,18 +409,30 @@ export class AttendanceService implements OnModuleInit {
         const last = (await this.days.punches(tx, e.id, win.from, Math.min(win.to, now + 1))).at(-1);
         direction = last && last.direction !== 'out' ? 'out' : 'in';
       }
-      id = (await one<{ id: string }>(
-        tx,
-        `insert into attendance_events (tenant_id, employee_id, kiosk_id, source, source_event_id, captured_at, direction, verify_method, latitude, longitude, accuracy_m,
-                                        geofence_result, distance_m, recorded_by_membership_id, note, remote_ip)
-         values (app_tenant_id(), $1, $2, $3, $4, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-         on conflict (tenant_id, source, source_event_id) do nothing returning id`,
-        [e.id, p.kioskId ?? null, p.source, p.sourceEventId, direction, p.source === 'qr' ? 'qr' : null, p.latitude, p.longitude, p.accuracy, p.geofence, p.distance, actor.membershipId, p.note, p.ip],
-      ))?.id ?? (await one<{ id: string }>(tx, 'select id from attendance_events where source = $1 and source_event_id = $2', [p.source, p.sourceEventId]))!.id;
+      id = (
+        await tx.collection('attendance_events').insert({
+          employee_id: e.id,
+          kiosk_id: p.kioskId ?? null,
+          source: p.source,
+          source_event_id: p.sourceEventId,
+          captured_at: new Date(now),
+          direction,
+          verify_method: p.source === 'qr' ? 'qr' : null,
+          latitude: p.latitude,
+          longitude: p.longitude,
+          accuracy_m: p.accuracy,
+          geofence_result: p.geofence,
+          distance_m: p.distance,
+          recorded_by_membership_id: actor.membershipId,
+          note: p.note,
+          remote_ip: p.ip,
+        })
+      ).id as string;
       const [prev, cur] = this.days.datesFor(e, now);
       await this.days.recompute(tx, e.id, prev, cur, now);
     }
-    const punch = (await one(tx, `select id, captured_at as "capturedAt", direction, source, geofence_result as "geofence", distance_m as "distanceM" from attendance_events where id = $1`, [id]))!;
+    const ev = (await tx.collection('attendance_events').findOne({ id }))!;
+    const punch = { id: ev.id, capturedAt: ev.captured_at, direction: ev.direction, source: ev.source, geofence: ev.geofence_result ?? null, distanceM: ev.distance_m ?? null };
     return { punch, duplicate: Boolean(existing), today: await this.dayRow(tx, e.id, today) };
   }
 
@@ -372,7 +451,7 @@ export class AttendanceService implements OnModuleInit {
       const expected = kioskId && mac && Number.isInteger(window) && (window === now || window === now - 1) ? this.qrCode(kioskId, window) : null;
       const valid = expected !== null && expected.length === code.length && timingSafeEqual(Buffer.from(expected), Buffer.from(code));
       if (!valid) throw Errors.badRequest('qr_expired', 'This QR code has expired or is not valid. Scan the code on the kiosk screen again.');
-      const kiosk = await one<{ id: string; location_id: string; name: string }>(tx, 'select id, location_id, name from attendance_kiosks where id = $1 and revoked_at is null', [kioskId]);
+      const kiosk = await tx.collection('attendance_kiosks').findOne({ id: kioskId, revoked_at: null });
       if (!kiosk) throw Errors.badRequest('qr_expired', 'This QR code has expired or is not valid. Scan the code on the kiosk screen again.');
       const e = await this.me(tx);
       await this.authz.require('attendance:punch', attrsOf(e), tx);
@@ -391,21 +470,23 @@ export class AttendanceService implements OnModuleInit {
   // ---------------------------------------------------------------------------------------------------------
 
   listKiosks() {
-    return this.db.tenant((tx) =>
-      many(tx, `select k.id, k.name, k.location_id as "locationId", l.name as "locationName", k.last_seen_at as "lastSeenAt", k.revoked_at as "revokedAt", k.created_at as "createdAt"
-                  from attendance_kiosks k join locations l on l.id = k.location_id order by k.revoked_at nulls first, k.name`),
-    );
+    return this.db.tenant(async (tx) => {
+      const kiosks = await tx.collection('attendance_kiosks').find({});
+      const locations = await fieldById(tx, 'locations', kiosks.map((k) => k.location_id));
+      // Live kiosks first, by name; then revoked ones.
+      return kiosks
+        .filter((k) => locations.has(k.location_id))
+        .sort((a, b) => Number(!!a.revoked_at) - Number(!!b.revoked_at) || (a.revoked_at && b.revoked_at ? a.revoked_at - b.revoked_at : 0) || String(a.name).localeCompare(String(b.name)))
+        .map((k) => ({ id: k.id, name: k.name, locationId: k.location_id, locationName: locations.get(k.location_id)!, lastSeenAt: k.last_seen_at ?? null, revokedAt: k.revoked_at ?? null, createdAt: k.created_at }));
+    });
   }
 
   async createKiosk(input: z.infer<typeof kioskInput>) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      if (!(await one(tx, 'select 1 from locations where id = $1 and archived_at is null', [input.locationId]))) throw Errors.badRequest('invalid_location', 'Location not found');
+      if (!(await tx.collection('locations').exists({ id: input.locationId, archived_at: null }))) throw Errors.badRequest('invalid_location', 'Location not found');
       const token = randomBytes(32).toString('base64url');
-      const row = (await one<{ id: string }>(
-        tx, `insert into attendance_kiosks (tenant_id, name, location_id, token_hash, created_by) values (app_tenant_id(), $1, $2, $3, $4) returning id`,
-        [input.name, input.locationId, sha256(token), actor.userId],
-      ))!;
+      const row = await tx.collection('attendance_kiosks').insert({ name: input.name, location_id: input.locationId, token_hash: sha256(token), created_by: actor.userId });
       await this.audit.record(tx, { action: 'kiosk.created', resourceType: 'attendance_kiosk', resourceId: row.id, changes: input });
       // The token is shown once; only its hash is stored.
       return { id: row.id, ...input, token };
@@ -414,26 +495,25 @@ export class AttendanceService implements OnModuleInit {
 
   async revokeKiosk(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await tx.query('update attendance_kiosks set revoked_at = now() where id = $1 and revoked_at is null', [id]);
-      if (!r.rowCount) throw Errors.notFound('Kiosk');
+      if (!(await tx.collection('attendance_kiosks').updateOne({ id, revoked_at: null }, { $set: { revoked_at: new Date() } }))) throw Errors.notFound('Kiosk');
       await this.audit.record(tx, { action: 'kiosk.revoked', resourceType: 'attendance_kiosk', resourceId: id });
     });
   }
 
   /** For the kiosk screen itself, authenticated by its token (no user session). */
   async kioskDisplay(token: string) {
-    const k = await this.db.platform((tx) =>
-      one<{ id: string; tenant_id: string; name: string; location: string; tenant: string }>(
-        tx,
-        `select k.id, k.tenant_id, k.name, l.name as location, t.name as tenant from attendance_kiosks k join locations l on l.id = k.location_id join tenants t on t.id = k.tenant_id
-          where k.token_hash = $1 and k.revoked_at is null and t.status = 'active'`,
-        [sha256(token)],
-      ),
-    );
+    const k = await this.db.platform(async (tx) => {
+      const kiosk = await tx.collection('attendance_kiosks').findOne({ token_hash: sha256(token), revoked_at: null });
+      const tenant = kiosk && (await tx.collection('tenants').findOne({ id: kiosk.tenant_id, status: 'active' }));
+      const location = tenant && (await tx.collection('locations').findOne({ id: kiosk.location_id }));
+      return location ? { id: kiosk.id as string, tenant_id: kiosk.tenant_id as string, name: kiosk.name as string, location: location.name as string, tenant: tenant.name as string, lastSeen: kiosk.last_seen_at as Date | null } : undefined;
+    });
     if (!k) throw Errors.unauthorized('This kiosk link is not valid or was revoked');
     // Kiosks are part of advanced attendance; the screen stops showing codes when the plan no longer includes it.
     if (!(await this.db.tenant((tx) => loadEntitlements(tx), { tenantId: k.tenant_id })).features.has('attendance_advanced')) throw Errors.featureNotInPlan('Geofencing, kiosks, biometric devices');
-    await this.db.platform((tx) => tx.query('update attendance_kiosks set last_seen_at = now() where id = $1 and (last_seen_at is null or last_seen_at < now() - interval \'1 minute\')', [k.id]));
+    if (!k.lastSeen || k.lastSeen.getTime() < Date.now() - 60_000) {
+      await this.db.platform((tx) => tx.collection('attendance_kiosks').updateOne({ id: k.id }, { $set: { last_seen_at: new Date() } }));
+    }
     const window = Math.floor(Date.now() / QR_WINDOW_MS);
     return { kiosk: k.name, location: k.location, workspace: k.tenant, code: this.qrCode(k.id, window), expiresAt: new Date((window + 1) * QR_WINDOW_MS).toISOString(), refreshSeconds: QR_WINDOW_MS / 1000 };
   }
@@ -442,8 +522,9 @@ export class AttendanceService implements OnModuleInit {
   // Views
   // ---------------------------------------------------------------------------------------------------------
 
-  private dayRow(tx: Tx, employeeId: string, date: string) {
-    return one(tx, `select ${DAY_COLUMNS} from attendance_days d left join shift_templates st on st.id = d.shift_template_id where d.employee_id = $1 and d.work_date = $2`, [employeeId, date]);
+  private async dayRow(tx: TenantTx, employeeId: string, date: string) {
+    const d = await tx.collection('attendance_days').findOne({ employee_id: employeeId, work_date: date });
+    return d ? (await dayViews(tx, [d]))[0] : undefined;
   }
 
   /** My day today: status, punches, what I can do next. */
@@ -457,11 +538,8 @@ export class AttendanceService implements OnModuleInit {
       const punches = await this.days.punches(tx, e.id, win.from, win.to);
       if (date >= e.date_of_joining) {
         // Punching recomputes the day itself; a view only refreshes a day that is missing or stale.
-        const reuse = await one<{ ok: boolean }>(
-          tx, `select coalesce((select ${freshDay('$3')} from employees e join attendance_days d on d.employee_id = e.id and d.work_date = $1 where e.id = $2), false) as ok`,
-          [date, e.id, TEAM_REFRESH_SECONDS],
-        );
-        if (!reuse!.ok) await this.days.recompute(tx, e.id, date, date);
+        const stored = await tx.collection('attendance_days').findOne({ employee_id: e.id, work_date: date });
+        if (!stored || !(await freshDays(tx, date, [stored])).has(e.id)) await this.days.recompute(tx, e.id, date, date);
       }
       const last = punches.at(-1);
       return {
@@ -476,7 +554,7 @@ export class AttendanceService implements OnModuleInit {
         day: await this.dayRow(tx, e.id, date),
         allowed: { web: policy.web_punch, mobile: policy.mobile_punch, qr: policy.qr_punch },
         geofence: { mode: policy.geofence_mode, configured: Boolean(e.fence), radiusM: e.fence?.radiusM ?? null },
-        locked: (await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, date]))!.locked,
+        locked: await isLocked(tx, e.id, date),
       };
     });
   }
@@ -491,13 +569,12 @@ export class AttendanceService implements OnModuleInit {
       const end = to > today ? today : to;
       const start = from < e.date_of_joining ? e.date_of_joining : from;
       if (start <= end) {
-        const have = new Set((await many<{ d: string }>(tx, `select work_date as d from attendance_days where employee_id = $1 and work_date between $2 and $3 and work_date < $4`, [e.id, start, end, addDays(today, -1)])).map((r) => r.d));
+        const have = new Set(
+          (await tx.collection('attendance_days').find({ employee_id: e.id, work_date: { $gte: start, $lte: end, $lt: addDays(today, -1) } }, { projection: { work_date: 1 } })).map((r) => r.work_date as string),
+        );
         for (let d = start; d <= end; d = addDays(d, 1)) if (!have.has(d)) await this.days.recompute(tx, e.id, d, d);
       }
-      const rows = await many<{ workDate: string; status: string; workedMinutes: number; lateMinutes: number; overtimeMinutes: number; approvedOvertimeMinutes: number }>(
-        tx, `select ${DAY_COLUMNS} from attendance_days d left join shift_templates st on st.id = d.shift_template_id where d.employee_id = $1 and d.work_date between $2 and $3 order by d.work_date`,
-        [e.id, from, to],
-      );
+      const rows = await dayViews(tx, await tx.collection('attendance_days').find({ employee_id: e.id, work_date: { $gte: from, $lte: to } }, { sort: { work_date: 1 } }));
       const count = (s: string) => rows.filter((r) => r.status === s).length;
       return {
         employee: { id: e.id, name: e.name, code: e.code, timeZone: e.tz },
@@ -510,8 +587,21 @@ export class AttendanceService implements OnModuleInit {
           approvedOvertimeMinutes: rows.reduce((t, r) => t + r.approvedOvertimeMinutes, 0),
         },
         days: rows,
-        corrections: await many(tx, `select id, work_date as "workDate", status, punches, reason, created_at as "createdAt" from attendance_corrections where employee_id = $1 and work_date between $2 and $3 order by created_at desc`, [e.id, from, to]),
-        overtimeClaims: await many(tx, `select id, work_date as "workDate", status, minutes, reason from overtime_claims where employee_id = $1 and work_date between $2 and $3 order by created_at desc`, [e.id, from, to]),
+        corrections: (await tx.collection('attendance_corrections').find({ employee_id: e.id, work_date: { $gte: from, $lte: to } }, { sort: { created_at: -1 } })).map((c) => ({
+          id: c.id,
+          workDate: c.work_date,
+          status: c.status,
+          punches: c.punches,
+          reason: c.reason,
+          createdAt: c.created_at,
+        })),
+        overtimeClaims: (await tx.collection('overtime_claims').find({ employee_id: e.id, work_date: { $gte: from, $lte: to } }, { sort: { created_at: -1 } })).map((c) => ({
+          id: c.id,
+          workDate: c.work_date,
+          status: c.status,
+          minutes: c.minutes,
+          reason: c.reason ?? null,
+        })),
       };
     });
   }
@@ -529,7 +619,7 @@ export class AttendanceService implements OnModuleInit {
         day: (await this.dayRow(tx, e.id, date)) ?? null,
         window: { from: new Date(win.from).toISOString(), to: new Date(win.to).toISOString() },
         punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, verifyMethod: p.verify_method, viaCorrection: Boolean(p.correction_id), note: p.note, flags: p.risk_flags })),
-        locked: (await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, date]))!.locked,
+        locked: await isLocked(tx, e.id, date),
       };
     });
   }
@@ -537,44 +627,51 @@ export class AttendanceService implements OnModuleInit {
   /** Everyone the caller can see on one date, with a status summary. Recent days are refreshed first. */
   async team(q: { date: string; status?: string; departmentId?: string; locationId?: string }) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [q.date];
-      const where = [await this.authz.predicate('attendance:read', EMPLOYEE_SCOPE, params, tx), `e.date_of_joining <= $1`, `(e.last_working_day is null or e.last_working_day >= $1)`];
-      if (q.departmentId) { params.push(q.departmentId); where.push(`e.current_department_id = $${params.length}`); }
-      if (q.locationId) { params.push(q.locationId); where.push(`e.current_location_id = $${params.length}`); }
+      const scope = await this.authz.filter('attendance:read', EMPLOYEE_FIELDS, tx);
+      const and: Record<string, unknown>[] = [scope, { date_of_joining: { $lte: q.date } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: q.date } }] }];
+      if (q.departmentId) and.push({ current_department_id: q.departmentId });
+      if (q.locationId) and.push({ current_location_id: q.locationId });
       // A day is refreshed when it was never computed, or (for today and yesterday, which change as time passes) when
       // it is older than TEAM_REFRESH_SECONDS or a leave request changed after it. Punches, corrections, devices and
-      // shift changes recompute their days when they are written, so a busy team view no longer rewrites every
-      // person's day on every request (the load test showed those writes queueing behind each other).
-      params.push(TEAM_REFRESH_SECONDS);
-      const fresh = freshDay(`$${params.length}`);
-      const people = await many<{ id: string; computed: string | null; fresh: boolean; tz: string }>(
-        tx,
-        `select e.id, d.computed_at as computed, coalesce(${fresh}, false) as fresh, coalesce(l.timezone, le.timezone, t.timezone) as tz from employees e join tenants t on t.id = e.tenant_id
-           left join locations l on l.id = e.current_location_id left join legal_entities le on le.id = e.current_legal_entity_id
-           left join attendance_days d on d.employee_id = e.id and d.work_date = $1
-          where ${where.join(' and ')} limit 1000`,
-        params,
-      );
+      // shift changes recompute their days when they are written, so a busy team view does not rewrite every
+      // person's day on every request.
+      const employees = await tx.collection('employees').find({ $and: and }, { limit: 1000 });
+      const ids = employees.map((e) => e.id as string);
+      const stored = new Map((await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: q.date })).map((d) => [d.employee_id as string, d]));
+      const fresh = await freshDays(tx, q.date, [...stored.values()]);
+      const tenant = await tx.collection('tenants').findOne({});
+      const locationTz = await fieldById(tx, 'locations', employees.map((e) => e.current_location_id), 'timezone');
+      const entityTz = await fieldById(tx, 'legal_entities', employees.map((e) => e.current_legal_entity_id), 'timezone');
+      const people = employees.map((e) => ({
+        id: e.id as string,
+        computed: stored.has(e.id),
+        fresh: fresh.has(e.id),
+        tz: locationTz.get(e.current_location_id) ?? entityTz.get(e.current_legal_entity_id) ?? (tenant!.timezone as string),
+      }));
       const stale = people.filter((p) => q.date <= localToday(p.tz) && (!p.computed || (q.date >= addDays(localToday(p.tz), -1) && !p.fresh)));
       if (stale.length) {
         await this.days.lockBulk(tx);
         for (const p of stale.sort((a, b) => a.id.localeCompare(b.id))) await this.days.recompute(tx, p.id, q.date, q.date);
       }
       if (!people.length) return { date: q.date, summary: {}, rows: [] };
-      const rows = await many<{ status: string; lateMinutes: number; firstIn: string | null; lastOut: string | null }>(
-        tx,
-        `select ${DAY_COLUMNS}, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "employeeName", e.employee_code as "employeeCode",
-                dep.name as "department", loc.name as "location"
-           from employees e join attendance_days d on d.employee_id = e.id and d.work_date = $1
-           left join shift_templates st on st.id = d.shift_template_id
-           left join departments dep on dep.id = e.current_department_id left join locations loc on loc.id = e.current_location_id
-          where e.id = any($2) ${q.status ? 'and d.status = $3' : ''}
-          order by "employeeName"`,
-        q.status ? [q.date, people.map((p) => p.id), q.status] : [q.date, people.map((p) => p.id)],
-      );
-      const all = q.status
-        ? await many<{ status: string; lateMinutes: number; firstIn: string | null; lastOut: string | null }>(tx, `select status, late_minutes as "lateMinutes", first_in as "firstIn", last_out as "lastOut" from attendance_days where work_date = $1 and employee_id = any($2)`, [q.date, people.map((p) => p.id)])
-        : rows;
+      const allDays = await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: q.date });
+      const views = await dayViews(tx, q.status ? allDays.filter((d) => d.status === q.status) : allDays);
+      const byId = new Map(employees.map((e) => [e.id as string, e]));
+      const departments = await fieldById(tx, 'departments', employees.map((e) => e.current_department_id));
+      const locations = await fieldById(tx, 'locations', employees.map((e) => e.current_location_id));
+      const rows = views
+        .map((d) => {
+          const e = byId.get(d.employeeId)!;
+          return {
+            ...d,
+            employeeName: `${e.preferred_name ?? e.first_name} ${e.last_name}`.trim(),
+            employeeCode: e.employee_code as string,
+            department: departments.get(e.current_department_id) ?? null,
+            location: locations.get(e.current_location_id) ?? null,
+          };
+        })
+        .sort((a, b) => (a.employeeName < b.employeeName ? -1 : a.employeeName > b.employeeName ? 1 : 0));
+      const all = allDays.map((d) => ({ status: d.status as string, lateMinutes: d.late_minutes as number, firstIn: d.first_in ?? null, lastOut: d.last_out ?? null }));
       const summary: Record<string, number> = { total: all.length, late: all.filter((r) => r.lateMinutes > 0).length, onSiteNow: all.filter((r) => r.status === 'in_progress' && r.firstIn && !r.lastOut).length };
       for (const r of all) summary[r.status] = (summary[r.status] ?? 0) + 1;
       return { date: q.date, summary, rows };
@@ -598,51 +695,56 @@ export class AttendanceService implements OnModuleInit {
       if (!isAdmin && input.workDate < addDays(today, -policy.correction_window_days)) {
         throw Errors.badRequest('too_old', `Corrections can be requested for the last ${policy.correction_window_days} days only.`);
       }
-      if ((await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, input.workDate]))!.locked) {
+      if (await isLocked(tx, e.id, input.workDate)) {
         throw Errors.conflict('period_locked', 'This date is in a period locked for payroll.');
       }
       const times = input.punches.map((p) => fromLocal(input.workDate, hhmm(p.time) + (p.nextDay ? 1440 : 0), e.tz));
       if (times.some((t) => t > Date.now())) throw Errors.badRequest('future_time', 'A corrected punch cannot be in the future.');
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into attendance_corrections (tenant_id, employee_id, work_date, punches, reason, requested_by_membership_id)
-         values (app_tenant_id(), $1, $2, $3, $4, $5) returning id`,
-        [e.id, input.workDate, JSON.stringify(input.punches), input.reason, actor.membershipId],
-      ).catch((err: { code?: string }) => {
+      const row = (await tx.collection('attendance_corrections').insert({
+        employee_id: e.id,
+        work_date: input.workDate,
+        punches: input.punches,
+        reason: input.reason,
+        requested_by_membership_id: actor.membershipId,
+      }).catch((err: { code?: string }) => {
         if (err.code === '23505') throw Errors.conflict('correction_pending', 'There is already a pending correction for this day.');
         throw err;
       }))!;
       const summary = `${e.name}: add ${input.punches.map((p) => `${p.direction} ${p.time}${p.nextDay ? ' (next day)' : ''}`).join(', ')} on ${input.workDate}. "${input.reason}"`;
       const approvalId = await this.approvals.start(tx, { resourceType: 'attendance_correction', resourceId: row.id, subjectEmployeeId: e.id, summary });
-      await tx.query('update attendance_corrections set approval_request_id = $2 where id = $1', [row.id, approvalId]);
+      await tx.collection('attendance_corrections').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
       await this.audit.record(tx, { action: 'attendance_correction.submitted', resourceType: 'attendance_correction', resourceId: row.id, changes: { employeeId: e.id, workDate: input.workDate, punches: input.punches }, metadata: { onBehalf } });
       return this.correction(tx, row.id);
     });
   }
 
-  private correction(tx: Tx, id: string) {
-    return one(tx, `select c.id, c.employee_id as "employeeId", c.work_date as "workDate", c.punches, c.reason, c.status, c.created_at as "createdAt", c.approval_request_id as "approvalId",
-                           trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "employeeName"
-                      from attendance_corrections c join employees e on e.id = c.employee_id where c.id = $1`, [id]);
+  private async correction(tx: TenantTx, id: string) {
+    const c = await tx.collection('attendance_corrections').findOne({ id });
+    return c ? (await correctionViews(tx, [c]))[0] : undefined;
   }
 
-  private async correctionApproved(tx: Tx, req: ApprovalRequestRow) {
-    const c = await one<{ id: string; employee_id: string; work_date: string; punches: { time: string; direction: 'in' | 'out'; nextDay?: boolean }[]; requested_by_membership_id: string | null }>(
-      tx, `select id, employee_id, work_date, punches, requested_by_membership_id from attendance_corrections where id = $1 and status = 'pending' for update`, [req.resource_id],
-    );
+  private async correctionApproved(tx: TenantTx, req: ApprovalRequestRow) {
+    const c = await tx.collection<{ id: string; employee_id: string; work_date: string; punches: { time: string; direction: 'in' | 'out'; nextDay?: boolean }[]; requested_by_membership_id: string | null }>(
+      'attendance_corrections',
+    ).findOne({ id: req.resource_id, status: 'pending' });
     if (!c) return;
     const e = (await this.days.employee(tx, c.employee_id))!;
-    if ((await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, c.work_date]))!.locked) {
+    if (await isLocked(tx, e.id, c.work_date)) {
       throw Errors.conflict('period_locked', 'This date was locked for payroll after the correction was requested. Unlock the period first.');
     }
-    await tx.query(`update attendance_corrections set status = 'approved', decided_at = now() where id = $1`, [c.id]);
+    if (!(await tx.collection('attendance_corrections').updateOne({ id: c.id, status: 'pending' }, { $set: { status: 'approved', decided_at: new Date() } }))) return;
     for (const [i, p] of c.punches.entries()) {
       // Corrections add punches; the original record stays as it was.
-      await tx.query(
-        `insert into attendance_events (tenant_id, employee_id, source, source_event_id, captured_at, direction, correction_id, recorded_by_membership_id, note)
-         values (app_tenant_id(), $1, 'correction', $2, $3, $4, $5, $6, 'Approved correction')`,
-        [e.id, `${c.id}:${i}`, new Date(fromLocal(c.work_date, hhmm(p.time) + (p.nextDay ? 1440 : 0), e.tz)), p.direction, c.id, c.requested_by_membership_id],
-      );
+      await tx.collection('attendance_events').insert({
+        employee_id: e.id,
+        source: 'correction',
+        source_event_id: `${c.id}:${i}`,
+        captured_at: new Date(fromLocal(c.work_date, hhmm(p.time) + (p.nextDay ? 1440 : 0), e.tz)),
+        direction: p.direction,
+        correction_id: c.id,
+        recorded_by_membership_id: c.requested_by_membership_id,
+        note: 'Approved correction',
+      });
     }
     await this.days.recompute(tx, e.id, addDays(c.work_date, -1), addDays(c.work_date, 1) > localToday(e.tz) ? c.work_date : addDays(c.work_date, 1));
     await this.audit.record(tx, { action: 'attendance_correction.approved', resourceType: 'attendance_correction', resourceId: c.id, metadata: { workDate: c.work_date, punches: c.punches.length } });
@@ -650,23 +752,22 @@ export class AttendanceService implements OnModuleInit {
 
   async listCorrections(q: { scope: 'mine' | 'visible'; status?: string }) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const where: string[] = [];
-      if (q.scope === 'mine') {
-        params.push((await this.me(tx)).id);
-        where.push(`c.employee_id = $1`);
-      } else where.push(await this.authz.predicate('attendance:read', EMPLOYEE_SCOPE, params, tx));
-      if (q.status) { params.push(q.status); where.push(`c.status = $${params.length}`); }
-      return many(tx, `select c.id, c.employee_id as "employeeId", c.work_date as "workDate", c.punches, c.reason, c.status, c.created_at as "createdAt",
-                              trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "employeeName"
-                         from attendance_corrections c join employees e on e.id = c.employee_id where ${where.join(' and ')} order by c.created_at desc limit 200`, params);
+      const and: Record<string, unknown>[] = [];
+      if (q.scope === 'mine') and.push({ employee_id: (await this.me(tx)).id });
+      else {
+        const scope = await this.authz.filter('attendance:read', EMPLOYEE_FIELDS, tx);
+        and.push({ employee_id: { $in: (await tx.collection('employees').find(scope, { projection: { _id: 1 } })).map((e) => e.id) } });
+      }
+      if (q.status) and.push({ status: q.status });
+      const rows = await tx.collection('attendance_corrections').find({ $and: and }, { sort: { created_at: -1 }, limit: 200 });
+      return (await correctionViews(tx, rows)).map(({ approvalId: _a, ...c }) => c);
     });
   }
 
   async cancelCorrection(id: string) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const c = await one<{ status: string; employee_id: string; approval_request_id: string | null; requested_by_membership_id: string | null }>(tx, 'select status, employee_id, approval_request_id, requested_by_membership_id from attendance_corrections where id = $1 for update', [id]);
+      const c = await tx.collection('attendance_corrections').findOne({ id });
       if (!c) throw Errors.notFound('Correction');
       const e = (await this.days.employee(tx, c.employee_id))!;
       if (c.requested_by_membership_id !== actor.membershipId && e.membership_id !== actor.membershipId) {
@@ -674,7 +775,9 @@ export class AttendanceService implements OnModuleInit {
         throw Errors.forbidden('Only the person who asked for this correction can withdraw it');
       }
       if (c.status !== 'pending') throw Errors.conflict('invalid_state', `This correction is already ${c.status}`);
-      await tx.query(`update attendance_corrections set status = 'cancelled', decided_at = now() where id = $1`, [id]);
+      if (!(await tx.collection('attendance_corrections').updateOne({ id, status: 'pending' }, { $set: { status: 'cancelled', decided_at: new Date() } }))) {
+        throw Errors.conflict('invalid_state', 'This correction was decided meanwhile');
+      }
       if (c.approval_request_id) await this.approvals.cancel(tx, c.approval_request_id);
       await this.audit.record(tx, { action: 'attendance_correction.cancelled', resourceType: 'attendance_correction', resourceId: id });
       return this.correction(tx, id);
@@ -691,16 +794,19 @@ export class AttendanceService implements OnModuleInit {
       const { e, onBehalf } = await this.target(tx, input.employeeId, 'attendance:correct');
       const policy = await this.days.policy(tx, e.location_id);
       if (!policy.overtime_requires_approval) throw Errors.badRequest('no_approval_needed', 'Overtime at your location counts automatically; there is nothing to claim.');
-      if ((await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, input.workDate]))!.locked) throw Errors.conflict('period_locked', 'This date is in a period locked for payroll.');
+      if (await isLocked(tx, e.id, input.workDate)) throw Errors.conflict('period_locked', 'This date is in a period locked for payroll.');
       await this.days.recompute(tx, e.id, input.workDate, input.workDate);
-      const day = await one<{ overtime_minutes: number; status: string }>(tx, 'select overtime_minutes, status from attendance_days where employee_id = $1 and work_date = $2', [e.id, input.workDate]);
+      const day = await tx.collection('attendance_days').findOne({ employee_id: e.id, work_date: input.workDate });
       if (!day || day.overtime_minutes <= 0) throw Errors.badRequest('no_overtime', 'No overtime was recorded on this day.');
       if (input.minutes > day.overtime_minutes) throw Errors.badRequest('too_many_minutes', `At most ${day.overtime_minutes} minutes of overtime were recorded on this day.`);
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into overtime_claims (tenant_id, employee_id, work_date, minutes, computed_minutes, reason, requested_by_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5, $6) returning id`,
-        [e.id, input.workDate, input.minutes, day.overtime_minutes, input.reason ?? null, actor.membershipId],
-      ).catch((err: { code?: string }) => {
+      const row = (await tx.collection('overtime_claims').insert({
+        employee_id: e.id,
+        work_date: input.workDate,
+        minutes: input.minutes,
+        computed_minutes: day.overtime_minutes,
+        reason: input.reason ?? null,
+        requested_by_membership_id: actor.membershipId,
+      }).catch((err: { code?: string }) => {
         if (err.code === '23505') throw Errors.conflict('claim_exists', 'There is already a pending or approved overtime claim for this day.');
         throw err;
       }))!;
@@ -708,9 +814,10 @@ export class AttendanceService implements OnModuleInit {
         resourceType: 'overtime_claim', resourceId: row.id, subjectEmployeeId: e.id,
         summary: `${e.name}: ${input.minutes} minutes of overtime on ${input.workDate}${input.reason ? `. "${input.reason}"` : ''}`,
       });
-      await tx.query('update overtime_claims set approval_request_id = $2 where id = $1', [row.id, approvalId]);
+      await tx.collection('overtime_claims').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
       await this.audit.record(tx, { action: 'overtime_claim.submitted', resourceType: 'overtime_claim', resourceId: row.id, changes: { employeeId: e.id, workDate: input.workDate, minutes: input.minutes }, metadata: { onBehalf } });
-      return one(tx, `select id, employee_id as "employeeId", work_date as "workDate", minutes, computed_minutes as "computedMinutes", status, reason from overtime_claims where id = $1`, [row.id]);
+      const claim = (await tx.collection('overtime_claims').findOne({ id: row.id }))!;
+      return { id: claim.id, employeeId: claim.employee_id, workDate: claim.work_date, minutes: claim.minutes, computedMinutes: claim.computed_minutes, status: claim.status, reason: claim.reason ?? null };
     });
   }
 
@@ -719,34 +826,46 @@ export class AttendanceService implements OnModuleInit {
   // ---------------------------------------------------------------------------------------------------------
 
   listPolicies() {
-    return this.db.tenant((tx) =>
-      many(tx, `select p.id, p.location_id as "locationId", l.name as "locationName", p.web_punch as "webPunch", p.mobile_punch as "mobilePunch", p.qr_punch as "qrPunch",
-                       p.geofence_mode as "geofenceMode", p.default_shift_id as "defaultShiftId", s.name as "defaultShiftName", p.overtime_requires_approval as "overtimeRequiresApproval",
-                       p.early_window_minutes as "earlyWindowMinutes", p.correction_window_days as "correctionWindowDays"
-                  from attendance_policies p left join locations l on l.id = p.location_id left join shift_templates s on s.id = p.default_shift_id
-                 order by p.location_id nulls first, l.name`),
-    );
+    return this.db.tenant(async (tx) => {
+      const policies = await tx.collection('attendance_policies').find({});
+      const locations = await fieldById(tx, 'locations', policies.map((p) => p.location_id));
+      const shifts = await fieldById(tx, 'shift_templates', policies.map((p) => p.default_shift_id));
+      return policies
+        .map((p) => ({
+          id: p.id,
+          locationId: p.location_id ?? null,
+          locationName: locations.get(p.location_id) ?? null,
+          webPunch: p.web_punch,
+          mobilePunch: p.mobile_punch,
+          qrPunch: p.qr_punch,
+          geofenceMode: p.geofence_mode,
+          defaultShiftId: p.default_shift_id ?? null,
+          defaultShiftName: shifts.get(p.default_shift_id) ?? null,
+          overtimeRequiresApproval: p.overtime_requires_approval,
+          earlyWindowMinutes: p.early_window_minutes,
+          correctionWindowDays: p.correction_window_days,
+        }))
+        .sort((a, b) => Number(a.locationId !== null) - Number(b.locationId !== null) || String(a.locationName ?? '').localeCompare(String(b.locationName ?? '')));
+    });
   }
 
   async savePolicy(input: AttendancePolicyInput) {
     return this.db.tenant(async (tx) => {
-      if (input.locationId && !(await one(tx, 'select 1 from locations where id = $1', [input.locationId]))) throw Errors.badRequest('invalid_location', 'Location not found');
-      if (input.defaultShiftId && !(await one(tx, 'select 1 from shift_templates where id = $1 and archived_at is null', [input.defaultShiftId]))) throw Errors.badRequest('invalid_shift', 'Shift not found');
-      const before = await one(tx, `select * from attendance_policies where location_id is not distinct from $1`, [input.locationId]);
-      const values = [input.webPunch, input.mobilePunch, input.qrPunch, input.geofenceMode, input.defaultShiftId, input.overtimeRequiresApproval, input.earlyWindowMinutes, input.correctionWindowDays];
-      if (before) {
-        await tx.query(
-          `update attendance_policies set web_punch = $2, mobile_punch = $3, qr_punch = $4, geofence_mode = $5, default_shift_id = $6, overtime_requires_approval = $7,
-                  early_window_minutes = $8, correction_window_days = $9 where location_id is not distinct from $1`,
-          [input.locationId, ...values],
-        );
-      } else {
-        await tx.query(
-          `insert into attendance_policies (tenant_id, location_id, web_punch, mobile_punch, qr_punch, geofence_mode, default_shift_id, overtime_requires_approval, early_window_minutes, correction_window_days)
-           values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [input.locationId, ...values],
-        );
-      }
+      if (input.locationId && !(await tx.collection('locations').exists({ id: input.locationId }))) throw Errors.badRequest('invalid_location', 'Location not found');
+      if (input.defaultShiftId && !(await tx.collection('shift_templates').exists({ id: input.defaultShiftId, archived_at: null }))) throw Errors.badRequest('invalid_shift', 'Shift not found');
+      const before = await tx.collection('attendance_policies').findOne({ location_id: input.locationId ?? null });
+      const values = {
+        web_punch: input.webPunch,
+        mobile_punch: input.mobilePunch,
+        qr_punch: input.qrPunch,
+        geofence_mode: input.geofenceMode,
+        default_shift_id: input.defaultShiftId ?? null,
+        overtime_requires_approval: input.overtimeRequiresApproval,
+        early_window_minutes: input.earlyWindowMinutes,
+        correction_window_days: input.correctionWindowDays,
+      };
+      if (before) await tx.collection('attendance_policies').updateOne({ id: before.id }, { $set: values });
+      else await tx.collection('attendance_policies').insert({ location_id: input.locationId ?? null, ...values });
       await this.audit.record(tx, { action: before ? 'attendance_policy.updated' : 'attendance_policy.created', resourceType: 'attendance_policy', resourceId: input.locationId ?? 'default', changes: input });
       return input;
     });
@@ -754,38 +873,60 @@ export class AttendanceService implements OnModuleInit {
 
   async removePolicy(locationId: string) {
     return this.db.tenant(async (tx) => {
-      const r = await tx.query('delete from attendance_policies where location_id = $1', [locationId]);
-      if (!r.rowCount) throw Errors.notFound('Location policy');
+      if (!(await tx.collection('attendance_policies').deleteOne({ location_id: locationId }))) throw Errors.notFound('Location policy');
       await this.audit.record(tx, { action: 'attendance_policy.removed', resourceType: 'attendance_policy', resourceId: locationId });
     });
   }
 
   listLocks() {
-    return this.db.tenant((tx) =>
-      many(tx, `select p.id, p.legal_entity_id as "legalEntityId", le.name as "legalEntityName", p.period_start as "periodStart", p.period_end as "periodEnd", p.note,
-                       p.locked_at as "lockedAt", lu.full_name as "lockedBy", p.unlocked_at as "unlockedAt", uu.full_name as "unlockedBy", p.unlock_reason as "unlockReason"
-                  from attendance_periods p left join legal_entities le on le.id = p.legal_entity_id
-                  left join users lu on lu.id = p.locked_by left join users uu on uu.id = p.unlocked_by
-                 order by p.period_start desc, p.locked_at desc limit 100`),
-    );
+    return this.db.tenant(async (tx) => {
+      const periods = await tx.collection('attendance_periods').find({}, { sort: { period_start: -1, locked_at: -1 }, limit: 100 });
+      const entities = await fieldById(tx, 'legal_entities', periods.map((p) => p.legal_entity_id));
+      const users = await (await usersTable(tx)).find({ id: { $in: [...new Set(periods.flatMap((p) => [p.locked_by, p.unlocked_by]).filter(Boolean))] } }, { projection: { full_name: 1 } });
+      const name = new Map(users.map((u) => [u.id as string, (u.full_name as string | null) ?? null]));
+      return periods.map((p) => ({
+        id: p.id,
+        legalEntityId: p.legal_entity_id ?? null,
+        legalEntityName: entities.get(p.legal_entity_id) ?? null,
+        periodStart: p.period_start,
+        periodEnd: p.period_end,
+        note: p.note ?? null,
+        lockedAt: p.locked_at,
+        lockedBy: name.get(p.locked_by) ?? null,
+        unlockedAt: p.unlocked_at ?? null,
+        unlockedBy: name.get(p.unlocked_by) ?? null,
+        unlockReason: p.unlock_reason ?? null,
+      }));
+    });
   }
 
   async lock(input: z.infer<typeof periodLockInput>) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into attendance_periods (tenant_id, legal_entity_id, period_start, period_end, note, locked_by) values (app_tenant_id(), $1, $2, $3, $4, $5) returning id`,
-        [input.legalEntityId, input.periodStart, input.periodEnd, input.note ?? null, actor.userId],
-      ).catch((err: { code?: string }) => {
-        if (err.code === '23P01') throw Errors.conflict('already_locked', 'Part of this period is already locked.');
-        if (err.code === '23503') throw Errors.badRequest('invalid_legal_entity', 'Legal entity not found');
-        throw err;
-      }))!;
-      const pending = await one<{ n: number }>(
-        tx, `select count(*)::int as n from attendance_corrections c join employees e on e.id = c.employee_id where c.status = 'pending' and c.work_date between $1 and $2 and ($3::uuid is null or e.current_legal_entity_id = $3)`,
-        [input.periodStart, input.periodEnd, input.legalEntityId],
-      );
+      if (input.legalEntityId && !(await tx.collection('legal_entities').exists({ id: input.legalEntityId }))) throw Errors.badRequest('invalid_legal_entity', 'Legal entity not found');
+      // Live locks for one entity (or the whole workspace) never overlap (an exclusion constraint in PostgreSQL).
+      if (
+        await tx.collection('attendance_periods').exists({
+          unlocked_at: null,
+          legal_entity_id: input.legalEntityId ?? null,
+          period_start: { $lte: input.periodEnd },
+          period_end: { $gte: input.periodStart },
+        })
+      ) {
+        throw Errors.conflict('already_locked', 'Part of this period is already locked.');
+      }
+      const row = await tx.collection('attendance_periods').insert({
+        legal_entity_id: input.legalEntityId ?? null,
+        period_start: input.periodStart,
+        period_end: input.periodEnd,
+        note: input.note ?? null,
+        locked_by: actor.userId,
+      });
+      const open = await tx.collection('attendance_corrections').find({ status: 'pending', work_date: { $gte: input.periodStart, $lte: input.periodEnd } }, { projection: { employee_id: 1 } });
+      const inEntity = input.legalEntityId
+        ? new Set((await tx.collection('employees').find({ id: { $in: open.map((c) => c.employee_id) }, current_legal_entity_id: input.legalEntityId }, { projection: { _id: 1 } })).map((e) => e.id))
+        : null;
+      const pending = { n: open.filter((c) => !inEntity || inEntity.has(c.employee_id)).length };
       await this.audit.record(tx, { action: 'attendance_period.locked', resourceType: 'attendance_period', resourceId: row.id, changes: input, metadata: { pendingCorrections: pending!.n } });
       return { id: row.id, ...input, pendingCorrections: pending!.n };
     });
@@ -794,8 +935,9 @@ export class AttendanceService implements OnModuleInit {
   async unlock(id: string, reason: string) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const r = await tx.query('update attendance_periods set unlocked_at = now(), unlocked_by = $2, unlock_reason = $3 where id = $1 and unlocked_at is null', [id, actor.userId, reason]);
-      if (!r.rowCount) throw Errors.notFound('Locked period');
+      if (!(await tx.collection('attendance_periods').updateOne({ id, unlocked_at: null }, { $set: { unlocked_at: new Date(), unlocked_by: actor.userId, unlock_reason: reason } }))) {
+        throw Errors.notFound('Locked period');
+      }
       await this.audit.record(tx, { action: 'attendance_period.unlocked', resourceType: 'attendance_period', resourceId: id, metadata: { reason } });
     });
   }
@@ -803,10 +945,11 @@ export class AttendanceService implements OnModuleInit {
   /** Recomputes days, for one employee or everyone the caller can configure, in a range of up to 62 days. */
   async recomputeRange(q: { employeeId?: string; from: string; to: string }) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [q.to, q.from];
-      const where = [await this.authz.predicate('attendance:configure', EMPLOYEE_SCOPE, params, tx), 'e.date_of_joining <= $1', '(e.last_working_day is null or e.last_working_day >= $2)'];
-      if (q.employeeId) { params.push(q.employeeId); where.push(`e.id = $${params.length}`); }
-      const people = await many<{ id: string }>(tx, `select e.id from employees e where ${where.join(' and ')}`, params);
+      const scope = await this.authz.filter('attendance:configure', EMPLOYEE_FIELDS, tx);
+      const people = await tx.collection('employees').find(
+        { $and: [scope, { date_of_joining: { $lte: q.to } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: q.from } }] }, ...(q.employeeId ? [{ id: q.employeeId }] : [])] },
+        { projection: { _id: 1 } },
+      );
       let days = 0;
       if (people.length > 1) await this.days.lockBulk(tx);
       for (const p of people) days += (await this.days.recompute(tx, p.id, q.from, q.to)).size;
@@ -821,8 +964,10 @@ export class AttendanceService implements OnModuleInit {
    */
   async refreshRecent(tenantId: string, days = 2) {
     return this.db.tenant(async (tx) => {
-      const people = await many<{ id: string }>(
-        tx, `select id from employees where status <> 'pre_boarding' and date_of_joining <= current_date + 1 and (last_working_day is null or last_working_day >= current_date - $1::int)`, [days + 1],
+      const utcToday = new Date().toISOString().slice(0, 10);
+      const people = await tx.collection('employees').find(
+        { status: { $ne: 'pre_boarding' }, date_of_joining: { $lte: addDays(utcToday, 1) }, $or: [{ last_working_day: null }, { last_working_day: { $gte: addDays(utcToday, -(days + 1)) } }] },
+        { projection: { _id: 1 } },
       );
       let n = 0;
       if (people.length) await this.days.lockBulk(tx);
@@ -837,7 +982,7 @@ export class AttendanceService implements OnModuleInit {
   }
 
   /** Recompute hook for other modules (leave approvals and cancellations change attendance days). */
-  async recomputeFor(tx: Tx, employeeId: string, from: string, to: string) {
+  async recomputeFor(tx: TenantTx, employeeId: string, from: string, to: string) {
     const e = await this.days.employee(tx, employeeId);
     if (!e) return;
     const today = localToday(e.tz);

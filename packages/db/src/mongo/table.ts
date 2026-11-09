@@ -8,6 +8,7 @@ import {
   type FindOptions,
 } from 'mongodb';
 import {
+  LOCK_FIELD,
   ConstraintError,
   guardKey,
   guardedKeys,
@@ -147,6 +148,17 @@ export class Table<T extends Row = Row> {
   async count(filter: Document = {}): Promise<number> {
     this.need('select');
     return this.coll.countDocuments(this.filter(filter), { session: this.session });
+  }
+
+  /**
+   * SELECT ... FOR UPDATE: writes to the matching row, so another transaction that locks or changes it before this one
+   * commits gets a write conflict and is retried, and checks made after the lock see no concurrent change. Returns
+   * whether a row matched. Needs only read access: the counter it writes is internal and never returned.
+   */
+  async lock(filter: Document): Promise<boolean> {
+    this.need('select');
+    const r = await this.coll.updateOne(this.filter(filter), { $inc: { [LOCK_FIELD]: 1 } }, { session: this.session });
+    return r.matchedCount > 0;
   }
 
   async exists(filter: Document = {}): Promise<boolean> {

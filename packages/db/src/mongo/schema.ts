@@ -29,6 +29,8 @@ export interface ColumnSpec {
   enum?: string[];
   /** A generated, increasing number (PostgreSQL identity column). */
   identity?: boolean;
+  /** Digits after the point of a decimal (numeric(p, s)): values are rounded to it on write, as PostgreSQL did. */
+  scale?: number;
 }
 
 export interface KeyColumn {

@@ -270,3 +270,12 @@ export type AnyTx = TenantTx | UserTx | PlatformTx;
 export async function usersTable(tx: TenantTx | PlatformTx): Promise<Table<Row>> {
   return tx instanceof TenantTx ? tx.users() : tx.collection('users');
 }
+
+/** The full name of the login behind each membership (users.full_name), by membership id. */
+export async function membershipUserNames(tx: TenantTx | PlatformTx, ids: unknown[]): Promise<Map<string, string | null>> {
+  const wanted = [...new Set(ids.filter((x): x is string => typeof x === 'string'))];
+  if (!wanted.length) return new Map();
+  const ms = await tx.collection('memberships').find({ id: { $in: wanted } }, { projection: { user_id: 1 } });
+  const users = new Map((await (await usersTable(tx)).find({ id: { $in: ms.map((m) => m.user_id) } }, { projection: { full_name: 1 } })).map((u) => [u.id as string, (u.full_name as string | null) ?? null]));
+  return new Map(ms.map((m) => [m.id as string, users.get(m.user_id) ?? null]));
+}

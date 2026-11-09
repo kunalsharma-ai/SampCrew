@@ -28,6 +28,17 @@ describe('MongoDB data rules carried over from PostgreSQL', () => {
     db = mongoService();
   });
 
+  it('rounds decimals to the column scale, as numeric(p, s) did', () => {
+    expect(mongo.withScale('1.5', 2)).toBe('1.50');
+    expect(mongo.withScale('2.345', 2)).toBe('2.35');
+    expect(mongo.withScale('-2.345', 2)).toBe('-2.35');
+    expect(mongo.withScale('-0.001', 2)).toBe('0.00');
+    expect(mongo.withScale('12', 0)).toBe('12');
+    expect(mongo.withScale('1e-3', 4)).toBe('0.0010');
+    expect(mongo.withScale('1.2e3', 1)).toBe('1200.0');
+    expect(mongo.withScale('0.5', 0)).toBe('1');
+  });
+
   afterAll(async () => {
     await db.onModuleDestroy();
   });
@@ -47,8 +58,8 @@ describe('MongoDB data rules carried over from PostgreSQL', () => {
       await tx.collection('plan_prices').insert({ plan_id: p.id, currency: 'INR', monthly_per_seat: '149.50', annual_per_seat_month: 120 });
       return tx.collection('plan_prices').findOne({ plan_id: p.id });
     });
-    // numeric comes back as a string, exactly as node-postgres returned it.
-    expect(plan).toMatchObject({ monthly_per_seat: '149.50', annual_per_seat_month: '120' });
+    // numeric(12, 2) comes back as a string with two decimals, exactly as node-postgres returned it.
+    expect(plan).toMatchObject({ monthly_per_seat: '149.50', annual_per_seat_month: '120.00' });
   });
 
   it('refuses NOT NULL, enum, unknown-column and wrong-type values with the PostgreSQL error codes', async () => {

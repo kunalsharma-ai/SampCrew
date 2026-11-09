@@ -52,6 +52,31 @@ function defaultValue(spec: ColumnSpec): unknown {
 }
 
 /** Converts a value to how a column is stored. Throws 22P02 for a value that cannot be that type. */
+/**
+ * A decimal string rounded (half away from zero) to `scale` digits after the point, written with exactly that many:
+ * numeric(12, 2) stores 1.5 as 1.50 and 2.345 as 2.35.
+ */
+export function withScale(value: string, scale: number): string {
+  const m = /^(-?)(\d+)(?:\.(\d+))?(?:e(-?\d+))?$/i.exec(value.trim());
+  if (!m) throw new Error(`Not a decimal: ${value}`);
+  const [, sign, int, frac = '', exp = '0'] = m;
+  // All digits as one integer, and where the point sits counted from the right.
+  let digits = BigInt(int! + frac);
+  let point = frac.length - Number(exp);
+  if (point < 0) {
+    digits *= 10n ** BigInt(-point);
+    point = 0;
+  }
+  if (point > scale) {
+    const div = 10n ** BigInt(point - scale);
+    const rest = digits % div;
+    digits = digits / div + (rest * 2n >= div ? 1n : 0n);
+  } else digits *= 10n ** BigInt(scale - point);
+  const text = digits.toString().padStart(scale + 1, '0');
+  const out = scale ? `${text.slice(0, -scale)}.${text.slice(-scale)}` : text;
+  return digits === 0n ? out : `${sign}${out}`;
+}
+
 export function toStored(table: string, column: string, spec: ColumnSpec, value: unknown): unknown {
   if (value === null || value === undefined) return value;
   const bad = () => new ConstraintError('22P02', `Invalid value for ${table}.${column}`, column, table);
@@ -74,7 +99,7 @@ export function toStored(table: string, column: string, spec: ColumnSpec, value:
       if (value instanceof Decimal128) return value;
       const s = typeof value === 'number' ? (Number.isFinite(value) ? String(value) : '') : typeof value === 'string' ? value.trim() : '';
       if (!/^-?\d+(\.\d+)?(e-?\d+)?$/i.test(s)) throw bad();
-      return Decimal128.fromString(s);
+      return Decimal128.fromString(spec.scale === undefined ? s : withScale(s, spec.scale));
     }
     case 'bool':
       if (typeof value !== 'boolean') throw bad();
@@ -111,12 +136,15 @@ export function toStored(table: string, column: string, spec: ColumnSpec, value:
 }
 
 /** A stored document as the services read it: `id` for `_id`, decimals as strings, bytes as Buffers. */
+/** Internal counter written by Table.lock() so concurrent transactions on one row conflict; never returned. */
+export const LOCK_FIELD = '_lock';
+
 export function toRow<T = Document>(doc: Document | null | undefined): T {
   if (!doc) return doc as T;
   const out: Document = {};
   for (const [k, v] of Object.entries(doc)) {
     if (k === '_id') out.id = v;
-    else out[k] = fromStored(v);
+    else if (k !== LOCK_FIELD) out[k] = fromStored(v);
   }
   return out as T;
 }
