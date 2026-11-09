@@ -1,139 +1,162 @@
-import type { Pool } from 'pg';
 import { DEFAULT_IN_STATUTORY, leaveMath, payrollEngine } from '@crew/contracts';
-import type { PoolClient } from 'pg';
-import { provisionTenant } from '../src/provision';
+import type { ClientSession, Db, MongoClient } from 'mongodb';
+import { appendAuditEvent, provisionTenantMongo, Table, type Row } from '../src/mongo';
+
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+const ago = (ms: number) => new Date(Date.now() - ms);
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+const addDays = (day: string, n: number) => isoDay(new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY));
+const addMonths = (day: string, n: number) => {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return isoDay(d);
+};
+
+/**
+ * One workspace's collections inside the seed transaction. The tables apply the same rules as the API (types,
+ * defaults, enums, unique keys, foreign keys, CHECK rules and row guards); every row is written with the
+ * workspace's tenant_id and every read is limited to it.
+ */
+function workspace(db: Db, session: ClientSession, tid: string) {
+  const table = (name: string) => new Table(db, name, session, { scope: null });
+  const own = (row: Row) => ({ tenant_id: tid, ...row });
+  const ws = {
+    table,
+    insert: async (name: string, row: Row) => (await table(name).insert(own(row))).id as string,
+    insertMany: (name: string, rows: Row[]) => table(name).insertMany(rows.map(own)),
+    find: (name: string, filter: Row = {}, options: { sort?: Row; projection?: Row } = {}) => table(name).find(own(filter), options),
+    findOne: (name: string, filter: Row, options: { sort?: Row } = {}) => table(name).findOne(own(filter), options),
+    /** The id of the one row matching `filter`; a missing row is a bug in the seed, so it throws. */
+    id: async (name: string, filter: Row, options: { sort?: Row } = {}) => {
+      const r = await ws.findOne(name, filter, options);
+      if (!r) throw new Error(`Demo seed: no ${name} row matches ${JSON.stringify(filter)}`);
+      return r.id as string;
+    },
+    set: (name: string, filter: Row, fields: Row) => table(name).update(own(filter), { $set: fields }),
+  };
+  return ws;
+}
+type Workspace = ReturnType<typeof workspace>;
 
 /**
  * Demo tenant for local development and sales demos. The tenant is flagged is_demo = true and every
- * screen shows a "Demo data" banner. All people and companies here are fictional.
+ * screen shows a "Demo data" banner. All people and companies here are fictional. Everything is written in one
+ * transaction, so a failed seed leaves nothing behind.
  */
-export async function seedDemoTenant(pool: Pool, passwordHash: string): Promise<boolean> {
-  const exists = await pool.query(`select 1 from tenants where slug = 'demo-northwind'`);
-  if (exists.rowCount) return false;
-
-  const client = await pool.connect();
+export async function seedDemoTenant(client: MongoClient, db: Db, passwordHash: string): Promise<boolean> {
+  if (await db.collection('tenants').findOne({ slug: 'demo-northwind' }, { projection: { _id: 1 } })) return false;
+  const session = client.startSession();
   try {
-    await client.query('begin');
-    const t = await provisionTenant(client, {
-      name: 'Northwind Manufacturing (Demo)',
-      slug: 'demo-northwind',
-      countryCode: 'IN',
-      currency: 'INR',
-      timezone: 'Asia/Kolkata',
-      locale: 'en-IN',
-      isDemo: true,
-      owner: { email: 'owner@demo.crew.local', fullName: 'Aarav Mehta', passwordHash },
-      plan: { key: 'business', seats: 120, billingCycle: 'annual', trialDays: 30 },
-    });
-    const tid = t.tenantId;
-    // The demo workspace comes fully set up, so its admins are not taken through the first-login company setup.
-    await client.query(`update tenants set industry = 'manufacturing', company_size = '201-500', setup_step = 4, setup_completed_at = now() where id = $1`, [tid]);
-    const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
-
-    const uk = await q(
-      `insert into legal_entities (tenant_id, name, legal_name, country_code, currency, timezone, fiscal_year_start_month)
-       values ($1, 'Northwind UK', 'Northwind Manufacturing UK Ltd (Demo)', 'GB', 'GBP', 'Europe/London', 4) returning id`,
-      [tid],
-    );
-    const ops = await q(`insert into business_units (tenant_id, name, code) values ($1, 'Operations', 'OPS') returning id`, [tid]);
-    const corp = await q(`insert into business_units (tenant_id, name, code) values ($1, 'Corporate', 'CORP') returning id`, [tid]);
-
-    const pune = await q(
-      `insert into locations (tenant_id, legal_entity_id, name, code, kind, timezone, city, region, country_code, latitude, longitude, geofence_radius_m)
-       values ($1, $2, 'Pune Plant', 'PNQ-1', 'factory', 'Asia/Kolkata', 'Pune', 'Maharashtra', 'IN', 18.5204, 73.8567, 250) returning id`,
-      [tid, t.legalEntityId],
-    );
-    const blr = await q(
-      `insert into locations (tenant_id, legal_entity_id, name, code, kind, timezone, city, region, country_code, latitude, longitude, geofence_radius_m)
-       values ($1, $2, 'Bengaluru HQ', 'BLR-HQ', 'office', 'Asia/Kolkata', 'Bengaluru', 'Karnataka', 'IN', 12.9716, 77.5946, 150) returning id`,
-      [tid, t.legalEntityId],
-    );
-    const lon = await q(
-      `insert into locations (tenant_id, legal_entity_id, name, code, kind, timezone, city, country_code, latitude, longitude)
-       values ($1, $2, 'London Office', 'LON-1', 'office', 'Europe/London', 'London', 'GB', 51.5072, -0.1276) returning id`,
-      [tid, uk.id],
-    );
-
-    const dept = (name: string, code: string, parent: string | null, entity: string, bu: string) =>
-      q(`insert into departments (tenant_id, name, code, parent_id, legal_entity_id, business_unit_id) values ($1, $2, $3, $4, $5, $6) returning id`, [tid, name, code, parent, entity, bu]);
-    const manufacturing = await dept('Manufacturing', 'MFG', null, t.legalEntityId, ops.id);
-    const assembly = await dept('Assembly Line', 'MFG-ASM', manufacturing.id, t.legalEntityId, ops.id);
-    const quality = await dept('Quality Assurance', 'MFG-QA', manufacturing.id, t.legalEntityId, ops.id);
-    const hr = await dept('People & Culture', 'HR', null, t.legalEntityId, corp.id);
-    const finance = await dept('Finance', 'FIN', null, t.legalEntityId, corp.id);
-    const talent = await dept('Talent Acquisition', 'HR-TA', hr.id, t.legalEntityId, corp.id);
-    const sales = await dept('Sales UK', 'SALES-UK', null, uk.id, corp.id);
-
-    const roleId = async (key: string) => (await q(`select id from roles where tenant_id = $1 and key = $2`, [tid, key])).id;
-
-    const people: { email: string; name: string; title: string; dept: string; loc: string; entity: string; manager?: string; roles: string[] }[] = [
-      { email: 'hr.admin@demo.crew.local', name: 'Priya Nair', title: 'Head of People', dept: hr.id, loc: blr.id, entity: t.legalEntityId, roles: ['hr_admin'] },
-      { email: 'recruiter@demo.crew.local', name: 'Kabir Shah', title: 'Senior Recruiter', dept: talent.id, loc: blr.id, entity: t.legalEntityId, manager: 'hr.admin@demo.crew.local', roles: ['recruiter'] },
-      { email: 'payroll@demo.crew.local', name: 'Meera Iyer', title: 'Payroll Lead', dept: finance.id, loc: blr.id, entity: t.legalEntityId, roles: ['payroll_admin'] },
-      { email: 'finance@demo.crew.local', name: 'Rohan Gupta', title: 'Finance Manager', dept: finance.id, loc: blr.id, entity: t.legalEntityId, roles: ['finance_manager'] },
-      { email: 'plant.head@demo.crew.local', name: 'Vikram Rao', title: 'Plant Head', dept: manufacturing.id, loc: pune.id, entity: t.legalEntityId, roles: ['department_manager', 'hiring_manager'] },
-      { email: 'supervisor@demo.crew.local', name: 'Sunita Patil', title: 'Assembly Supervisor', dept: assembly.id, loc: pune.id, entity: t.legalEntityId, manager: 'plant.head@demo.crew.local', roles: ['department_manager'] },
-      { email: 'operator1@demo.crew.local', name: 'Arjun Kulkarni', title: 'Machine Operator', dept: assembly.id, loc: pune.id, entity: t.legalEntityId, manager: 'supervisor@demo.crew.local', roles: [] },
-      { email: 'operator2@demo.crew.local', name: 'Neha Deshmukh', title: 'Machine Operator', dept: assembly.id, loc: pune.id, entity: t.legalEntityId, manager: 'supervisor@demo.crew.local', roles: [] },
-      { email: 'qa.lead@demo.crew.local', name: 'Farhan Qureshi', title: 'QA Lead', dept: quality.id, loc: pune.id, entity: t.legalEntityId, manager: 'plant.head@demo.crew.local', roles: [] },
-      { email: 'attendance@demo.crew.local', name: 'Lakshmi Menon', title: 'Time Office Executive', dept: hr.id, loc: pune.id, entity: t.legalEntityId, manager: 'hr.admin@demo.crew.local', roles: ['attendance_admin'] },
-      { email: 'uk.hr@demo.crew.local', name: 'Emma Clarke', title: 'HR Manager UK', dept: sales.id, loc: lon.id, entity: uk.id, roles: ['hr_manager'] },
-      { email: 'uk.sales@demo.crew.local', name: 'Oliver Bennett', title: 'Account Executive', dept: sales.id, loc: lon.id, entity: uk.id, manager: 'uk.hr@demo.crew.local', roles: [] },
-      { email: 'hr.ops@demo.crew.local', name: 'Anjali Rao', title: 'HR Operations Manager', dept: hr.id, loc: blr.id, entity: t.legalEntityId, manager: 'hr.admin@demo.crew.local', roles: ['hr_admin'] },
-      { email: 'auditor@demo.crew.local', name: 'Ishaan Verma', title: 'Internal Auditor', dept: finance.id, loc: blr.id, entity: t.legalEntityId, roles: ['auditor'] },
-    ];
-
-    const membershipByEmail = new Map<string, string>();
-    membershipByEmail.set('owner@demo.crew.local', t.ownerMembershipId);
-    await client.query(`update memberships set department_id = $2, location_id = $3, title = 'Managing Director' where id = $1`, [t.ownerMembershipId, hr.id, blr.id]);
-    for (const p of people) {
-      const user = await q(`insert into users (email, full_name, password_hash, email_verified_at) values ($1, $2, $3, now()) returning id`, [p.email, p.name, passwordHash]);
-      const m = await q(
-        `insert into memberships (tenant_id, user_id, status, legal_entity_id, department_id, location_id, manager_membership_id, title, joined_at)
-         values ($1, $2, 'active', $3, $4, $5, $6, $7, now()) returning id`,
-        [tid, user.id, p.entity, p.dept, p.loc, p.manager ? membershipByEmail.get(p.manager) : null, p.title],
-      );
-      membershipByEmail.set(p.email, m.id);
-      for (const r of ['employee', ...p.roles]) {
-        const constraints = r === 'hr_manager' ? { legalEntityIds: [uk.id] } : {};
-        await client.query(`insert into role_assignments (tenant_id, membership_id, role_id, constraints) values ($1, $2, $3, $4)`, [tid, m.id, await roleId(r), constraints]);
-      }
-    }
-    await client.query(`update departments set head_membership_id = $2 where id = $1`, [manufacturing.id, membershipByEmail.get('plant.head@demo.crew.local')]);
-    await client.query(`update departments set head_membership_id = $2 where id = $1`, [hr.id, membershipByEmail.get('hr.admin@demo.crew.local')]);
-    await client.query(`update users set email_verified_at = now() where email = 'owner@demo.crew.local'`);
-
-    await seedCoreHr(client, {
-      tid, indiaId: t.legalEntityId, ukId: uk.id, puneId: pune.id, blrId: blr.id, lonId: lon.id, assemblyId: assembly.id, qualityId: quality.id,
-      ownerTitle: 'Managing Director', people: [{ email: 'owner@demo.crew.local', name: 'Aarav Mehta', title: 'Managing Director', dept: hr.id, loc: blr.id, entity: t.legalEntityId }, ...people],
-      membershipByEmail,
-    });
-    await seedAttendance(client, { tid, puneId: pune.id, membershipByEmail });
-    await seedRecruitment(client, { tid, indiaId: t.legalEntityId, puneId: pune.id, manufacturingId: manufacturing.id, membershipByEmail });
-    await seedPayroll(client, { tid, indiaId: t.legalEntityId, membershipByEmail });
-    await seedTalent(client, { tid, assemblyId: assembly.id, manufacturingId: manufacturing.id, membershipByEmail });
-    await seedHelpdesk(client, { tid, manufacturingId: manufacturing.id, membershipByEmail });
-    await seedAiAutomation(client, { tid, membershipByEmail });
-    await seedLenses(client, { tid, membershipByEmail });
-
-    await client.query(
-      `insert into audit_events (tenant_id, actor_type, actor_label, action, resource_type, resource_id, metadata)
-       values ($1, 'system', 'demo seed', 'tenant.created', 'tenant', $2, '{"demo": true}')`,
-      [tid, tid],
-    );
-    await client.query('commit');
-    return true;
-  } catch (e) {
-    await client.query('rollback');
-    throw e;
+    await session.withTransaction(() => seed(db, session, passwordHash), { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
   } finally {
-    client.release();
+    await session.endSession();
   }
+  return true;
+}
+
+async function seed(db: Db, session: ClientSession, passwordHash: string) {
+  const unscoped = { collection: <T extends Row = Row>(name: string) => new Table<T>(db, name, session, { scope: null }) };
+  const t = await provisionTenantMongo(unscoped, {
+    name: 'Northwind Manufacturing (Demo)',
+    slug: 'demo-northwind',
+    countryCode: 'IN',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    locale: 'en-IN',
+    isDemo: true,
+    owner: { email: 'owner@demo.crew.local', fullName: 'Aarav Mehta', passwordHash },
+    plan: { key: 'business', seats: 120, billingCycle: 'annual', trialDays: 30 },
+  });
+  const tid = t.tenantId;
+  const ws = workspace(db, session, tid);
+  // The demo workspace comes fully set up, so its admins are not taken through the first-login company setup.
+  await ws.table('tenants').updateOne({ id: tid }, { $set: { industry: 'manufacturing', company_size: '201-500', setup_step: 4, setup_completed_at: new Date() } });
+
+  const uk = await ws.insert('legal_entities', { name: 'Northwind UK', legal_name: 'Northwind Manufacturing UK Ltd (Demo)', country_code: 'GB', currency: 'GBP', timezone: 'Europe/London', fiscal_year_start_month: 4 });
+  const ops = await ws.insert('business_units', { name: 'Operations', code: 'OPS' });
+  const corp = await ws.insert('business_units', { name: 'Corporate', code: 'CORP' });
+
+  const pune = await ws.insert('locations', {
+    legal_entity_id: t.legalEntityId, name: 'Pune Plant', code: 'PNQ-1', kind: 'factory', timezone: 'Asia/Kolkata', city: 'Pune', region: 'Maharashtra', country_code: 'IN',
+    latitude: '18.5204', longitude: '73.8567', geofence_radius_m: 250,
+  });
+  const blr = await ws.insert('locations', {
+    legal_entity_id: t.legalEntityId, name: 'Bengaluru HQ', code: 'BLR-HQ', kind: 'office', timezone: 'Asia/Kolkata', city: 'Bengaluru', region: 'Karnataka', country_code: 'IN',
+    latitude: '12.9716', longitude: '77.5946', geofence_radius_m: 150,
+  });
+  const lon = await ws.insert('locations', {
+    legal_entity_id: uk, name: 'London Office', code: 'LON-1', kind: 'office', timezone: 'Europe/London', city: 'London', country_code: 'GB', latitude: '51.5072', longitude: '-0.1276',
+  });
+
+  const dept = (name: string, code: string, parent: string | null, entity: string, bu: string) =>
+    ws.insert('departments', { name, code, parent_id: parent, legal_entity_id: entity, business_unit_id: bu });
+  const manufacturing = await dept('Manufacturing', 'MFG', null, t.legalEntityId, ops);
+  const assembly = await dept('Assembly Line', 'MFG-ASM', manufacturing, t.legalEntityId, ops);
+  const quality = await dept('Quality Assurance', 'MFG-QA', manufacturing, t.legalEntityId, ops);
+  const hr = await dept('People & Culture', 'HR', null, t.legalEntityId, corp);
+  const finance = await dept('Finance', 'FIN', null, t.legalEntityId, corp);
+  const talent = await dept('Talent Acquisition', 'HR-TA', hr, t.legalEntityId, corp);
+  const sales = await dept('Sales UK', 'SALES-UK', null, uk, corp);
+
+  const roleId = (key: string) => ws.id('roles', { key });
+
+  const people: DemoPerson[] = [
+    { email: 'hr.admin@demo.crew.local', name: 'Priya Nair', title: 'Head of People', dept: hr, loc: blr, entity: t.legalEntityId, roles: ['hr_admin'] },
+    { email: 'recruiter@demo.crew.local', name: 'Kabir Shah', title: 'Senior Recruiter', dept: talent, loc: blr, entity: t.legalEntityId, manager: 'hr.admin@demo.crew.local', roles: ['recruiter'] },
+    { email: 'payroll@demo.crew.local', name: 'Meera Iyer', title: 'Payroll Lead', dept: finance, loc: blr, entity: t.legalEntityId, roles: ['payroll_admin'] },
+    { email: 'finance@demo.crew.local', name: 'Rohan Gupta', title: 'Finance Manager', dept: finance, loc: blr, entity: t.legalEntityId, roles: ['finance_manager'] },
+    { email: 'plant.head@demo.crew.local', name: 'Vikram Rao', title: 'Plant Head', dept: manufacturing, loc: pune, entity: t.legalEntityId, roles: ['department_manager', 'hiring_manager'] },
+    { email: 'supervisor@demo.crew.local', name: 'Sunita Patil', title: 'Assembly Supervisor', dept: assembly, loc: pune, entity: t.legalEntityId, manager: 'plant.head@demo.crew.local', roles: ['department_manager'] },
+    { email: 'operator1@demo.crew.local', name: 'Arjun Kulkarni', title: 'Machine Operator', dept: assembly, loc: pune, entity: t.legalEntityId, manager: 'supervisor@demo.crew.local', roles: [] },
+    { email: 'operator2@demo.crew.local', name: 'Neha Deshmukh', title: 'Machine Operator', dept: assembly, loc: pune, entity: t.legalEntityId, manager: 'supervisor@demo.crew.local', roles: [] },
+    { email: 'qa.lead@demo.crew.local', name: 'Farhan Qureshi', title: 'QA Lead', dept: quality, loc: pune, entity: t.legalEntityId, manager: 'plant.head@demo.crew.local', roles: [] },
+    { email: 'attendance@demo.crew.local', name: 'Lakshmi Menon', title: 'Time Office Executive', dept: hr, loc: pune, entity: t.legalEntityId, manager: 'hr.admin@demo.crew.local', roles: ['attendance_admin'] },
+    { email: 'uk.hr@demo.crew.local', name: 'Emma Clarke', title: 'HR Manager UK', dept: sales, loc: lon, entity: uk, roles: ['hr_manager'] },
+    { email: 'uk.sales@demo.crew.local', name: 'Oliver Bennett', title: 'Account Executive', dept: sales, loc: lon, entity: uk, manager: 'uk.hr@demo.crew.local', roles: [] },
+    { email: 'hr.ops@demo.crew.local', name: 'Anjali Rao', title: 'HR Operations Manager', dept: hr, loc: blr, entity: t.legalEntityId, manager: 'hr.admin@demo.crew.local', roles: ['hr_admin'] },
+    { email: 'auditor@demo.crew.local', name: 'Ishaan Verma', title: 'Internal Auditor', dept: finance, loc: blr, entity: t.legalEntityId, roles: ['auditor'] },
+  ];
+
+  const membershipByEmail = new Map<string, string>();
+  membershipByEmail.set('owner@demo.crew.local', t.ownerMembershipId);
+  await ws.set('memberships', { id: t.ownerMembershipId }, { department_id: hr, location_id: blr, title: 'Managing Director' });
+  for (const p of people) {
+    const user = (await ws.table('users').insert({ email: p.email, full_name: p.name, password_hash: passwordHash, email_verified_at: new Date() })).id as string;
+    const m = await ws.insert('memberships', {
+      user_id: user, status: 'active', legal_entity_id: p.entity, department_id: p.dept, location_id: p.loc,
+      manager_membership_id: p.manager ? membershipByEmail.get(p.manager) : null, title: p.title, joined_at: new Date(),
+    });
+    membershipByEmail.set(p.email, m);
+    for (const r of ['employee', ...(p.roles ?? [])]) {
+      await ws.insert('role_assignments', { membership_id: m, role_id: await roleId(r), constraints: r === 'hr_manager' ? { legalEntityIds: [uk] } : {} });
+    }
+  }
+  await ws.set('departments', { id: manufacturing }, { head_membership_id: membershipByEmail.get('plant.head@demo.crew.local') });
+  await ws.set('departments', { id: hr }, { head_membership_id: membershipByEmail.get('hr.admin@demo.crew.local') });
+  await ws.table('users').update({ email: 'owner@demo.crew.local' }, { $set: { email_verified_at: new Date() } });
+
+  await seedCoreHr(ws, {
+    indiaId: t.legalEntityId, ukId: uk, puneId: pune, assemblyId: assembly, qualityId: quality,
+    people: [{ email: 'owner@demo.crew.local', name: 'Aarav Mehta', title: 'Managing Director', dept: hr, loc: blr, entity: t.legalEntityId }, ...people],
+    membershipByEmail,
+  });
+  await seedAttendance(ws, { tid, puneId: pune });
+  await seedRecruitment(ws, { indiaId: t.legalEntityId, puneId: pune, manufacturingId: manufacturing, membershipByEmail });
+  await seedPayroll(ws, { indiaId: t.legalEntityId, membershipByEmail });
+  await seedTalent(ws, { assemblyId: assembly, manufacturingId: manufacturing, membershipByEmail });
+  await seedHelpdesk(ws, { tid, manufacturingId: manufacturing, membershipByEmail });
+  await seedAiAutomation(ws, { membershipByEmail });
+  await seedLenses(ws, { membershipByEmail });
+
+  await appendAuditEvent(db, session, {
+    tenant_id: tid, actor_type: 'system', actor_id: null, actor_label: 'demo seed', action: 'tenant.created', resource_type: 'tenant', resource_id: tid,
+    changes: {}, metadata: { demo: true }, ip: null, user_agent: null, request_id: null,
+  });
 }
 
 /** Skills for the Workforce Universe skills network, by job title, and one saved headcount scenario. */
-async function seedLenses(client: PoolClient, c: { tid: string; membershipByEmail: Map<string, string> }) {
-  const { tid } = c;
+async function seedLenses(ws: Workspace, c: { membershipByEmail: Map<string, string> }) {
   const SKILL_CATEGORY: Record<string, string> = {
     'CNC operation': 'Shop floor', Forklift: 'Shop floor', '5S': 'Shop floor', 'Shift planning': 'Shop floor', 'Lean manufacturing': 'Shop floor', Metrology: 'Quality',
     'First aid': 'Safety', 'Six Sigma': 'Quality', 'Root cause analysis': 'Quality', 'ISO 9001': 'Quality',
@@ -151,63 +174,55 @@ async function seedLenses(client: PoolClient, c: { tid: string; membershipByEmai
     [/sales/i, [['Negotiation', 3], ['Key accounts', 3], ['Excel modelling', 1]]],
     [/director|owner/i, [['Strategy', 4], ['Negotiation', 3], ['Lean manufacturing', 2]]],
   ];
-  const people = (await client.query<{ id: string; title: string | null; n: number }>(
-    `select e.id, d.name as title, row_number() over (order by e.employee_code)::int as n from employees e left join designations d on d.id = e.current_designation_id
-      where e.tenant_id = $1 and e.status not in ('exited', 'pre_boarding')`,
-    [tid],
-  )).rows;
+  const designations = new Map((await ws.find('designations')).map((d) => [d.id as string, d.name as string]));
+  const employees = await ws.find('employees', { status: { $nin: ['exited', 'pre_boarding'] } }, { sort: { employee_code: 1 } });
   const skillId = new Map<string, string>();
-  for (const p of people) {
-    const set = byTitle.find(([re]) => re.test(p.title ?? ''))?.[1] ?? [['First aid', 1]];
+  for (const [index, e] of employees.entries()) {
+    const n = index + 1;
+    const title = designations.get(e.current_designation_id) ?? '';
+    const set = byTitle.find(([re]) => re.test(title))?.[1] ?? [['First aid', 1]];
     // Vary levels a little so the network is not uniform.
     for (const [i, [name, level]] of set.entries()) {
-      if ((p.n + i) % 5 === 0) continue;
-      if (!skillId.has(name)) {
-        skillId.set(name, (await client.query<{ id: string }>(`insert into skills (tenant_id, name, category) values ($1, $2, $3) returning id`, [tid, name, SKILL_CATEGORY[name] ?? null])).rows[0]!.id);
-      }
-      const lv = Math.max(1, Math.min(4, level + ((p.n + i) % 3 === 0 ? 1 : (p.n + i) % 4 === 0 ? -1 : 0)));
-      await client.query(`insert into employee_skills (tenant_id, employee_id, skill_id, level) values ($1, $2, $3, $4)`, [tid, p.id, skillId.get(name), lv]);
+      if ((n + i) % 5 === 0) continue;
+      if (!skillId.has(name)) skillId.set(name, await ws.insert('skills', { name, category: SKILL_CATEGORY[name] ?? null }));
+      const lv = Math.max(1, Math.min(4, level + ((n + i) % 3 === 0 ? 1 : (n + i) % 4 === 0 ? -1 : 0)));
+      await ws.insert('employee_skills', { employee_id: e.id, skill_id: skillId.get(name), level: lv });
     }
   }
-  const dept = async (name: string) => (await client.query<{ id: string }>(`select id from departments where tenant_id = $1 and name = $2`, [tid, name])).rows[0]?.id;
-  const assembly = await dept('Assembly Line');
-  const quality = await dept('Quality Assurance');
+  const assembly = (await ws.findOne('departments', { name: 'Assembly Line' }))?.id;
+  const quality = (await ws.findOne('departments', { name: 'Quality Assurance' }))?.id;
   if (assembly && quality) {
     const today = new Date();
     const q = Math.floor(today.getUTCMonth() / 3) * 3 + 3;
     const nextQuarter = `${today.getUTCFullYear() + Math.floor(q / 12)}-${String((q % 12) + 1).padStart(2, '0')}`;
-    await client.query(
-      `insert into workforce_scenarios (tenant_id, name, notes, changes, assumptions, created_by_membership_id) values ($1, 'Second shift on line 2', 'Demo data: what a second shift would add from next quarter.', $2, $3, $4)`,
-      [
-        tid,
-        JSON.stringify([
-          { departmentId: assembly, delta: 6, monthlyCostPerHead: 32000, startMonth: nextQuarter, role: 'Machine Operator (second shift)' },
-          { departmentId: quality, delta: 1, startMonth: nextQuarter, role: 'Quality Inspector' },
-        ]),
-        JSON.stringify({ startMonth: null, horizonMonths: 12, attritionPctYear: 12, payRisePct: 8, payRiseMonth: `${new Date().getUTCFullYear() + 1}-04` }),
-        c.membershipByEmail.get('plant.head@demo.crew.local'),
+    await ws.insert('workforce_scenarios', {
+      name: 'Second shift on line 2',
+      notes: 'Demo data: what a second shift would add from next quarter.',
+      changes: [
+        { departmentId: assembly, delta: 6, monthlyCostPerHead: 32000, startMonth: nextQuarter, role: 'Machine Operator (second shift)' },
+        { departmentId: quality, delta: 1, startMonth: nextQuarter, role: 'Quality Inspector' },
       ],
-    );
+      assumptions: { startMonth: null, horizonMonths: 12, attritionPctYear: 12, payRisePct: 8, payRiseMonth: `${today.getUTCFullYear() + 1}-04` },
+      created_by_membership_id: c.membershipByEmail.get('plant.head@demo.crew.local'),
+    });
   }
 }
 
-interface DemoPerson { email: string; name: string; title: string; dept: string; loc: string; entity: string; manager?: string }
+interface DemoPerson { email: string; name: string; title: string; dept: string; loc: string; entity: string; manager?: string; roles?: string[] }
 
 /** Phase 2 demo data: employee records, designations, leave setup, holidays, onboarding and a few requests. */
 async function seedCoreHr(
-  client: PoolClient,
-  c: { tid: string; indiaId: string; ukId: string; puneId: string; blrId: string; lonId: string; assemblyId: string; qualityId: string; ownerTitle: string; people: DemoPerson[]; membershipByEmail: Map<string, string> },
+  ws: Workspace,
+  c: { indiaId: string; ukId: string; puneId: string; assemblyId: string; qualityId: string; people: DemoPerson[]; membershipByEmail: Map<string, string> },
 ) {
-  const { tid } = c;
-  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = isoDay(new Date());
   const year = Number(today.slice(0, 4));
 
   // Designations from the job titles in use.
   const designation = new Map<string, string>();
   const levels: Record<string, number> = { 'Managing Director': 1, 'Head of People': 2, 'Plant Head': 2, 'Finance Manager': 3, 'HR Manager UK': 3 };
   for (const title of [...new Set([...c.people.map((p) => p.title), 'Helper', 'Quality Inspector'])]) {
-    designation.set(title, (await q(`insert into designations (tenant_id, name, level) values ($1, $2, $3) returning id`, [tid, title, levels[title] ?? 5])).id);
+    designation.set(title, await ws.insert('designations', { name: title, level: levels[title] ?? 5 }));
   }
 
   // Employee records for every demo member, plus shop-floor staff without SampCrew logins.
@@ -218,20 +233,18 @@ async function seedCoreHr(
     const [first, ...rest] = p.name.split(' ');
     const code = `NW${String(n++).padStart(4, '0')}`;
     const onProbation = !!p.probationEnd && p.probationEnd >= today;
-    const e = await q(
-      `insert into employees (tenant_id, employee_code, first_name, last_name, work_email, date_of_joining, probation_end_date, confirmation_date, status,
-                              current_legal_entity_id, current_department_id, current_location_id, current_designation_id, current_manager_employee_id, membership_id)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id`,
-      [tid, code, first, rest.join(' '), p.email ?? null, p.joined, p.probationEnd ?? null, onProbation ? null : p.probationEnd ?? p.joined, onProbation ? 'probation' : 'active',
-        p.entity, p.dept, p.loc, designation.get(p.title), p.managerId, p.membershipId ?? null],
-    );
-    await client.query(
-      `insert into employment_records (tenant_id, employee_id, effective_from, legal_entity_id, department_id, location_id, designation_id, manager_employee_id, employment_type, change_reason)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, 'full_time', 'hire')`,
-      [tid, e.id, p.joined, p.entity, p.dept, p.loc, designation.get(p.title), p.managerId],
-    );
-    await client.query(`insert into lifecycle_events (tenant_id, employee_id, kind, effective_on, details) values ($1, $2, 'hired', $3, '{"demo": true}')`, [tid, e.id, p.joined]);
-    return e.id;
+    const id = await ws.insert('employees', {
+      employee_code: code, first_name: first, last_name: rest.join(' '), work_email: p.email ?? null, date_of_joining: p.joined, probation_end_date: p.probationEnd ?? null,
+      confirmation_date: onProbation ? null : p.probationEnd ?? p.joined, status: onProbation ? 'probation' : 'active',
+      current_legal_entity_id: p.entity, current_department_id: p.dept, current_location_id: p.loc, current_designation_id: designation.get(p.title),
+      current_manager_employee_id: p.managerId, membership_id: p.membershipId ?? null,
+    });
+    await ws.insert('employment_records', {
+      employee_id: id, effective_from: p.joined, legal_entity_id: p.entity, department_id: p.dept, location_id: p.loc, designation_id: designation.get(p.title),
+      manager_employee_id: p.managerId, employment_type: 'full_time', change_reason: 'hire',
+    });
+    await ws.insert('lifecycle_events', { employee_id: id, kind: 'hired', effective_on: p.joined, details: { demo: true } });
+    return id;
   };
   for (const [i, p] of c.people.entries()) {
     const probationEnd = p.email === 'uk.sales@demo.crew.local' ? `${year + 1}-02-02` : null;
@@ -242,43 +255,50 @@ async function seedCoreHr(
     employeeByEmail.set(p.email, id);
   }
   const supervisor = employeeByEmail.get('supervisor@demo.crew.local')!;
+  const qaLead = employeeByEmail.get('qa.lead@demo.crew.local')!;
   const shopFloor = new Map<string, string>();
   for (const [name, title, dept] of [['Ganesh Pawar', 'Helper', c.assemblyId], ['Rekha Jadhav', 'Machine Operator', c.assemblyId], ['Sameer Khan', 'Quality Inspector', c.qualityId]] as const) {
-    shopFloor.set(name, await addEmployee({ name, title, dept, loc: c.puneId, entity: c.indiaId, managerId: dept === c.qualityId ? employeeByEmail.get('qa.lead@demo.crew.local')! : supervisor, joined: '2023-06-01' }));
+    shopFloor.set(name, await addEmployee({ name, title, dept, loc: c.puneId, entity: c.indiaId, managerId: dept === c.qualityId ? qaLead : supervisor, joined: '2023-06-01' }));
   }
   // Some history for the Workforce Universe timeline: Rekha started as a quality inspector and moved to the
   // assembly line as a machine operator the next spring.
   const rekha = shopFloor.get('Rekha Jadhav')!;
   const moveOn = '2024-04-01';
-  await client.query(
-    `update employment_records set department_id = $2, designation_id = $3, manager_employee_id = $4, effective_to = date '${moveOn}' - 1 where employee_id = $1`,
-    [rekha, c.qualityId, designation.get('Quality Inspector'), employeeByEmail.get('qa.lead@demo.crew.local')],
-  );
-  await client.query(
-    `insert into employment_records (tenant_id, employee_id, effective_from, legal_entity_id, department_id, location_id, designation_id, manager_employee_id, employment_type, change_reason)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, 'full_time', 'transfer')`,
-    [tid, rekha, moveOn, c.indiaId, c.assemblyId, c.puneId, designation.get('Machine Operator'), supervisor],
-  );
-  await client.query(`insert into lifecycle_events (tenant_id, employee_id, kind, effective_on, details) values ($1, $2, 'transferred', $3, '{"demo": true}')`, [tid, rekha, moveOn]);
-  await client.query(`insert into employee_number_series (tenant_id, prefix, padding, next_value) values ($1, 'NW', 4, $2)`, [tid, n]);
-  // Memberships follow employee placement through a trigger; this reconciles managers set before their reports existed.
-  await client.query(`select employees_apply_current(current_date)`);
-  await client.query(`update employees set membership_id = membership_id where tenant_id = $1 and membership_id is not null`, [tid]);
+  await ws.set('employment_records', { employee_id: rekha }, {
+    department_id: c.qualityId, designation_id: designation.get('Quality Inspector'), manager_employee_id: qaLead, effective_to: addDays(moveOn, -1),
+  });
+  await ws.insert('employment_records', {
+    employee_id: rekha, effective_from: moveOn, legal_entity_id: c.indiaId, department_id: c.assemblyId, location_id: c.puneId, designation_id: designation.get('Machine Operator'),
+    manager_employee_id: supervisor, employment_type: 'full_time', change_reason: 'transfer',
+  });
+  await ws.insert('lifecycle_events', { employee_id: rekha, kind: 'transferred', effective_on: moveOn, details: { demo: true } });
+  await ws.insert('employee_number_series', { prefix: 'NW', padding: 4, next_value: n });
+
+  // Each login follows its employee record (as the API's syncMembership does): placement, manager and title.
+  const employees = await ws.find('employees', { membership_id: { $ne: null } });
+  const byId = new Map(employees.map((e) => [e.id as string, e]));
+  const titles = new Map([...designation].map(([title, id]) => [id, title]));
+  for (const e of employees) {
+    await ws.set('memberships', { id: e.membership_id }, {
+      legal_entity_id: e.current_legal_entity_id, department_id: e.current_department_id, location_id: e.current_location_id,
+      manager_membership_id: e.current_manager_employee_id ? byId.get(e.current_manager_employee_id)?.membership_id ?? null : null,
+      employee_id: e.id, title: titles.get(e.current_designation_id) ?? null,
+    });
+  }
 
   // Leave types and policies. These are demo policies, not a statement of any country's statutory minimum.
-  const type = async (code: string, name: string, paid: boolean, color: string, halfDay = true) =>
-    (await q(`insert into leave_types (tenant_id, code, name, paid, color, allow_half_day, description) values ($1, $2, $3, $4, $5, $6, 'Demo leave type') returning id`, [tid, code, name, paid, color, halfDay])).id;
+  const type = (code: string, name: string, paid: boolean, color: string, halfDay = true) =>
+    ws.insert('leave_types', { code, name, paid, color, allow_half_day: halfDay, description: 'Demo leave type' });
   const cl = await type('CL', 'Casual leave', true, '#2563eb');
   const sl = await type('SL', 'Sick leave', true, '#dc2626');
   const el = await type('EL', 'Earned leave', true, '#059669', false);
   const lwp = await type('LWP', 'Leave without pay', false, '#6b7280');
   const al = await type('AL', 'Annual leave', true, '#7c3aed');
   const policy = (typeId: string, entity: string, method: string, entitlement: string, carry: string, extra: { notice?: number; maxRun?: string; probation?: boolean } = {}) =>
-    client.query(
-      `insert into leave_policies (tenant_id, leave_type_id, legal_entity_id, accrual_method, annual_entitlement, carry_forward_max, min_notice_days, max_consecutive_days, available_during_probation)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [tid, typeId, entity, method, entitlement, carry, extra.notice ?? 0, extra.maxRun ?? null, extra.probation ?? true],
-    );
+    ws.insert('leave_policies', {
+      leave_type_id: typeId, legal_entity_id: entity, accrual_method: method, annual_entitlement: entitlement, carry_forward_max: carry,
+      min_notice_days: extra.notice ?? 0, max_consecutive_days: extra.maxRun ?? null, available_during_probation: extra.probation ?? true,
+    });
   await policy(cl, c.indiaId, 'annual_upfront', '8', '0', { maxRun: '3' });
   await policy(sl, c.indiaId, 'annual_upfront', '8', '0');
   await policy(el, c.indiaId, 'monthly', '18', '30', { notice: 7, probation: false });
@@ -287,37 +307,33 @@ async function seedCoreHr(
   await policy(lwp, c.ukId, 'none', '0', '0');
 
   // Holiday calendars. Only fixed-date national holidays are listed for India; add regional ones per location.
-  const india = (await q(`insert into holiday_calendars (tenant_id, name, legal_entity_id, weekly_offs) values ($1, 'India offices (demo data)', $2, '{0,6}') returning id`, [tid, c.indiaId])).id;
-  const plant = (await q(`insert into holiday_calendars (tenant_id, name, location_id, weekly_offs) values ($1, 'Pune Plant, Sundays off (demo data)', $2, '{0}') returning id`, [tid, c.puneId])).id;
-  const ukCal = (await q(`insert into holiday_calendars (tenant_id, name, legal_entity_id, weekly_offs) values ($1, 'England and Wales (demo data)', $2, '{0,6}') returning id`, [tid, c.ukId])).id;
+  const india = await ws.insert('holiday_calendars', { name: 'India offices (demo data)', legal_entity_id: c.indiaId, weekly_offs: [0, 6] });
+  const plant = await ws.insert('holiday_calendars', { name: 'Pune Plant, Sundays off (demo data)', location_id: c.puneId, weekly_offs: [0] });
+  const ukCal = await ws.insert('holiday_calendars', { name: 'England and Wales (demo data)', legal_entity_id: c.ukId, weekly_offs: [0, 6] });
   for (const cal of [india, plant]) {
     for (const y of [year, year + 1]) {
       for (const [md, name] of [['01-26', 'Republic Day'], ['08-15', 'Independence Day'], ['10-02', 'Gandhi Jayanti']]) {
-        await client.query(`insert into holidays (tenant_id, calendar_id, holiday_date, name) values ($1, $2, $3, $4)`, [tid, cal, `${y}-${md}`, name]);
+        await ws.insert('holidays', { calendar_id: cal, holiday_date: `${y}-${md}`, name });
       }
     }
   }
   if (year === 2026) {
     for (const [d, name] of [['2026-01-01', "New Year's Day"], ['2026-04-03', 'Good Friday'], ['2026-04-06', 'Easter Monday'], ['2026-05-04', 'Early May bank holiday'],
       ['2026-05-25', 'Spring bank holiday'], ['2026-08-31', 'Summer bank holiday'], ['2026-12-25', 'Christmas Day'], ['2026-12-28', 'Boxing Day (substitute day)']]) {
-      await client.query(`insert into holidays (tenant_id, calendar_id, holiday_date, name) values ($1, $2, $3, $4)`, [tid, ukCal, d, name]);
+      await ws.insert('holidays', { calendar_id: ukCal, holiday_date: d, name });
     }
   }
 
   // Accruals due so far this year, using the same arithmetic as the API.
-  const emps = (await client.query<{ id: string; date_of_joining: string; legal_entity_id: string }>(
-    `select id, to_char(date_of_joining, 'YYYY-MM-DD') as date_of_joining, current_legal_entity_id as legal_entity_id from employees where tenant_id = $1`, [tid],
-  )).rows;
-  const pols = (await client.query<{ leave_type_id: string; legal_entity_id: string; accrual_method: 'annual_upfront' | 'monthly' | 'none'; annual_entitlement: string; rounding: 'none' | 'half_day' }>(
-    `select leave_type_id, legal_entity_id, accrual_method, annual_entitlement::text, rounding from leave_policies where tenant_id = $1 and active`, [tid],
-  )).rows;
+  const emps = await ws.find('employees');
+  const pols = await ws.find('leave_policies', { active: true });
   for (const e of emps) {
-    for (const p of pols.filter((x) => x.legal_entity_id === e.legal_entity_id)) {
+    for (const p of pols.filter((x) => x.legal_entity_id === e.current_legal_entity_id)) {
       for (const cr of leaveMath.accrualsDue({ accrualMethod: p.accrual_method, annualEntitlement: leaveMath.toH(p.annual_entitlement), rounding: p.rounding }, { dateOfJoining: e.date_of_joining, lastWorkingDay: null }, today)) {
-        await client.query(
-          `insert into leave_ledger (tenant_id, employee_id, leave_type_id, leave_year, kind, quantity, effective_on, accrual_key, note) values ($1, $2, $3, $4, 'accrual', $5, $6, $7, $8)`,
-          [tid, e.id, p.leave_type_id, year, leaveMath.fromH(cr.quantity), cr.effectiveOn, cr.key, `Accrual ${cr.key.slice(1)}`],
-        );
+        await ws.insert('leave_ledger', {
+          employee_id: e.id, leave_type_id: p.leave_type_id, leave_year: year, kind: 'accrual', quantity: leaveMath.fromH(cr.quantity), effective_on: cr.effectiveOn,
+          accrual_key: cr.key, note: `Accrual ${cr.key.slice(1)}`,
+        });
       }
     }
   }
@@ -326,37 +342,33 @@ async function seedCoreHr(
   const nextMonday = (() => {
     const d = new Date(`${today}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + ((8 - d.getUTCDay()) % 7 || 7) + 7);
-    return d.toISOString().slice(0, 10);
+    return isoDay(d);
   })();
   const arjun = employeeByEmail.get('operator1@demo.crew.local')!;
   const arjunM = c.membershipByEmail.get('operator1@demo.crew.local')!;
   const supM = c.membershipByEmail.get('supervisor@demo.crew.local')!;
   if (nextMonday.slice(0, 4) === String(year)) {
-    const lr = await q(
-      `insert into leave_requests (tenant_id, employee_id, leave_type_id, start_date, end_date, days, reason, requested_by_membership_id) values ($1, $2, $3, $4, $4, 1, 'Family function', $5) returning id`,
-      [tid, arjun, cl, nextMonday, arjunM],
-    );
-    const ar = await q(
-      `insert into approval_requests (tenant_id, resource_type, resource_id, subject_employee_id, requested_by_membership_id, summary) values ($1, 'leave_request', $2, $3, $4, $5) returning id`,
-      [tid, lr.id, arjun, arjunM, `Arjun Kulkarni: Casual leave, ${nextMonday} (1.00 days). "Family function"`],
-    );
-    await client.query(`insert into approval_steps (tenant_id, request_id, seq, kind, approver_membership_id, status) values ($1, $2, 1, 'manager', $3, 'pending')`, [tid, ar.id, supM]);
-    await client.query(`update leave_requests set approval_request_id = $2 where id = $1`, [lr.id, ar.id]);
-    await client.query(`insert into notifications (tenant_id, membership_id, kind, title, body, link) values ($1, $2, 'approval.requested', 'Leave request waiting for your approval', $3, '/approvals')`,
-      [tid, supM, `Arjun Kulkarni: Casual leave, ${nextMonday}`]);
+    const lr = await ws.insert('leave_requests', {
+      employee_id: arjun, leave_type_id: cl, start_date: nextMonday, end_date: nextMonday, days: '1', reason: 'Family function', requested_by_membership_id: arjunM,
+    });
+    const ar = await ws.insert('approval_requests', {
+      resource_type: 'leave_request', resource_id: lr, subject_employee_id: arjun, requested_by_membership_id: arjunM,
+      summary: `Arjun Kulkarni: Casual leave, ${nextMonday} (1.00 days). "Family function"`,
+    });
+    await ws.insert('approval_steps', { request_id: ar, seq: 1, kind: 'manager', approver_membership_id: supM, status: 'pending' });
+    await ws.set('leave_requests', { id: lr }, { approval_request_id: ar });
+    await ws.insert('notifications', {
+      membership_id: supM, kind: 'approval.requested', title: 'Leave request waiting for your approval', body: `Arjun Kulkarni: Casual leave, ${nextMonday}`, link: '/approvals',
+    });
   }
   const neha = employeeByEmail.get('operator2@demo.crew.local')!;
   const day = `${year}-03-10`;
   if (day < today) {
-    const lr = await q(
-      `insert into leave_requests (tenant_id, employee_id, leave_type_id, start_date, end_date, days, reason, status, decided_at, requested_by_membership_id)
-       values ($1, $2, $3, $4, $4, 1, 'Fever', 'approved', now(), $5) returning id`,
-      [tid, neha, sl, day, c.membershipByEmail.get('operator2@demo.crew.local')],
-    );
-    await client.query(
-      `insert into leave_ledger (tenant_id, employee_id, leave_type_id, leave_year, kind, quantity, effective_on, leave_request_id) values ($1, $2, $3, $4, 'taken', -1, $5, $6)`,
-      [tid, neha, sl, year, day, lr.id],
-    );
+    const lr = await ws.insert('leave_requests', {
+      employee_id: neha, leave_type_id: sl, start_date: day, end_date: day, days: '1', reason: 'Fever', status: 'approved', decided_at: new Date(),
+      requested_by_membership_id: c.membershipByEmail.get('operator2@demo.crew.local'),
+    });
+    await ws.insert('leave_ledger', { employee_id: neha, leave_type_id: sl, leave_year: year, kind: 'taken', quantity: '-1', effective_on: day, leave_request_id: lr });
   }
 }
 
@@ -365,47 +377,42 @@ async function seedCoreHr(
  * whose punches arrive through enrolment numbers. Attendance days are not inserted: the API derives them from these
  * raw punches on first view and in the hourly job, exactly as it does for real data.
  */
-async function seedAttendance(client: PoolClient, c: { tid: string; puneId: string; membershipByEmail: Map<string, string> }) {
-  const { tid } = c;
-  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
-  const gen = await q(`select id from shift_templates where tenant_id = $1 and code = 'GEN'`, [tid]);
-  await client.query(
-    `insert into shift_templates (tenant_id, code, name, start_time, end_time, break_minutes, overtime_enabled, overtime_min_minutes, color)
-     values ($1, 'NIGHT', 'Night shift (demo data)', '22:00', '06:00', 30, true, 30, '#7c3aed')`,
-    [tid],
-  );
-  await client.query(
-    `insert into attendance_policies (tenant_id, location_id, geofence_mode, default_shift_id, correction_window_days) values ($1, $2, 'warn', $3, 30)`,
-    [tid, c.puneId, gen.id],
-  );
+async function seedAttendance(ws: Workspace, c: { tid: string; puneId: string }) {
+  const gen = await ws.id('shift_templates', { code: 'GEN' });
+  await ws.insert('shift_templates', {
+    code: 'NIGHT', name: 'Night shift (demo data)', start_time: '22:00', end_time: '06:00', break_minutes: 30, overtime_enabled: true, overtime_min_minutes: 30, color: '#7c3aed',
+  });
+  await ws.insert('attendance_policies', { location_id: c.puneId, geofence_mode: 'warn', default_shift_id: gen, correction_window_days: 30 });
 
-  const emp = async (where: string, value: string) => (await q(`select id from employees where tenant_id = $1 and ${where} = $2`, [tid, value])).id;
   const web = {
-    arjun: await emp('work_email', 'operator1@demo.crew.local'),
-    neha: await emp('work_email', 'operator2@demo.crew.local'),
-    sunita: await emp('work_email', 'supervisor@demo.crew.local'),
+    arjun: await ws.id('employees', { work_email: 'operator1@demo.crew.local' }),
+    neha: await ws.id('employees', { work_email: 'operator2@demo.crew.local' }),
+    sunita: await ws.id('employees', { work_email: 'supervisor@demo.crew.local' }),
   };
-  const ganesh = await emp('first_name', 'Ganesh');
-  const rekha = await emp('first_name', 'Rekha');
+  const ganesh = await ws.id('employees', { first_name: 'Ganesh' });
+  const rekha = await ws.id('employees', { first_name: 'Rekha' });
 
-  const device = await q(
-    `insert into attendance_devices (tenant_id, name, vendor, model, serial_number, location_id, time_zone, simulated, last_seen_at)
-     values ($1, 'Pune gate (simulated demo device)', 'zkteco', 'Simulated', $2, $3, 'Asia/Kolkata', true, now()) returning id`,
-    [tid, `DEMO${tid.replace(/-/g, '').slice(0, 10).toUpperCase()}`, c.puneId],
-  );
-  await client.query(`insert into device_user_mappings (tenant_id, device_id, device_user_id, employee_id) values ($1, null, '101', $2), ($1, null, '102', $3)`, [tid, ganesh, rekha]);
+  const device = await ws.insert('attendance_devices', {
+    name: 'Pune gate (simulated demo device)', vendor: 'zkteco', model: 'Simulated', serial_number: `DEMO${c.tid.replace(/-/g, '').slice(0, 10).toUpperCase()}`,
+    location_id: c.puneId, time_zone: 'Asia/Kolkata', simulated: true, last_seen_at: new Date(),
+  });
+  await ws.insertMany('device_user_mappings', [
+    { device_id: null, device_user_id: '101', employee_id: ganesh },
+    { device_id: null, device_user_id: '102', employee_id: rekha },
+  ]);
 
   // The last 26 days before today that the Pune calendar treats as working days (Sundays and holidays skipped).
-  const holidays = new Set((await client.query<{ d: string }>(`select to_char(h.holiday_date, 'YYYY-MM-DD') as d from holidays h join holiday_calendars hc on hc.id = h.calendar_id where hc.tenant_id = $1 and hc.location_id = $2`, [tid, c.puneId])).rows.map((r) => r.d));
+  const calendars = (await ws.find('holiday_calendars', { location_id: c.puneId })).map((x) => x.id);
+  const holidays = new Set((await ws.find('holidays', { calendar_id: { $in: calendars } })).map((h) => h.holiday_date as string));
   const days: string[] = [];
-  const cursor = new Date(Date.now() + 5.5 * 3_600_000); // today in India
+  const cursor = new Date(Date.now() + 5.5 * HOUR); // today in India
   while (days.length < 26) {
     cursor.setUTCDate(cursor.getUTCDate() - 1);
-    const d = cursor.toISOString().slice(0, 10);
+    const d = isoDay(cursor);
     if (cursor.getUTCDay() !== 0 && !holidays.has(d)) days.push(d);
   }
-  const at = (d: string, hm: string) => `${d}T${hm}:00+05:30`;
-  const pune = { latitude: 18.5205, longitude: 73.8566, accuracy: 15, distance: 15 };
+  const at = (d: string, hm: string) => new Date(`${d}T${hm}:00+05:30`);
+  const events: Row[] = [];
   let accepted = 0;
   for (const [i, d] of days.entries()) {
     for (const [key, id] of Object.entries(web)) {
@@ -414,33 +421,26 @@ async function seedAttendance(client: PoolClient, c: { tid: string; puneId: stri
       const punches: [string, 'in' | 'out'][] = [[late ? '09:34' : `08:5${i % 7}`, 'in']];
       if (!missingOut) punches.push([key === 'sunita' && i === 0 ? '19:20' : `18:0${(i * 3) % 10}`, 'out']);
       for (const [hm, direction] of punches) {
-        await client.query(
-          `insert into attendance_events (tenant_id, employee_id, source, source_event_id, captured_at, direction, latitude, longitude, accuracy_m, geofence_result, distance_m, note)
-           values ($1, $2, 'web', $3, $4, $5, $6, $7, $8, 'inside', $9, 'Demo data')`,
-          [tid, id, `demo-${key}-${d}-${direction}`, at(d, hm), direction, pune.latitude, pune.longitude, pune.accuracy, pune.distance],
-        );
+        events.push({
+          employee_id: id, source: 'web', source_event_id: `demo-${key}-${d}-${direction}`, captured_at: at(d, hm), direction,
+          latitude: '18.5205', longitude: '73.8566', accuracy_m: 15, geofence_result: 'inside', distance_m: 15, note: 'Demo data',
+        });
       }
     }
     // Shop floor staff punch on the device. 103 is not mapped yet, so it shows up as an enrolment number to map.
     for (const [pin, inAt, outAt] of [['101', '08:46', '17:58'], ['102', `08:5${i % 9}`, '18:04'], ['103', '08:55', '18:01']] as const) {
       for (const [hm, direction, status] of [[inAt, 'in', 0], [outAt, 'out', 1]] as const) {
-        await client.query(
-          `insert into attendance_events (tenant_id, device_id, device_user_id, source, source_event_id, captured_at, device_local_time, direction, verify_method, raw)
-           values ($1, $2, $3, 'device', $4, $5, $6, $7, 'fingerprint', $8)`,
-          [tid, device.id, pin, `demo-${device.id}-${pin}-${d}-${direction}`, at(d, hm), `${d} ${hm}:00`, direction, { demo: true, status }],
-        );
+        events.push({
+          device_id: device, device_user_id: pin, source: 'device', source_event_id: `demo-${device}-${pin}-${d}-${direction}`, captured_at: at(d, hm),
+          device_local_time: `${d} ${hm}:00`, direction, verify_method: 'fingerprint', raw: { demo: true, status },
+        });
         accepted++;
       }
     }
   }
-  await client.query(
-    `update attendance_devices set records_accepted = $2, last_punch_at = $3 where id = $1`,
-    [device.id, accepted, at(days[0]!, '18:04')],
-  );
-  await client.query(
-    `insert into device_ingest_log (tenant_id, device_id, kind, records, accepted, duplicates, rejected, detail) values ($1, $2, 'attlog', $3, $3, 0, 0, 'Demo data: a week of punches')`,
-    [tid, device.id, accepted],
-  );
+  await ws.insertMany('attendance_events', events);
+  await ws.set('attendance_devices', { id: device }, { records_accepted: accepted, last_punch_at: at(days[0]!, '18:04') });
+  await ws.insert('device_ingest_log', { device_id: device, kind: 'attlog', records: accepted, accepted, duplicates: 0, rejected: 0, detail: 'Demo data: a week of punches' });
 }
 
 /**
@@ -448,47 +448,39 @@ async function seedAttendance(client: PoolClient, c: { tid: string; puneId: stri
  * stages (one with a past interview awaiting a scorecard), and a draft requisition. Every candidate is tagged
  * "demo" and uses a .local address, so no real person is contacted.
  */
-async function seedRecruitment(client: PoolClient, c: { tid: string; indiaId: string; puneId: string; manufacturingId: string; membershipByEmail: Map<string, string> }) {
-  const { tid } = c;
-  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
+async function seedRecruitment(ws: Workspace, c: { indiaId: string; puneId: string; manufacturingId: string; membershipByEmail: Map<string, string> }) {
   const m = (email: string) => c.membershipByEmail.get(email)!;
   const recruiter = m('recruiter@demo.crew.local');
   const plantHead = m('plant.head@demo.crew.local');
   const qaLead = m('qa.lead@demo.crew.local');
 
-  await client.query(
-    `insert into career_sites (tenant_id, enabled, slug, headline, intro, privacy_notice, retention_days) values ($1, true, 'northwind-demo', $2, $3, $4, 365)`,
-    [
-      tid,
-      'Build what moves India (demo career site)',
-      'This is a demo career site for the Northwind sample workspace. Applications here are stored in the demo workspace only.',
-      'Northwind (a demo organisation) uses the details and CV you send only to consider you for this job and similar roles. Our hiring team and the interviewers for the role can see them. We keep them for one year after your last contact with us, then delete them. You can ask us to delete them sooner at any time.',
-    ],
-  );
-  await client.query(`insert into requisition_number_series (tenant_id, next_value) values ($1, 3)`, [tid]);
-  const stage = async (kind: string) => (await q(`select id from recruitment_stages where tenant_id = $1 and kind = $2 order by position limit 1`, [tid, kind])).id;
+  await ws.insert('career_sites', {
+    enabled: true, slug: 'northwind-demo', headline: 'Build what moves India (demo career site)',
+    intro: 'This is a demo career site for the Northwind sample workspace. Applications here are stored in the demo workspace only.',
+    privacy_notice: 'Northwind (a demo organisation) uses the details and CV you send only to consider you for this job and similar roles. Our hiring team and the interviewers for the role can see them. We keep them for one year after your last contact with us, then delete them. You can ask us to delete them sooner at any time.',
+    retention_days: 365,
+  });
+  await ws.insert('requisition_number_series', { next_value: 3 });
+  const stage = (kind: string) => ws.id('recruitment_stages', { kind }, { sort: { position: 1 } });
 
-  const open = await q(
-    `insert into job_requisitions (tenant_id, code, title, legal_entity_id, department_id, location_id, hiring_manager_membership_id, employment_type, work_mode, headcount,
-                                   reason, salary_min, salary_max, currency, justification, description, scorecard, status, created_by_membership_id, approved_at, opened_at)
-     values ($1, 'REQ-0001', 'Quality Engineer', $2, $3, $4, $5, 'full_time', 'onsite', 2, 'new_role', 600000, 900000, 'INR',
-             'Demo data: second shift line needs in-process inspection cover.', 'Own in-process quality checks on the assembly line and lead root-cause analysis for defects.',
-             $6, 'open', $7, now() - interval '20 days', now() - interval '18 days') returning id`,
-    [tid, c.indiaId, c.manufacturingId, c.puneId, plantHead, ['Quality systems', 'Problem solving', 'Communication', 'Shop-floor safety'], recruiter],
-  );
-  await client.query(
-    `insert into job_postings (tenant_id, requisition_id, public_title, slug, summary, description, location_text, show_salary, published_at)
-     values ($1, $2, 'Quality Engineer (demo)', 'quality-engineer', 'Keep our Pune assembly line right first time',
-             $3, 'Pune Plant', true, now() - interval '17 days')`,
-    [tid, open.id, 'This is a demo job posting.\n\nYou will run in-process inspections on our assembly line, lead root-cause analysis when defects appear, and work with supervisors to keep quality high on every shift.\n\nYou have 2 or more years in manufacturing quality, know 8D or a similar method, and communicate clearly with operators and engineers.'],
-  );
-  await client.query(
-    `insert into job_requisitions (tenant_id, code, title, legal_entity_id, department_id, location_id, hiring_manager_membership_id, employment_type, work_mode, headcount,
-                                   reason, salary_min, salary_max, currency, justification, scorecard, status, created_by_membership_id)
-     values ($1, 'REQ-0002', 'CNC Machine Operator', $2, $3, $4, $5, 'full_time', 'onsite', 3, 'new_role', 300000, 420000, 'INR',
-             'Demo data: new CNC cell starting next quarter.', $6, 'draft', $5)`,
-    [tid, c.indiaId, c.manufacturingId, c.puneId, plantHead, ['Machine skills', 'Safety', 'Reliability']],
-  );
+  const open = await ws.insert('job_requisitions', {
+    code: 'REQ-0001', title: 'Quality Engineer', legal_entity_id: c.indiaId, department_id: c.manufacturingId, location_id: c.puneId, hiring_manager_membership_id: plantHead,
+    employment_type: 'full_time', work_mode: 'onsite', headcount: 2, reason: 'new_role', salary_min: '600000', salary_max: '900000', currency: 'INR',
+    justification: 'Demo data: second shift line needs in-process inspection cover.',
+    description: 'Own in-process quality checks on the assembly line and lead root-cause analysis for defects.',
+    scorecard: ['Quality systems', 'Problem solving', 'Communication', 'Shop-floor safety'], status: 'open', created_by_membership_id: recruiter,
+    approved_at: ago(20 * DAY), opened_at: ago(18 * DAY),
+  });
+  await ws.insert('job_postings', {
+    requisition_id: open, public_title: 'Quality Engineer (demo)', slug: 'quality-engineer', summary: 'Keep our Pune assembly line right first time',
+    description: 'This is a demo job posting.\n\nYou will run in-process inspections on our assembly line, lead root-cause analysis when defects appear, and work with supervisors to keep quality high on every shift.\n\nYou have 2 or more years in manufacturing quality, know 8D or a similar method, and communicate clearly with operators and engineers.',
+    location_text: 'Pune Plant', show_salary: true, published_at: ago(17 * DAY),
+  });
+  await ws.insert('job_requisitions', {
+    code: 'REQ-0002', title: 'CNC Machine Operator', legal_entity_id: c.indiaId, department_id: c.manufacturingId, location_id: c.puneId, hiring_manager_membership_id: plantHead,
+    employment_type: 'full_time', work_mode: 'onsite', headcount: 3, reason: 'new_role', salary_min: '300000', salary_max: '420000', currency: 'INR',
+    justification: 'Demo data: new CNC cell starting next quarter.', scorecard: ['Machine skills', 'Safety', 'Reliability'], status: 'draft', created_by_membership_id: plantHead,
+  });
 
   const candidates: { first: string; last: string; email: string; title: string; company: string; source: string; basis: string; kind: string; daysAgo: number; cover?: string }[] = [
     { first: 'Ananya', last: 'Joshi', email: 'ananya.joshi@candidates.demo.crew.local', title: 'Quality Inspector', company: 'Demo Auto Parts', source: 'career_site', basis: 'candidate_consent', kind: 'interview', daysAgo: 12, cover: 'I have led 8D investigations on a press line for three years.' },
@@ -497,33 +489,34 @@ async function seedRecruitment(client: PoolClient, c: { tid: string; indiaId: st
   ];
   const applied = await stage('new');
   for (const cd of candidates) {
-    const cand = await q(
-      `insert into candidates (tenant_id, first_name, last_name, email, current_title, current_company, location_text, source, source_detail, tags, consent_basis, privacy_notice_version, consent_at, last_activity_at, created_at)
-       values ($1, $2, $3, $4, $5, $6, 'Pune', $7, 'Demo data', '{demo}', $8, case when $8 = 'candidate_consent' then 1 end, now() - make_interval(days => $9), now() - make_interval(days => $9), now() - make_interval(days => $9)) returning id`,
-      [tid, cd.first, cd.last, cd.email, cd.title, cd.company, cd.source, cd.basis, cd.daysAgo],
-    );
+    const since = ago(cd.daysAgo * DAY);
+    const moved = ago(Math.max(cd.daysAgo - 2, 0) * DAY);
+    const cand = await ws.insert('candidates', {
+      first_name: cd.first, last_name: cd.last, email: cd.email, current_title: cd.title, current_company: cd.company, location_text: 'Pune', source: cd.source,
+      source_detail: 'Demo data', tags: ['demo'], consent_basis: cd.basis, privacy_notice_version: cd.basis === 'candidate_consent' ? 1 : null,
+      consent_at: since, last_activity_at: since, created_at: since,
+    });
     const to = await stage(cd.kind);
-    const app = await q(
-      `insert into applications (tenant_id, candidate_id, requisition_id, stage_id, source, cover_note, created_by_membership_id, applied_at, stage_entered_at)
-       values ($1, $2, $3, $4, $5, $6, $7, now() - make_interval(days => $8), now() - make_interval(days => greatest($8 - 2, 0))) returning id`,
-      [tid, cand.id, open.id, to, cd.source, cd.cover ?? null, cd.source === 'career_site' ? null : recruiter, cd.daysAgo],
-    );
-    await client.query(`insert into application_events (tenant_id, application_id, kind, to_stage_id, detail, created_at) values ($1, $2, 'applied', $3, $4, now() - make_interval(days => $5))`, [tid, app.id, applied, { source: cd.source }, cd.daysAgo]);
+    const app = await ws.insert('applications', {
+      candidate_id: cand, requisition_id: open, stage_id: to, source: cd.source, cover_note: cd.cover ?? null,
+      created_by_membership_id: cd.source === 'career_site' ? null : recruiter, applied_at: since, stage_entered_at: moved,
+    });
+    await ws.insert('application_events', { application_id: app, kind: 'applied', to_stage_id: applied, detail: { source: cd.source }, created_at: since });
     if (to !== applied) {
-      await client.query(
-        `insert into application_events (tenant_id, application_id, kind, from_stage_id, to_stage_id, actor_membership_id, created_at) values ($1, $2, 'stage_changed', $3, $4, $5, now() - make_interval(days => greatest($6 - 2, 0)))`,
-        [tid, app.id, applied, to, recruiter, cd.daysAgo],
-      );
+      await ws.insert('application_events', { application_id: app, kind: 'stage_changed', from_stage_id: applied, to_stage_id: to, actor_membership_id: recruiter, created_at: moved });
     }
     if (cd.kind === 'interview') {
       // Yesterday's interview: the QA lead's scorecard is still due, so the demo can show the scorecard flow.
-      const iv = await q(
-        `insert into interviews (tenant_id, application_id, title, starts_at, duration_minutes, mode, meeting_url, created_by_membership_id)
-         values ($1, $2, 'Technical interview', date_trunc('hour', now()) - interval '1 day', 60, 'video', 'https://meet.example.com/demo-quality-engineer', $3) returning id`,
-        [tid, app.id, recruiter],
-      );
-      await client.query(`insert into interview_panelists (tenant_id, interview_id, membership_id) values ($1, $2, $3), ($1, $2, $4)`, [tid, iv.id, qaLead, plantHead]);
-      await client.query(`insert into application_events (tenant_id, application_id, kind, detail, actor_membership_id, created_at) values ($1, $2, 'interview_scheduled', $3, $4, now() - interval '3 days')`, [tid, app.id, { interviewId: iv.id, title: 'Technical interview' }, recruiter]);
+      const hour = new Date();
+      hour.setUTCMinutes(0, 0, 0);
+      const iv = await ws.insert('interviews', {
+        application_id: app, title: 'Technical interview', starts_at: new Date(hour.getTime() - DAY), duration_minutes: 60, mode: 'video',
+        meeting_url: 'https://meet.example.com/demo-quality-engineer', created_by_membership_id: recruiter,
+      });
+      await ws.insertMany('interview_panelists', [{ interview_id: iv, membership_id: qaLead }, { interview_id: iv, membership_id: plantHead }]);
+      await ws.insert('application_events', {
+        application_id: app, kind: 'interview_scheduled', detail: { interviewId: iv, title: 'Technical interview' }, actor_membership_id: recruiter, created_at: ago(3 * DAY),
+      });
     }
   }
 }
@@ -534,21 +527,16 @@ async function seedRecruitment(client: PoolClient, c: { tid: string; indiaId: st
  * for the supervisor). No payroll run is created, so the first run can be tried end to end. The UK entity has no
  * payroll: SampCrew's statutory rules in this release cover India only.
  */
-async function seedPayroll(client: PoolClient, c: { tid: string; indiaId: string; membershipByEmail: Map<string, string> }) {
-  const { tid } = c;
-  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
-  const today = new Date().toISOString().slice(0, 10);
+async function seedPayroll(ws: Workspace, c: { indiaId: string; membershipByEmail: Map<string, string> }) {
+  const today = isoDay(new Date());
   const fy = payrollEngine.fyStart(today);
-  await client.query(
-    `insert into statutory_settings (tenant_id, legal_entity_id, effective_from, lop_source, settings) values ($1, $2, $3, 'attendance_and_leave', $4)`,
-    [tid, c.indiaId, fy, JSON.stringify(DEFAULT_IN_STATUTORY)],
-  );
-  const structure = await q(`select id from salary_structures where tenant_id = $1 and name = 'Standard'`, [tid]);
-  const lines = (await client.query<{ component_id: string; code: string; name: string; kind: 'earning' | 'deduction'; calc: payrollEngine.CalcMethod; value: string; is_basic: boolean }>(
-    `select c.id as component_id, c.code, c.name, c.kind, l.calc, l.value::text, c.is_basic from salary_structure_lines l join pay_components c on c.id = l.component_id
-      where l.structure_id = $1 order by l.position`,
-    [structure.id],
-  )).rows;
+  await ws.insert('statutory_settings', { legal_entity_id: c.indiaId, effective_from: fy, lop_source: 'attendance_and_leave', settings: DEFAULT_IN_STATUTORY });
+  const structure = await ws.id('salary_structures', { name: 'Standard' });
+  const components = new Map((await ws.find('pay_components')).map((p) => [p.id as string, p]));
+  const lines = (await ws.find('salary_structure_lines', { structure_id: structure }, { sort: { position: 1 } })).map((l) => {
+    const k = components.get(l.component_id)!;
+    return { componentId: l.component_id as string, code: k.code, name: k.name, kind: k.kind, calc: l.calc as payrollEngine.CalcMethod, value: l.value as string, isBasic: k.is_basic as boolean };
+  });
   // Annual CTC by work email or first name (demo figures).
   const ctc: Record<string, string> = {
     'owner@demo.crew.local': '4800000', 'hr.admin@demo.crew.local': '2400000', 'recruiter@demo.crew.local': '1200000', 'payroll@demo.crew.local': '1500000',
@@ -556,91 +544,75 @@ async function seedPayroll(client: PoolClient, c: { tid: string; indiaId: string
     'operator2@demo.crew.local': '280000', 'qa.lead@demo.crew.local': '900000', 'attendance@demo.crew.local': '420000', 'auditor@demo.crew.local': '1400000', 'hr.ops@demo.crew.local': '1600000',
     Ganesh: '216000', Rekha: '264000', Sameer: '240000',
   };
-  const employees = (await client.query<{ id: string; work_email: string | null; first_name: string; date_of_joining: string }>(
-    `select id, work_email, first_name, to_char(date_of_joining, 'YYYY-MM-DD') as date_of_joining from employees where tenant_id = $1 and current_legal_entity_id = $2`,
-    [tid, c.indiaId],
-  )).rows;
-  for (const e of employees) {
+  for (const e of await ws.find('employees', { current_legal_entity_id: c.indiaId })) {
     const annual = ctc[e.work_email ?? ''] ?? ctc[e.first_name];
     if (!annual) continue;
-    const built = payrollEngine.buildSalary(annual, lines.map((l) => ({ code: l.code, name: l.name, kind: l.kind, calc: l.calc, value: l.value, isBasic: l.is_basic })), { pf: true, settings: DEFAULT_IN_STATUTORY });
-    const sal = await q(
-      `insert into employee_salaries (tenant_id, employee_id, effective_from, annual_ctc, currency, structure_id, employer_pf_monthly, note) values ($1, $2, $3, $4, 'INR', $5, $6, 'Demo data') returning id`,
-      [tid, e.id, e.date_of_joining, annual, structure.id, built.employerPfMonthly],
-    );
-    await client.query(
-      `insert into employee_salary_lines (tenant_id, salary_id, component_id, position, monthly) select $1, $2, x.component_id, x.pos, x.monthly from unnest($3::uuid[], $4::numeric[]) with ordinality as x(component_id, monthly, pos)`,
-      [tid, sal.id, lines.map((l) => l.component_id), built.components.map((x) => x.monthly)],
-    );
+    const built = payrollEngine.buildSalary(annual, lines, { pf: true, settings: DEFAULT_IN_STATUTORY });
+    const sal = await ws.insert('employee_salaries', {
+      employee_id: e.id, effective_from: e.date_of_joining, annual_ctc: annual, currency: 'INR', structure_id: structure, employer_pf_monthly: built.employerPfMonthly, note: 'Demo data',
+    });
+    await ws.insertMany('employee_salary_lines', lines.map((l, i) => ({ salary_id: sal, component_id: l.componentId, position: i + 1, monthly: built.components[i]!.monthly })));
   }
 
-  const emp = async (email: string) => (await q(`select id from employees where tenant_id = $1 and work_email = $2`, [tid, email])).id;
-  const category = async (name: string) => (await q(`select id from expense_categories where tenant_id = $1 and name = $2`, [tid, name])).id;
+  const emp = (email: string) => ws.id('employees', { work_email: email });
+  const category = (name: string) => ws.id('expense_categories', { name });
   const prev = new Date();
   prev.setUTCDate(10);
   prev.setUTCMonth(prev.getUTCMonth() - 1);
-  const lastMonth10th = prev.toISOString().slice(0, 10); // inside last month, so the first demo run reimburses it
-  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-  await client.query(
-    `insert into expense_claims (tenant_id, employee_id, category_id, spent_on, amount, currency, description, status, submitted_by_membership_id, decided_at)
-     values ($1, $2, $3, $4, 850, 'INR', 'Cab to the supplier audit in Chakan (demo data)', 'approved', $5, now())`,
-    [tid, await emp('operator1@demo.crew.local'), await category('Travel'), lastMonth10th, c.membershipByEmail.get('operator1@demo.crew.local')],
-  );
+  const lastMonth10th = isoDay(prev); // inside last month, so the first demo run reimburses it
+  const yesterday = isoDay(ago(DAY));
+  await ws.insert('expense_claims', {
+    employee_id: await emp('operator1@demo.crew.local'), category_id: await category('Travel'), spent_on: lastMonth10th, amount: '850', currency: 'INR',
+    description: 'Cab to the supplier audit in Chakan (demo data)', status: 'approved', submitted_by_membership_id: c.membershipByEmail.get('operator1@demo.crew.local'), decided_at: new Date(),
+  });
   const nehaM = c.membershipByEmail.get('operator2@demo.crew.local')!;
   const supM = c.membershipByEmail.get('supervisor@demo.crew.local')!;
   const neha = await emp('operator2@demo.crew.local');
-  const claim = await q(
-    `insert into expense_claims (tenant_id, employee_id, category_id, spent_on, amount, currency, description, status, submitted_by_membership_id)
-     values ($1, $2, $3, $4, 640, 'INR', 'Lunch during the night-shift handover training (demo data)', 'pending', $5) returning id`,
-    [tid, neha, await category('Meals'), yesterday, nehaM],
-  );
-  const ar = await q(
-    `insert into approval_requests (tenant_id, resource_type, resource_id, subject_employee_id, requested_by_membership_id, summary) values ($1, 'expense_claim', $2, $3, $4, $5) returning id`,
-    [tid, claim.id, neha, nehaM, `Neha Deshmukh: Meals expense of INR 640.00 on ${yesterday}. Lunch during the night-shift handover training (demo data)`],
-  );
-  await client.query(`insert into approval_steps (tenant_id, request_id, seq, kind, approver_membership_id, status) values ($1, $2, 1, 'manager', $3, 'pending')`, [tid, ar.id, supM]);
-  await client.query(`update expense_claims set approval_request_id = $2 where id = $1`, [claim.id, ar.id]);
+  const claim = await ws.insert('expense_claims', {
+    employee_id: neha, category_id: await category('Meals'), spent_on: yesterday, amount: '640', currency: 'INR',
+    description: 'Lunch during the night-shift handover training (demo data)', status: 'pending', submitted_by_membership_id: nehaM,
+  });
+  const ar = await ws.insert('approval_requests', {
+    resource_type: 'expense_claim', resource_id: claim, subject_employee_id: neha, requested_by_membership_id: nehaM,
+    summary: `Neha Deshmukh: Meals expense of INR 640.00 on ${yesterday}. Lunch during the night-shift handover training (demo data)`,
+  });
+  await ws.insert('approval_steps', { request_id: ar, seq: 1, kind: 'manager', approver_membership_id: supM, status: 'pending' });
+  await ws.set('expense_claims', { id: claim }, { approval_request_id: ar });
 }
 
 /**
  * Phase 6 demo data: goals with check-ins, a mid-year review cycle in progress for the Assembly Line, learning
  * assignments, an open anonymous survey with a few answers, and recognition posts. Every record says it is demo data.
  */
-async function seedTalent(client: PoolClient, c: { tid: string; assemblyId: string; manufacturingId: string; membershipByEmail: Map<string, string> }) {
-  const { tid } = c;
-  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
-  const emp = async (where: string, value: string) => (await q(`select id from employees where tenant_id = $1 and ${where} = $2`, [tid, value])).id;
+async function seedTalent(ws: Workspace, c: { assemblyId: string; manufacturingId: string; membershipByEmail: Map<string, string> }) {
+  const emp = (filter: Row) => ws.id('employees', filter);
   const m = (email: string) => c.membershipByEmail.get(email)!;
   const year = new Date().getUTCFullYear();
-  const vikram = await emp('work_email', 'plant.head@demo.crew.local');
-  const sunita = await emp('work_email', 'supervisor@demo.crew.local');
-  const arjun = await emp('work_email', 'operator1@demo.crew.local');
-  const neha = await emp('work_email', 'operator2@demo.crew.local');
-  const farhan = await emp('work_email', 'qa.lead@demo.crew.local');
-  const ganesh = await emp('first_name', 'Ganesh');
-  const rekha = await emp('first_name', 'Rekha');
+  const today = isoDay(new Date());
+  const vikram = await emp({ work_email: 'plant.head@demo.crew.local' });
+  const sunita = await emp({ work_email: 'supervisor@demo.crew.local' });
+  const arjun = await emp({ work_email: 'operator1@demo.crew.local' });
+  const neha = await emp({ work_email: 'operator2@demo.crew.local' });
+  const farhan = await emp({ work_email: 'qa.lead@demo.crew.local' });
+  const ganesh = await emp({ first_name: 'Ganesh' });
+  const rekha = await emp({ first_name: 'Rekha' });
 
   // Goals --------------------------------------------------------------------------------------------------------
-  const goal = async (employeeId: string, by: string, title: string, parent: string | null, weight: number, progress: number, confidence: string | null) =>
-    (await q(
-      `insert into goals (tenant_id, employee_id, parent_goal_id, title, description, period_start, period_end, weight, progress, reported_progress, confidence, last_checkin_at, created_by_membership_id)
-       values ($1, $2, $3, $4, 'Demo data', $5, $6, $7, $8, $8, $9, case when $9::text is null then null else now() - interval '3 days' end, $10) returning id`,
-      [tid, employeeId, parent, title, `${year}-01-01`, `${year}-12-31`, weight, progress, confidence, m(by)],
-    )).id;
-  const kr = (goalId: string, pos: number, title: string, start: number, target: number, current: number, unit: string) =>
-    client.query(
-      `insert into goal_key_results (tenant_id, goal_id, position, title, start_value, target_value, current_value, unit) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [tid, goalId, pos, title, start, target, current, unit],
-    );
+  const goal = (employeeId: string, by: string, title: string, parent: string | null, weight: number, progress: number, confidence: string | null) =>
+    ws.insert('goals', {
+      employee_id: employeeId, parent_goal_id: parent, title, description: 'Demo data', period_start: `${year}-01-01`, period_end: `${year}-12-31`,
+      weight, progress, reported_progress: progress, confidence, last_checkin_at: confidence === null ? null : ago(3 * DAY), created_by_membership_id: m(by),
+    });
+  const kr = (goalId: string, position: number, title: string, start: number, target: number, current: number, unit: string) =>
+    ws.insert('goal_key_results', { goal_id: goalId, position, title, start_value: start, target_value: target, current_value: current, unit });
   const oee = await goal(vikram, 'plant.head@demo.crew.local', 'Raise assembly line OEE to 85%', null, 60, 38.5, 'on_track');
   await kr(oee, 1, 'Overall equipment effectiveness', 72, 85, 77, '%');
   const defects = await goal(sunita, 'supervisor@demo.crew.local', 'Cut night-shift handover defects', oee, 50, 40, 'at_risk');
   await kr(defects, 1, 'Handover defects per month', 40, 10, 28, 'defects');
-  await client.query(
-    `insert into goal_checkins (tenant_id, goal_id, progress, confidence, note, values, by_membership_id, created_at)
-     values ($1, $2, 40, 'at_risk', 'Checklist adopted on line 2; line 3 still uses paper (demo data)', $3, $4, now() - interval '3 days')`,
-    [tid, defects, JSON.stringify([{ title: 'Handover defects per month', from: '34.00', to: '28' }]), m('supervisor@demo.crew.local')],
-  );
+  await ws.insert('goal_checkins', {
+    goal_id: defects, progress: 40, confidence: 'at_risk', note: 'Checklist adopted on line 2; line 3 still uses paper (demo data)',
+    values: [{ title: 'Handover defects per month', from: '34.00', to: '28' }], by_membership_id: m('supervisor@demo.crew.local'), created_at: ago(3 * DAY),
+  });
   await goal(arjun, 'supervisor@demo.crew.local', 'Get certified on the new CNC cell', defects, 40, 50, 'on_track');
 
   // Review cycle in progress -------------------------------------------------------------------------------------
@@ -653,24 +625,21 @@ async function seedTalent(client: PoolClient, c: { tid: string; assemblyId: stri
     { value: 1, label: 'Below expectations' }, { value: 2, label: 'Partly meets expectations' }, { value: 3, label: 'Meets expectations' },
     { value: 4, label: 'Exceeds expectations' }, { value: 5, label: 'Outstanding' },
   ];
-  const cycle = await q(
-    `insert into review_cycles (tenant_id, name, period_start, period_end, status, self_review, peer_feedback, questions, rating_scale, department_id, launched_at, created_by_membership_id)
-     values ($1, $2, $3, $4, 'active', true, true, $5, $6, $7, now() - interval '10 days', $8) returning id`,
-    [tid, `Mid-year ${year} review (demo data)`, `${year}-01-01`, `${year}-06-30`, JSON.stringify(questions), JSON.stringify(scale), c.assemblyId, m('hr.admin@demo.crew.local')],
-  );
-  const answers = (who: string) => JSON.stringify({
+  const cycle = await ws.insert('review_cycles', {
+    name: `Mid-year ${year} review (demo data)`, period_start: `${year}-01-01`, period_end: `${year}-06-30`, status: 'active', self_review: true, peer_feedback: true,
+    questions, rating_scale: scale, department_id: c.assemblyId, launched_at: ago(10 * DAY), created_by_membership_id: m('hr.admin@demo.crew.local'),
+  });
+  const answers = (who: string) => ({
     achievements: `${who} delivered the planned output with fewer stoppages (demo data).`,
     strengths: 'Reliable on night shifts and helps new joiners.',
     growth: 'Take on the changeover checklist and train one colleague.',
   });
-  const review = async (employeeId: string, managerId: string, selfDone: boolean, managerRating: number | null) =>
-    (await q(
-      `insert into reviews (tenant_id, cycle_id, employee_id, manager_employee_id, self_status, self_answers, self_rating, self_submitted_at,
-                            manager_status, manager_answers, manager_rating, manager_submitted_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`,
-      [tid, cycle.id, employeeId, managerId, selfDone ? 'submitted' : 'pending', selfDone ? answers('I') : '{}', selfDone ? 3 : null, selfDone ? new Date() : null,
-        managerRating ? 'submitted' : 'pending', managerRating ? answers('They') : '{}', managerRating, managerRating ? new Date() : null],
-    )).id;
+  const review = (employeeId: string, managerId: string, selfDone: boolean, managerRating: number | null) =>
+    ws.insert('reviews', {
+      cycle_id: cycle, employee_id: employeeId, manager_employee_id: managerId,
+      self_status: selfDone ? 'submitted' : 'pending', self_answers: selfDone ? answers('I') : {}, self_rating: selfDone ? 3 : null, self_submitted_at: selfDone ? new Date() : null,
+      manager_status: managerRating ? 'submitted' : 'pending', manager_answers: managerRating ? answers('They') : {}, manager_rating: managerRating, manager_submitted_at: managerRating ? new Date() : null,
+    });
   await review(sunita, vikram, true, 4);
   await review(neha, sunita, true, 3);
   await review(ganesh, sunita, false, 3);
@@ -682,130 +651,124 @@ async function seedTalent(client: PoolClient, c: { tid: string; assemblyId: stri
     [ganesh, 'Explains the machine clearly to helpers.', 'Hand over the shift log on time.'],
   ] as const;
   for (const [reviewer, strengths, improve] of peer) {
-    await client.query(
-      `insert into review_feedback (tenant_id, review_id, reviewer_employee_id, requested_by_membership_id, status, answers, submitted_at) values ($1, $2, $3, $4, 'submitted', $5, now() - interval '2 days')`,
-      [tid, arjunReview, reviewer, m('supervisor@demo.crew.local'), JSON.stringify({ strengths: `${strengths} (demo data)`, improve })],
-    );
+    await ws.insert('review_feedback', {
+      review_id: arjunReview, reviewer_employee_id: reviewer, requested_by_membership_id: m('supervisor@demo.crew.local'), status: 'submitted',
+      answers: { strengths: `${strengths} (demo data)`, improve }, submitted_at: ago(2 * DAY),
+    });
   }
 
   // Learning -----------------------------------------------------------------------------------------------------
-  const course = async (title: string, format: string, minutes: number, validity: number | null, category: string, selfEnrol: boolean, description: string) =>
-    (await q(
-      `insert into courses (tenant_id, title, description, format, duration_minutes, validity_months, category, self_enrol, created_by_membership_id)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
-      [tid, title, `${description} (demo data, no content link)`, format, minutes, validity, category, selfEnrol, m('hr.admin@demo.crew.local')],
-    )).id;
+  const course = (title: string, format: string, minutes: number, validity: number | null, category: string, selfEnrol: boolean, description: string) =>
+    ws.insert('courses', {
+      title, description: `${description} (demo data, no content link)`, format, duration_minutes: minutes, validity_months: validity, category, self_enrol: selfEnrol,
+      created_by_membership_id: m('hr.admin@demo.crew.local'),
+    });
   const forklift = await course('Forklift safety refresher', 'document', 45, 12, 'Safety', false, 'Annual refresher on safe forklift operation in the plant');
   const drill = await course('Fire drill and evacuation', 'classroom', 60, 12, 'Safety', false, 'Practical drill on the shop floor');
   await course('Lean basics: 5S on the line', 'online', 90, null, 'Operations', true, 'Sort, set in order, shine, standardise, sustain');
   await course('Spreadsheets for supervisors', 'online', 120, null, 'Skills', true, 'Shift reports and simple charts');
-  const path = await q(`insert into learning_paths (tenant_id, title, description) values ($1, 'Shop floor safety', 'Required every year for plant staff (demo data)') returning id`, [tid]);
-  await client.query(`insert into learning_path_courses (tenant_id, path_id, course_id, position) values ($1, $2, $3, 1), ($1, $2, $4, 2)`, [tid, path.id, forklift, drill]);
-  const due = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
+  const path = await ws.insert('learning_paths', { title: 'Shop floor safety', description: 'Required every year for plant staff (demo data)' });
+  await ws.insertMany('learning_path_courses', [{ path_id: path, course_id: forklift, position: 1 }, { path_id: path, course_id: drill, position: 2 }]);
+  const due = isoDay(new Date(Date.now() + 14 * DAY));
   for (const who of [arjun, neha]) {
     for (const courseId of [forklift, drill]) {
-      await client.query(
-        `insert into course_assignments (tenant_id, employee_id, course_id, path_id, source, assigned_by_membership_id, due_on) values ($1, $2, $3, $4, 'assigned', $5, $6)`,
-        [tid, who, courseId, path.id, m('supervisor@demo.crew.local'), due],
-      );
+      await ws.insert('course_assignments', { employee_id: who, course_id: courseId, path_id: path, source: 'assigned', assigned_by_membership_id: m('supervisor@demo.crew.local'), due_on: due });
     }
   }
-  await client.query(
-    `update course_assignments set status = 'completed', started_at = now() - interval '5 days', completed_on = current_date - 4, completion_note = 'Demo data',
-            completed_by_membership_id = $3, expires_on = (current_date - 4 + interval '12 months')::date
-      where tenant_id = $1 and employee_id = $2 and course_id = $4`,
-    [tid, neha, m('operator2@demo.crew.local'), forklift],
-  );
+  const completedOn = addDays(today, -4);
+  await ws.set('course_assignments', { employee_id: neha, course_id: forklift }, {
+    status: 'completed', started_at: ago(5 * DAY), completed_on: completedOn, completion_note: 'Demo data',
+    completed_by_membership_id: m('operator2@demo.crew.local'), expires_on: addMonths(completedOn, 12),
+  });
 
   // An open anonymous survey for Manufacturing, with three demo answers ----------------------------------------------
-  const survey = await q(
-    `insert into surveys (tenant_id, title, description, min_responses, questions, status, department_id, closes_on, opened_at, created_by_membership_id)
-     values ($1, 'Plant pulse (demo data)', 'Five questions, fully anonymous.', 3, $2, 'open', $3, current_date + 10, now() - interval '2 days', $4) returning id`,
-    [tid, JSON.stringify([
+  const survey = await ws.insert('surveys', {
+    title: 'Plant pulse (demo data)', description: 'Five questions, fully anonymous.', min_responses: 3,
+    questions: [
       { id: 'tools', kind: 'scale', text: 'I have the tools and information I need to do my job well' },
       { id: 'safety', kind: 'scale', text: 'I feel safe raising a problem on the line' },
       { id: 'enps', kind: 'enps', text: 'How likely are you to recommend working here to a friend?' },
       { id: 'comments', kind: 'text', text: 'What one thing would make work better?' },
-    ]), c.manufacturingId, m('hr.admin@demo.crew.local')],
-  );
-  const audience = (await client.query<{ id: string }>(
-    `with recursive deps(id) as (select $2::uuid union select d.id from departments d join deps on d.parent_id = deps.id)
-     select id from employees where tenant_id = $1 and membership_id is not null and status in ('probation', 'active', 'notice') and current_department_id in (select id from deps)`,
-    [tid, c.manufacturingId],
-  )).rows.map((r) => r.id);
-  await client.query(`insert into survey_invitations (tenant_id, survey_id, employee_id, responded) select $1, $2, x, x = any($4::uuid[]) from unnest($3::uuid[]) x`, [tid, survey.id, audience, [vikram, sunita, farhan]]);
+    ],
+    status: 'open', department_id: c.manufacturingId, closes_on: addDays(today, 10), opened_at: ago(2 * DAY), created_by_membership_id: m('hr.admin@demo.crew.local'),
+  });
+  // Everyone with a login in Manufacturing or any department under it.
+  const departments = await ws.find('departments', {}, { projection: { parent_id: 1 } });
+  const within = new Set([c.manufacturingId]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const d of departments) if (d.parent_id && within.has(d.parent_id) && !within.has(d.id)) (within.add(d.id), (grew = true));
+  }
+  const audience = await ws.find('employees', { membership_id: { $ne: null }, status: { $in: ['probation', 'active', 'notice'] }, current_department_id: { $in: [...within] } });
+  const responded = new Set([vikram, sunita, farhan]);
+  await ws.insertMany('survey_invitations', audience.map((e) => ({ survey_id: survey, employee_id: e.id, responded: responded.has(e.id) })));
   for (const a of [{ tools: 4, safety: 5, enps: 9, comments: 'More spare parts on the night shift (demo data)' }, { tools: 3, safety: 4, enps: 7 }, { tools: 2, safety: 3, enps: 6, comments: 'Fix the canteen timings (demo data)' }]) {
-    await client.query(`insert into survey_responses (tenant_id, survey_id, department_id, answers, submitted_on) values ($1, $2, $3, $4, current_date - 1)`, [tid, survey.id, c.manufacturingId, JSON.stringify(a)]);
+    await ws.insert('survey_responses', { survey_id: survey, department_id: c.manufacturingId, answers: a, submitted_on: addDays(today, -1) });
   }
 
   // Recognition --------------------------------------------------------------------------------------------------
-  const value = async (name: string) => (await q(`select id from company_values where tenant_id = $1 and name = $2`, [tid, name])).id;
-  const recognise = (from: string, to: string, valueName: string, message: string, daysAgo: number) =>
-    value(valueName).then((v) => client.query(
-      `insert into recognitions (tenant_id, from_employee_id, to_employee_id, value_id, message, created_at) values ($1, $2, $3, $4, $5, now() - make_interval(days => $6))`,
-      [tid, from, to, v, `${message} (demo data)`, daysAgo],
-    ));
+  const recognise = async (from: string, to: string, valueName: string, message: string, daysAgo: number) =>
+    ws.insert('recognitions', { from_employee_id: from, to_employee_id: to, value_id: await ws.id('company_values', { name: valueName }), message: `${message} (demo data)`, created_at: ago(daysAgo * DAY) });
   await recognise(sunita, neha, 'Teamwork', 'Covered two night shifts at short notice so the Diwali order shipped on time.', 6);
   await recognise(vikram, sunita, 'Ownership', 'Rolled out the handover checklist on line 2 without being asked.', 4);
   await recognise(farhan, arjun, 'Safety', 'Stopped the press when the guard sensor failed and reported it straight away.', 1);
 }
 
 /** Phase 7 demo data: helpdesk handlers, a confidential grievance category, help articles, a few cases and announcements. */
-async function seedHelpdesk(client: PoolClient, c: { tid: string; manufacturingId: string; membershipByEmail: Map<string, string> }) {
-  const { tid } = c;
-  const q = async <T = { id: string }>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] as T;
+async function seedHelpdesk(ws: Workspace, c: { tid: string; manufacturingId: string; membershipByEmail: Map<string, string> }) {
   const m = (email: string) => c.membershipByEmail.get(email)!;
-  const emp = async (email: string) => (await q(`select id from employees where tenant_id = $1 and work_email = $2`, [tid, email])).id;
-  const category = async (name: string) => (await q(`select id from helpdesk_categories where tenant_id = $1 and name = $2`, [tid, name])).id;
+  const emp = (email: string) => ws.id('employees', { work_email: email });
+  const category = (name: string) => ws.id('helpdesk_categories', { name });
   const hr = m('hr.admin@demo.crew.local');
 
   // HR handles pay, leave and document questions; grievances are confidential and seen only by the Head of People.
   for (const name of ['Pay and payslips', 'Leave and attendance', 'Documents and letters']) {
-    await client.query(`insert into helpdesk_category_handlers (tenant_id, category_id, membership_id, position) values ($1, $2, $3, 1)`, [tid, await category(name), hr]);
+    await ws.insert('helpdesk_category_handlers', { category_id: await category(name), membership_id: hr, position: 1 });
   }
-  const grievance = await q(
-    `insert into helpdesk_categories (tenant_id, name, description, confidential, first_response_hours, resolution_hours)
-     values ($1, 'Grievance', 'Raise a concern about treatment at work in confidence. Only the named HR handlers can see it.', true, 24, 240) returning id`,
-    [tid],
-  );
-  await client.query(`insert into helpdesk_category_handlers (tenant_id, category_id, membership_id, position) values ($1, $2, $3, 1)`, [tid, grievance.id, hr]);
+  const grievance = await ws.insert('helpdesk_categories', {
+    name: 'Grievance', description: 'Raise a concern about treatment at work in confidence. Only the named HR handlers can see it.', confidential: true, first_response_hours: 24, resolution_hours: 240,
+  });
+  await ws.insert('helpdesk_category_handlers', { category_id: grievance, membership_id: hr, position: 1 });
 
-  const article = (cat: string, title: string, body: string) =>
-    category(cat).then((k) => client.query(`insert into helpdesk_articles (tenant_id, category_id, title, body, updated_by_membership_id) values ($1, $2, $3, $4, $5)`, [tid, k, title, `${body}\n\n(Demo data)`, hr]));
+  const article = async (cat: string, title: string, body: string) =>
+    ws.insert('helpdesk_articles', { category_id: await category(cat), title, body: `${body}\n\n(Demo data)`, updated_by_membership_id: hr });
   await article('Pay and payslips', 'How to read your payslip', 'Your payslip lists earnings, then deductions such as provident fund and professional tax, then reimbursements. Net pay is earnings minus deductions plus reimbursements. Open a payslip in SampCrew to see how each line was worked out.');
   await article('Leave and attendance', 'Forgot to punch out?', 'Open Attendance, choose the day and ask for a correction with the time you left. Your manager approves it and the day is worked out again.');
   await article('Documents and letters', 'Address proof letter for a bank', 'HR can issue a letter confirming your employment and address. Raise a case in Documents and letters with the bank name; letters are usually ready in two working days.');
 
-  // Cases (numbers continue from the workspace counter).
+  // Cases (numbers continue from the workspace counter, as the API numbers them).
   const neha = await emp('operator2@demo.crew.local');
   const farhan = await emp('qa.lead@demo.crew.local');
+  const counters = ws.table('helpdesk_counters');
+  await counters.upsert({ tenant_id: c.tid }, { tenant_id: c.tid, last_number: 0 });
   const kase = async (o: { employee: string; requester: string; cat: string; subject: string; description: string; status: string; ageHours: number; assigned: boolean; reply?: string; resolvedHoursAgo?: number }) => {
-    const k = await q<{ id: string; confidential: boolean; first_response_hours: number; resolution_hours: number }>(`select id, confidential, first_response_hours, resolution_hours from helpdesk_categories where tenant_id = $1 and name = $2`, [tid, o.cat]);
-    const n = (await q<{ last_number: number }>(`insert into helpdesk_counters (tenant_id, last_number) values ($1, 1) on conflict (tenant_id) do update set last_number = helpdesk_counters.last_number + 1 returning last_number`, [tid])).last_number;
-    const created = `now() - make_interval(hours => ${Number(o.ageHours)})`;
-    const row = await q(
-      `insert into helpdesk_cases (tenant_id, number, employee_id, requester_membership_id, raised_by_membership_id, category_id, confidential, subject, description, status, assignee_membership_id,
-                                   first_response_due_at, resolution_due_at, first_responded_at, resolved_at, created_at, updated_at)
-       values ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9, $10, ${created} + make_interval(hours => $11), ${created} + make_interval(hours => $12),
-               case when $13::text is not null then ${created} + interval '3 hours' end, case when $14::int is not null then now() - make_interval(hours => $14) end, ${created}, now()) returning id`,
-      [tid, n, o.employee, o.requester, k.id, k.confidential, o.subject, `${o.description} (demo data)`, o.status, o.assigned ? hr : null, k.first_response_hours, k.resolution_hours, o.reply ?? null, o.resolvedHoursAgo ?? null],
-    );
-    await client.query(`insert into helpdesk_events (tenant_id, case_id, by_membership_id, action, to_value, created_at) values ($1, $2, $3, 'created', 'open', ${created})`, [tid, row.id, o.requester]);
-    if (o.reply) await client.query(`insert into helpdesk_messages (tenant_id, case_id, author_membership_id, body, created_at) values ($1, $2, $3, $4, ${created} + interval '3 hours')`, [tid, row.id, hr, o.reply]);
+    const k = (await ws.findOne('helpdesk_categories', { name: o.cat }))!;
+    const number = (await counters.updateAndGet({ tenant_id: c.tid }, { $inc: { last_number: 1 } }))!.last_number as number;
+    const created = ago(o.ageHours * HOUR).getTime();
+    const id = await ws.insert('helpdesk_cases', {
+      number, employee_id: o.employee, requester_membership_id: o.requester, raised_by_membership_id: o.requester, category_id: k.id, confidential: k.confidential,
+      subject: o.subject, description: `${o.description} (demo data)`, status: o.status, assignee_membership_id: o.assigned ? hr : null,
+      first_response_due_at: new Date(created + k.first_response_hours * HOUR), resolution_due_at: new Date(created + k.resolution_hours * HOUR),
+      first_responded_at: o.reply ? new Date(created + 3 * HOUR) : null, resolved_at: o.resolvedHoursAgo === undefined ? null : ago(o.resolvedHoursAgo * HOUR),
+      created_at: new Date(created), updated_at: new Date(),
+    });
+    await ws.insert('helpdesk_events', { case_id: id, by_membership_id: o.requester, action: 'created', to_value: 'open', created_at: new Date(created) });
+    if (o.reply) await ws.insert('helpdesk_messages', { case_id: id, author_membership_id: hr, body: o.reply, created_at: new Date(created + 3 * HOUR) });
   };
   await kase({ employee: neha, requester: m('operator2@demo.crew.local'), cat: 'Documents and letters', subject: 'Address proof letter for my bank', description: 'I am opening a salary account and the bank needs a letter with my address.', status: 'in_progress', ageHours: 20, assigned: true, reply: 'Happy to help. Which bank and branch should the letter be addressed to?' });
   await kase({ employee: farhan, requester: m('qa.lead@demo.crew.local'), cat: 'Pay and payslips', subject: 'Night shift allowance', description: 'Is the night shift allowance paid in the same month or the month after?', status: 'resolved', ageHours: 72, assigned: true, reply: 'It is paid with the next month\'s salary, once attendance for the month is locked.', resolvedHoursAgo: 40 });
   await kase({ employee: neha, requester: m('operator2@demo.crew.local'), cat: 'Leave and attendance', subject: 'Holiday list for next year', description: 'When will next year\'s holiday calendar be published?', status: 'open', ageHours: 30, assigned: false });
 
   // Announcements.
-  await client.query(
-    `insert into announcements (tenant_id, title, body, pinned, status, published_at, published_by_membership_id, created_by_membership_id) values ($1, $2, $3, true, 'published', now() - interval '3 days', $4, $4)`,
-    [tid, 'Welcome to the SampCrew app', 'You can now punch attendance, apply for leave, see payslips and ask HR from your phone. Ask your supervisor if you need help signing in. (Demo data)', hr],
-  );
-  await client.query(
-    `insert into announcements (tenant_id, title, body, department_id, requires_ack, status, published_at, published_by_membership_id, created_by_membership_id) values ($1, $2, $3, $4, true, 'published', now() - interval '1 day', $5, $5)`,
-    [tid, 'Safety shoes required on the shop floor', 'From Monday, safety shoes are required everywhere on the shop floor, including the canteen corridor. Please acknowledge that you have read this. (Demo data)', c.manufacturingId, m('plant.head@demo.crew.local')],
-  );
+  await ws.insert('announcements', {
+    title: 'Welcome to the SampCrew app', body: 'You can now punch attendance, apply for leave, see payslips and ask HR from your phone. Ask your supervisor if you need help signing in. (Demo data)',
+    pinned: true, status: 'published', published_at: ago(3 * DAY), published_by_membership_id: hr, created_by_membership_id: hr,
+  });
+  const plantHead = m('plant.head@demo.crew.local');
+  await ws.insert('announcements', {
+    title: 'Safety shoes required on the shop floor', body: 'From Monday, safety shoes are required everywhere on the shop floor, including the canteen corridor. Please acknowledge that you have read this. (Demo data)',
+    department_id: c.manufacturingId, requires_ack: true, status: 'published', published_at: ago(DAY), published_by_membership_id: plantHead, created_by_membership_id: plantHead,
+  });
 }
 
 /**
@@ -813,13 +776,9 @@ async function seedHelpdesk(client: PoolClient, c: { tid: string; manufacturingI
  * sets an AI provider) and one tested, active workflow. Attrition scores are calculated by the daily HR job,
  * which runs shortly after the API starts.
  */
-async function seedAiAutomation(client: PoolClient, c: { tid: string; membershipByEmail: Map<string, string> }) {
-  const { tid } = c;
+async function seedAiAutomation(ws: Workspace, c: { membershipByEmail: Map<string, string> }) {
   const hr = c.membershipByEmail.get('hr.admin@demo.crew.local')!;
-  await client.query(
-    `insert into ai_settings (tenant_id, features, prompt_log_days, updated_by_membership_id) values ($1, $2, 90, $3)`,
-    [tid, JSON.stringify({ assistant: true, helpdesk_draft: true, workflow_draft: true }), hr],
-  );
+  await ws.insert('ai_settings', { features: { assistant: true, helpdesk_draft: true, workflow_draft: true }, prompt_log_days: 90, updated_by_membership_id: hr });
   const definition = {
     trigger: { event: 'leave.requested' },
     steps: [
@@ -828,30 +787,20 @@ async function seedAiAutomation(client: PoolClient, c: { tid: string; membership
       { id: 'notify_1', type: 'notify', to: 'role', role: 'hr_admin', title: '{{employee.name}} asked for {{leave.days}} days of sick leave', body: 'Consider checking in with {{employee.name}} ({{employee.department}}) to see whether they need any support.', email: false },
     ],
   };
-  const w = (await client.query<{ id: string }>(
-    `insert into workflows (tenant_id, name, description, trigger_event, owner_membership_id) values ($1, $2, $3, 'leave.requested', $4) returning id`,
-    [tid, 'Check in after long sick leave', 'Lets HR know when someone asks for three or more days of sick leave. (Demo data)', hr],
-  )).rows[0]!;
-  const v = (await client.query<{ id: string }>(
-    `insert into workflow_versions (tenant_id, workflow_id, version, definition, created_by_membership_id, tested_at) values ($1, $2, 1, $3, $4, now()) returning id`,
-    [tid, w.id, JSON.stringify(definition), hr],
-  )).rows[0]!;
+  const w = await ws.insert('workflows', {
+    name: 'Check in after long sick leave', description: 'Lets HR know when someone asks for three or more days of sick leave. (Demo data)', trigger_event: 'leave.requested', owner_membership_id: hr,
+  });
+  const v = await ws.insert('workflow_versions', { workflow_id: w, version: 1, definition, created_by_membership_id: hr, tested_at: new Date() });
   // The test run that let version 1 be activated.
-  const run = (await client.query<{ id: string }>(
-    `insert into workflow_runs (tenant_id, workflow_id, version_id, mode, context, status, step_index, outcome, started_by_membership_id, finished_at)
-     values ($1, $2, $3, 'test', $4, 'succeeded', 3, 'Reached the end', $5, now()) returning id`,
-    [tid, w.id, v.id, JSON.stringify({ 'employee.name': 'Sample Employee', 'employee.department': 'Assembly Line', 'leave.type': 'Sick leave', 'leave.days': 4 }), hr],
-  )).rows[0]!;
+  const run = await ws.insert('workflow_runs', {
+    workflow_id: w, version_id: v, mode: 'test', context: { 'employee.name': 'Sample Employee', 'employee.department': 'Assembly Line', 'leave.type': 'Sick leave', 'leave.days': 4 },
+    status: 'succeeded', step_index: 3, outcome: 'Reached the end', started_by_membership_id: hr, finished_at: new Date(),
+  });
   const trace = [
     ['condition_1', 'condition', 'Met: leave.type is "Sick leave"'],
     ['condition_2', 'condition', 'Met: leave.days is "4"'],
     ['notify_1', 'notify', 'Would notify 2 people with the hr_admin role: "Sample Employee asked for 4 days of sick leave"'],
   ];
-  for (const [i, [id, type, detail]] of trace.entries()) {
-    await client.query(
-      `insert into workflow_step_runs (tenant_id, run_id, step_index, step_id, type, status, detail) values ($1, $2, $3, $4, $5, $6, $7)`,
-      [tid, run.id, i, id, type, type === 'condition' ? 'succeeded' : 'simulated', detail],
-    );
-  }
-  await client.query(`update workflows set status = 'active', active_version_id = $2 where id = $1`, [w.id, v.id]);
+  await ws.insertMany('workflow_step_runs', trace.map(([id, type, detail], i) => ({ run_id: run, step_index: i, step_id: id, type, status: type === 'condition' ? 'succeeded' : 'simulated', detail })));
+  await ws.set('workflows', { id: w }, { status: 'active', active_version_id: v });
 }

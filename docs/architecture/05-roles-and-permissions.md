@@ -16,7 +16,7 @@ SampCrew combines **RBAC** (roles bundle permissions) with **ABAC** (each grant 
 - **Assignment constraints**: a role assignment can be narrowed to listed legal entities, departments or locations (for example, "HR Manager for India entity only").
 - **Environmental conditions**: permissions marked MFA require a session that completed multi-factor authentication. Sensitive permissions are additionally audited on every read.
 - **Custom roles**: tenants on plans with `custom_roles` can compose their own roles from the same catalogue. A member's effective permission is the widest scope across all their roles.
-- **Tenant isolation is not a permission.** No role in a tenant can see another tenant; that is enforced by PostgreSQL Row-Level Security underneath every permission check.
+- **Tenant isolation is not a permission.** No role in a tenant can see another tenant; that is enforced by the data layer's workspace transactions underneath every permission check.
 
 ## 5.2 Tenant roles × permissions
 
@@ -144,7 +144,7 @@ Platform staff authenticate in a separate realm (`platform_admins` table, separa
 | `tenants:read` | ✓ | ✓ | ✓ | ✓ |
 | `tenants:manage` | ✓ | · | · | · |
 | `access:manage` | ✓ | · | · | · |
-| `integrations:manage` (connect, test or switch Claude AI, email, push, scanning, mobile sign-in) | ✓ | · | · | · |
+| `integrations:manage` | ✓ | · | · | · |
 | `billing:read` | ✓ | · | ✓ | ✓ |
 | `billing:manage` | ✓ | · | ✓ | · |
 | `plans:manage` | ✓ | · | ✓ | · |

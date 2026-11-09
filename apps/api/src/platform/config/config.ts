@@ -5,13 +5,11 @@ const optional = <T extends z.ZodType>(t: T) => z.preprocess((v) => (v === '' ? 
 
 const schema = z.object({
   CREW_ENV: z.enum(['local', 'test', 'staging', 'production']).default('local'),
-  DATABASE_URL: z.string().min(1),
-  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
   /**
-   * MongoDB replica set, e.g. mongodb://localhost:27017/crew?replicaSet=rs0 (the path names the database). Optional
-   * while modules move from PostgreSQL to MongoDB; required once the move is complete.
+   * MongoDB replica set or Atlas cluster, e.g. mongodb://localhost:27017/crew?replicaSet=rs0 (the path names the
+   * database). It must support transactions: a replica set or sharded cluster, never a standalone server.
    */
-  MONGODB_URL: optional(z.string().regex(/^mongodb(\+srv)?:\/\//, 'MONGODB_URL must start with mongodb:// or mongodb+srv://')),
+  MONGODB_URL: z.string().regex(/^mongodb(\+srv)?:\/\//, 'MONGODB_URL must start with mongodb:// or mongodb+srv://'),
   MONGODB_POOL_MAX: z.coerce.number().int().min(1).max(500).default(20),
   API_PORT: z.coerce.number().int().default(4000),
   WEB_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
@@ -158,10 +156,17 @@ export function productionProblems(c: z.infer<typeof schema>): string[] {
   for (const [name, v] of secrets) if (v && PLACEHOLDER.test(v)) out.push(`${name} still holds a template value; generate one (infra/deploy/gen-secrets.sh)`);
   if (/^0+$|^A+=*$/.test(c.FIELD_ENCRYPTION_KEY)) out.push('FIELD_ENCRYPTION_KEY still holds a template value; generate one (infra/deploy/gen-secrets.sh)');
   try {
-    const db = new URL(c.DATABASE_URL);
-    if (!db.password || PLACEHOLDER.test(decodeURIComponent(db.password))) out.push('DATABASE_URL needs a real password for the crew_api login');
+    // WHATWG URL cannot parse a mongodb:// URL with several hosts, so read the credentials and options by hand.
+    const m = /^mongodb(?:\+srv)?:\/\/(?:([^@/]*)@)?[^/?]*(?:\/[^?]*)?(?:\?(.*))?$/.exec(c.MONGODB_URL);
+    if (!m) throw new Error('unparsable');
+    const password = m[1]?.includes(':') ? decodeURIComponent(m[1].slice(m[1].indexOf(':') + 1)) : '';
+    const mechanism = new URLSearchParams(m[2] ?? '').get('authMechanism') ?? '';
+    // X.509 and cloud-identity sign-in carry no password; everything else needs a real one.
+    if (!/^MONGODB-(X509|AWS|OIDC)$/i.test(mechanism) && (!password || PLACEHOLDER.test(password))) {
+      out.push('MONGODB_URL needs a database user with a real password (or authMechanism=MONGODB-X509, MONGODB-AWS or MONGODB-OIDC)');
+    }
   } catch {
-    out.push('DATABASE_URL is not a valid connection URL');
+    out.push('MONGODB_URL is not a valid connection URL');
   }
   if (c.REDIS_URL) {
     try {

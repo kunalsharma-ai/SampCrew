@@ -20,7 +20,7 @@ out.push('  - `A` all: the whole tenant.');
 out.push('- **Assignment constraints**: a role assignment can be narrowed to listed legal entities, departments or locations (for example, "HR Manager for India entity only").');
 out.push('- **Environmental conditions**: permissions marked MFA require a session that completed multi-factor authentication. Sensitive permissions are additionally audited on every read.');
 out.push('- **Custom roles**: tenants on plans with `custom_roles` can compose their own roles from the same catalogue. A member\'s effective permission is the widest scope across all their roles.');
-out.push('- **Tenant isolation is not a permission.** No role in a tenant can see another tenant; that is enforced by PostgreSQL Row-Level Security underneath every permission check.', '');
+out.push('- **Tenant isolation is not a permission.** No role in a tenant can see another tenant; that is enforced by the data layer\'s workspace transactions underneath every permission check.', '');
 out.push('## 5.2 Tenant roles × permissions', '');
 out.push('| Permission | Phase | MFA | ' + roles.map((r) => r.name).join(' | ') + ' |');
 out.push('|---|---|---|' + roles.map(() => '---').join('|') + '|');

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { mongo, SlugTakenError } from '@crew/db';
+import { mongo } from '@crew/db';
 import type { z } from 'zod';
 import type { platformCreateTenantRequest } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
@@ -172,7 +172,7 @@ export class PlatformService {
           ownerAlreadyHadAccount: t.existingUser,
         };
       } catch (e) {
-        if (e instanceof SlugTakenError) throw Errors.conflict('slug_taken', e.message);
+        if (e instanceof mongo.SlugTakenError) throw Errors.conflict('slug_taken', e.message);
         throw e;
       }
     });

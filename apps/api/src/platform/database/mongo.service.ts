@@ -148,23 +148,17 @@ export class PlatformTx extends BaseTx {
  * Each runs as one multi-document transaction (snapshot reads, majority commit). MongoDB aborts one of two
  * transactions that write the same document, and the driver then runs the whole callback again, so callbacks must
  * not have side effects outside the database: queue email and webhooks through the outbox as today.
- *
- * Until the cut-over, MONGODB_URL is optional and nothing connects unless it is set.
  */
 @Injectable()
 export class MongoService implements OnModuleDestroy {
   private readonly logger = new Logger('MongoDB');
   private client: MongoClient | null = null;
   private connecting: Promise<MongoClient> | null = null;
-  private readonly dbName: string | null;
+  private readonly dbName: string;
   tables: Record<string, mongo.TableSpec> = mongo.TABLES;
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
-    this.dbName = config.MONGODB_URL ? mongo.databaseName(config.MONGODB_URL) : null;
-  }
-
-  get configured(): boolean {
-    return !!this.config.MONGODB_URL;
+    this.dbName = mongo.databaseName(config.MONGODB_URL);
   }
 
   async onModuleDestroy() {
@@ -243,9 +237,8 @@ export class MongoService implements OnModuleDestroy {
 
   private connect(): Promise<MongoClient> {
     if (this.client) return Promise.resolve(this.client);
-    if (!this.config.MONGODB_URL) return Promise.reject(new Error('MongoDB is not configured: set MONGODB_URL'));
     this.connecting ??= (async () => {
-      const client = mongo.createMongoClient({ url: this.config.MONGODB_URL!, maxPoolSize: this.config.MONGODB_POOL_MAX });
+      const client = mongo.createMongoClient({ url: this.config.MONGODB_URL, maxPoolSize: this.config.MONGODB_POOL_MAX });
       try {
         await client.connect();
         await mongo.assertTransactionsSupported(client);

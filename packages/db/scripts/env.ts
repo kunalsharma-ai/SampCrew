@@ -1,3 +1,5 @@
+import { createMongoClient, databaseName } from '../src/mongo/client';
+
 export function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v) {
@@ -7,5 +9,9 @@ export function requireEnv(name: string): string {
   return v;
 }
 
-/** Migrations and seeds connect with the admin (owner) URL, never the API's restricted role. */
-export const adminUrl = () => requireEnv('DATABASE_ADMIN_URL');
+/** The MongoDB connection the scripts use (migrations, seed, reset), and its database. */
+export function connect(appName: string) {
+  const url = requireEnv('MONGODB_URL');
+  const client = createMongoClient({ url, appName });
+  return { client, db: client.db(databaseName(url)), name: databaseName(url) };
+}

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { LoginResponse, MeResponse, SignupRequest, TokenPair } from '@crew/contracts';
-import { mongo, SlugTakenError } from '@crew/db';
+import { mongo } from '@crew/db';
 import { AuditService } from '../../platform/audit/audit.service';
 import { decryptField, encryptField, hashPassword, randomToken, sha256, verifyPassword } from '../../platform/auth/crypto';
 import { generateMfaSecret, mfaUri, verifyTotp } from '../../platform/auth/mfa';
@@ -71,7 +71,7 @@ export class AuthService {
         const pair = await this.issueSession(tx, { userId: t.ownerUserId, tenantId: t.tenantId, membershipId: t.ownerMembershipId, mfa: false, client });
         return { ...pair, tenantId: t.tenantId };
       } catch (e) {
-        if (e instanceof SlugTakenError) throw Errors.conflict('slug_taken', e.message);
+        if (e instanceof mongo.SlugTakenError) throw Errors.conflict('slug_taken', e.message);
         throw e;
       }
     });

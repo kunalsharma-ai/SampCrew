@@ -6,15 +6,20 @@
  *   CREW_SEED_DEMO=true + CREW_DEMO_PASSWORD                      demo tenant "demo-northwind"
  */
 import { hash } from '@node-rs/argon2';
-import { Pool } from 'pg';
-import { syncCatalogue } from '../src/catalogue';
+import { syncCatalogueMongo, Table } from '../src/mongo';
 import { seedDemoTenant } from './demo';
-import { adminUrl } from './env';
+import { connect } from './env';
 
 async function main() {
-  const pool = new Pool({ connectionString: adminUrl() });
+  const { client, db } = connect('crew-seed');
+  await client.connect();
   try {
-    await syncCatalogue(pool);
+    const session = client.startSession();
+    try {
+      await session.withTransaction(() => syncCatalogueMongo({ collection: (name) => new Table(db, name, session, { scope: null }) }));
+    } finally {
+      await session.endSession();
+    }
     console.log('Catalogue synced (features, plans).');
 
     const email = process.env.CREW_BOOTSTRAP_ADMIN_EMAIL;
@@ -24,12 +29,16 @@ async function main() {
       if (production && (password.length < 14 || /change-?me|example|password/i.test(password))) {
         throw new Error('CREW_BOOTSTRAP_ADMIN_PASSWORD must be at least 14 characters and not a template value in production');
       }
-      const { rowCount } = await pool.query('select 1 from platform_admins');
-      if (!rowCount) {
-        await pool.query(
-          `insert into platform_admins (email, full_name, password_hash, role) values ($1, 'Platform Super Admin', $2, 'super_admin')`,
-          [email.toLowerCase(), await hash(password)],
-        );
+      if (!(await db.collection('platform_admins').countDocuments({}, { limit: 1 }))) {
+        const session = client.startSession();
+        try {
+          const passwordHash = await hash(password);
+          await session.withTransaction(() =>
+            new Table(db, 'platform_admins', session, { scope: null }).insert({ email: email.toLowerCase(), full_name: 'Platform Super Admin', password_hash: passwordHash, role: 'super_admin' }),
+          );
+        } finally {
+          await session.endSession();
+        }
         console.log(`Bootstrapped platform super admin ${email}. Enrol MFA at first sign-in.`);
       }
     }
@@ -41,11 +50,11 @@ async function main() {
     if (process.env.CREW_SEED_DEMO === 'true') {
       const demoPassword = process.env.CREW_DEMO_PASSWORD;
       if (!demoPassword) throw new Error('CREW_SEED_DEMO=true needs CREW_DEMO_PASSWORD');
-      const created = await seedDemoTenant(pool, await hash(demoPassword));
+      const created = await seedDemoTenant(client, db, await hash(demoPassword));
       console.log(created ? 'Demo tenant "demo-northwind" created (marked as demo data).' : 'Demo tenant already exists.');
     }
   } finally {
-    await pool.end();
+    await client.close();
   }
 }
 main().catch((e) => {

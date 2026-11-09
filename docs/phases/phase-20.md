@@ -59,3 +59,51 @@ Everything below runs against a real MongoDB 8.0 replica set. The tests are in `
 - MongoDB server roles are not set up yet. PostgreSQL gave the API login no table privileges and kept `audit_events` append-only at the database level. With MongoDB that protection is in our code. A database role that can only insert into `audit_events` comes with PR 9's deploy work.
 - Production hosting (MongoDB Atlas or a self-hosted replica set in `infra/deploy`) is still Kunal's choice. Backups (`mongodump`), restore and the DR drill move in PR 9.
 - `$unionWith` cannot be used: MongoDB does not allow it inside transactions. Reports that need it will run two queries instead.
+
+---
+
+# Phase 20, part 2: the whole move
+
+The plan above had parts 2 to 9 as separate pull requests stacked on one branch. Because the modules join each
+other's data almost everywhere, they were done on one branch and land together in one pull request. After it,
+PostgreSQL is gone: there is no `pg` dependency, no SQL migration and no `DATABASE_*` setting.
+
+## What changed
+
+- **Every module** reads and writes MongoDB through `MongoService` (`tenant()`, `user()`, `platform()`), and the
+  PostgreSQL `DatabaseService` is deleted.
+- **The PostgreSQL rules are kept.** `packages/db/src/mongo/schema.generated.ts` was generated once from migrations
+  0001 to 0027 and is now the schema. From it the data layer enforces, on every write: types and defaults, enums,
+  NOT NULL, unique keys (including case-insensitive and partial ones), foreign keys with their delete rules,
+  column grants for workspace transactions, the triggers (as row guards), and the CHECK constraints. All 373 CHECKs
+  are compiled into the collection validators (`checks.ts`), so the server refuses a bad document whoever writes it,
+  with SQL's rule that only a false CHECK fails.
+- **Reads look like before**: `id` for `_id`, decimals as strings, dates as `YYYY-MM-DD`, and every declared column
+  present (null when not set), so API responses did not change.
+- **Seed and demo data** (`packages/db/scripts`): `pnpm db:migrate`, `db:seed` and `db:reset` work on MongoDB; the
+  Northwind demo workspace is written in one transaction through the same data rules as the API.
+- **Production stack** (`infra/deploy`): a one-node MongoDB 8.0 replica set with authentication and a replica set
+  key, an API user (`crew_api`, read and write on the SampCrew database only) created by the migration job, gzip
+  `mongodump` backups (encrypted as before), a restore script that refuses a non-empty database and checks every
+  validator and audit chain after restoring, and the backup and restore drill (`dr-drill`) rewritten for MongoDB. For
+  MongoDB Atlas, set `MONGODB_URL` and `MONGODB_ADMIN_URL` and start without the bundled server.
+- **Configuration**: `MONGODB_URL` is required. In staging and production the API refuses a URL without a database
+  user and a real password (unless it signs in with X.509, AWS or OIDC).
+- **CI** starts a MongoDB replica set (`infra/ci/start-mongo.sh`) for the tests, the end-to-end flows, the drill and
+  the ClamAV job; the production-stack smoke test builds the MongoDB stack.
+
+## Tests
+
+- 447 API tests (38 files) and 42 data-layer tests pass on MongoDB.
+- Tests that checked PostgreSQL itself (roles, RLS, triggers) now check the same rule in the data layer: a workspace
+  transaction cannot update or delete what PostgreSQL's grants refused, cross-workspace references are refused, and
+  frozen records stay frozen.
+- One test changed meaning: two recomputes of the same attendance day racing each other. PostgreSQL made the second
+  wait for the first; MongoDB aborts one and runs it again. The test now checks that both finish and exactly one
+  correct day is stored.
+
+## Not done yet
+
+- A custom MongoDB role that lets the API only insert into `audit_events`. Today the data layer refuses any change,
+  and the hash chain shows a change made outside SampCrew.
+- MongoDB Atlas or self-hosted for production is still Kunal's choice; both are supported.

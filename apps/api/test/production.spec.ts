@@ -33,7 +33,7 @@ describe('Phase 12 production readiness', () => {
   describe('production configuration', () => {
     const good = {
       CREW_ENV: 'production',
-      DATABASE_URL: 'postgres://crew_api:9f1c2b7e4d8a6f3c0b5e1d7a@db.internal:5432/crew',
+      MONGODB_URL: 'mongodb://crew_api:9f1c2b7e4d8a6f3c0b5e1d7a@db1.internal:27017,db2.internal:27017,db3.internal:27017/crew?replicaSet=rs0&authSource=admin',
       WEB_PUBLIC_URL: 'https://crew.acme.test',
       API_PUBLIC_URL: 'https://api.crew.acme.test',
       CORS_ORIGINS: 'https://crew.acme.test,https://console.crew.acme.test',
@@ -70,8 +70,10 @@ describe('Phase 12 production readiness', () => {
 
     it('refuses secrets and passwords still holding template values', () => {
       expect(() => load({ JWT_ACCESS_SECRET: 'change-me-change-me-change-me-change-me-12' })).toThrow(/JWT_ACCESS_SECRET still holds a template value/);
-      expect(() => load({ DATABASE_URL: 'postgres://crew_api:change-me-local-only@db:5432/crew' })).toThrow(/DATABASE_URL needs a real password/);
-      expect(() => load({ DATABASE_URL: 'postgres://crew_api@db:5432/crew' })).toThrow(/DATABASE_URL needs a real password/);
+      expect(() => load({ MONGODB_URL: 'mongodb://crew_api:change-me-local-only@mongo:27017/crew?replicaSet=rs0' })).toThrow(/MONGODB_URL needs a database user with a real password/);
+      expect(() => load({ MONGODB_URL: 'mongodb://mongo:27017/crew?replicaSet=rs0' })).toThrow(/MONGODB_URL needs a database user/);
+      expect(load({ MONGODB_URL: 'mongodb+srv://crew-api:Qm7Xt2Vr9Lp4Nz8K@crew.abc12.mongodb.net/crew?retryWrites=true' }).isProductionLike).toBe(true);
+      expect(load({ MONGODB_URL: 'mongodb+srv://crew.abc12.mongodb.net/crew?authMechanism=MONGODB-X509&tls=true' }).isProductionLike).toBe(true);
       expect(() => load({ REDIS_URL: 'redis://:changeme@redis:6379' })).toThrow(/REDIS_URL/);
       // Every problem is listed at once, so one restart fixes them all.
       const all = productionProblems({ ...(load({ CREW_ENV: 'local' }) as never), WEB_PUBLIC_URL: 'http://a.test', API_PUBLIC_URL: 'http://b.test' });

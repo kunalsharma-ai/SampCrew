@@ -1,5 +1,4 @@
 import { FEATURES, PLAN_TEMPLATES, SYSTEM_ROLES } from '@crew/contracts';
-import { DEFAULT_ONBOARDING_TASKS, type ProvisionedTenant, type ProvisionTenantInput, regionFor, SlugTakenError } from '../provision';
 import type { Row, Table } from './table';
 
 /** Anything that hands out unrestricted tables in one transaction (the API's PlatformTx, or a script's own). */
@@ -8,7 +7,7 @@ export interface Tables {
 }
 
 /**
- * MongoDB version of provisionTenant (../provision.ts): a tenant with its first legal entity, the system roles,
+ * Creates a tenant with its first legal entity, the system roles,
  * the owner's membership, a subscription and the starting data every workspace edits. Run it in a platform
  * transaction so that it all lands or none of it does.
  */
@@ -193,3 +192,52 @@ function addDays(days: number): string {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
+
+export interface ProvisionTenantInput {
+  name: string;
+  slug: string;
+  countryCode: string;
+  currency: string;
+  timezone: string;
+  locale?: string;
+  region?: string;
+  isDemo?: boolean;
+  owner: { email: string; fullName: string; passwordHash: string | null };
+  plan: { key: string; seats: number; billingCycle: 'monthly' | 'annual'; trialDays: number };
+}
+
+export interface ProvisionedTenant {
+  tenantId: string;
+  ownerUserId: string;
+  ownerMembershipId: string;
+  legalEntityId: string;
+  /** True when the owner already had a SampCrew identity (for example a consultant joining a second tenant). */
+  existingUser: boolean;
+}
+
+export class SlugTakenError extends Error {
+  constructor() {
+    super('That workspace address is already taken');
+  }
+}
+
+export function regionFor(countryCode: string): string {
+  if (countryCode === 'IN') return 'in';
+  if (countryCode === 'GB') return 'uk';
+  if (['US', 'CA', 'MX', 'BR'].includes(countryCode)) return 'us';
+  if (['AE', 'SA', 'QA', 'KW', 'OM', 'BH'].includes(countryCode)) return 'me';
+  if (['SG', 'MY', 'ID', 'PH', 'TH', 'VN'].includes(countryCode)) return 'sg';
+  if (['AU', 'NZ'].includes(countryCode)) return 'au';
+  return 'eu';
+}
+
+export const DEFAULT_ONBOARDING_TASKS = [
+  { title: 'Send offer letter and collect signed copy', owner: 'hr', dueOffsetDays: -14 },
+  { title: 'Collect identity and address proof', owner: 'employee', dueOffsetDays: -3 },
+  { title: 'Add bank and tax details', owner: 'employee', dueOffsetDays: 0 },
+  { title: 'Prepare laptop, email and system access', owner: 'it', dueOffsetDays: -2 },
+  { title: 'Plan the first week and assign a buddy', owner: 'manager', dueOffsetDays: -1 },
+  { title: 'Welcome meeting and workplace tour', owner: 'manager', dueOffsetDays: 0 },
+  { title: 'Read and acknowledge company policies', owner: 'employee', dueOffsetDays: 7 },
+  { title: '30-day check-in', owner: 'manager', dueOffsetDays: 30 },
+];

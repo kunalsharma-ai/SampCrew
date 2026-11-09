@@ -14,7 +14,6 @@
     "dev:web": "pnpm --filter @crew/web dev",
     "dev:console": "pnpm --filter @crew/console dev",
     "db:migrate": "pnpm --filter @crew/db migrate",
-    "db:migrate:mongo": "pnpm --filter @crew/db migrate:mongo",
     "db:seed": "pnpm --filter @crew/db seed",
     "db:reset": "pnpm --filter @crew/db reset",
     "typecheck": "pnpm -r run typecheck",
