@@ -9,6 +9,12 @@ import { ScopeViolationError, type Scope, type Table } from './mongo-scope';
 type Row = Record<string, any>;
 
 const MAX_ATTEMPTS = 8;
+/**
+ * How long a transaction keeps retrying write conflicts. Writers to one hot document (a workspace's audit-chain head)
+ * succeed one per round, so a burst of N of them needs about N rounds: retry on time, not on a small count, as
+ * PostgreSQL made them wait on the row lock instead of failing.
+ */
+const CONFLICT_RETRY_MS = 30_000;
 
 function hasLabel(err: unknown, label: string): boolean {
   return typeof (err as { hasErrorLabel?: unknown })?.hasErrorLabel === 'function' && (err as { hasErrorLabel(l: string): boolean }).hasErrorLabel(label);
@@ -201,6 +207,7 @@ export class MongoService implements OnModuleDestroy {
     try {
       // Two transactions writing the same document: MongoDB aborts one with a transient error and the whole callback
       // runs again, a bounded number of times. Anything else ends the transaction, as an error did in PostgreSQL.
+      const started = Date.now();
       for (let attempt = 1; ; attempt++) {
         session.startTransaction(TRANSACTION);
         try {
@@ -212,8 +219,8 @@ export class MongoService implements OnModuleDestroy {
           return result;
         } catch (err) {
           if (session.inTransaction()) await session.abortTransaction().catch(() => undefined);
-          if (attempt < MAX_ATTEMPTS && hasLabel(err, 'TransientTransactionError')) {
-            await new Promise((r) => setTimeout(r, Math.min(5 * 2 ** attempt, 200) * Math.random()));
+          if (hasLabel(err, 'TransientTransactionError') && Date.now() - started < CONFLICT_RETRY_MS) {
+            await new Promise((r) => setTimeout(r, Math.min(5 * 2 ** Math.min(attempt, 6), 200) * Math.random()));
             continue;
           }
           throw err;
