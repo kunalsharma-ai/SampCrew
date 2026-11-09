@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AuthzService } from '../../platform/authz/authz.service';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { HelpdeskService } from '../helpdesk/helpdesk.service';
 import { AiGatewayService, type Evidence } from './ai-gateway.service';
@@ -12,10 +12,14 @@ const STOP = new Set(('a an and are as at be but by can could did do does for fr
   + 'please should so than that the their them then there these they this to was we were what when where which who why will with would you your about '
   + 'get got any much many also just more most some such only own same very hello hi thanks thank').split(' '));
 
-/** Turns free text into an OR query of its meaningful words, for PostgreSQL full-text search. */
-export function searchTerms(text: string): string | null {
-  const words = [...new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !STOP.has(w)))].slice(0, 20);
-  return words.length ? words.join(' | ') : null;
+/** A light English stem ("leaves", "leaving" and "leave" match), close to what full-text search did. */
+export function stem(word: string): string {
+  return word.replace(/(ies)$/, 'y').replace(/(ing|ed|es|s)$/, '').replace(/e$/, '');
+}
+
+/** The meaningful words of free text, stemmed, for matching help articles. */
+export function searchTerms(text: string): string[] {
+  return [...new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !STOP.has(w)).map(stem))].slice(0, 20);
 }
 
 interface Source { id: string; title: string; body: string }
@@ -34,17 +38,20 @@ export class AssistantService {
     private readonly helpdesk: HelpdeskService,
   ) {}
 
-  private async sources(tx: Tx, text: string, limit = 4): Promise<Source[]> {
-    const q = searchTerms(text);
-    if (!q) return [];
-    return many<Source>(
-      tx,
-      `select a.id, a.title, left(a.body, 4000) as body
-         from helpdesk_articles a, to_tsquery('english', $1) q
-        where a.published and to_tsvector('english', a.title || ' ' || a.body) @@ q
-        order by ts_rank(to_tsvector('english', a.title || ' ' || a.body), q) desc, a.updated_at desc limit $2`,
-      [q, limit],
-    );
+  /** Published articles that share words with the text, most matches first (ties: most recently updated). */
+  private async sources(tx: TenantTx, text: string, limit = 4): Promise<Source[]> {
+    const terms = new Set(searchTerms(text));
+    if (!terms.size) return [];
+    const articles = await tx.collection('helpdesk_articles').find({ published: true }, { projection: { title: 1, body: 1, updated_at: 1 } });
+    return articles
+      .map((a) => {
+        const words = `${a.title} ${a.body}`.toLowerCase().split(/[^a-z0-9]+/).map(stem);
+        return { a, score: words.filter((w) => terms.has(w)).length / Math.log(2 + words.length) };
+      })
+      .filter((x) => x.score > 0)
+      .sort((x, y) => y.score - x.score || new Date(y.a.updated_at).getTime() - new Date(x.a.updated_at).getTime())
+      .slice(0, limit)
+      .map(({ a }) => ({ id: a.id as string, title: a.title as string, body: (a.body as string).slice(0, 4000) }));
   }
 
   private static numbered(sources: Source[]) {
@@ -60,7 +67,7 @@ export class AssistantService {
     await this.gateway.assertAvailable('assistant');
     const { sources, workspace } = await this.db.tenant(async (tx) => {
       await this.authz.require('helpdesk:use', undefined, tx);
-      const w = await one<{ name: string }>(tx, 'select name from tenants where id = app_tenant_id()');
+      const w = await tx.collection<{ name: string }>('tenants').findOne({ id: tx.tenantId });
       return { sources: await this.sources(tx, question), workspace: w!.name };
     });
     if (!sources.length) {

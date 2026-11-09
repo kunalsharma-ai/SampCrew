@@ -79,10 +79,34 @@ const announcementReceiptsGuard: RowGuard = async (ctx, op, before, after) => {
   if (!sameValue(before.read_at, after.read_at)) throw fail('the first read time cannot be changed');
 };
 
+/** ai_interactions_guard: kept for audit; only the prompt and answer text may be removed (retention). */
+const aiInteractionsGuard: RowGuard = async (ctx, op, before, after) => {
+  const fail = (m: string) => frozenError(m, ctx.table);
+  if (op === 'delete') throw fail('AI interactions are kept for audit and cannot be deleted');
+  if (op !== 'update' || !before || !after) return;
+  const fixed = ['tenant_id', 'membership_id', 'feature', 'status', 'provider', 'model', 'prompt_version', 'subject_type', 'subject_id', 'evidence', 'redactions',
+    'input_tokens', 'output_tokens', 'credits', 'latency_ms', 'error', 'created_at'];
+  if (changed(before, after, fixed)) throw fail('an AI interaction cannot be changed');
+  for (const c of ['request', 'response']) {
+    if (!sameValue(before[c], after[c]) && after[c] !== null && after[c] !== undefined) throw fail("an AI interaction's prompt and answer can only be removed");
+  }
+};
+
+/** privacy_requests_guard: a closed request is final, except recording that its export file was deleted. */
+const privacyRequestsGuard: RowGuard = async (ctx, op, before, after) => {
+  if (op !== 'update' || !before || !after || before.status === 'open') return;
+  const exportRemoved = before.export_storage_key && !after.export_storage_key && after.export_deleted_at && !before.export_deleted_at;
+  const others = Object.keys({ ...before, ...after }).filter((k) => !['export_storage_key', 'export_deleted_at', 'updated_at', '_lock'].includes(k));
+  if (exportRemoved && !changed(before, after, others)) return;
+  throw frozenError('privacy request is closed', ctx.table);
+};
+
 /** Guards by trigger name (TableSpec.triggers). Triggers without one here are enforced in the owning service. */
 export const ROW_GUARDS: Record<string, RowGuard> = {
   payroll_frozen: payrollFrozen,
   helpdesk_cases_guard: helpdeskCasesGuard,
   announcements_guard: announcementsGuard,
   announcement_receipts_guard: announcementReceiptsGuard,
+  ai_interactions_guard: aiInteractionsGuard,
+  privacy_requests_guard: privacyRequestsGuard,
 };

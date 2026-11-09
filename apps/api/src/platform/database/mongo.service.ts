@@ -77,8 +77,8 @@ export class TenantTx extends BaseTx {
   }
 
   /** A table seen from this workspace: its own rows only, shared reference data read-only. */
-  collection<T extends Row = Row>(name: string): Table<T> {
-    return new mongo.Table<T>(this.db, name, this.session, { scope: this.scope, tables: this.tables, readOnly: name === mongo.AUDIT_EVENTS });
+  collection<T extends Row = Row>(name: string, options: { flags?: string[] } = {}): Table<T> {
+    return new mongo.Table<T>(this.db, name, this.session, { scope: this.scope, tables: this.tables, readOnly: name === mongo.AUDIT_EVENTS, flags: options.flags });
   }
 
   /** People who are members of this workspace (invited, active or suspended), without password hashes or MFA secrets. */
@@ -91,8 +91,8 @@ export class TenantTx extends BaseTx {
    * A table without the workspace restriction, in this same transaction: for the few reviewed places where a workspace
    * action creates or changes a global record (a person's identity when they are invited). Prefer collection().
    */
-  unscoped<T extends Row = Row>(name: string): Table<T> {
-    return new mongo.Table<T>(this.db, name, this.session, { scope: null, tables: this.tables });
+  unscoped<T extends Row = Row>(name: string, options: { flags?: string[] } = {}): Table<T> {
+    return new mongo.Table<T>(this.db, name, this.session, { scope: null, tables: this.tables, flags: options.flags });
   }
 
   /** Recomputes this workspace's audit hash chain. */
