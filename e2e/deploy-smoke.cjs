@@ -74,10 +74,12 @@ function expect(cond, msg) {
     await p.click('button[type=submit]');
     await p.waitForURL(`${WEB}/`, { timeout: 30000 });
   };
-  // A network change on the runner can cancel the sign-in request itself; sign in once more if that is what happened.
+  // A network change on the runner (Docker adding the stack's networks) can cancel the first page load or the
+  // sign-in request itself; wait a moment and sign in once more if that is what happened.
   await signIn().catch(async (e) => {
-    if (errs.some((x) => /ERR_NETWORK_CHANGED/.test(x))) return signIn();
-    throw e;
+    if (!/ERR_NETWORK_CHANGED|ERR_ABORTED/.test(e.message) && !errs.some((x) => /ERR_NETWORK_CHANGED/.test(x))) throw e;
+    await p.waitForTimeout(2000);
+    return signIn();
   }).catch(async (e) => {
     const text = (await p.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 600);
     throw new Error(`sign-in did not reach Home (at ${p.url()}): ${e.message.split('\n')[0]}\npage: ${text}\nbrowser: ${errs.join(' | ')}`);
