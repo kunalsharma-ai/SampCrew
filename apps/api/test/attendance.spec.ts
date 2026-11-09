@@ -1,11 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AttendanceDaysService } from '../src/modules/attendance/attendance-days.service';
 import { attlogLines } from '../src/modules/attendance/zk-push';
-import { DatabaseService } from '../src/platform/database/database.service';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestTenant } from './helpers';
+import { MongoService as DatabaseService } from '../src/platform/database/mongo.service';
+import { addMember, adminPool, api, createApp, createTenant, department, expectHiddenFrom, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const IST_OFFSET = '+05:30';
 const istToday = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
@@ -32,7 +32,7 @@ const futureWeekday = (n: number) => {
 /** Phase 3 through the HTTP API: punching, the engine, corrections, overtime, locks, rosters, swaps, devices, kiosks. */
 describe('attendance', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let hrAdmin: string;
@@ -42,10 +42,9 @@ describe('attendance', () => {
   const people: Record<string, { email: string; membershipId: string; employeeId: string }> = {};
   const token = async (who: string) => (await login(app, people[who]!.email)).accessToken;
   const punchAt = async (who: string, date: string, time: string, direction: 'in' | 'out' | 'unknown' = 'unknown') => {
-    await pool.query(
-      `insert into attendance_events (tenant_id, employee_id, source, source_event_id, captured_at, direction) values ($1, $2, 'import', gen_random_uuid()::text, $3, $4)`,
-      [t.id, people[who]!.employeeId, `${date}T${time}:00${IST_OFFSET}`, direction],
-    );
+    await pool.insert('attendance_events', {
+      tenant_id: t.id, employee_id: people[who]!.employeeId, source: 'import', source_event_id: randomUUID(), captured_at: new Date(`${date}T${time}:00${IST_OFFSET}`), direction,
+    });
   };
   const dayOf = async (who: string, date: string, as?: string) => {
     const res = await api(app, as ?? (await token(who))).get(`/attendance/days?employeeId=${people[who]!.employeeId}&from=${date}&to=${date}`);
@@ -66,10 +65,7 @@ describe('attendance', () => {
     other = await createTenant(pool);
     assembly = await department(pool, t, 'Assembly');
     qa = await department(pool, t, 'Quality');
-    pune = (await pool.query<{ id: string }>(
-      `insert into locations (tenant_id, legal_entity_id, name, kind, timezone, country_code, latitude, longitude, geofence_radius_m) values ($1, $2, 'Pune Plant', 'factory', 'Asia/Kolkata', 'IN', 18.5204, 73.8567, 200) returning id`,
-      [t.id, t.legalEntityId],
-    )).rows[0]!.id;
+    pune = (await pool.insert('locations', { tenant_id: t.id, legal_entity_id: t.legalEntityId, name: 'Pune Plant', kind: 'factory', timezone: 'Asia/Kolkata', country_code: 'IN', latitude: '18.5204', longitude: '73.8567', geofence_radius_m: 200 })).id as string;
     const hr = await addMember(pool, t, { roles: ['hr_admin'], name: 'Hana HR' });
     const sup = await addMember(pool, t, { roles: ['department_manager'], departmentId: assembly, name: 'Sam Supervisor' });
     const op = await addMember(pool, t, { departmentId: assembly, managerId: sup.membershipId, name: 'Olu Operator' });
@@ -118,8 +114,7 @@ describe('attendance', () => {
       expect(far.body.error.message).toMatch(/outside its 200 m area/);
       expect((await api(app, peer).post('/attendance/punch').send({ clientEventId: 'web-test-0102' })).body.error.code).toBe('location_required');
       expect((await api(app, peer).post('/attendance/punch').send({ clientEventId: 'web-test-0103', latitude: 18.5204, longitude: 73.8567 })).status).toBe(201);
-      const audit = await pool.query(`select 1 from audit_events where tenant_id = $1 and action = 'attendance.punch_refused'`, [t.id]);
-      expect(audit.rowCount).toBe(1);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'attendance.punch_refused' })).toBe(1);
       // Back to the workspace default for the rest of the tests.
       expect((await api(app, hrAdmin).delete(`/attendance/policies/${pune}`)).status).toBe(204);
     });
@@ -140,8 +135,10 @@ describe('attendance', () => {
     });
 
     it('raw punches cannot be edited or deleted, even directly in the database', async () => {
-      await expect(pool.query(`update attendance_events set captured_at = now() where tenant_id = $1`, [t.id])).rejects.toThrow(/append-only|not allowed|immutable/i);
-      await expect(pool.query(`delete from attendance_events where tenant_id = $1`, [t.id])).rejects.toThrow();
+      expect(await pool.count('attendance_events', { tenant_id: t.id })).toBeGreaterThan(0);
+      await expect(pool.update('attendance_events', { tenant_id: t.id }, { $set: { captured_at: new Date() } })).rejects.toThrow(/append-only|not allowed|immutable/i);
+      await expect(pool.delete('attendance_events', { tenant_id: t.id })).rejects.toThrow(/append-only|not allowed|immutable/i);
+      await expect(pool.tenant(t.id, (tx) => tx.collection('attendance_events').delete({}))).rejects.toThrow();
     });
   });
 
@@ -177,7 +174,7 @@ describe('attendance', () => {
 
     it("team view reuses today's computed days for 30 seconds instead of rewriting them on every request", async () => {
       const today = istToday();
-      const computedAt = async () => (await pool.query(`select computed_at from attendance_days where employee_id = $1 and work_date = $2`, [people.operator!.employeeId, today])).rows[0]?.computed_at as Date;
+      const computedAt = async () => (await pool.one('attendance_days', { employee_id: people.operator!.employeeId, work_date: today }))?.computed_at as Date;
       const sup = await token('supervisor');
       expect((await api(app, sup).get(`/attendance/team?date=${today}`)).status).toBe(200);
       const first = await computedAt();
@@ -185,7 +182,7 @@ describe('attendance', () => {
       await api(app, sup).get(`/attendance/team?date=${today}`);
       expect(await computedAt()).toEqual(first);
       // Older than the window: refreshed on the next view.
-      await pool.query(`update attendance_days set computed_at = now() - interval '1 minute' where employee_id = $1 and work_date = $2`, [people.operator!.employeeId, today]);
+      await pool.update('attendance_days', { employee_id: people.operator!.employeeId, work_date: today }, { $set: { computed_at: new Date(Date.now() - 60_000) } });
       await api(app, sup).get(`/attendance/team?date=${today}`);
       expect((await computedAt()).getTime()).toBeGreaterThan(Date.now() - 10_000);
     });
@@ -195,7 +192,7 @@ describe('attendance', () => {
     it('a correction goes to the manager; approval adds a punch and fixes the day, leaving the originals as they were', async () => {
       const d2 = pastWeekday(4);
       const op = await token('operator');
-      const before = await pool.query(`select count(*)::int as n from attendance_events where employee_id = $1`, [people.operator!.employeeId]);
+      const before = await pool.count('attendance_events', { employee_id: people.operator!.employeeId });
       const twice = await api(app, op).post('/attendance/corrections').send({ workDate: d2, punches: [{ time: '18:05', direction: 'out' }, { time: '18:05', direction: 'out' }], reason: 'Twice' });
       expect(twice.status).toBe(422);
       const res = await api(app, op).post('/attendance/corrections').send({ workDate: d2, punches: [{ time: '18:05', direction: 'out' }], reason: 'Forgot to punch out' });
@@ -207,8 +204,8 @@ describe('attendance', () => {
       const approved = await approveAll('supervisor');
       expect(approved.map((a) => a.resourceType)).toEqual(['attendance_correction']);
       expect(await dayOf('operator', d2)).toMatchObject({ status: 'present', flags: [] });
-      const after = await pool.query(`select count(*)::int as n, count(*) filter (where source = 'correction')::int as c from attendance_events where employee_id = $1`, [people.operator!.employeeId]);
-      expect(after.rows[0]).toEqual({ n: before.rows[0].n + 1, c: 1 });
+      expect(await pool.count('attendance_events', { employee_id: people.operator!.employeeId })).toBe(before + 1);
+      expect(await pool.count('attendance_events', { employee_id: people.operator!.employeeId, source: 'correction' })).toBe(1);
     });
 
     it('overtime counts once a claim for it is approved, and a claim cannot exceed what was recorded', async () => {
@@ -410,23 +407,12 @@ describe('attendance', () => {
     it('keeps every Phase 3 record inside its workspace', async () => {
       const tables = ['shift_templates', 'rosters', 'shift_assignments', 'attendance_policies', 'attendance_devices', 'device_user_mappings', 'device_ingest_log',
         'attendance_kiosks', 'attendance_events', 'attendance_days', 'attendance_periods', 'attendance_corrections', 'overtime_claims', 'shift_swap_requests'];
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        await client.query('set local role crew_app');
-        await client.query(`select set_config('app.tenant_id', $1, true)`, [other.id]);
-        for (const table of tables) {
-          const r = await client.query(`select count(*)::int as n from ${table} where tenant_id = $1`, [t.id]);
-          expect(r.rows[0].n, table).toBe(0);
-        }
-        await expect(client.query(`insert into attendance_events (tenant_id, employee_id, source, source_event_id, captured_at) values ($1, $2, 'web', 'x', now())`, [t.id, people.operator!.employeeId])).rejects.toThrow();
-        await client.query('rollback');
-      } finally {
-        client.release();
-      }
+      const held = await expectHiddenFrom(pool, t, other, tables);
+      expect(held.attendance_events).toBeGreaterThan(0);
+      await expect(pool.tenant(other.id, (tx) => tx.collection('attendance_events').insert({ tenant_id: t.id, employee_id: people.operator!.employeeId, source: 'web', source_event_id: 'x', captured_at: new Date() }))).rejects.toThrow();
       const otherOwner = (await login(app, other.ownerEmail)).accessToken;
       expect((await api(app, otherOwner).get(`/attendance/days/${people.operator!.employeeId}/${pastWeekday(3)}`)).status).toBe(404);
-      expect((await api(app, otherOwner).get(`/attendance/devices/${(await pool.query('select id from attendance_devices where tenant_id = $1 limit 1', [t.id])).rows[0].id}`)).status).toBe(404);
+      expect((await api(app, otherOwner).get(`/attendance/devices/${(await pool.one('attendance_devices', { tenant_id: t.id }))!.id}`)).status).toBe(404);
     });
   });
 });

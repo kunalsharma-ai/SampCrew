@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ScopeViolationError } from '../../src/platform/database/mongo-scope';
-import type { MongoService } from '../../src/platform/database/mongo.service';
+import { countBy, type MongoService } from '../../src/platform/database/mongo.service';
 import { id, mongoService } from './helpers';
 
 /**
@@ -155,5 +155,12 @@ describe('MongoDB workspace-scoped access', () => {
 
   it('needs a workspace in context for tenant()', () => {
     expect(() => db.tenant(async () => 1)).toThrow(/without a tenant/);
+  });
+
+  it('counts rows per key within the workspace only (countBy)', async () => {
+    const counts = await db.tenant((tx) => countBy(tx, 't_items', 'plan_key', ['growth', 'scale', 'none']), { tenantId: tenantA });
+    expect(Object.fromEntries(counts)).toEqual({ growth: 1, scale: 1 });
+    const b = await db.tenant((tx) => countBy(tx, 't_items', 'plan_key', ['growth']), { tenantId: tenantB });
+    expect(b.get('growth')).toBe(1);
   });
 });

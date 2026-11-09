@@ -2,7 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
-import { adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestTenant, type TestDb } from './helpers';
+import { adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 describe('SAMPLEDGE Super Admin Console API', () => {
   let app: INestApplication;

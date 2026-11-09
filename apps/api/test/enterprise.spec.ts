@@ -1,8 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const oidcStub = require('../../../e2e/oidc-stub.cjs') as { start: (o: object) => Promise<Stub> };
@@ -14,7 +13,7 @@ const plus = (d: string, n: number) => new Date(Date.parse(d) + n * 86_400_000).
 
 describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let idp: Stub;
   let ent: TestTenant;
   let other: TestTenant;
@@ -98,8 +97,8 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
       const s = ok(await as('owner').put('/security/sso').send(settings()));
       expect(s.connection).toMatchObject({ status: 'draft', issuer: idp.issuer, domains: [domain()], verifiedAt: null, enforced: false });
       expect(JSON.stringify(s)).not.toContain(idp.clientSecret);
-      const row = await pool.query('select client_secret_enc from sso_connections where tenant_id = $1', [ent.id]);
-      expect(row.rows[0].client_secret_enc).not.toContain(idp.clientSecret);
+      const row = (await pool.one('sso_connections', { tenant_id: ent.id }))!;
+      expect(row.client_secret_enc).not.toContain(idp.clientSecret);
       fails(await as('otherOwner').put('/security/sso').send({ ...settings() }), 409, 'domain_taken');
       // Not switched on until a test passes.
       fails(await as('owner').post('/security/sso/status').send({ status: 'active' }), 409, 'sso_not_tested');
@@ -123,8 +122,7 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
       expect(ok(await api(app, r.accessToken).get('/me')).user.email).toBe(people.worker.email);
       const strong = ok(await signInWithSso(people.manager.email, { amr: ['pwd', 'mfa'] }));
       expect(claims(strong.accessToken).mfa).toBe(true);
-      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'auth.sso_login'`, [ent.id]);
-      expect(audit.rows[0].n).toBe(2);
+      expect(await pool.count('audit_events', { tenant_id: ent.id, action: 'auth.sso_login' })).toBe(2);
     });
 
     it('refuses tokens that do not check out, and every code and state works once', async () => {
@@ -146,8 +144,8 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
       const body = { code: back.searchParams.get('code'), state: back.searchParams.get('state') };
       ok(await api(app).post('/auth/sso/callback').send(body));
       fails(await api(app).post('/auth/sso/callback').send(body), 401);
-      const failed = await pool.query(`select metadata->>'reason' as reason from audit_events where tenant_id = $1 and action = 'auth.sso_failed' order by id`, [ent.id]);
-      expect(failed.rows.map((x) => x.reason).join(' | ')).toMatch(/nonce.*verify.*verify.*verified.*domains/s);
+      const failed = await pool.find('audit_events', { tenant_id: ent.id, action: 'auth.sso_failed' }, { sort: { chain_seq: 1 } });
+      expect(failed.map((x) => x.metadata?.reason).join(' | ')).toMatch(/nonce.*verify.*verify.*verified.*domains/s);
     });
 
     it('turns away people who are not members unless just-in-time provisioning is on', async () => {
@@ -157,11 +155,11 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
       // Same provider and client: still tested and on.
       expect(ok(await as('owner').get('/security/sso')).connection).toMatchObject({ status: 'active', jitProvisioning: true });
       const r = ok(await signInWithSso(newcomer, { name: 'Nia Newcomer' }));
-      const m = await pool.query(
-        `select m.status, m.provisioned_by, array_agg(r.key) as roles from memberships m join role_assignments ra on ra.membership_id = m.id join roles r on r.id = ra.role_id where m.id = $1 group by m.id`,
-        [claims(r.accessToken).mid],
-      );
-      expect(m.rows[0]).toMatchObject({ status: 'active', provisioned_by: 'sso', roles: ['employee'] });
+      const mid = claims(r.accessToken).mid;
+      const membership = (await pool.one('memberships', { id: mid }))!;
+      const roleIds = (await pool.find('role_assignments', { membership_id: mid })).map((x) => x.role_id);
+      const roles = (await pool.find('roles', { id: { $in: roleIds } })).map((x) => x.key);
+      expect({ status: membership.status, provisioned_by: membership.provisioned_by, roles }).toMatchObject({ status: 'active', provisioned_by: 'sso', roles: ['employee'] });
     });
 
     it('can be required for members; owners keep a password as a way in', async () => {
@@ -233,13 +231,14 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
       expect(on.body).toMatchObject({ active: true, displayName: 'Samira Scim' });
       expect((await scim(tokens.scim!).del(`/Users/${ids.scimUser}`)).status).toBe(204);
       expect((await scim(tokens.scim!).get(`/Users/${ids.scimUser}`)).body.active).toBe(false);
-      const owner = await pool.query(`select m.id from memberships m join users u on u.id = m.user_id where u.email = $1 and m.tenant_id = $2`, [ent.ownerEmail, ent.id]);
-      expect((await scim(tokens.scim!).patch(`/Users/${owner.rows[0].id}`, { Operations: [{ op: 'replace', path: 'active', value: false }] })).body.scimType).toBe('mutability');
+      const ownerUser = (await pool.one('users', { email: ent.ownerEmail }))!;
+      const owner = (await pool.one('memberships', { user_id: ownerUser.id, tenant_id: ent.id }))!;
+      expect((await scim(tokens.scim!).patch(`/Users/${owner.id}`, { Operations: [{ op: 'replace', path: 'active', value: false }] })).body.scimType).toBe('mutability');
       const log = ok(await as('owner').get('/security/scim'));
       expect(log.events.map((e: any) => `${e.method} ${e.status}`)).toEqual(expect.arrayContaining(['POST 201', 'POST 409', 'PATCH 200', 'DELETE 204', 'PATCH 400']));
       expect(log.token.prefix).toBe(tokens.scim!.slice(5, 15));
-      const audit = await pool.query(`select action from audit_events where tenant_id = $1 and resource_id = $2 order by id`, [ent.id, ids.scimUser]);
-      expect(audit.rows.map((r) => r.action)).toEqual(expect.arrayContaining(['membership.provisioned', 'membership.suspended', 'membership.reactivated']));
+      const audit = await pool.find('audit_events', { tenant_id: ent.id, resource_id: ids.scimUser }, { sort: { chain_seq: 1 } });
+      expect(audit.map((r) => r.action)).toEqual(expect.arrayContaining(['membership.provisioned', 'membership.suspended', 'membership.reactivated']));
     });
 
     it('stops working when revoked or replaced', async () => {
@@ -289,8 +288,8 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
       expect(data).toMatchObject({ format: 'crew-personal-data-export/1', employee: { first_name: 'Pia', personal_email: 'pia@home.example' } });
       expect(Object.keys(data.records)).toContain('employment_records');
       expect(JSON.stringify(data)).not.toMatch(/_enc"|storage_key/);
-      const audit = await pool.query(`select action from audit_events where tenant_id = $1 and resource_id = $2 order by id`, [ent.id, r.id]);
-      expect(audit.rows.map((x) => x.action)).toEqual(['privacy.request_logged', 'privacy.export_prepared', 'privacy.export_downloaded']);
+      const audit = await pool.find('audit_events', { tenant_id: ent.id, resource_id: r.id }, { sort: { chain_seq: 1 } });
+      expect(audit.map((x) => x.action)).toEqual(['privacy.request_logged', 'privacy.export_prepared', 'privacy.export_downloaded']);
       fails(await as('hr').post(`/privacy/requests/${r.id}/reject`).send({ note: 'Too late' }), 409, 'request_closed');
     });
 
@@ -310,21 +309,21 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
       expect(before.erasureRules.map((x: any) => x.action)).toContain('kept');
       const res = ok(await as('hr').post(`/privacy/requests/${r.id}/erase`).send({ note: 'Lou left last month; payroll kept for tax' }));
       expect(res.removed).toMatchObject({ sensitive: 1, loginErased: 1 });
-      const e = (await pool.query('select first_name, last_name, employee_code, personal_email, erased_at from employees where id = $1', [leaverId])).rows[0];
+      const e = (await pool.one('employees', { id: leaverId }))!;
       expect(e).toMatchObject({ first_name: 'Erased', last_name: 'person', personal_email: null });
       expect(e.employee_code).toMatch(/^ERASED-/);
       expect(e.erased_at).not.toBeNull();
-      expect((await pool.query('select 1 from employee_sensitive where employee_id = $1', [leaverId])).rowCount).toBe(0);
-      const u = (await pool.query('select email, full_name, password_hash, status from users where id = $1', [leaver.userId])).rows[0];
+      expect(await pool.count('employee_sensitive', { employee_id: leaverId })).toBe(0);
+      const u = (await pool.one('users', { id: leaver.userId }))!;
       expect(u).toMatchObject({ full_name: 'Erased person', password_hash: null, status: 'disabled' });
       expect(u.email).toMatch(/@erased\.invalid$/);
       // The earlier export was the last copy of the details, so it is gone too.
       fails(await as('hr').get(`/privacy/requests/${access.id}/export`), 409, 'export_deleted');
       // Employment history stays, against the anonymous record.
-      expect((await pool.query('select count(*)::int as n from employment_records where employee_id = $1', [leaverId])).rows[0].n).toBeGreaterThan(0);
+      expect(await pool.count('employment_records', { employee_id: leaverId })).toBeGreaterThan(0);
       fails(await as('hr').post('/privacy/requests').send({ employeeId: leaverId, kind: 'access', source: 'Again' }), 409, 'already_erased');
       // Finished requests cannot be changed, even directly in the database.
-      await expect(pool.query(`update privacy_requests set decision_note = 'edited' where id = $1`, [r.id])).rejects.toThrow(/closed/);
+      await expect(pool.update('privacy_requests', { id: r.id }, { $set: { decision_note: 'edited' } })).rejects.toThrow(/closed/);
       fails(await as('otherOwner').get(`/privacy/requests/${r.id}`), 404);
     });
   });

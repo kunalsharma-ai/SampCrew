@@ -145,7 +145,7 @@ export async function syncCollections(db: Db, tables: Record<string, TableSpec> 
   const existing = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
   for (const name of [UNIQUE_GUARDS, SEQUENCES]) if (!existing.has(name)) await db.createCollection(name);
   for (const [name, spec] of Object.entries(tables)) {
-    const validator = validatorFor(spec);
+    const validator = validatorFor(spec, name);
     if (!existing.has(name)) await db.createCollection(name, { validator, validationLevel: 'strict', validationAction: 'error' });
     else await db.command({ collMod: name, validator, validationLevel: 'strict', validationAction: 'error' });
     const wanted = [

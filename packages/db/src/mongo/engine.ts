@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Binary, Decimal128, type Document } from 'mongodb';
+import { checksValidator } from './checks';
 import type { ColumnSpec, Condition, IndexSpec, KeyColumn, TableSpec, UniqueSpec } from './schema';
 import { TABLES } from './schema.generated';
 
@@ -367,8 +368,8 @@ export function guardedKeys(spec: TableSpec): UniqueSpec[] {
   return spec.unique.filter((u) => uniqueStrategy(spec, u) === 'guard');
 }
 
-/** The collection validator: types, enums and NOT NULL columns. */
-export function validatorFor(spec: TableSpec): Document {
+/** The collection validator: types, enums, NOT NULL columns and the CHECK constraints. */
+export function validatorFor(spec: TableSpec, table = '?'): Document {
   const properties: Document = {};
   const required: string[] = [];
   for (const [col, cs] of Object.entries(spec.columns)) {
@@ -382,7 +383,7 @@ export function validatorFor(spec: TableSpec): Document {
     properties[field] = p;
     if (cs.required && !cs.identity) required.push(field);
   }
-  return { $jsonSchema: { bsonType: 'object', required: [...new Set(['_id', ...required])], properties } };
+  return { $jsonSchema: { bsonType: 'object', required: [...new Set(['_id', ...required])], properties }, ...checksValidator(table, spec) };
 }
 
 /** Tables whose foreign keys point at `table`, for cascades and restrictions on delete. */

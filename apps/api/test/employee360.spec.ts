@@ -1,14 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
 /** Employee 360: each area of the summary appears only for people whose own access covers it. */
 describe('employee 360', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   const tokens: Record<string, string> = {};
@@ -43,23 +42,17 @@ describe('employee 360', () => {
     // Olu's month: 3 days present (one late), 1 absent, 1 missing punch.
     const statuses: [number, string, number][] = [[-5, 'present', 0], [-4, 'present', 12], [-3, 'absent', 0], [-2, 'missing_punch', 0], [-1, 'present', 0]];
     for (const [n, status, late] of statuses) {
-      await pool.query(
-        `insert into attendance_days (tenant_id, employee_id, work_date, day_type, status, worked_minutes, late_minutes, engine_version) values ($1, $2, $3, 'working', $4, $5, $6, 1)`,
-        [t.id, ids.olu, day(n), status, status === 'present' ? 480 : 0, late],
-      );
+      await pool.insert('attendance_days', {
+        tenant_id: t.id, employee_id: ids.olu, work_date: day(n), day_type: 'working', status, worked_minutes: status === 'present' ? 480 : 0, late_minutes: late, engine_version: 1,
+      });
     }
-    await pool.query(
-      `insert into goals (tenant_id, employee_id, title, period_start, period_end, status, progress, confidence) values
-         ($1, $2, 'Cut changeover time by 20%', $3, $4, 'active', 40, 'at_risk'), ($1, $2, 'Train two new operators', $3, $4, 'active', 80, 'on_track'),
-         ($1, $2, 'Finish forklift licence', $3, $4, 'completed', 100, null)`,
-      [t.id, ids.olu, day(-60), day(120)],
-    );
-    await pool.query(`insert into recognitions (tenant_id, from_employee_id, to_employee_id, message) values ($1, $2, $3, 'Stayed late to fix line 2')`, [t.id, ids.boss, ids.olu]);
-    const st = await pool.query<{ id: string }>(`insert into salary_structures (tenant_id, name) values ($1, 'Operators 360') returning id`, [t.id]);
-    await pool.query(
-      `insert into employee_salaries (tenant_id, employee_id, effective_from, annual_ctc, currency, structure_id) values ($1, $2, $3, 540000, 'INR', $4)`,
-      [t.id, ids.olu, day(-200), st.rows[0]!.id],
-    );
+    const goal = { tenant_id: t.id, employee_id: ids.olu, period_start: day(-60), period_end: day(120) };
+    await pool.insert('goals', { ...goal, title: 'Cut changeover time by 20%', status: 'active', progress: 40, confidence: 'at_risk' });
+    await pool.insert('goals', { ...goal, title: 'Train two new operators', status: 'active', progress: 80, confidence: 'on_track' });
+    await pool.insert('goals', { ...goal, title: 'Finish forklift licence', status: 'completed', progress: 100, confidence: null });
+    await pool.insert('recognitions', { tenant_id: t.id, from_employee_id: ids.boss, to_employee_id: ids.olu, message: 'Stayed late to fix line 2' });
+    const st = await pool.insert('salary_structures', { tenant_id: t.id, name: 'Operators 360' });
+    await pool.insert('employee_salaries', { tenant_id: t.id, employee_id: ids.olu, effective_from: day(-200), annual_ctc: '540000', currency: 'INR', structure_id: st.id });
   });
 
   afterAll(async () => {

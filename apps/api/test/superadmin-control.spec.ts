@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
 import { parseDeviceApi } from '../src/modules/attendance/devices.service';
-import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestTenant, type TestDb } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 /**
  * Phase 16: SAMPLEDGE Super Admin control of a workspace: the Web Portal and mobile app per workspace and per

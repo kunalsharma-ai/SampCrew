@@ -264,8 +264,9 @@ export class MongoService implements OnModuleDestroy {
 
 /** How many rows of `table` point at each of `ids` through `field` (the SQL `select count(*) ... group by`). */
 export async function countBy(tx: TenantTx | PlatformTx, table: string, field: string, ids: string[], filter: Record<string, unknown> = {}): Promise<Map<string, number>> {
-  const rows = await tx.collection(table).aggregate<{ _id: string; n: number }>([{ $match: { ...filter, [field]: { $in: ids } } }, { $group: { _id: '$' + field, n: { $sum: 1 } } }]);
-  return new Map(rows.map((r) => [r._id, r.n]));
+  // Aggregation results come back with the group key as `id` (see Table.aggregate).
+  const rows = await tx.collection(table).aggregate<{ id: string; n: number }>([{ $match: { ...filter, [field]: { $in: ids } } }, { $group: { _id: '$' + field, n: { $sum: 1 } } }]);
+  return new Map(rows.map((r) => [r.id, r.n]));
 }
 
 /** Any of the three transaction kinds. */

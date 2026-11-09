@@ -149,7 +149,7 @@ export class Table<T extends Row = Row> {
     const docs = await this.coll
       .find(this.filter(filter), { ...options, sort: mapIdKeys(options.sort), projection: mapIdKeys(options.projection), session: this.session })
       .toArray();
-    return docs.map((d) => this.visible(toRow<T>(d)));
+    return docs.map((d) => this.visible(this.complete(toRow<T>(d), options.projection)));
   }
 
   async findOne(filter: Document = {}, options: FindOptions & { sort?: Document; projection?: Document } = {}): Promise<T | undefined> {
@@ -218,7 +218,7 @@ export class Table<T extends Row = Row> {
     for (const doc of docs) await this.checkForeignKeys(doc);
     await this.addGuards(docs);
     await this.wrap(() => this.coll.insertMany(docs, { session: this.session, ordered: true }));
-    return docs.map((d) => toRow<T>(d));
+    return docs.map((d) => this.complete(toRow<T>(d)));
   }
 
   /** Updates matching rows. Returns how many matched. */
@@ -265,7 +265,7 @@ export class Table<T extends Row = Row> {
     const target = await this.coll.findOne(this.filter(filter), { session: this.session, projection: { _id: 1 } });
     if (!target) return undefined;
     await this.update({ _id: target._id }, update, { limit: 1 });
-    return toRow<T>(await this.coll.findOne({ _id: target._id }, { session: this.session }));
+    return this.complete(toRow<T>(await this.coll.findOne({ _id: target._id }, { session: this.session })));
   }
 
   /** Inserts `row` unless a row matches `filter`; then applies `update` (if given) to that row instead. */
@@ -273,7 +273,7 @@ export class Table<T extends Row = Row> {
     const existing = await this.coll.findOne(this.filter(filter), { session: this.session, projection: { _id: 1 } });
     if (!existing) return this.insert(row);
     if (update && Object.keys(update).length) await this.update({ _id: existing._id }, update, { limit: 1 });
-    return toRow<T>(await this.coll.findOne({ _id: existing._id }, { session: this.session }));
+    return this.complete(toRow<T>(await this.coll.findOne({ _id: existing._id }, { session: this.session })));
   }
 
   /** Deletes matching rows, applying ON DELETE rules of the tables that reference them. Returns how many. */
@@ -299,6 +299,22 @@ export class Table<T extends Row = Row> {
   }
 
   /** Drops columns a workspace may not read (password hashes, MFA secrets). */
+  /**
+   * A row as PostgreSQL returned it: every column present, NULL where nothing is stored. A document written without
+   * a column has no field for it, and code that compares with null (`x.location_id === null`) must not see undefined.
+   * With a projection, only the columns it asks for are filled in.
+   */
+  private complete(row: T, projection?: Document): T {
+    if (!row) return row;
+    const r = row as Row;
+    const p = projection ? Object.entries(projection) : [];
+    const include = p.filter(([, v]) => v === 1 || v === true).map(([k]) => k);
+    const exclude = new Set(p.filter(([, v]) => v === 0 || v === false).map(([k]) => k));
+    const cols = include.length ? include : Object.keys(this.spec.columns).filter((c) => !exclude.has(c));
+    for (const c of cols) if (!c.includes('.') && this.spec.columns[c] && r[c] === undefined) r[c] = null;
+    return row;
+  }
+
   private visible(row: T): T {
     if (!this.columns) return row;
     const out: Row = {};

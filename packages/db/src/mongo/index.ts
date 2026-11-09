@@ -4,6 +4,7 @@ export * from './migrator';
 export * from './audit-chain';
 export * from './schema';
 export * from './engine';
+export * from './checks';
 export * from './table';
 export * from './row-guards';
 export { TABLES } from './schema.generated';

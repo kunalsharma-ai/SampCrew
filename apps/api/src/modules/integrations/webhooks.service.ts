@@ -94,10 +94,10 @@ export class WebhooksService implements OnModuleInit, OnApplicationBootstrap, On
       const ids = list.map((w) => w.id);
       const week = new Date(Date.now() - 7 * 86_400_000);
       const recent = await tx.collection('webhook_deliveries').find({ endpoint_id: { $in: ids }, created_at: { $gt: week } }, { projection: { endpoint_id: 1, status: 1 } });
-      const last = await tx.collection('webhook_deliveries').aggregate<{ _id: string; at: Date }>([
+      const last = await tx.collection('webhook_deliveries').aggregate<{ id: string; at: Date }>([
         { $match: { endpoint_id: { $in: ids }, delivered_at: { $ne: null } } }, { $group: { _id: '$endpoint_id', at: { $max: '$delivered_at' } } },
       ]);
-      const lastAt = new Map(last.map((x) => [x._id, x.at]));
+      const lastAt = new Map(last.map((x) => [x.id, x.at]));
       return (await endpointViews(tx, list)).map(({ updatedAt: _u, ...w }) => ({
         ...w,
         deliveries7d: recent.filter((d) => d.endpoint_id === w.id).length,

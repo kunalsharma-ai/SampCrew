@@ -3,7 +3,7 @@ import { mongo } from '@crew/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
-import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestTenant, type TestDb } from './helpers';
+import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 /**
  * The plan builder: SAMPLEDGE sets what each plan includes in the Console, and a workspace's subscription decides

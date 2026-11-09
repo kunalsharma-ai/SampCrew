@@ -123,10 +123,10 @@ export class HelpdeskService {
     const candidates = handlers.filter((h) => active.has(h.membership_id));
     if (!candidates.length) return null;
     const open = new Map(
-      (await tx.collection('helpdesk_cases').aggregate<{ _id: string; n: number }>([
+      (await tx.collection('helpdesk_cases').aggregate<{ id: string; n: number }>([
         { $match: { assignee_membership_id: { $in: candidates.map((h) => h.membership_id) }, status: { $nin: ['resolved', 'closed'] } } },
         { $group: { _id: '$assignee_membership_id', n: { $sum: 1 } } },
-      ])).map((x) => [x._id ?? (x as Doc).id, x.n]),
+      ])).map((x) => [x.id, x.n]),
     );
     // Fewest open cases first; ties keep the handlers' order.
     return [...candidates].sort((a, b) => (open.get(a.membership_id) ?? 0) - (open.get(b.membership_id) ?? 0))[0]!.membership_id as string;
