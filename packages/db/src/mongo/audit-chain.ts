@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { AnyBulkWriteOperation, ClientSession, Db, MongoClient } from 'mongodb';
 import { canonicalJson } from './canonical';
 
@@ -76,12 +76,38 @@ export function auditHash(prev_hash: string | null, payload: string): string {
 export async function appendAuditEvent(db: Db, session: ClientSession, input: AuditEventInput): Promise<AuditEventDoc> {
   if (!session.inTransaction()) throw new Error('appendAuditEvent must run inside a transaction');
   if (!AUDIT_ACTION.test(input.action)) throw new Error(`Invalid audit action "${input.action}"`);
-  const event: AuditEventDoc = { _id: randomUUID(), ...input, chain_seq: null, prev_hash: null, hash: null, created_at: new Date(), pending: true };
+  const event: AuditEventDoc = { _id: orderedUuid(), ...input, chain_seq: null, prev_hash: null, hash: null, created_at: new Date(), pending: true };
   await db.collection<AuditEventDoc>(AUDIT_EVENTS).insertOne(event, { session });
   return event;
 }
 
 const LINK_BATCH = 500;
+
+let lastMs = 0;
+let counter = 0;
+/**
+ * A UUIDv7: the first 48 bits are the time in milliseconds and the next 12 count up within a millisecond, so ids
+ * sort in the order this process recorded the events (several in one transaction share a millisecond).
+ */
+export function orderedUuid(now = Date.now()): string {
+  if (now <= lastMs) {
+    counter += 1;
+    if (counter > 0xfff) {
+      lastMs += 1;
+      counter = 0;
+    }
+  } else {
+    lastMs = now;
+    counter = 0;
+  }
+  const bytes = randomBytes(16);
+  bytes.writeUIntBE(lastMs, 0, 6);
+  bytes[6] = 0x70 | (counter >> 8);
+  bytes[7] = counter & 0xff;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const h = bytes.toString('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
 
 /**
  * Gives every pending event of one chain (a workspace, or the platform with `null`) its place: the next sequence
