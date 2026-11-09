@@ -3,9 +3,10 @@ import { DEFAULT_IN_STATUTORY, payrollEngine, type SalaryInput } from '@crew/con
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, ilike, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
-import { EMPLOYEE_SCOPE, employeeAttrs } from '../employees/employee-attrs';
+import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
+import { displayName, fieldById } from '../employees/employee-view';
 import { legalEntity, statutoryOn } from './payroll-common';
 
 interface EmpRow {
@@ -21,16 +22,26 @@ interface EmpRow {
 export const attrsOf = (e: EmpRow) =>
   employeeAttrs({ id: e.id, membershipId: e.membership_id, legalEntityId: e.legal_entity_id, departmentId: e.department_id, locationId: e.location_id });
 
-export async function payrollEmployee(tx: Tx, id: string) {
-  const e = await one<EmpRow>(
-    tx,
-    `select id, membership_id, current_legal_entity_id as legal_entity_id, current_department_id as department_id, current_location_id as location_id,
-            trim(coalesce(preferred_name, first_name) || ' ' || last_name) as name, employee_code as code
-       from employees where id = $1`,
-    [id],
-  );
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function empRow(e: Record<string, any>): EmpRow {
+  return {
+    id: e.id, membership_id: e.membership_id ?? null, legal_entity_id: e.current_legal_entity_id ?? null, department_id: e.current_department_id ?? null,
+    location_id: e.current_location_id ?? null, name: displayName(e as never), code: e.employee_code,
+  };
+}
+
+export async function payrollEmployee(tx: TenantTx, id: string) {
+  const e = await tx.collection('employees').findOne({ id });
   if (!e) throw Errors.notFound('Employee');
-  return e;
+  return empRow(e);
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** The salary in effect today, else the earliest upcoming one. */
+function currentSalary<T extends { effective_from: string }>(rows: T[], on: string): T | undefined {
+  const past = rows.filter((x) => x.effective_from <= on).sort((a, b) => b.effective_from.localeCompare(a.effective_from));
+  return past[0] ?? rows.filter((x) => x.effective_from > on).sort((a, b) => a.effective_from.localeCompare(b.effective_from))[0];
 }
 
 /** Effective-dated employee salaries. Each revision stores its monthly breakdown so later structure edits never change history. */
@@ -44,26 +55,34 @@ export class SalariesService {
 
   async list(q: { legalEntityId?: string; q?: string }) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [q.legalEntityId ?? null, q.q ? `%${q.q}%` : null];
-      const pred = await this.authz.predicate('payroll:read', EMPLOYEE_SCOPE, params, tx);
-      return many(
-        tx,
-        `select e.id, e.employee_code as code, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name, e.status,
-                le.name as "legalEntityName", d.name as "departmentName",
-                s.id as "salaryId", to_char(s.effective_from, 'YYYY-MM-DD') as "effectiveFrom", s.annual_ctc::text as "annualCtc", s.currency, st.name as "structureName",
-                (select count(*)::int from employee_salaries x where x.employee_id = e.id and x.effective_from > current_date) as "upcomingRevisions"
-           from employees e
-           left join legal_entities le on le.id = e.current_legal_entity_id
-           left join departments d on d.id = e.current_department_id
-           left join lateral (select * from employee_salaries x where x.employee_id = e.id
-                               order by (x.effective_from <= current_date) desc, case when x.effective_from <= current_date then x.effective_from end desc, x.effective_from
-                               limit 1) s on true
-           left join salary_structures st on st.id = s.structure_id
-          where e.status <> 'exited' and ${pred} and ($1::uuid is null or e.current_legal_entity_id = $1)
-            and ($2::text is null or e.first_name ilike $2 or e.last_name ilike $2 or e.employee_code ilike $2)
-          order by name limit 500`,
-        params,
-      );
+      const scope = await this.authz.filter('payroll:read', EMPLOYEE_FIELDS, tx);
+      const like = q.q ? ilike(q.q) : null;
+      const emps = await tx.collection('employees').find({
+        $and: [scope, { status: { $ne: 'exited' } }, q.legalEntityId ? { current_legal_entity_id: q.legalEntityId } : {}, like ? { $or: [{ first_name: like }, { last_name: like }, { employee_code: like }] } : {}],
+      });
+      const ids = emps.map((e) => e.id as string);
+      const salaries = await tx.collection<{ id: string; employee_id: string; effective_from: string; annual_ctc: string; currency: string; structure_id: string }>('employee_salaries').find({ employee_id: { $in: ids } });
+      const byEmp = new Map<string, typeof salaries>();
+      for (const x of salaries) byEmp.set(x.employee_id, [...(byEmp.get(x.employee_id) ?? []), x]);
+      const [entities, departments, structures] = await Promise.all([
+        fieldById(tx, 'legal_entities', emps.map((e) => e.current_legal_entity_id)),
+        fieldById(tx, 'departments', emps.map((e) => e.current_department_id)),
+        fieldById(tx, 'salary_structures', salaries.map((x) => x.structure_id)),
+      ]);
+      const on = today();
+      return emps
+        .map((e) => {
+          const mine = byEmp.get(e.id) ?? [];
+          const s = currentSalary(mine, on);
+          return {
+            id: e.id, code: e.employee_code, name: displayName(e as never), status: e.status,
+            legalEntityName: entities.get(e.current_legal_entity_id) ?? null, departmentName: departments.get(e.current_department_id) ?? null,
+            salaryId: s?.id ?? null, effectiveFrom: s?.effective_from ?? null, annualCtc: s?.annual_ctc ?? null, currency: s?.currency ?? null,
+            structureName: s ? (structures.get(s.structure_id) ?? null) : null, upcomingRevisions: mine.filter((x) => x.effective_from > on).length,
+          };
+        })
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+        .slice(0, 500);
     });
   }
 
@@ -71,34 +90,39 @@ export class SalariesService {
     return this.db.tenant(async (tx) => {
       const e = await payrollEmployee(tx, employeeId);
       await this.authz.require('payroll:read', attrsOf(e), tx);
-      const revisions = await many(
-        tx,
-        `select s.id, to_char(s.effective_from, 'YYYY-MM-DD') as "effectiveFrom", s.annual_ctc::text as "annualCtc", s.currency, s.structure_id as "structureId",
-                st.name as "structureName", s.pf_enabled as "pfEnabled", s.esi_enabled as "esiEnabled", s.pt_enabled as "ptEnabled", s.tds_enabled as "tdsEnabled",
-                s.employer_pf_monthly::text as "employerPfMonthly", s.note, s.created_at as "createdAt", u.full_name as "createdBy",
-                exists (select 1 from payroll_items i where i.salary_id = s.id) as "usedByPayroll",
-                coalesce((select json_agg(json_build_object('code', c.code, 'name', c.name, 'kind', c.kind, 'monthly', l.monthly::text) order by l.position)
-                            from employee_salary_lines l join pay_components c on c.id = l.component_id where l.salary_id = s.id), '[]') as lines
-           from employee_salaries s join salary_structures st on st.id = s.structure_id left join users u on u.id = s.created_by
-          where s.employee_id = $1 order by s.effective_from desc`,
-        [employeeId],
-      );
+      const salaries = await tx.collection('employee_salaries').find({ employee_id: employeeId }, { sort: { effective_from: -1 } });
+      const ids = salaries.map((x) => x.id as string);
+      const lines = await tx.collection('employee_salary_lines').find({ salary_id: { $in: ids } }, { sort: { position: 1 } });
+      const comps = new Map((await tx.collection('pay_components').find({ id: { $in: lines.map((l) => l.component_id) } })).map((c) => [c.id as string, c]));
+      const structures = await fieldById(tx, 'salary_structures', salaries.map((x) => x.structure_id));
+      const users = new Map((await (await usersTable(tx)).find({ id: { $in: salaries.map((x) => x.created_by).filter(Boolean) } }, { projection: { full_name: 1 } })).map((u) => [u.id as string, u.full_name as string]));
+      const used = new Set(await tx.collection('payroll_items').distinct<string>('salary_id', { salary_id: { $in: ids } }));
+      const revisions = salaries.map((x) => ({
+        id: x.id, effectiveFrom: x.effective_from, annualCtc: x.annual_ctc, currency: x.currency, structureId: x.structure_id,
+        structureName: structures.get(x.structure_id) ?? null, pfEnabled: x.pf_enabled, esiEnabled: x.esi_enabled, ptEnabled: x.pt_enabled, tdsEnabled: x.tds_enabled,
+        employerPfMonthly: x.employer_pf_monthly, note: x.note ?? null, createdAt: x.created_at, createdBy: (x.created_by && users.get(x.created_by)) ?? null,
+        usedByPayroll: used.has(x.id),
+        lines: lines.filter((l) => l.salary_id === x.id).map((l) => {
+          const c = comps.get(l.component_id);
+          return { code: c?.code, name: c?.name, kind: c?.kind, monthly: l.monthly };
+        }),
+      }));
       return { employee: { id: e.id, name: e.name, code: e.code }, revisions };
     });
   }
 
   /** Splits a CTC with a structure, using the statutory settings that will apply (or India starting values when none are saved yet). */
-  private async build(tx: Tx, e: EmpRow, input: Pick<SalaryInput, 'annualCtc' | 'structureId' | 'pfEnabled' | 'effectiveFrom'>) {
+  private async build(tx: TenantTx, e: EmpRow, input: Pick<SalaryInput, 'annualCtc' | 'structureId' | 'pfEnabled' | 'effectiveFrom'>) {
     if (!e.legal_entity_id) throw Errors.badRequest('no_legal_entity', 'Place the employee in a legal entity first');
     const le = await legalEntity(tx, e.legal_entity_id);
-    const st = await one<{ archived_at: string | null }>(tx, 'select archived_at from salary_structures where id = $1', [input.structureId]);
+    const st = await tx.collection('salary_structures').findOne({ id: input.structureId });
     if (!st || st.archived_at) throw Errors.badRequest('unknown_structure', 'Choose an active salary structure');
-    const lines = await many<{ component_id: string; code: string; name: string; kind: 'earning' | 'deduction'; calc: payrollEngine.CalcMethod; value: string; is_basic: boolean }>(
-      tx,
-      `select c.id as component_id, c.code, c.name, c.kind, l.calc, l.value::text, c.is_basic from salary_structure_lines l join pay_components c on c.id = l.component_id
-        where l.structure_id = $1 order by l.position`,
-      [input.structureId],
-    );
+    const structureLines = await tx.collection('salary_structure_lines').find({ structure_id: input.structureId }, { sort: { position: 1 } });
+    const comps = new Map((await tx.collection('pay_components').find({ id: { $in: structureLines.map((l) => l.component_id) } })).map((c) => [c.id as string, c]));
+    const lines = structureLines.map((l) => {
+      const c = comps.get(l.component_id)!;
+      return { component_id: c.id as string, code: c.code as string, name: c.name as string, kind: c.kind as 'earning' | 'deduction', calc: l.calc as payrollEngine.CalcMethod, value: l.value as string, is_basic: c.is_basic as boolean };
+    });
     const statutory = await statutoryOn(tx, e.legal_entity_id, input.effectiveFrom);
     const warnings: string[] = [];
     if (!statutory) warnings.push('No statutory settings are saved for this legal entity yet, so employer PF uses the India starting values. Payroll cannot run until settings are saved.');
@@ -128,27 +152,19 @@ export class SalariesService {
     return this.db.tenant(async (tx) => {
       const e = await payrollEmployee(tx, employeeId);
       await this.authz.require('payroll:run', attrsOf(e), tx);
-      const paid = await one(
-        tx,
-        `select 1 from payroll_items i join payroll_runs r on r.id = i.run_id where i.employee_id = $1 and r.status in ('pending_approval', 'finalised') and r.period_end >= $2`,
-        [employeeId, input.effectiveFrom],
-      );
+      const items = await tx.collection('payroll_items').distinct<string>('run_id', { employee_id: employeeId });
+      const paid = await tx.collection('payroll_runs').exists({ id: { $in: items }, status: { $in: ['pending_approval', 'finalised'] }, period_end: { $gte: input.effectiveFrom } });
       if (paid) throw Errors.conflict('period_paid', 'Payroll from this date is already finalised or waiting for approval. Use a later effective date, or an adjustment for arrears.');
       const b = await this.build(tx, e, input);
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into employee_salaries (tenant_id, employee_id, effective_from, annual_ctc, currency, structure_id, pf_enabled, esi_enabled, pt_enabled, tds_enabled, employer_pf_monthly, note, created_by)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`,
-        [employeeId, input.effectiveFrom, input.annualCtc, b.currency, input.structureId, input.pfEnabled, input.esiEnabled, input.ptEnabled, input.tdsEnabled, b.employerPfMonthly, input.note ?? null, actor.userId],
-      ).catch((err: { code?: string }) => {
+      const row = await tx.collection('employee_salaries').insert({
+        employee_id: employeeId, effective_from: input.effectiveFrom, annual_ctc: input.annualCtc, currency: b.currency, structure_id: input.structureId,
+        pf_enabled: input.pfEnabled, esi_enabled: input.esiEnabled, pt_enabled: input.ptEnabled, tds_enabled: input.tdsEnabled, employer_pf_monthly: b.employerPfMonthly,
+        note: input.note ?? null, created_by: actor.userId,
+      }).catch((err: { code?: string }) => {
         if (err.code === '23505') throw Errors.conflict('revision_exists', 'This employee already has a salary from that date. Remove it first if it was a mistake.');
         throw err;
-      }))!;
-      await tx.query(
-        `insert into employee_salary_lines (tenant_id, salary_id, component_id, position, monthly)
-         select app_tenant_id(), $1, x.component_id, x.pos, x.monthly from unnest($2::uuid[], $3::numeric[]) with ordinality as x(component_id, monthly, pos)`,
-        [row.id, b.componentIds, b.components.map((c) => c.monthly)],
-      );
+      });
+      await tx.collection('employee_salary_lines').insertMany(b.componentIds.map((componentId, i) => ({ salary_id: row.id, component_id: componentId, position: i + 1, monthly: b.components[i]!.monthly })));
       // Amounts stay out of the audit trail (it is readable by auditors who should not see pay); the revision itself is recorded.
       await this.audit.record(tx, {
         action: 'employee_salary.assigned', resourceType: 'employee', resourceId: employeeId,
@@ -160,14 +176,14 @@ export class SalariesService {
 
   remove(salaryId: string) {
     return this.db.tenant(async (tx) => {
-      const s = await one<{ employee_id: string }>(tx, 'select employee_id from employee_salaries where id = $1', [salaryId]);
+      const s = await tx.collection('employee_salaries').findOne({ id: salaryId });
       if (!s) throw Errors.notFound('Salary');
       const e = await payrollEmployee(tx, s.employee_id);
       await this.authz.require('payroll:run', attrsOf(e), tx);
-      if (await one(tx, 'select 1 from payroll_items where salary_id = $1', [salaryId])) {
+      if (await tx.collection('payroll_items').exists({ salary_id: salaryId })) {
         throw Errors.conflict('salary_used', 'Payroll has used this salary, so it is kept as history. Add a new revision instead.');
       }
-      await tx.query('delete from employee_salaries where id = $1', [salaryId]);
+      await tx.collection('employee_salaries').deleteOne({ id: salaryId });
       await this.audit.record(tx, { action: 'employee_salary.removed', resourceType: 'employee', resourceId: s.employee_id, metadata: { salaryId } });
     });
   }

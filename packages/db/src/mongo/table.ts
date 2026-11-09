@@ -19,6 +19,7 @@ import {
   tableSpec,
   toRow,
 } from './engine';
+import { ROW_GUARDS, type GuardOp, type RowGuard } from './row-guards';
 import type { TableSpec } from './schema';
 import { TABLES } from './schema.generated';
 
@@ -94,6 +95,8 @@ export interface TableOptions {
   within?: Document;
   /** Apply the table's workspace column limits even without a scope (users seen from a workspace). */
   workspaceColumns?: boolean;
+  /** Flags passed to row guards (see row-guards.ts). */
+  flags?: string[];
 }
 
 export type Row = Document;
@@ -121,6 +124,15 @@ export class Table<T extends Row = Row> {
     this.restriction = restrictionFor(name, this.spec, opts.scope);
     this.ops = opts.readOnly ? new Set<Op>(['select']) : allowedOps(this.spec, opts.scope);
     this.columns = (opts.scope || opts.workspaceColumns) && this.spec.tenantColumns ? this.spec.tenantColumns : null;
+    this.guards = (this.spec.triggers ?? []).map((t) => ROW_GUARDS[t]).filter((g): g is RowGuard => !!g);
+  }
+
+  private readonly guards: RowGuard[];
+
+  private async runGuards(op: GuardOp, pairs: Array<[Document | null, Document | null]>) {
+    if (!this.guards.length) return;
+    const ctx = { db: this.db, session: this.session, table: this.name, flags: new Set(this.opts.flags ?? []) };
+    for (const [before, after] of pairs) for (const g of this.guards) await g(ctx, op, before, after);
   }
 
   private readonly columns: { select: string[]; update: string[] } | null;
@@ -202,6 +214,7 @@ export class Table<T extends Row = Row> {
       }
       docs.push(doc);
     }
+    await this.runGuards('insert', docs.map((d) => [null, d]));
     for (const doc of docs) await this.checkForeignKeys(doc);
     await this.addGuards(docs);
     await this.wrap(() => this.coll.insertMany(docs, { session: this.session, ordered: true }));
@@ -214,7 +227,7 @@ export class Table<T extends Row = Row> {
     this.checkUpdateScope(update);
     const prepared = prepareUpdate(this.name, this.spec, update);
     const f = this.filter(filter);
-    const needRows = this.needsRowsOnUpdate(prepared);
+    const needRows = this.guards.length > 0 || this.needsRowsOnUpdate(prepared);
     if (!needRows) {
       const r = await this.wrap(() =>
         options.limit === 1 ? this.coll.updateOne(f, prepared, { session: this.session }) : this.coll.updateMany(f, prepared, { session: this.session }),
@@ -226,6 +239,14 @@ export class Table<T extends Row = Row> {
     const ids = before.map((d) => d._id);
     await this.wrap(() => this.coll.updateMany({ _id: { $in: ids } }, prepared, { session: this.session }));
     const after = await this.coll.find({ _id: { $in: ids } }, { session: this.session }).toArray();
+    const afterById = new Map(after.map((d) => [String(d._id), d]));
+    try {
+      await this.runGuards('update', before.map((x) => [x, afterById.get(String(x._id)) ?? null]));
+    } catch (err) {
+      // Put the rows back, so a caller that catches the error does not keep a change the guard refused.
+      for (const doc of before) await this.coll.replaceOne({ _id: doc._id }, doc, { session: this.session });
+      throw err;
+    }
     const changed = changedColumns(prepared);
     for (const doc of after) await this.checkForeignKeys(doc, changed);
     await this.removeGuards(before);
@@ -260,6 +281,7 @@ export class Table<T extends Row = Row> {
     this.need('delete');
     const docs = await this.coll.find(this.filter(filter), { session: this.session, ...(options.limit === 1 ? { limit: 1 } : {}) }).toArray();
     if (!docs.length) return 0;
+    await this.runGuards('delete', docs.map((d) => [d, null]));
     await removeRows(this.db, this.session, this.name, this.spec, docs, this.tables);
     return docs.length;
   }

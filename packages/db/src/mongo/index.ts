@@ -5,6 +5,7 @@ export * from './audit-chain';
 export * from './schema';
 export * from './engine';
 export * from './table';
+export * from './row-guards';
 export { TABLES } from './schema.generated';
 export { MONGO_MIGRATIONS } from './migrations';
 export * from './provision';

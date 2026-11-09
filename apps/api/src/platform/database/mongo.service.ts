@@ -188,6 +188,11 @@ export class MongoService implements OnModuleDestroy {
     }
   }
 
+  /** A cluster-wide lock for work only one API server should do at a time; null when another server holds it. */
+  async tryLease(key: string, ttlMs: number): Promise<(() => Promise<void>) | null> {
+    return mongo.tryLease(await this.database(), key, ttlMs);
+  }
+
   tenant<T>(fn: (tx: TenantTx) => Promise<T>, scope?: { tenantId: string; userId?: string }): Promise<T> {
     const actor = requestContext.get()?.actor;
     const tenantId = scope?.tenantId ?? (actor?.kind === 'user' ? actor.tenantId : undefined);
@@ -278,4 +283,9 @@ export async function membershipUserNames(tx: TenantTx | PlatformTx, ids: unknow
   const ms = await tx.collection('memberships').find({ id: { $in: wanted } }, { projection: { user_id: 1 } });
   const users = new Map((await (await usersTable(tx)).find({ id: { $in: ms.map((m) => m.user_id) } }, { projection: { full_name: 1 } })).map((u) => [u.id as string, (u.full_name as string | null) ?? null]));
   return new Map(ms.map((m) => [m.id as string, users.get(m.user_id) ?? null]));
+}
+
+/** A case-insensitive "contains" match for user-typed search text (the SQL `ilike '%q%'`), with the text escaped. */
+export function ilike(q: string): { $regex: string; $options: 'i' } {
+  return { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
 }

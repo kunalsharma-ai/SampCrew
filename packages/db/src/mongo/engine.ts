@@ -19,11 +19,11 @@ export function tableSpec(name: string, tables: Record<string, TableSpec> = TABL
 
 /**
  * A data-rule failure, with the PostgreSQL error code the services already handle (e.g. `err.code === '23505'`):
- * 23505 unique, 23503 foreign key, 23502 not null, 23514 check, 22P02 invalid value.
+ * 23505 unique, 23503 foreign key, 23502 not null, 23514 check, 22P02 invalid value, P0001 a business rule (row guard).
  */
 export class ConstraintError extends Error {
   constructor(
-    readonly code: '23505' | '23503' | '23502' | '23514' | '22P02',
+    readonly code: '23505' | '23503' | '23502' | '23514' | '22P02' | 'P0001',
     message: string,
     readonly constraint?: string,
     readonly table?: string,

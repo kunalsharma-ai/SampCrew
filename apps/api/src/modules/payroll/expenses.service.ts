@@ -6,13 +6,14 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { can } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import type { UploadedFile } from '../documents/documents.service';
-import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
+import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
+import { displayName, employeeNames, fieldById } from '../employees/employee-view';
 import { attrsOf, payrollEmployee } from './salaries.service';
 import { safeFileName } from '../../platform/http/content-disposition';
 
@@ -26,12 +27,25 @@ interface ClaimRow {
   receipt_key: string | null;
 }
 
-const CLAIM_COLS = `c.id, c.employee_id as "employeeId", trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "employeeName", e.employee_code as "employeeCode",
-  c.category_id as "categoryId", cat.name as "categoryName", to_char(c.spent_on, 'YYYY-MM-DD') as "spentOn", c.amount::text, c.currency, c.description,
-  c.receipt_name as "receiptName", c.receipt_type as "receiptType", c.receipt_size as "receiptSize", c.status, c.approval_request_id as "approvalRequestId",
-  c.payroll_run_id as "payrollRunId", to_char(r.period_start, 'YYYY-MM') as "paidInMonth", c.decided_at as "decidedAt", c.paid_at as "paidAt", c.created_at as "createdAt"`;
-const CLAIM_FROM = `expense_claims c join employees e on e.id = c.employee_id join expense_categories cat on cat.id = c.category_id
-  left join payroll_runs r on r.id = c.payroll_run_id and c.status = 'paid'`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
+
+/** Claims as the API shows them: with the employee, the category and the month they were paid in. */
+async function claimViews(tx: TenantTx, claims: Doc[]) {
+  const [emps, cats] = await Promise.all([employeeNames(tx, claims.map((c) => c.employee_id)), fieldById(tx, 'expense_categories', claims.map((c) => c.category_id))]);
+  const runs = await fieldById(tx, 'payroll_runs', claims.filter((c) => c.status === 'paid').map((c) => c.payroll_run_id), 'period_start');
+  return claims.map((c) => {
+    const e = emps.get(c.employee_id);
+    const paidIn = c.status === 'paid' && c.payroll_run_id ? runs.get(c.payroll_run_id) : undefined;
+    return {
+      id: c.id, employeeId: c.employee_id, employeeName: e ? displayName(e.doc as never) : null, employeeCode: e?.doc.employee_code ?? null,
+      categoryId: c.category_id, categoryName: cats.get(c.category_id) ?? null, spentOn: c.spent_on, amount: c.amount, currency: c.currency, description: c.description,
+      receiptName: c.receipt_name ?? null, receiptType: c.receipt_type ?? null, receiptSize: c.receipt_size ?? null, status: c.status,
+      approvalRequestId: c.approval_request_id ?? null, payrollRunId: c.payroll_run_id ?? null, paidInMonth: paidIn ? paidIn.slice(0, 7) : null,
+      decidedAt: c.decided_at ?? null, paidAt: c.paid_at ?? null, createdAt: c.created_at,
+    };
+  });
+}
 
 /** Expense claims: submitted with a receipt, approved through the approvals engine, paid as a reimbursement in the next payroll run. */
 @Injectable()
@@ -59,16 +73,16 @@ export class ExpensesService implements OnModuleInit {
     });
   }
 
-  private async load(tx: Tx, id: string, lock = false) {
-    const c = await one<ClaimRow>(tx, `select id, employee_id, status, amount::text, currency, approval_request_id, receipt_key from expense_claims where id = $1${lock ? ' for update' : ''}`, [id]);
+  private async load(tx: TenantTx, id: string, lock = false): Promise<ClaimRow> {
+    const claims = tx.collection('expense_claims');
+    if (lock && !(await claims.lock({ id }))) throw Errors.notFound('Expense claim');
+    const c = await claims.findOne({ id });
     if (!c) throw Errors.notFound('Expense claim');
-    return c;
+    return { id: c.id, employee_id: c.employee_id, status: c.status, amount: c.amount, currency: c.currency, approval_request_id: c.approval_request_id ?? null, receipt_key: c.receipt_key ?? null };
   }
 
-  private async decided(tx: Tx, id: string, status: 'approved' | 'rejected') {
-    const c = await one<{ employee_id: string; amount: string; currency: string }>(
-      tx, `update expense_claims set status = $2, decided_at = now() where id = $1 and status = 'pending' returning employee_id, amount::text, currency`, [id, status],
-    );
+  private async decided(tx: TenantTx, id: string, status: 'approved' | 'rejected') {
+    const c = await tx.collection('expense_claims').updateAndGet({ id, status: 'pending' }, { $set: { status, decided_at: new Date() } });
     if (!c) return;
     await this.audit.record(tx, { action: `expense_claim.${status}`, resourceType: 'expense_claim', resourceId: id });
     const e = await payrollEmployee(tx, c.employee_id);
@@ -80,7 +94,7 @@ export class ExpensesService implements OnModuleInit {
   }
 
   /** Can the caller see this claim: their own, or one they may approve or pay. */
-  private async visible(tx: Tx, c: ClaimRow) {
+  private async visible(tx: TenantTx, c: ClaimRow) {
     const e = await payrollEmployee(tx, c.employee_id);
     const s = await this.authz.subject(tx);
     if (s.employeeId === e.id) return e;
@@ -100,32 +114,33 @@ export class ExpensesService implements OnModuleInit {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
+      const claims = tx.collection('expense_claims');
       if (q.view === 'mine') {
         if (!s.employeeId) return [];
-        return many(tx, `select ${CLAIM_COLS} from ${CLAIM_FROM} where c.employee_id = $1 and ($2::text is null or c.status = $2) order by c.created_at desc limit 200`, [s.employeeId, q.status ?? null]);
+        return claimViews(tx, await claims.find({ employee_id: s.employeeId, ...(q.status ? { status: q.status } : {}) }, { sort: { created_at: -1 }, limit: 200 }));
       }
       if (q.view === 'approvals') {
-        return many(
-          tx,
-          `select ${CLAIM_COLS} from ${CLAIM_FROM}
-             join approval_steps st on st.request_id = c.approval_request_id and st.status = 'pending'
-            where c.status = 'pending' and (st.approver_membership_id = $1 or (st.approver_membership_id is null and exists (
-                    select 1 from role_assignments ra join roles ro on ro.id = ra.role_id where ra.membership_id = $1 and ro.key = st.approver_role_key)))
-              and e.membership_id is distinct from $1
-            order by c.created_at limit 200`,
-          [actor.membershipId],
-        );
+        const roleIds = await tx.collection('role_assignments').distinct<string>('role_id', { membership_id: actor.membershipId });
+        const roleKeys = await tx.collection('roles').distinct<string>('key', { id: { $in: roleIds } });
+        const steps = await tx.collection('approval_steps').find({
+          status: 'pending', $or: [{ approver_membership_id: actor.membershipId }, { approver_membership_id: null, approver_role_key: { $in: roleKeys } }],
+        }, { projection: { request_id: 1 } });
+        const mine = await tx.collection('employees').distinct<string>('id', { membership_id: actor.membershipId });
+        return claimViews(tx, await claims.find(
+          { status: 'pending', approval_request_id: { $in: steps.map((st) => st.request_id) }, employee_id: { $nin: mine } },
+          { sort: { created_at: 1 }, limit: 200 },
+        ));
       }
-      const params: unknown[] = [q.status ?? null];
-      const pred = await this.authz.predicate('expenses:approve', EMPLOYEE_SCOPE, params, tx);
-      return many(tx, `select ${CLAIM_COLS} from ${CLAIM_FROM} where ${pred} and ($1::text is null or c.status = $1) order by c.created_at desc limit 500`, params);
+      const scope = await this.authz.filter('expenses:approve', EMPLOYEE_FIELDS, tx);
+      const visible = await tx.collection('employees').distinct<string>('id', scope);
+      return claimViews(tx, await claims.find({ employee_id: { $in: visible }, ...(q.status ? { status: q.status } : {}) }, { sort: { created_at: -1 }, limit: 500 }));
     });
   }
 
   async get(id: string) {
     return this.db.tenant(async (tx) => {
       await this.visible(tx, await this.load(tx, id));
-      return one(tx, `select ${CLAIM_COLS} from ${CLAIM_FROM} where c.id = $1`, [id]);
+      return (await claimViews(tx, [(await tx.collection('expense_claims').findOne({ id }))!]))[0];
     });
   }
 
@@ -146,9 +161,7 @@ export class ExpensesService implements OnModuleInit {
         if (!s.employeeId) throw Errors.badRequest('no_employee_record', 'Your login is not linked to an employee record yet. Ask HR to link it.');
         const e = await payrollEmployee(tx, s.employeeId);
         await this.authz.require('expenses:submit', attrsOf(e), tx);
-        const cat = await one<{ name: string; receipt_required: boolean; max_per_claim: string | null }>(
-          tx, 'select name, receipt_required, max_per_claim::text from expense_categories where id = $1 and archived_at is null', [input.categoryId],
-        );
+        const cat = await tx.collection<{ name: string; receipt_required: boolean; max_per_claim: string | null }>('expense_categories').findOne({ id: input.categoryId, archived_at: null });
         if (!cat) throw Errors.badRequest('unknown_category', 'Choose an expense category');
         if (cat.receipt_required && !file) throw Errors.badRequest('receipt_required', `${cat.name} claims need a receipt`);
         if (cat.max_per_claim && money.toMinor(input.amount) > money.toMinor(cat.max_per_claim)) {
@@ -156,25 +169,20 @@ export class ExpensesService implements OnModuleInit {
         }
         const today = new Date().toISOString().slice(0, 10);
         if (input.spentOn > today) throw Errors.badRequest('future_date', 'The expense date cannot be in the future');
-        const le = e.legal_entity_id ? await one<{ currency: string }>(tx, 'select currency from legal_entities where id = $1', [e.legal_entity_id]) : undefined;
-        const currency = le?.currency ?? (await one<{ currency: string }>(tx, 'select currency from tenants where id = app_tenant_id()'))!.currency;
+        const le = e.legal_entity_id ? await tx.collection('legal_entities').findOne({ id: e.legal_entity_id }) : undefined;
+        const currency: string = le?.currency ?? (await tx.collection('tenants').findOne({ id: tx.tenantId }))!.currency;
         if (file && key) {
           await this.storage.put(key, file.buffer, { upload: true });
           stored = true;
         }
-        const row = (await one<{ id: string }>(
-          tx,
-          `insert into expense_claims (tenant_id, employee_id, category_id, spent_on, amount, currency, description, receipt_key, receipt_name, receipt_type, receipt_size, receipt_sha256, submitted_by_membership_id)
-           values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`,
-          [
-            e.id, input.categoryId, input.spentOn, input.amount, currency, input.description, key,
-            file ? safeFileName(file.originalname, 'receipt') : null, file?.mimetype ?? null, file?.size ?? null,
-            file ? createHash('sha256').update(file.buffer).digest('hex') : null, actor.membershipId,
-          ],
-        ))!;
+        const row = await tx.collection('expense_claims').insert({
+          employee_id: e.id, category_id: input.categoryId, spent_on: input.spentOn, amount: input.amount, currency, description: input.description, receipt_key: key,
+          receipt_name: file ? safeFileName(file.originalname, 'receipt') : null, receipt_type: file?.mimetype ?? null, receipt_size: file?.size ?? null,
+          receipt_sha256: file ? createHash('sha256').update(file.buffer).digest('hex') : null, submitted_by_membership_id: actor.membershipId,
+        });
         const summary = `${e.name}: ${cat.name} expense of ${money.formatMoney(money.toMinor(input.amount), currency)} on ${input.spentOn}. ${input.description}`;
         const approvalId = await this.approvals.start(tx, { resourceType: 'expense_claim', resourceId: row.id, subjectEmployeeId: e.id, summary });
-        await tx.query('update expense_claims set approval_request_id = $2 where id = $1', [row.id, approvalId]);
+        await tx.collection('expense_claims').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
         await this.audit.record(tx, { action: 'expense_claim.submitted', resourceType: 'expense_claim', resourceId: row.id, changes: input, metadata: { receipt: Boolean(file) } });
         return { id: row.id, status: 'pending' };
       });
@@ -194,7 +202,7 @@ export class ExpensesService implements OnModuleInit {
       }
       if (c.status !== 'pending') throw Errors.conflict('invalid_state', `This claim is ${c.status}`);
       if (c.approval_request_id) await this.approvals.cancel(tx, c.approval_request_id);
-      await tx.query(`update expense_claims set status = 'cancelled' where id = $1`, [id]);
+      await tx.collection('expense_claims').updateOne({ id }, { $set: { status: 'cancelled' } });
       await this.audit.record(tx, { action: 'expense_claim.cancelled', resourceType: 'expense_claim', resourceId: id });
       return { status: 'cancelled' };
     });
@@ -213,7 +221,7 @@ export class ExpensesService implements OnModuleInit {
 
   async openReceipt(id: string, exp: number, sig: string) {
     if (!this.storage.verify(id, exp, sig, 'receipts')) throw Errors.notFound('File');
-    const f = await this.db.platform((tx) => one<{ receipt_key: string | null; receipt_name: string; receipt_type: string }>(tx, 'select receipt_key, receipt_name, receipt_type from expense_claims where id = $1', [id]));
+    const f = await this.db.platform((tx) => tx.collection<{ receipt_key: string | null; receipt_name: string; receipt_type: string }>('expense_claims').findOne({ id }));
     if (!f?.receipt_key) throw Errors.notFound('File');
     const { stream, size } = await this.storage.open(f.receipt_key);
     return { stream, size, fileName: f.receipt_name, contentType: f.receipt_type };

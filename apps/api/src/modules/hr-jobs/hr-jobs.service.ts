@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
-import { DatabaseService, many, one } from '../../platform/database/database.service';
+import { MongoService as DatabaseService } from '../../platform/database/mongo.service';
 import { AttendanceService } from '../attendance/attendance.service';
 import { DevicesService } from '../attendance/devices.service';
 import { EmployeesService } from '../employees/employees.service';
@@ -67,36 +67,34 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
   async runAll(asOf = new Date().toISOString().slice(0, 10)): Promise<HrJobResult[]> {
     if (this.running) return [];
     this.running = true;
-    // With several API servers, only one runs the daily jobs at a time: a session lock held for the whole run.
-    // Another server that finds it taken skips this tick instead of doing the same work twice.
-    const lock = await this.db.pool.connect();
-    let held = false;
+    // With several API servers, only one runs the daily jobs at a time: a lease held for the whole run (and dropped
+    // after an hour if that server dies). Another server that finds it taken skips this tick.
+    let release: (() => Promise<void>) | null = null;
     try {
-      held = Boolean((await lock.query<{ ok: boolean }>(`select pg_try_advisory_lock(hashtext('crew.hr_jobs')) as ok`)).rows[0]?.ok);
-      if (!held) {
+      release = await this.db.tryLease('hr_jobs', 60 * 60 * 1000);
+      if (!release) {
         this.logger.log('HR jobs are already running on another server; skipping this run');
         return [];
       }
-      const tenants = await this.db.platform((tx) => many<{ id: string }>(tx, `select id from tenants where status = 'active'`));
+      const tenants = await this.db.platform((tx) => tx.collection('tenants').find({ status: 'active' }, { projection: { id: 1 } }));
       const out: HrJobResult[] = [];
       for (const t of tenants) {
         try {
-          out.push(await this.runTenant(t.id, asOf));
+          out.push(await this.runTenant(t.id as string, asOf));
         } catch (err) {
           this.logger.error(`HR job failed for tenant ${t.id}: ${(err as Error).message}`);
         }
       }
       return out;
     } finally {
-      if (held) await lock.query(`select pg_advisory_unlock(hashtext('crew.hr_jobs'))`).catch(() => undefined);
-      lock.release();
+      if (release) await release().catch(() => undefined);
       this.running = false;
     }
   }
 
   async runTenant(tenantId: string, asOf: string): Promise<HrJobResult> {
     const hr = await this.db.tenant(async (tx) => {
-      const placementsUpdated = (await one<{ n: number }>(tx, 'select employees_apply_current($1::date) as n', [asOf]))!.n;
+      const placementsUpdated = await this.employees.applyCurrent(tx, asOf);
       const joinersStarted = await this.employees.startJoiners(tx, asOf);
       const exitsCompleted = await this.employees.finaliseExits(tx, asOf);
       const accrualsPosted = await this.leave.runAccruals(tx, asOf);
@@ -113,7 +111,7 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     // Attrition scores, once a day (the job runs hourly; a second run on the same day only refreshes them).
     const attritionScored = await this.db.tenant(async (tx) => {
       if (!(await loadEntitlements(tx)).features.has('workforce_analytics')) return 0;
-      if (await one(tx, 'select 1 from attrition_scores where computed_on = $1 limit 1', [asOf])) return 0;
+      if (await tx.collection('attrition_scores').exists({ computed_on: asOf })) return 0;
       return this.insights.computeAttrition(tx, asOf);
     }, { tenantId });
     // AI prompt and answer text past the workspace's retention period is removed; usage numbers stay.

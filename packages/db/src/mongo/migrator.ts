@@ -118,6 +118,25 @@ async function acquireLock(db: Db): Promise<() => Promise<void>> {
 }
 
 /**
+ * Takes the named lock if it is free or expired, for work that only one server should do at a time (the hourly HR
+ * jobs). Returns a release function, or null when another process holds it. A holder that dies loses it after `ttlMs`.
+ */
+export async function tryLease(db: Db, key: string, ttlMs: number): Promise<(() => Promise<void>) | null> {
+  const locks = db.collection<{ _id: string; holder: string; expiresAt: Date }>(LOCK_COLLECTION);
+  const holder = randomUUID();
+  const now = new Date();
+  try {
+    await locks.updateOne({ _id: key, expiresAt: { $lt: now } }, { $set: { holder, expiresAt: new Date(now.getTime() + ttlMs) } }, { upsert: true });
+  } catch (err) {
+    if (err instanceof MongoServerError && err.code === 11000) return null;
+    throw err;
+  }
+  return async () => {
+    await locks.deleteOne({ _id: key, holder });
+  };
+}
+
+/**
  * Makes every table in the schema exist as a collection with its validator and indexes. Runs after the migrations
  * on every deploy and is safe to repeat: a changed validator is replaced, and an index whose definition changed is
  * rebuilt. Data changes still go in numbered migrations.
