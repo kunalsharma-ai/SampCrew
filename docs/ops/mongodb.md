@@ -59,7 +59,13 @@ edited by hand, together with a new numbered migration in `packages/db/src/mongo
 - **Triggers** (append-only tables, frozen payroll and reviews, anonymous survey answers, and the rest) are row guards
   in `row-guards.ts`, run for every write.
 - **Audit trail**: `audit_events` is append-only and hash-chained per workspace (and once for the platform) with the
-  same payload and hash as before, so older chains still verify.
+  same payload and hash as before, so older chains still verify. An event is written in the transaction that makes
+  the change (so they commit or roll back together) and given its place in the chain by a short transaction right
+  after the commit, before the API answers. Linking inside every write transaction made a busy workspace's
+  transactions abort each other under snapshot isolation (the load test showed leave requests at 15 s). If the API
+  stops between a commit and the linking, the outbox loop links what is left within a minute.
+- **Counters** that every write in a workspace would touch (employee numbers) are taken in a short transaction of
+  their own, like a sequence; a write that then fails leaves a gap.
 
 ## Writing data-layer code
 

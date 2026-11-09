@@ -102,6 +102,15 @@ PostgreSQL is gone: there is no `pg` dependency, no SQL migration and no `DATABA
   wait for the first; MongoDB aborts one and runs it again. The test now checks that both finish and exactly one
   correct day is stored.
 
+## Throughput under load
+
+The workflow load test (`e2e/load-workflows.cjs`: 100 hires, salaries, a payroll run, then punches, leave and
+helpdesk from 12 users at once) first failed on MongoDB with no errors but slow writes: leave requests at a p95 of
+15 s and hires at 3.3 s. Two documents every write in a workspace touched, the audit chain head and the employee
+number series, made concurrent transactions abort and run again. Audit events are now linked into the chain right
+after the commit, and employee numbers are reserved in their own short transaction. The same test now passes:
+leave 0.44 s, hires 0.81 s, every other step under 0.7 s at p95, no errors.
+
 ## Not done yet
 
 - A custom MongoDB role that lets the API only insert into `audit_events`. Today the data layer refuses any change,

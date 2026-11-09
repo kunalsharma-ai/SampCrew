@@ -1,6 +1,6 @@
 import { DEFAULT_IN_STATUTORY, leaveMath, payrollEngine } from '@crew/contracts';
 import type { ClientSession, Db, MongoClient } from 'mongodb';
-import { appendAuditEvent, provisionTenantMongo, Table, type Row } from '../src/mongo';
+import { appendAuditEvent, linkAuditChain, provisionTenantMongo, Table, type Row } from '../src/mongo';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -47,15 +47,17 @@ type Workspace = ReturnType<typeof workspace>;
 export async function seedDemoTenant(client: MongoClient, db: Db, passwordHash: string): Promise<boolean> {
   if (await db.collection('tenants').findOne({ slug: 'demo-northwind' }, { projection: { _id: 1 } })) return false;
   const session = client.startSession();
+  let tenantId = '';
   try {
-    await session.withTransaction(() => seed(db, session, passwordHash), { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+    await session.withTransaction(async () => (tenantId = await seed(db, session, passwordHash)), { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
   } finally {
     await session.endSession();
   }
+  await linkAuditChain(client, db, tenantId);
   return true;
 }
 
-async function seed(db: Db, session: ClientSession, passwordHash: string) {
+async function seed(db: Db, session: ClientSession, passwordHash: string): Promise<string> {
   const unscoped = { collection: <T extends Row = Row>(name: string) => new Table<T>(db, name, session, { scope: null }) };
   const t = await provisionTenantMongo(unscoped, {
     name: 'Northwind Manufacturing (Demo)',
@@ -153,6 +155,7 @@ async function seed(db: Db, session: ClientSession, passwordHash: string) {
     tenant_id: tid, actor_type: 'system', actor_id: null, actor_label: 'demo seed', action: 'tenant.created', resource_type: 'tenant', resource_id: tid,
     changes: {}, metadata: { demo: true }, ip: null, user_agent: null, request_id: null,
   });
+  return tid;
 }
 
 /** Skills for the Workforce Universe skills network, by job title, and one saved headcount scenario. */

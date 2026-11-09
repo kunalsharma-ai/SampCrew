@@ -42,6 +42,8 @@ const TRANSACTION: TransactionOptions = {
 /** Work queued to run inside the transaction just before it commits (the audit trail), in the order it was asked. */
 abstract class BaseTx {
   private readonly jobs: Array<() => Promise<unknown>> = [];
+  /** @internal Chains this transaction wrote events to (tenant id, or null for the platform), linked after commit. */
+  readonly auditedChains = new Set<string | null>();
 
   constructor(
     readonly session: ClientSession,
@@ -54,10 +56,14 @@ abstract class BaseTx {
     this.jobs.push(job);
   }
 
-  /** Appends to the workspace's (or the platform's) audit chain as the transaction's last write. */
+  /**
+   * Records an audit event with this transaction's changes; it takes its place in the workspace's (or the platform's)
+   * hash chain as soon as the transaction commits (see linkAuditChain).
+   */
   audit(input: mongo.AuditEventInput): void {
     // Checked now, so a bad action fails where it is written rather than at commit.
     if (!mongo.AUDIT_ACTION.test(input.action)) throw new Error(`Invalid audit action "${input.action}"`);
+    this.auditedChains.add(input.tenant_id ?? null);
     this.defer(() => mongo.appendAuditEvent(this.db, this.session, input));
   }
 
@@ -220,6 +226,7 @@ export class MongoService implements OnModuleDestroy {
           const result = await fn(tx);
           await tx.flush();
           await commitWithRetry(session);
+          await this.linkAudit(client, db, tx.auditedChains);
           return result;
         } catch (err) {
           if (session.inTransaction()) await session.abortTransaction().catch(() => undefined);
@@ -233,6 +240,23 @@ export class MongoService implements OnModuleDestroy {
     } finally {
       await session.endSession();
     }
+  }
+
+  /**
+   * Gives the events a committed transaction recorded their place in the audit chain, before the caller sees the
+   * result. The change is already committed, so a failure here is logged, not thrown: the outbox loop links whatever
+   * is left (linkPendingAudit).
+   */
+  private async linkAudit(client: MongoClient, db: Db, chains: Set<string | null>): Promise<void> {
+    for (const tenant of chains) {
+      await mongo.linkAuditChain(client, db, tenant).catch((err: Error) => this.logger.error(`Linking audit chain ${tenant ?? 'platform'} failed: ${err.message}`));
+    }
+  }
+
+  /** Links audit events still pending after a crash between a commit and its linking. Returns how many. */
+  async linkPendingAudit(): Promise<number> {
+    const client = await this.connect();
+    return mongo.linkPendingAuditEvents(client, client.db(this.dbName));
   }
 
   private connect(): Promise<MongoClient> {

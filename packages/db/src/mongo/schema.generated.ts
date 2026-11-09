@@ -654,19 +654,22 @@ export const TABLES: Record<string, TableSpec> = {
   },
   audit_events: {
     access: "tenant", grants: ["insert", "select"], triggers: ["audit_events_chain", "reject_mutation"],
-    // Written only by appendAuditEvent (audit-chain.ts): ids are UUIDs and hashes hex strings in MongoDB.
+    // Written only by appendAuditEvent (audit-chain.ts): ids are UUIDs and hashes hex strings in MongoDB. An event is
+    // inserted with the change it records and pending: true, then given its place in the chain (chain_seq, prev_hash,
+    // hash) by linkAuditChain right after that transaction commits.
     columns: {
       action: {"required": true, "type": "string"},
       actor_id: {"type": "uuid"},
       actor_label: {"type": "string"},
       actor_type: {"enum": ["user", "platform_admin", "system", "ai_agent", "integration"], "required": true, "type": "string"},
-      chain_seq: {"required": true, "type": "int"},
+      chain_seq: {"type": "int"},
       changes: {"default": {"json": {}}, "required": true, "type": "json"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
-      hash: {"required": true, "type": "string"},
+      hash: {"type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       ip: {"type": "string"},
       metadata: {"default": {"json": {}}, "required": true, "type": "json"},
+      pending: {"type": "bool"},
       prev_hash: {"type": "string"},
       request_id: {"type": "string"},
       resource_id: {"type": "string"},
@@ -685,9 +688,12 @@ export const TABLES: Record<string, TableSpec> = {
       {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "audit_events_tenant_time"},
       {"cols": [{"col": "tenant_id"}, {"col": "resource_type"}, {"col": "resource_id"}], "name": "audit_events_resource"},
       {"cols": [{"col": "tenant_id"}, {"col": "actor_id"}], "name": "audit_events_actor"},
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at"}, {"col": "id"}], "name": "audit_events_pending", "where": [{"col": "pending", "op": "notnull"}]},
     ],
     checks: [
       "CHECK ((action ~ '^[a-z_]+(\\.[a-z_]+)+$'::text))",
+      "CHECK (((chain_seq IS NULL) = (hash IS NULL)))",
+      "CHECK (((pending IS NULL) = (hash IS NOT NULL)))",
     ],
   },
   bid_acceptance_links: {

@@ -28,6 +28,8 @@ export class OutboxService implements OnApplicationBootstrap, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
   private running = false;
 
+  private ticks = 0;
+
   constructor(private readonly db: DatabaseService) {}
 
   async publish(tx: TenantTx | UserTx | PlatformTx, tenantId: string | null, type: string, payload: Record<string, unknown>): Promise<void> {
@@ -54,6 +56,8 @@ export class OutboxService implements OnApplicationBootstrap, OnModuleDestroy {
    */
   async tick(): Promise<void> {
     await this.dispatchOnce().catch((err: Error) => this.logger.error(`Outbox tick failed: ${err.message}`));
+    // Audit events whose linking into the hash chain was interrupted (a crash right after a commit).
+    if (++this.ticks % 30 === 0) await this.db.linkPendingAudit().catch((err: Error) => this.logger.error(`Audit linking failed: ${err.message}`));
   }
 
   /** Delivers one batch. Exposed for tests and for a dedicated worker process. */

@@ -563,6 +563,13 @@ export class EmployeesService {
     const actor = requestContext.tenantActor();
     let inviteToken: string | undefined;
     let temporaryPassword: string | undefined;
+    // The code is reserved in a short transaction of its own, like a database sequence: the series is one document
+    // every hire in the workspace updates, and holding it for the whole hire made concurrent hires abort and start
+    // again behind each other. A hire that then fails leaves a gap in the numbers.
+    const code = await this.db.tenant(async (tx) => {
+      await this.authz.require('employees:create', { legalEntityId: input.legalEntityId }, tx);
+      return this.nextEmployeeCode(tx);
+    });
     const created = await this.db.tenant(async (tx) => {
       inviteToken = undefined;
       temporaryPassword = undefined;
@@ -571,7 +578,6 @@ export class EmployeesService {
       await this.entitlements.requireWithinLimit('max_employees', count, tx);
       await this.checkPlacement(tx, input, null);
 
-      const code = await this.nextEmployeeCode(tx);
       const startsLater = input.dateOfJoining > today();
       const status = startsLater ? 'pre_boarding' : input.probationMonths > 0 ? 'probation' : 'active';
       const row = await tx
