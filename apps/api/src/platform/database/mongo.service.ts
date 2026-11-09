@@ -1,9 +1,31 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
-import type { ClientSession, Db, Document, MongoClient, TransactionOptions } from 'mongodb';
+import type { ClientSession, Db, MongoClient, TransactionOptions } from 'mongodb';
 import { mongo } from '@crew/db';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { requestContext } from '../context/request-context';
-import { ScopedCollection, ScopeViolationError, scopeFilter, type MongoDoc, type Scope } from './mongo-scope';
+import { ScopeViolationError, type Scope, type Table } from './mongo-scope';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any>;
+
+const MAX_ATTEMPTS = 8;
+
+function hasLabel(err: unknown, label: string): boolean {
+  return typeof (err as { hasErrorLabel?: unknown })?.hasErrorLabel === 'function' && (err as { hasErrorLabel(l: string): boolean }).hasErrorLabel(label);
+}
+
+/** A commit whose outcome is unknown (e.g. a network blip) is safe to repeat. */
+async function commitWithRetry(session: ClientSession): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await session.commitTransaction();
+      return;
+    } catch (err) {
+      if (attempt < MAX_ATTEMPTS && hasLabel(err, 'UnknownTransactionCommitResult')) continue;
+      throw err;
+    }
+  }
+}
 
 const TRANSACTION: TransactionOptions = {
   readConcern: { level: 'snapshot' },
@@ -15,7 +37,11 @@ const TRANSACTION: TransactionOptions = {
 abstract class BaseTx {
   private readonly jobs: Array<() => Promise<unknown>> = [];
 
-  constructor(readonly session: ClientSession, protected readonly db: Db) {}
+  constructor(
+    readonly session: ClientSession,
+    protected readonly db: Db,
+    protected readonly tables: Record<string, mongo.TableSpec>,
+  ) {}
 
   /** Runs `job` inside this transaction, after the rest of the work and just before commit. */
   defer(job: () => Promise<unknown>): void {
@@ -39,9 +65,20 @@ abstract class BaseTx {
 export class TenantTx extends BaseTx {
   private readonly scope: Scope;
 
-  constructor(session: ClientSession, db: Db, readonly tenantId: string, readonly userId: string | null, private readonly rules: Record<string, mongo.CollectionRule>) {
-    super(session, db);
-    this.scope = { kind: 'tenant', id: tenantId, rules };
+  constructor(session: ClientSession, db: Db, readonly tenantId: string, readonly userId: string | null, tables: Record<string, mongo.TableSpec>) {
+    super(session, db, tables);
+    this.scope = { kind: 'tenant', id: tenantId };
+  }
+
+  /** A table seen from this workspace: its own rows only, shared reference data read-only. */
+  collection<T extends Row = Row>(name: string): Table<T> {
+    return new mongo.Table<T>(this.db, name, this.session, { scope: this.scope, tables: this.tables, readOnly: name === mongo.AUDIT_EVENTS });
+  }
+
+  /** People who are members of this workspace (invited, active or suspended), without password hashes or MFA secrets. */
+  async users(): Promise<Table<Row>> {
+    const ids = await this.db.collection('memberships').distinct('user_id', { tenant_id: this.tenantId }, { session: this.session });
+    return new mongo.Table(this.db, 'users', this.session, { scope: null, tables: this.tables, readOnly: true, workspaceColumns: true, within: { _id: { $in: ids } } });
   }
 
   /** Appends to this workspace's audit chain; an event for any other workspace is refused. */
@@ -51,60 +88,35 @@ export class TenantTx extends BaseTx {
     }
     super.audit({ ...input, tenant_id: this.tenantId });
   }
-
-  /** A workspace-owned collection, narrowed to this workspace. Shared reference data comes back read-only. */
-  collection<T extends Document = MongoDoc>(name: string): ScopedCollection<T> {
-    const restriction = scopeFilter(name, this.scope);
-    if (!restriction) throw new ScopeViolationError(`${name} is shared reference data: use shared('${name}')`);
-    const writable = mongo.collectionRule(name, this.rules)!.tenantWritable !== false;
-    return new ScopedCollection<T>(this.db.collection<T>(name), restriction, this.scope, this.session, writable);
-  }
-
-  /** Shared reference data (no owner workspace), read-only. */
-  shared<T extends Document = MongoDoc>(name: string) {
-    return sharedCollection<T>(this.db, name, this.rules, this.session);
-  }
 }
 
-/** Before a workspace is chosen: only the signed-in user's own documents (e.g. their memberships). */
+/** Before a workspace is chosen: only the signed-in user's own documents (e.g. their memberships), read-only. */
 export class UserTx extends BaseTx {
   private readonly scope: Scope;
 
-  constructor(session: ClientSession, db: Db, readonly userId: string, private readonly rules: Record<string, mongo.CollectionRule>) {
-    super(session, db);
-    this.scope = { kind: 'user', id: userId, rules };
+  constructor(session: ClientSession, db: Db, readonly userId: string, tables: Record<string, mongo.TableSpec>) {
+    super(session, db, tables);
+    this.scope = { kind: 'user', id: userId };
   }
 
-  collection<T extends Document = MongoDoc>(name: string): ScopedCollection<T> {
-    const restriction = scopeFilter(name, this.scope);
-    if (!restriction) throw new ScopeViolationError(`${name} is shared reference data: use shared('${name}')`);
-    return new ScopedCollection<T>(this.db.collection<T>(name), restriction, this.scope, this.session, false);
-  }
-
-  shared<T extends Document = MongoDoc>(name: string) {
-    return sharedCollection<T>(this.db, name, this.rules, this.session);
+  collection<T extends Row = Row>(name: string): Table<T> {
+    return new mongo.Table<T>(this.db, name, this.session, { scope: this.scope, tables: this.tables });
   }
 }
 
 /**
- * Unrestricted access, for authentication bootstrap and the SAMPLEDGE Super Admin Console only. Call sites are few
- * and reviewed, as with crew_platform on PostgreSQL. Pass `session` to every operation.
+ * Unrestricted access, for authentication bootstrap, background workers and the SAMPLEDGE Super Admin Console.
+ * Call sites are few and reviewed, as with crew_platform on PostgreSQL. Data rules still apply.
  */
 export class PlatformTx extends BaseTx {
+  collection<T extends Row = Row>(name: string): Table<T> {
+    return new mongo.Table<T>(this.db, name, this.session, { scope: null, tables: this.tables });
+  }
+
+  /** The raw database, for the few operations tables do not cover. Pass `session` to every call. */
   get database(): Db {
     return this.db;
   }
-}
-
-function sharedCollection<T extends Document>(db: Db, name: string, rules: Record<string, mongo.CollectionRule>, session: ClientSession) {
-  const rule = mongo.collectionRule(name, rules);
-  if (rule?.scope !== 'shared') throw new ScopeViolationError(`${name} is not shared reference data`);
-  const coll = db.collection<T>(name);
-  return {
-    find: (filter: Document = {}, options: Document = {}) => coll.find(filter as never, { ...options, session }),
-    findOne: (filter: Document = {}, options: Document = {}) => coll.findOne(filter as never, { ...options, session }),
-    countDocuments: (filter: Document = {}) => coll.countDocuments(filter as never, { session }),
-  };
 }
 
 /**
@@ -126,7 +138,7 @@ export class MongoService implements OnModuleDestroy {
   private client: MongoClient | null = null;
   private connecting: Promise<MongoClient> | null = null;
   private readonly dbName: string | null;
-  rules: Record<string, mongo.CollectionRule> = mongo.COLLECTION_RULES;
+  tables: Record<string, mongo.TableSpec> = mongo.TABLES;
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
     this.dbName = config.MONGODB_URL ? mongo.databaseName(config.MONGODB_URL) : null;
@@ -162,16 +174,16 @@ export class MongoService implements OnModuleDestroy {
     const tenantId = scope?.tenantId ?? (actor?.kind === 'user' ? actor.tenantId : undefined);
     const userId = scope?.userId ?? (actor?.kind === 'user' ? actor.userId : undefined);
     if (!tenantId) throw new Error('tenant() called without a tenant in context');
-    return this.run((session, db) => new TenantTx(session, db, tenantId, userId ?? null, this.rules), fn);
+    return this.run((session, db) => new TenantTx(session, db, tenantId, userId ?? null, this.tables), fn);
   }
 
   user<T>(userId: string, fn: (tx: UserTx) => Promise<T>): Promise<T> {
     if (!userId) throw new Error('user() called without a user');
-    return this.run((session, db) => new UserTx(session, db, userId, this.rules), fn);
+    return this.run((session, db) => new UserTx(session, db, userId, this.tables), fn);
   }
 
   platform<T>(fn: (tx: PlatformTx) => Promise<T>): Promise<T> {
-    return this.run((session, db) => new PlatformTx(session, db), fn);
+    return this.run((session, db) => new PlatformTx(session, db, this.tables), fn);
   }
 
   private async run<X extends BaseTx, T>(make: (session: ClientSession, db: Db) => X, fn: (tx: X) => Promise<T>): Promise<T> {
@@ -179,14 +191,26 @@ export class MongoService implements OnModuleDestroy {
     const db = client.db(this.dbName!);
     const session = client.startSession({ causalConsistency: true });
     try {
-      let result!: T;
-      await session.withTransaction(async () => {
-        // A fresh handle per attempt, so work deferred by an aborted attempt is not replayed.
-        const tx = make(session, db);
-        result = await fn(tx);
-        await tx.flush();
-      }, TRANSACTION);
-      return result;
+      // Two transactions writing the same document: MongoDB aborts one with a transient error and the whole callback
+      // runs again, a bounded number of times. Anything else ends the transaction, as an error did in PostgreSQL.
+      for (let attempt = 1; ; attempt++) {
+        session.startTransaction(TRANSACTION);
+        try {
+          // A fresh handle per attempt, so work deferred by an aborted attempt is not replayed.
+          const tx = make(session, db);
+          const result = await fn(tx);
+          await tx.flush();
+          await commitWithRetry(session);
+          return result;
+        } catch (err) {
+          if (session.inTransaction()) await session.abortTransaction().catch(() => undefined);
+          if (attempt < MAX_ATTEMPTS && hasLabel(err, 'TransientTransactionError')) {
+            await new Promise((r) => setTimeout(r, Math.min(5 * 2 ** attempt, 200) * Math.random()));
+            continue;
+          }
+          throw err;
+        }
+      }
     } finally {
       await session.endSession();
     }

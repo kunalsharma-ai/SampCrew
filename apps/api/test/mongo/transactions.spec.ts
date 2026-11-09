@@ -18,22 +18,22 @@ describe('MongoDB transactions, concurrency and the audit chain', () => {
     const tenantId = id();
     await expect(
       db.tenant(async (tx) => {
-        await tx.collection('t_items').insertOne({ _id: 'lost', name: 'never committed' });
+        await tx.collection('t_items').insert({ id: 'lost', name: 'never committed' });
         tx.audit(auditInput({ action: 'item.created' }));
         throw new Error('boom');
       }, { tenantId }),
     ).rejects.toThrow('boom');
     await expect(
       db.tenant(async (tx) => {
-        await tx.collection('t_items').insertOne({ _id: 'lost2' });
+        await tx.collection('t_items').insert({ id: 'lost2' });
         tx.defer(async () => {
           throw new Error('late failure');
         });
       }, { tenantId }),
     ).rejects.toThrow('late failure');
     const left = await db.tenant(async (tx) => ({
-      items: await tx.collection('t_items').countDocuments(),
-      audit: await tx.collection('audit_events').countDocuments(),
+      items: await tx.collection('t_items').count(),
+      audit: await tx.collection('audit_events').count(),
     }), { tenantId });
     expect(left).toEqual({ items: 0, audit: 0 });
   });
@@ -44,7 +44,7 @@ describe('MongoDB transactions, concurrency and the audit chain', () => {
     await db.tenant(async (tx) => {
       tx.defer(async () => order.push('first deferred'));
       tx.defer(async () => order.push('second deferred'));
-      await tx.collection('t_items').insertOne({ _id: 'k' });
+      await tx.collection('t_items').insert({ id: 'k' });
       order.push('body');
       expect(tx.session.inTransaction()).toBe(true);
     }, { tenantId });
@@ -53,17 +53,17 @@ describe('MongoDB transactions, concurrency and the audit chain', () => {
 
   it('serialises read-then-write updates on one document, replacing SELECT ... FOR UPDATE', async () => {
     const tenantId = id();
-    await db.tenant((tx) => tx.collection('t_items').insertOne({ _id: 'balance', days: 0 }), { tenantId });
+    await db.tenant((tx) => tx.collection('t_items').insert({ id: 'balance', days: 0 }), { tenantId });
     // 20 requests each read the balance and write balance + 1. Without isolation some would overwrite each other.
     await Promise.all(
       Array.from({ length: 20 }, () =>
         db.tenant(async (tx) => {
-          const row = await tx.collection<{ _id: string; days: number }>('t_items').findOne({ _id: 'balance' });
-          await tx.collection('t_items').updateOne({ _id: 'balance' }, { $set: { days: row!.days + 1 } });
+          const row = await tx.collection<{ id: string; days: number }>('t_items').findOne({ id: 'balance' });
+          await tx.collection('t_items').update({ id: 'balance' }, { $set: { days: row!.days + 1 } });
         }, { tenantId }),
       ),
     );
-    const final = await db.tenant((tx) => tx.collection<{ _id: string; days: number }>('t_items').findOne({ _id: 'balance' }), { tenantId });
+    const final = await db.tenant((tx) => tx.collection<{ id: string; days: number }>('t_items').findOne({ id: 'balance' }), { tenantId });
     expect(final!.days).toBe(20);
   });
 
@@ -73,7 +73,7 @@ describe('MongoDB transactions, concurrency and the audit chain', () => {
     await Promise.all(
       Array.from({ length: 25 }, (_, i) =>
         db.tenant(async (tx) => {
-          await tx.collection('t_items').insertOne({ _id: `c${i}` });
+          await tx.collection('t_items').insert({ id: `c${i}` });
           tx.audit(auditInput({ action: 'item.created', resource_type: 'item', resource_id: `c${i}`, changes: { n: { from: null, to: i } } }));
         }, { tenantId: i % 5 === 0 ? other : tenantId }),
       ),

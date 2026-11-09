@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { MongoServerError, type CreateIndexesOptions, type Db, type Document, type IndexSpecification } from 'mongodb';
 import { canonicalJson } from './canonical';
+import { plainIndex, uniqueIndex, validatorFor } from './engine';
+import type { TableSpec } from './schema';
+import { TABLES } from './schema.generated';
+import { SEQUENCES, UNIQUE_GUARDS } from './table';
 import { MONGO_MIGRATIONS } from './migrations';
 
 export interface MongoIndex {
@@ -70,6 +74,7 @@ export async function migrateMongo(
       await db.collection<Document>(MIGRATIONS_COLLECTION).insertOne({ _id: m.name as never, checksum, appliedAt: new Date() });
       ran.push(m.name);
     }
+    if (migrations === MONGO_MIGRATIONS) await syncCollections(db, TABLES, log);
     return ran;
   } finally {
     await release();
@@ -108,6 +113,39 @@ async function acquireLock(db: Db): Promise<() => Promise<void>> {
       if (!(err instanceof MongoServerError && err.code === 11000)) throw err;
       if (Date.now() > deadline) throw new Error('Another process is applying MongoDB migrations (lock held for over a minute)');
       await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+}
+
+/**
+ * Makes every table in the schema exist as a collection with its validator and indexes. Runs after the migrations
+ * on every deploy and is safe to repeat: a changed validator is replaced, and an index whose definition changed is
+ * rebuilt. Data changes still go in numbered migrations.
+ */
+export async function syncCollections(db: Db, tables: Record<string, TableSpec> = TABLES, log: (m: string) => void = () => {}): Promise<void> {
+  const existing = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
+  for (const name of [UNIQUE_GUARDS, SEQUENCES]) if (!existing.has(name)) await db.createCollection(name);
+  for (const [name, spec] of Object.entries(tables)) {
+    const validator = validatorFor(spec);
+    if (!existing.has(name)) await db.createCollection(name, { validator, validationLevel: 'strict', validationAction: 'error' });
+    else await db.command({ collMod: name, validator, validationLevel: 'strict', validationAction: 'error' });
+    const wanted = [
+      ...spec.unique.map((u) => uniqueIndex(spec, u)),
+      ...spec.indexes.map((i) => plainIndex(spec, i)),
+    ].filter((i): i is NonNullable<typeof i> => !!i);
+    for (const index of wanted) {
+      try {
+        await db.collection(name).createIndex(index.key as IndexSpecification, index.options as CreateIndexesOptions);
+      } catch (err) {
+        // Same name, different definition: rebuild it.
+        if (err instanceof MongoServerError && (err.code === 85 || err.code === 86)) {
+          log(`rebuilding index ${name}.${index.options.name}`);
+          await db.collection(name).dropIndex(index.options.name as string);
+          await db.collection(name).createIndex(index.key as IndexSpecification, index.options as CreateIndexesOptions);
+        } else {
+          throw new Error(`Index ${name}.${index.options.name}: ${(err as Error).message}`);
+        }
+      }
     }
   }
 }

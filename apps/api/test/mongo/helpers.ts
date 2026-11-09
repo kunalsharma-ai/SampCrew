@@ -3,20 +3,31 @@ import { mongo } from '@crew/db';
 import type { AppConfig } from '../../src/platform/config/config';
 import { MongoService } from '../../src/platform/database/mongo.service';
 
-/** Collections registered only for these tests, one of each kind. */
-export const TEST_RULES: Record<string, mongo.CollectionRule> = {
-  ...mongo.COLLECTION_RULES,
-  t_items: { scope: 'tenant' },
-  t_tags: { scope: 'tenant' },
-  t_nodes: { scope: 'tenant' },
-  t_memberships: { scope: 'tenant', userField: 'user_id' },
-  t_plans: { scope: 'shared' },
-  t_secrets: { scope: 'platform' },
+const tenantTable = (columns: Record<string, mongo.ColumnSpec>, extra: Partial<mongo.TableSpec> = {}): mongo.TableSpec => ({
+  access: 'tenant',
+  grants: ['select', 'insert', 'update', 'delete'],
+  columns: { id: { type: 'string', required: true }, tenant_id: { type: 'uuid', required: true }, ...columns },
+  unique: [],
+  fks: [],
+  indexes: [],
+  checks: [],
+  ...extra,
+});
+
+/** Tables registered only for these tests, one of each kind, next to the real schema. */
+export const TEST_TABLES: Record<string, mongo.TableSpec> = {
+  ...mongo.TABLES,
+  t_items: tenantTable({ name: { type: 'string' }, plan_key: { type: 'string' }, tag_id: { type: 'string' }, touched: { type: 'bool' }, days: { type: 'int' } }),
+  t_tags: tenantTable({ label: { type: 'string' } }),
+  t_nodes: tenantTable({ parent: { type: 'string' } }),
+  t_memberships: { ...tenantTable({ user_id: { type: 'uuid', required: true }, role: { type: 'string' } }), access: 'tenant_or_user' },
+  t_plans: { access: 'shared', grants: ['select'], columns: { id: { type: 'string', required: true }, name: { type: 'string' } }, unique: [], fks: [], indexes: [], checks: [] },
+  t_secrets: { access: 'platform', grants: [], columns: { id: { type: 'string', required: true }, value: { type: 'string' } }, unique: [], fks: [], indexes: [], checks: [] },
 };
 
 export function mongoService(): MongoService {
   const svc = new MongoService({ MONGODB_URL: process.env.MONGODB_URL, MONGODB_POOL_MAX: 20 } as AppConfig);
-  svc.rules = TEST_RULES;
+  svc.tables = TEST_TABLES;
   return svc;
 }
 
