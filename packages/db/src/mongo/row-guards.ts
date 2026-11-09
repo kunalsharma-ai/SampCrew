@@ -101,6 +101,70 @@ const privacyRequestsGuard: RowGuard = async (ctx, op, before, after) => {
   throw frozenError('privacy request is closed', ctx.table);
 };
 
+/** The columns of a document other than `except` (and the internal lock counter). */
+const otherColumns = (before: Document, after: Document, except: string[]) =>
+  Object.keys({ ...before, ...after }).filter((k) => !except.includes(k) && k !== '_lock');
+
+const ERASED = { erased: true };
+
+/** reviews_guard: a released review is final apart from the employee's acknowledgement; submitted parts stay as submitted. */
+const reviewsGuard: RowGuard = async (ctx, op, before, after) => {
+  const fail = (m: string) => frozenError(m, ctx.table);
+  if (op === 'insert' || !before) return;
+  if (op === 'delete') {
+    if (before.released_at) throw fail('A released review cannot be deleted');
+    return;
+  }
+  if (!after) return;
+  if (ctx.flags.has('erasure')) {
+    const text = ['self_answers', 'manager_answers', 'employee_comment', 'excluded_reason', 'updated_at'];
+    if (changed(before, after, otherColumns(before, after, text)) || !sameValue(after.self_answers, ERASED) || !sameValue(after.manager_answers, ERASED)
+      || (after.employee_comment ?? null) !== null || (after.excluded_reason ?? null) !== null) {
+      throw fail('erasure may only blank the text of a review');
+    }
+    return;
+  }
+  if (before.released_at) {
+    if (changed(before, after, otherColumns(before, after, ['acknowledged_at', 'employee_comment', 'updated_at'])) || before.acknowledged_at) throw fail('A released review cannot be changed');
+    return;
+  }
+  if (before.self_status === 'submitted' && changed(before, after, ['self_answers', 'self_rating', 'self_status', 'self_submitted_at'])) throw fail('A submitted self review cannot be changed');
+  if (before.manager_status === 'submitted' && changed(before, after, ['manager_answers', 'manager_rating', 'manager_status', 'manager_submitted_at'])) {
+    throw fail('A submitted manager review cannot be changed');
+  }
+};
+
+/** review_feedback_guard: feedback that was submitted or declined is final. */
+const reviewFeedbackGuard: RowGuard = async (ctx, op, before, after) => {
+  const fail = (m: string) => frozenError(m, ctx.table);
+  if (op === 'insert' || !before) return;
+  if (op === 'update' && after && ctx.flags.has('erasure')) {
+    if (changed(before, after, otherColumns(before, after, ['answers'])) || !sameValue(after.answers, ERASED)) throw fail('erasure may only blank the text of feedback');
+    return;
+  }
+  if (before.status === 'submitted' || before.status === 'declined') throw fail('Feedback that was submitted or declined cannot be changed');
+};
+
+/** course_assignments_guard: a completed course is a fact and cannot be changed or removed. */
+const courseAssignmentsGuard: RowGuard = async (ctx, op, before, after) => {
+  const fail = (m: string) => frozenError(m, ctx.table);
+  if (op === 'insert' || !before) return;
+  if (op === 'update' && after && ctx.flags.has('erasure')) {
+    if (changed(before, after, otherColumns(before, after, ['completion_note', 'cancelled_reason', 'updated_at'])) || (after.completion_note ?? null) !== null || (after.cancelled_reason ?? null) !== null) {
+      throw fail('erasure may only blank the notes of a course assignment');
+    }
+    return;
+  }
+  if (before.status === 'completed') throw fail('A completed course cannot be changed');
+};
+
+/** survey_responses_anonymous: a response to an anonymous survey never names the respondent. */
+const surveyResponsesAnonymous: RowGuard = async (ctx, op, _before, after) => {
+  if (op !== 'insert' || !after?.employee_id) return;
+  const survey = await ctx.db.collection('surveys').findOne({ _id: after.survey_id }, { session: ctx.session, projection: { anonymous: 1 } });
+  if (survey?.anonymous) throw frozenError('Responses to an anonymous survey cannot name the respondent', ctx.table);
+};
+
 /** Guards by trigger name (TableSpec.triggers). Triggers without one here are enforced in the owning service. */
 export const ROW_GUARDS: Record<string, RowGuard> = {
   payroll_frozen: payrollFrozen,
@@ -109,4 +173,8 @@ export const ROW_GUARDS: Record<string, RowGuard> = {
   announcement_receipts_guard: announcementReceiptsGuard,
   ai_interactions_guard: aiInteractionsGuard,
   privacy_requests_guard: privacyRequestsGuard,
+  reviews_guard: reviewsGuard,
+  review_feedback_guard: reviewFeedbackGuard,
+  course_assignments_guard: courseAssignmentsGuard,
+  survey_responses_anonymous: surveyResponsesAnonymous,
 };

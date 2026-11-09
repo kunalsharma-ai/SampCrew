@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { type CycleInput, PEER_ANONYMITY_MIN, PEER_QUESTIONS, type RatingLevel, type ReviewWriteInput, talentMath } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
-import { AuthzService } from '../../platform/authz/authz.service';
+import { AuthzService, descendants } from '../../platform/authz/authz.service';
 import { can, hasPermission, type Subject } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { countBy, membershipUserNames, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
-import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
-import { attrsOf, nameOf, needEmployee, pickAnswers, talentEmployee } from './talent-common';
+import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
+import { displayName, employeeNames, fieldById } from '../employees/employee-view';
+import { attrsOf, needEmployee, pickAnswers, talentEmployee } from './talent-common';
 
 interface CycleRow {
   id: string;
@@ -40,8 +41,15 @@ interface ReviewRow {
 
 type Role = 'employee' | 'manager' | 'hr' | 'viewer';
 
-const CYCLE_SELECT = `id, name, status, self_review, peer_feedback, questions, rating_scale, to_char(period_start, 'YYYY-MM-DD') as period_start,
-  to_char(period_end, 'YYYY-MM-DD') as period_end, legal_entity_id, department_id`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
+
+const cycleRow = (c: Doc): CycleRow => ({
+  id: c.id, name: c.name, status: c.status, self_review: c.self_review, peer_feedback: c.peer_feedback, questions: c.questions ?? [], rating_scale: c.rating_scale ?? [],
+  period_start: c.period_start, period_end: c.period_end, legal_entity_id: c.legal_entity_id ?? null, department_id: c.department_id ?? null,
+});
+
+const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name);
 
 /**
  * Review cycles: HR launches a cycle for a group of people; each person writes a self review, their manager writes a
@@ -61,25 +69,27 @@ export class ReviewsService {
     return hasPermission(s, 'performance:configure').allowed;
   }
 
-  private async cycle(tx: Tx, id: string, lock = false) {
-    const c = await one<CycleRow>(tx, `select ${CYCLE_SELECT} from review_cycles where id = $1${lock ? ' for update' : ''}`, [id]);
+  private async cycle(tx: TenantTx, id: string, lock = false): Promise<CycleRow> {
+    const cycles = tx.collection('review_cycles');
+    if (lock) await cycles.lock({ id });
+    const c = await cycles.findOne({ id });
     if (!c) throw Errors.notFound('Review cycle');
-    return c;
+    return cycleRow(c);
   }
 
-  private async review(tx: Tx, id: string, lock = false) {
-    const r = await one<ReviewRow>(
-      tx,
-      `select id, cycle_id, employee_id, manager_employee_id, self_status, manager_status, manager_rating, final_rating, excluded, released_at, acknowledged_at
-         from reviews where id = $1${lock ? ' for update' : ''}`,
-      [id],
-    );
+  private async review(tx: TenantTx, id: string, lock = false): Promise<ReviewRow> {
+    const reviews = tx.collection('reviews');
+    if (lock) await reviews.lock({ id });
+    const r = await reviews.findOne({ id });
     if (!r) throw Errors.notFound('Review');
-    return r;
+    return {
+      id: r.id, cycle_id: r.cycle_id, employee_id: r.employee_id, manager_employee_id: r.manager_employee_id ?? null, self_status: r.self_status, manager_status: r.manager_status,
+      manager_rating: r.manager_rating ?? null, final_rating: r.final_rating ?? null, excluded: r.excluded, released_at: r.released_at ?? null, acknowledged_at: r.acknowledged_at ?? null,
+    };
   }
 
   /** How the caller relates to a review. Anyone else gets 404. */
-  private async roleFor(tx: Tx, r: ReviewRow): Promise<{ role: Role; s: Subject }> {
+  private async roleFor(tx: TenantTx, r: ReviewRow): Promise<{ role: Role; s: Subject }> {
     const s = await this.authz.subject(tx);
     if (s.employeeId && s.employeeId === r.employee_id) return { role: 'employee', s };
     if (s.employeeId && s.employeeId === r.manager_employee_id) return { role: 'manager', s };
@@ -92,48 +102,55 @@ export class ReviewsService {
   // Cycles -------------------------------------------------------------------------------------------------------
 
   listCycles() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select c.id, c.name, c.status, to_char(c.period_start, 'YYYY-MM-DD') as "periodStart", to_char(c.period_end, 'YYYY-MM-DD') as "periodEnd",
-                c.self_review as "selfReview", c.peer_feedback as "peerFeedback", le.name as "legalEntityName", d.name as "departmentName",
-                to_char(c.self_due, 'YYYY-MM-DD') as "selfDue", to_char(c.manager_due, 'YYYY-MM-DD') as "managerDue", c.launched_at as "launchedAt", c.released_at as "releasedAt",
-                (select count(*)::int from reviews r where r.cycle_id = c.id and not r.excluded) as participants,
-                (select count(*)::int from reviews r where r.cycle_id = c.id and not r.excluded and r.manager_status = 'submitted') as "managerDone",
-                (select count(*)::int from reviews r where r.cycle_id = c.id and not r.excluded and r.self_status = 'submitted') as "selfDone"
-           from review_cycles c left join legal_entities le on le.id = c.legal_entity_id left join departments d on d.id = c.department_id
-          order by c.created_at desc limit 200`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const cycles = await tx.collection('review_cycles').find({}, { sort: { created_at: -1 }, limit: 200 });
+      const entities = await fieldById(tx, 'legal_entities', cycles.map((c) => c.legal_entity_id));
+      const depts = await fieldById(tx, 'departments', cycles.map((c) => c.department_id));
+      const reviews = await tx.collection('reviews').find({ cycle_id: { $in: cycles.map((c) => c.id) }, excluded: false }, { projection: { cycle_id: 1, manager_status: 1, self_status: 1 } });
+      return cycles.map((c) => {
+        const mine = reviews.filter((r) => r.cycle_id === c.id);
+        return {
+          id: c.id, name: c.name, status: c.status, periodStart: c.period_start, periodEnd: c.period_end, selfReview: c.self_review, peerFeedback: c.peer_feedback,
+          legalEntityName: entities.get(c.legal_entity_id) ?? null, departmentName: depts.get(c.department_id) ?? null, selfDue: c.self_due ?? null, managerDue: c.manager_due ?? null,
+          launchedAt: c.launched_at ?? null, releasedAt: c.released_at ?? null, participants: mine.length,
+          managerDone: mine.filter((r) => r.manager_status === 'submitted').length, selfDone: mine.filter((r) => r.self_status === 'submitted').length,
+        };
+      });
+    });
   }
 
   async getCycle(id: string) {
     return this.db.tenant(async (tx) => {
       const c = await this.cycle(tx, id);
-      const full = await one<Record<string, unknown>>(
-        tx,
-        `select c.id, c.name, c.status, to_char(c.period_start, 'YYYY-MM-DD') as "periodStart", to_char(c.period_end, 'YYYY-MM-DD') as "periodEnd",
-                c.self_review as "selfReview", c.peer_feedback as "peerFeedback", c.questions, c.rating_scale as "ratingScale",
-                c.legal_entity_id as "legalEntityId", le.name as "legalEntityName", c.department_id as "departmentId", d.name as "departmentName",
-                to_char(c.self_due, 'YYYY-MM-DD') as "selfDue", to_char(c.manager_due, 'YYYY-MM-DD') as "managerDue",
-                c.launched_at as "launchedAt", c.calibration_started_at as "calibrationStartedAt", c.released_at as "releasedAt"
-           from review_cycles c left join legal_entities le on le.id = c.legal_entity_id left join departments d on d.id = c.department_id where c.id = $1`,
-        [id],
-      );
-      const reviews = await many<{ excluded: boolean; managerRating: number | null; finalRating: number | null }>(
-        tx,
-        `select r.id, r.employee_id as "employeeId", ${nameOf('e')} as "employeeName", e.employee_code as "employeeCode", dep.name as "departmentName",
-                r.manager_employee_id as "managerEmployeeId", ${nameOf('m')} as "managerName", r.self_status as "selfStatus", r.manager_status as "managerStatus",
-                r.self_rating as "selfRating", r.manager_rating as "managerRating", r.final_rating as "finalRating", r.excluded, r.excluded_reason as "excludedReason",
-                r.acknowledged_at as "acknowledgedAt",
-                (select count(*)::int from review_feedback f where f.review_id = r.id and f.status = 'submitted') as "peerSubmitted",
-                (select count(*)::int from review_feedback f where f.review_id = r.id and f.status in ('requested', 'submitted')) as "peerRequested",
-                (select count(*)::int from review_calibrations k where k.review_id = r.id) as "calibrationChanges"
-           from reviews r join employees e on e.id = r.employee_id left join employees m on m.id = r.manager_employee_id
-           left join departments dep on dep.id = e.current_department_id
-          where r.cycle_id = $1 order by r.excluded, ${nameOf('e')}`,
-        [id],
-      );
+      const x = (await tx.collection('review_cycles').findOne({ id }))!;
+      const entity = await fieldById(tx, 'legal_entities', [x.legal_entity_id]);
+      const dept = await fieldById(tx, 'departments', [x.department_id]);
+      const full = {
+        id: x.id, name: x.name, status: x.status, periodStart: x.period_start, periodEnd: x.period_end, selfReview: x.self_review, peerFeedback: x.peer_feedback,
+        questions: x.questions, ratingScale: x.rating_scale, legalEntityId: x.legal_entity_id ?? null, legalEntityName: entity.get(x.legal_entity_id) ?? null,
+        departmentId: x.department_id ?? null, departmentName: dept.get(x.department_id) ?? null, selfDue: x.self_due ?? null, managerDue: x.manager_due ?? null,
+        launchedAt: x.launched_at ?? null, calibrationStartedAt: x.calibration_started_at ?? null, releasedAt: x.released_at ?? null,
+      };
+      const rows = await tx.collection('reviews').find({ cycle_id: id });
+      const ids = rows.map((r) => r.id as string);
+      const people = await employeeNames(tx, rows.flatMap((r) => [r.employee_id, r.manager_employee_id]));
+      const deptNames = await fieldById(tx, 'departments', [...people.values()].map((p) => p.doc.current_department_id));
+      const feedback = await tx.collection('review_feedback').find({ review_id: { $in: ids }, status: { $in: ['requested', 'submitted'] } }, { projection: { review_id: 1, status: 1 } });
+      const calibrations = await countBy(tx, 'review_calibrations', 'review_id', ids);
+      const reviews = rows
+        .filter((r) => people.has(r.employee_id))
+        .map((r) => {
+          const e = people.get(r.employee_id)!;
+          const fb = feedback.filter((f) => f.review_id === r.id);
+          return {
+            id: r.id as string, employeeId: r.employee_id, employeeName: e.name, employeeCode: e.doc.employee_code, departmentName: deptNames.get(e.doc.current_department_id) ?? null,
+            managerEmployeeId: r.manager_employee_id ?? null, managerName: people.get(r.manager_employee_id)?.name ?? null, selfStatus: r.self_status, managerStatus: r.manager_status,
+            selfRating: r.self_rating ?? null, managerRating: (r.manager_rating as number | null) ?? null, finalRating: (r.final_rating as number | null) ?? null, excluded: r.excluded as boolean,
+            excludedReason: r.excluded_reason ?? null, acknowledgedAt: r.acknowledged_at ?? null,
+            peerSubmitted: fb.filter((f) => f.status === 'submitted').length, peerRequested: fb.length, calibrationChanges: calibrations.get(r.id) ?? 0,
+          };
+        })
+        .sort((a, b) => Number(a.excluded) - Number(b.excluded) || a.employeeName.localeCompare(b.employeeName));
       const included = reviews.filter((r) => !r.excluded);
       return {
         ...full,
@@ -148,32 +165,36 @@ export class ReviewsService {
   }
 
   /** Everyone a cycle would include: current employees in its entity and department (with sub-departments) who joined by the end of the period. */
-  private participants(tx: Tx, c: CycleRow) {
-    return many<{ id: string; name: string; manager_employee_id: string | null; manager_name: string | null; membership_id: string | null; manager_membership_id: string | null }>(
-      tx,
-      `with recursive deps(id) as (select $3::uuid where $3::uuid is not null union select d.id from departments d join deps on d.parent_id = deps.id)
-       select e.id, ${nameOf('e')} as name, e.current_manager_employee_id as manager_employee_id, ${nameOf('m')} as manager_name, e.membership_id, m.membership_id as manager_membership_id
-         from employees e left join employees m on m.id = e.current_manager_employee_id
-        where e.status in ('probation', 'active', 'notice') and e.date_of_joining <= $1::date
-          and ($2::uuid is null or e.current_legal_entity_id = $2) and ($3::uuid is null or e.current_department_id in (select id from deps))
-        order by name`,
-      [c.period_end, c.legal_entity_id, c.department_id],
-    );
+  private async participants(tx: TenantTx, c: CycleRow) {
+    const filter: Doc = { status: { $in: ['probation', 'active', 'notice'] }, date_of_joining: { $lte: c.period_end } };
+    if (c.legal_entity_id) filter.current_legal_entity_id = c.legal_entity_id;
+    if (c.department_id) filter.current_department_id = { $in: [c.department_id, ...(await descendants(tx, 'departments', 'parent_id', c.department_id))] };
+    const people = await tx.collection('employees').find(filter);
+    const managers = await employeeNames(tx, people.map((e) => e.current_manager_employee_id));
+    return people
+      .map((e) => {
+        const m = managers.get(e.current_manager_employee_id);
+        return {
+          id: e.id as string, name: displayName(e as never), manager_employee_id: (e.current_manager_employee_id as string | null) ?? null, manager_name: m?.name ?? null,
+          membership_id: (e.membership_id as string | null) ?? null, manager_membership_id: m?.membershipId ?? null,
+        };
+      })
+      .sort(byName);
+  }
+
+  private cycleFields(input: CycleInput) {
+    return {
+      name: input.name, period_start: input.periodStart, period_end: input.periodEnd, self_review: input.selfReview, peer_feedback: input.peerFeedback, questions: input.questions,
+      rating_scale: input.ratingScale, legal_entity_id: input.legalEntityId ?? null, department_id: input.departmentId ?? null, self_due: input.selfDue ?? null, manager_due: input.managerDue ?? null,
+    };
   }
 
   async createCycle(input: CycleInput) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into review_cycles (tenant_id, name, period_start, period_end, self_review, peer_feedback, questions, rating_scale, legal_entity_id, department_id,
-                                    self_due, manager_due, created_by_membership_id)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id`,
-        [input.name, input.periodStart, input.periodEnd, input.selfReview, input.peerFeedback, JSON.stringify(input.questions), JSON.stringify(input.ratingScale),
-          input.legalEntityId, input.departmentId, input.selfDue, input.managerDue, actor.membershipId],
-      ))!;
+      const row = await tx.collection('review_cycles').insert({ ...this.cycleFields(input), created_by_membership_id: actor.membershipId });
       await this.audit.record(tx, { action: 'review_cycle.created', resourceType: 'review_cycle', resourceId: row.id, changes: input });
-      return { id: row.id };
+      return { id: row.id as string };
     });
   }
 
@@ -181,12 +202,7 @@ export class ReviewsService {
     return this.db.tenant(async (tx) => {
       const c = await this.cycle(tx, id, true);
       if (c.status !== 'draft') throw Errors.conflict('invalid_state', 'Only a draft cycle can be changed');
-      await tx.query(
-        `update review_cycles set name = $2, period_start = $3, period_end = $4, self_review = $5, peer_feedback = $6, questions = $7, rating_scale = $8,
-                legal_entity_id = $9, department_id = $10, self_due = $11, manager_due = $12 where id = $1`,
-        [id, input.name, input.periodStart, input.periodEnd, input.selfReview, input.peerFeedback, JSON.stringify(input.questions), JSON.stringify(input.ratingScale),
-          input.legalEntityId, input.departmentId, input.selfDue, input.managerDue],
-      );
+      await tx.collection('review_cycles').updateOne({ id }, { $set: this.cycleFields(input) });
       await this.audit.record(tx, { action: 'review_cycle.updated', resourceType: 'review_cycle', resourceId: id, changes: input });
       return { id };
     });
@@ -196,7 +212,7 @@ export class ReviewsService {
     return this.db.tenant(async (tx) => {
       const c = await this.cycle(tx, id, true);
       if (c.status !== 'draft') throw Errors.conflict('invalid_state', 'Only a draft cycle can be deleted');
-      await tx.query('delete from review_cycles where id = $1', [id]);
+      await tx.collection('review_cycles').deleteOne({ id });
       await this.audit.record(tx, { action: 'review_cycle.deleted', resourceType: 'review_cycle', resourceId: id });
     });
   }
@@ -207,13 +223,8 @@ export class ReviewsService {
       if (c.status !== 'draft') throw Errors.conflict('invalid_state', 'This cycle has already been launched');
       const people = await this.participants(tx, c);
       if (!people.length) throw Errors.badRequest('no_participants', 'Nobody matches this cycle. Check its legal entity, department and dates.');
-      for (const p of people) {
-        await tx.query(
-          `insert into reviews (tenant_id, cycle_id, employee_id, manager_employee_id, self_status) values (app_tenant_id(), $1, $2, $3, $4)`,
-          [id, p.id, p.manager_employee_id, c.self_review ? 'pending' : 'not_required'],
-        );
-      }
-      await tx.query(`update review_cycles set status = 'active', launched_at = now() where id = $1`, [id]);
+      await tx.collection('reviews').insertMany(people.map((p) => ({ cycle_id: id, employee_id: p.id, manager_employee_id: p.manager_employee_id, self_status: c.self_review ? 'pending' : 'not_required' })));
+      await tx.collection('review_cycles').updateOne({ id }, { $set: { status: 'active', launched_at: new Date() } });
       if (c.self_review) {
         await this.notifications.notify(tx, { membershipIds: people.map((p) => p.membership_id), kind: 'review.self_requested', title: `${c.name}: write your self review`, link: '/reviews' });
       }
@@ -230,17 +241,18 @@ export class ReviewsService {
     return this.db.tenant(async (tx) => {
       const c = await this.cycle(tx, id, true);
       if (c.status !== 'active') throw Errors.conflict('invalid_state', 'Calibration starts from an active cycle');
-      const missing = await many<{ name: string }>(
-        tx,
-        `select ${nameOf('e')} as name from reviews r join employees e on e.id = r.employee_id where r.cycle_id = $1 and not r.excluded and r.manager_status <> 'submitted' order by 1`,
-        [id],
-      );
+      const pending = await tx.collection('reviews').find({ cycle_id: id, excluded: false, manager_status: { $ne: 'submitted' } }, { projection: { employee_id: 1 } });
+      const missing = [...(await employeeNames(tx, pending.map((r) => r.employee_id))).values()].map((e) => ({ name: e.name })).sort(byName);
       if (missing.length) {
         throw Errors.conflict('manager_reviews_missing', `Manager reviews are still missing for ${missing.slice(0, 5).map((m) => m.name).join(', ')}${missing.length > 5 ? ` and ${missing.length - 5} more` : ''}. Wait for them, or exclude those people from the cycle.`);
       }
-      await tx.query(`update reviews set final_rating = manager_rating where cycle_id = $1 and not excluded`, [id]);
-      await tx.query(`update review_feedback f set status = 'withdrawn' from reviews r where r.id = f.review_id and r.cycle_id = $1 and f.status = 'requested'`, [id]);
-      await tx.query(`update review_cycles set status = 'calibration', calibration_started_at = now() where id = $1`, [id]);
+      const reviews = tx.collection('reviews');
+      for (const rv of await reviews.find({ cycle_id: id, excluded: false }, { projection: { manager_rating: 1 } })) {
+        await reviews.updateOne({ id: rv.id }, { $set: { final_rating: rv.manager_rating ?? null } });
+      }
+      const all = await reviews.distinct<string>('id', { cycle_id: id });
+      await tx.collection('review_feedback').update({ review_id: { $in: all }, status: 'requested' }, { $set: { status: 'withdrawn' } });
+      await tx.collection('review_cycles').updateOne({ id }, { $set: { status: 'calibration', calibration_started_at: new Date() } });
       await this.audit.record(tx, { action: 'review_cycle.calibration_started', resourceType: 'review_cycle', resourceId: id });
       return { status: 'calibration' };
     });
@@ -250,12 +262,12 @@ export class ReviewsService {
     return this.db.tenant(async (tx) => {
       const c = await this.cycle(tx, id, true);
       if (c.status !== 'calibration') throw Errors.conflict('invalid_state', 'Results are released after calibration');
-      const released = await many<{ membership_id: string | null }>(
-        tx,
-        `update reviews r set released_at = now() from employees e where e.id = r.employee_id and r.cycle_id = $1 and not r.excluded returning e.membership_id`,
-        [id],
-      );
-      await tx.query(`update review_cycles set status = 'released', released_at = now() where id = $1`, [id]);
+      const reviews = tx.collection('reviews');
+      const toRelease = await reviews.find({ cycle_id: id, excluded: false }, { projection: { employee_id: 1 } });
+      await reviews.update({ id: { $in: toRelease.map((x) => x.id) } }, { $set: { released_at: new Date() } });
+      const owners = await employeeNames(tx, toRelease.map((x) => x.employee_id));
+      const released = toRelease.map((x) => ({ membership_id: owners.get(x.employee_id)?.membershipId ?? null }));
+      await tx.collection('review_cycles').updateOne({ id }, { $set: { status: 'released', released_at: new Date() } });
       await this.notifications.notify(tx, { membershipIds: released.map((r) => r.membership_id), kind: 'review.released', title: `${c.name}: your review is ready to read`, link: '/reviews' });
       await this.audit.record(tx, { action: 'review_cycle.released', resourceType: 'review_cycle', resourceId: id, metadata: { reviews: released.length } });
       return { released: released.length };
@@ -269,25 +281,35 @@ export class ReviewsService {
       const s = await this.authz.subject(tx);
       if (!s.employeeId) return [];
       if (view === 'feedback') {
-        return many(
-          tx,
-          `select f.id, f.status, r.id as "reviewId", ${nameOf('e')} as "employeeName", c.name as "cycleName", c.status as "cycleStatus", f.created_at as "requestedAt", f.submitted_at as "submittedAt"
-             from review_feedback f join reviews r on r.id = f.review_id join review_cycles c on c.id = r.cycle_id join employees e on e.id = r.employee_id
-            where f.reviewer_employee_id = $1 and f.status <> 'withdrawn' order by f.status = 'requested' desc, f.created_at desc limit 200`,
-          [s.employeeId],
-        );
+        const rows = await tx.collection('review_feedback').find({ reviewer_employee_id: s.employeeId, status: { $ne: 'withdrawn' } });
+        const reviews = new Map((await tx.collection('reviews').find({ id: { $in: rows.map((f) => f.review_id) } }, { projection: { cycle_id: 1, employee_id: 1 } })).map((x) => [x.id as string, x]));
+        const cycles = new Map((await tx.collection('review_cycles').find({ id: { $in: [...reviews.values()].map((x) => x.cycle_id) } }, { projection: { name: 1, status: 1 } })).map((x) => [x.id as string, x]));
+        const names = await employeeNames(tx, [...reviews.values()].map((x) => x.employee_id));
+        rows.sort((a, b) => Number(b.status === 'requested') - Number(a.status === 'requested') || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        return rows.slice(0, 200).map((f) => {
+          const rv = reviews.get(f.review_id)!;
+          const c = cycles.get(rv.cycle_id)!;
+          return { id: f.id, status: f.status, reviewId: f.review_id, employeeName: names.get(rv.employee_id)?.name ?? '', cycleName: c.name, cycleStatus: c.status, requestedAt: f.created_at, submittedAt: f.submitted_at ?? null };
+        });
       }
-      const where = view === 'mine' ? 'r.employee_id = $1' : 'r.manager_employee_id = $1';
-      return many(
-        tx,
-        `select r.id, c.id as "cycleId", c.name as "cycleName", c.status as "cycleStatus", ${nameOf('e')} as "employeeName", ${nameOf('m')} as "managerName",
-                c.self_review as "selfReview", r.self_status as "selfStatus", r.manager_status as "managerStatus", r.excluded,
-                to_char(c.self_due, 'YYYY-MM-DD') as "selfDue", to_char(c.manager_due, 'YYYY-MM-DD') as "managerDue",
-                case when r.released_at is not null or $2 then r.final_rating end as "finalRating", r.released_at as "releasedAt", r.acknowledged_at as "acknowledgedAt"
-           from reviews r join review_cycles c on c.id = r.cycle_id join employees e on e.id = r.employee_id left join employees m on m.id = r.manager_employee_id
-          where ${where} and c.status <> 'draft' and (not r.excluded or $2) order by c.created_at desc, ${nameOf('e')} limit 300`,
-        [s.employeeId, view === 'team'],
-      );
+      const team = view === 'team';
+      const rows = await tx.collection('reviews').find({ [team ? 'manager_employee_id' : 'employee_id']: s.employeeId, ...(team ? {} : { excluded: false }) });
+      const cycles = new Map((await tx.collection('review_cycles').find({ id: { $in: [...new Set(rows.map((x) => x.cycle_id))] }, status: { $ne: 'draft' } })).map((x) => [x.id as string, x]));
+      const names = await employeeNames(tx, rows.flatMap((x) => [x.employee_id, x.manager_employee_id]));
+      const out = rows
+        .filter((x) => cycles.has(x.cycle_id))
+        .map((x) => {
+          const c = cycles.get(x.cycle_id)!;
+          return {
+            id: x.id, cycleId: c.id, cycleName: c.name, cycleStatus: c.status, employeeName: names.get(x.employee_id)?.name ?? '', managerName: names.get(x.manager_employee_id)?.name ?? null,
+            selfReview: c.self_review, selfStatus: x.self_status, managerStatus: x.manager_status, excluded: x.excluded, selfDue: c.self_due ?? null, managerDue: c.manager_due ?? null,
+            finalRating: x.released_at || team ? (x.final_rating ?? null) : null, releasedAt: x.released_at ?? null, acknowledgedAt: x.acknowledged_at ?? null,
+            _created: new Date(c.created_at).getTime(),
+          };
+        })
+        .sort((a, b) => b._created - a._created || a.employeeName.localeCompare(b.employeeName))
+        .slice(0, 300);
+      return out.map(({ _created, ...rest }) => rest);
     });
   }
 
@@ -296,26 +318,27 @@ export class ReviewsService {
       const r = await this.review(tx, id);
       const { role } = await this.roleFor(tx, r);
       const c = await this.cycle(tx, r.cycle_id);
-      const full = (await one<Record<string, any>>(
-        tx,
-        `select r.id, r.employee_id as "employeeId", ${nameOf('e')} as "employeeName", r.manager_employee_id as "managerEmployeeId", ${nameOf('m')} as "managerName",
-                r.self_status as "selfStatus", r.self_answers as "selfAnswers", r.self_rating as "selfRating", r.self_submitted_at as "selfSubmittedAt",
-                r.manager_status as "managerStatus", r.manager_answers as "managerAnswers", r.manager_rating as "managerRating", r.manager_submitted_at as "managerSubmittedAt",
-                r.final_rating as "finalRating", r.excluded, r.excluded_reason as "excludedReason", r.released_at as "releasedAt",
-                r.acknowledged_at as "acknowledgedAt", r.employee_comment as "employeeComment"
-           from reviews r join employees e on e.id = r.employee_id left join employees m on m.id = r.manager_employee_id where r.id = $1`,
-        [id],
-      ))!;
+      const x = (await tx.collection('reviews').findOne({ id }))!;
+      const names = await employeeNames(tx, [x.employee_id, x.manager_employee_id]);
+      const full = {
+        id: x.id, employeeId: x.employee_id, employeeName: names.get(x.employee_id)?.name ?? '', managerEmployeeId: x.manager_employee_id ?? null,
+        managerName: names.get(x.manager_employee_id)?.name ?? null, selfStatus: x.self_status, selfAnswers: x.self_answers ?? {}, selfRating: x.self_rating ?? null,
+        selfSubmittedAt: x.self_submitted_at ?? null, managerStatus: x.manager_status, managerAnswers: x.manager_answers ?? {}, managerRating: x.manager_rating ?? null,
+        managerSubmittedAt: x.manager_submitted_at ?? null, finalRating: x.final_rating ?? null, excluded: x.excluded, excludedReason: x.excluded_reason ?? null,
+        releasedAt: x.released_at ?? null, acknowledgedAt: x.acknowledged_at ?? null, employeeComment: x.employee_comment ?? null,
+      };
       const released = Boolean(r.released_at);
       // Drafts stay private to their writer; the person sees the manager review once results are released.
       const seesManager = role === 'manager' ? true : role === 'employee' ? released : full.managerStatus === 'submitted';
       const seesSelf = role === 'employee' || full.selfStatus === 'submitted';
-      const feedback = await many<{ reviewerName: string; status: string; answers: Record<string, string>; id: string; reviewerEmployeeId: string }>(
-        tx,
-        `select f.id, f.reviewer_employee_id as "reviewerEmployeeId", ${nameOf('e')} as "reviewerName", f.status, f.answers, f.submitted_at as "submittedAt"
-           from review_feedback f join employees e on e.id = f.reviewer_employee_id where f.review_id = $1 and f.status <> 'withdrawn' order by f.created_at`,
-        [id],
-      );
+      const fbRows = await tx.collection('review_feedback').find({ review_id: id, status: { $ne: 'withdrawn' } }, { sort: { created_at: 1 } });
+      const reviewers = await employeeNames(tx, fbRows.map((f) => f.reviewer_employee_id));
+      const feedback = fbRows
+        .filter((f) => reviewers.has(f.reviewer_employee_id))
+        .map((f) => ({
+          id: f.id as string, reviewerEmployeeId: f.reviewer_employee_id as string, reviewerName: reviewers.get(f.reviewer_employee_id)!.name, status: f.status as string,
+          answers: (f.answers ?? {}) as Record<string, string>, submittedAt: f.submitted_at ?? null,
+        }));
       let peer: unknown;
       if (role === 'employee') {
         const submitted = feedback.filter((f) => f.status === 'submitted');
@@ -327,15 +350,16 @@ export class ReviewsService {
       } else {
         peer = { shown: true, requests: feedback };
       }
-      const calibrations = role === 'hr'
-        ? await many(tx, `select k.from_rating as "fromRating", k.to_rating as "toRating", k.reason, k.created_at as "createdAt", u.full_name as "byName"
-                            from review_calibrations k join memberships m on m.id = k.by_membership_id join users u on u.id = m.user_id where k.review_id = $1 order by k.created_at`, [id])
-        : [];
-      const goals = await many(
-        tx,
-        `select id, title, progress::float8 as progress, status, weight from goals where employee_id = $1 and status <> 'cancelled' and period_start <= $3::date and period_end >= $2::date order by period_end`,
-        [r.employee_id, c.period_start, c.period_end],
-      );
+      let calibrations: unknown[] = [];
+      if (role === 'hr') {
+        const ks = await tx.collection('review_calibrations').find({ review_id: id }, { sort: { created_at: 1 } });
+        const by = await membershipUserNames(tx, ks.map((k) => k.by_membership_id));
+        calibrations = ks.filter((k) => by.has(k.by_membership_id)).map((k) => ({ fromRating: k.from_rating ?? null, toRating: k.to_rating, reason: k.reason, createdAt: k.created_at, byName: by.get(k.by_membership_id) ?? null }));
+      }
+      const goals = (await tx.collection('goals').find(
+        { employee_id: r.employee_id, status: { $ne: 'cancelled' }, period_start: { $lte: c.period_end }, period_end: { $gte: c.period_start } },
+        { sort: { period_end: 1 } },
+      )).map((g) => ({ id: g.id, title: g.title, progress: Number(g.progress), status: g.status, weight: g.weight }));
       const writable = c.status === 'active' && !r.excluded;
       return {
         ...full,
@@ -380,11 +404,9 @@ export class ReviewsService {
       const answers = pickAnswers(c.questions, input.answers);
       if (input.rating != null && !c.rating_scale.some((l) => l.value === input.rating)) throw Errors.badRequest('invalid_rating', 'Choose a rating from the scale');
       if (input.submit) this.requireComplete(c.questions, answers, input.rating, c.rating_scale);
-      await tx.query(
-        `update reviews set self_answers = $2, self_rating = $3, self_status = case when $4 then 'submitted' else self_status end,
-                self_submitted_at = case when $4 then now() end where id = $1`,
-        [id, JSON.stringify(answers), input.rating, input.submit],
-      );
+      await tx.collection('reviews').updateOne({ id }, {
+        $set: { self_answers: answers, self_rating: input.rating ?? null, self_submitted_at: input.submit ? new Date() : null, ...(input.submit ? { self_status: 'submitted' } : {}) },
+      });
       if (input.submit) {
         await this.audit.record(tx, { action: 'review.self_submitted', resourceType: 'review', resourceId: id });
         const e = await talentEmployee(tx, r.employee_id);
@@ -407,11 +429,12 @@ export class ReviewsService {
       const answers = pickAnswers(c.questions, input.answers);
       if (input.rating != null && !c.rating_scale.some((l) => l.value === input.rating)) throw Errors.badRequest('invalid_rating', 'Choose a rating from the scale');
       if (input.submit) this.requireComplete(c.questions, answers, input.rating, c.rating_scale);
-      await tx.query(
-        `update reviews set manager_answers = $2, manager_rating = $3, manager_status = case when $4 then 'submitted' else manager_status end,
-                manager_submitted_at = case when $4 then now() end, manager_submitted_by = case when $4 then $5::uuid end where id = $1`,
-        [id, JSON.stringify(answers), input.rating, input.submit, actor.membershipId],
-      );
+      await tx.collection('reviews').updateOne({ id }, {
+        $set: {
+          manager_answers: answers, manager_rating: input.rating ?? null, manager_submitted_at: input.submit ? new Date() : null,
+          manager_submitted_by: input.submit ? actor.membershipId : null, ...(input.submit ? { manager_status: 'submitted' } : {}),
+        },
+      });
       if (input.submit) await this.audit.record(tx, { action: 'review.manager_submitted', resourceType: 'review', resourceId: id });
       return { managerStatus: input.submit ? 'submitted' : 'pending' };
     });
@@ -432,13 +455,11 @@ export class ReviewsService {
         if (rid === r.employee_id || rid === r.manager_employee_id) throw Errors.badRequest('invalid_reviewer', 'Choose colleagues other than the person and their manager');
         const p = await talentEmployee(tx, rid, 'Colleague');
         if (p.status === 'exited') throw Errors.badRequest('invalid_reviewer', `${p.name} has left`);
-        const ins = await one(
-          tx,
-          `insert into review_feedback (tenant_id, review_id, reviewer_employee_id, requested_by_membership_id) values (app_tenant_id(), $1, $2, $3)
-           on conflict (tenant_id, review_id, reviewer_employee_id) do nothing returning id`,
-          [id, rid, actor.membershipId],
-        );
-        if (ins) reviewers.push(p);
+        const table = tx.collection('review_feedback');
+        if (!(await table.exists({ review_id: id, reviewer_employee_id: rid }))) {
+          await table.insert({ review_id: id, reviewer_employee_id: rid, requested_by_membership_id: actor.membershipId });
+          reviewers.push(p);
+        }
       }
       await this.notifications.notify(tx, {
         membershipIds: reviewers.map((p) => p.membership_id), kind: 'review.feedback_requested', title: `Share feedback on ${e.name} for ${c.name}`, link: '/reviews?view=feedback',
@@ -453,25 +474,29 @@ export class ReviewsService {
       const r = await this.review(tx, reviewId);
       const { role } = await this.roleFor(tx, r);
       if (role !== 'manager' && role !== 'hr') throw Errors.forbidden();
-      const f = await one<{ status: string }>(tx, 'select status from review_feedback where id = $1 and review_id = $2 for update', [feedbackId, reviewId]);
+      const table = tx.collection('review_feedback');
+      await table.lock({ id: feedbackId, review_id: reviewId });
+      const f = await table.findOne({ id: feedbackId, review_id: reviewId }, { projection: { status: 1 } });
       if (!f) throw Errors.notFound('Feedback request');
       if (f.status !== 'requested') throw Errors.conflict('invalid_state', `This feedback was ${f.status}`);
-      await tx.query(`update review_feedback set status = 'withdrawn' where id = $1`, [feedbackId]);
+      await table.updateOne({ id: feedbackId }, { $set: { status: 'withdrawn' } });
       await this.audit.record(tx, { action: 'review.feedback_withdrawn', resourceType: 'review', resourceId: reviewId, metadata: { feedbackId } });
     });
   }
 
-  private async feedbackForReviewer(tx: Tx, id: string, lock = false) {
+  private async feedbackForReviewer(tx: TenantTx, id: string, lock = false) {
     const s = await this.authz.subject(tx);
-    const f = await one<{ id: string; status: string; review_id: string; answers: Record<string, string>; cycle_status: string; employee_name: string; cycle_name: string }>(
-      tx,
-      `select f.id, f.status, f.review_id, f.answers, c.status as cycle_status, ${nameOf('e')} as employee_name, c.name as cycle_name
-         from review_feedback f join reviews r on r.id = f.review_id join review_cycles c on c.id = r.cycle_id join employees e on e.id = r.employee_id
-        where f.id = $1 and f.reviewer_employee_id = $2${lock ? ' for update of f' : ''}`,
-      [id, s.employeeId ?? null],
-    );
-    if (!f) throw Errors.notFound('Feedback request');
-    return f;
+    const table = tx.collection('review_feedback');
+    if (lock) await table.lock({ id, reviewer_employee_id: s.employeeId ?? null });
+    const row = await table.findOne({ id, reviewer_employee_id: s.employeeId ?? null });
+    if (!row) throw Errors.notFound('Feedback request');
+    const rv = (await tx.collection('reviews').findOne({ id: row.review_id }, { projection: { cycle_id: 1, employee_id: 1 } }))!;
+    const c = (await tx.collection('review_cycles').findOne({ id: rv.cycle_id }, { projection: { status: 1, name: 1 } }))!;
+    const names = await employeeNames(tx, [rv.employee_id]);
+    return {
+      id: row.id as string, status: row.status as string, review_id: row.review_id as string, answers: (row.answers ?? {}) as Record<string, string>, cycle_status: c.status as string,
+      employee_name: names.get(rv.employee_id)?.name ?? '', cycle_name: c.name as string,
+    };
   }
 
   async getFeedback(id: string) {
@@ -491,10 +516,7 @@ export class ReviewsService {
       if (f.status !== 'requested' || f.cycle_status !== 'active') throw Errors.conflict('invalid_state', 'This feedback request is closed');
       const clean = pickAnswers([...PEER_QUESTIONS], answers);
       if (submit && PEER_QUESTIONS.some((q) => !clean[q.id])) throw Errors.badRequest('answers_missing', 'Answer both questions before submitting');
-      await tx.query(
-        `update review_feedback set answers = $2, status = case when $3 then 'submitted' else status end, submitted_at = case when $3 then now() end where id = $1`,
-        [id, JSON.stringify(clean), submit],
-      );
+      await tx.collection('review_feedback').updateOne({ id }, { $set: { answers: clean, submitted_at: submit ? new Date() : null, ...(submit ? { status: 'submitted' } : {}) } });
       if (submit) await this.audit.record(tx, { action: 'review.feedback_submitted', resourceType: 'review', resourceId: f.review_id, metadata: { feedbackId: id } });
       return { status: submit ? 'submitted' : 'requested' };
     });
@@ -504,7 +526,7 @@ export class ReviewsService {
     return this.db.tenant(async (tx) => {
       const f = await this.feedbackForReviewer(tx, id, true);
       if (f.status !== 'requested') throw Errors.conflict('invalid_state', 'This feedback request is closed');
-      await tx.query(`update review_feedback set status = 'declined', answers = '{}' where id = $1`, [id]);
+      await tx.collection('review_feedback').updateOne({ id }, { $set: { status: 'declined', answers: {} } });
       await this.audit.record(tx, { action: 'review.feedback_declined', resourceType: 'review', resourceId: f.review_id, metadata: { feedbackId: id } });
       return { status: 'declined' };
     });
@@ -523,11 +545,8 @@ export class ReviewsService {
       if (c.status !== 'calibration' || r.excluded) throw Errors.conflict('invalid_state', 'Ratings are calibrated while the cycle is in calibration');
       if (!c.rating_scale.some((l) => l.value === finalRating)) throw Errors.badRequest('invalid_rating', 'Choose a rating from the scale');
       if (finalRating === r.final_rating) return { finalRating };
-      await tx.query('update reviews set final_rating = $2, calibrated_at = now() where id = $1', [id, finalRating]);
-      await tx.query(
-        `insert into review_calibrations (tenant_id, review_id, from_rating, to_rating, reason, by_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5)`,
-        [id, r.final_rating, finalRating, reason, actor.membershipId],
-      );
+      await tx.collection('reviews').updateOne({ id }, { $set: { final_rating: finalRating, calibrated_at: new Date() } });
+      await tx.collection('review_calibrations').insert({ review_id: id, from_rating: r.final_rating, to_rating: finalRating, reason, by_membership_id: actor.membershipId });
       await this.audit.record(tx, { action: 'review.calibrated', resourceType: 'review', resourceId: id, changes: { from: r.final_rating, to: finalRating, reason } });
       return { finalRating };
     });
@@ -540,8 +559,8 @@ export class ReviewsService {
       if (!this.isHr(s)) throw Errors.forbidden();
       const c = await this.cycle(tx, r.cycle_id);
       if (!['active', 'calibration'].includes(c.status) || r.excluded) throw Errors.conflict('invalid_state', 'This review cannot be excluded now');
-      await tx.query('update reviews set excluded = true, excluded_reason = $2, final_rating = null where id = $1', [id, reason]);
-      await tx.query(`update review_feedback set status = 'withdrawn' where review_id = $1 and status = 'requested'`, [id]);
+      await tx.collection('reviews').updateOne({ id }, { $set: { excluded: true, excluded_reason: reason, final_rating: null } });
+      await tx.collection('review_feedback').update({ review_id: id, status: 'requested' }, { $set: { status: 'withdrawn' } });
       await this.audit.record(tx, { action: 'review.excluded', resourceType: 'review', resourceId: id, metadata: { reason } });
       return { excluded: true };
     });
@@ -557,7 +576,7 @@ export class ReviewsService {
       if (managerEmployeeId === r.employee_id) throw Errors.badRequest('invalid_manager', 'Choose someone other than the person being reviewed');
       const m = managerEmployeeId ? await talentEmployee(tx, managerEmployeeId, 'Manager') : null;
       // A draft written by the previous manager is not passed to the new one.
-      await tx.query(`update reviews set manager_employee_id = $2, manager_answers = '{}', manager_rating = null where id = $1`, [id, managerEmployeeId]);
+      await tx.collection('reviews').updateOne({ id }, { $set: { manager_employee_id: managerEmployeeId, manager_answers: {}, manager_rating: null } });
       if (m) {
         const e = await talentEmployee(tx, r.employee_id);
         await this.notifications.notify(tx, { membershipIds: [m.membership_id], kind: 'review.manager_requested', title: `${c.name}: write a review for ${e.name}`, link: `/reviews/${id}` });
@@ -574,7 +593,7 @@ export class ReviewsService {
       if (role !== 'employee') throw Errors.forbidden('Only the person reviewed can acknowledge it');
       if (!r.released_at) throw Errors.conflict('invalid_state', 'This review has not been released yet');
       if (r.acknowledged_at) throw Errors.conflict('invalid_state', 'You already acknowledged this review');
-      await tx.query('update reviews set acknowledged_at = now(), employee_comment = $2 where id = $1', [id, comment || null]);
+      await tx.collection('reviews').updateOne({ id }, { $set: { acknowledged_at: new Date(), employee_comment: comment || null } });
       await this.audit.record(tx, { action: 'review.acknowledged', resourceType: 'review', resourceId: id });
       return { acknowledged: true };
     });
@@ -584,27 +603,25 @@ export class ReviewsService {
   async colleagues(q: string) {
     return this.db.tenant(async (tx) => {
       needEmployee((await this.authz.subject(tx)).employeeId);
-      return many(
-        tx,
-        `select e.id, ${nameOf('e')} as name, d.name as "departmentName" from employees e left join departments d on d.id = e.current_department_id
-          where e.status <> 'exited' and ($1::text is null or ${nameOf('e')} ilike $1) order by 2 limit 20`,
-        [q ? `%${q}%` : null],
-      );
+      return this.peopleList(tx, { status: { $ne: 'exited' } }, q, 20);
     });
+  }
+
+  /** Employees matching `filter` (and a name search), with their department, sorted by name. */
+  private async peopleList(tx: TenantTx, filter: Doc, q: string | undefined, limit: number) {
+    const rows = await tx.collection('employees').find(filter, { projection: { preferred_name: 1, first_name: 1, last_name: 1, current_department_id: 1 } });
+    const needle = q?.toLowerCase();
+    const named = rows.map((e) => ({ e, name: displayName(e as never) })).filter((x) => !needle || x.name.toLowerCase().includes(needle)).sort(byName).slice(0, limit);
+    const depts = await fieldById(tx, 'departments', named.map((x) => x.e.current_department_id));
+    return named.map((x) => ({ id: x.e.id as string, name: x.name, departmentName: depts.get(x.e.current_department_id) ?? null }));
   }
 
   /** People the caller manages for performance or learning (their `:manage` scope), to pick goal owners or learners. */
   async managed(kind: 'performance' | 'learning') {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
-      const params: unknown[] = [s.employeeId ?? null];
-      const pred = await this.authz.predicate(`${kind}:manage`, EMPLOYEE_SCOPE, params, tx);
-      return many(
-        tx,
-        `select e.id, ${nameOf('e')} as name, d.name as "departmentName" from employees e left join departments d on d.id = e.current_department_id
-          where ${pred} and e.status <> 'exited' and e.id is distinct from $1 order by 2 limit 1000`,
-        params,
-      );
+      const scope = await this.authz.filter(`${kind}:manage`, EMPLOYEE_FIELDS, tx);
+      return this.peopleList(tx, { $and: [scope, { status: { $ne: 'exited' } }, ...(s.employeeId ? [{ id: { $ne: s.employeeId } }] : [])] }, undefined, 1000);
     });
   }
 }

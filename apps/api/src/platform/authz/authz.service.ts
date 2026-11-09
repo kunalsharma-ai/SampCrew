@@ -96,7 +96,7 @@ export async function loadSubject(tx: TenantTx, membershipId: string, userId: st
 }
 
 /** Everyone below `rootId` in a reporting tree, level by level (at most 50 levels, as the SQL version). */
-async function descendants(tx: TenantTx, table: string, parentField: string, rootId: string): Promise<Set<string>> {
+export async function descendants(tx: TenantTx, table: string, parentField: string, rootId: string): Promise<Set<string>> {
   const out = new Set<string>();
   let frontier = [rootId];
   for (let depth = 0; depth < 50 && frontier.length; depth++) {

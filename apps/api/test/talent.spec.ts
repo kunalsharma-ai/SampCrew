@@ -1,7 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, expectHiddenFrom, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const QUESTIONS = [
   { id: 'achievements', text: 'What went well this period?' },
@@ -19,7 +18,7 @@ const year = new Date().getUTCFullYear();
 /** Phase 6 through the HTTP API: goals, review cycles with 360 feedback and calibration, learning, surveys and recognition. */
 describe('talent', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let engineering: string;
@@ -111,8 +110,8 @@ describe('talent', () => {
         { keyResultId: defects.id, title: 'Handover defects per month', from: '40.00', to: '25' },
       ]);
       // The manager hears about the risk.
-      const n = await pool.query(`select title from notifications where membership_id = $1 and kind = 'goal.at_risk'`, [people.manager.membershipId]);
-      expect(n.rows[0].title).toMatch(/at risk/);
+      const n = await pool.find('notifications', { membership_id: people.manager.membershipId, kind: 'goal.at_risk' });
+      expect(n[0]!.title).toMatch(/at risk/);
       const mine = ok(await as('asha').get('/goals'));
       expect(mine.overallProgress).toBe(50);
     });
@@ -169,8 +168,7 @@ describe('talent', () => {
       const l = ok(await as('hr').post(`/review-cycles/${c.id}/launch`), 201);
       expect(l).toEqual({ participants: 6, withoutManager: 1 });
       fails(await as('hr').put(`/review-cycles/${c.id}`).send({ name: 'Too late', periodStart: `${year}-01-01`, periodEnd: `${year}-06-30`, questions: QUESTIONS, ratingScale: SCALE }), 409);
-      const n = await pool.query(`select count(*)::int as n from notifications where kind = 'review.self_requested' and tenant_id = $1`, [t.id]);
-      expect(n.rows[0].n).toBe(6);
+      expect(await pool.count('notifications', { kind: 'review.self_requested', tenant_id: t.id })).toBe(6);
       const mine = ok(await as('asha').get('/reviews')) as unknown as { id: string }[];
       expect(mine).toHaveLength(1);
       ids.ashaReview = mine[0]!.id;
@@ -231,9 +229,9 @@ describe('talent', () => {
       ok(await as('hr').put(`/reviews/${manu.id}/manager`).send({ answers: { achievements: 'Built the team', growth: 'Hire a lead' }, rating: 4, submit: true }));
       ok(await as('hr').post(`/review-cycles/${ids.cycle}/calibration`), 201);
       // Unanswered requests close when calibration starts.
-      const late = await pool.query<{ id: string; status: string }>(`select id, status from review_feedback where reviewer_employee_id = $1`, [people.asha.employeeId]);
-      expect(late.rows[0]!.status).toBe('withdrawn');
-      fails(await as('asha').put(`/feedback/${late.rows[0]!.id}`).send({ answers: { strengths: 'late' } }), 409);
+      const late = await pool.find('review_feedback', { reviewer_employee_id: people.asha.employeeId });
+      expect(late[0]!.status).toBe('withdrawn');
+      fails(await as('asha').put(`/feedback/${late[0]!.id}`).send({ answers: { strengths: 'late' } }), 409);
     });
 
     it('calibrates with reasons and keeps results hidden until release', async () => {
@@ -271,21 +269,12 @@ describe('talent', () => {
     });
 
     it('freezes released reviews in the database itself', async () => {
-      await expect(pool.query('update reviews set final_rating = 1 where id = $1', [ids.ashaReview])).rejects.toThrow(/released review/);
-      await expect(pool.query('delete from reviews where id = $1', [ids.ashaReview])).rejects.toThrow(/released review/);
-      const fb = await pool.query<{ id: string }>(`select id from review_feedback where review_id = $1 and status = 'submitted' limit 1`, [ids.ashaReview]);
-      await expect(pool.query(`update review_feedback set answers = '{}' where id = $1`, [fb.rows[0]!.id])).rejects.toThrow(/cannot be changed/);
-      // Calibration history is insert-only for the API's database role.
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        await client.query('set local role crew_app');
-        await client.query(`select set_config('app.tenant_id', $1, true)`, [t.id]);
-        await expect(client.query('update review_calibrations set to_rating = 5')).rejects.toThrow(/permission denied/);
-        await client.query('rollback');
-      } finally {
-        client.release();
-      }
+      await expect(pool.update('reviews', { id: ids.ashaReview }, { $set: { final_rating: 1 } })).rejects.toThrow(/released review/);
+      await expect(pool.delete('reviews', { id: ids.ashaReview })).rejects.toThrow(/released review/);
+      const fb = (await pool.one('review_feedback', { review_id: ids.ashaReview, status: 'submitted' }))!;
+      await expect(pool.update('review_feedback', { id: fb.id }, { $set: { answers: {} } })).rejects.toThrow(/cannot be changed/);
+      // Calibration history is insert-only from a workspace transaction.
+      await expect(pool.tenant(t.id, (tx) => tx.collection('review_calibrations').update({}, { $set: { to_rating: 5 } }))).rejects.toThrow(/not allowed/);
     });
   });
 
@@ -309,8 +298,8 @@ describe('talent', () => {
       expect(again.created).toBe(0);
       expect(again.skipped[0]).toMatch(/already assigned/);
       fails(await as('manager2').post('/learning/assignments').send({ employeeIds: [people.asha.employeeId], courseId: ids.excel }), 403);
-      const n = await pool.query(`select title from notifications where membership_id = $1 and kind = 'learning.assigned'`, [people.asha.membershipId]);
-      expect(n.rows[0].title).toMatch(/2 courses/);
+      const n = await pool.find('notifications', { membership_id: people.asha.membershipId, kind: 'learning.assigned' });
+      expect(n[0]!.title).toMatch(/2 courses/);
     });
 
     it('records completion with an expiry; classroom attendance is confirmed by the manager', async () => {
@@ -329,11 +318,10 @@ describe('talent', () => {
       expect(done.status).toBe('completed');
       expect(done.expiresOn).toBe(expected);
       fails(await as('manager').post(`/learning/assignments/${safety.id}/cancel`).send({ reason: 'Undo' }), 409);
-      await expect(pool.query(`update course_assignments set completed_on = '2001-01-01' where id = $1`, [safety.id])).rejects.toThrow(/completed course/);
+      await expect(pool.update('course_assignments', { id: safety.id }, { $set: { completed_on: '2001-01-01' } })).rejects.toThrow(/completed course/);
       // A lapsed completion is flagged and the course can be assigned again.
-      await pool.query(`alter table course_assignments disable trigger course_assignments_guard`);
-      await pool.query(`update course_assignments set expires_on = current_date - 1 where id = $1`, [safety.id]);
-      await pool.query(`alter table course_assignments enable trigger course_assignments_guard`);
+      // (Past the guard, straight in the database, as if a year had gone by.)
+      await (await pool.database()).collection('course_assignments').updateOne({ _id: safety.id }, { $set: { expires_on: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10) } });
       expect((ok(await as('asha').get('/learning/assignments')) as unknown as any[]).find((x) => x.id === safety.id).expired).toBe(true);
       expect(ok(await as('manager').post('/learning/assignments').send({ employeeIds: [people.asha.employeeId], courseId: ids.safety }), 201).created).toBe(1);
     });
@@ -344,7 +332,7 @@ describe('talent', () => {
       fails(await as('chen').post(`/learning/courses/${ids.excel}/enrol`), 409, 'already_enrolled');
       const courses = ok(await as('chen').get('/learning/courses')) as unknown as { id: string; myStatus: string }[];
       expect(courses.find((c) => c.id === ids.excel)!.myStatus).toBe('in_progress');
-      await pool.query(`update course_assignments set due_on = current_date - 3 where employee_id = $1 and status = 'assigned'`, [people.bala.employeeId]);
+      await pool.update('course_assignments', { employee_id: people.bala.employeeId, status: 'assigned' }, { $set: { due_on: new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10) } });
       const overdue = ok(await as('manager').get('/learning/assignments?view=team&status=overdue')) as unknown as { employeeName: string; overdue: boolean }[];
       expect(overdue.length).toBe(2);
       expect(overdue.every((o) => o.employeeName === 'Bala Test' && o.overdue)).toBe(true);
@@ -382,12 +370,11 @@ describe('talent', () => {
       };
       for (const [who, a] of Object.entries(answers)) ok(await as(who).post(`/my-surveys/${ids.survey}/responses`).send({ answers: a }), 201);
       fails(await as('asha').post(`/my-surveys/${ids.survey}/responses`).send({ answers: answers.asha }), 409, 'already_responded');
-      const stored = await pool.query(`select employee_id, department_id from survey_responses where survey_id = $1`, [ids.survey]);
-      expect(stored.rows).toHaveLength(4);
-      expect(stored.rows.every((r) => r.employee_id === null)).toBe(true);
-      await expect(pool.query(`insert into survey_responses (tenant_id, survey_id, employee_id, answers) values ($1, $2, $3, '{}')`, [t.id, ids.survey, people.eve.employeeId])).rejects.toThrow(/anonymous/);
-      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and resource_id = $2 and action like 'survey.respon%'`, [t.id, ids.survey]);
-      expect(audit.rows[0].n).toBe(0);
+      const stored = await pool.find('survey_responses', { survey_id: ids.survey });
+      expect(stored).toHaveLength(4);
+      expect(stored.every((r) => (r.employee_id ?? null) === null)).toBe(true);
+      await expect(pool.insert('survey_responses', { tenant_id: t.id, survey_id: ids.survey, employee_id: people.eve.employeeId, answers: {} })).rejects.toThrow(/anonymous/);
+      expect(await pool.count('audit_events', { tenant_id: t.id, resource_id: ids.survey, action: { $regex: '^survey\\.respon' } })).toBe(0);
     });
 
     it('shows results above the threshold and withholds a breakdown that would expose a small group', async () => {
@@ -412,8 +399,8 @@ describe('talent', () => {
       ids.kudos = ok(await as('asha').post('/recognition').send({ toEmployeeId: people.bala.employeeId, valueId: teamwork.id, message: 'Covered my shift at short notice' }), 201).id;
       const feed = ok(await as('chen').get('/recognition')) as unknown as any[];
       expect(feed[0]).toMatchObject({ fromName: 'Asha Test', toName: 'Bala Test', valueName: 'Teamwork', message: 'Covered my shift at short notice' });
-      const n = await pool.query(`select kind from notifications where membership_id = any($1::uuid[]) and kind like 'recognition.%' order by kind`, [[people.bala.membershipId, people.manager.membershipId]]);
-      expect(n.rows.map((r) => r.kind)).toEqual(['recognition.received', 'recognition.team']);
+      const n = await pool.find('notifications', { membership_id: { $in: [people.bala.membershipId, people.manager.membershipId] }, kind: { $regex: '^recognition\\.' } }, { sort: { kind: 1 } });
+      expect(n.map((r) => r.kind)).toEqual(['recognition.received', 'recognition.team']);
     });
 
     it('lets HR hide a post with a reason', async () => {
@@ -428,20 +415,8 @@ describe('talent', () => {
     it('keeps every Phase 6 record inside its workspace', async () => {
       const tables = ['goals', 'goal_key_results', 'goal_checkins', 'review_cycles', 'reviews', 'review_feedback', 'review_calibrations', 'courses', 'learning_paths',
         'learning_path_courses', 'course_assignments', 'surveys', 'survey_invitations', 'survey_responses', 'company_values', 'recognitions'];
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        await client.query('set local role crew_app');
-        await client.query(`select set_config('app.tenant_id', $1, true)`, [other.id]);
-        for (const table of tables) {
-          const r = await client.query(`select count(*)::int as n from ${table} where tenant_id = $1`, [t.id]);
-          expect(r.rows[0].n, table).toBe(0);
-        }
-        await expect(client.query(`insert into company_values (tenant_id, name) values ($1, 'Injected')`, [t.id])).rejects.toThrow();
-        await client.query('rollback');
-      } finally {
-        client.release();
-      }
+      await expectHiddenFrom(pool, t, other, tables);
+      await expect(pool.tenant(other.id, (tx) => tx.collection('company_values').insert({ tenant_id: t.id, name: 'Injected' }))).rejects.toThrow();
       const owner = (await loginWithMfa(app, pool, other.ownerEmail)).accessToken;
       const o = api(app, owner);
       expect((await o.get(`/goals/${ids.ashaGoal}`)).status).toBe(404);

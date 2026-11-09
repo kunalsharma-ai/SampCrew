@@ -16,9 +16,6 @@ export interface TalentEmployee {
   status: string;
 }
 
-/** SQL display name of an employee row aliased `alias`, for the services still being moved to MongoDB. */
-export const nameOf = (alias: string) => `trim(coalesce(${alias}.preferred_name, ${alias}.first_name) || ' ' || ${alias}.last_name)`;
-
 export async function talentEmployee(tx: TenantTx, id: string, what = 'Employee'): Promise<TalentEmployee> {
   const e = await tx.collection('employees').findOne({ id });
   if (!e) throw Errors.notFound(what);
