@@ -81,6 +81,14 @@ export class TenantTx extends BaseTx {
     return new mongo.Table(this.db, 'users', this.session, { scope: null, tables: this.tables, readOnly: true, workspaceColumns: true, within: { _id: { $in: ids } } });
   }
 
+  /**
+   * A table without the workspace restriction, in this same transaction: for the few reviewed places where a workspace
+   * action creates or changes a global record (a person's identity when they are invited). Prefer collection().
+   */
+  unscoped<T extends Row = Row>(name: string): Table<T> {
+    return new mongo.Table<T>(this.db, name, this.session, { scope: null, tables: this.tables });
+  }
+
   /** Appends to this workspace's audit chain; an event for any other workspace is refused. */
   override audit(input: Omit<mongo.AuditEventInput, 'tenant_id'> & { tenant_id?: string | null }): void {
     if (input.tenant_id !== undefined && input.tenant_id !== this.tenantId) {
@@ -235,4 +243,18 @@ export class MongoService implements OnModuleDestroy {
     })();
     return this.connecting;
   }
+}
+
+/** How many rows of `table` point at each of `ids` through `field` (the SQL `select count(*) ... group by`). */
+export async function countBy(tx: TenantTx | PlatformTx, table: string, field: string, ids: string[], filter: Record<string, unknown> = {}): Promise<Map<string, number>> {
+  const rows = await tx.collection(table).aggregate<{ _id: string; n: number }>([{ $match: { ...filter, [field]: { $in: ids } } }, { $group: { _id: '$' + field, n: { $sum: 1 } } }]);
+  return new Map(rows.map((r) => [r._id, r.n]));
+}
+
+/** Any of the three transaction kinds. */
+export type AnyTx = TenantTx | UserTx | PlatformTx;
+
+/** The users table as this transaction may see it: a workspace sees only its members, without secrets. */
+export async function usersTable(tx: TenantTx | PlatformTx): Promise<Table<Row>> {
+  return tx instanceof TenantTx ? tx.users() : tx.collection('users');
 }

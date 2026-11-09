@@ -6,7 +6,10 @@ import { hashPassword, randomToken, sha256 } from '../../platform/auth/crypto';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any>;
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
@@ -16,22 +19,75 @@ import { NotificationService } from '../../platform/notify/notification.service'
 
 const INVITE_TTL_DAYS = 7;
 
-const MEMBER_COLUMNS = `m.id, m.status, m.title, u.id as "userId", u.full_name as "fullName", u.email::text as email, u.mfa_enabled as "mfaEnabled",
-  m.legal_entity_id as "legalEntityId", le.name as "legalEntityName", m.department_id as "departmentId", d.name as "departmentName",
-  m.location_id as "locationId", l.name as "locationName", m.manager_membership_id as "managerMembershipId", mu.full_name as "managerName",
-  m.joined_at as "joinedAt", m.created_at as "createdAt", u.last_login_at as "lastLoginAt",
-  coalesce((select json_agg(json_build_object('key', r.key, 'name', r.name, 'constraints', ra.constraints) order by r.name)
-              from role_assignments ra join roles r on r.id = ra.role_id where ra.membership_id = m.id), '[]') as roles`;
+const SCOPE_FIELDS = { membershipId: '_id', legalEntityId: 'legal_entity_id', departmentId: 'department_id', locationId: 'location_id' };
 
-const MEMBER_FROM = `from memberships m
-  join users u on u.id = m.user_id
-  left join legal_entities le on le.id = m.legal_entity_id
-  left join departments d on d.id = m.department_id
-  left join locations l on l.id = m.location_id
-  left join memberships mm on mm.id = m.manager_membership_id
-  left join users mu on mu.id = mm.user_id`;
+export interface MemberView {
+  id: string;
+  status: string;
+  title: string | null;
+  userId: string;
+  fullName: string;
+  email: string;
+  mfaEnabled: boolean;
+  legalEntityId: string | null;
+  legalEntityName: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  locationId: string | null;
+  locationName: string | null;
+  managerMembershipId: string | null;
+  managerName: string | null;
+  joinedAt: Date | null;
+  createdAt: Date;
+  lastLoginAt: Date | null;
+  roles: { key: string; name: string; constraints: unknown }[];
+}
 
-const SCOPE_COLS = { membershipId: 'm.id', legalEntityId: 'm.legal_entity_id', departmentId: 'm.department_id', locationId: 'm.location_id' };
+/** Members as the API shows them: the membership with its person, placement, manager and roles (one query per table). */
+export async function memberViews(tx: TenantTx, memberships: Row[]): Promise<MemberView[]> {
+  if (!memberships.length) return [];
+  const managers = await tx.collection('memberships').find({ id: { $in: memberships.map((m) => m.manager_membership_id).filter(Boolean) } }, { projection: { user_id: 1 } });
+  const userIds = [...new Set([...memberships.map((m) => m.user_id), ...managers.map((m) => m.user_id)])];
+  const users = byId(await (await tx.users()).find({ id: { $in: userIds } }));
+  const names = async (table: string, field: string) => byId(await tx.collection(table).find({ id: { $in: [...new Set(memberships.map((m) => m[field]).filter(Boolean))] } }, { projection: { name: 1 } }));
+  const entities = await names('legal_entities', 'legal_entity_id');
+  const departments = await names('departments', 'department_id');
+  const locations = await names('locations', 'location_id');
+  const managerUser = new Map(managers.map((m) => [m.id as string, users.get(m.user_id)]));
+  const assignments = await tx.collection('role_assignments').find({ membership_id: { $in: memberships.map((m) => m.id) } });
+  const roles = byId(await tx.collection('roles').find({ id: { $in: [...new Set(assignments.map((a) => a.role_id))] } }));
+  return memberships.map((m) => {
+    const u = users.get(m.user_id) ?? {};
+    return {
+      id: m.id,
+      status: m.status,
+      title: m.title ?? null,
+      userId: m.user_id,
+      fullName: u.full_name,
+      email: u.email,
+      mfaEnabled: !!u.mfa_enabled,
+      legalEntityId: m.legal_entity_id ?? null,
+      legalEntityName: entities.get(m.legal_entity_id)?.name ?? null,
+      departmentId: m.department_id ?? null,
+      departmentName: departments.get(m.department_id)?.name ?? null,
+      locationId: m.location_id ?? null,
+      locationName: locations.get(m.location_id)?.name ?? null,
+      managerMembershipId: m.manager_membership_id ?? null,
+      managerName: managerUser.get(m.manager_membership_id)?.full_name ?? null,
+      joinedAt: m.joined_at ?? null,
+      createdAt: m.created_at,
+      lastLoginAt: u.last_login_at ?? null,
+      roles: assignments
+        .filter((a) => a.membership_id === m.id && roles.has(a.role_id))
+        .map((a) => ({ key: roles.get(a.role_id)!.key, name: roles.get(a.role_id)!.name, constraints: a.constraints ?? {} }))
+        .sort((x, y) => x.name.localeCompare(y.name)),
+    };
+  });
+}
+
+function byId(rows: Row[]): Map<string, Row> {
+  return new Map(rows.map((r) => [r.id as string, r]));
+}
 
 @Injectable()
 export class MembersService {
@@ -51,32 +107,20 @@ export class MembersService {
   /** Lists members the caller may see. ABAC scope is pushed into SQL so pagination stays correct. */
   async list(q: PaginationQuery & { status?: string; departmentId?: string }) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const where = [await this.authz.predicate('users:read', SCOPE_COLS, params, tx)];
+      const filter: Row = { $and: [await this.authz.filter('users:read', SCOPE_FIELDS, tx)] };
+      if (q.status) filter.status = q.status;
+      if (q.departmentId) filter.department_id = q.departmentId;
+      // Names live on the person, not the membership: filter and order the workspace's members in memory.
+      let rows = await memberViews(tx, await tx.collection('memberships').find(filter));
       if (q.q) {
-        params.push(`%${q.q.toLowerCase()}%`);
-        where.push(`(lower(u.full_name) like $${params.length} or lower(u.email) like $${params.length} or lower(coalesce(m.title, '')) like $${params.length})`);
+        const needle = q.q.toLowerCase();
+        rows = rows.filter((m) => [m.fullName, m.email, m.title ?? ''].some((v) => v.toLowerCase().includes(needle)));
       }
-      if (q.status) {
-        params.push(q.status);
-        where.push(`m.status = $${params.length}`);
-      }
-      if (q.departmentId) {
-        params.push(q.departmentId);
-        where.push(`m.department_id = $${params.length}`);
-      }
+      const key = (m: MemberView) => m.fullName.toLowerCase();
+      rows.sort((x, y) => (key(x) < key(y) ? -1 : key(x) > key(y) ? 1 : x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
       const cursor = decodeCursor(q.cursor);
-      if (cursor) {
-        params.push(cursor[0], cursor[1]);
-        where.push(`(lower(u.full_name), m.id) > ($${params.length - 1}, $${params.length}::uuid)`);
-      }
-      params.push(q.limit + 1);
-      const rows = await many<{ id: string; fullName: string }>(
-        tx,
-        `select ${MEMBER_COLUMNS} ${MEMBER_FROM} where ${where.join(' and ')} order by lower(u.full_name), m.id limit $${params.length}`,
-        params,
-      );
-      return page(rows, q.limit, (r) => r.fullName.toLowerCase());
+      if (cursor) rows = rows.filter((m) => key(m) > cursor[0] || (key(m) === cursor[0] && m.id > cursor[1]));
+      return page(rows.slice(0, q.limit + 1), q.limit, key);
     });
   }
 
@@ -100,38 +144,34 @@ export class MembersService {
    * Creates the user (if new), an invited membership with the Employee baseline plus the chosen roles, and an
    * invitation whose email is queued in the same transaction. Used by member invites and by hiring.
    */
-  async createInvitation(tx: Tx, input: z.infer<typeof inviteMemberRequest>): Promise<{ membershipId: string; token: string }> {
+  async createInvitation(tx: TenantTx, input: z.infer<typeof inviteMemberRequest>): Promise<{ membershipId: string; token: string }> {
     const actor = requestContext.tenantActor();
     const token = randomToken(32);
-    const { count } = (await one<{ count: number }>(tx, `select count(*)::int as count from memberships where status <> 'suspended'`))!;
+    const count = await tx.collection('memberships').count({ status: { $ne: 'suspended' } });
     await this.entitlements.requireWithinLimit('max_employees', count, tx);
     // Everyone gets the Employee self-service baseline in addition to the roles chosen.
     const roles = await this.resolveRoles(tx, [...new Set(['employee', ...input.roleKeys])]);
     await this.assertCanGrant(tx, roles.map((r) => r.key));
 
-    const legalEntityId = input.legalEntityId ?? (await one<{ id: string }>(tx, 'select id from legal_entities where archived_at is null order by created_at limit 1'))?.id ?? null;
-    // Identities are global; creating or finding the user row needs the platform role.
-    const userId = await this.db.platform(async (ptx) => {
-      const existing = await one<{ id: string }>(ptx, 'select id from users where email = $1', [input.email]);
-      if (existing) return existing.id;
-      return (await one<{ id: string }>(ptx, `insert into users (email, full_name) values ($1, $2) returning id`, [input.email, input.fullName]))!.id;
-    });
-    const already = await one(tx, 'select 1 from memberships where user_id = $1', [userId]);
+    const legalEntityId = input.legalEntityId ?? (await tx.collection('legal_entities').findOne({ archived_at: null }, { sort: { created_at: 1 } }))?.id ?? null;
+    // Identities are global: the user is found or created outside the workspace, in this same transaction.
+    const users = tx.unscoped('users');
+    const existing = await users.findOne({ email: input.email }, { projection: { _id: 1 } });
+    const userId = (existing ?? (await users.insert({ email: input.email, full_name: input.fullName }))).id as string;
+    const already = await tx.collection('memberships').exists({ user_id: userId });
     if (already) throw Errors.conflict('already_member', 'This person is already a member of the workspace');
 
-    const membership = (await one<{ id: string }>(
-      tx,
-      `insert into memberships (tenant_id, user_id, status, legal_entity_id, department_id, location_id, manager_membership_id, title, invited_by)
-       values ($1, $2, 'invited', $3, $4, $5, $6, null, $7) returning id`,
-      [actor.tenantId, userId, legalEntityId, input.departmentId ?? null, input.locationId ?? null, input.managerMembershipId ?? null, actor.membershipId],
-    ))!;
-    for (const r of roles) {
-      await tx.query('insert into role_assignments (tenant_id, membership_id, role_id, granted_by) values ($1, $2, $3, $4)', [actor.tenantId, membership.id, r.id, actor.membershipId]);
-    }
-    await tx.query(
-      `insert into invitations (tenant_id, membership_id, email, token_hash, expires_at, invited_by) values ($1, $2, $3, $4, now() + make_interval(days => $5), $6)`,
-      [actor.tenantId, membership.id, input.email, sha256(token), INVITE_TTL_DAYS, actor.membershipId],
-    );
+    const membership = await tx.collection('memberships').insert({
+      user_id: userId,
+      status: 'invited',
+      legal_entity_id: legalEntityId,
+      department_id: input.departmentId ?? null,
+      location_id: input.locationId ?? null,
+      manager_membership_id: input.managerMembershipId ?? null,
+      invited_by: actor.membershipId,
+    });
+    await tx.collection('role_assignments').insertMany(roles.map((r) => ({ membership_id: membership.id, role_id: r.id, granted_by: actor.membershipId })));
+    await tx.collection('invitations').insert({ membership_id: membership.id, email: input.email, token_hash: sha256(token), expires_at: inDays(INVITE_TTL_DAYS), invited_by: actor.membershipId });
     await this.queueInviteEmail(tx, input.email, token);
     await this.audit.record(tx, { action: 'membership.invited', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, roles: input.roleKeys } });
     await this.outbox.publish(tx, actor.tenantId, 'membership.invited', { membershipId: membership.id, email: input.email });
@@ -144,30 +184,33 @@ export class MembersService {
    * the person must replace it at their first sign-in. An email that already has a SampCrew account cannot be given a
    * password by HR; that person joins through an invitation instead.
    */
-  async createLoginWithPassword(tx: Tx, input: z.infer<typeof inviteMemberRequest>, temporaryPassword: string): Promise<{ membershipId: string }> {
+  async createLoginWithPassword(tx: TenantTx, input: z.infer<typeof inviteMemberRequest>, temporaryPassword: string): Promise<{ membershipId: string }> {
     const actor = requestContext.tenantActor();
-    const { count } = (await one<{ count: number }>(tx, `select count(*)::int as count from memberships where status <> 'suspended'`))!;
+    const count = await tx.collection('memberships').count({ status: { $ne: 'suspended' } });
     await this.entitlements.requireWithinLimit('max_employees', count, tx);
     const roles = await this.resolveRoles(tx, [...new Set(['employee', ...input.roleKeys])]);
     await this.assertCanGrant(tx, roles.map((r) => r.key));
-    const legalEntityId = input.legalEntityId ?? (await one<{ id: string }>(tx, 'select id from legal_entities where archived_at is null order by created_at limit 1'))?.id ?? null;
+    const legalEntityId = input.legalEntityId ?? (await tx.collection('legal_entities').findOne({ archived_at: null }, { sort: { created_at: 1 } }))?.id ?? null;
     const hash = await hashPassword(temporaryPassword);
-    const userId = await this.db.platform(async (ptx) => {
-      if (await one(ptx, 'select 1 from users where email = $1', [input.email])) {
+    const users = tx.unscoped('users');
+    const userId = await (async () => {
+      if (await users.exists({ email: input.email })) {
         throw Errors.conflict('account_exists', 'This email already has a SampCrew account, so HR cannot set its password. Send an invitation instead and they join with their own password.');
       }
-      return (await one<{ id: string }>(ptx, `insert into users (email, full_name, password_hash, must_change_password) values ($1, $2, $3, true) returning id`, [input.email, input.fullName, hash]))!.id;
+      return (await users.insert({ email: input.email, full_name: input.fullName, password_hash: hash, must_change_password: true })).id as string;
+    })();
+    const membership = await tx.collection('memberships').insert({
+      user_id: userId,
+      status: 'active',
+      legal_entity_id: legalEntityId,
+      department_id: input.departmentId ?? null,
+      location_id: input.locationId ?? null,
+      manager_membership_id: input.managerMembershipId ?? null,
+      invited_by: actor.membershipId,
+      joined_at: new Date(),
     });
-    const membership = (await one<{ id: string }>(
-      tx,
-      `insert into memberships (tenant_id, user_id, status, legal_entity_id, department_id, location_id, manager_membership_id, title, invited_by, joined_at)
-       values ($1, $2, 'active', $3, $4, $5, $6, null, $7, now()) returning id`,
-      [actor.tenantId, userId, legalEntityId, input.departmentId ?? null, input.locationId ?? null, input.managerMembershipId ?? null, actor.membershipId],
-    ))!;
-    for (const r of roles) {
-      await tx.query('insert into role_assignments (tenant_id, membership_id, role_id, granted_by) values ($1, $2, $3, $4)', [actor.tenantId, membership.id, r.id, actor.membershipId]);
-    }
-    const workspace = (await one<{ name: string }>(tx, 'select name from tenants where id = app_tenant_id()'))!;
+    await tx.collection('role_assignments').insertMany(roles.map((r) => ({ membership_id: membership.id, role_id: r.id, granted_by: actor.membershipId })));
+    const workspace = (await tx.collection('tenants').findOne({}))!;
     // The password itself is never emailed: HR hands it over in person.
     await this.notifications.queueEmail(
       tx,
@@ -182,9 +225,9 @@ export class MembersService {
     return { membershipId: membership.id };
   }
 
-  private async queueInviteEmail(tx: Tx, email: string, token: string) {
+  private async queueInviteEmail(tx: TenantTx, email: string, token: string) {
     const actor = requestContext.tenantActor();
-    const workspace = (await one<{ name: string }>(tx, 'select name from tenants where id = app_tenant_id()'))!;
+    const workspace = (await tx.collection('tenants').findOne({}))!;
     await this.notifications.queueEmail(
       tx,
       actor.tenantId,
@@ -211,18 +254,18 @@ export class MembersService {
       if (input.status === 'suspended') await this.assertNotLastOwner(tx, id);
       const map: Record<string, string> = { departmentId: 'department_id', legalEntityId: 'legal_entity_id', locationId: 'location_id', managerMembershipId: 'manager_membership_id', status: 'status' };
       const entries = Object.entries(input).filter(([k, v]) => map[k] && v !== undefined);
-      const linked = await one(tx, 'select 1 from employees where membership_id = $1', [id]);
+      const linked = await tx.collection('employees').exists({ membership_id: id });
       if (linked && ['departmentId', 'legalEntityId', 'locationId', 'managerMembershipId'].some((k) => input[k as keyof typeof input] !== undefined)) {
         throw Errors.conflict('placement_on_employee', 'This member has an employee record. Change their placement there so the job history is kept.');
       }
       if (input.status && before.status === 'invited') throw Errors.badRequest('invite_pending', 'This person has not accepted their invitation yet');
-      if (entries.length) await tx.query(`update memberships set ${entries.map(([k], i) => `${map[k]} = $${i + 2}`).join(', ')} where id = $1`, [id, ...entries.map(([, v]) => v)]);
+      if (entries.length) await tx.collection('memberships').updateOne({ id }, { $set: Object.fromEntries(entries.map(([k, v]) => [map[k]!, v])) });
       const after = await this.load(tx, id);
       // The new placement must also be within the caller's scope (cannot move someone out of reach).
       await this.authz.require('users:manage', attrs(after), tx);
-      const changes = diff(before, Object.fromEntries(entries.map(([k]) => [k, after[k as keyof typeof after]])));
+      const changes = diff(before as unknown as Record<string, unknown>, Object.fromEntries(entries.map(([k]) => [k, after[k as keyof typeof after]])));
       if (input.status === 'suspended') {
-        await this.db.platform((ptx) => ptx.query(`update sessions set revoked_at = now(), revoked_reason = 'membership_suspended' where user_id = $1 and tenant_id = $2 and revoked_at is null`, [before.userId, actor.tenantId]));
+        await this.db.platform((ptx) => ptx.collection('sessions').update({ user_id: before.userId, tenant_id: actor.tenantId, revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'membership_suspended' } }));
       }
       await this.audit.record(tx, { action: input.status === 'suspended' ? 'membership.suspended' : 'membership.updated', resourceType: 'membership', resourceId: id, changes });
       await this.outbox.publish(tx, actor.tenantId, 'membership.changed', { membershipId: id, fields: Object.keys(changes) });
@@ -236,21 +279,18 @@ export class MembersService {
       const member = await this.load(tx, id);
       const roles = await this.resolveRoles(tx, input.assignments.map((a) => a.roleKey));
       await this.assertCanGrant(tx, roles.map((r) => r.key));
-      const beforeKeys = (member.roles as { key: string }[]).map((r) => r.key).sort();
+      const beforeKeys = member.roles.map((r) => r.key).sort();
       if (beforeKeys.includes('tenant_owner') && !roles.some((r) => r.key === 'tenant_owner')) await this.assertNotLastOwner(tx, id);
       if (id === actor.membershipId && beforeKeys.includes('tenant_owner') && !roles.some((r) => r.key === 'tenant_owner')) {
         throw Errors.badRequest('cannot_demote_self', 'Ask another owner to remove your owner role');
       }
       // Roles that come from a provisioning group stay while the person is in the group; the identity provider
       // manages those. Everything else is replaced by what was sent.
-      await tx.query(`delete from role_assignments where membership_id = $1 and source = 'manual'`, [id]);
+      await tx.collection('role_assignments').delete({ membership_id: id, source: 'manual' });
       for (const a of input.assignments) {
         const role = roles.find((r) => r.key === a.roleKey)!;
-        await tx.query(
-          `insert into role_assignments (tenant_id, membership_id, role_id, constraints, granted_by) values ($1, $2, $3, $4, $5)
-           on conflict (membership_id, role_id) do update set constraints = excluded.constraints, granted_by = excluded.granted_by`,
-          [actor.tenantId, id, role.id, JSON.stringify(a.constraints ?? {}), actor.membershipId],
-        );
+        const fields = { constraints: a.constraints ?? {}, granted_by: actor.membershipId };
+        await tx.collection('role_assignments').upsert({ membership_id: id, role_id: role.id }, { membership_id: id, role_id: role.id, ...fields }, { $set: fields });
       }
       const after = await this.load(tx, id);
       await this.audit.record(tx, {
@@ -269,52 +309,47 @@ export class MembersService {
     await this.db.tenant(async (tx) => {
       const m = await this.load(tx, id);
       if (m.status !== 'invited') throw Errors.badRequest('not_invited', 'This member has already joined');
-      await tx.query('update invitations set revoked_at = now() where membership_id = $1 and accepted_at is null and revoked_at is null', [id]);
-      await tx.query(
-        `insert into invitations (tenant_id, membership_id, email, token_hash, expires_at, invited_by) values ($1, $2, $3, $4, now() + make_interval(days => $5), $6)`,
-        [actor.tenantId, id, m.email, sha256(token), INVITE_TTL_DAYS, actor.membershipId],
-      );
+      await tx.collection('invitations').update({ membership_id: id, accepted_at: null, revoked_at: null }, { $set: { revoked_at: new Date() } });
+      await tx.collection('invitations').insert({ membership_id: id, email: m.email, token_hash: sha256(token), expires_at: inDays(INVITE_TTL_DAYS), invited_by: actor.membershipId });
       await this.queueInviteEmail(tx, m.email, token);
       await this.audit.record(tx, { action: 'membership.invite_resent', resourceType: 'membership', resourceId: id });
     });
     return this.inviteResult(token);
   }
 
-  private async load(tx: Tx, id: string) {
-    const row = await one<{ id: string; status: string; userId: string; email: string; roles: unknown; legalEntityId: string | null; departmentId: string | null; locationId: string | null }>(
-      tx,
-      `select ${MEMBER_COLUMNS} ${MEMBER_FROM} where m.id = $1 and m.tenant_id = app_tenant_id()`,
-      [id],
-    );
-    if (!row) throw Errors.notFound('Member');
-    return row;
+  private async load(tx: TenantTx, id: string): Promise<MemberView> {
+    const m = await tx.collection('memberships').findOne({ id });
+    if (!m) throw Errors.notFound('Member');
+    return (await memberViews(tx, [m]))[0]!;
   }
 
-  private async resolveRoles(tx: Tx, keys: string[]) {
-    const roles = await many<{ id: string; key: string }>(tx, 'select id, key from roles where key = any($1::text[])', [keys]);
+  private async resolveRoles(tx: TenantTx, keys: string[]) {
+    const roles = (await tx.collection('roles').find({ key: { $in: keys } })).map((r) => ({ id: r.id as string, key: r.key as string }));
     const missing = keys.filter((k) => !roles.some((r) => r.key === k));
     if (missing.length) throw Errors.badRequest('unknown_role', `Unknown role: ${missing.join(', ')}`);
     return roles;
   }
 
   /** Prevents privilege escalation: only owners can grant the owner role, and roles:manage is needed for anything else. */
-  private async assertCanGrant(tx: Tx, roleKeys: string[]) {
+  private async assertCanGrant(tx: TenantTx, roleKeys: string[]) {
     const subject = await this.authz.subject(tx);
     const isOwner = subject.grants.some((g) => g.roleKey === 'tenant_owner');
     if (roleKeys.includes('tenant_owner') && !isOwner) throw Errors.forbidden('Only a workspace owner can grant the owner role');
     if (roleKeys.some((k) => k !== 'employee')) await this.authz.require('roles:manage', undefined, tx);
   }
 
-  private async assertNotLastOwner(tx: Tx, membershipId: string) {
-    const owners = await many<{ membership_id: string }>(
-      tx,
-      `select ra.membership_id from role_assignments ra join roles r on r.id = ra.role_id join memberships m on m.id = ra.membership_id
-        where r.key = 'tenant_owner' and m.status = 'active'`,
-    );
-    if (owners.length === 1 && owners[0]!.membership_id === membershipId) throw Errors.conflict('last_owner', 'A workspace needs at least one active owner');
+  private async assertNotLastOwner(tx: TenantTx, membershipId: string) {
+    const owner = await tx.collection('roles').findOne({ key: 'tenant_owner' });
+    const holders = owner ? (await tx.collection('role_assignments').find({ role_id: owner.id })).map((a) => a.membership_id) : [];
+    const owners = await tx.collection('memberships').find({ id: { $in: holders }, status: 'active' }, { projection: { _id: 1 } });
+    if (owners.length === 1 && owners[0]!.id === membershipId) throw Errors.conflict('last_owner', 'A workspace needs at least one active owner');
   }
 }
 
 function attrs(row: { id: string; legalEntityId: string | null; departmentId: string | null; locationId: string | null }) {
   return { membershipId: row.id, legalEntityId: row.legalEntityId, departmentId: row.departmentId, locationId: row.locationId };
+}
+
+function inDays(days: number): Date {
+  return new Date(Date.now() + days * 86_400_000);
 }

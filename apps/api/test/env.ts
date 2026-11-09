@@ -12,6 +12,8 @@ export function applyTestEnv() {
   api.username = 'crew_api';
   api.password = apiPassword;
   process.env.CREW_ENV = 'test';
+  // MongoDB, replacing PostgreSQL: a dedicated test database (its name must contain "test").
+  process.env.MONGODB_URL = process.env.TEST_MONGODB_URL ?? 'mongodb://127.0.0.1:27017/crew_test?replicaSet=rs0';
   process.env.DATABASE_ADMIN_URL = admin.toString();
   process.env.DATABASE_API_PASSWORD = apiPassword;
   process.env.DATABASE_URL = api.toString();

@@ -3,8 +3,7 @@ import { getPermission, PERMISSIONS, type Scope } from '@crew/contracts';
 import type { z } from 'zod';
 import type { customRoleInput } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
-import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { countBy, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 
 type RoleInput = z.infer<typeof customRoleInput>;
@@ -21,24 +20,21 @@ export class RolesService {
   }
 
   list() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select r.id, r.key, r.name, r.description, r.is_system as "isSystem",
-                (select count(*)::int from role_assignments ra where ra.role_id = r.id) as "memberCount",
-                coalesce((select json_object_agg(rp.permission, rp.scope) from role_permissions rp where rp.role_id = r.id), '{}') as grants
-           from roles r order by r.is_system desc, r.name`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const roles = await tx.collection('roles').find({}, { sort: { is_system: -1, name: 1 } });
+      const ids = roles.map((r) => r.id as string);
+      const counts = await countBy(tx, 'role_assignments', 'role_id', ids);
+      const grants = await grantsBy(tx, ids);
+      return roles.map((r) => ({ ...view(r, grants.get(r.id)), memberCount: counts.get(r.id) ?? 0 }));
+    });
   }
 
   async create(input: RoleInput) {
     validateGrants(input.grants);
     return this.db.tenant(async (tx) => {
-      const tenantId = requestContext.tenantActor().tenantId;
-      if (await one(tx, 'select 1 from roles where key = $1', [input.key])) throw Errors.conflict('role_exists', 'A role with this key already exists');
-      const role = (await one<{ id: string }>(tx, `insert into roles (tenant_id, key, name, description) values ($1, $2, $3, $4) returning id`, [tenantId, input.key, input.name, input.description ?? null]))!;
-      await this.writeGrants(tx, tenantId, role.id, input.grants);
+      if (await tx.collection('roles').exists({ key: input.key })) throw Errors.conflict('role_exists', 'A role with this key already exists');
+      const role = await tx.collection('roles').insert({ key: input.key, name: input.name, description: input.description ?? null });
+      await this.writeGrants(tx, role.id, input.grants);
       await this.audit.record(tx, { action: 'role.created', resourceType: 'role', resourceId: role.id, changes: { key: input.key, grants: input.grants } });
       return this.get(tx, role.id);
     });
@@ -47,13 +43,13 @@ export class RolesService {
   async update(id: string, input: Omit<RoleInput, 'key'>) {
     validateGrants(input.grants);
     return this.db.tenant(async (tx) => {
-      const role = await one<{ is_system: boolean }>(tx, 'select is_system from roles where id = $1 for update', [id]);
+      const role = await tx.collection('roles').findOne({ id });
       if (!role) throw Errors.notFound('Role');
       if (role.is_system) throw Errors.badRequest('system_role', 'System roles cannot be edited. Duplicate it as a custom role instead.');
       const before = await this.get(tx, id);
-      await tx.query('update roles set name = $2, description = $3 where id = $1', [id, input.name, input.description ?? null]);
-      await tx.query('delete from role_permissions where role_id = $1', [id]);
-      await this.writeGrants(tx, requestContext.tenantActor().tenantId, id, input.grants);
+      await tx.collection('roles').updateOne({ id }, { $set: { name: input.name, description: input.description ?? null } });
+      await tx.collection('role_permissions').delete({ role_id: id });
+      await this.writeGrants(tx, id, input.grants);
       await this.audit.record(tx, { action: 'role.updated', resourceType: 'role', resourceId: id, changes: { grants: { from: before.grants, to: Object.fromEntries(input.grants.map((g) => [g.permission, g.scope])) } } });
       return this.get(tx, id);
     });
@@ -61,31 +57,35 @@ export class RolesService {
 
   async remove(id: string) {
     await this.db.tenant(async (tx) => {
-      const role = await one<{ is_system: boolean; key: string }>(tx, 'select is_system, key from roles where id = $1 for update', [id]);
+      const role = await tx.collection('roles').findOne({ id });
       if (!role) throw Errors.notFound('Role');
       if (role.is_system) throw Errors.badRequest('system_role', 'System roles cannot be deleted');
-      if (await one(tx, 'select 1 from role_assignments where role_id = $1 limit 1', [id])) throw Errors.conflict('role_in_use', 'Remove this role from all members first');
-      await tx.query('delete from roles where id = $1', [id]);
+      if (await tx.collection('role_assignments').exists({ role_id: id })) throw Errors.conflict('role_in_use', 'Remove this role from all members first');
+      await tx.collection('roles').deleteOne({ id });
       await this.audit.record(tx, { action: 'role.deleted', resourceType: 'role', resourceId: id, changes: { key: role.key } });
     });
   }
 
-  private async get(tx: Tx, id: string) {
-    return (await one<{ id: string; grants: Record<string, Scope> }>(
-      tx,
-      `select r.id, r.key, r.name, r.description, r.is_system as "isSystem",
-              coalesce((select json_object_agg(rp.permission, rp.scope) from role_permissions rp where rp.role_id = r.id), '{}') as grants
-         from roles r where r.id = $1`,
-      [id],
-    ))!;
+  private async get(tx: TenantTx, id: string) {
+    const role = await tx.collection('roles').findOne({ id });
+    return view(role!, (await grantsBy(tx, [id])).get(id));
   }
 
-  private async writeGrants(tx: Tx, tenantId: string, roleId: string, grants: RoleInput['grants']) {
-    await tx.query(
-      `insert into role_permissions (tenant_id, role_id, permission, scope) select $1, $2, g.p, g.s from unnest($3::text[], $4::text[]) g(p, s)`,
-      [tenantId, roleId, grants.map((g) => g.permission), grants.map((g) => g.scope)],
-    );
+  private async writeGrants(tx: TenantTx, roleId: string, grants: RoleInput['grants']) {
+    if (grants.length) await tx.collection('role_permissions').insertMany(grants.map((g) => ({ role_id: roleId, permission: g.permission, scope: g.scope })));
   }
+}
+
+function view(r: Record<string, unknown>, grants: Record<string, Scope> = {}) {
+  return { id: r.id as string, key: r.key as string, name: r.name as string, description: (r.description as string | null) ?? null, isSystem: r.is_system as boolean, grants };
+}
+
+async function grantsBy(tx: TenantTx, roleIds: string[]): Promise<Map<string, Record<string, Scope>>> {
+  const out = new Map<string, Record<string, Scope>>();
+  for (const rp of await tx.collection('role_permissions').find({ role_id: { $in: roleIds } })) {
+    out.set(rp.role_id, { ...(out.get(rp.role_id) ?? {}), [rp.permission]: rp.scope });
+  }
+  return out;
 }
 
 /** Every grant must name a catalogued permission at a scope that permission supports. */

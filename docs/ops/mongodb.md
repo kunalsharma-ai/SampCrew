@@ -30,6 +30,7 @@ TEST_MONGODB_URL='mongodb://localhost:27017/crew_test?replicaSet=rs0' pnpm test:
 - Use UUID strings for `_id` (`randomUUID()`), not ObjectIds. Field names keep the PostgreSQL column names (`tenant_id`, `full_name`, `created_at`), so API mapping code and audit records read the same.
 - A transaction callback can run more than once when MongoDB retries a write conflict. Keep side effects out of it, and queue email and webhooks through the outbox.
 - Use `tx.audit(...)` for the audit trail, and `tx.defer(...)` for anything else that has to run last.
+- Transactions read a snapshot taken at their first read. A second transaction opened inside one (`db.platform()` inside `db.tenant()`) commits on its own, and the outer one does not see what it wrote, so a later reference to it fails as missing. Do the work in the same transaction; for a global record written from a workspace (a person's identity on invite), use `tx.unscoped(name)` at a reviewed call site.
 - `$unionWith`, `$out` and `$merge` are not available. Use two queries.
 
 ## Not yet done (PR 9)

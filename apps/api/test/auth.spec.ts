@@ -1,12 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { currentTotp } from '../src/platform/auth/mfa';
-import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
+import { addMember, adminPool, type TestDb, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
 
 describe('authentication', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
 
   beforeAll(async () => {
@@ -31,8 +30,8 @@ describe('authentication', () => {
     expect(me.body.membership.roles.map((r: { key: string }) => r.key)).toContain('tenant_owner');
     expect(me.body.subscription).toMatchObject({ plan: 'professional', status: 'trialing' });
     expect(me.body.features).toContain('recruitment');
-    const audit = await pool.query(`select action from audit_events where tenant_id = $1 order by chain_seq`, [res.body.tenantId]);
-    expect(audit.rows.map((r) => r.action)).toEqual(['tenant.created', 'auth.login']);
+    const audit = await pool.find('audit_events', { tenant_id: res.body.tenantId }, { sort: { chain_seq: 1 } });
+    expect(audit.map((r) => r.action)).toEqual(['tenant.created', 'auth.login']);
   });
 
   it('rejects a duplicate slug and an existing email', async () => {
@@ -98,8 +97,8 @@ describe('authentication', () => {
 
   it('offers a workspace picker to people in several tenants', async () => {
     const other = await createTenant(pool);
-    const userId = (await pool.query(`select id from users where email = $1`, [t.ownerEmail])).rows[0].id;
-    await pool.query(`insert into memberships (tenant_id, user_id, status, legal_entity_id) values ($1, $2, 'active', $3)`, [other.id, userId, other.legalEntityId]);
+    const userId = (await pool.one('users', { email: t.ownerEmail }))!.id;
+    await pool.insert('memberships', { tenant_id: other.id, user_id: userId, status: 'active', legal_entity_id: other.legalEntityId });
     const res = await api(app).post('/auth/login').send({ email: t.ownerEmail, password: PASSWORD });
     expect(res.body.status).toBe('select_tenant');
     expect(res.body.tenants.map((x: { id: string }) => x.id)).toEqual(expect.arrayContaining([t.id, other.id]));

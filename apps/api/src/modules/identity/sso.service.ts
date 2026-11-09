@@ -8,6 +8,7 @@ import { PlatformIntegrationsService } from '../../platform/integrations/platfor
 import { decryptField, encryptField, randomToken, sha256 } from '../../platform/auth/crypto';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
+import type { PlatformTx } from '../../platform/database/mongo.service';
 import { DatabaseService, one, type Tx } from '../../platform/database/database.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
@@ -272,14 +273,10 @@ export class SsoService {
   // Sign-in --------------------------------------------------------------------------------------------------------
 
   /** Whether password sign-in is closed to this member of this workspace (single sign-on required, not an owner). */
-  async passwordBlocked(tx: Tx, tenantId: string, membershipId: string) {
-    const r = await one<{ blocked: boolean }>(
-      tx,
-      `select exists (select 1 from sso_connections c where c.tenant_id = $1 and c.enforced)
-              and not exists (select 1 from role_assignments ra join roles r on r.id = ra.role_id where ra.membership_id = $2 and r.key = 'tenant_owner') as blocked`,
-      [tenantId, membershipId],
-    );
-    return r?.blocked ?? false;
+  async passwordBlocked(tx: PlatformTx, tenantId: string, membershipId: string) {
+    if (!(await tx.collection('sso_connections').exists({ tenant_id: tenantId, enforced: true }))) return false;
+    const owner = await tx.collection('roles').findOne({ tenant_id: tenantId, key: 'tenant_owner' });
+    return !(owner && (await tx.collection('role_assignments').exists({ membership_id: membershipId, role_id: owner.id })));
   }
 
   /** Finds the workspace for an email's domain and returns the provider's sign-in address. */

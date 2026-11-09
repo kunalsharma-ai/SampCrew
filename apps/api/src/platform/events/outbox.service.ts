@@ -1,5 +1,8 @@
 import { Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
-import { DatabaseService, type Tx } from '../database/database.service';
+import { MongoService as DatabaseService, type PlatformTx, type TenantTx, type UserTx } from '../database/mongo.service';
+
+/** How long a dispatcher owns an event it took; after that another dispatcher may deliver it again. */
+const LEASE_SECONDS = 120;
 
 export interface DomainEvent<T = Record<string, unknown>> {
   id: string;
@@ -14,6 +17,9 @@ type Handler = (event: DomainEvent) => Promise<void>;
 /**
  * Transactional outbox. publish() writes the event in the caller's transaction; a dispatcher loop delivers
  * committed events to subscribers at least once. Handlers must be idempotent.
+ *
+ * Each event is taken under a short lease (its available_at moves forward), delivered outside any transaction,
+ * then marked published, or failed with a back-off, so a slow handler never holds a transaction open.
  */
 @Injectable()
 export class OutboxService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -24,8 +30,8 @@ export class OutboxService implements OnApplicationBootstrap, OnModuleDestroy {
 
   constructor(private readonly db: DatabaseService) {}
 
-  async publish(tx: Tx, tenantId: string | null, type: string, payload: Record<string, unknown>): Promise<void> {
-    await tx.query('insert into outbox_events (tenant_id, type, payload) values ($1, $2, $3)', [tenantId, type, JSON.stringify(payload)]);
+  async publish(tx: TenantTx | UserTx | PlatformTx, tenantId: string | null, type: string, payload: Record<string, unknown>): Promise<void> {
+    await tx.collection('outbox_events').insert({ tenant_id: tenantId, type, payload });
   }
 
   subscribe(type: string, handler: Handler) {
@@ -55,31 +61,38 @@ export class OutboxService implements OnApplicationBootstrap, OnModuleDestroy {
     if (this.running) return 0;
     this.running = true;
     try {
-      return await this.db.platform(async (tx) => {
-        const { rows } = await tx.query<{ id: string; tenant_id: string | null; type: string; payload: Record<string, unknown>; occurred_at: Date; attempts: number }>(
-          `select id, tenant_id, type, payload, occurred_at, attempts from outbox_events
-            where published_at is null and available_at <= now()
-            order by occurred_at limit $1 for update skip locked`,
-          [batch],
-        );
-        for (const row of rows) {
-          const event: DomainEvent = { id: row.id, tenantId: row.tenant_id, type: row.type, payload: row.payload, occurredAt: row.occurred_at.toISOString() };
-          try {
-            for (const h of this.handlers.get(row.type) ?? []) await h(event);
-            await tx.query('update outbox_events set published_at = now(), attempts = attempts + 1 where id = $1', [row.id]);
-          } catch (err) {
-            const delay = Math.min(2 ** row.attempts * 5, 3600);
-            await tx.query(
-              `update outbox_events set attempts = attempts + 1, last_error = $2, available_at = now() + make_interval(secs => $3) where id = $1`,
-              [row.id, (err as Error).message.slice(0, 1000), delay],
-            );
-            this.logger.warn(`Event ${row.type} ${row.id} failed (attempt ${row.attempts + 1}): ${(err as Error).message}`);
-          }
+      let delivered = 0;
+      for (; delivered < batch; delivered++) {
+        const row = await this.claim();
+        if (!row) break;
+        const event: DomainEvent = { id: row.id, tenantId: row.tenant_id ?? null, type: row.type, payload: row.payload, occurredAt: row.occurred_at.toISOString() };
+        try {
+          for (const h of this.handlers.get(row.type) ?? []) await h(event);
+          await this.db.platform((tx) => tx.collection('outbox_events').updateOne({ id: row.id }, { $set: { published_at: new Date() }, $inc: { attempts: 1 } }));
+        } catch (err) {
+          const delay = Math.min(2 ** row.attempts * 5, 3600);
+          await this.db.platform((tx) =>
+            tx.collection('outbox_events').updateOne({ id: row.id }, { $set: { last_error: (err as Error).message.slice(0, 1000), available_at: new Date(Date.now() + delay * 1000) }, $inc: { attempts: 1 } }),
+          );
+          this.logger.warn(`Event ${row.type} ${row.id} failed (attempt ${row.attempts + 1}): ${(err as Error).message}`);
         }
-        return rows.length;
-      });
+      }
+      return delivered;
     } finally {
       this.running = false;
     }
+  }
+
+  /** Takes the oldest event that is due, moving its available_at past the lease so no other dispatcher takes it meanwhile. */
+  private claim() {
+    return this.db.platform(async (tx) => {
+      const events = tx.collection<{ id: string; tenant_id?: string | null; type: string; payload: Record<string, unknown>; occurred_at: Date; attempts: number; available_at: Date }>('outbox_events');
+      const now = new Date();
+      const next = await events.findOne({ published_at: null, available_at: { $lte: now } }, { sort: { occurred_at: 1 } });
+      if (!next) return undefined;
+      // Two dispatchers taking the same event write the same document; MongoDB lets only one transaction commit.
+      await events.updateOne({ id: next.id, available_at: next.available_at }, { $set: { available_at: new Date(now.getTime() + LEASE_SECONDS * 1000) } });
+      return next;
+    });
   }
 }
