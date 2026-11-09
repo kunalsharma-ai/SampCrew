@@ -19,17 +19,18 @@ import { AuthzService } from '../../platform/authz/authz.service';
 import { can, type ResourceAttributes } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { countBy, ilike, membershipUserNames, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import type { EmailAttachment } from '../../platform/notify/mailer.service';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { StorageService } from '../../platform/storage/storage.service';
 import { ApprovalsService } from '../approvals/approvals.service';
+import { fieldById } from '../employees/employee-view';
 import { uniqueAs } from '../employees/employees.service';
 import { type ProposalData, renderProposal } from './proposal-pdf';
 
 /** Row scope: "own" means bids the member owns; "entity" means bids raised under their legal entity. */
-const BID_SCOPE = { membershipId: 'b.owner_membership_id', legalEntityId: 'b.legal_entity_id', departmentId: 'null::uuid', locationId: 'null::uuid' };
+const BID_FIELDS = { membershipId: 'owner_membership_id', legalEntityId: 'legal_entity_id', departmentId: '_no_department', locationId: '_no_location' };
 const MAX_SCHEDULE_DAYS = 90;
 
 interface BidRow {
@@ -59,15 +60,27 @@ interface BidRow {
 
 interface LineRow { roleTitle: string; designationId: string | null; headcount: number; location: string | null; payMonthly: string; billMonthly: string | null; notes: string | null }
 
-const BID_COLS = `id, code, client_id, legal_entity_id, title, mode, status, currency, to_char(start_date, 'YYYY-MM-DD') as start_date, duration_months,
-  on_cost_pct::text, overhead_pct::text, target_margin_pct::text, template_id, cover_note, terms, to_char(valid_until, 'YYYY-MM-DD') as valid_until,
-  version, approval_request_id, owner_membership_id, rate_card_id, fees`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
 
-const CLIENT_COLS = `c.id, c.name, c.legal_name as "legalName", c.industry, c.contact_name as "contactName", c.contact_email as "contactEmail",
-  c.contact_phone as "contactPhone", c.address, c.currency, c.notes, c.archived_at as "archivedAt", c.created_at as "createdAt"`;
+const bidRow = (b: Doc): BidRow => ({
+  id: b.id, code: b.code, client_id: b.client_id, legal_entity_id: b.legal_entity_id, title: b.title, mode: b.mode, status: b.status, currency: b.currency,
+  start_date: b.start_date, duration_months: b.duration_months, on_cost_pct: b.on_cost_pct, overhead_pct: b.overhead_pct, target_margin_pct: b.target_margin_pct,
+  template_id: b.template_id ?? null, cover_note: b.cover_note, terms: b.terms, valid_until: b.valid_until ?? null, version: b.version,
+  approval_request_id: b.approval_request_id ?? null, owner_membership_id: b.owner_membership_id, rate_card_id: b.rate_card_id ?? null, fees: b.fees ?? [],
+});
 
-const TEMPLATE_COLS = `id, name, cover_note as "coverNote", terms, validity_days as "validityDays", on_cost_pct::text as "onCostPct",
-  overhead_pct::text as "overheadPct", target_margin_pct::text as "targetMarginPct", is_default as "isDefault", updated_at as "updatedAt"`;
+const clientView = (c: Doc) => ({
+  id: c.id as string, name: c.name as string, legalName: c.legal_name ?? null, industry: c.industry ?? null, contactName: c.contact_name ?? null, contactEmail: c.contact_email ?? null,
+  contactPhone: c.contact_phone ?? null, address: c.address ?? null, currency: c.currency, notes: c.notes ?? null, archivedAt: c.archived_at ?? null, createdAt: c.created_at,
+});
+
+const templateView = (t: Doc) => ({
+  id: t.id as string, name: t.name as string, coverNote: t.cover_note, terms: t.terms, validityDays: t.validity_days, onCostPct: t.on_cost_pct, overheadPct: t.overhead_pct,
+  targetMarginPct: t.target_margin_pct, isDefault: t.is_default as boolean, updatedAt: t.updated_at,
+});
+
+const lower = (v: unknown) => String(v ?? '').toLowerCase();
 
 const attrs = (b: Pick<BidRow, 'owner_membership_id' | 'legal_entity_id'>): ResourceAttributes => ({ membershipId: b.owner_membership_id, legalEntityId: b.legal_entity_id });
 
@@ -100,38 +113,44 @@ export class BidsService implements OnModuleInit {
       link: (id) => `/staffing/bids/${id}`,
       attributes: async (tx, id) => attrs(await this.load(tx, id)),
       onApproved: async (tx, req) => {
-        const b = await one<{ code: string; title: string; owner_membership_id: string }>(
-          tx,
-          `update staffing_bids set status = 'approved', approved_at = now() where id = $1 and status = 'pending_approval' returning code, title, owner_membership_id`,
-          [req.resource_id],
-        );
-        if (!b) return;
+        const n = await tx.collection('staffing_bids').updateOne({ id: req.resource_id, status: 'pending_approval' }, { $set: { status: 'approved', approved_at: new Date() } });
+        if (!n) return;
         await this.audit.record(tx, { action: 'bid.approved', resourceType: 'staffing_bid', resourceId: req.resource_id });
       },
       onRejected: async (tx, req) => {
-        await tx.query(`update staffing_bids set status = 'rejected' where id = $1 and status = 'pending_approval'`, [req.resource_id]);
+        await tx.collection('staffing_bids').updateOne({ id: req.resource_id, status: 'pending_approval' }, { $set: { status: 'rejected' } });
         await this.audit.record(tx, { action: 'bid.rejected', resourceType: 'staffing_bid', resourceId: req.resource_id });
       },
     });
   }
 
-  private async load(tx: Tx, id: string, lock = false): Promise<BidRow> {
-    const b = await one<BidRow>(tx, `select ${BID_COLS} from staffing_bids where id = $1${lock ? ' for update' : ''}`, [id]);
+  private async load(tx: TenantTx, id: string, lock = false): Promise<BidRow> {
+    const bids = tx.collection('staffing_bids');
+    if (lock) await bids.lock({ id });
+    const b = await bids.findOne({ id });
     if (!b) throw Errors.notFound('Bid');
-    return b;
+    return bidRow(b);
   }
 
-  private async lines(tx: Tx, bidId: string): Promise<LineRow[]> {
-    return many<LineRow>(
-      tx,
-      `select role_title as "roleTitle", designation_id as "designationId", headcount, location, pay_monthly::text as "payMonthly",
-              bill_monthly::text as "billMonthly", notes from bid_lines where bid_id = $1 order by seq`,
-      [bidId],
-    );
+  private async lines(tx: TenantTx, bidId: string): Promise<LineRow[]> {
+    return (await tx.collection('bid_lines').find({ bid_id: bidId }, { sort: { seq: 1 } })).map((l) => ({
+      roleTitle: l.role_title, designationId: l.designation_id ?? null, headcount: l.headcount, location: l.location ?? null, payMonthly: l.pay_monthly,
+      billMonthly: l.bill_monthly ?? null, notes: l.notes ?? null,
+    }));
   }
 
-  private async card(tx: Tx, id: string | null) {
-    return id ? one<{ id: string; name: string; currency: string; lines: RateCardInput['lines'] }>(tx, `select id, name, currency, lines from bid_rate_cards where id = $1`, [id]) : null;
+  private async card(tx: TenantTx, id: string | null) {
+    if (!id) return null;
+    const c = await tx.collection('bid_rate_cards').findOne({ id });
+    return c ? { id: c.id as string, name: c.name as string, currency: c.currency as string, lines: c.lines as RateCardInput['lines'] } : null;
+  }
+
+  /** Rate cards as the API returns them. */
+  private async rateCardViews(tx: TenantTx, cards: Doc[]): Promise<RateCard[]> {
+    const clients = await fieldById(tx, 'clients', cards.map((c) => c.client_id));
+    return cards.map((c) => ({
+      id: c.id, name: c.name, clientId: c.client_id ?? null, clientName: clients.get(c.client_id) ?? null, currency: c.currency, notes: c.notes ?? null, lines: c.lines, updatedAt: c.updated_at,
+    })) as RateCard[];
   }
 
   private price(b: BidRow, lines: LineRow[], card?: { lines: RateCardInput['lines'] } | null): BidPricing {
@@ -148,37 +167,37 @@ export class BidsService implements OnModuleInit {
   // Rate cards ---------------------------------------------------------------------------------------------
 
   async rateCards() {
-    return this.db.tenant(async (tx) => many<RateCard>(
-      tx,
-      `select r.id, r.name, r.client_id as "clientId", c.name as "clientName", r.currency, r.notes, r.lines, r.updated_at as "updatedAt"
-         from bid_rate_cards r left join clients c on c.id = r.client_id where r.archived_at is null order by r.client_id nulls first, lower(r.name)`,
-    ));
+    return this.db.tenant(async (tx) => {
+      const cards = await tx.collection('bid_rate_cards').find({ archived_at: null });
+      cards.sort((a, b) => Number(!!a.client_id) - Number(!!b.client_id) || String(a.client_id ?? '').localeCompare(String(b.client_id ?? '')) || lower(a.name).localeCompare(lower(b.name)));
+      return this.rateCardViews(tx, cards);
+    });
   }
 
   async saveRateCard(id: string | null, input: RateCardInput) {
     return this.db.tenant(async (tx) => {
-      if (input.clientId && !(await one(tx, 'select 1 from clients where id = $1 and archived_at is null', [input.clientId]))) throw Errors.badRequest('invalid_client', 'Choose an active client');
-      const lines = JSON.stringify(input.lines.map((l) => ({ roleTitle: l.roleTitle.replace(/\s+/g, ' '), payMonthly: l.payMonthly, billMonthly: l.billMonthly })));
-      const params = [input.name, input.clientId, input.currency, input.notes, lines];
-      const r = id
-        ? await one<{ id: string }>(
-          tx, `update bid_rate_cards set name = $2, client_id = $3, currency = $4, notes = $5, lines = $6 where id = $1 and archived_at is null returning id`, [id, ...params],
-        ).catch(uniqueAs('rate_card_exists', 'A rate card with that name already exists'))
-        : await one<{ id: string }>(
-          tx, `insert into bid_rate_cards (tenant_id, name, client_id, currency, notes, lines, created_by_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5, $6) returning id`,
-          [...params, requestContext.tenantActor().membershipId],
-        ).catch(uniqueAs('rate_card_exists', 'A rate card with that name already exists'));
-      if (!r) throw Errors.notFound('Rate card');
-      await this.audit.record(tx, { action: id ? 'bid_rate_card.updated' : 'bid_rate_card.created', resourceType: 'bid_rate_card', resourceId: r.id, changes: { name: input.name, roles: input.lines.length } });
-      return one<RateCard>(
-        tx, `select r.id, r.name, r.client_id as "clientId", c.name as "clientName", r.currency, r.notes, r.lines, r.updated_at as "updatedAt" from bid_rate_cards r left join clients c on c.id = r.client_id where r.id = $1`, [r.id],
-      );
+      if (input.clientId && !(await tx.collection('clients').exists({ id: input.clientId, archived_at: null }))) throw Errors.badRequest('invalid_client', 'Choose an active client');
+      const fields = {
+        name: input.name, client_id: input.clientId ?? null, currency: input.currency, notes: input.notes ?? null,
+        lines: input.lines.map((l) => ({ roleTitle: l.roleTitle.replace(/\s+/g, ' '), payMonthly: l.payMonthly, billMonthly: l.billMonthly })),
+      };
+      const cards = tx.collection('bid_rate_cards');
+      const unique = uniqueAs('rate_card_exists', 'A rate card with that name already exists');
+      let cardId: string | null = null;
+      if (id) {
+        if (await cards.updateOne({ id, archived_at: null }, { $set: fields }).catch(unique)) cardId = id;
+      } else {
+        cardId = (await cards.insert({ ...fields, created_by_membership_id: requestContext.tenantActor().membershipId }).catch(unique)).id;
+      }
+      if (!cardId) throw Errors.notFound('Rate card');
+      await this.audit.record(tx, { action: id ? 'bid_rate_card.updated' : 'bid_rate_card.created', resourceType: 'bid_rate_card', resourceId: cardId, changes: { name: input.name, roles: input.lines.length } });
+      return (await this.rateCardViews(tx, [(await cards.findOne({ id: cardId }))!]))[0]!;
     });
   }
 
   async archiveRateCard(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await one(tx, `update bid_rate_cards set archived_at = now() where id = $1 and archived_at is null returning id`, [id]);
+      const r = await tx.collection('bid_rate_cards').updateOne({ id, archived_at: null }, { $set: { archived_at: new Date() } });
       if (!r) throw Errors.notFound('Rate card');
       await this.audit.record(tx, { action: 'bid_rate_card.archived', resourceType: 'bid_rate_card', resourceId: id });
     });
@@ -187,50 +206,47 @@ export class BidsService implements OnModuleInit {
   // Clients -----------------------------------------------------------------------------------------------
 
   async clients(includeArchived = false) {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select ${CLIENT_COLS},
-                (select count(*)::int from staffing_bids b where b.client_id = c.id) as "bidCount",
-                (select count(*)::int from staffing_bids b where b.client_id = c.id and b.status = 'won') as "wonCount"
-           from clients c ${includeArchived ? '' : 'where c.archived_at is null'} order by lower(c.name) limit 1000`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const rows = (await tx.collection('clients').find(includeArchived ? {} : { archived_at: null })).sort((a, b) => lower(a.name).localeCompare(lower(b.name))).slice(0, 1000);
+      const ids = rows.map((c) => c.id as string);
+      const bids = await countBy(tx, 'staffing_bids', 'client_id', ids);
+      const won = await countBy(tx, 'staffing_bids', 'client_id', ids, { status: 'won' });
+      return rows.map((c) => ({ ...clientView(c), bidCount: bids.get(c.id) ?? 0, wonCount: won.get(c.id) ?? 0 }));
+    });
+  }
+
+  private clientFields(input: ClientInput) {
+    return {
+      name: input.name, legal_name: input.legalName ?? null, industry: input.industry ?? null, contact_name: input.contactName ?? null, contact_email: input.contactEmail ?? null,
+      contact_phone: input.contactPhone ?? null, address: input.address ?? null, currency: input.currency, notes: input.notes ?? null,
+    };
   }
 
   async createClient(input: ClientInput) {
     return this.db.tenant(async (tx) => {
-      const c = await one<{ id: string }>(
-        tx,
-        `insert into clients (tenant_id, name, legal_name, industry, contact_name, contact_email, contact_phone, address, currency, notes, created_by_membership_id)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
-        [input.name, input.legalName ?? null, input.industry ?? null, input.contactName ?? null, input.contactEmail ?? null, input.contactPhone ?? null,
-          input.address ?? null, input.currency, input.notes ?? null, requestContext.tenantActor().membershipId],
-      ).catch(uniqueAs('client_exists', 'A client with that name already exists'));
-      await this.audit.record(tx, { action: 'client.created', resourceType: 'client', resourceId: c!.id, changes: { name: input.name } });
-      return one(tx, `select ${CLIENT_COLS} from clients c where c.id = $1`, [c!.id]);
+      const c = await tx.collection('clients')
+        .insert({ ...this.clientFields(input), created_by_membership_id: requestContext.tenantActor().membershipId })
+        .catch(uniqueAs('client_exists', 'A client with that name already exists'));
+      await this.audit.record(tx, { action: 'client.created', resourceType: 'client', resourceId: c.id, changes: { name: input.name } });
+      return clientView(c);
     });
   }
 
   async updateClient(id: string, input: ClientInput) {
     return this.db.tenant(async (tx) => {
-      const c = await one<{ id: string }>(
-        tx,
-        `update clients set name = $2, legal_name = $3, industry = $4, contact_name = $5, contact_email = $6, contact_phone = $7, address = $8, currency = $9, notes = $10
-          where id = $1 returning id`,
-        [id, input.name, input.legalName ?? null, input.industry ?? null, input.contactName ?? null, input.contactEmail ?? null, input.contactPhone ?? null,
-          input.address ?? null, input.currency, input.notes ?? null],
-      ).catch(uniqueAs('client_exists', 'A client with that name already exists'));
-      if (!c) throw Errors.notFound('Client');
+      const n = await tx.collection('clients').updateOne({ id }, { $set: this.clientFields(input) }).catch(uniqueAs('client_exists', 'A client with that name already exists'));
+      if (!n) throw Errors.notFound('Client');
       await this.audit.record(tx, { action: 'client.updated', resourceType: 'client', resourceId: id });
-      return one(tx, `select ${CLIENT_COLS} from clients c where c.id = $1`, [id]);
+      return clientView((await tx.collection('clients').findOne({ id }))!);
     });
   }
 
   async archiveClient(id: string) {
     return this.db.tenant(async (tx) => {
-      const c = await one(tx, `update clients set archived_at = coalesce(archived_at, now()) where id = $1 returning id`, [id]);
+      const clients = tx.collection('clients');
+      const c = await clients.findOne({ id }, { projection: { archived_at: 1 } });
       if (!c) throw Errors.notFound('Client');
+      if (!c.archived_at) await clients.updateOne({ id }, { $set: { archived_at: new Date() } });
       await this.audit.record(tx, { action: 'client.archived', resourceType: 'client', resourceId: id });
     });
   }
@@ -238,50 +254,46 @@ export class BidsService implements OnModuleInit {
   // Templates ---------------------------------------------------------------------------------------------
 
   /** Every workspace starts with one standard template so a first bid needs no setup. */
-  private async ensureTemplate(tx: Tx) {
-    if (await one(tx, 'select 1 from bid_templates where archived_at is null limit 1')) return;
-    await tx.query(
-      `insert into bid_templates (tenant_id, name, cover_note, terms, is_default) values (app_tenant_id(), 'Standard proposal', $1, $2, true)`,
-      [
+  private async ensureTemplate(tx: TenantTx) {
+    if (await tx.collection('bid_templates').exists({ archived_at: null })) return;
+    const [coverNote, terms] = [
         'Thank you for the opportunity to support your team. This proposal sets out the people we will provide, the monthly rates and the overall contract value.',
         'Rates are per person per month and cover salary, statutory contributions and our management fee. Invoices are raised monthly and payable within 30 days. Replacements for any exit are provided within 15 working days at no extra cost. Either party may end the agreement with 30 days written notice.',
-      ],
-    );
+    ];
+    await tx.collection('bid_templates').insert({ name: 'Standard proposal', cover_note: coverNote, terms, is_default: true });
   }
 
   async templates() {
     return this.db.tenant(async (tx) => {
       await this.ensureTemplate(tx);
-      return many(tx, `select ${TEMPLATE_COLS} from bid_templates where archived_at is null order by is_default desc, lower(name)`);
+      const rows = await tx.collection('bid_templates').find({ archived_at: null });
+      rows.sort((a, b) => Number(!!b.is_default) - Number(!!a.is_default) || lower(a.name).localeCompare(lower(b.name)));
+      return rows.map(templateView);
     });
   }
 
   async saveTemplate(id: string | null, input: BidTemplateInput) {
     return this.db.tenant(async (tx) => {
-      if (input.isDefault) await tx.query(`update bid_templates set is_default = false where is_default and id is distinct from $1`, [id]);
-      const params = [input.name, input.coverNote, input.terms, input.validityDays, input.onCostPct, input.overheadPct, input.targetMarginPct, input.isDefault];
-      const t = id
-        ? await one<{ id: string }>(
-          tx,
-          `update bid_templates set name = $2, cover_note = $3, terms = $4, validity_days = $5, on_cost_pct = $6, overhead_pct = $7, target_margin_pct = $8, is_default = $9
-            where id = $1 and archived_at is null returning id`,
-          [id, ...params],
-        ).catch(uniqueAs('template_exists', 'A template with that name already exists'))
-        : await one<{ id: string }>(
-          tx,
-          `insert into bid_templates (tenant_id, name, cover_note, terms, validity_days, on_cost_pct, overhead_pct, target_margin_pct, is_default)
-           values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8) returning id`,
-          params,
-        ).catch(uniqueAs('template_exists', 'A template with that name already exists'));
-      if (!t) throw Errors.notFound('Template');
-      await this.audit.record(tx, { action: id ? 'bid_template.updated' : 'bid_template.created', resourceType: 'bid_template', resourceId: t.id });
-      return one(tx, `select ${TEMPLATE_COLS} from bid_templates where id = $1`, [t.id]);
+      const templates = tx.collection('bid_templates');
+      if (input.isDefault) await templates.update({ is_default: true, ...(id ? { id: { $ne: id } } : {}) }, { $set: { is_default: false } });
+      const fields = {
+        name: input.name, cover_note: input.coverNote, terms: input.terms, validity_days: input.validityDays, on_cost_pct: input.onCostPct, overhead_pct: input.overheadPct,
+        target_margin_pct: input.targetMarginPct, is_default: input.isDefault,
+      };
+      const unique = uniqueAs('template_exists', 'A template with that name already exists');
+      let templateId: string | null = null;
+      if (id) {
+        if (await templates.updateOne({ id, archived_at: null }, { $set: fields }).catch(unique)) templateId = id;
+      } else templateId = (await templates.insert(fields).catch(unique)).id;
+      if (!templateId) throw Errors.notFound('Template');
+      await this.audit.record(tx, { action: id ? 'bid_template.updated' : 'bid_template.created', resourceType: 'bid_template', resourceId: templateId });
+      return templateView((await templates.findOne({ id: templateId }))!);
     });
   }
 
   async archiveTemplate(id: string) {
     return this.db.tenant(async (tx) => {
-      const t = await one(tx, `update bid_templates set archived_at = now(), is_default = false where id = $1 and archived_at is null returning id`, [id]);
+      const t = await tx.collection('bid_templates').updateOne({ id, archived_at: null }, { $set: { archived_at: new Date(), is_default: false } });
       if (!t) throw Errors.notFound('Template');
       await this.audit.record(tx, { action: 'bid_template.archived', resourceType: 'bid_template', resourceId: id });
     });
@@ -291,22 +303,22 @@ export class BidsService implements OnModuleInit {
 
   async list(q: { status?: string; clientId?: string; q?: string }) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const where = [await this.authz.predicate('bids:read', BID_SCOPE, params, tx)];
-      if (q.status) { params.push(q.status); where.push(`b.status = $${params.length}`); }
-      if (q.clientId) { params.push(q.clientId); where.push(`b.client_id = $${params.length}`); }
-      if (q.q) { params.push(`%${q.q.replace(/[%_\\]/g, '\\$&')}%`); where.push(`(b.title ilike $${params.length} or b.code ilike $${params.length} or c.name ilike $${params.length})`); }
-      return many(
-        tx,
-        `select b.id, b.code, b.title, b.status, b.mode, b.currency, b.headcount, b.monthly_revenue::text as "monthlyRevenue",
-                b.contract_revenue::text as "contractRevenue", b.margin_pct::text as "marginPct", b.target_margin_pct::text as "targetMarginPct",
-                b.duration_months as "durationMonths", to_char(b.start_date, 'YYYY-MM-DD') as "startDate", b.version, b.sent_at as "sentAt",
-                b.updated_at as "updatedAt", c.id as "clientId", c.name as "clientName", u.full_name as "ownerName"
-           from staffing_bids b join clients c on c.id = b.client_id
-           join memberships m on m.id = b.owner_membership_id join users u on u.id = m.user_id
-          where ${where.join(' and ')} order by b.updated_at desc limit 500`,
-        params,
-      );
+      const and: Doc[] = [await this.authz.filter('bids:read', BID_FIELDS, tx)];
+      if (q.status) and.push({ status: q.status });
+      if (q.clientId) and.push({ client_id: q.clientId });
+      if (q.q) {
+        const m = ilike(q.q);
+        const clients = await tx.collection('clients').distinct<string>('id', { name: m });
+        and.push({ $or: [{ title: m }, { code: m }, { client_id: { $in: clients } }] });
+      }
+      const rows = await tx.collection('staffing_bids').find({ $and: and }, { sort: { updated_at: -1 }, limit: 500 });
+      const clients = await fieldById(tx, 'clients', rows.map((b) => b.client_id));
+      const owners = await membershipUserNames(tx, rows.map((b) => b.owner_membership_id));
+      return rows.filter((b) => owners.has(b.owner_membership_id)).map((b) => ({
+        id: b.id, code: b.code, title: b.title, status: b.status, mode: b.mode, currency: b.currency, headcount: b.headcount, monthlyRevenue: b.monthly_revenue,
+        contractRevenue: b.contract_revenue, marginPct: b.margin_pct, targetMarginPct: b.target_margin_pct, durationMonths: b.duration_months, startDate: b.start_date,
+        version: b.version, sentAt: b.sent_at ?? null, updatedAt: b.updated_at, clientId: b.client_id, clientName: clients.get(b.client_id) ?? null, ownerName: owners.get(b.owner_membership_id) ?? null,
+      }));
     });
   }
 
@@ -317,44 +329,41 @@ export class BidsService implements OnModuleInit {
       const lines = await this.lines(tx, id);
       const card = await this.card(tx, b.rate_card_id);
       const s = await this.authz.subject(tx);
-      const meta = await one<Record<string, unknown>>(
-        tx,
-        `select c.name as "clientName", c.contact_name as "clientContact", c.contact_email as "clientEmail", le.name as "legalEntityName",
-                u.full_name as "ownerName", b.submitted_at as "submittedAt", b.approved_at as "approvedAt", b.sent_at as "sentAt",
-                b.decided_at as "decidedAt", b.outcome_reason as "outcomeReason", b.created_at as "createdAt", b.updated_at as "updatedAt"
-           from staffing_bids b join clients c on c.id = b.client_id join legal_entities le on le.id = b.legal_entity_id
-           join memberships m on m.id = b.owner_membership_id join users u on u.id = m.user_id where b.id = $1`,
-        [id],
-      );
-      const versions = await many<{ id: string; version: number; event: string; createdAt: string; createdBy: string | null; hasPdf: boolean; pricing: BidPricing }>(
-        tx,
-        `select v.id, v.version, v.event, v.created_at as "createdAt", u.full_name as "createdBy", v.pdf_storage_key is not null as "hasPdf", v.pricing
-           from bid_versions v left join memberships m on m.id = v.created_by_membership_id left join users u on u.id = m.user_id
-          where v.bid_id = $1 order by v.created_at desc`,
-        [id],
-      );
-      const emails = await many<{ id: string; versionId: string; to: string; cc: string[]; subject: string; sendAt: string; cancelledAt: string | null; createdAt: string; ids: string[] }>(
-        tx,
-        `select id, version_id as "versionId", to_email::text as "to", cc, subject, send_at as "sendAt", cancelled_at as "cancelledAt", created_at as "createdAt",
-                email_message_ids as "ids" from bid_emails where bid_id = $1 order by created_at desc`,
-        [id],
-      );
+      const x = (await tx.collection('staffing_bids').findOne({ id }))!;
+      const client = await tx.collection('clients').findOne({ id: b.client_id });
+      const entity = await fieldById(tx, 'legal_entities', [b.legal_entity_id]);
+      const versionDocs = await tx.collection('bid_versions').find({ bid_id: id }, { sort: { created_at: -1 } });
+      const emailDocs = await tx.collection('bid_emails').find({ bid_id: id }, { sort: { created_at: -1 } });
+      const people = await membershipUserNames(tx, [b.owner_membership_id, ...versionDocs.map((v) => v.created_by_membership_id)]);
+      const meta = {
+        clientName: client?.name ?? null, clientContact: client?.contact_name ?? null, clientEmail: client?.contact_email ?? null, legalEntityName: entity.get(b.legal_entity_id) ?? null,
+        ownerName: people.get(b.owner_membership_id) ?? null, submittedAt: x.submitted_at ?? null, approvedAt: x.approved_at ?? null, sentAt: x.sent_at ?? null,
+        decidedAt: x.decided_at ?? null, outcomeReason: x.outcome_reason ?? null, createdAt: x.created_at, updatedAt: x.updated_at,
+      };
+      const versions = versionDocs.map((v) => ({
+        id: v.id as string, version: v.version as number, event: v.event as string, createdAt: v.created_at, createdBy: people.get(v.created_by_membership_id) ?? null,
+        hasPdf: !!v.pdf_storage_key, pricing: v.pricing as BidPricing,
+      }));
+      const emails = emailDocs.map((e) => ({
+        id: e.id as string, versionId: e.version_id as string, to: e.to_email as string, cc: (e.cc ?? []) as string[], subject: e.subject as string, sendAt: e.send_at,
+        cancelledAt: e.cancelled_at ?? null, createdAt: e.created_at, ids: (e.email_message_ids ?? []) as string[],
+      }));
       const delivery = await this.delivery(emails.flatMap((e) => e.ids));
-      const links = await many<{ emailId: string; to: string; firstViewedAt: string | null; viewCount: number; decision: string | null; decidedAt: string | null; expiresAt: string; revokedAt: string | null }>(
-        tx,
-        `select bid_email_id as "emailId", sent_to::text as "to", first_viewed_at as "firstViewedAt", view_count as "viewCount", decision, decided_at as "decidedAt", expires_at as "expiresAt", revoked_at as "revokedAt"
-           from bid_acceptance_links where bid_id = $1 order by created_at, sent_to`,
-        [id],
-      );
-      const acceptance = await one<{ decision: 'accepted' | 'declined'; sentTo: string; decidedAt: string; signerName: string; signerTitle: string | null; signerEmail: string; reason: string | null; ip: string | null; version: number; hasSignedPdf: boolean }>(
-        tx,
-        `select l.decision, l.sent_to::text as "sentTo", l.decided_at as "decidedAt", l.signer_name as "signerName", l.signer_title as "signerTitle", l.signer_email as "signerEmail",
-                l.decline_reason as reason, l.decided_ip as ip, v.version, l.signed_pdf_storage_key is not null as "hasSignedPdf"
-           from bid_acceptance_links l join bid_versions v on v.id = l.version_id where l.bid_id = $1 and l.decision is not null`,
-        [id],
-      );
+      const linkDocs = await tx.collection('bid_acceptance_links').find({ bid_id: id }, { sort: { created_at: 1, sent_to: 1 } });
+      const links = linkDocs.map((l) => ({
+        emailId: l.bid_email_id as string, to: l.sent_to as string, firstViewedAt: l.first_viewed_at ?? null, viewCount: l.view_count as number, decision: l.decision ?? null,
+        decidedAt: l.decided_at ?? null, expiresAt: l.expires_at, revokedAt: l.revoked_at ?? null,
+      }));
+      const decided = linkDocs.find((l) => l.decision);
+      const acceptance = decided
+        ? {
+            decision: decided.decision as 'accepted' | 'declined', sentTo: decided.sent_to as string, decidedAt: decided.decided_at, signerName: decided.signer_name, signerTitle: decided.signer_title ?? null,
+            signerEmail: decided.signer_email, reason: decided.decline_reason ?? null, ip: decided.decided_ip ?? null,
+            version: versionDocs.find((v) => v.id === decided.version_id)?.version as number, hasSignedPdf: !!decided.signed_pdf_storage_key,
+          }
+        : null;
       const approval = b.approval_request_id
-        ? { id: b.approval_request_id, status: (await one<{ status: string }>(tx, 'select status from approval_requests where id = $1', [b.approval_request_id]))?.status, steps: await this.approvals.trail(tx, b.approval_request_id) }
+        ? { id: b.approval_request_id, status: (await tx.collection('approval_requests').findOne({ id: b.approval_request_id }, { projection: { status: 1 } }))?.status as string | undefined, steps: await this.approvals.trail(tx, b.approval_request_id) }
         : null;
       const manage = can(s, 'bids:manage', attrs(b)).allowed;
       return {
@@ -386,55 +395,56 @@ export class BidsService implements OnModuleInit {
     const out = new Map<string, { status: string; sentAt: string | null; error: string | null }>();
     if (!ids.length) return out;
     const tenantId = requestContext.tenantActor().tenantId;
-    const rows = await this.db.platform((tx) =>
-      many<{ id: string; status: string; sentAt: string | null; error: string | null }>(
-        tx,
-        `select id, status, sent_at as "sentAt", last_error as "error" from email_messages where id = any($1::uuid[]) and tenant_id = $2`,
-        [ids, tenantId],
-      ),
-    );
-    for (const r of rows) out.set(r.id, { status: r.status, sentAt: r.sentAt, error: r.error });
+    const rows = await this.db.platform((tx) => tx.collection('email_messages').find({ id: { $in: ids }, tenant_id: tenantId }, { projection: { status: 1, sent_at: 1, last_error: 1 } }));
+    for (const r of rows) out.set(r.id, { status: r.status, sentAt: r.sent_at ?? null, error: r.last_error ?? null });
     return out;
   }
 
-  private async checkRefs(tx: Tx, input: BidInput) {
-    if (!(await one(tx, 'select 1 from clients where id = $1 and archived_at is null', [input.clientId]))) throw Errors.badRequest('invalid_client', 'Choose an active client');
-    if (!(await one(tx, 'select 1 from legal_entities where id = $1', [input.legalEntityId]))) throw Errors.badRequest('invalid_entity', 'Choose a legal entity in this workspace');
-    if (input.templateId && !(await one(tx, 'select 1 from bid_templates where id = $1', [input.templateId]))) throw Errors.badRequest('invalid_template', 'Choose a template in this workspace');
+  private async checkRefs(tx: TenantTx, input: BidInput) {
+    if (!(await tx.collection('clients').exists({ id: input.clientId, archived_at: null }))) throw Errors.badRequest('invalid_client', 'Choose an active client');
+    if (!(await tx.collection('legal_entities').exists({ id: input.legalEntityId }))) throw Errors.badRequest('invalid_entity', 'Choose a legal entity in this workspace');
+    if (input.templateId && !(await tx.collection('bid_templates').exists({ id: input.templateId }))) throw Errors.badRequest('invalid_template', 'Choose a template in this workspace');
     if (input.rateCardId) {
-      const card = await one<{ currency: string; clientId: string | null }>(tx, 'select currency, client_id as "clientId" from bid_rate_cards where id = $1 and archived_at is null', [input.rateCardId]);
+      const card = await tx.collection('bid_rate_cards').findOne({ id: input.rateCardId, archived_at: null }, { projection: { currency: 1, client_id: 1 } });
       if (!card) throw Errors.badRequest('invalid_rate_card', 'Choose an active rate card');
       if (card.currency !== input.currency) throw Errors.badRequest('rate_card_currency', `This rate card is in ${card.currency}; the bid is in ${input.currency}`);
-      if (card.clientId && card.clientId !== input.clientId) throw Errors.badRequest('rate_card_client', 'This rate card is for another client');
+      if (card.client_id && card.client_id !== input.clientId) throw Errors.badRequest('rate_card_client', 'This rate card is for another client');
     }
-    const designations = input.lines.map((l) => l.designationId).filter((x): x is string => !!x);
+    const designations = [...new Set(input.lines.map((l) => l.designationId).filter((x): x is string => !!x))];
     if (designations.length) {
-      const n = (await one<{ n: number }>(tx, 'select count(*)::int as n from designations where id = any($1::uuid[])', [designations]))!.n;
-      if (n !== new Set(designations).size) throw Errors.badRequest('invalid_designation', 'Choose designations from this workspace');
+      const n = await tx.collection('designations').count({ id: { $in: designations } });
+      if (n !== designations.length) throw Errors.badRequest('invalid_designation', 'Choose designations from this workspace');
     }
   }
 
-  private async writeLines(tx: Tx, bidId: string, input: BidInput) {
-    await tx.query('delete from bid_lines where bid_id = $1', [bidId]);
-    for (const [i, l] of input.lines.entries()) {
-      await tx.query(
-        `insert into bid_lines (tenant_id, bid_id, seq, role_title, designation_id, headcount, location, pay_monthly, bill_monthly, notes)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [bidId, i + 1, l.roleTitle, l.designationId ?? null, l.headcount, l.location ?? null, l.payMonthly, l.billMonthly ?? null, l.notes ?? null],
-      );
-    }
+  private async writeLines(tx: TenantTx, bidId: string, input: BidInput) {
+    const lines = tx.collection('bid_lines');
+    await lines.delete({ bid_id: bidId });
+    await lines.insertMany(input.lines.map((l, i) => ({
+      bid_id: bidId, seq: i + 1, role_title: l.roleTitle, designation_id: l.designationId ?? null, headcount: l.headcount, location: l.location ?? null,
+      pay_monthly: l.payMonthly, bill_monthly: l.billMonthly ?? null, notes: l.notes ?? null,
+    })));
     const p = priceBid(input, await this.card(tx, input.rateCardId ?? null));
-    await tx.query(
-      `update staffing_bids set headcount = $2, monthly_revenue = $3, contract_revenue = $4, margin_pct = $5, fees = $6, rate_card_id = $7 where id = $1`,
-      [bidId, p.headcount, p.monthlyRevenue, p.contractRevenue, p.marginPct, JSON.stringify(input.fees ?? []), input.rateCardId ?? null],
-    );
+    await tx.collection('staffing_bids').updateOne({ id: bidId }, {
+      $set: { headcount: p.headcount, monthly_revenue: p.monthlyRevenue, contract_revenue: p.contractRevenue, margin_pct: p.marginPct, fees: input.fees ?? [], rate_card_id: input.rateCardId ?? null },
+    });
     return p;
   }
 
-  private async nextCode(tx: Tx) {
-    await tx.query(`select pg_advisory_xact_lock(hashtext('staffing_bids:' || app_tenant_id()::text))`);
-    const n = (await one<{ n: number }>(tx, `select coalesce(max(substring(code from 5)::int), 0) + 1 as n from staffing_bids where code ~ '^BID-[0-9]+$'`))!.n;
+  private async nextCode(tx: TenantTx) {
+    // Locking the workspace serialises numbering, as the advisory lock did: a second bid created at the same time waits and is retried.
+    await tx.collection('tenants').lock({});
+    const codes = await tx.collection('staffing_bids').distinct<string>('code', { code: { $regex: '^BID-[0-9]+$' } });
+    const n = codes.reduce((m, c) => Math.max(m, Number(c.slice(4))), 0) + 1;
     return `BID-${String(n).padStart(4, '0')}`;
+  }
+
+  private bidFields(input: BidInput) {
+    return {
+      client_id: input.clientId, legal_entity_id: input.legalEntityId, title: input.title, mode: input.mode, currency: input.currency, start_date: input.startDate,
+      duration_months: input.durationMonths, on_cost_pct: input.onCostPct, overhead_pct: input.overheadPct, target_margin_pct: input.targetMarginPct,
+      template_id: input.templateId ?? null, cover_note: input.coverNote, terms: input.terms, valid_until: input.validUntil ?? null,
+    };
   }
 
   async create(input: BidInput) {
@@ -443,17 +453,10 @@ export class BidsService implements OnModuleInit {
       await this.authz.require('bids:manage', { membershipId: me, legalEntityId: input.legalEntityId }, tx);
       await this.checkRefs(tx, input);
       const code = await this.nextCode(tx);
-      const b = (await one<{ id: string }>(
-        tx,
-        `insert into staffing_bids (tenant_id, code, client_id, legal_entity_id, title, mode, currency, start_date, duration_months, on_cost_pct, overhead_pct,
-                                    target_margin_pct, template_id, cover_note, terms, valid_until, owner_membership_id)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id`,
-        [code, input.clientId, input.legalEntityId, input.title, input.mode, input.currency, input.startDate, input.durationMonths, input.onCostPct, input.overheadPct,
-          input.targetMarginPct, input.templateId ?? null, input.coverNote, input.terms, input.validUntil ?? null, me],
-      ))!;
+      const b = await tx.collection('staffing_bids').insert({ code, ...this.bidFields(input), owner_membership_id: me });
       const p = await this.writeLines(tx, b.id, input);
       await this.audit.record(tx, { action: 'bid.created', resourceType: 'staffing_bid', resourceId: b.id, changes: { code, title: input.title, headcount: p.headcount, marginPct: p.marginPct } });
-      return b.id;
+      return b.id as string;
     });
     return this.get(id);
   }
@@ -466,16 +469,12 @@ export class BidsService implements OnModuleInit {
       if (!BID_EDITABLE.includes(b.status)) throw Errors.conflict('bid_locked', b.status === 'pending_approval' ? 'This bid is waiting for approval. Withdraw it to make changes.' : `A ${b.status} bid cannot be changed`);
       await this.checkRefs(tx, input);
       // A change after the bid was submitted or sent starts a new version, which needs approval again.
-      const used = await one(tx, 'select 1 from bid_versions where bid_id = $1 and version = $2', [id, b.version]);
-      await tx.query(
-        `update staffing_bids set client_id = $2, legal_entity_id = $3, title = $4, mode = $5, currency = $6, start_date = $7, duration_months = $8, on_cost_pct = $9,
-                overhead_pct = $10, target_margin_pct = $11, template_id = $12, cover_note = $13, terms = $14, valid_until = $15,
-                version = version + $16, status = case when status in ('approved', 'sent') then 'draft' else status end,
-                approval_request_id = case when status in ('approved', 'sent') then null else approval_request_id end
-          where id = $1`,
-        [id, input.clientId, input.legalEntityId, input.title, input.mode, input.currency, input.startDate, input.durationMonths, input.onCostPct, input.overheadPct,
-          input.targetMarginPct, input.templateId ?? null, input.coverNote, input.terms, input.validUntil ?? null, used ? 1 : 0],
-      );
+      const used = await tx.collection('bid_versions').exists({ bid_id: id, version: b.version });
+      const reopened = ['approved', 'sent'].includes(b.status);
+      await tx.collection('staffing_bids').updateOne({ id }, {
+        $set: { ...this.bidFields(input), ...(reopened ? { status: 'draft', approval_request_id: null } : {}) },
+        $inc: { version: used ? 1 : 0 },
+      });
       const p = await this.writeLines(tx, id, input);
       await this.audit.record(tx, { action: 'bid.updated', resourceType: 'staffing_bid', resourceId: id, changes: { headcount: p.headcount, marginPct: p.marginPct, newVersion: !!used } });
     });
@@ -486,24 +485,20 @@ export class BidsService implements OnModuleInit {
     await this.db.tenant(async (tx) => {
       const b = await this.load(tx, id, true);
       await this.authz.require('bids:manage', attrs(b), tx);
-      if (b.status !== 'draft' || (await one(tx, 'select 1 from bid_versions where bid_id = $1', [id]))) {
+      if (b.status !== 'draft' || (await tx.collection('bid_versions').exists({ bid_id: id }))) {
         throw Errors.conflict('bid_has_history', 'Only a draft that was never submitted can be deleted. Withdraw it instead.');
       }
-      await tx.query('delete from staffing_bids where id = $1', [id]);
+      await tx.collection('staffing_bids').deleteOne({ id });
       await this.audit.record(tx, { action: 'bid.deleted', resourceType: 'staffing_bid', resourceId: id, changes: { code: b.code } });
     });
   }
 
   /** The proposal as the client will see it, frozen into a version. */
-  private async proposal(tx: Tx, b: BidRow, lines: LineRow[], issuedOn: string, validUntil: string | null): Promise<ProposalData> {
-    const m = (await one<{ legalName: string; clientName: string; clientLegal: string | null; contact: string | null; address: string | null; owner: string }>(
-      tx,
-      `select coalesce(nullif(le.legal_name, ''), le.name) as "legalName", c.name as "clientName", c.legal_name as "clientLegal", c.contact_name as contact,
-              c.address, u.full_name as owner
-         from staffing_bids b join legal_entities le on le.id = b.legal_entity_id join clients c on c.id = b.client_id
-         join memberships mm on mm.id = b.owner_membership_id join users u on u.id = mm.user_id where b.id = $1`,
-      [b.id],
-    ))!;
+  private async proposal(tx: TenantTx, b: BidRow, lines: LineRow[], issuedOn: string, validUntil: string | null): Promise<ProposalData> {
+    const le = (await tx.collection('legal_entities').findOne({ id: b.legal_entity_id }, { projection: { legal_name: 1, name: 1 } }))!;
+    const c = (await tx.collection('clients').findOne({ id: b.client_id }))!;
+    const owner = (await membershipUserNames(tx, [b.owner_membership_id])).get(b.owner_membership_id) ?? '';
+    const m = { legalName: (le.legal_name || le.name) as string, clientName: c.name as string, clientLegal: c.legal_name ?? null, contact: c.contact_name ?? null, address: c.address ?? null, owner };
     return {
       workspace: m.legalName, code: b.code, version: b.version, title: b.title, issuedOn, validUntil,
       client: { name: m.clientName, legalName: m.clientLegal, contactName: m.contact, address: m.address },
@@ -527,15 +522,12 @@ export class BidsService implements OnModuleInit {
       const proposal = await this.proposal(tx, b, lines, today, b.valid_until);
       const p = proposal.pricing;
       // A resubmission after rejection without changes is the same version; any edit has already moved the version on.
-      await tx.query(
-        `insert into bid_versions (tenant_id, bid_id, version, event, snapshot, pricing, created_by_membership_id) values (app_tenant_id(), $1, $2, 'submitted', $3, $4, $5)`,
-        [id, b.version, JSON.stringify(this.snapshot(b, lines, proposal)), JSON.stringify(p), requestContext.tenantActor().membershipId],
-      );
+      await tx.collection('bid_versions').insert({ bid_id: id, version: b.version, event: 'submitted', snapshot: this.snapshot(b, lines, proposal), pricing: p, created_by_membership_id: requestContext.tenantActor().membershipId });
       const flag = (p.lossMaking ? ' LOSS-MAKING' : p.belowTarget ? ' below target' : '') + (p.belowRateCard ? `; ${p.belowRateCard} role(s) below the rate card` : '');
       const fees = p.fees.length ? ` plus ${b.currency} ${formatAmount(p.feesTotal, b.currency)} in one-off fees` : '';
       const summary = `${b.code} ${proposal.client.name}: ${b.title}. ${p.headcount} people, ${b.currency} ${formatAmount(p.monthlyRevenue, b.currency)} a month for ${b.duration_months} months${fees}, margin ${p.marginPct}% (target ${pctText(b.target_margin_pct)}%)${flag}`;
       const approvalId = await this.approvals.start(tx, { resourceType: 'staffing_bid', resourceId: id, subjectEmployeeId: null, summary });
-      await tx.query(`update staffing_bids set status = 'pending_approval', submitted_at = now(), approval_request_id = $2 where id = $1`, [id, approvalId]);
+      await tx.collection('staffing_bids').updateOne({ id }, { $set: { status: 'pending_approval', submitted_at: new Date(), approval_request_id: approvalId } });
       await this.audit.record(tx, { action: 'bid.submitted', resourceType: 'staffing_bid', resourceId: id, changes: { version: b.version, marginPct: p.marginPct, belowTarget: p.belowTarget, belowRateCard: p.belowRateCard } });
       return { id, status: 'pending_approval' as const, approvalId };
     });
@@ -550,28 +542,24 @@ export class BidsService implements OnModuleInit {
       }
       if (b.status === 'pending_approval' && b.approval_request_id) await this.approvals.cancel(tx, b.approval_request_id);
       if (input.outcome === 'withdrawn') await this.cancelQueued(tx, id);
-      await tx.query(`update staffing_bids set status = $2, decided_at = now(), outcome_reason = $3 where id = $1`, [id, input.outcome, input.reason ?? null]);
+      await tx.collection('staffing_bids').updateOne({ id }, { $set: { status: input.outcome, decided_at: new Date(), outcome_reason: input.reason ?? null } });
       await this.audit.record(tx, { action: `bid.${input.outcome}`, resourceType: 'staffing_bid', resourceId: id, changes: { reason: input.reason ?? null } });
       return { id, status: input.outcome };
     });
   }
 
   /** Stops proposal emails that have not gone yet. Returns how many were stopped. */
-  private async cancelQueued(tx: Tx, bidId: string, emailId?: string) {
-    const rows = await many<{ id: string; email_message_ids: string[] }>(
-      tx,
-      `select id, email_message_ids from bid_emails where bid_id = $1 and cancelled_at is null${emailId ? ' and id = $2' : ''}`,
-      emailId ? [bidId, emailId] : [bidId],
-    );
+  private async cancelQueued(tx: TenantTx, bidId: string, emailId?: string) {
+    const rows = await tx.collection('bid_emails').find({ bid_id: bidId, cancelled_at: null, ...(emailId ? { id: emailId } : {}) }, { projection: { email_message_ids: 1 } });
     let stopped = 0;
     const tenantId = requestContext.tenantActor().tenantId;
     for (const r of rows) {
-      const n = await this.db.platform(async (ptx) =>
-        (await ptx.query(`update email_messages set status = 'cancelled' where id = any($1::uuid[]) and tenant_id = $2 and status = 'queued' and attempts = 0`, [r.email_message_ids, tenantId])).rowCount ?? 0,
+      const n = await this.db.platform((ptx) =>
+        ptx.collection('email_messages').update({ id: { $in: r.email_message_ids ?? [] }, tenant_id: tenantId, status: 'queued', attempts: 0 }, { $set: { status: 'cancelled' } }),
       );
       if (n > 0) {
-        await tx.query('update bid_emails set cancelled_at = now() where id = $1', [r.id]);
-        await tx.query('update bid_acceptance_links set revoked_at = now() where bid_email_id = $1 and decision is null', [r.id]);
+        await tx.collection('bid_emails').updateOne({ id: r.id }, { $set: { cancelled_at: new Date() } });
+        await tx.collection('bid_acceptance_links').update({ bid_email_id: r.id, decision: null }, { $set: { revoked_at: new Date() } });
         stopped++;
       }
     }
@@ -582,11 +570,11 @@ export class BidsService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const b = await this.load(tx, bidId, true);
       await this.authz.require('bids:manage', attrs(b), tx);
-      if (!(await one(tx, 'select 1 from bid_emails where id = $1 and bid_id = $2', [emailId, bidId]))) throw Errors.notFound('Scheduled email');
+      if (!(await tx.collection('bid_emails').exists({ id: emailId, bid_id: bidId }))) throw Errors.notFound('Scheduled email');
       if (!(await this.cancelQueued(tx, bidId, emailId))) throw Errors.conflict('already_sent', 'This email has already been sent or cancelled');
       // With nothing left going out, the proposal has not been sent after all.
-      const live = await one(tx, 'select 1 from bid_emails where bid_id = $1 and cancelled_at is null', [bidId]);
-      if (!live && b.status === 'sent') await tx.query(`update staffing_bids set status = 'approved', sent_at = null where id = $1`, [bidId]);
+      const live = await tx.collection('bid_emails').exists({ bid_id: bidId, cancelled_at: null });
+      if (!live && b.status === 'sent') await tx.collection('staffing_bids').updateOne({ id: bidId }, { $set: { status: 'approved', sent_at: null } });
       await this.audit.record(tx, { action: 'bid.email_cancelled', resourceType: 'staffing_bid', resourceId: bidId, metadata: { emailId } });
       return { id: emailId, cancelled: true };
     });
@@ -603,42 +591,39 @@ export class BidsService implements OnModuleInit {
       if (!['approved', 'sent'].includes(b.status)) throw Errors.conflict('not_approved', 'A bid must be approved before the proposal is sent');
       const lines = await this.lines(tx, id);
       // The PDF for this version is made once, when it is first sent, and reused for every later email.
-      let version = await one<{ id: string; pdf_storage_key: string }>(tx, `select id, pdf_storage_key from bid_versions where bid_id = $1 and version = $2 and event = 'sent'`, [id, b.version]);
+      const versions = tx.collection('bid_versions');
+      const found = await versions.findOne({ bid_id: id, version: b.version, event: 'sent' }, { projection: { pdf_storage_key: 1 } });
+      let version = found ? { id: found.id as string, pdf_storage_key: found.pdf_storage_key as string } : undefined;
       // If every email for that PDF was cancelled before it went, nobody has seen it: make it again so the issue
       // date is the day this email goes, not the day of the cancelled schedule.
-      const unseen = version && !(await one(tx, 'select 1 from bid_emails where version_id = $1 and cancelled_at is null', [version.id]));
+      const unseen = version && !(await tx.collection('bid_emails').exists({ version_id: version.id, cancelled_at: null }));
       if (!version || unseen) {
         const issued = sendAt.toISOString().slice(0, 10);
         let validUntil = b.valid_until;
         if (!validUntil) {
-          const days = (await one<{ d: number }>(tx, `select coalesce((select validity_days from bid_templates where id = $1), 30) as d`, [b.template_id]))!.d;
+          const days = ((b.template_id ? (await tx.collection('bid_templates').findOne({ id: b.template_id }, { projection: { validity_days: 1 } }))?.validity_days : undefined) as number | undefined) ?? 30;
           validUntil = new Date(sendAt.getTime() + days * 86_400_000).toISOString().slice(0, 10);
-          await tx.query('update staffing_bids set valid_until = $2 where id = $1', [id, validUntil]);
+          await tx.collection('staffing_bids').updateOne({ id }, { $set: { valid_until: validUntil } });
         }
         const proposal = await this.proposal(tx, b, lines, issued, validUntil);
         const pdf = await renderProposal(proposal);
         const key = this.storage.newKey(actor.tenantId);
         await this.storage.put(key, pdf);
-        const snap = JSON.stringify(this.snapshot({ ...b, valid_until: validUntil }, lines, proposal));
-        version = unseen
-          ? (await one<{ id: string; pdf_storage_key: string }>(
-            tx,
-            `update bid_versions set snapshot = $2, pricing = $3, pdf_storage_key = $4, created_at = now(), created_by_membership_id = $5 where id = $1 returning id, pdf_storage_key`,
-            [version!.id, snap, JSON.stringify(proposal.pricing), key, actor.membershipId],
-          ))!
-          : (await one<{ id: string; pdf_storage_key: string }>(
-            tx,
-            `insert into bid_versions (tenant_id, bid_id, version, event, snapshot, pricing, pdf_storage_key, created_by_membership_id)
-             values (app_tenant_id(), $1, $2, 'sent', $3, $4, $5, $6) returning id, pdf_storage_key`,
-            [id, b.version, snap, JSON.stringify(proposal.pricing), key, actor.membershipId],
-          ))!;
+        const snap = this.snapshot({ ...b, valid_until: validUntil }, lines, proposal);
+        if (unseen) {
+          await versions.updateOne({ id: version!.id }, { $set: { snapshot: snap, pricing: proposal.pricing, pdf_storage_key: key, created_at: new Date(), created_by_membership_id: actor.membershipId } });
+          version = { id: version!.id, pdf_storage_key: key };
+        } else {
+          const v = await versions.insert({ bid_id: id, version: b.version, event: 'sent', snapshot: snap, pricing: proposal.pricing, pdf_storage_key: key, created_by_membership_id: actor.membershipId });
+          version = { id: v.id as string, pdf_storage_key: key };
+        }
       }
       const attachment: EmailAttachment = { filename: `${b.code}-v${b.version}.pdf`, contentType: 'application/pdf', storageKey: version.pdf_storage_key };
       const p = this.price(b, lines, await this.card(tx, b.rate_card_id));
       const summary = `${input.message}\n\n${b.code}: ${b.title}\n${p.headcount} people for ${b.duration_months} months from ${b.start_date}\nMonthly total: ${b.currency} ${formatAmount(p.monthlyRevenue, b.currency)}\n${p.fees.length ? `One-off fees: ${b.currency} ${formatAmount(p.feesTotal, b.currency)}\n` : ''}Contract value: ${b.currency} ${formatAmount(p.contractRevenue, b.currency)}\n\nThe full proposal is attached as a PDF.`;
       // Each recipient gets a private link to review and accept or decline online, live from when the email goes
       // until the proposal's validity ends (at least a week). Only its hash is stored.
-      const until = (await one<{ v: string }>(tx, `select to_char(valid_until, 'YYYY-MM-DD') as v from staffing_bids where id = $1`, [id]))!.v;
+      const until = (await tx.collection('staffing_bids').findOne({ id }, { projection: { valid_until: 1 } }))!.valid_until as string;
       const expiresAt = new Date(Math.max(Date.parse(`${until}T23:59:59Z`), sendAt.getTime() + 7 * 86_400_000));
       const web = this.config.WEB_PUBLIC_URL.replace(/\/$/, '');
       const links: { to: string; hash: string }[] = [];
@@ -648,25 +633,18 @@ export class BidsService implements OnModuleInit {
         const token = randomBytes(24).toString('base64url');
         links.push({ to, hash: createHash('sha256').update(token).digest('hex') });
         const body = `${summary}\n\nReview it and accept or decline online: ${web}/proposal/${token}\nThis link is for ${to} and works until ${expiresAt.toISOString().slice(0, 10)}.`;
-        await tx.query(
-          `insert into email_messages (id, tenant_id, to_email, subject, text_body, template, attachments, next_attempt_at) values ($1, app_tenant_id(), $2, $3, $4, 'bid.proposal', $5, $6)`,
-          [mid, to, input.subject, body, JSON.stringify([attachment]), sendAt.toISOString()],
-        );
+        await tx.collection('email_messages').insert({ id: mid, to_email: to, subject: input.subject, text_body: body, template: 'bid.proposal', attachments: [attachment], next_attempt_at: sendAt });
         ids.push(mid);
       }
-      const e = (await one<{ id: string }>(
-        tx,
-        `insert into bid_emails (tenant_id, bid_id, version_id, to_email, cc, subject, message, send_at, email_message_ids, created_by_membership_id)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
-        [id, version.id, input.to, input.cc, input.subject, input.message, sendAt.toISOString(), ids, actor.membershipId],
-      ))!;
-      for (const l of links) {
-        await tx.query(
-          `insert into bid_acceptance_links (tenant_id, bid_id, version_id, bid_email_id, sent_to, token_hash, active_from, expires_at) values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7)`,
-          [id, version.id, e.id, l.to, l.hash, sendAt.toISOString(), expiresAt.toISOString()],
-        );
-      }
-      await tx.query(`update staffing_bids set status = 'sent', sent_at = coalesce(sent_at, now()) where id = $1`, [id]);
+      const e = await tx.collection('bid_emails').insert({
+        bid_id: id, version_id: version.id, to_email: input.to, cc: input.cc, subject: input.subject, message: input.message, send_at: sendAt, email_message_ids: ids,
+        created_by_membership_id: actor.membershipId,
+      });
+      await tx.collection('bid_acceptance_links').insertMany(links.map((l) => ({
+        bid_id: id, version_id: version!.id, bid_email_id: e.id, sent_to: l.to, token_hash: l.hash, active_from: sendAt, expires_at: expiresAt,
+      })));
+      const sentAt = (await tx.collection('staffing_bids').findOne({ id }, { projection: { sent_at: 1 } }))?.sent_at ?? new Date();
+      await tx.collection('staffing_bids').updateOne({ id }, { $set: { status: 'sent', sent_at: sentAt } });
       await this.audit.record(tx, { action: 'bid.proposal_scheduled', resourceType: 'staffing_bid', resourceId: id, changes: { to: input.to, cc: input.cc, sendAt: sendAt.toISOString(), version: b.version } });
       return { id: e.id, sendAt: sendAt.toISOString(), recipients: ids.length };
     });
@@ -678,9 +656,7 @@ export class BidsService implements OnModuleInit {
       const b = await this.load(tx, id);
       await this.authz.require('bids:read', attrs(b), tx);
       if (versionId) {
-        const v = await one<{ version: number; pdf_storage_key: string | null; snapshot: Omit<ProposalData, 'pricing'>; pricing: BidPricing }>(
-          tx, 'select version, pdf_storage_key, snapshot, pricing from bid_versions where id = $1 and bid_id = $2', [versionId, id],
-        );
+        const v = await tx.collection('bid_versions').findOne({ id: versionId, bid_id: id });
         if (!v) throw Errors.notFound('Version');
         const content = v.pdf_storage_key ? await this.read(v.pdf_storage_key) : await renderProposal({ ...v.snapshot, pricing: v.pricing });
         return { fileName: `${b.code}-v${v.version}.pdf`, content };
@@ -696,13 +672,10 @@ export class BidsService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const b = await this.load(tx, id);
       await this.authz.require('bids:read', attrs(b), tx);
-      const l = await one<{ key: string; version: number }>(
-        tx,
-        `select l.signed_pdf_storage_key as key, v.version from bid_acceptance_links l join bid_versions v on v.id = l.version_id
-          where l.bid_id = $1 and l.decision = 'accepted' and l.signed_pdf_storage_key is not null`,
-        [id],
-      );
-      if (!l) throw Errors.notFound('Signed proposal');
+      const link = await tx.collection('bid_acceptance_links').findOne({ bid_id: id, decision: 'accepted', signed_pdf_storage_key: { $ne: null } });
+      const v = link ? await tx.collection('bid_versions').findOne({ id: link.version_id }, { projection: { version: 1 } }) : undefined;
+      if (!link || !v) throw Errors.notFound('Signed proposal');
+      const l = { key: link.signed_pdf_storage_key as string, version: v.version as number };
       return { fileName: `${b.code}-v${l.version}-signed.pdf`, content: await this.read(l.key) };
     });
   }
