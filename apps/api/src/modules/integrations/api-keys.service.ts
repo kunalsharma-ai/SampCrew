@@ -4,9 +4,9 @@ import { randomBytes } from 'node:crypto';
 import { AuditService } from '../../platform/audit/audit.service';
 import { randomToken, safeEqual, sha256 } from '../../platform/auth/crypto';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one } from '../../platform/database/database.service';
+import { MongoService as DatabaseService } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
-import { BY, WHO } from './common';
+import { membershipNames } from './common';
 
 export interface ApiKeyIdentity {
   id: string;
@@ -35,17 +35,31 @@ export class ApiKeysService {
   ) {}
 
   async list() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select k.id, k.name, k.prefix, k.scopes, k.expires_at as "expiresAt", k.last_used_at as "lastUsedAt", k.last_used_ip::text as "lastUsedIp",
-                k.use_count::int as "useCount", k.revoked_at as "revokedAt", k.created_at as "createdAt", ${WHO('cu', 'ce')} as "createdBy",
-                case when k.revoked_at is not null then 'revoked' when k.expires_at is not null and k.expires_at <= now() then 'expired'
-                     when cm.status <> 'active' then 'owner_inactive' else 'active' end as status
-           from api_keys k ${BY('k.created_by_membership_id', 'c')}
-          order by k.revoked_at is not null, k.created_at desc`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const now = new Date();
+      const keys = await tx.collection('api_keys').find({}, { sort: { created_at: -1 } });
+      const who = await membershipNames(tx, keys.map((k) => k.created_by_membership_id));
+      const rows = keys.map((k) => {
+        const creator = who.get(k.created_by_membership_id);
+        const status = k.revoked_at ? 'revoked' : k.expires_at && k.expires_at <= now ? 'expired' : creator?.status !== 'active' ? 'owner_inactive' : 'active';
+        return {
+          id: k.id,
+          name: k.name,
+          prefix: k.prefix,
+          scopes: k.scopes,
+          expiresAt: k.expires_at ?? null,
+          lastUsedAt: k.last_used_at ?? null,
+          lastUsedIp: k.last_used_ip ?? null,
+          useCount: k.use_count,
+          revokedAt: k.revoked_at ?? null,
+          createdAt: k.created_at,
+          createdBy: creator?.name ?? null,
+          status,
+        };
+      });
+      // Current keys first, newest first within each group.
+      return [...rows.filter((k) => !k.revokedAt), ...rows.filter((k) => k.revokedAt)];
+    });
   }
 
   async create(input: ApiKeyInput) {
@@ -54,12 +68,14 @@ export class ApiKeysService {
     const secret = randomToken(32);
     const token = `${API_KEY_PREFIX}${prefix}_${secret}`;
     const row = await this.db.tenant(async (tx) => {
-      const r = (await one<{ id: string; expires_at: string | null }>(
-        tx,
-        `insert into api_keys (tenant_id, name, prefix, secret_hash, scopes, created_by_membership_id, expires_at)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, case when $6::int is null then null else now() + make_interval(days => $6::int) end) returning id, expires_at`,
-        [input.name, prefix, sha256(secret), input.scopes, actor.membershipId, input.expiresInDays],
-      ))!;
+      const r = await tx.collection('api_keys').insert({
+        name: input.name,
+        prefix,
+        secret_hash: sha256(secret),
+        scopes: input.scopes,
+        created_by_membership_id: actor.membershipId,
+        expires_at: input.expiresInDays == null ? null : new Date(Date.now() + input.expiresInDays * 86_400_000),
+      });
       await this.audit.record(tx, { action: 'api_key.created', resourceType: 'api_key', resourceId: r.id, metadata: { name: input.name, prefix, scopes: input.scopes, expiresAt: r.expires_at } });
       return r;
     });
@@ -69,10 +85,10 @@ export class ApiKeysService {
 
   async revoke(id: string) {
     return this.db.tenant(async (tx) => {
-      const k = await one<{ revoked_at: string | null; prefix: string }>(tx, 'select revoked_at, prefix from api_keys where id = $1', [id]);
+      const k = await tx.collection('api_keys').findOne({ id });
       if (!k) throw Errors.notFound('API key');
       if (k.revoked_at) throw Errors.conflict('already_revoked', 'This key is already revoked.');
-      await tx.query('update api_keys set revoked_at = now(), revoked_by_membership_id = $2 where id = $1', [id, requestContext.tenantActor().membershipId]);
+      await tx.collection('api_keys').updateOne({ id }, { $set: { revoked_at: new Date(), revoked_by_membership_id: requestContext.tenantActor().membershipId } });
       await this.audit.record(tx, { action: 'api_key.revoked', resourceType: 'api_key', resourceId: id, metadata: { prefix: k.prefix } });
       return { ok: true };
     });
@@ -86,21 +102,28 @@ export class ApiKeysService {
     const parsed = parseApiKey(token);
     if (!parsed) return null;
     return this.db.platform(async (tx) => {
-      const k = await one<{ id: string; name: string; tenant_id: string; secret_hash: string; scopes: string[]; membership_id: string; user_id: string; ok: boolean; tenant_status: string; full_name: string; stale: boolean }>(
-        tx,
-        `select k.id, k.name, k.tenant_id, k.secret_hash, k.scopes, m.id as membership_id, m.user_id, t.status as tenant_status, u.full_name,
-                (k.revoked_at is null and (k.expires_at is null or k.expires_at > now()) and m.status = 'active' and u.status = 'active') as ok,
-                (k.last_used_at is null or k.last_used_at < now() - interval '1 minute') as stale
-           from api_keys k join memberships m on m.id = k.created_by_membership_id and m.tenant_id = k.tenant_id
-           join users u on u.id = m.user_id join tenants t on t.id = k.tenant_id
-          where k.prefix = $1`,
-        [parsed.prefix],
-      );
+      const now = new Date();
+      const key = await tx.collection('api_keys').findOne({ prefix: parsed.prefix });
+      const m = key && (await tx.collection('memberships').findOne({ id: key.created_by_membership_id, tenant_id: key.tenant_id }));
+      const u = m && (await tx.collection('users').findOne({ id: m.user_id }));
+      const t = u && (await tx.collection('tenants').findOne({ id: key!.tenant_id }));
+      const k = t && {
+        id: key!.id as string,
+        name: key!.name as string,
+        tenant_id: key!.tenant_id as string,
+        secret_hash: key!.secret_hash as string,
+        scopes: key!.scopes as string[],
+        membership_id: m!.id as string,
+        user_id: m!.user_id as string,
+        tenant_status: t.status as string,
+        full_name: u!.full_name as string,
+        ok: !key!.revoked_at && (!key!.expires_at || key!.expires_at > now) && m!.status === 'active' && u!.status === 'active',
+        stale: !key!.last_used_at || key!.last_used_at < new Date(now.getTime() - 60_000),
+      };
       // Compare hashes in constant time whether or not the prefix matched, so timing does not reveal valid prefixes.
       const match = safeEqual(sha256(parsed.secret), k?.secret_hash ?? '0'.repeat(64));
       if (!k || !match || !k.ok) return null;
-      if (k.stale) await tx.query('update api_keys set last_used_at = now(), last_used_ip = $2, use_count = use_count + 1 where id = $1', [k.id, ip ?? null]);
-      else await tx.query('update api_keys set use_count = use_count + 1 where id = $1', [k.id]);
+      await tx.collection('api_keys').updateOne({ id: k.id }, { $inc: { use_count: 1 }, ...(k.stale ? { $set: { last_used_at: now, last_used_ip: ip ?? null } } : {}) });
       return { id: k.id, name: k.name, prefix: parsed.prefix, tenantId: k.tenant_id, membershipId: k.membership_id, userId: k.user_id, scopes: k.scopes, tenantStatus: k.tenant_status, label: `API key "${k.name}" (${parsed.prefix}, created by ${k.full_name})` };
     });
   }

@@ -95,6 +95,11 @@ export class TenantTx extends BaseTx {
     return new mongo.Table<T>(this.db, name, this.session, { scope: null, tables: this.tables });
   }
 
+  /** Recomputes this workspace's audit hash chain. */
+  verifyAuditChain(): Promise<{ checked: number; firstBrokenSeq: number | null }> {
+    return mongo.verifyAuditChain(this.db, this.tenantId);
+  }
+
   /** Appends to this workspace's audit chain; an event for any other workspace is refused. */
   override audit(input: Omit<mongo.AuditEventInput, 'tenant_id'> & { tenant_id?: string | null }): void {
     if (input.tenant_id !== undefined && input.tenant_id !== this.tenantId) {

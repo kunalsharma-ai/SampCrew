@@ -8,8 +8,7 @@ import { PlatformIntegrationsService } from '../../platform/integrations/platfor
 import { decryptField, encryptField, randomToken, sha256 } from '../../platform/auth/crypto';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import type { PlatformTx } from '../../platform/database/mongo.service';
-import { DatabaseService, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type PlatformTx } from '../../platform/database/mongo.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { AppError, Errors } from '../../platform/http/errors';
@@ -156,13 +155,23 @@ export class SsoService {
 
   async get() {
     return this.db.tenant(async (tx) => {
-      const c = await one(
-        tx,
-        `select id, protocol, issuer, client_id as "clientId", domains, status, enforced, jit_provisioning as "jitProvisioning",
-                verified_at as "verifiedAt", verified_email as "verifiedEmail", updated_at as "updatedAt",
-                saml_sso_url as "samlSsoUrl", saml_cert_expires_at as "samlCertExpiresAt", saml_cert_fingerprint as "samlCertFingerprint"
-           from sso_connections`,
-      );
+      const row = await tx.collection('sso_connections').findOne({});
+      const c = row && {
+        id: row.id,
+        protocol: row.protocol,
+        issuer: row.issuer,
+        clientId: row.client_id ?? null,
+        domains: row.domains,
+        status: row.status,
+        enforced: row.enforced,
+        jitProvisioning: row.jit_provisioning,
+        verifiedAt: row.verified_at ?? null,
+        verifiedEmail: row.verified_email ?? null,
+        updatedAt: row.updated_at,
+        samlSsoUrl: row.saml_sso_url ?? null,
+        samlCertExpiresAt: row.saml_cert_expires_at ?? null,
+        samlCertFingerprint: row.saml_cert_fingerprint ?? null,
+      };
       return { connection: c ?? null, redirectUri: this.redirectUri, saml: this.samlSp };
     });
   }
@@ -179,10 +188,10 @@ export class SsoService {
     const clientId = input.protocol === 'oidc' ? input.clientId : null;
     const clientSecret = input.protocol === 'oidc' ? input.clientSecret : undefined;
     await this.db.tenant(async (tx) => {
-      const existing = await one<{
+      const existing = await tx.collection<{
         id: string; protocol: string; issuer: string; client_id: string | null; client_secret_enc: string | null; saml_sso_url: string | null;
         saml_idp_cert: string | null; saml_cert_expires_at: Date | null; saml_cert_fingerprint: string | null;
-      }>(tx, 'select id, protocol, issuer, client_id, client_secret_enc, saml_sso_url, saml_idp_cert, saml_cert_expires_at, saml_cert_fingerprint from sso_connections');
+      }>('sso_connections').findOne({});
       if (saml && !cert) {
         // Other settings changed and the certificate left out: keep the stored one.
         if (existing?.protocol !== 'saml' || !existing.saml_idp_cert || !existing.saml_cert_fingerprint) throw Errors.validation([{ path: 'certificate', message: 'Required' }]);
@@ -190,39 +199,43 @@ export class SsoService {
       }
       if (!saml && !clientSecret && (!existing || !existing.client_secret_enc)) throw Errors.validation([{ path: 'clientSecret', message: 'Required' }]);
       // Domains are claimed across workspaces, so the check needs the platform role.
-      const taken = await this.db.platform((ptx) => one<{ domain: string }>(ptx, 'select domain::text from sso_domains where domain = any($1::citext[]) and tenant_id <> $2 limit 1', [input.domains, actor.tenantId]));
+      const taken = await tx.unscoped('sso_domains').findOne({ domain: { $in: input.domains }, tenant_id: { $ne: actor.tenantId } });
       if (taken) throw Errors.conflict('domain_taken', `${taken.domain} is already used for single sign-on by another workspace. Contact support if it is yours.`);
       const secret = clientSecret ? encryptField(clientSecret, this.config.fieldKeys) : null;
       const identityChanged =
         !existing || existing.protocol !== input.protocol || existing.issuer !== issuer || Boolean(clientSecret)
         || (saml ? existing.saml_sso_url !== (input as { ssoUrl: string }).ssoUrl || existing.saml_cert_fingerprint !== cert!.fingerprint : existing.client_id !== clientId);
-      const values = [
-        input.protocol, issuer, clientId, secret, input.domains, input.jitProvisioning,
-        saml ? (input as { ssoUrl: string }).ssoUrl : null, cert?.pem ?? null, cert?.expiresAt ?? null, cert?.fingerprint ?? null,
-      ];
+      const fields = {
+        protocol: input.protocol,
+        issuer,
+        client_id: clientId,
+        domains: input.domains,
+        jit_provisioning: input.jitProvisioning,
+        saml_sso_url: saml ? (input as { ssoUrl: string }).ssoUrl : null,
+        saml_idp_cert: cert?.pem ?? null,
+        saml_cert_expires_at: cert?.expiresAt ?? null,
+        saml_cert_fingerprint: cert?.fingerprint ?? null,
+      };
       let id: string;
       if (!existing) {
-        id = (await one<{ id: string }>(
-          tx,
-          `insert into sso_connections (tenant_id, protocol, issuer, client_id, client_secret_enc, domains, jit_provisioning, saml_sso_url, saml_idp_cert, saml_cert_expires_at, saml_cert_fingerprint, created_by_membership_id)
-           values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
-          [...values, actor.membershipId],
-        ))!.id;
+        id = (await tx.collection('sso_connections').insert({ ...fields, client_secret_enc: secret, created_by_membership_id: actor.membershipId })).id;
       } else {
         id = existing.id;
         // A different provider, client or certificate must pass a new test before anyone can use it. Switching to
         // SAML drops the OpenID Connect secret; switching to OpenID Connect drops the SAML settings.
-        await tx.query(
-          `update sso_connections set protocol = $1, issuer = $2, client_id = $3,
-                  client_secret_enc = case when $1 = 'saml' then null else coalesce($4, client_secret_enc) end,
-                  domains = $5, jit_provisioning = $6, saml_sso_url = $7, saml_idp_cert = $8, saml_cert_expires_at = $9, saml_cert_fingerprint = $10, updated_at = now()
-             ${identityChanged ? `, status = 'draft', enforced = false, verified_at = null, verified_email = null` : ''}
-           where id = $11`,
-          [...values, id],
+        await tx.collection('sso_connections').updateOne(
+          { id },
+          {
+            $set: {
+              ...fields,
+              client_secret_enc: saml ? null : (secret ?? existing.client_secret_enc),
+              ...(identityChanged ? { status: 'draft', enforced: false, verified_at: null, verified_email: null } : {}),
+            },
+          },
         );
       }
-      await tx.query('delete from sso_domains where tenant_id = app_tenant_id()');
-      for (const d of input.domains) await tx.query('insert into sso_domains (domain, tenant_id) values ($1, app_tenant_id())', [d]);
+      await tx.collection('sso_domains').delete({});
+      await tx.collection('sso_domains').insertMany(input.domains.map((domain) => ({ domain })));
       await this.audit.record(tx, {
         action: existing ? 'sso.updated' : 'sso.created', resourceType: 'sso_connection', resourceId: id,
         metadata: {
@@ -237,21 +250,19 @@ export class SsoService {
   async setStatus(status: 'active' | 'disabled', enforced: boolean) {
     const actor = requestContext.tenantActor();
     await this.db.tenant(async (tx) => {
-      const c = await one<{ id: string; verified_at: string | null; enforced: boolean }>(tx, 'select id, verified_at, enforced from sso_connections');
+      const c = await tx.collection('sso_connections').findOne({});
       if (!c) throw Errors.notFound('Single sign-on connection');
       if (status === 'active' && !c.verified_at) throw Errors.conflict('sso_not_tested', 'Run a test sign-in that succeeds before switching single sign-on on.');
       if (enforced && status !== 'active') throw Errors.badRequest('sso_enforce_needs_active', 'Single sign-on must be on to require it.');
-      await tx.query('update sso_connections set status = $2, enforced = $3, updated_at = now() where id = $1', [c.id, status, enforced]);
+      await tx.collection('sso_connections').updateOne({ id: c.id }, { $set: { status, enforced } });
       if (enforced && !c.enforced) {
         // Members (other than owners) signed in with a password are signed out, so their next sign-in goes through the provider.
-        await this.db.platform((ptx) =>
-          ptx.query(
-            `update sessions s set revoked_at = now(), revoked_reason = 'sso_enforced'
-               where s.tenant_id = $1 and s.revoked_at is null and s.user_id <> $2
-                 and not exists (select 1 from memberships m join role_assignments ra on ra.membership_id = m.id join roles r on r.id = ra.role_id
-                                  where m.user_id = s.user_id and m.tenant_id = $1 and r.key = 'tenant_owner')`,
-            [actor.tenantId, actor.userId],
-          ),
+        const owner = await tx.collection('roles').findOne({ key: 'tenant_owner' });
+        const ownerMemberships = owner ? (await tx.collection('role_assignments').find({ role_id: owner.id })).map((a) => a.membership_id) : [];
+        const ownerUsers = (await tx.collection('memberships').find({ id: { $in: ownerMemberships } }, { projection: { user_id: 1 } })).map((m) => m.user_id);
+        await tx.unscoped('sessions').update(
+          { tenant_id: actor.tenantId, revoked_at: null, user_id: { $nin: [actor.userId, ...ownerUsers] } },
+          { $set: { revoked_at: new Date(), revoked_reason: 'sso_enforced' } },
         );
       }
       await this.audit.record(tx, { action: 'sso.status_changed', resourceType: 'sso_connection', resourceId: c.id, metadata: { status, enforced } });
@@ -261,10 +272,10 @@ export class SsoService {
 
   async remove() {
     await this.db.tenant(async (tx) => {
-      const c = await one<{ id: string }>(tx, 'select id from sso_connections');
+      const c = await tx.collection('sso_connections').findOne({});
       if (!c) throw Errors.notFound('Single sign-on connection');
-      await tx.query('delete from sso_domains where tenant_id = app_tenant_id()');
-      await tx.query(`update sso_connections set status = 'disabled', enforced = false, updated_at = now() where id = $1`, [c.id]);
+      await tx.collection('sso_domains').delete({});
+      await tx.collection('sso_connections').updateOne({ id: c.id }, { $set: { status: 'disabled', enforced: false } });
       await this.audit.record(tx, { action: 'sso.disabled', resourceType: 'sso_connection', resourceId: c.id });
     });
     return { ok: true };
@@ -286,9 +297,11 @@ export class SsoService {
       if (!(await this.integrations.mobileSsoRedirects()).includes(mobile.returnTo)) throw Errors.badRequest('return_to_not_allowed', 'This app address is not allowed to receive single sign-on.');
     }
     const domain = emailDomain(email);
-    const c = await this.db.platform((tx) =>
-      one<ConnectionRow>(tx, `select c.* from sso_domains d join sso_connections c on c.tenant_id = d.tenant_id join tenants t on t.id = c.tenant_id where d.domain = $1 and c.status = 'active' and t.status = 'active'`, [domain]),
-    );
+    const c = await this.db.platform(async (tx) => {
+      const d = await tx.collection('sso_domains').findOne({ domain });
+      const conn = d && (await tx.collection<ConnectionRow>('sso_connections').findOne({ tenant_id: d.tenant_id, status: 'active' }));
+      return conn && (await tx.collection('tenants').exists({ id: conn.tenant_id, status: 'active' })) ? conn : undefined;
+    });
     if (!c) throw Errors.notFound('Single sign-on for this email domain');
     return this.start(c, 'login', client, null, email, client === 'mobile' ? (mobile as MobileStart) : undefined);
   }
@@ -296,7 +309,7 @@ export class SsoService {
   /** Owners test the connection before switching it on. */
   async startTest() {
     const actor = requestContext.tenantActor();
-    const c = await this.db.platform((tx) => one<ConnectionRow>(tx, 'select * from sso_connections where tenant_id = $1', [actor.tenantId]));
+    const c = await this.db.platform((tx) => tx.collection<ConnectionRow>('sso_connections').findOne({ tenant_id: actor.tenantId }));
     if (!c) throw Errors.notFound('Single sign-on connection');
     return this.start(c, 'test', 'web', actor.membershipId);
   }
@@ -305,11 +318,19 @@ export class SsoService {
     const state = randomToken(32);
     const save = (nonce: string, verifier: string | null) =>
       this.db.platform((tx) =>
-        tx.query(
-          `insert into sso_login_states (state_hash, tenant_id, nonce, code_verifier_enc, purpose, client, protocol, started_by_membership_id, return_to, app_challenge, expires_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + make_interval(mins => $11))`,
-          [sha256(state), c.tenant_id, nonce, verifier ? encryptField(verifier, this.config.fieldKeys) : null, purpose, client, c.protocol, membershipId, mobile?.returnTo ?? null, mobile?.appChallenge ?? null, STATE_TTL_MIN],
-        ),
+        tx.collection('sso_login_states').insert({
+          state_hash: sha256(state),
+          tenant_id: c.tenant_id,
+          nonce,
+          code_verifier_enc: verifier ? encryptField(verifier, this.config.fieldKeys) : null,
+          purpose,
+          client,
+          protocol: c.protocol,
+          started_by_membership_id: membershipId,
+          return_to: mobile?.returnTo ?? null,
+          app_challenge: mobile?.appChallenge ?? null,
+          expires_at: new Date(Date.now() + STATE_TTL_MIN * 60_000),
+        }),
       );
     if (c.protocol === 'saml') {
       // node-saml makes the AuthnRequest and hands its ID to the cache provider: that ID is kept as the nonce, and
@@ -343,19 +364,15 @@ export class SsoService {
 
   /** Uses a sign-in state once. Returns it with its connection, after checking the workspace may still use it. */
   private async consume(state: string, protocol: 'oidc' | 'saml') {
+    // One use: two callbacks with the same state write the same document, and only one transaction commits.
     const st = await this.db.platform((tx) =>
-      one<StateRow>(
-        tx,
-        `update sso_login_states set used_at = now() where state_hash = $1 and used_at is null and expires_at > now()
-         returning tenant_id, nonce, code_verifier_enc, purpose, client, protocol, started_by_membership_id, return_to, app_challenge`,
-        [sha256(state)],
-      ),
+      tx.collection<StateRow>('sso_login_states').updateAndGet({ state_hash: sha256(state), used_at: null, expires_at: { $gt: new Date() } }, { $set: { used_at: new Date() } }),
     );
     if (!st) throw Errors.unauthorized('This sign-in link has expired or was already used. Start again.');
-    const c = await this.db.platform((tx) => one<ConnectionRow>(tx, 'select * from sso_connections where tenant_id = $1', [st.tenant_id]));
+    const c = await this.db.platform((tx) => tx.collection<ConnectionRow>('sso_connections').findOne({ tenant_id: st.tenant_id }));
     if (!c || (st.purpose === 'login' && c.status !== 'active')) throw Errors.forbidden('Single sign-on is not switched on for this workspace');
     if (c.protocol !== protocol || st.protocol !== protocol) throw new AppError(401, 'sso_failed', 'Single sign-on failed: the workspace changed its single sign-on settings during this sign-in. Start again.', { purpose: st.purpose });
-    if (!(await this.db.tenant(loadEntitlements, { tenantId: c.tenant_id })).features.has('sso')) throw Errors.featureNotInPlan('Single sign-on');
+    if (!(await this.db.tenant((tx) => loadEntitlements(tx), { tenantId: c.tenant_id })).features.has('sso')) throw Errors.featureNotInPlan('Single sign-on');
     const fail = async (reason: string): Promise<never> => {
       await this.db.platform((tx) => this.audit.record(tx, { tenantId: c.tenant_id, action: 'auth.sso_failed', resourceType: 'sso_connection', resourceId: c.id, metadata: { reason, purpose: st.purpose, protocol } }));
       throw new AppError(401, 'sso_failed', `Single sign-on failed: ${reason}`, { purpose: st.purpose });
@@ -368,7 +385,7 @@ export class SsoService {
     if (!c.domains.includes(emailDomain(email))) return fail(`${emailDomain(email)} is not one of this workspace's single sign-on domains`);
     if (st.purpose === 'test') {
       await this.db.platform(async (tx) => {
-        await tx.query('update sso_connections set verified_at = now(), verified_email = $2, updated_at = now() where id = $1', [c.id, email]);
+        await tx.collection('sso_connections').updateOne({ id: c.id }, { $set: { verified_at: new Date(), verified_email: email } });
         await this.audit.record(tx, { tenantId: c.tenant_id, action: 'sso.tested', resourceType: 'sso_connection', resourceId: c.id, metadata: { email, protocol: c.protocol } });
       });
       return { kind: 'test', tenantId: c.tenant_id, email };
@@ -379,10 +396,15 @@ export class SsoService {
       // verifier behind app_challenge can exchange.
       const code = randomToken(32);
       await this.db.platform((tx) =>
-        tx.query(
-          `insert into sso_handoffs (code_hash, tenant_id, user_id, membership_id, mfa, app_challenge, expires_at) values ($1, $2, $3, $4, $5, $6, now() + make_interval(secs => $7))`,
-          [sha256(code), c.tenant_id, member.userId, member.membershipId, mfa, st.app_challenge, HANDOFF_TTL_SEC],
-        ),
+        tx.collection('sso_handoffs').insert({
+          code_hash: sha256(code),
+          tenant_id: c.tenant_id,
+          user_id: member.userId,
+          membership_id: member.membershipId,
+          mfa,
+          app_challenge: st.app_challenge,
+          expires_at: new Date(Date.now() + HANDOFF_TTL_SEC * 1000),
+        }),
       );
       const to = new URL(st.return_to!);
       to.searchParams.set('code', code);
@@ -394,11 +416,9 @@ export class SsoService {
   /** The app exchanges its one-time code, proving it holds the verifier for the challenge it started with. */
   async exchange(code: string, verifier: string) {
     const h = await this.db.platform((tx) =>
-      one<{ tenant_id: string; user_id: string; membership_id: string; mfa: boolean; app_challenge: string }>(
-        tx,
-        `update sso_handoffs set used_at = now() where code_hash = $1 and used_at is null and expires_at > now() returning tenant_id, user_id, membership_id, mfa, app_challenge`,
-        [sha256(code)],
-      ),
+      tx
+        .collection<{ tenant_id: string; user_id: string; membership_id: string; mfa: boolean; app_challenge: string }>('sso_handoffs')
+        .updateAndGet({ code_hash: sha256(code), used_at: null, expires_at: { $gt: new Date() } }, { $set: { used_at: new Date() } }),
     );
     if (!h) throw Errors.unauthorized('This sign-in has expired or was already used. Start again in the app.');
     if (createHash('sha256').update(verifier).digest('base64url') !== h.app_challenge) {
@@ -483,32 +503,27 @@ export class SsoService {
   /** The member signing in. A pending invitation is accepted; with just-in-time provisioning, a new member is created. */
   private async memberFor(c: ConnectionRow, email: string, name: string) {
     return this.db.platform(async (tx) => {
-      const m = await one<{ membership_id: string; user_id: string; status: string; user_status: string }>(
-        tx,
-        `select m.id as membership_id, u.id as user_id, m.status, u.status as user_status from users u join memberships m on m.user_id = u.id and m.tenant_id = $2 where u.email = $1`,
-        [email, c.tenant_id],
-      );
+      const u = await tx.collection('users').findOne({ email });
+      const ms = u && (await tx.collection('memberships').findOne({ user_id: u.id, tenant_id: c.tenant_id }));
+      const m = ms && { membership_id: ms.id as string, user_id: u!.id as string, status: ms.status as string, user_status: u!.status as string };
       if (m) {
         if (m.status === 'suspended' || m.user_status !== 'active') throw Errors.forbidden('Your access to this workspace is suspended. Contact your HR team.');
         if (m.status === 'invited') {
-          await tx.query(`update memberships set status = 'active' where id = $1`, [m.membership_id]);
-          await tx.query('update invitations set accepted_at = now() where membership_id = $1 and accepted_at is null and revoked_at is null', [m.membership_id]);
+          await tx.collection('memberships').updateOne({ id: m.membership_id }, { $set: { status: 'active' } });
+          await tx.collection('invitations').update({ membership_id: m.membership_id, accepted_at: null, revoked_at: null }, { $set: { accepted_at: new Date() } });
           await this.audit.record(tx, { tenantId: c.tenant_id, action: 'invitation.accepted', resourceType: 'membership', resourceId: m.membership_id, metadata: { via: 'sso' } });
         }
         return { userId: m.user_id, membershipId: m.membership_id };
       }
       if (!c.jit_provisioning) throw Errors.forbidden('You are not a member of this workspace yet. Ask your HR team to add you.');
-      const seats = (await one<{ n: number }>(tx, `select count(*)::int as n from memberships where tenant_id = $1 and status <> 'suspended'`, [c.tenant_id]))!.n;
-      const limit = (await this.db.tenant(loadEntitlements, { tenantId: c.tenant_id })).limits.max_employees;
+      const seats = await tx.collection('memberships').count({ tenant_id: c.tenant_id, status: { $ne: 'suspended' } });
+      const limit = (await this.db.tenant((ttx) => loadEntitlements(ttx), { tenantId: c.tenant_id })).limits.max_employees;
       if (limit !== undefined && limit !== UNLIMITED && seats >= limit) throw Errors.forbidden('This workspace has no seats left. Ask your HR team to add you.');
-      const userId = (await one<{ id: string }>(tx, 'insert into users (email, full_name) values ($1, $2) on conflict (email) do update set email = excluded.email returning id', [email, name.slice(0, 160)]))!.id;
-      const entity = await one<{ id: string }>(tx, 'select id from legal_entities where tenant_id = $1 and archived_at is null order by created_at limit 1', [c.tenant_id]);
-      const membershipId = (await one<{ id: string }>(
-        tx,
-        `insert into memberships (tenant_id, user_id, status, legal_entity_id, provisioned_by) values ($1, $2, 'active', $3, 'sso') returning id`,
-        [c.tenant_id, userId, entity?.id ?? null],
-      ))!.id;
-      await tx.query(`insert into role_assignments (tenant_id, membership_id, role_id) select $1, $2, id from roles where tenant_id = $1 and key = 'employee'`, [c.tenant_id, membershipId]);
+      const userId = (u ?? (await tx.collection('users').insert({ email, full_name: name.slice(0, 160) }))).id as string;
+      const entity = await tx.collection('legal_entities').findOne({ tenant_id: c.tenant_id, archived_at: null }, { sort: { created_at: 1 } });
+      const membershipId = (await tx.collection('memberships').insert({ tenant_id: c.tenant_id, user_id: userId, status: 'active', legal_entity_id: entity?.id ?? null, provisioned_by: 'sso' })).id as string;
+      const employeeRole = await tx.collection('roles').findOne({ tenant_id: c.tenant_id, key: 'employee' });
+      if (employeeRole) await tx.collection('role_assignments').insert({ tenant_id: c.tenant_id, membership_id: membershipId, role_id: employeeRole.id });
       await this.audit.record(tx, { tenantId: c.tenant_id, action: 'membership.provisioned', resourceType: 'membership', resourceId: membershipId, changes: { email }, metadata: { via: 'sso_jit' } });
       await this.outbox.publish(tx, c.tenant_id, 'membership.invited', { membershipId, email });
       return { userId, membershipId };

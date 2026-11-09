@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { AuditService } from '../../platform/audit/audit.service';
 import { randomToken, safeEqual, sha256 } from '../../platform/auth/crypto';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { AppError, Errors } from '../../platform/http/errors';
@@ -33,8 +33,20 @@ interface MemberRow {
 const ALPHA = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const newPrefix = () => Array.from(randomBytes(10), (b) => ALPHA[b % ALPHA.length]).join('');
 
-const MEMBER_SQL = `select m.id, u.email::text, u.full_name, m.status, m.scim_external_id, m.created_at, m.updated_at
-                      from memberships m join users u on u.id = m.user_id`;
+/** Memberships with the person's email and name, as SCIM resources are built from them. */
+async function memberRows(tx: TenantTx, filter: Record<string, unknown>, options: { sort?: Record<string, 1 | -1>; skip?: number; limit?: number } = {}): Promise<MemberRow[]> {
+  const memberships = await tx.collection('memberships').find(filter, { sort: options.sort, skip: options.skip, limit: options.limit });
+  const users = new Map((await (await tx.users()).find({ id: { $in: memberships.map((m) => m.user_id) } })).map((u) => [u.id as string, u]));
+  return memberships.map((m) => ({
+    id: m.id,
+    email: users.get(m.user_id)?.email,
+    full_name: users.get(m.user_id)?.full_name,
+    status: m.status,
+    scim_external_id: m.scim_external_id ?? null,
+    created_at: m.created_at,
+    updated_at: m.updated_at,
+  }));
+}
 
 /**
  * SCIM 2.0 user provisioning (RFC 7643/7644) for Okta, Microsoft Entra ID and other identity providers. A SCIM
@@ -56,14 +68,16 @@ export class ScimService {
   async status() {
     return this.db.tenant(async (tx) => ({
       baseUrl: `${this.config.API_PUBLIC_URL.replace(/\/$/, '')}/api/v1/scim/v2`,
-      token: await one(
-        tx,
-        `select t.id, t.prefix, t.last_used_at as "lastUsedAt", t.use_count::int as "useCount", t.created_at as "createdAt", u.full_name as "createdBy"
-           from scim_tokens t join memberships m on m.id = t.created_by_membership_id join users u on u.id = m.user_id
-          where t.revoked_at is null`,
-      ),
-      provisioned: (await one<{ n: number }>(tx, `select count(*)::int as n from memberships where provisioned_by = 'scim' and status = 'active'`))!.n,
-      events: await many(tx, `select method, path, status, detail, created_at as "createdAt" from scim_events order by created_at desc limit 50`),
+      token: await (async () => {
+        const t = await tx.collection('scim_tokens').findOne({ revoked_at: null });
+        if (!t) return undefined;
+        const creator = await tx.collection('memberships').findOne({ id: t.created_by_membership_id });
+        const user = creator && (await (await tx.users()).findOne({ id: creator.user_id }));
+        if (!user) return undefined;
+        return { id: t.id, prefix: t.prefix, lastUsedAt: t.last_used_at ?? null, useCount: t.use_count, createdAt: t.created_at, createdBy: user.full_name };
+      })(),
+      provisioned: await tx.collection('memberships').count({ provisioned_by: 'scim', status: 'active' }),
+      events: (await tx.collection('scim_events').find({}, { sort: { created_at: -1 }, limit: 50 })).map((e) => ({ method: e.method, path: e.path, status: e.status, detail: e.detail ?? null, createdAt: e.created_at })),
     }));
   }
 
@@ -73,12 +87,8 @@ export class ScimService {
     const prefix = newPrefix();
     const secret = randomToken(32);
     await this.db.tenant(async (tx) => {
-      const old = await one<{ id: string }>(tx, 'update scim_tokens set revoked_at = now() where revoked_at is null returning id');
-      const r = (await one<{ id: string }>(
-        tx,
-        'insert into scim_tokens (tenant_id, prefix, secret_hash, created_by_membership_id) values (app_tenant_id(), $1, $2, $3) returning id',
-        [prefix, sha256(secret), actor.membershipId],
-      ))!;
+      const old = await tx.collection('scim_tokens').updateAndGet({ revoked_at: null }, { $set: { revoked_at: new Date() } });
+      const r = await tx.collection('scim_tokens').insert({ prefix, secret_hash: sha256(secret), created_by_membership_id: actor.membershipId });
       await this.audit.record(tx, { action: 'scim.token_created', resourceType: 'scim_token', resourceId: r.id, metadata: { prefix, replaced: old?.id ?? null } });
     });
     return { token: `${SCIM_TOKEN_PREFIX}${prefix}_${secret}`, prefix };
@@ -86,7 +96,7 @@ export class ScimService {
 
   async revokeToken() {
     await this.db.tenant(async (tx) => {
-      const old = await one<{ id: string; prefix: string }>(tx, 'update scim_tokens set revoked_at = now() where revoked_at is null returning id, prefix');
+      const old = await tx.collection('scim_tokens').updateAndGet({ revoked_at: null }, { $set: { revoked_at: new Date() } });
       if (!old) throw Errors.notFound('SCIM token');
       await this.audit.record(tx, { action: 'scim.token_revoked', resourceType: 'scim_token', resourceId: old.id, metadata: { prefix: old.prefix } });
     });
@@ -98,19 +108,24 @@ export class ScimService {
     const parsed = parseScimToken(token);
     if (!parsed) return null;
     return this.db.platform(async (tx) => {
-      const t = await one<{ id: string; tenant_id: string; secret_hash: string; membership_id: string; user_id: string; full_name: string; tenant_status: string; ok: boolean; stale: boolean }>(
-        tx,
-        `select t.id, t.tenant_id, t.secret_hash, m.id as membership_id, m.user_id, u.full_name, tn.status as tenant_status,
-                (t.revoked_at is null and m.status = 'active' and u.status = 'active') as ok,
-                (t.last_used_at is null or t.last_used_at < now() - interval '1 minute') as stale
-           from scim_tokens t join memberships m on m.id = t.created_by_membership_id and m.tenant_id = t.tenant_id
-           join users u on u.id = m.user_id join tenants tn on tn.id = t.tenant_id
-          where t.prefix = $1`,
-        [parsed.prefix],
-      );
+      const token = await tx.collection('scim_tokens').findOne({ prefix: parsed.prefix });
+      const m = token && (await tx.collection('memberships').findOne({ id: token.created_by_membership_id, tenant_id: token.tenant_id }));
+      const u = m && (await tx.collection('users').findOne({ id: m.user_id }));
+      const tn = u && (await tx.collection('tenants').findOne({ id: token!.tenant_id }));
+      const t = tn && {
+        id: token!.id as string,
+        tenant_id: token!.tenant_id as string,
+        secret_hash: token!.secret_hash as string,
+        membership_id: m!.id as string,
+        user_id: m!.user_id as string,
+        full_name: u!.full_name as string,
+        tenant_status: tn.status as string,
+        ok: !token!.revoked_at && m!.status === 'active' && u!.status === 'active',
+        stale: !token!.last_used_at || token!.last_used_at < new Date(Date.now() - 60_000),
+      };
       const match = safeEqual(sha256(parsed.secret), t?.secret_hash ?? '0'.repeat(64));
       if (!t || !match || !t.ok) return null;
-      await tx.query(`update scim_tokens set use_count = use_count + 1${t.stale ? ', last_used_at = now()' : ''} where id = $1`, [t.id]);
+      await tx.collection('scim_tokens').updateOne({ id: t.id }, { $inc: { use_count: 1 }, ...(t.stale ? { $set: { last_used_at: new Date() } } : {}) });
       return { id: t.id, prefix: parsed.prefix, tenantId: t.tenant_id, membershipId: t.membership_id, userId: t.user_id, createdBy: t.full_name, tenantStatus: t.tenant_status };
     });
   }
@@ -134,10 +149,8 @@ export class ScimService {
     };
   }
 
-  private async log(tx: Tx, method: string, path: string, status: number, membershipId: string | null, detail?: string) {
-    await tx.query('insert into scim_events (tenant_id, method, path, status, membership_id, detail) values (app_tenant_id(), $1, $2, $3, $4, $5)', [
-      method, path.slice(0, 300), status, membershipId, detail?.slice(0, 500) ?? null,
-    ]);
+  private async log(tx: TenantTx, method: string, path: string, status: number, membershipId: string | null, detail?: string) {
+    await tx.collection('scim_events').insert({ method, path: path.slice(0, 300), status, membership_id: membershipId, detail: detail?.slice(0, 500) ?? null });
   }
 
   /** Records failed calls too, in their own transaction (the failing one is rolled back). */
@@ -145,9 +158,9 @@ export class ScimService {
     await this.db.tenant((tx) => this.log(tx, method, path, status, null, detail)).catch(() => undefined);
   }
 
-  private async load(tx: Tx, id: string) {
+  private async load(tx: TenantTx, id: string) {
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ScimError(404, undefined, 'User not found');
-    const r = await one<MemberRow>(tx, `${MEMBER_SQL} where m.id = $1`, [id]);
+    const [r] = await memberRows(tx, { id });
     if (!r) throw new ScimError(404, undefined, 'User not found');
     return r;
   }
@@ -158,10 +171,13 @@ export class ScimService {
     const start = Math.max(1, q.startIndex ?? 1);
     const count = Math.min(Math.max(0, q.count ?? 100), 200);
     return this.db.tenant(async (tx) => {
-      const where = !f ? '' : f.attr === 'userName' ? 'where u.email = $3' : 'where m.scim_external_id = $3';
-      const params: unknown[] = [count, start - 1, ...(f ? [f.value] : [])];
-      const rows = await many<MemberRow>(tx, `${MEMBER_SQL} ${where} order by m.created_at, m.id limit $1 offset $2`, params);
-      const total = (await one<{ n: number }>(tx, `select count(*)::int as n from memberships m join users u on u.id = m.user_id ${where.replace('$3', '$1')}`, f ? [f.value] : []))!.n;
+      let filter: Record<string, unknown> = {};
+      if (f?.attr === 'userName') {
+        const user = await (await tx.users()).findOne({ email: f.value });
+        filter = { user_id: user?.id ?? null, ...(user ? {} : { _id: { $in: [] } }) };
+      } else if (f) filter = { scim_external_id: f.value };
+      const rows = await memberRows(tx, filter, { sort: { created_at: 1, _id: 1 }, skip: start - 1, limit: count });
+      const total = await tx.collection('memberships').count(filter);
       await this.log(tx, 'GET', `/Users${q.filter ? `?filter=${q.filter}` : ''}`, 200, null);
       return { schemas: [SCIM_LIST_SCHEMA], totalResults: total, startIndex: start, itemsPerPage: rows.length, Resources: rows.map((r) => this.resource(r, base)) };
     });
@@ -176,32 +192,33 @@ export class ScimService {
     if (!email) throw new ScimError(400, 'invalidValue', 'userName or a primary email must be an email address');
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const userId = await this.db.platform(async (ptx) => {
-        const existing = await one<{ id: string }>(ptx, 'select id from users where email = $1', [email]);
-        if (existing) return existing.id;
-        return (await one<{ id: string }>(ptx, 'insert into users (email, full_name) values ($1, $2) returning id', [email, scimFullName(input)]))!.id;
-      });
-      if (await one(tx, 'select 1 from memberships where user_id = $1', [userId])) throw new ScimError(409, 'uniqueness', 'A user with this userName already exists in the workspace');
-      if (input.externalId && (await one(tx, 'select 1 from memberships where scim_external_id = $1', [input.externalId]))) {
+      // Identities are global: found or created outside the workspace, in this same transaction.
+      const users = tx.unscoped('users');
+      const userId = ((await users.findOne({ email }, { projection: { _id: 1 } })) ?? (await users.insert({ email, full_name: scimFullName(input) }))).id as string;
+      if (await tx.collection('memberships').exists({ user_id: userId })) throw new ScimError(409, 'uniqueness', 'A user with this userName already exists in the workspace');
+      if (input.externalId && (await tx.collection('memberships').exists({ scim_external_id: input.externalId }))) {
         throw new ScimError(409, 'uniqueness', 'A user with this externalId already exists');
       }
       if (input.active) {
-        const { n } = (await one<{ n: number }>(tx, `select count(*)::int as n from memberships where status <> 'suspended'`))!;
+        const n = await tx.collection('memberships').count({ status: { $ne: 'suspended' } });
         await this.entitlements.requireWithinLimit('max_employees', n, tx).catch(() => {
           throw new ScimError(409, undefined, 'The workspace has no seats left on its plan. Add seats in Plan and billing, then retry.');
         });
       }
-      const legalEntity = await one<{ id: string }>(tx, 'select id from legal_entities where archived_at is null order by created_at limit 1');
-      const m = (await one<{ id: string }>(
-        tx,
-        `insert into memberships (tenant_id, user_id, status, legal_entity_id, invited_by, scim_external_id, provisioned_by, joined_at)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, 'scim', null) returning id`,
-        [userId, input.active ? 'active' : 'suspended', legalEntity?.id ?? null, actor.membershipId, input.externalId ?? null],
-      ))!;
-      const role = (await one<{ id: string }>(tx, `select id from roles where key = 'employee'`))!;
-      await tx.query('insert into role_assignments (tenant_id, membership_id, role_id, granted_by) values (app_tenant_id(), $1, $2, $3)', [m.id, role.id, actor.membershipId]);
+      const legalEntity = await tx.collection('legal_entities').findOne({ archived_at: null }, { sort: { created_at: 1 } });
+      const m = await tx.collection('memberships').insert({
+        user_id: userId,
+        status: input.active ? 'active' : 'suspended',
+        legal_entity_id: legalEntity?.id ?? null,
+        invited_by: actor.membershipId,
+        scim_external_id: input.externalId ?? null,
+        provisioned_by: 'scim',
+        joined_at: null,
+      });
+      const role = (await tx.collection('roles').findOne({ key: 'employee' }))!;
+      await tx.collection('role_assignments').insert({ membership_id: m.id, role_id: role.id, granted_by: actor.membershipId });
       // Connect the login to the person's employee record when HR already created one with this work email.
-      const linked = await one<{ id: string }>(tx, `update employees set membership_id = $1 where id = (select id from employees where work_email = $2 and membership_id is null and status <> 'exited' limit 1) returning id`, [m.id, email]);
+      const linked = await tx.collection('employees').updateAndGet({ work_email: email, membership_id: null, status: { $ne: 'exited' } }, { $set: { membership_id: m.id } });
       await this.audit.record(tx, { action: 'membership.provisioned', resourceType: 'membership', resourceId: m.id, changes: { email, active: input.active, externalId: input.externalId ?? null, employeeId: linked?.id ?? null } });
       await this.outbox.publish(tx, actor.tenantId, 'membership.invited', { membershipId: m.id, email });
       await this.log(tx, 'POST', '/Users', 201, m.id, email);
@@ -239,35 +256,33 @@ export class ScimService {
     });
   }
 
-  private async apply(tx: Tx, r: MemberRow, next: { active: boolean; givenName: string; familyName: string; externalId: string | null }, method: string, detail?: string, keepName = false) {
+  private async apply(tx: TenantTx, r: MemberRow, next: { active: boolean; givenName: string; familyName: string; externalId: string | null }, method: string, detail?: string, keepName = false) {
     const actor = requestContext.tenantActor();
-    const owner = await one(tx, `select 1 from role_assignments ra join roles ro on ro.id = ra.role_id where ra.membership_id = $1 and ro.key = 'tenant_owner'`, [r.id]);
+    const ownerRole = await tx.collection('roles').findOne({ key: 'tenant_owner' });
+    const owner = ownerRole && (await tx.collection('role_assignments').exists({ membership_id: r.id, role_id: ownerRole.id }));
     if (owner && !next.active) throw new ScimError(400, 'mutability', 'Workspace owners are not deactivated by provisioning. Change owners in SampCrew.');
     if (r.status === 'invited' && !next.active) throw new ScimError(400, 'mutability', 'This person has a pending invitation; revoke it in SampCrew');
     const status = r.status === 'invited' ? 'invited' : next.active ? 'active' : 'suspended';
     if (status === 'active' && r.status === 'suspended') {
-      const { n } = (await one<{ n: number }>(tx, `select count(*)::int as n from memberships where status <> 'suspended'`))!;
+      const n = await tx.collection('memberships').count({ status: { $ne: 'suspended' } });
       await this.entitlements.requireWithinLimit('max_employees', n, tx).catch(() => {
         throw new ScimError(409, undefined, 'The workspace has no seats left on its plan');
       });
     }
-    if (next.externalId !== r.scim_external_id && next.externalId && (await one(tx, 'select 1 from memberships where scim_external_id = $1 and id <> $2', [next.externalId, r.id]))) {
+    if (next.externalId !== r.scim_external_id && next.externalId && (await tx.collection('memberships').exists({ scim_external_id: next.externalId, id: { $ne: r.id } }))) {
       throw new ScimError(409, 'uniqueness', 'Another user has this externalId');
     }
-    await tx.query('update memberships set status = $2, scim_external_id = $3 where id = $1', [r.id, status, next.externalId]);
+    await tx.collection('memberships').updateOne({ id: r.id }, { $set: { status, scim_external_id: next.externalId } });
     const fullName = `${next.givenName} ${next.familyName}`.trim();
     // The login's name is shared by all its workspaces, so provisioning only renames people who belong to this one.
     if (!keepName && fullName && fullName !== r.full_name) {
-      // Memberships in other workspaces are invisible here, so this check uses the platform role.
-      await this.db.platform((ptx) =>
-        ptx.query(
-          `update users u set full_name = $2 where u.email = $1 and (select count(*) from memberships o where o.user_id = u.id) = 1`,
-          [r.email, fullName.slice(0, 160)],
-        ),
-      );
+      // Memberships in other workspaces are invisible here, so this check reads past the workspace (same transaction).
+      const user = await tx.unscoped('users').findOne({ email: r.email });
+      if (user && (await tx.unscoped('memberships').count({ user_id: user.id })) === 1) await tx.unscoped('users').updateOne({ id: user.id }, { $set: { full_name: fullName.slice(0, 160) } });
     }
     if (status === 'suspended' && r.status !== 'suspended') {
-      await this.db.platform((ptx) => ptx.query(`update sessions set revoked_at = now(), revoked_reason = 'scim_deactivated' where user_id = (select id from users where email = $1) and tenant_id = $2 and revoked_at is null`, [r.email, actor.tenantId]));
+      const user = await tx.unscoped('users').findOne({ email: r.email }, { projection: { _id: 1 } });
+      if (user) await tx.unscoped('sessions').update({ user_id: user.id, tenant_id: actor.tenantId, revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'scim_deactivated' } });
     }
     const changed = status !== r.status ? (status === 'suspended' ? 'membership.suspended' : 'membership.reactivated') : 'membership.updated';
     await this.audit.record(tx, { action: changed, resourceType: 'membership', resourceId: r.id, changes: { status: [r.status, status], externalId: next.externalId }, metadata: { via: 'scim' } });
