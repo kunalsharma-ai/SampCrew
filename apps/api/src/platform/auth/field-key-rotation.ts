@@ -1,5 +1,5 @@
 import { AuditService } from '../audit/audit.service';
-import type { DatabaseService } from '../database/database.service';
+import type { MongoService as DatabaseService } from '../database/mongo.service';
 import { decryptField, encryptField, keyIdOf } from './crypto';
 
 /**
@@ -29,14 +29,16 @@ export interface RotationColumnResult {
   rewritten: number;
 }
 
+/** Rows whose value in `column` is set but not on the key `current`. */
+const notOnKey = (column: string, current: string) => ({ $and: [{ [column]: { $nin: ['', null] } }, { [column]: { $not: { $regex: `^v2\\.${current}\\.` } } }] });
+
 /** How many values in each column are not yet on the current key. */
 export async function fieldKeyStatus(db: DatabaseService, keys: string): Promise<RotationColumnResult[]> {
   const current = currentKeyId(keys);
   return db.platform(async (tx) => {
     const out: RotationColumnResult[] = [];
     for (const c of ENCRYPTED_COLUMNS) {
-      const r = await tx.query<{ n: string }>(`select count(*)::text as n from ${c.table} where ${c.column} <> '' and ${c.column} not like $1`, [`v2.${current}.%`]);
-      out.push({ table: c.table, column: c.column, pending: Number(r.rows[0]!.n), rewritten: 0 });
+      out.push({ table: c.table, column: c.column, pending: await tx.collection(c.table).count(notOnKey(c.column, current)), rewritten: 0 });
     }
     return out;
   });
@@ -44,8 +46,7 @@ export async function fieldKeyStatus(db: DatabaseService, keys: string): Promise
 
 /**
  * Re-encrypts every value that is not on the current key (the first in `keys`), in batches of `batchSize` rows per
- * transaction so the API keeps working while it runs. Rows are locked while rewritten (`for update skip locked`; a
- * locked row is picked up by a later batch). Safe to run again: values already on the current key are left alone.
+ * transaction so the API keeps working while it runs. A row changed meanwhile makes that batch retry. Safe to run again: values already on the current key are left alone.
  * A value no key in the ring can open stops the run with an error naming the table and row, and nothing in that
  * batch is changed.
  */
@@ -60,22 +61,18 @@ export async function rotateFieldKeys(db: DatabaseService, keys: string, opts: {
     let rewritten = 0;
     for (;;) {
       const n = await db.platform(async (tx) => {
-        const rows = await tx.query<{ k: string; v: string }>(
-          `select ${c.key}::text as k, ${c.column} as v from ${c.table}
-            where ${c.column} <> '' and ${c.column} not like $1
-            order by ${c.key} limit $2 for update skip locked`,
-          [`v2.${current}.%`, batchSize],
-        );
-        for (const row of rows.rows) {
+        const table = tx.collection(c.table);
+        const rows = await table.find(notOnKey(c.column, current), { sort: { [c.key]: 1 as const }, limit: batchSize, projection: { [c.key]: 1, [c.column]: 1 } });
+        for (const row of rows) {
           let plain: string;
           try {
-            plain = decryptField(row.v, keys);
+            plain = decryptField(row[c.column] as string, keys);
           } catch (e) {
-            throw new Error(`${c.table}.${c.column} for ${c.key} ${row.k} cannot be decrypted with the keys given (${(e as Error).message})`);
+            throw new Error(`${c.table}.${c.column} for ${c.key} ${row[c.key]} cannot be decrypted with the keys given (${(e as Error).message})`);
           }
-          await tx.query(`update ${c.table} set ${c.column} = $2 where ${c.key}::text = $1`, [row.k, encryptField(plain, keys)]);
+          await table.updateOne({ [c.key]: row[c.key] }, { $set: { [c.column]: encryptField(plain, keys) } });
         }
-        return rows.rowCount ?? 0;
+        return rows.length;
       });
       rewritten += n;
       if (n < batchSize) break;

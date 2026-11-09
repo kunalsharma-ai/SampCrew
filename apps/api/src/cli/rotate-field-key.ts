@@ -8,7 +8,7 @@
  * FIELD_ENCRYPTION_KEYS_PREVIOUS to the old one, and restart the API with both, so values are readable throughout.
  */
 import { loadConfig } from '../platform/config/config';
-import { DatabaseService } from '../platform/database/database.service';
+import { MongoService as DatabaseService } from '../platform/database/mongo.service';
 import { currentKeyId, fieldKeyStatus, rotateFieldKeys } from '../platform/auth/field-key-rotation';
 
 async function main() {

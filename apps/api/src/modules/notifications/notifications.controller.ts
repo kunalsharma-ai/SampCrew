@@ -1,7 +1,7 @@
 import { Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one } from '../../platform/database/database.service';
+import { MongoService as DatabaseService } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
@@ -17,22 +17,21 @@ export class NotificationsController {
   @Doc({ summary: 'Your notifications, newest first', query: listQuery })
   list(@Query(new ZodPipe(listQuery)) q: z.infer<typeof listQuery>) {
     const me = requestContext.tenantActor().membershipId;
-    return this.db.tenant(async (tx) => ({
-      unread: (await one<{ n: number }>(tx, 'select count(*)::int as n from notifications where membership_id = $1 and read_at is null', [me]))!.n,
-      items: await many(
-        tx,
-        `select id, kind, title, body, link, read_at as "readAt", created_at as "createdAt" from notifications
-          where membership_id = $1 ${q.unread === 'true' ? 'and read_at is null' : ''} order by created_at desc limit $2`,
-        [me, q.limit],
-      ),
-    }));
+    return this.db.tenant(async (tx) => {
+      const notes = tx.collection('notifications');
+      const items = await notes.find({ membership_id: me, ...(q.unread === 'true' ? { read_at: null } : {}) }, { sort: { created_at: -1 }, limit: q.limit });
+      return {
+        unread: await notes.count({ membership_id: me, read_at: null }),
+        items: items.map((n) => ({ id: n.id, kind: n.kind, title: n.title, body: n.body ?? null, link: n.link ?? null, readAt: n.read_at ?? null, createdAt: n.created_at })),
+      };
+    });
   }
 
   @Get('unread-count')
   @Doc({ summary: 'Number of unread notifications' })
   count() {
     const me = requestContext.tenantActor().membershipId;
-    return this.db.tenant(async (tx) => (await one<{ unread: number }>(tx, 'select count(*)::int as unread from notifications where membership_id = $1 and read_at is null', [me]))!);
+    return this.db.tenant(async (tx) => ({ unread: await tx.collection('notifications').count({ membership_id: me, read_at: null }) }));
   }
 
   @Post(':id/read')
@@ -40,8 +39,13 @@ export class NotificationsController {
   @Doc({ summary: 'Mark one notification read' })
   async read(@Param('id', UuidPipe) id: string) {
     const me = requestContext.tenantActor().membershipId;
-    const r = await this.db.tenant((tx) => tx.query('update notifications set read_at = coalesce(read_at, now()) where id = $1 and membership_id = $2', [id, me]));
-    if (!r.rowCount) throw Errors.notFound('Notification');
+    const found = await this.db.tenant(async (tx) => {
+      const notes = tx.collection('notifications');
+      if (!(await notes.exists({ id, membership_id: me }))) return false;
+      await notes.updateOne({ id, read_at: null }, { $set: { read_at: new Date() } });
+      return true;
+    });
+    if (!found) throw Errors.notFound('Notification');
   }
 
   @Post('read-all')
@@ -49,6 +53,6 @@ export class NotificationsController {
   @Doc({ summary: 'Mark all your notifications read' })
   async readAll() {
     const me = requestContext.tenantActor().membershipId;
-    await this.db.tenant((tx) => tx.query('update notifications set read_at = now() where membership_id = $1 and read_at is null', [me]));
+    await this.db.tenant((tx) => tx.collection('notifications').update({ membership_id: me, read_at: null }, { $set: { read_at: new Date() } }));
   }
 }
