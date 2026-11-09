@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { mongo } from '@crew/db';
 import request from 'supertest';
+import { expect } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/bootstrap';
 import { hashPassword, sha256 } from '../src/platform/auth/crypto';
@@ -156,4 +157,18 @@ export async function loginWithMfa(app: INestApplication, db: TestDb, email: str
   await db.update('sessions', { refresh_token_hash: sha256(s.refreshToken) }, { $set: { mfa_verified: true } });
   const res = await request(app.getHttpServer()).post('/api/v1/auth/refresh').send({ refreshToken: s.refreshToken });
   return res.body as { accessToken: string; refreshToken: string };
+}
+
+/**
+ * Checks that rows of `owner` in each table are invisible from another workspace's transaction (the database-level
+ * check that row-level security made on PostgreSQL). Returns how many rows of the owner each table held.
+ */
+export async function expectHiddenFrom(db: TestDb, owner: TestTenant, viewer: TestTenant, tables: string[]): Promise<Record<string, number>> {
+  const held: Record<string, number> = {};
+  for (const table of tables) {
+    const ids = (await db.find(table, { tenant_id: owner.id })).map((x) => x.id);
+    held[table] = ids.length;
+    expect(await db.tenant(viewer.id, (tx) => tx.collection(table).count({ id: { $in: ids } })), table).toBe(0);
+  }
+  return held;
 }

@@ -176,3 +176,16 @@ export async function managerCycle(tx: TenantTx, employeeId: string, managerId: 
   for (let at: string | undefined = managerId, depth = 0; at && depth < 100; at = managers.get(at), depth++) if (at === employeeId) return true;
   return false;
 }
+
+/**
+ * How a member is named across the product: their employee record's display name when the login is linked to one,
+ * else the login's full name (the SQL `coalesce(nullif(employee name, ''), users.full_name)`). Keyed by membership id.
+ */
+export async function memberNames(tx: TenantTx, membershipIds: unknown[]): Promise<Map<string, string | null>> {
+  const ids = uniq(membershipIds);
+  if (!ids.length) return new Map();
+  const ms = await tx.collection('memberships').find({ id: { $in: ids } }, { projection: { user_id: 1, employee_id: 1 } });
+  const emps = await employeeNames(tx, ms.map((m) => m.employee_id));
+  const users = new Map((await (await tx.users()).find({ id: { $in: ms.map((m) => m.user_id) } }, { projection: { full_name: 1 } })).map((u) => [u.id as string, (u.full_name as string | null) ?? null]));
+  return new Map(ms.map((m) => [m.id as string, emps.get(m.employee_id)?.name || users.get(m.user_id) || null]));
+}

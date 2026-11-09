@@ -33,7 +33,56 @@ const payrollFrozen: RowGuard = async (ctx, op, before, after) => {
   if (finalised) throw frozenError(message, ctx.table);
 };
 
+/** Whether two stored values are the same (dates by time, decimals and ids by their text). */
+export function sameValue(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown) => (v === undefined ? null : v instanceof Date ? v.getTime() : v !== null && typeof v === 'object' ? JSON.stringify(v) : v);
+  return norm(a) === norm(b);
+}
+
+const changed = (before: Document, after: Document, cols: string[]) => cols.some((c) => !sameValue(before[c], after[c]));
+
+/** helpdesk_cases_guard: cases are never deleted, a closed case is final and the original request never changes. */
+const helpdeskCasesGuard: RowGuard = async (ctx, op, before, after) => {
+  const fail = (m: string) => frozenError(m, ctx.table);
+  if (op === 'delete') throw fail('helpdesk cases cannot be deleted');
+  if (op !== 'update' || !before || !after) return;
+  if (ctx.flags.has('erasure')) {
+    if (after.subject !== '[erased]' || after.description !== '[erased] (personal details removed on request)' || changed(before, after, ['number', 'employee_id', 'status'])) {
+      throw fail('erasure may only blank the text of a helpdesk case');
+    }
+    return;
+  }
+  if (before.status === 'closed') throw fail('closed helpdesk cases cannot be changed');
+  if (changed(before, after, ['number', 'employee_id', 'raised_by_membership_id', 'description', 'created_at'])) throw fail('the original request of a helpdesk case cannot be changed');
+};
+
+/** announcements_guard: a published announcement keeps its wording and audience, and is archived, never deleted. */
+const announcementsGuard: RowGuard = async (ctx, op, before, after) => {
+  const fail = (m: string) => frozenError(m, ctx.table);
+  if (op === 'delete') {
+    if (before?.status !== 'draft') throw fail('published announcements cannot be deleted; archive them instead');
+    return;
+  }
+  if (op !== 'update' || !before || !after) return;
+  if (before.status !== 'draft' && changed(before, after, ['title', 'body', 'requires_ack', 'legal_entity_id', 'department_id', 'location_id', 'published_at'])) {
+    throw fail('a published announcement cannot be reworded or readdressed');
+  }
+  if (before.status === 'archived' && after.status !== 'archived') throw fail('archived announcements cannot be republished');
+};
+
+/** announcement_receipts_guard: the first read stays, and an acknowledgement once given stays. */
+const announcementReceiptsGuard: RowGuard = async (ctx, op, before, after) => {
+  const fail = (m: string) => frozenError(m, ctx.table);
+  if (op === 'delete') throw fail('announcement receipts cannot be deleted');
+  if (op !== 'update' || !before || !after) return;
+  if (before.acknowledged_at && !sameValue(before.acknowledged_at, after.acknowledged_at)) throw fail('an acknowledgement cannot be changed');
+  if (!sameValue(before.read_at, after.read_at)) throw fail('the first read time cannot be changed');
+};
+
 /** Guards by trigger name (TableSpec.triggers). Triggers without one here are enforced in the owning service. */
 export const ROW_GUARDS: Record<string, RowGuard> = {
   payroll_frozen: payrollFrozen,
+  helpdesk_cases_guard: helpdeskCasesGuard,
+  announcements_guard: announcementsGuard,
+  announcement_receipts_guard: announcementReceiptsGuard,
 };

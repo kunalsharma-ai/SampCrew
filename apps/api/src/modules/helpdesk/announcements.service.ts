@@ -3,24 +3,65 @@ import type { AnnouncementInput } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { hasPermission } from '../../platform/authz/policy';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
-import { nameOf } from '../talent/talent-common';
+import { displayName, fieldById, memberNames } from '../employees/employee-view';
 
-/** SQL deciding whether the employee aliased `e` is in announcement `a`'s audience. */
-const IN_AUDIENCE = `(a.legal_entity_id is null or e.current_legal_entity_id = a.legal_entity_id)
-  and (a.location_id is null or e.current_location_id = a.location_id)
-  and (a.department_id is null or e.current_department_id in (
-        with recursive deps(id) as (select a.department_id union select d.id from departments d join deps on d.parent_id = deps.id) select id from deps))`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
 
-const COLS = `a.id, a.title, a.body, a.legal_entity_id as "legalEntityId", le.name as "legalEntityName", a.department_id as "departmentId", d.name as "departmentName",
-  a.location_id as "locationId", l.name as "locationName", a.requires_ack as "requiresAck", a.pinned, a.status, a.published_at as "publishedAt",
-  to_char(a.expires_on, 'YYYY-MM-DD') as "expiresOn", a.created_at as "createdAt", a.updated_at as "updatedAt",
-  coalesce(nullif(${nameOf('pe')}, ''), pu.full_name) as "publishedByName"`;
-const FROM = `announcements a left join legal_entities le on le.id = a.legal_entity_id left join departments d on d.id = a.department_id
-  left join locations l on l.id = a.location_id left join memberships pm on pm.id = a.published_by_membership_id
-  left join users pu on pu.id = pm.user_id left join employees pe on pe.id = pm.employee_id`;
+const AUDIENCE_STATUSES = ['active', 'notice', 'probation'];
+
+/**
+ * Who an announcement reaches: a legal entity, location and department (with its sub-departments), each optional.
+ * Built once per request, since it needs the department tree.
+ */
+async function audienceTest(tx: TenantTx) {
+  const departments = await tx.collection('departments').find({}, { projection: { parent_id: 1 } });
+  const children = new Map<string, string[]>();
+  for (const d of departments) if (d.parent_id) children.set(d.parent_id, [...(children.get(d.parent_id) ?? []), d.id]);
+  const subtrees = new Map<string, Set<string>>();
+  const subtree = (id: string) => {
+    let out = subtrees.get(id);
+    if (!out) {
+      out = new Set([id]);
+      for (let frontier = [id]; frontier.length; ) frontier = frontier.flatMap((x) => children.get(x) ?? []).filter((x) => !out!.has(x) && out!.add(x));
+      subtrees.set(id, out);
+    }
+    return out;
+  };
+  return (a: Doc, e: Doc) =>
+    (!a.legal_entity_id || e.current_legal_entity_id === a.legal_entity_id) &&
+    (!a.location_id || e.current_location_id === a.location_id) &&
+    (!a.department_id || (!!e.current_department_id && subtree(a.department_id).has(e.current_department_id)));
+}
+
+/** Current employees with an active login: the people an announcement can reach. */
+async function reachable(tx: TenantTx): Promise<Doc[]> {
+  const emps = await tx.collection('employees').find({ status: { $in: AUDIENCE_STATUSES }, membership_id: { $ne: null } });
+  const active = new Set(await tx.collection('memberships').distinct<string>('id', { id: { $in: emps.map((e) => e.membership_id) }, status: 'active' }));
+  return emps.filter((e) => active.has(e.membership_id));
+}
+
+/** Announcements as the API shows them, with the audience and the publisher by name. */
+async function views(tx: TenantTx, docs: Doc[]): Promise<Doc[]> {
+  const [entities, departments, locations, publishers] = await Promise.all([
+    fieldById(tx, 'legal_entities', docs.map((a) => a.legal_entity_id)),
+    fieldById(tx, 'departments', docs.map((a) => a.department_id)),
+    fieldById(tx, 'locations', docs.map((a) => a.location_id)),
+    memberNames(tx, docs.map((a) => a.published_by_membership_id)),
+  ]);
+  return docs.map((a) => ({
+    id: a.id, title: a.title, body: a.body, legalEntityId: a.legal_entity_id ?? null, legalEntityName: entities.get(a.legal_entity_id) ?? null,
+    departmentId: a.department_id ?? null, departmentName: departments.get(a.department_id) ?? null, locationId: a.location_id ?? null,
+    locationName: locations.get(a.location_id) ?? null, requiresAck: a.requires_ack, pinned: a.pinned, status: a.status, publishedAt: a.published_at ?? null,
+    expiresOn: a.expires_on ?? null, createdAt: a.created_at, updatedAt: a.updated_at,
+    publishedByName: a.published_by_membership_id ? (publishers.get(a.published_by_membership_id) ?? null) : null,
+  }));
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
 
 /**
  * Announcements from HR to everyone or to a legal entity, department (with its sub-departments) or location.
@@ -36,20 +77,24 @@ export class AnnouncementsService {
     private readonly notifications: NotificationService,
   ) {}
 
-  private async audience(tx: Tx, id: string) {
-    return many<{ membership_id: string }>(
-      tx,
-      `select e.membership_id from announcements a join employees e on ${IN_AUDIENCE}
-        join memberships m on m.id = e.membership_id and m.status = 'active'
-        where a.id = $1 and e.status in ('active', 'notice', 'probation') and e.membership_id is not null`,
-      [id],
-    );
+  private async audience(tx: TenantTx, id: string) {
+    const a = await tx.collection('announcements').findOne({ id });
+    if (!a) return [];
+    const reaches = await audienceTest(tx);
+    return (await reachable(tx)).filter((e) => reaches(a, e)).map((e) => ({ membership_id: e.membership_id as string }));
   }
 
-  private async checkRefs(tx: Tx, input: AnnouncementInput) {
-    if (input.legalEntityId && !(await one(tx, 'select 1 from legal_entities where id = $1', [input.legalEntityId]))) throw Errors.badRequest('unknown_legal_entity', 'Choose an existing legal entity');
-    if (input.departmentId && !(await one(tx, 'select 1 from departments where id = $1', [input.departmentId]))) throw Errors.badRequest('unknown_department', 'Choose an existing department');
-    if (input.locationId && !(await one(tx, 'select 1 from locations where id = $1', [input.locationId]))) throw Errors.badRequest('unknown_location', 'Choose an existing location');
+  /** Whether the employee is in the announcement's audience. */
+  private async addressedTo(tx: TenantTx, a: Doc, employeeId: string | null | undefined): Promise<boolean> {
+    if (!employeeId) return false;
+    const e = await tx.collection('employees').findOne({ id: employeeId });
+    return !!e && (await audienceTest(tx))(a, e);
+  }
+
+  private async checkRefs(tx: TenantTx, input: AnnouncementInput) {
+    if (input.legalEntityId && !(await tx.collection('legal_entities').exists({ id: input.legalEntityId }))) throw Errors.badRequest('unknown_legal_entity', 'Choose an existing legal entity');
+    if (input.departmentId && !(await tx.collection('departments').exists({ id: input.departmentId }))) throw Errors.badRequest('unknown_department', 'Choose an existing department');
+    if (input.locationId && !(await tx.collection('locations').exists({ id: input.locationId }))) throw Errors.badRequest('unknown_location', 'Choose an existing location');
   }
 
   /** The caller's feed: published, unexpired announcements addressed to them, pinned first. */
@@ -57,15 +102,14 @@ export class AnnouncementsService {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
       if (!s.employeeId) return [];
-      return many(
-        tx,
-        `select ${COLS}, r.read_at as "readAt", r.acknowledged_at as "acknowledgedAt"
-           from ${FROM} join employees e on e.id = $1 and ${IN_AUDIENCE}
-           left join announcement_receipts r on r.announcement_id = a.id and r.membership_id = $2
-          where a.status = 'published' and (a.expires_on is null or a.expires_on >= current_date)
-          order by a.pinned desc, a.published_at desc limit $3`,
-        [s.employeeId, s.membershipId, limit],
-      );
+      const e = await tx.collection('employees').findOne({ id: s.employeeId });
+      if (!e) return [];
+      const reaches = await audienceTest(tx);
+      const live = (await tx.collection('announcements').find({ status: 'published', $or: [{ expires_on: null }, { expires_on: { $gte: today() } }] }, { sort: { pinned: -1, published_at: -1 } }))
+        .filter((a) => reaches(a, e))
+        .slice(0, limit);
+      const receipts = new Map((await tx.collection('announcement_receipts').find({ announcement_id: { $in: live.map((a) => a.id) }, membership_id: s.membershipId })).map((r) => [r.announcement_id as string, r]));
+      return (await views(tx, live)).map((a) => ({ ...a, readAt: receipts.get(a.id)?.read_at ?? null, acknowledgedAt: receipts.get(a.id)?.acknowledged_at ?? null }));
     });
   }
 
@@ -74,16 +118,20 @@ export class AnnouncementsService {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
       const manage = hasPermission(s, 'announcements:manage').allowed;
-      const a = await one<{ id: string; status: string }>(
-        tx,
-        `select ${COLS} from ${FROM} where a.id = $1 and (a.status = 'published' and exists (select 1 from employees e where e.id = $2 and ${IN_AUDIENCE}) or $3)`,
-        [id, s.employeeId ?? null, manage],
-      );
-      if (!a) throw Errors.notFound('Announcement');
+      const doc = await tx.collection('announcements').findOne({ id });
+      const inAudience = !!doc && doc.status === 'published' && (await this.addressedTo(tx, doc, s.employeeId));
+      if (!doc || (!inAudience && !manage)) throw Errors.notFound('Announcement');
+      const a = (await views(tx, [doc]))[0]!;
       let receipt: { readAt: Date; acknowledgedAt: Date | null } | null = null;
-      if (a.status === 'published' && s.employeeId && (await one(tx, `select 1 from announcements a join employees e on e.id = $2 and ${IN_AUDIENCE} where a.id = $1`, [id, s.employeeId]))) {
-        await tx.query(`insert into announcement_receipts (tenant_id, announcement_id, membership_id) values (app_tenant_id(), $1, $2) on conflict do nothing`, [id, s.membershipId]);
-        receipt = (await one<{ readAt: Date; acknowledgedAt: Date | null }>(tx, `select read_at as "readAt", acknowledged_at as "acknowledgedAt" from announcement_receipts where announcement_id = $1 and membership_id = $2`, [id, s.membershipId]))!;
+      if (inAudience) {
+        const receipts = tx.collection('announcement_receipts');
+        if (!(await receipts.exists({ announcement_id: id, membership_id: s.membershipId }))) {
+          await receipts.insert({ announcement_id: id, membership_id: s.membershipId }).catch((err: { code?: string }) => {
+            if (err.code !== '23505') throw err;
+          });
+        }
+        const r = (await receipts.findOne({ announcement_id: id, membership_id: s.membershipId }))!;
+        receipt = { readAt: r.read_at, acknowledgedAt: r.acknowledged_at ?? null };
       }
       return { ...a, readAt: receipt?.readAt ?? null, acknowledgedAt: receipt?.acknowledgedAt ?? null, inAudience: receipt !== null, canManage: manage };
     });
@@ -92,18 +140,15 @@ export class AnnouncementsService {
   async acknowledge(id: string) {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
-      const a = await one<{ requires_ack: boolean }>(
-        tx, `select a.requires_ack from announcements a join employees e on e.id = $2 and ${IN_AUDIENCE} where a.id = $1 and a.status = 'published'`, [id, s.employeeId ?? null],
-      );
-      if (!a) throw Errors.notFound('Announcement');
+      const a = await tx.collection('announcements').findOne({ id, status: 'published' });
+      if (!a || !(await this.addressedTo(tx, a, s.employeeId))) throw Errors.notFound('Announcement');
       if (!a.requires_ack) throw Errors.badRequest('no_ack_needed', 'This announcement does not ask for an acknowledgement');
-      await tx.query(
-        `insert into announcement_receipts (tenant_id, announcement_id, membership_id, acknowledged_at) values (app_tenant_id(), $1, $2, now())
-         on conflict (announcement_id, membership_id) do update set acknowledged_at = coalesce(announcement_receipts.acknowledged_at, now())
-         where announcement_receipts.acknowledged_at is null`,
-        [id, s.membershipId],
-      );
-      return one(tx, `select acknowledged_at as "acknowledgedAt" from announcement_receipts where announcement_id = $1 and membership_id = $2`, [id, s.membershipId]);
+      const receipts = tx.collection('announcement_receipts');
+      const now = new Date();
+      await receipts.upsert({ announcement_id: id, membership_id: s.membershipId }, { announcement_id: id, membership_id: s.membershipId, acknowledged_at: now });
+      await receipts.updateOne({ announcement_id: id, membership_id: s.membershipId, acknowledged_at: null }, { $set: { acknowledged_at: now } });
+      const r = (await receipts.findOne({ announcement_id: id, membership_id: s.membershipId }))!;
+      return { acknowledgedAt: r.acknowledged_at };
     });
   }
 
@@ -112,33 +157,40 @@ export class AnnouncementsService {
   async list() {
     return this.db.tenant(async (tx) => {
       await this.authz.require('announcements:manage', undefined, tx);
-      return many(
-        tx,
-        `select ${COLS},
-                (select count(*)::int from announcement_receipts r where r.announcement_id = a.id) as "readCount",
-                (select count(*)::int from announcement_receipts r where r.announcement_id = a.id and r.acknowledged_at is not null) as "ackCount",
-                (select count(*)::int from employees e join memberships m on m.id = e.membership_id and m.status = 'active'
-                  where ${IN_AUDIENCE} and e.status in ('active', 'notice', 'probation')) as "audienceSize"
-           from ${FROM} order by a.status = 'archived', a.pinned desc, coalesce(a.published_at, a.created_at) desc limit 300`,
-      );
+      const docs = await tx.collection('announcements').find({});
+      const at = (a: Doc) => new Date(a.published_at ?? a.created_at).getTime();
+      docs.sort((a, b) => Number(a.status === 'archived') - Number(b.status === 'archived') || Number(b.pinned) - Number(a.pinned) || at(b) - at(a));
+      const shown = docs.slice(0, 300);
+      const receipts = await tx.collection('announcement_receipts').find({ announcement_id: { $in: shown.map((a) => a.id) } }, { projection: { announcement_id: 1, acknowledged_at: 1 } });
+      const people = await reachable(tx);
+      const reaches = await audienceTest(tx);
+      return (await views(tx, shown)).map((a, i) => ({
+        ...a,
+        readCount: receipts.filter((r) => r.announcement_id === a.id).length,
+        ackCount: receipts.filter((r) => r.announcement_id === a.id && r.acknowledged_at).length,
+        audienceSize: people.filter((e) => reaches(shown[i]!, e)).length,
+      }));
     });
   }
 
   async detail(id: string) {
     return this.db.tenant(async (tx) => {
       await this.authz.require('announcements:manage', undefined, tx);
-      const a = await one<Record<string, unknown>>(tx, `select ${COLS} from ${FROM} where a.id = $1`, [id]);
-      if (!a) throw Errors.notFound('Announcement');
-      const people = await many(
-        tx,
-        `select e.id as "employeeId", ${nameOf('e')} as name, dd.name as "departmentName", r.read_at as "readAt", r.acknowledged_at as "acknowledgedAt"
-           from announcements a join employees e on ${IN_AUDIENCE} join memberships m on m.id = e.membership_id and m.status = 'active'
-           left join departments dd on dd.id = e.current_department_id
-           left join announcement_receipts r on r.announcement_id = a.id and r.membership_id = e.membership_id
-          where a.id = $1 and e.status in ('active', 'notice', 'probation')
-          order by r.acknowledged_at nulls first, r.read_at nulls first, name limit 5000`,
-        [id],
-      );
+      const doc = await tx.collection('announcements').findOne({ id });
+      if (!doc) throw Errors.notFound('Announcement');
+      const a = (await views(tx, [doc]))[0]!;
+      const reaches = await audienceTest(tx);
+      const emps = (await reachable(tx)).filter((e) => reaches(doc, e));
+      const departments = await fieldById(tx, 'departments', emps.map((e) => e.current_department_id));
+      const receipts = new Map((await tx.collection('announcement_receipts').find({ announcement_id: id })).map((r) => [r.membership_id as string, r]));
+      const t = (v: unknown) => (v ? new Date(v as Date).getTime() : -Infinity);
+      const people = emps
+        .map((e) => {
+          const r = receipts.get(e.membership_id);
+          return { employeeId: e.id, name: displayName(e as never), departmentName: departments.get(e.current_department_id) ?? null, readAt: r?.read_at ?? null, acknowledgedAt: r?.acknowledged_at ?? null };
+        })
+        .sort((x, y) => t(x.acknowledgedAt) - t(y.acknowledgedAt) || t(x.readAt) - t(y.readAt) || x.name.localeCompare(y.name))
+        .slice(0, 5000);
       return { ...a, people };
     });
   }
@@ -149,24 +201,25 @@ export class AnnouncementsService {
       const s = await this.authz.subject(tx);
       await this.checkRefs(tx, input);
       if (id) {
-        const cur = await one<{ status: string }>(tx, 'select status from announcements where id = $1', [id]);
+        const announcements = tx.collection('announcements');
+        const cur = await announcements.findOne({ id });
         if (!cur) throw Errors.notFound('Announcement');
         if (cur.status === 'draft') {
-          await tx.query(
-            `update announcements set title = $2, body = $3, legal_entity_id = $4, department_id = $5, location_id = $6, requires_ack = $7, pinned = $8, expires_on = $9 where id = $1`,
-            [id, input.title, input.body, input.legalEntityId, input.departmentId, input.locationId, input.requiresAck, input.pinned, input.expiresOn],
-          );
+          await announcements.updateOne({ id }, {
+            $set: {
+              title: input.title, body: input.body, legal_entity_id: input.legalEntityId ?? null, department_id: input.departmentId ?? null, location_id: input.locationId ?? null,
+              requires_ack: input.requiresAck, pinned: input.pinned, expires_on: input.expiresOn ?? null,
+            },
+          });
         } else if (cur.status === 'published') {
           // Only how it is shown can change after publishing.
-          await tx.query('update announcements set pinned = $2, expires_on = $3 where id = $1', [id, input.pinned, input.expiresOn]);
+          await announcements.updateOne({ id }, { $set: { pinned: input.pinned, expires_on: input.expiresOn ?? null } });
         } else throw Errors.conflict('archived', 'Archived announcements cannot be changed');
       } else {
-        id = (await one<{ id: string }>(
-          tx,
-          `insert into announcements (tenant_id, title, body, legal_entity_id, department_id, location_id, requires_ack, pinned, expires_on, created_by_membership_id)
-           values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
-          [input.title, input.body, input.legalEntityId, input.departmentId, input.locationId, input.requiresAck, input.pinned, input.expiresOn, s.membershipId],
-        ))!.id;
+        id = (await tx.collection('announcements').insert({
+          title: input.title, body: input.body, legal_entity_id: input.legalEntityId ?? null, department_id: input.departmentId ?? null, location_id: input.locationId ?? null,
+          requires_ack: input.requiresAck, pinned: input.pinned, expires_on: input.expiresOn ?? null, created_by_membership_id: s.membershipId,
+        })).id as string;
       }
       return { id };
     });
@@ -176,13 +229,13 @@ export class AnnouncementsService {
     return this.db.tenant(async (tx) => {
       await this.authz.require('announcements:manage', undefined, tx);
       const s = await this.authz.subject(tx);
-      const a = await one<{ status: string; title: string; requires_ack: boolean; expires_on: string | null }>(tx, `select status, title, requires_ack, to_char(expires_on, 'YYYY-MM-DD') as expires_on from announcements where id = $1`, [id]);
+      const a = await tx.collection<{ status: string; title: string; requires_ack: boolean; expires_on: string | null }>('announcements').findOne({ id });
       if (!a) throw Errors.notFound('Announcement');
       if (a.status !== 'draft') throw Errors.conflict('not_draft', 'Only drafts can be published');
       if (a.expires_on && a.expires_on < new Date().toISOString().slice(0, 10)) throw Errors.badRequest('expired', 'The expiry date has already passed');
       const audience = await this.audience(tx, id);
       if (!audience.length) throw Errors.badRequest('empty_audience', 'Nobody is in this audience yet');
-      await tx.query(`update announcements set status = 'published', published_at = now(), published_by_membership_id = $2 where id = $1`, [id, s.membershipId]);
+      await tx.collection('announcements').updateOne({ id }, { $set: { status: 'published', published_at: new Date(), published_by_membership_id: s.membershipId } });
       await this.notifications.notify(tx, {
         membershipIds: audience.map((r) => r.membership_id),
         kind: 'announcement',
@@ -197,8 +250,7 @@ export class AnnouncementsService {
   async archive(id: string) {
     return this.db.tenant(async (tx) => {
       await this.authz.require('announcements:manage', undefined, tx);
-      const r = await tx.query(`update announcements set status = 'archived', pinned = false where id = $1 and status = 'published'`, [id]);
-      if (!r.rowCount) throw Errors.conflict('not_published', 'Only published announcements can be archived');
+      if (!(await tx.collection('announcements').updateOne({ id, status: 'published' }, { $set: { status: 'archived', pinned: false } }))) throw Errors.conflict('not_published', 'Only published announcements can be archived');
       await this.audit.record(tx, { action: 'announcement.archived', resourceType: 'announcement', resourceId: id });
       return { id };
     });
@@ -207,8 +259,7 @@ export class AnnouncementsService {
   async remove(id: string) {
     return this.db.tenant(async (tx) => {
       await this.authz.require('announcements:manage', undefined, tx);
-      const r = await tx.query(`delete from announcements where id = $1 and status = 'draft'`, [id]);
-      if (!r.rowCount) throw Errors.conflict('not_draft', 'Only drafts can be deleted; archive a published announcement instead');
+      if (!(await tx.collection('announcements').deleteOne({ id, status: 'draft' }))) throw Errors.conflict('not_draft', 'Only drafts can be deleted; archive a published announcement instead');
     });
   }
 }
