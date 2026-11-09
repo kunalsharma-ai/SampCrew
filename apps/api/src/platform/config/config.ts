@@ -7,6 +7,12 @@ const schema = z.object({
   CREW_ENV: z.enum(['local', 'test', 'staging', 'production']).default('local'),
   DATABASE_URL: z.string().min(1),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
+  /**
+   * MongoDB replica set, e.g. mongodb://localhost:27017/crew?replicaSet=rs0 (the path names the database). Optional
+   * while modules move from PostgreSQL to MongoDB; required once the move is complete.
+   */
+  MONGODB_URL: optional(z.string().regex(/^mongodb(\+srv)?:\/\//, 'MONGODB_URL must start with mongodb:// or mongodb+srv://')),
+  MONGODB_POOL_MAX: z.coerce.number().int().min(1).max(500).default(20),
   API_PORT: z.coerce.number().int().default(4000),
   WEB_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
   CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:3001'),

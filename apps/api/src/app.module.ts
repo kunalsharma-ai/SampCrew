@@ -110,6 +110,7 @@ import { TokenService } from './platform/auth/token.service';
 import { AuthzService } from './platform/authz/authz.service';
 import { APP_CONFIG, loadConfig } from './platform/config/config';
 import { DatabaseService } from './platform/database/database.service';
+import { MongoService } from './platform/database/mongo.service';
 import { EntitlementsService } from './platform/entitlements/entitlements.service';
 import { OutboxService } from './platform/events/outbox.service';
 import { contextMiddleware } from './platform/http/context.middleware';
@@ -206,6 +207,7 @@ export const CONTROLLERS = [
   providers: [
     { provide: APP_CONFIG, useFactory: () => loadConfig() },
     DatabaseService,
+    MongoService,
     TokenService,
     AuditService,
     OutboxService,
