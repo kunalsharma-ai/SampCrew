@@ -43,7 +43,8 @@ jobs:
       # MongoDB data layer (replacing PostgreSQL module by module). A replica set, because it relies on transactions.
       - name: Start MongoDB replica set
         run: |
-          docker run -d --name mongo -p 27017:27017 mongo:8.0 mongod --replSet rs0 --bind_ip_all
+          # mongo:8.0 refuses to start on Linux 6.19+ (SERVER-121912). Turning off tcmalloc's rseq use lets it run (docker-library/mongo#765).
+          docker run -d --name mongo -p 27017:27017 -e GLIBC_TUNABLES=glibc.pthread.rseq=1 mongo:8.0 mongod --replSet rs0 --bind_ip_all
           ready() { docker exec mongo mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' >/dev/null 2>&1; }
           for i in $(seq 1 60); do ready && break; sleep 1; done
           # Show why mongod stopped or never answered, instead of failing on the next command with no clue.

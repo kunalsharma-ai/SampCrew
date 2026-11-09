@@ -19,6 +19,8 @@ services:
   mongo:
     image: mongo:8.0
     command: ["--replSet", "rs0", "--bind_ip_all"]
+    # Lets mongo:8.0 start on Linux 6.19+ hosts (SERVER-121912); harmless on older kernels.
+    environment: { GLIBC_TUNABLES: glibc.pthread.rseq=1 }
     ports: ["27017:27017"]
     volumes: [mongodata:/data/db]
     healthcheck:
