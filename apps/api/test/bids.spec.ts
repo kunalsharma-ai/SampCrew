@@ -1,18 +1,17 @@
 import { priceBid } from '@crew/contracts';
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { SMTPServer } from 'smtp-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { resetConfigForTests } from '../src/platform/config/config';
 import { MailerService } from '../src/platform/notify/mailer.service';
 import { PDFDocument } from 'pdf-lib';
 import { createHash } from 'node:crypto';
-import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 /** Staffing bids: clients, templates, exact pricing, approval before sending, the proposal PDF and scheduled email. */
 describe('staffing bids', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let server: SMTPServer;
@@ -185,8 +184,8 @@ describe('staffing bids', () => {
     // The same PDF version is reused; no second "sent" version.
     expect(b.versions.filter((v: { event: string }) => v.event === 'sent')).toHaveLength(1);
     // The PDF made for the cancelled schedule (dated tomorrow) was never seen, so it was made again for today.
-    const issued = await pool.query(`select snapshot->>'issuedOn' as d from bid_versions where bid_id = $1 and event = 'sent'`, [bidId]);
-    expect(issued.rows[0].d).toBe(new Date().toISOString().slice(0, 10));
+    const issued = await pool.find('bid_versions', { bid_id: bidId, event: 'sent' });
+    expect(issued[0]!.snapshot.issuedOn).toBe(new Date().toISOString().slice(0, 10));
     expect((await as('recruiter').post(`/staffing/bids/${bidId}/emails/${now.id}/cancel`)).status).toBe(409);
   });
 
@@ -215,8 +214,8 @@ describe('staffing bids', () => {
     const draft = ok(await as('recruiter').post('/staffing/bids').send(bid({ title: 'Warehouse associates' })), 201);
     expect(draft.code).toBe('BID-0002');
     expect((await as('recruiter').delete(`/staffing/bids/${draft.id}`)).status).toBe(204);
-    const audit = await pool.query(`select action from audit_events where tenant_id = $1 and resource_type = 'staffing_bid' order by created_at`, [t.id]);
-    expect(audit.rows.map((r) => r.action)).toEqual(expect.arrayContaining(['bid.created', 'bid.submitted', 'bid.approved', 'bid.proposal_scheduled', 'bid.email_cancelled', 'bid.withdrawn', 'bid.deleted']));
+    const audit = await pool.find('audit_events', { tenant_id: t.id, resource_type: 'staffing_bid' }, { sort: { created_at: 1 } });
+    expect(audit.map((r) => r.action)).toEqual(expect.arrayContaining(['bid.created', 'bid.submitted', 'bid.approved', 'bid.proposal_scheduled', 'bid.email_cancelled', 'bid.withdrawn', 'bid.deleted']));
   });
 
   /** Submits, approves and emails a fresh bid; returns its id and the links sent to each recipient. */
@@ -253,8 +252,8 @@ describe('staffing bids', () => {
       expect.objectContaining({ to: 'meera@acme.test', viewCount: 2, decision: null, revoked: false, firstViewedAt: expect.any(String) }),
       expect.objectContaining({ to: 'ops2@acme.test', viewCount: 0, firstViewedAt: null }),
     ]);
-    const seen = await pool.query(`select title from notifications where tenant_id = $1 and kind = 'bid.viewed'`, [t.id]);
-    expect(seen.rows.map((r) => r.title)).toEqual([`Acme Logistics opened proposal ${f.code}`]);
+    const seen = await pool.find('notifications', { tenant_id: t.id, kind: 'bid.viewed' });
+    expect(seen.map((r) => r.title)).toEqual([`Acme Logistics opened proposal ${f.code}`]);
 
     const original = await binary(pub(app).get(`/public/proposals/${f.links['meera@acme.test']}/proposal.pdf`));
     expect(original.status).toBe(200);
@@ -281,17 +280,17 @@ describe('staffing bids', () => {
     expect(await pages(signed.body)).toBe((await pages(original.body)) + 1);
     const viaLink = await binary(pub(app).get(`/public/proposals/${f.links['meera@acme.test']}/proposal.pdf`));
     expect(Buffer.compare(viaLink.body, signed.body)).toBe(0);
-    const stored = await pool.query(`select pdf_sha256, decided_ip from bid_acceptance_links where bid_id = $1 and decision = 'accepted'`, [f.id]);
-    expect(stored.rows[0].pdf_sha256).toBe(createHash('sha256').update(original.body).digest('hex'));
+    const stored = (await pool.one('bid_acceptance_links', { bid_id: f.id, decision: 'accepted' }))!;
+    expect(stored.pdf_sha256).toBe(createHash('sha256').update(original.body).digest('hex'));
     expect((await as('stranger').get(`/staffing/bids/${f.id}/signed.pdf`)).status).toBe(404);
     expect((await as('recruiter').get(`/staffing/bids/${bidId}/signed.pdf`)).status).toBe(404);
 
-    const notes = await pool.query(`select kind from notifications where tenant_id = $1 and kind like 'bid.%'`, [t.id]);
-    expect(notes.rows.map((r) => r.kind)).toContain('bid.accepted');
-    const audit = await pool.query(`select action, actor_type, metadata from audit_events where tenant_id = $1 and resource_id = $2 order by created_at`, [t.id, f.id]);
-    const acc = audit.rows.find((r) => r.action === 'bid.accepted_online');
+    const notes = await pool.find('notifications', { tenant_id: t.id, kind: { $regex: '^bid\\.' } });
+    expect(notes.map((r) => r.kind)).toContain('bid.accepted');
+    const audit = await pool.find('audit_events', { tenant_id: t.id, resource_id: f.id }, { sort: { created_at: 1 } });
+    const acc = audit.find((r) => r.action === 'bid.accepted_online');
     expect(acc).toMatchObject({ actor_type: 'system', metadata: expect.objectContaining({ signerEmail: 'meera@acme.test', sentTo: 'meera@acme.test' }) });
-    expect(audit.rows.map((r) => r.action)).toContain('bid.proposal_viewed');
+    expect(audit.map((r) => r.action)).toContain('bid.proposal_viewed');
   });
 
   it('lets the client decline with a reason, and stops links for replaced or expired proposals', async () => {
@@ -310,16 +309,16 @@ describe('staffing bids', () => {
     ok(await as('recruiter').put(`/staffing/bids/${g.id}`).send(bid({ title: 'Loaders for the new depot', durationMonths: 9 })));
     expect(ok(await pub(app).get(`/public/proposals/${old}`)).status).toBe('replaced');
     const h = await sendFresh('Pickers for the night shift', 'ria@acme.test');
-    await pool.query(`update bid_acceptance_links set expires_at = now() - interval '1 minute' where bid_id = $1`, [h.id]);
+    await pool.update('bid_acceptance_links', { bid_id: h.id }, { $set: { expires_at: new Date(Date.now() - 60_000) } });
     expect(ok(await pub(app).get(`/public/proposals/${h.links['ria@acme.test']}`)).status).toBe('expired');
     expect((await pub(app).post(`/public/proposals/${h.links['ria@acme.test']}/accept`).send({ ...signer, signerEmail: 'ria@acme.test' })).status).toBe(409);
     // A scheduled email that is cancelled takes its link with it.
     const i = await sendFresh('Drivers for the airport run', 'raj@acme.test');
     const later = ok(await as('recruiter').post(`/staffing/bids/${i.id}/send`).send({ to: 'raj2@acme.test', subject: 'Later', message: 'Later', sendAt: new Date(Date.now() + 86_400_000).toISOString() }), 201);
-    const queued = await pool.query(`select token_hash, active_from > now() as future from bid_acceptance_links where bid_email_id = $1`, [later.id]);
-    expect(queued.rows[0].future).toBe(true);
+    const queued = (await pool.one('bid_acceptance_links', { bid_email_id: later.id }))!;
+    expect(queued.active_from.getTime()).toBeGreaterThan(Date.now());
     ok(await as('recruiter').post(`/staffing/bids/${i.id}/emails/${later.id}/cancel`));
-    expect((await pool.query(`select revoked_at from bid_acceptance_links where bid_email_id = $1`, [later.id])).rows[0].revoked_at).toBeTruthy();
+    expect((await pool.one('bid_acceptance_links', { bid_email_id: later.id }))!.revoked_at).toBeTruthy();
   });
 
   it('keeps rate cards, checks bids against them, and adds one-off fees to the contract', async () => {
