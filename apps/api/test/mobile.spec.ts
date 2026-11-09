@@ -1,19 +1,19 @@
+import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { resetConfigForTests } from '../src/platform/config/config';
 import { PushService } from '../src/platform/notify/push.service';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const HOUR = 3_600_000;
 
 /** Phase 7 mobile API: devices, push delivery through a stand-in for the Expo push service, and offline punches. */
 describe('mobile', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let pushServer: Server;
   const pushed: { to: string; title: string; body: string; data: Record<string, unknown> }[][] = [];
@@ -56,10 +56,7 @@ describe('mobile', () => {
     pool = adminPool();
     t = await createTenant(pool);
     const assembly = await department(pool, t, 'Assembly');
-    pune = (await pool.query<{ id: string }>(
-      `insert into locations (tenant_id, legal_entity_id, name, kind, timezone, country_code, latitude, longitude, geofence_radius_m) values ($1, $2, 'Pune Plant', 'factory', 'Asia/Kolkata', 'IN', 18.5204, 73.8567, 200) returning id`,
-      [t.id, t.legalEntityId],
-    )).rows[0]!.id;
+    pune = (await pool.insert('locations', { tenant_id: t.id, legal_entity_id: t.legalEntityId, name: 'Pune Plant', kind: 'factory', timezone: 'Asia/Kolkata', country_code: 'IN', latitude: '18.5204', longitude: '73.8567', geofence_radius_m: 200 })).id as string;
     const hr = await addMember(pool, t, { roles: ['hr_admin'] });
     op = await addMember(pool, t, { departmentId: assembly, name: 'Olu Operator' });
     peer = await addMember(pool, t, { departmentId: assembly, name: 'Pat Peer' });
@@ -92,10 +89,9 @@ describe('mobile', () => {
       const again = ok(await as(opSession.accessToken).post('/mobile/devices').send({ ...body, appVersion: '1.0.1' }));
       expect(again).toMatchObject({ id: deviceId, appVersion: '1.0.1' });
       expect((ok(await as(opSession.accessToken).get('/mobile/devices')) as unknown as unknown[]).length).toBe(1);
-      const s = await pool.query(`select client from sessions where refresh_token_hash = encode(sha256($1::bytea), 'hex')`, [opSession.refreshToken]);
-      expect(s.rows[0].client).toBe('mobile');
-      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'mobile.device_registered'`, [t.id]);
-      expect(audit.rows[0].n).toBe(1);
+      const s = await pool.one('sessions', { refresh_token_hash: createHash('sha256').update(opSession.refreshToken).digest('hex') });
+      expect(s!.client).toBe('mobile');
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'mobile.device_registered' })).toBe(1);
     });
 
     it('accepts only Expo push tokens, and only for my own device', async () => {
@@ -136,8 +132,7 @@ describe('mobile', () => {
       expect(Math.abs(at - (now - 5 * 60_000))).toBeLessThan(10_000);
       const retry = ok(await sync({ punches: [{ sequence: 1, direction: 'in', capturedAt: new Date(now - 5 * 60_000).toISOString() }] }));
       expect(retry.results[0]).toMatchObject({ status: 'duplicate' });
-      const n = await pool.query(`select count(*)::int as n from attendance_events where mobile_device_id = $1`, [deviceId]);
-      expect(n.rows[0].n).toBe(1);
+      expect(await pool.count('attendance_events', { mobile_device_id: deviceId })).toBe(1);
     });
 
     it('flags a changed phone clock and keeps both times; flags unverifiable times and mock locations', async () => {
@@ -153,9 +148,9 @@ describe('mobile', () => {
       expect(r.results[0]).toMatchObject({ status: 'accepted', punch: { flags: ['clock_changed'] } });
       expect(Math.abs(new Date(r.results[0].punch.capturedAt).getTime() - (now - 120_000))).toBeLessThan(10_000);
       expect(r.results[1]).toMatchObject({ status: 'accepted', punch: { flags: ['clock_unverified', 'mock_location'] } });
-      const ev = await pool.query(`select device_local_time, raw from attendance_events where source = 'mobile' and source_event_id = $1`, [`${deviceId}:2`]);
-      expect(ev.rows[0].device_local_time).toBe(new Date(now - 3 * HOUR).toISOString());
-      expect(ev.rows[0].raw).toMatchObject({ timeBasis: 'monotonic', sameRun: true });
+      const ev = (await pool.one('attendance_events', { source: 'mobile', source_event_id: `${deviceId}:2` }))!;
+      expect(new Date(ev.device_local_time).toISOString()).toBe(new Date(now - 3 * HOUR).toISOString());
+      expect(ev.raw).toMatchObject({ timeBasis: 'monotonic', sameRun: true });
       const today = ok(await as(opSession.accessToken).get('/attendance/today'));
       expect(today.punches.flatMap((p: { flags: string[] }) => p.flags)).toEqual(expect.arrayContaining(['offline', 'clock_changed', 'mock_location']));
     });
@@ -173,8 +168,8 @@ describe('mobile', () => {
       }));
       expect(r.results.map((x: { reason: string }) => x.reason)).toEqual(['too_old', 'in_future', 'outside_geofence', 'location_required']);
       expect(r.results[0].message).toMatch(/Ask for an attendance correction/);
-      const audit = await pool.query(`select metadata from audit_events where tenant_id = $1 and action = 'attendance.punch_refused'`, [t.id]);
-      expect(audit.rows[0].metadata).toMatchObject({ source: 'mobile', sequence: 12 });
+      const audit = (await pool.one('audit_events', { tenant_id: t.id, action: 'attendance.punch_refused', 'metadata.sequence': 12 }))!;
+      expect(audit.metadata).toMatchObject({ source: 'mobile', sequence: 12 });
       ok(await as(hrToken).put('/attendance/policies').send({ locationId: pune, geofenceMode: 'warn', defaultShiftId: null }));
     });
 

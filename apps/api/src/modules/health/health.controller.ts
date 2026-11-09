@@ -1,7 +1,6 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../../platform/authz/decorators';
-import { DatabaseService } from '../../platform/database/database.service';
 import { MongoService } from '../../platform/database/mongo.service';
 import { Doc } from '../../platform/openapi/openapi';
 
@@ -9,10 +8,7 @@ import { Doc } from '../../platform/openapi/openapi';
 @Public()
 @SkipThrottle()
 export class HealthController {
-  constructor(
-    private readonly db: DatabaseService,
-    private readonly mongo: MongoService,
-  ) {}
+  constructor(private readonly mongo: MongoService) {}
 
   @Get('live')
   @Doc({ summary: 'Liveness probe' })
@@ -24,20 +20,11 @@ export class HealthController {
   @Doc({ summary: 'Readiness probe (database reachable)' })
   async ready() {
     const started = Date.now();
-    try {
-      await this.db.pool.query('select 1');
-    } catch {
+    if (!(await this.mongo.ping())) {
       // 503, not 500: load balancers and container health checks read it as "not ready, try again", and the
       // database error itself is not shown to whoever asked.
       throw new ServiceUnavailableException({ code: 'not_ready', message: 'The database cannot be reached' });
     }
-    const database = { latencyMs: Date.now() - started };
-    // MongoDB counts towards readiness once it is configured (MONGODB_URL), as modules move onto it.
-    if (!this.mongo.configured) return { status: 'ok', database };
-    const mongoStarted = Date.now();
-    if (!(await this.mongo.ping())) {
-      throw new ServiceUnavailableException({ code: 'not_ready', message: 'The database cannot be reached' });
-    }
-    return { status: 'ok', database, mongodb: { latencyMs: Date.now() - mongoStarted } };
+    return { status: 'ok', database: { latencyMs: Date.now() - started } };
   }
 }
