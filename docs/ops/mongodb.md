@@ -26,8 +26,8 @@ TEST_MONGODB_URL='mongodb://localhost:27017/crew_test?replicaSet=rs0' pnpm test:
 ## Writing data-layer code
 
 - Use `MongoService` (`apps/api/src/platform/database/mongo.service.ts`), never the driver directly. A test fails if code outside `src/platform/database` imports `mongodb`, apart from type-only imports.
-- Register every new collection in `packages/db/src/mongo/collections.ts` (`tenant`, `shared` or `platform`). Create it in a new numbered migration in `packages/db/src/mongo/migrations` with a validator and tenant-first indexes (`{ tenantId: 1, ... }`).
-- Use UUID strings for `_id` (`randomUUID()`), not ObjectIds.
+- Register every new collection in `packages/db/src/mongo/collections.ts` (`tenant`, `shared` or `platform`). Create it in a new numbered migration in `packages/db/src/mongo/migrations` with a validator and tenant-first indexes (`{ tenant_id: 1, ... }`).
+- Use UUID strings for `_id` (`randomUUID()`), not ObjectIds. Field names keep the PostgreSQL column names (`tenant_id`, `full_name`, `created_at`), so API mapping code and audit records read the same.
 - A transaction callback can run more than once when MongoDB retries a write conflict. Keep side effects out of it, and queue email and webhooks through the outbox.
 - Use `tx.audit(...)` for the audit trail, and `tx.defer(...)` for anything else that has to run last.
 - `$unionWith`, `$out` and `$merge` are not available. Use two queries.

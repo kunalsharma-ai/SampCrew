@@ -1,7 +1,7 @@
 /**
  * Who may reach each collection, replacing PostgreSQL row-level security.
  *
- *  - tenant:   every document carries `tenantId`. Through a workspace transaction, reads only ever see the current
+ *  - tenant:   every document carries `tenant_id`. Through a workspace transaction, reads only ever see the current
  *              workspace's documents and writes can only create or change them (apps/api MongoService).
  *  - shared:   reference data with no owner workspace (e.g. the plan catalogue). Read-only from a workspace.
  *  - platform: SAMPLEDGE-internal (Super Admin, chain heads). Never reachable from a workspace transaction.

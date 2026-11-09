@@ -26,15 +26,15 @@ describe('MongoDB workspace-scoped access', () => {
         { _id: 'a2', name: 'A two', planKey: 'scale', tagId: 'tb1' },
       ]);
       await tx.collection('t_tags').insertOne({ _id: 'ta1', label: 'A tag' });
-      await tx.collection('t_memberships').insertOne({ _id: id(), userId: userA, role: 'owner' });
+      await tx.collection('t_memberships').insertOne({ _id: id(), user_id: userA, role: 'owner' });
     }, { tenantId: tenantA });
     await db.tenant(async (tx) => {
       await tx.collection('t_items').insertOne({ _id: 'b1', name: 'B one', planKey: 'growth', tagId: 'ta1' });
       // Same _id space, different workspace: B's tag uses the id A's item points at, to prove lookups do not cross.
       await tx.collection('t_tags').insertOne({ _id: 'tb1', label: 'B tag' });
       await tx.collection('t_memberships').insertMany([
-        { _id: id(), userId: userA, role: 'member' },
-        { _id: id(), userId: userB, role: 'owner' },
+        { _id: id(), user_id: userA, role: 'member' },
+        { _id: id(), user_id: userB, role: 'owner' },
       ]);
     }, { tenantId: tenantB });
   });
@@ -46,7 +46,7 @@ describe('MongoDB workspace-scoped access', () => {
   it('stamps inserts with the workspace and only reads that workspace', async () => {
     const a = await db.tenant((tx) => tx.collection('t_items').find().sort({ _id: 1 }).toArray(), { tenantId: tenantA });
     expect(a.map((d) => d._id)).toEqual(['a1', 'a2']);
-    expect(a.every((d) => d.tenantId === tenantA)).toBe(true);
+    expect(a.every((d) => d.tenant_id === tenantA)).toBe(true);
     const b = await db.tenant(async (tx) => ({
       one: await tx.collection('t_items').findOne({ _id: 'a1' }),
       count: await tx.collection('t_items').countDocuments(),
@@ -58,15 +58,15 @@ describe('MongoDB workspace-scoped access', () => {
   it('refuses a filter, document or update that names another workspace', async () => {
     await db.tenant(async (tx) => {
       const items = tx.collection('t_items');
-      expect(() => items.find({ tenantId: tenantA })).toThrow(ScopeViolationError);
-      expect(() => items.insertOne({ _id: 'x', tenantId: tenantA })).toThrow(ScopeViolationError);
-      expect(() => items.updateOne({ _id: 'b1' }, { $set: { tenantId: tenantA } })).toThrow(ScopeViolationError);
-      expect(() => items.updateOne({ _id: 'b1' }, { $rename: { name: 'tenantId' } })).toThrow(ScopeViolationError);
-      expect(() => items.updateOne({ _id: 'b1' }, { $unset: { tenantId: '' } })).toThrow(ScopeViolationError);
-      expect(() => items.updateOne({ _id: 'b1' }, [{ $set: { tenantId: tenantA } }])).toThrow(ScopeViolationError);
+      expect(() => items.find({ tenant_id: tenantA })).toThrow(ScopeViolationError);
+      expect(() => items.insertOne({ _id: 'x', tenant_id: tenantA })).toThrow(ScopeViolationError);
+      expect(() => items.updateOne({ _id: 'b1' }, { $set: { tenant_id: tenantA } })).toThrow(ScopeViolationError);
+      expect(() => items.updateOne({ _id: 'b1' }, { $rename: { name: 'tenant_id' } })).toThrow(ScopeViolationError);
+      expect(() => items.updateOne({ _id: 'b1' }, { $unset: { tenant_id: '' } })).toThrow(ScopeViolationError);
+      expect(() => items.updateOne({ _id: 'b1' }, [{ $set: { tenant_id: tenantA } }])).toThrow(ScopeViolationError);
       expect(() => items.updateOne({ _id: 'b1' }, [{ $replaceWith: { _id: 'b1' } }])).toThrow(ScopeViolationError);
       expect(() => items.updateOne({ _id: 'b1' }, { name: 'whole doc' } as never)).toThrow(ScopeViolationError);
-      expect(() => items.replaceOne({ _id: 'b1' }, { name: 'x', tenantId: tenantA })).toThrow(ScopeViolationError);
+      expect(() => items.replaceOne({ _id: 'b1' }, { name: 'x', tenant_id: tenantA })).toThrow(ScopeViolationError);
     }, { tenantId: tenantB });
   });
 
@@ -80,8 +80,8 @@ describe('MongoDB workspace-scoped access', () => {
       await tx.collection('t_items').updateOne({ _id: 'b2' }, { $set: { name: 'B two' } }, { upsert: true });
       await tx.collection('t_items').replaceOne({ _id: 'b2' }, { name: 'B two, replaced' });
     }, { tenantId: tenantB });
-    const all = await db.platform((tx) => tx.database.collection<{ _id: string; [k: string]: unknown }>('t_items').find({ tenantId: { $in: [tenantA, tenantB] } }, { session: tx.session }).sort({ _id: 1 }).toArray());
-    expect(all.map((d) => [d._id, d.tenantId, d.touched ?? false])).toEqual([
+    const all = await db.platform((tx) => tx.database.collection<{ _id: string; [k: string]: unknown }>('t_items').find({ tenant_id: { $in: [tenantA, tenantB] } }, { session: tx.session }).sort({ _id: 1 }).toArray());
+    expect(all.map((d) => [d._id, d.tenant_id, d.touched ?? false])).toEqual([
       ['a1', tenantA, false],
       ['a2', tenantA, false],
       ['b1', tenantB, true],
@@ -154,10 +154,10 @@ describe('MongoDB workspace-scoped access', () => {
 
   it('lets a user, before choosing a workspace, read only their own memberships', async () => {
     const mine = await db.user(userA, (tx) => tx.collection('t_memberships').find().toArray());
-    expect(mine.map((m) => [m.tenantId, m.role]).sort()).toEqual([[tenantA, 'owner'], [tenantB, 'member']].sort());
+    expect(mine.map((m) => [m.tenant_id, m.role]).sort()).toEqual([[tenantA, 'owner'], [tenantB, 'member']].sort());
     await db.user(userA, async (tx) => {
-      expect(await tx.collection('t_memberships').findOne({ userId: userA, tenantId: tenantB })).not.toBeNull();
-      expect(() => tx.collection('t_memberships').find({ userId: userB })).toThrow(ScopeViolationError);
+      expect(await tx.collection('t_memberships').findOne({ user_id: userA, tenant_id: tenantB })).not.toBeNull();
+      expect(() => tx.collection('t_memberships').find({ user_id: userB })).toThrow(ScopeViolationError);
       expect(() => tx.collection('t_memberships').insertOne({ _id: 'x', role: 'owner' })).toThrow(/read-only/);
       expect(() => tx.collection('t_items')).toThrow(/before a workspace is chosen/);
     });

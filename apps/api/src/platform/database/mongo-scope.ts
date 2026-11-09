@@ -43,7 +43,7 @@ export function scopeFilter(name: string, scope: Scope): { field: string; value:
   if (!rule) throw new ScopeViolationError(`Collection ${name} is not registered (packages/db/src/mongo/collections.ts)`);
   if (rule.scope === 'shared') return null;
   if (rule.scope === 'platform') throw new ScopeViolationError(`Collection ${name} is platform-only`);
-  if (scope.kind === 'tenant') return { field: 'tenantId', value: scope.id };
+  if (scope.kind === 'tenant') return { field: 'tenant_id', value: scope.id };
   if (rule.userField) return { field: rule.userField, value: scope.id };
   throw new ScopeViolationError(`Collection ${name} is not readable before a workspace is chosen`);
 }

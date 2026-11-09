@@ -11,26 +11,26 @@ export type AuditActorType = 'user' | 'platform_admin' | 'system' | 'ai_agent' |
 export const AUDIT_ACTION = /^[a-z_]+(\.[a-z_]+)+$/;
 
 export interface AuditEventInput {
-  tenantId: string | null;
-  actorType: AuditActorType;
-  actorId: string | null;
-  actorLabel: string | null;
+  tenant_id: string | null;
+  actor_type: AuditActorType;
+  actor_id: string | null;
+  actor_label: string | null;
   action: string;
-  resourceType: string;
-  resourceId: string | null;
+  resource_type: string;
+  resource_id: string | null;
   changes: Record<string, unknown>;
   metadata: Record<string, unknown>;
   ip: string | null;
-  userAgent: string | null;
-  requestId: string | null;
+  user_agent: string | null;
+  request_id: string | null;
 }
 
 export interface AuditEventDoc extends AuditEventInput {
   _id: string;
-  chainSeq: number;
-  prevHash: string | null;
+  chain_seq: number;
+  prev_hash: string | null;
   hash: string;
-  createdAt: Date;
+  created_at: Date;
 }
 
 interface AuditHead {
@@ -40,24 +40,24 @@ interface AuditHead {
 }
 
 /** The hashed fields, in the same order and format as audit_event_payload() in the PostgreSQL schema. */
-export function auditPayload(e: Pick<AuditEventDoc, 'tenantId' | 'chainSeq' | 'actorType' | 'actorId' | 'action' | 'resourceType' | 'resourceId' | 'changes' | 'metadata' | 'createdAt'>): string {
+export function auditPayload(e: Pick<AuditEventDoc, 'tenant_id' | 'chain_seq' | 'actor_type' | 'actor_id' | 'action' | 'resource_type' | 'resource_id' | 'changes' | 'metadata' | 'created_at'>): string {
   return [
-    e.tenantId ?? '-',
-    String(e.chainSeq),
-    e.actorType,
-    e.actorId ?? '-',
+    e.tenant_id ?? '-',
+    String(e.chain_seq),
+    e.actor_type,
+    e.actor_id ?? '-',
     e.action,
-    e.resourceType,
-    e.resourceId ?? '-',
+    e.resource_type,
+    e.resource_id ?? '-',
     canonicalJson(e.changes),
     canonicalJson(e.metadata),
-    e.createdAt.toISOString(),
+    e.created_at.toISOString(),
   ].join('|');
 }
 
-export function auditHash(prevHash: string | null, payload: string): string {
+export function auditHash(prev_hash: string | null, payload: string): string {
   return createHash('sha256')
-    .update(prevHash ? Buffer.from(prevHash, 'hex') : Buffer.alloc(0))
+    .update(prev_hash ? Buffer.from(prev_hash, 'hex') : Buffer.alloc(0))
     .update(payload, 'utf8')
     .digest('hex');
 }
@@ -75,36 +75,36 @@ export async function appendAuditEvent(db: Db, session: ClientSession, input: Au
   if (!session.inTransaction()) throw new Error('appendAuditEvent must run inside a transaction');
   if (!AUDIT_ACTION.test(input.action)) throw new Error(`Invalid audit action "${input.action}"`);
   const heads = db.collection<AuditHead>(AUDIT_HEADS);
-  const key = input.tenantId ?? PLATFORM_CHAIN;
+  const key = input.tenant_id ?? PLATFORM_CHAIN;
   await heads.updateOne({ _id: key }, { $setOnInsert: { seq: 0, hash: null } }, { upsert: true, session });
   const head = (await heads.findOne({ _id: key }, { session }))!;
   const event: AuditEventDoc = {
     _id: randomUUID(),
     ...input,
-    chainSeq: head.seq + 1,
-    prevHash: head.hash,
-    createdAt: new Date(),
+    chain_seq: head.seq + 1,
+    prev_hash: head.hash,
+    created_at: new Date(),
     hash: '',
   };
   event.hash = auditHash(head.hash, auditPayload(event));
-  const moved = await heads.updateOne({ _id: key, seq: head.seq }, { $set: { seq: event.chainSeq, hash: event.hash } }, { session });
+  const moved = await heads.updateOne({ _id: key, seq: head.seq }, { $set: { seq: event.chain_seq, hash: event.hash } }, { session });
   if (moved.modifiedCount !== 1) throw new Error(`Audit chain ${key} moved during the transaction`);
   await db.collection<AuditEventDoc>(AUDIT_EVENTS).insertOne(event, { session });
   return event;
 }
 
 /** Recomputes a chain. Returns how many events were checked and the first broken sequence number, if any. */
-export async function verifyAuditChain(db: Db, tenantId: string | null): Promise<{ checked: number; firstBrokenSeq: number | null }> {
+export async function verifyAuditChain(db: Db, tenant_id: string | null): Promise<{ checked: number; firstBrokenSeq: number | null }> {
   const cursor = db
     .collection<AuditEventDoc>(AUDIT_EVENTS)
-    .find({ tenantId: tenantId ?? null })
-    .sort({ chainSeq: 1 });
+    .find({ tenant_id: tenant_id ?? null })
+    .sort({ chain_seq: 1 });
   let expectedPrev: string | null = null;
   let n = 0;
   for await (const e of cursor) {
     n += 1;
-    if (e.chainSeq !== n || e.prevHash !== expectedPrev || e.hash !== auditHash(expectedPrev, auditPayload(e))) {
-      return { checked: n, firstBrokenSeq: e.chainSeq };
+    if (e.chain_seq !== n || e.prev_hash !== expectedPrev || e.hash !== auditHash(expectedPrev, auditPayload(e))) {
+      return { checked: n, firstBrokenSeq: e.chain_seq };
     }
     expectedPrev = e.hash;
   }

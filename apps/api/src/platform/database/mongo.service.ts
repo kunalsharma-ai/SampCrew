@@ -35,7 +35,7 @@ abstract class BaseTx {
   }
 }
 
-/** A transaction confined to one workspace. Everything it reads or writes carries that workspace's tenantId. */
+/** A transaction confined to one workspace. Everything it reads or writes carries that workspace's tenant_id. */
 export class TenantTx extends BaseTx {
   private readonly scope: Scope;
 
@@ -45,11 +45,11 @@ export class TenantTx extends BaseTx {
   }
 
   /** Appends to this workspace's audit chain; an event for any other workspace is refused. */
-  override audit(input: Omit<mongo.AuditEventInput, 'tenantId'> & { tenantId?: string | null }): void {
-    if (input.tenantId !== undefined && input.tenantId !== this.tenantId) {
+  override audit(input: Omit<mongo.AuditEventInput, 'tenant_id'> & { tenant_id?: string | null }): void {
+    if (input.tenant_id !== undefined && input.tenant_id !== this.tenantId) {
       throw new ScopeViolationError('Audit events from a workspace transaction must belong to that workspace');
     }
-    super.audit({ ...input, tenantId: this.tenantId });
+    super.audit({ ...input, tenant_id: this.tenantId });
   }
 
   /** A workspace-owned collection, narrowed to this workspace. Shared reference data comes back read-only. */

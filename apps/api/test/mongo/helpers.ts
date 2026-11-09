@@ -9,7 +9,7 @@ export const TEST_RULES: Record<string, mongo.CollectionRule> = {
   t_items: { scope: 'tenant' },
   t_tags: { scope: 'tenant' },
   t_nodes: { scope: 'tenant' },
-  t_memberships: { scope: 'tenant', userField: 'userId' },
+  t_memberships: { scope: 'tenant', userField: 'user_id' },
   t_plans: { scope: 'shared' },
   t_secrets: { scope: 'platform' },
 };
@@ -22,20 +22,20 @@ export function mongoService(): MongoService {
 
 export const id = () => randomUUID();
 
-/** An audit event; without `tenantId` it takes the transaction's workspace (pass null for a platform event). */
+/** An audit event; without `tenant_id` it takes the transaction's workspace (pass null for a platform event). */
 export function auditInput(over: Partial<mongo.AuditEventInput> = {}): mongo.AuditEventInput {
   return {
-    actorType: 'system',
-    actorId: null,
-    actorLabel: 'test',
+    actor_type: 'system',
+    actor_id: null,
+    actor_label: 'test',
     action: 'test.event',
-    resourceType: 'test',
-    resourceId: null,
+    resource_type: 'test',
+    resource_id: null,
     changes: {},
     metadata: {},
     ip: null,
-    userAgent: null,
-    requestId: null,
+    user_agent: null,
+    request_id: null,
     ...over,
   } as mongo.AuditEventInput;
 }

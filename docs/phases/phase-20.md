@@ -26,7 +26,7 @@ Everything below runs against a real MongoDB 8.0 replica set. The tests are in `
 
 ### Workspace isolation without row-level security (`apps/api/src/platform/database/mongo.service.ts`, `mongo-scope.ts`)
 - `MongoService.tenant()`, `user()` and `platform()` match the three `DatabaseService` transaction kinds.
-- In a workspace transaction, every filter is narrowed to that workspace and every insert is stamped with its `tenantId`. Updates cannot change `tenantId`, through operators or update pipelines. A filter or document that names another workspace throws `ScopeViolationError` instead of quietly returning nothing.
+- In a workspace transaction, every filter is narrowed to that workspace and every insert is stamped with its `tenant_id`. Updates cannot change `tenant_id`, through operators or update pipelines. A filter or document that names another workspace throws `ScopeViolationError` instead of quietly returning nothing.
 - In aggregations, `$lookup`, `$graphLookup` and `$facet` get the same workspace filter on whatever they read. `$out`, `$merge`, `$unionWith`, `$documents` and every stage not on the allow-list are refused.
 - Each collection is registered with a scope in `packages/db/src/mongo/collections.ts`: `tenant`, `shared` (read-only reference data) or `platform` (never reachable from a workspace). An unregistered collection cannot be used at all.
 - `user()` reads only the signed-in user's own documents (for example their memberships, before a workspace is chosen), and only reads.
