@@ -190,6 +190,15 @@ jobs:
           node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
           pnpm e2e:platform-integrations
+      - name: Billing with online payment (local Razorpay stand-in, keys typed into the Console)
+        # The flow starts e2e/payments-stub.cjs on 4060 itself; no real Razorpay keys, money or network are used.
+        # Needs a console admin and owner without MFA, so it runs on a fresh database.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
+          pnpm e2e:billing
       - name: Super Admin control of workspaces (apps, users, activity, attendance machines, subscription)
         # Needs a console admin without MFA, so it runs on a fresh database; Web Portal and Console are still running.
         run: |

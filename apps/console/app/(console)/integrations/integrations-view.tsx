@@ -1,7 +1,7 @@
 'use client';
 import type { PlatformIntegrationDef, PlatformIntegrationKey, PlatformIntegrationView } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, Checkbox, Field, Input, Select, Switch, Textarea, cn } from '@crew/ui';
-import { BellRing, Bot, ChevronDown, ExternalLink, Mail, ShieldCheck, Smartphone, type LucideIcon } from 'lucide-react';
+import { BellRing, Bot, ChevronDown, Copy, CreditCard, ExternalLink, IndianRupee, Mail, ShieldCheck, Smartphone, type LucideIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { resetIntegrationAction, saveIntegrationAction, testIntegrationAction } from '../actions';
@@ -10,13 +10,13 @@ import { LocalTime } from '@/components/local-time';
 type Values = Record<string, unknown>;
 type Flash = { tone: 'success' | 'danger' | 'warning'; text: string } | null;
 
-const ICON: Record<PlatformIntegrationKey, LucideIcon> = { ai: Bot, email: Mail, push: BellRing, scanning: ShieldCheck, mobile_sso: Smartphone };
+const ICON: Record<PlatformIntegrationKey, LucideIcon> = { ai: Bot, email: Mail, push: BellRing, scanning: ShieldCheck, mobile_sso: Smartphone, razorpay: IndianRupee, stripe: CreditCard };
 const SOURCE: Record<PlatformIntegrationView['source'], { label: string; tone: 'accent' | 'neutral' | 'warning' }> = {
   console: { label: 'Set in Console', tone: 'accent' },
   environment: { label: 'From server settings', tone: 'warning' },
   none: { label: 'Not set up', tone: 'neutral' },
 };
-const SECRET_LABEL: Record<string, string> = { apiKey: 'API key', password: 'Password', accessToken: 'Access token' };
+const SECRET_LABEL: Record<string, string> = { apiKey: 'API key', password: 'Password', accessToken: 'Access token', keySecret: 'Key secret', secretKey: 'Secret key', webhookSecret: 'Webhook secret' };
 const MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
 
 export function IntegrationsView({ defs, list, canManage }: { defs: readonly PlatformIntegrationDef[]; list: PlatformIntegrationView[]; canManage: boolean }) {
@@ -47,6 +47,8 @@ function initialValues(v: PlatformIntegrationView): Values {
     case 'push': return { enabled: v.enabled, accessToken: '' };
     case 'scanning': return { enabled: v.enabled, url: s.url ?? 'tcp://clamav:3310' };
     case 'mobile_sso': return { enabled: v.enabled, redirects: ((s.redirects as string[]) ?? ['crew://sso']).join('\n') };
+    case 'razorpay': return { enabled: v.enabled, keyId: s.keyId ?? '', keySecret: '', webhookSecret: '', baseUrl: s.baseUrl ?? '' };
+    case 'stripe': return { enabled: v.enabled, publishableKey: s.publishableKey ?? '', secretKey: '', webhookSecret: '', baseUrl: s.baseUrl ?? '' };
   }
 }
 
@@ -247,6 +249,25 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
               </Field>
             )}
 
+            {(def.key === 'razorpay' || def.key === 'stripe') && (
+              <>
+                {def.key === 'razorpay' ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {text('keyId', 'Key id', { placeholder: 'rzp_live_…', required: true, hint: 'rzp_test_ keys take test payments only.' })}
+                    {secret('keySecret', 'Key secret', 'Shown once when the key is generated.')}
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {secret('secretKey', 'Secret key', 'Starts with sk_live_ or sk_test_ (or a restricted rk_ key).')}
+                    {text('publishableKey', 'Publishable key (optional)', { placeholder: 'pk_live_…' })}
+                  </div>
+                )}
+                <WebhookAddress url={view.webhookUrl} events={def.key === 'razorpay' ? 'payment_link.paid, payment_link.cancelled, payment_link.expired' : 'checkout.session.completed, checkout.session.expired (and the two checkout.session.async_payment events if you allow bank debits)'} />
+                {secret('webhookSecret', 'Webhook secret', def.key === 'razorpay' ? 'The secret you typed when adding the webhook.' : 'Starts with whsec_, shown on the webhook endpoint.')}
+                {text('baseUrl', 'API address (optional)', { placeholder: def.key === 'razorpay' ? 'https://api.razorpay.com' : 'https://api.stripe.com', hint: 'Leave empty unless SAMPLEDGE support asks you to change it.' })}
+              </>
+            )}
+
             {test && (
               <Alert tone={test.ok ? 'success' : 'danger'} title={test.ok ? 'Connection works' : 'Connection failed'}>
                 <span data-testid={`${def.key}-test-result`}>{test.detail}</span>
@@ -263,5 +284,21 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
         </CardBody>
       )}
     </Card>
+  );
+}
+
+/** The address to paste into the Razorpay or Stripe dashboard, so payments are confirmed to SampCrew. */
+function WebhookAddress({ url, events }: { url: string | null | undefined; events: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!url) return null;
+  return (
+    <div className="grid gap-1.5 rounded-md bg-bg-subtle p-3 text-[0.8125rem]">
+      <span className="font-medium text-fg">Webhook address</span>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 break-all text-xs" data-testid="webhook-url">{url}</code>
+        <Button type="button" size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText(url).then(() => setCopied(true)); }} aria-label="Copy the webhook address"><Copy className="size-3.5" aria-hidden />{copied ? 'Copied' : 'Copy'}</Button>
+      </div>
+      <span className="text-xs text-fg-muted">Events to send: {events}.</span>
+    </div>
   );
 }

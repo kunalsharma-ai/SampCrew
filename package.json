@@ -47,6 +47,7 @@
     "e2e:access": "node e2e/access-flow.cjs",
     "e2e:plans": "node e2e/plans-flow.cjs",
     "e2e:platform-integrations": "node e2e/platform-integrations-flow.cjs",
+    "e2e:billing": "node e2e/billing-flow.cjs",
     "e2e:superadmin": "node e2e/superadmin-flow.cjs",
     "e2e:a11y": "node e2e/a11y.cjs",
     "e2e:deploy": "infra/deploy/smoke.sh",

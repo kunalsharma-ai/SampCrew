@@ -8,7 +8,10 @@ import { z } from 'zod';
  * Workspace-level integrations (Slack, webhooks, API keys, single sign-on) stay in each workspace's own
  * Settings > Integrations in the Web Portal.
  */
-export const PLATFORM_INTEGRATION_KEYS = ['ai', 'email', 'push', 'scanning', 'mobile_sso'] as const;
+export const PLATFORM_INTEGRATION_KEYS = ['ai', 'email', 'push', 'scanning', 'mobile_sso', 'razorpay', 'stripe'] as const;
+/** The integrations that collect payments for SampCrew subscriptions. */
+export const PAYMENT_GATEWAYS = ['razorpay', 'stripe'] as const;
+export type PaymentGateway = (typeof PAYMENT_GATEWAYS)[number];
 export type PlatformIntegrationKey = (typeof PLATFORM_INTEGRATION_KEYS)[number];
 
 /** Where the setting in effect comes from: saved in the Console, the server's environment (bootstrap fallback), or nowhere. */
@@ -61,12 +64,42 @@ export const mobileSsoIntegrationInput = z.object({
   redirects: z.array(z.string().trim().min(3).max(300).regex(/^[a-z][a-z0-9+.-]*:\/\/\S+$/i, 'Each address needs a scheme, like crew://sso')).min(1).max(10),
 }).strict();
 
+const gatewayBaseUrl = z.union([z.literal(''), z.string().trim().url().max(300)]).optional();
+
+/** Razorpay (India: cards, UPI, net banking, wallets). Payments are taken on Razorpay payment links. */
+export const razorpayIntegrationInput = z.object({
+  enabled: z.boolean(),
+  /** The public key id, rzp_test_... or rzp_live_... */
+  keyId: z.string().trim().regex(/^rzp_(test|live)_[A-Za-z0-9]{6,40}$/, 'Razorpay key ids look like rzp_live_XXXXXXXXXXXXXX'),
+  /** Leave empty to keep the saved key secret. */
+  keySecret: optionalSecret,
+  /** The secret typed when the webhook was added in the Razorpay Dashboard. Empty keeps the saved one. */
+  webhookSecret: optionalSecret,
+  /** Only for a test stand-in. Empty means https://api.razorpay.com. */
+  baseUrl: gatewayBaseUrl,
+}).strict();
+
+/** Stripe (cards and wallets worldwide). Payments are taken on Stripe Checkout; saved cards renew automatically. */
+export const stripeIntegrationInput = z.object({
+  enabled: z.boolean(),
+  /** Optional: shown for reference only (pk_live_... or pk_test_...). */
+  publishableKey: z.union([z.literal(''), z.string().trim().regex(/^pk_(test|live)_[A-Za-z0-9]{6,200}$/, 'Publishable keys look like pk_live_...')]).optional(),
+  /** sk_live_... or a restricted key rk_live_... Leave empty to keep the saved one. */
+  secretKey: optionalSecret,
+  /** The signing secret of the webhook endpoint (whsec_...). Empty keeps the saved one. */
+  webhookSecret: optionalSecret,
+  /** Only for a test stand-in. Empty means https://api.stripe.com. */
+  baseUrl: gatewayBaseUrl,
+}).strict();
+
 export const PLATFORM_INTEGRATION_INPUTS = {
   ai: aiIntegrationInput,
   email: emailIntegrationInput,
   push: pushIntegrationInput,
   scanning: scanningIntegrationInput,
   mobile_sso: mobileSsoIntegrationInput,
+  razorpay: razorpayIntegrationInput,
+  stripe: stripeIntegrationInput,
 } as const;
 
 export type PlatformIntegrationInput<K extends PlatformIntegrationKey = PlatformIntegrationKey> = z.infer<(typeof PLATFORM_INTEGRATION_INPUTS)[K]>;
@@ -87,6 +120,8 @@ export const PLATFORM_INTEGRATION_SECRETS: Record<PlatformIntegrationKey, readon
   push: ['accessToken'],
   scanning: [],
   mobile_sso: [],
+  razorpay: ['keySecret', 'webhookSecret'],
+  stripe: ['secretKey', 'webhookSecret'],
 };
 
 export interface PlatformIntegrationStep { title: string; body: string; link?: { label: string; href: string } }
@@ -100,6 +135,8 @@ export interface PlatformIntegrationDef {
   whenOff: string;
   /** The environment variables used only while nothing is saved in the Console. */
   envFallback: readonly string[];
+  /** Where the provider must send its webhooks, relative to the API's public address. */
+  webhookPath?: string;
   steps: readonly PlatformIntegrationStep[];
 }
 
@@ -167,11 +204,41 @@ export const PLATFORM_INTEGRATIONS: readonly PlatformIntegrationDef[] = [
       { title: 'Save', body: 'Workspaces turn single sign-on on themselves in Settings > Single sign-on; this list only controls where the mobile app may be sent back to.' },
     ],
   },
+  {
+    key: 'razorpay',
+    name: 'Razorpay payments',
+    category: 'Payments',
+    description: 'Collects subscription, upgrade, add-on and invoice payments by card, UPI, net banking and wallets, usually for workspaces billed in INR. Paid invoices are marked paid and the plan change is applied automatically.',
+    whenOff: 'Workspaces cannot pay online with Razorpay. Plan changes are invoiced and SAMPLEDGE finance marks invoices paid by hand.',
+    envFallback: [],
+    webhookPath: '/api/v1/billing/webhooks/razorpay',
+    steps: [
+      { title: 'Create API keys', body: 'In the Razorpay Dashboard open Account & Settings > API Keys and generate a key. Use Test mode keys (rzp_test_...) first and Live mode keys (rzp_live_...) when you go live. Payment links must be enabled on the account.', link: { label: 'Open Razorpay API keys', href: 'https://dashboard.razorpay.com/app/website-app-settings/api-keys' } },
+      { title: 'Add the webhook', body: 'In Account & Settings > Webhooks add the webhook address shown below, choose a secret and tick the events payment_link.paid, payment_link.expired and payment_link.cancelled. Paste the same secret below.', link: { label: 'Open Razorpay webhooks', href: 'https://dashboard.razorpay.com/app/webhooks' } },
+      { title: 'Test, then switch on', body: 'Test connection signs in to Razorpay with the key and secret. Then switch it on and choose in Billing > Settings which currencies Razorpay collects (INR by default).' },
+    ],
+  },
+  {
+    key: 'stripe',
+    name: 'Stripe payments',
+    category: 'Payments',
+    description: 'Collects subscription, upgrade, add-on and invoice payments by card and wallets in any currency on Stripe Checkout. The card is saved, so renewals are charged automatically.',
+    whenOff: 'Workspaces cannot pay online with Stripe. Plan changes are invoiced and SAMPLEDGE finance marks invoices paid by hand.',
+    envFallback: [],
+    webhookPath: '/api/v1/billing/webhooks/stripe',
+    steps: [
+      { title: 'Create a secret key', body: 'In the Stripe Dashboard open Developers > API keys. Use the test mode secret key (sk_test_...) first and the live one (sk_live_...) when you go live. A restricted key needs write access to Customers, Checkout Sessions and Payment Intents.', link: { label: 'Open Stripe API keys', href: 'https://dashboard.stripe.com/apikeys' } },
+      { title: 'Add the webhook endpoint', body: 'In Developers > Webhooks add an endpoint with the address shown below and the events checkout.session.completed and checkout.session.expired. Copy its signing secret (whsec_...) and paste it below.', link: { label: 'Open Stripe webhooks', href: 'https://dashboard.stripe.com/webhooks' } },
+      { title: 'Test, then switch on', body: 'Test connection reads your Stripe balance with the key. Then switch it on and choose in Billing > Settings which currencies Stripe collects (all except INR by default).' },
+    ],
+  },
 ];
 
 /** What the Console shows for one integration. Secret values are replaced by a hint (last characters) or null. */
 export interface PlatformIntegrationView {
   key: PlatformIntegrationKey;
+  /** For payment gateways: the full address to enter in the provider's webhook settings. */
+  webhookUrl?: string;
   source: IntegrationSource;
   enabled: boolean;
   /** Non-secret settings in effect (from the Console, else from the environment). */

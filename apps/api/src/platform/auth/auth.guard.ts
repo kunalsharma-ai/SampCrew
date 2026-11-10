@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { API_KEY_PREFIX, PLATFORM_ROLE_CAPABILITIES, type PlatformRole } from '@crew/contracts';
 import type { Request } from 'express';
 import { AuthzService } from '../authz/authz.service';
-import { ALLOW_WITHOUT_MFA_KEY, FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY } from '../authz/decorators';
+import { ALLOW_WHEN_LOCKED_KEY, ALLOW_WITHOUT_MFA_KEY, FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY } from '../authz/decorators';
 import { requestContext } from '../context/request-context';
 import { MongoService as DatabaseService } from '../database/mongo.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
@@ -62,6 +62,7 @@ export class AuthGuard implements CanActivate {
       const user = tenant && (await tx.collection('users').findOne({ id: session.user_id, status: 'active' }));
       if (!membership || !tenant || !user) return undefined;
       const controls = await tx.collection('tenant_access_controls').findOne({ tenant_id: tenant.id });
+      const sub = await tx.collection('subscriptions').findOne({ tenant_id: tenant.id }, { projection: { locked_at: 1 } });
       return {
         session_ok: !session.revoked_at && session.expires_at > new Date(),
         membership_status: membership.status as string,
@@ -72,6 +73,7 @@ export class AuthGuard implements CanActivate {
         client: session.client as 'web' | 'mobile' | 'api',
         web_on: controls?.web_portal_enabled ?? true,
         mobile_on: controls?.mobile_app_enabled ?? true,
+        locked: Boolean(sub?.locked_at),
       };
     });
     if (!row?.session_ok || row.membership_status !== 'active') throw Errors.unauthorized('Your session is no longer valid. Sign in again.');
@@ -82,6 +84,7 @@ export class AuthGuard implements CanActivate {
     requestContext.setActor({ kind: 'user', userId: claims.sub, tenantId: claims.tid, membershipId: claims.mid, sessionId: claims.sid, mfa: claims.mfa, client: row.client, label: `${row.full_name} <${row.email}>` });
 
     if (row.require_mfa && !claims.mfa && !allowWithoutMfa) throw Errors.mfaRequired();
+    if (row.locked) this.readOnly(req, ctx);
 
     const feature = this.meta<string>(FEATURE_KEY, ctx);
     if (feature) await this.entitlements.requireFeature(feature);
@@ -105,10 +108,18 @@ export class AuthGuard implements CanActivate {
       throw Errors.forbidden(permission ? `This API key does not have the ${permission} scope` : 'This route cannot be used with an API key');
     }
     requestContext.setActor({ kind: 'user', userId: key.userId, tenantId: key.tenantId, membershipId: key.membershipId, sessionId: `api_key:${key.id}`, mfa: false, label: key.label, apiKey: { id: key.id, scopes: key.scopes } });
+    if (await this.db.platform((tx) => tx.collection('subscriptions').exists({ tenant_id: key.tenantId, locked_at: { $ne: null } }))) this.readOnly(req, ctx);
     const feature = this.meta<string>(FEATURE_KEY, ctx);
     if (feature) await this.entitlements.requireFeature(feature);
     await this.authz.require(permission);
     return true;
+  }
+
+  /** While a workspace is read-only for an unpaid invoice, only reads (and billing, sign-out, own security) go through. */
+  private readOnly(req: Request, ctx: ExecutionContext) {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return;
+    if (this.meta<boolean>(ALLOW_WHEN_LOCKED_KEY, ctx)) return;
+    throw Errors.workspaceLocked();
   }
 
   /**

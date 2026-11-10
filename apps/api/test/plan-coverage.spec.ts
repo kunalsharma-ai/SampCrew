@@ -69,6 +69,7 @@ const PUBLIC_CHECKED_IN_SERVICE: Record<string, string> = {
   'DocumentsController.file': 'signed, expiring links issued by a gated module',
   SignatureAgentController: 'email_signatures (SignaturesService.agentByToken)',
   PlatformAuthController: 'none (SAMPLEDGE Console sign-in)',
+  BillingWebhooksController: 'none (payment confirmations from Razorpay and Stripe, signed with the webhook secret)',
 };
 
 type Ctor = new (...args: never[]) => unknown;

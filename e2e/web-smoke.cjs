@@ -49,17 +49,19 @@ async function adminFlow() {
 
   // 2. Billing: change seats on current plan
   await p.goto(BASE + '/settings/billing');
-  await p.click('text=Change seats or cycle');
+  // During the demo's sign-up trial the current plan's button buys it; afterwards it changes seats or cycle.
+  await p.locator('[data-current=true] [data-testid^=plan-choose-]').click();
   await p.fill('dialog input[type=number]', '130');
-  await p.click('text=Confirm change');
+  await p.getByTestId('quote-summary').waitFor();
+  await p.getByTestId('plan-confirm').click();
   await p.waitForSelector('text=15 / 130', { timeout: 8000 });
   console.log('billing seats 120 -> 130: OK');
-  // downgrade blocked: Starter allows 1 entity, demo has 2
-  await p.locator('text=Switch to this plan').first().click();
+  // downgrade blocked: Starter allows 1 entity, demo has 2. The quote shows why before anything is confirmed.
+  await p.getByTestId('plan-choose-starter').click();
   await p.fill('dialog input[type=number]', '20');
-  await p.click('text=Confirm change');
-  await p.waitForTimeout(1500);
-  console.log('downgrade blocked message:', (await p.locator('dialog [class*=danger], dialog [role=alert]').first().textContent().catch(() => 'none'))?.slice(0, 140));
+  const blocked = p.locator('dialog [role=alert], dialog [role=status]').filter({ hasText: /legal entit/i }).first();
+  await blocked.waitFor({ timeout: 8000 });
+  console.log('downgrade blocked message:', (await blocked.textContent())?.slice(0, 140));
     await p.click('dialog >> text=Cancel');
 
   // 3. Organization: add a location, then rename it

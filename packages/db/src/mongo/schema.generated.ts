@@ -5,6 +5,273 @@
 import type { TableSpec } from './schema';
 
 export const TABLES: Record<string, TableSpec> = {
+  addons: {
+    // The add-on catalogue SAMPLEDGE sells on top of plans (Console > Billing > Add-ons).
+    access: "shared", grants: ["select"], touch: true,
+    columns: {
+      archived_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      description: {"type": "string"},
+      feature_key: {"required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      is_public: {"default": true, "required": true, "type": "bool"},
+      key: {"required": true, "type": "string"},
+      kind: {"enum": ["module", "limit"], "required": true, "type": "string"},
+      name: {"required": true, "type": "string"},
+      plan_keys: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // [{ currency, monthly, annualPerMonth }]: price of one unit per month.
+      prices: {"default": {"json": []}, "required": true, "type": "json"},
+      unit_quantity: {"default": 1, "required": true, "type": "int"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "addons_pkey", "primary": true},
+      {"cols": [{"col": "key"}], "name": "addons_key_key"},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [
+      "CHECK ((unit_quantity >= 1))",
+      "CHECK ((key ~ '^[a-z][a-z0-9_]*$'::text))",
+    ],
+  },
+  billing_events: {
+    // What happened to each subscription, for the revenue report (MRR movements, churn, trial conversion).
+    access: "tenant", grants: ["select"],
+    columns: {
+      currency: {"type": "string"},
+      detail: {"default": {"json": {}}, "required": true, "type": "json"},
+      from_plan_key: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["new", "upgrade", "downgrade", "renewal", "cancelled", "reactivated", "trial_started", "trial_converted", "trial_expired", "addon_added", "addon_removed", "payment_received", "payment_failed", "locked", "unlocked"], "required": true, "type": "string"},
+      // Change in monthly recurring revenue, in `currency`.
+      mrr_delta: {"default": 0, "required": true, "scale": 2, "type": "decimal"},
+      occurred_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      plan_key: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "billing_events_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "occurred_at", "desc": true}], "name": "billing_events_time"},
+      {"cols": [{"col": "tenant_id"}, {"col": "occurred_at", "desc": true}], "name": "billing_events_tenant"},
+    ],
+    checks: [],
+  },
+  billing_notices: {
+    // Reminders already sent (trial ending, invoice overdue, usage at 80% / 100%), so each is sent once.
+    access: "tenant", grants: ["select"],
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      kind: {"enum": ["trial_reminder", "trial_ended", "invoice_issued", "invoice_reminder", "payment_failed", "locked", "usage_80", "usage_100"], "required": true, "type": "string"},
+      sent_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "billing_notices_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "billing_notices_once"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  billing_profiles: {
+    // The workspace's billing details printed on its invoices.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      address_line1: {"required": true, "type": "string"},
+      address_line2: {"type": "string"},
+      city: {"required": true, "type": "string"},
+      country_code: {"required": true, "type": "string"},
+      email: {"required": true, "type": "citext"},
+      gstin: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      legal_name: {"required": true, "type": "string"},
+      postal_code: {"required": true, "type": "string"},
+      state_code: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "billing_profiles_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}], "name": "billing_profiles_tenant_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK (((gstin IS NULL) OR (gstin ~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$'::text)))",
+      "CHECK ((country_code ~ '^[A-Z]{2}$'::text))",
+    ],
+  },
+  billing_settings: {
+    // How SAMPLEDGE bills (seller details, tax, payment terms, reminders, gateways per currency). One row, key 'default'.
+    access: "platform", grants: [],
+    columns: {
+      key: {"required": true, "type": "string"},
+      settings: {"default": {"json": {}}, "required": true, "type": "json"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_admin_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "key"}], "name": "billing_settings_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["updated_by_admin_id"], "onDelete": "set_null", "ref": "platform_admins", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  coupon_redemptions: {
+    access: "tenant", grants: ["select"],
+    columns: {
+      coupon_id: {"required": true, "type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      redeemed_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "coupon_redemptions_pkey", "primary": true},
+      {"cols": [{"col": "coupon_id"}, {"col": "tenant_id"}], "name": "coupon_redemptions_once"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["coupon_id"], "onDelete": "cascade", "ref": "coupons", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  coupons: {
+    access: "platform", grants: [],
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      code: {"required": true, "type": "citext"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_admin_id: {"type": "uuid"},
+      currency: {"type": "string"},
+      cycles: {"type": "int"},
+      duration: {"enum": ["once", "repeating", "forever"], "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["percent", "amount"], "required": true, "type": "string"},
+      max_redemptions: {"type": "int"},
+      name: {"required": true, "type": "string"},
+      partner: {"type": "string"},
+      plan_keys: {"default": {"json": []}, "required": true, "type": "string[]"},
+      redeemed_count: {"default": 0, "required": true, "type": "int"},
+      valid_until: {"type": "date"},
+      value: {"required": true, "scale": 2, "type": "decimal"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "coupons_pkey", "primary": true},
+      {"cols": [{"col": "code"}], "name": "coupons_code_key"},
+    ],
+    fks: [
+      {"cols": ["created_by_admin_id"], "onDelete": "set_null", "ref": "platform_admins", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK ((value > (0)::numeric))",
+      "CHECK ((redeemed_count >= 0))",
+    ],
+  },
+  payment_events: {
+    // Every webhook a payment gateway sent, once each (a repeated delivery is recognised by its event id).
+    access: "platform", grants: [],
+    columns: {
+      detail: {"type": "string"},
+      event_id: {"required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      order_id: {"type": "uuid"},
+      provider: {"enum": ["stripe", "razorpay"], "required": true, "type": "string"},
+      received_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      status: {"enum": ["processed", "ignored", "failed"], "required": true, "type": "string"},
+      type: {"required": true, "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "payment_events_pkey", "primary": true},
+      {"cols": [{"col": "provider"}, {"col": "event_id"}], "name": "payment_events_once"},
+    ],
+    fks: [],
+    indexes: [
+      {"cols": [{"col": "received_at", "desc": true}], "name": "payment_events_time"},
+    ],
+    checks: [],
+  },
+  payment_orders: {
+    // A payment the workspace was sent to a gateway for, and what to do when it is paid.
+    access: "tenant", grants: ["select"],
+    columns: {
+      amount: {"required": true, "scale": 2, "type": "decimal"},
+      checkout_url: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      currency: {"required": true, "type": "string"},
+      description: {"required": true, "type": "string"},
+      failure_reason: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      invoice_id: {"type": "uuid"},
+      paid_at: {"type": "timestamp"},
+      // What the payment buys: { kind: 'plan_change' | 'addon' | 'invoice', ... }.
+      payload: {"default": {"json": {}}, "required": true, "type": "json"},
+      provider: {"enum": ["stripe", "razorpay"], "required": true, "type": "string"},
+      provider_order_id: {"type": "string"},
+      provider_payment_id: {"type": "string"},
+      purpose: {"enum": ["plan_change", "addon", "invoice"], "required": true, "type": "string"},
+      status: {"default": "created", "enum": ["created", "paid", "failed", "expired", "cancelled"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "payment_orders_pkey", "primary": true},
+      {"cols": [{"col": "provider"}, {"col": "provider_order_id"}], "name": "payment_orders_provider_ref", "where": [{"col": "provider_order_id", "op": "notnull"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["invoice_id"], "onDelete": "set_null", "ref": "invoices", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "payment_orders_tenant"},
+    ],
+    checks: [
+      "CHECK ((amount > (0)::numeric))",
+    ],
+  },
+  subscription_addons: {
+    access: "tenant", grants: ["select"],
+    columns: {
+      addon_id: {"required": true, "type": "uuid"},
+      cancel_at_period_end: {"default": false, "required": true, "type": "bool"},
+      cancelled_at: {"type": "timestamp"},
+      currency: {"required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      quantity: {"required": true, "type": "int"},
+      started_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      status: {"default": "active", "enum": ["active", "cancelled"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      // Price of one unit per month at purchase.
+      unit_price: {"required": true, "scale": 2, "type": "decimal"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "subscription_addons_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "addon_id"}], "name": "subscription_addons_one_active", "where": [{"col": "status", "op": "eq", "value": "active"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["addon_id"], "onDelete": "no_action", "ref": "addons", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK ((quantity >= 1))",
+      "CHECK ((unit_price >= (0)::numeric))",
+    ],
+  },
   ai_interactions: {
     access: "tenant", grants: ["insert", "select", "update"], triggers: ["ai_interactions_guard"],
     columns: {
@@ -2297,6 +2564,7 @@ export const TABLES: Record<string, TableSpec> = {
       description: {"required": true, "type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       invoice_id: {"required": true, "type": "uuid"},
+      kind: {"enum": ["plan", "addon", "overage", "credit", "discount", "manual"], "type": "string"},
       quantity: {"required": true, "scale": 4, "type": "decimal"},
       tenant_id: {"required": true, "type": "uuid"},
       unit_amount: {"required": true, "scale": 4, "type": "decimal"},
@@ -2314,16 +2582,30 @@ export const TABLES: Record<string, TableSpec> = {
   invoices: {
     access: "tenant", grants: ["select"],
     columns: {
+      // The workspace's billing details when the invoice was issued (legal name, GSTIN, address).
+      buyer: {"type": "json"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       currency: {"required": true, "type": "string"},
       due_at: {"type": "timestamp"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       issued_at: {"type": "timestamp"},
+      kind: {"enum": ["subscription", "renewal", "upgrade", "addon", "overage", "manual"], "type": "string"},
+      last_reminder_at: {"type": "timestamp"},
+      note: {"type": "string"},
       number: {"required": true, "type": "string"},
       paid_at: {"type": "timestamp"},
+      paid_reference: {"type": "string"},
+      payment_order_id: {"type": "uuid"},
       period_end: {"required": true, "type": "date"},
       period_start: {"required": true, "type": "date"},
+      place_of_supply: {"type": "string"},
+      provider: {"enum": ["manual", "stripe", "razorpay"], "type": "string"},
       provider_ref: {"type": "string"},
+      reminders_sent: {"default": 0, "type": "int"},
+      // SAMPLEDGE's details when the invoice was issued.
+      seller: {"type": "json"},
+      tax_lines: {"default": {"json": []}, "type": "json"},
+      void_reason: {"type": "string"},
       status: {"enum": ["draft", "open", "paid", "void", "uncollectible"], "required": true, "type": "string"},
       subtotal: {"required": true, "scale": 2, "type": "decimal"},
       tax: {"default": 0, "required": true, "scale": 2, "type": "decimal"},
@@ -3359,9 +3641,14 @@ export const TABLES: Record<string, TableSpec> = {
       key: {"required": true, "type": "string"},
       minimum_seats: {"default": 1, "required": true, "type": "int"},
       name: {"required": true, "type": "string"},
+      // Per limit: { policy: 'block' | 'overage', prices: { INR: '0.50' } } (see planBillingUpdate).
+      overage: {"default": {"json": {}}, "type": "json"},
       quote_only: {"default": false, "required": true, "type": "bool"},
       sort_order: {"default": 0, "required": true, "type": "int"},
       tagline: {"type": "string"},
+      trial_days: {"default": 0, "type": "int"},
+      // Modules available during a trial; empty means the whole plan.
+      trial_features: {"default": {"json": []}, "type": "string[]"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
     },
     unique: [
@@ -3375,6 +3662,7 @@ export const TABLES: Record<string, TableSpec> = {
     checks: [
       "CHECK ((minimum_seats >= 1))",
       "CHECK ((key ~ '^[a-z][a-z0-9_]*$'::text))",
+      "CHECK (((trial_days >= 0) AND (trial_days <= 90)))",
     ],
   },
   platform_admins: {
@@ -3407,7 +3695,7 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       config_hash: {"required": true, "type": "string"},
       enabled: {"default": false, "required": true, "type": "bool"},
-      key: {"enum": ["ai", "email", "push", "scanning", "mobile_sso"], "required": true, "type": "string"},
+      key: {"enum": ["ai", "email", "push", "scanning", "mobile_sso", "razorpay", "stripe"], "required": true, "type": "string"},
       last_test_at: {"type": "timestamp"},
       last_test_detail: {"type": "string"},
       last_test_hash: {"type": "string"},
@@ -4608,15 +4896,35 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       billing_cycle: {"enum": ["monthly", "annual"], "required": true, "type": "string"},
       cancel_at_period_end: {"default": false, "required": true, "type": "bool"},
+      cancelled_at: {"type": "timestamp"},
+      coupon_cycles_left: {"type": "int"},
+      coupon_id: {"type": "uuid"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       currency: {"required": true, "type": "string"},
       current_period_end: {"required": true, "type": "date"},
       current_period_start: {"required": true, "type": "date"},
+      // A contract with this workspace: { unitPrice, discountPercent, features, endsOn, partner, note } (see dealInput).
+      deal: {"type": "json"},
       feature_overrides: {"default": {"json": {}}, "required": true, "type": "json"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Unpaid past the grace period: the workspace is read-only until it pays.
+      locked_at: {"type": "timestamp"},
+      // SAMPLEDGE lifted the lock by hand: it is not locked again before this time.
+      lock_paused_until: {"type": "timestamp"},
+      // Whether the current period has been paid for (false during a trial and for a period not invoiced yet).
+      period_paid: {"default": true, "type": "bool"},
+      past_due_since: {"type": "timestamp"},
       plan_id: {"required": true, "type": "uuid"},
       provider: {"default": "manual", "enum": ["manual", "stripe", "razorpay"], "required": true, "type": "string"},
+      // The saved Stripe customer and card, for automatic renewals.
+      provider_customer_ref: {"type": "string"},
+      provider_method_ref: {"type": "string"},
       provider_ref: {"type": "string"},
+      // A downgrade waiting for the period end: { planKey, seats, billingCycle, currency, requestedAt }.
+      scheduled_change: {"type": "json"},
+      // During a trial of another plan: what to go back to if it is not bought.
+      trial_return: {"type": "json"},
+      trial_used_at: {"type": "timestamp"},
       seats: {"required": true, "type": "int"},
       status: {"enum": ["trialing", "active", "past_due", "cancelled", "suspended"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},

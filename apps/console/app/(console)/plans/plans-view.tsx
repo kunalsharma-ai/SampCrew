@@ -1,16 +1,17 @@
 'use client';
 import { FEATURES, isCoreFeature, isPlannedFeature, PLAN_KEY_PATTERN, planPriceUpdate } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Switch, Table, TBody, TD, Textarea, TH, THead, TR, cn } from '@crew/ui';
-import { Archive, Inbox, Layers, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Archive, Hourglass, Inbox, Layers, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
-import { archivePlanAction, createPlanAction, decidePlanRequestAction, deletePlanAction, setPlanEntitlementsAction, setPriceAction, updatePlanAction } from '../actions';
+import { archivePlanAction, createPlanAction, decidePlanRequestAction, deletePlanAction, setPlanBillingAction, setPlanEntitlementsAction, setPriceAction, updatePlanAction } from '../actions';
 
 export interface PlatformPlan {
   id: string; key: string; name: string; tagline: string; quoteOnly: boolean; minimumSeats: number; isPublic: boolean; sortOrder: number;
   tenants: number; activeTenants: number; pendingRequests: number; customisedAt: string | null; customisedBy: string | null; archivedAt: string | null;
   prices: { currency: string; monthly: string; annualPerMonth: string }[];
   features: { key: string; limitValue: number | null }[];
+  trialDays: number; trialFeatures: string[]; overage: Record<string, { policy: string; prices: Record<string, string> }>;
 }
 export interface PlanRequest {
   id: string; tenantId: string; tenantName: string; planKey: string; planName: string; currentPlanKey: string | null; currentPlanName: string | null;
@@ -36,6 +37,7 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
   const [price, setPrice] = useState<{ plan: PlatformPlan; currency: 'USD' | 'INR' } | null>(null);
   const [contents, setContents] = useState<PlatformPlan | null>(null);
   const [details, setDetails] = useState<PlatformPlan | null>(null);
+  const [billing, setBilling] = useState<PlatformPlan | null>(null);
   const [creating, setCreating] = useState(false);
   const [note, setNote] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [pending, start] = useTransition();
@@ -67,11 +69,12 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
                   {p.pendingRequests > 0 && <Badge tone="accent">{p.pendingRequests} request(s)</Badge>}
                 </span>
               }
-              description={`${p.tagline ? `${p.tagline} · ` : ''}minimum ${p.minimumSeats} seats · ${p.tenants} workspace(s)${p.customisedAt ? ` · contents set in the Console${p.customisedBy ? ` by ${p.customisedBy}` : ''}` : ' · launch defaults'}`}
+              description={`${p.tagline ? `${p.tagline} · ` : ''}minimum ${p.minimumSeats} seats · ${p.trialDays > 0 ? `${p.trialDays}-day trial · ` : ''}${Object.values(p.overage).some((o) => o.policy === 'overage') ? 'bills overage · ' : ''}${p.tenants} workspace(s)${p.customisedAt ? ` · contents set in the Console${p.customisedBy ? ` by ${p.customisedBy}` : ''}` : ' · launch defaults'}`}
               action={canEdit ? (
                 <div className="flex flex-wrap gap-1.5">
                   <Button size="sm" onClick={() => setContents(p)} data-testid={`plan-edit-contents-${p.key}`}><SlidersHorizontal className="size-3.5" />Modules & limits</Button>
                   <Button size="sm" variant="secondary" onClick={() => setDetails(p)} data-testid={`plan-edit-details-${p.key}`}><Pencil className="size-3.5" />Details</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setBilling(p)} data-testid={`plan-edit-billing-${p.key}`}><Hourglass className="size-3.5" />Trial & overage</Button>
                   <Button size="sm" variant="ghost" disabled={pending} onClick={() => {
                     if (!p.archivedAt && !confirm(`Stop offering ${p.name}? The ${p.tenants} workspace(s) on it keep it until they change plan, and open requests for it are declined.`)) return;
                     start(async () => { const r = await archivePlanAction(p.key, !p.archivedAt); done(r, r.ok ? r.data?.note : undefined); });
@@ -128,6 +131,7 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
       })}
       {price && <PriceDialog {...price} onClose={() => setPrice(null)} onSaved={(n) => { setNote({ tone: 'success', text: n }); setPrice(null); }} />}
       {contents && <ContentsDialog plan={contents} onClose={() => setContents(null)} onSaved={(t) => { setNote({ tone: 'success', text: t }); setContents(null); router.refresh(); }} />}
+      {billing && <BillingDialog plan={billing} onClose={() => setBilling(null)} onSaved={(t) => { setNote({ tone: 'success', text: t }); setBilling(null); router.refresh(); }} />}
       {details && <DetailsDialog plan={details} onClose={() => setDetails(null)} onSaved={(t) => { setNote({ tone: 'success', text: t }); setDetails(null); router.refresh(); }} />}
       {creating && <CreateDialog plans={plans} onClose={() => setCreating(false)} onSaved={(t, key) => { setNote({ tone: 'success', text: t }); setCreating(false); router.refresh(); const p = plans.find((x) => x.key === key); if (p) setContents(p); }} />}
     </div>
@@ -338,6 +342,84 @@ function PriceDialog({ plan, currency, onClose, onSaved }: { plan: PlatformPlan;
         {error && <Alert tone="danger" className="sm:col-span-2">{error}</Alert>}
         <Field label="Monthly, per seat" error={errors.monthly}>{(p) => <Input {...p} inputMode="decimal" value={monthly} onChange={(e) => setMonthly(e.target.value)} />}</Field>
         <Field label="Annual, per seat per month" error={errors.annualPerMonth}>{(p) => <Input {...p} inputMode="decimal" value={annual} onChange={(e) => setAnnual(e.target.value)} />}</Field>
+      </div>
+    </Dialog>
+  );
+}
+
+const OVERAGE_LIMITS = [
+  { key: 'max_employees', name: 'Employees', unit: 'person' },
+  { key: 'ai_credits_monthly', name: 'AI credits per month', unit: 'credit' },
+  { key: 'storage_gb', name: 'Storage', unit: 'GB' },
+] as const;
+
+/** A plan's free trial and what happens beyond each limit: stop the workspace, or let it go on and bill the extra. */
+function BillingDialog({ plan, onClose, onSaved }: { plan: PlatformPlan; onClose: () => void; onSaved: (text: string) => void }) {
+  const included = MODULES.filter((m) => plan.features.some((f) => f.key === m.key && f.limitValue === null) && !isCoreFeature(m.key));
+  const [days, setDays] = useState(String(plan.trialDays));
+  const [whole, setWhole] = useState(plan.trialFeatures.length === 0);
+  const [trialFeatures, setTrialFeatures] = useState<Set<string>>(new Set(plan.trialFeatures));
+  const [overage, setOverage] = useState(() => Object.fromEntries(OVERAGE_LIMITS.map((l) => {
+    const o = plan.overage[l.key];
+    return [l.key, { policy: o?.policy ?? 'block', INR: o?.prices?.INR ?? '', USD: o?.prices?.USD ?? '' }];
+  })) as Record<string, { policy: string; INR: string; USD: string }>);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const save = () => start(async () => {
+    const body = {
+      trialDays: Number(days),
+      trialFeatures: whole ? [] : [...trialFeatures],
+      overage: Object.fromEntries(OVERAGE_LIMITS.map((l) => {
+        const o = overage[l.key]!;
+        const prices = Object.fromEntries((['INR', 'USD'] as const).filter((c) => o[c].trim()).map((c) => [c, o[c].trim()]));
+        return [l.key, { policy: o.policy, prices }];
+      })),
+    };
+    const r = await setPlanBillingAction(plan.key, body);
+    if (!r.ok) { setError(r.message); setErrors(r.fieldErrors ?? {}); } else onSaved(r.message ?? 'Saved.');
+  });
+  return (
+    <Dialog open onClose={onClose} size="lg" title={`${plan.name}: trial and overage`} description="A workspace can try this plan free once. Beyond a limit, the workspace is either stopped or billed for the extra at the end of its period."
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={pending} onClick={save} data-testid="plan-billing-save">Save</Button></>}>
+      <div className="grid gap-5">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <section className="grid gap-3">
+          <h3 className="text-[0.8125rem] font-semibold">Free trial</h3>
+          <Field label="Trial days" hint="0 means no trial. Up to 90." error={errors.trialDays}>{(p) => <Input {...p} type="number" min={0} max={90} value={days} onChange={(e) => setDays(e.target.value)} data-testid="plan-trial-days" />}</Field>
+          {Number(days) > 0 && (
+            <>
+              <Checkbox label="The whole plan during the trial" checked={whole} onChange={(e) => setWhole(e.target.checked)} />
+              {!whole && (
+                <div className="grid gap-1.5 sm:grid-cols-2">
+                  {included.map((m) => (
+                    <Checkbox key={m.key} label={m.name} checked={trialFeatures.has(m.key)} onChange={(e) => setTrialFeatures((prev) => { const n = new Set(prev); if (e.target.checked) n.add(m.key); else n.delete(m.key); return n; })} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+        <section className="grid gap-3">
+          <h3 className="text-[0.8125rem] font-semibold">Beyond a limit</h3>
+          {OVERAGE_LIMITS.map((l) => {
+            const o = overage[l.key]!;
+            const set = (patch: Partial<typeof o>) => setOverage({ ...overage, [l.key]: { ...o, ...patch } });
+            return (
+              <div key={l.key} className="grid items-end gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                <Field label={l.name} error={errors[`overage.${l.key}.prices`]}>{(p) => (
+                  <Select {...p} value={o.policy} onChange={(e) => set({ policy: e.target.value })} data-testid={`overage-${l.key}`}>
+                    <option value="block">Stop at the limit</option>
+                    <option value="overage">Go on and bill the extra</option>
+                  </Select>
+                )}</Field>
+                {o.policy === 'overage' && (['INR', 'USD'] as const).map((c) => (
+                  <Field key={c} label={`${c} per extra ${l.unit}`}>{(p) => <Input {...p} inputMode="decimal" value={o[c]} onChange={(e) => set({ [c]: e.target.value })} data-testid={`overage-${l.key}-${c}`} />}</Field>
+                ))}
+              </div>
+            );
+          })}
+        </section>
       </div>
     </Dialog>
   );

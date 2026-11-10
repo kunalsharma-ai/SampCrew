@@ -140,3 +140,82 @@ export async function pauseDeviceAction(id: string, deviceId: string, reason: st
   revalidatePath('/devices');
   return r;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Billing
+// ---------------------------------------------------------------------------------------------------------------
+
+export async function saveBillingSettingsAction(body: Record<string, unknown>) {
+  const r = await act(() => api('/platform/billing/settings', { method: 'PUT', body }), 'Billing settings saved. New invoices use them.');
+  revalidatePath('/billing');
+  return r;
+}
+
+export async function markInvoicePaidAction(id: string, body: { reference: string; paidOn?: string }) {
+  const r = await act(() => api(`/platform/billing/invoices/${id}/mark-paid`, { method: 'POST', body }), 'Payment recorded. The invoice is paid.');
+  revalidatePath('/billing');
+  revalidatePath('/tenants', 'layout');
+  return r;
+}
+
+export async function voidInvoiceAction(id: string, reason: string) {
+  const r = await act(() => api(`/platform/billing/invoices/${id}/void`, { method: 'POST', body: { reason } }), 'Invoice voided.');
+  revalidatePath('/billing');
+  revalidatePath('/tenants', 'layout');
+  return r;
+}
+
+export async function manualInvoiceAction(tenantId: string, body: { description: string; amount: string; currency: string }) {
+  const r = await act(() => api<{ id: string; number: string }>(`/platform/billing/tenants/${tenantId}/invoices`, { method: 'POST', body }));
+  revalidatePath(`/tenants/${tenantId}/billing`);
+  return r;
+}
+
+export async function setDealAction(tenantId: string, body: Record<string, unknown>) {
+  const r = await act(() => api(`/platform/billing/tenants/${tenantId}/deal`, { method: 'PUT', body }), 'Contract terms saved. Renewals use them.');
+  revalidatePath(`/tenants/${tenantId}/billing`);
+  return r;
+}
+
+export async function unlockTenantAction(tenantId: string, reason: string) {
+  const r = await act(() => api(`/platform/billing/tenants/${tenantId}/unlock`, { method: 'POST', body: { reason } }), 'Read-only lifted for 7 days. It comes back after that if the invoice is still unpaid.');
+  revalidatePath(`/tenants/${tenantId}/billing`);
+  return r;
+}
+
+export async function runBillingAction(tenantId?: string) {
+  const r = await act(() => api<unknown[]>('/platform/billing/run', { method: 'POST', body: tenantId ? { tenantId } : {} }));
+  revalidatePath('/billing');
+  if (tenantId) revalidatePath(`/tenants/${tenantId}/billing`);
+  return r;
+}
+
+export async function setPlanBillingAction(planKey: string, body: Record<string, unknown>) {
+  const r = await act(() => api(`/platform/billing/plans/${planKey}`, { method: 'PUT', body }), 'Trial and overage saved.');
+  revalidatePath('/plans');
+  return r;
+}
+
+export async function createAddonAction(body: Record<string, unknown>) {
+  const r = await act(() => api('/platform/billing/addons', { method: 'POST', body }), 'Add-on created.');
+  revalidatePath('/billing');
+  return r;
+}
+
+export async function updateAddonAction(key: string, body: Record<string, unknown>) {
+  const r = await act(() => api(`/platform/billing/addons/${key}`, { method: 'PATCH', body }), 'Add-on saved.');
+  revalidatePath('/billing');
+  return r;
+}
+
+export async function createCouponAction(body: Record<string, unknown>) {
+  const r = await act(() => api('/platform/billing/coupons', { method: 'POST', body }), 'Coupon created.');
+  revalidatePath('/billing');
+  return r;
+}
+
+export async function setCouponActiveAction(id: string, active: boolean) {
+  const r = await act(() => api(`/platform/billing/coupons/${id}`, { method: 'PATCH', body: { active } }), active ? 'Coupon switched on.' : 'Coupon switched off.');
+  revalidatePath('/billing');
+  return r;
+}

@@ -10,6 +10,8 @@ export interface NavItem {
   beyondOwn?: boolean;
   /** Visible when the plan includes this feature. */
   feature?: string;
+  /** Shown to billing admins when the plan lacks the feature: the link opens Plan & billing to upgrade. */
+  locked?: boolean;
 }
 
 export interface NavGroup {
@@ -190,7 +192,22 @@ export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: st
 }
 
 export function visibleNav(me: Me): NavGroup[] {
-  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && (!i.feature || me.features.includes(i.feature))) })).filter((g) => g.items.length);
+  const allowed = (i: NavItem) => !i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'));
+  // A billing admin also sees each module the plan lacks once, with a lock, so they know it exists and can upgrade.
+  const upsell = me.permissions['billing:manage'] ? new Set<string>() : null;
+  return NAV.map((g) => ({
+    ...g,
+    items: g.items.flatMap((i): NavItem[] => {
+      if (!allowed(i)) return [];
+      if (!i.feature || me.features.includes(i.feature)) return [i];
+      if (!upsell || upsell.has(i.feature) || NOT_SOLD.has(i.feature)) return [];
+      upsell.add(i.feature);
+      return [{ ...i, href: `/settings/billing?upgrade=${i.feature}`, locked: true }];
+    }),
+  })).filter((g) => g.items.length);
 }
+
+/** Modules agreed with SAMPLEDGE case by case rather than bought on Plan & billing. */
+const NOT_SOLD = new Set(['email_signatures']);
 
 export const can = (me: Me, permission: string) => Boolean(me.permissions[permission]);

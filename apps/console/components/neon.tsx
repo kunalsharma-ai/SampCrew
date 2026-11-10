@@ -31,9 +31,10 @@ export function TileRow({ children }: { children: ReactNode }) {
   return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{children}</div>;
 }
 
-export type WorkspaceTab = 'overview' | 'access' | 'users' | 'activity' | 'devices';
+export type WorkspaceTab = 'overview' | 'billing' | 'access' | 'users' | 'activity' | 'devices';
 const TABS: { key: WorkspaceTab; label: string; path: string; cap?: string }[] = [
   { key: 'overview', label: 'Overview & subscription', path: '' },
+  { key: 'billing', label: 'Billing', path: '/billing', cap: 'billing:read' },
   { key: 'access', label: 'Features & permissions', path: '/access' },
   { key: 'users', label: 'Users', path: '/users', cap: 'access:manage' },
   { key: 'activity', label: 'Activity', path: '/activity', cap: 'access:manage' },

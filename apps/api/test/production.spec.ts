@@ -202,6 +202,8 @@ describe('Phase 12 production readiness', () => {
       'POST /device-api/heartbeat', 'POST /device-api/punches', 'POST /iclock/cdata', 'POST /iclock/devicecmd', 'POST /platform/auth/login', 'POST /platform/auth/refresh',
       'POST /public/careers/:site/jobs/:job/apply', 'POST /public/proposals/:token/accept', 'POST /public/proposals/:token/decline',
       'GET /signature-agent/images/:kind', 'POST /signature-agent/report', 'POST /signature-agent/sync',
+      // Razorpay and Stripe webhooks: refused unless signed with the webhook secret saved in Console > Integrations.
+      'POST /billing/webhooks/:provider',
     ];
 
     it('only the reviewed routes are reachable without signing in', () => {

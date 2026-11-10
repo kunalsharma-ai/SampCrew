@@ -3681,7 +3681,7 @@
         "tags": [
           "Billing"
         ],
-        "summary": "Available plans with prices, features and limits",
+        "summary": "Available plans with prices, features, limits, trial days and overage policy",
         "operationId": "Billing_plans",
         "security": [
           {
@@ -3710,7 +3710,7 @@
         "tags": [
           "Billing"
         ],
-        "summary": "Current subscription and usage against plan limits",
+        "summary": "Current subscription, scheduled change, trial, read-only lock, contract terms and whether online payment is set up",
         "description": "Requires permission `billing:read`.",
         "operationId": "Billing_subscription",
         "security": [
@@ -3738,7 +3738,7 @@
         "tags": [
           "Billing"
         ],
-        "summary": "Change plan, billing cycle or seats. Downgrades are blocked when current usage does not fit.",
+        "summary": "Change plan, cycle or seats. Paying less waits for the period end; an upgrade is charged for the days left, through Razorpay or Stripe when set up (the response then holds the checkout address), else invoiced.",
         "description": "Requires permission `billing:manage`.",
         "operationId": "Billing_change",
         "security": [
@@ -3776,13 +3776,613 @@
                       "USD",
                       "INR"
                     ]
+                  },
+                  "couponCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9_-]{3,40}$"
                   }
                 },
                 "required": [
                   "planKey",
                   "billingCycle",
                   "seats"
-                ]
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/quote": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "What a plan change would cost now (proration, credit, coupon, GST) and when it applies",
+        "description": "Requires permission `billing:read`.",
+        "operationId": "Billing_quote",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "planKey": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  },
+                  "billingCycle": {
+                    "type": "string",
+                    "enum": [
+                      "monthly",
+                      "annual"
+                    ]
+                  },
+                  "seats": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "USD",
+                      "INR"
+                    ]
+                  },
+                  "couponCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9_-]{3,40}$"
+                  }
+                },
+                "required": [
+                  "planKey",
+                  "billingCycle",
+                  "seats"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/scheduled-change": {
+      "delete": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Cancel a plan change waiting for the end of the period",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_cancelScheduled",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/renewal": {
+      "put": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Renew automatically at the end of each period, or stop at the end of this one",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_renewal",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "autoRenew": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "autoRenew"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/trial": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Try a plan free for its trial days (once per workspace). At the end, buy it or go back to the current plan.",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_trial",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "planKey": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  }
+                },
+                "required": [
+                  "planKey"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/coupons/check": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Check a coupon code before using it",
+        "description": "Requires permission `billing:read`.",
+        "operationId": "Billing_checkCoupon",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9_-]{3,40}$"
+                  },
+                  "planKey": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  }
+                },
+                "required": [
+                  "code"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/usage": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Usage against each limit (employees, AI credits this month, storage) with the policy beyond it",
+        "description": "Requires permission `billing:read`.",
+        "operationId": "Billing_usage",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/addons": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Add-ons the workspace can buy on its plan, and the ones it has",
+        "description": "Requires permission `billing:read`.",
+        "operationId": "Billing_addons",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Buy an add-on or more of it. The rest of the period is charged now (checkout when online payment is set up).",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_buyAddon",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "addonKey": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                  }
+                },
+                "required": [
+                  "addonKey",
+                  "quantity"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/addons/{key}": {
+      "delete": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Remove an add-on at the end of the paid period (it works until then)",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_removeAddon",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/addons/{key}/keep": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Keep an add-on that was going to end with the period",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_keepAddon",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/profile": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Billing details printed on invoices (legal name, GSTIN, address)",
+        "description": "Requires permission `billing:read`.",
+        "operationId": "Billing_profile",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Save billing details. A GSTIN and state decide CGST + SGST or IGST on the next invoices.",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_saveProfile",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "legalName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "gstin": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
+                      }
+                    ]
+                  },
+                  "addressLine1": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 200
+                  },
+                  "addressLine2": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "city": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "stateCode": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{2}$"
+                      }
+                    ]
+                  },
+                  "postalCode": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 12
+                  },
+                  "countryCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{2}$"
+                  },
+                  "email": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "format": "email",
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  }
+                },
+                "required": [
+                  "legalName",
+                  "addressLine1",
+                  "city",
+                  "postalCode",
+                  "countryCode",
+                  "email"
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3952,6 +4552,161 @@
         "security": [
           {
             "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/invoices/{id}/pdf": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "The invoice as a PDF (tax invoice with GST when SAMPLEDGE has a GSTIN)",
+        "description": "Requires permission `billing:read`.",
+        "operationId": "Billing_invoicePdf",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/invoices/{id}/pay": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Pay an open invoice online: returns the Razorpay or Stripe checkout address",
+        "description": "Requires permission `billing:manage`.",
+        "operationId": "Billing_pay",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/orders/{id}": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Whether a payment sent to Razorpay or Stripe has been confirmed",
+        "description": "Requires permission `billing:read`.",
+        "operationId": "Billing_order",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/webhooks/{provider}": {
+      "post": {
+        "tags": [
+          "BillingWebhooks"
+        ],
+        "summary": "Payment confirmations from Razorpay (X-Razorpay-Signature) or Stripe (Stripe-Signature)",
+        "operationId": "BillingWebhooks_webhook",
+        "security": [],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -37987,6 +38742,1455 @@
                 },
                 "required": [
                   "values"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/settings": {
+      "get": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "How SAMPLEDGE bills: seller details and GSTIN, tax, invoice numbers, payment terms, reminders, read-only lock, gateway per currency",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_settings",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Save the billing settings",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_saveSettings",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "seller": {
+                    "type": "object",
+                    "properties": {
+                      "legalName": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 160
+                      },
+                      "addressLine1": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 200
+                      },
+                      "addressLine2": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "city": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 80
+                      },
+                      "stateCode": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": ""
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{2}$"
+                          }
+                        ]
+                      },
+                      "postalCode": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 12
+                      },
+                      "countryCode": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{2}$"
+                      },
+                      "gstin": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": ""
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
+                          }
+                        ]
+                      },
+                      "pan": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": ""
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^[A-Z]{5}[0-9]{4}[A-Z]$"
+                          }
+                        ]
+                      },
+                      "email": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "format": "email",
+                        "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                      },
+                      "sac": {
+                        "default": "998314",
+                        "type": "string",
+                        "pattern": "^\\d{4,8}$"
+                      }
+                    },
+                    "required": [
+                      "legalName",
+                      "addressLine1",
+                      "city",
+                      "postalCode",
+                      "countryCode",
+                      "email"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "invoicePrefix": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9]{1,5}$"
+                  },
+                  "gstRate": {
+                    "type": "string",
+                    "pattern": "^(100(\\.0{1,2})?|\\d{1,2}(\\.\\d{1,2})?)$"
+                  },
+                  "exportZeroRated": {
+                    "type": "boolean"
+                  },
+                  "otherTaxRate": {
+                    "type": "string",
+                    "pattern": "^(100(\\.0{1,2})?|\\d{1,2}(\\.\\d{1,2})?)$"
+                  },
+                  "otherTaxLabel": {
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "paymentTermsDays": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 90
+                  },
+                  "reminderDays": {
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 90
+                    }
+                  },
+                  "graceDays": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 120
+                  },
+                  "lockAfterGrace": {
+                    "type": "boolean"
+                  },
+                  "trialReminderDays": {
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 60
+                    }
+                  },
+                  "gateways": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "INR",
+                        "USD"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "enum": [
+                        "razorpay",
+                        "stripe",
+                        "none"
+                      ]
+                    },
+                    "required": [
+                      "INR",
+                      "USD"
+                    ]
+                  }
+                },
+                "required": [
+                  "seller",
+                  "invoicePrefix",
+                  "gstRate",
+                  "exportZeroRated",
+                  "otherTaxRate",
+                  "otherTaxLabel",
+                  "paymentTermsDays",
+                  "reminderDays",
+                  "graceDays",
+                  "lockAfterGrace",
+                  "trialReminderDays",
+                  "gateways"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/revenue": {
+      "get": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Revenue: MRR and ARR, subscriptions by status, upgrades, downgrades, churn, trial conversion, money collected and outstanding, per plan and add-on",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_revenue",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/invoices": {
+      "get": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Invoices across workspaces",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_invoices",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "paid",
+                "void",
+                "overdue"
+              ]
+            }
+          },
+          {
+            "name": "tenantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/invoices/{id}/pdf": {
+      "get": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "An invoice as a PDF",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_invoicePdf",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/invoices/{id}/mark-paid": {
+      "post": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Record a bank transfer or cheque for an invoice (lifts past-due and the read-only lock when nothing else is overdue)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_markPaid",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 120
+                  },
+                  "paidOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  }
+                },
+                "required": [
+                  "reference"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/invoices/{id}/void": {
+      "post": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Void an open invoice",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_voidInvoice",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/tenants/{id}": {
+      "get": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "One workspace's billing: subscription, deal, coupon, add-ons, usage, invoices and payments",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_tenant",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/tenants/{id}/deal": {
+      "put": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Contract terms for one workspace: price per seat, discount, extra modules, end date (empty clears it)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_deal",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "unitPrice": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{1,11}(\\.\\d{1,2})?$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "discountPercent": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^(100(\\.0{1,2})?|\\d{1,2}(\\.\\d{1,2})?)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "features": {
+                    "default": [],
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]*$"
+                    }
+                  },
+                  "endsOn": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "partner": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/tenants/{id}/invoices": {
+      "post": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Issue an invoice by hand (a one-off charge)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_manualInvoice",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 200
+                  },
+                  "amount": {
+                    "type": "string",
+                    "pattern": "^\\d{1,11}(\\.\\d{1,2})?$"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "INR",
+                      "USD"
+                    ]
+                  }
+                },
+                "required": [
+                  "description",
+                  "amount",
+                  "currency"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/tenants/{id}/unlock": {
+      "post": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Lift the read-only lock for 7 days while a payment is on its way",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_unlock",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/run": {
+      "post": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Run the billing clock now: renewals, trial ends, reminders, read-only lock, usage warnings (it also runs every hour)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_run",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "tenantId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "asOf": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/payment-events": {
+      "get": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "The latest webhooks from Razorpay and Stripe and what SampCrew did with each",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_paymentEvents",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/plans/{key}": {
+      "put": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "A plan's free trial (days and modules) and, per limit, whether to stop or bill overage",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_planBilling",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "trialDays": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 90
+                  },
+                  "trialFeatures": {
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]*$"
+                    }
+                  },
+                  "overage": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "max_employees",
+                        "ai_credits_monthly",
+                        "storage_gb"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "policy": {
+                          "type": "string",
+                          "enum": [
+                            "block",
+                            "overage"
+                          ]
+                        },
+                        "prices": {
+                          "default": {},
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "enum": [
+                              "INR",
+                              "USD"
+                            ]
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "pattern": "^\\d{1,7}(\\.\\d{1,4})?$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "policy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "trialDays",
+                  "trialFeatures",
+                  "overage"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/addons": {
+      "get": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "The add-on catalogue with how many workspaces have each",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_addons",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Create an add-on: a module, or more of a limit (employees, AI credits, storage)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_createAddon",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "module",
+                      "limit"
+                    ]
+                  },
+                  "featureKey": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "unitQuantity": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000000
+                  },
+                  "prices": {
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "currency": {
+                          "type": "string",
+                          "enum": [
+                            "INR",
+                            "USD"
+                          ]
+                        },
+                        "monthly": {
+                          "type": "string",
+                          "pattern": "^\\d{1,11}(\\.\\d{1,2})?$"
+                        },
+                        "annualPerMonth": {
+                          "type": "string",
+                          "pattern": "^\\d{1,11}(\\.\\d{1,2})?$"
+                        }
+                      },
+                      "required": [
+                        "currency",
+                        "monthly",
+                        "annualPerMonth"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "planKeys": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                    }
+                  },
+                  "isPublic": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "kind",
+                  "featureKey",
+                  "prices"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/addons/{key}": {
+      "patch": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Change an add-on's name, prices, plans or visibility, or archive it (workspaces that have it keep it)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_updateAddon",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "unitQuantity": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000000
+                  },
+                  "prices": {
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "currency": {
+                          "type": "string",
+                          "enum": [
+                            "INR",
+                            "USD"
+                          ]
+                        },
+                        "monthly": {
+                          "type": "string",
+                          "pattern": "^\\d{1,11}(\\.\\d{1,2})?$"
+                        },
+                        "annualPerMonth": {
+                          "type": "string",
+                          "pattern": "^\\d{1,11}(\\.\\d{1,2})?$"
+                        }
+                      },
+                      "required": [
+                        "currency",
+                        "monthly",
+                        "annualPerMonth"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "planKeys": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                    }
+                  },
+                  "isPublic": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "archived": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/coupons": {
+      "get": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Coupon codes with how often each was used",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_coupons",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Create a coupon code (percent or amount off, once, for some invoices or forever)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_createCoupon",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9_-]{3,40}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "percent",
+                      "amount"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^\\d{1,9}(\\.\\d{1,2})?$"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "INR",
+                      "USD"
+                    ]
+                  },
+                  "duration": {
+                    "type": "string",
+                    "enum": [
+                      "once",
+                      "repeating",
+                      "forever"
+                    ]
+                  },
+                  "cycles": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 36
+                  },
+                  "planKeys": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                    }
+                  },
+                  "maxRedemptions": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000
+                  },
+                  "validUntil": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "partner": {
+                    "type": "string",
+                    "maxLength": 80
+                  }
+                },
+                "required": [
+                  "code",
+                  "name",
+                  "kind",
+                  "value",
+                  "duration"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/billing/coupons/{id}": {
+      "patch": {
+        "tags": [
+          "Platform: Billing"
+        ],
+        "summary": "Switch a coupon code on or off",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformBilling_coupon",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "active"
                 ],
                 "additionalProperties": false
               }

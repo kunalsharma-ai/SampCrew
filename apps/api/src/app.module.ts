@@ -7,8 +7,12 @@ import { ApprovalsService } from './modules/approvals/approvals.service';
 import { AuditController } from './modules/audit/audit.controller';
 import { AuthController, MeController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
-import { BillingController } from './modules/billing/billing.controller';
+import { BillingController, BillingWebhooksController } from './modules/billing/billing.controller';
 import { BillingService } from './modules/billing/billing.service';
+import { BillingEngine } from './modules/billing/billing-engine.service';
+import { BillingJobsService } from './modules/billing/billing-jobs.service';
+import { PlatformBillingController } from './modules/billing/platform-billing.controller';
+import { PlatformBillingService } from './modules/billing/platform-billing.service';
 import { DocumentsController } from './modules/documents/documents.controller';
 import { DocumentsService } from './modules/documents/documents.service';
 import { DesignationsController, EmployeesController } from './modules/employees/employees.controller';
@@ -136,6 +140,7 @@ export const CONTROLLERS = [
   RolesController,
   AuditController,
   BillingController,
+  BillingWebhooksController,
   DesignationsController,
   EmployeesController,
   OnboardingController,
@@ -187,6 +192,7 @@ export const CONTROLLERS = [
   PlatformAuthController,
   PlatformController,
   PlatformIntegrationsController,
+  PlatformBillingController,
 ];
 
 @Module({
@@ -216,6 +222,9 @@ export const CONTROLLERS = [
     MembersService,
     RolesService,
     BillingService,
+    BillingEngine,
+    BillingJobsService,
+    PlatformBillingService,
     PlatformAuthService,
     PlatformService,
     AccessControlsService,

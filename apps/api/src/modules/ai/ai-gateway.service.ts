@@ -90,7 +90,7 @@ export class AiGatewayService {
     const s = await this.settings(tx);
     if (!s.features[feature]) return { available: false, reason: 'Your workspace has not switched this AI feature on.' };
     const u = await this.usage(tx);
-    if (u.limit !== -1 && u.used >= u.limit) return { available: false, reason: 'Your workspace has used this month\'s AI credits.' };
+    if (u.limit !== -1 && u.used >= u.limit && !e.overage.has('ai_credits_monthly')) return { available: false, reason: 'Your workspace has used this month\'s AI credits.' };
     return { available: true, reason: null };
   }
 
@@ -145,7 +145,7 @@ export class AiGatewayService {
       const s = await this.settings(tx);
       if (!s.features[input.feature]) throw Errors.conflict('ai_feature_off', `This AI feature is switched off for your workspace (${AI_FEATURE_LABEL[input.feature].split(':')[0]}).`);
       const u = await this.usage(tx);
-      if (u.limit !== -1 && u.used >= u.limit) {
+      if (u.limit !== -1 && u.used >= u.limit && !e.overage.has('ai_credits_monthly')) {
         await this.record(tx, { provider: provider.name, feature: input.feature, status: 'over_limit', promptVersion: input.promptVersion, model: provider.model, subject: input.subject, request: null, response: null, evidence: [], redactions: {} });
         throw new AppError(HttpStatus.PAYMENT_REQUIRED, 'ai_credits_used', `Your workspace has used its ${u.limit} AI credits for this month. They renew on the 1st.`);
       }

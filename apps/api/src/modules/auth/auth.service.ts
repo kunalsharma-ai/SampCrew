@@ -321,7 +321,7 @@ export class AuthService {
       featureBlocks: data.ent.blocked,
       disabledPermissions: data.disabledPermissions,
       limits: data.ent.limits,
-      subscription: data.ent.planKey ? { plan: data.ent.planKey, status: data.ent.status!, trialEndsOn: data.ent.trialEndsOn } : null,
+      subscription: data.ent.planKey ? { plan: data.ent.planKey, status: data.ent.status!, trialEndsOn: data.ent.trialEndsOn, locked: data.ent.locked } : null,
       session: { mfa: actor.mfa },
       client: actor.client ?? 'web',
       tenants,
