@@ -12,14 +12,14 @@
  * 5. The client opens their private link from the email (no sign-in), sees roles, rates and totals but no costs,
  *    signs with their typed name and accepts. The cc recipient's link then says it has been answered. The bid is
  *    Won with the signer on it and a signed copy of the PDF; the list shows a 100% win rate, after a reload.
- *    (The email is read from the mail queue in the database, so DATABASE_ADMIN_URL must be set.)
+ *    (The email is read from the mail queue in the database, so MONGODB_URL must be set.)
  * 6. The recruiter keeps a rate card for the client, starts an Advanced Bid from it (typing a role fills its rates),
  *    bills one role below the card and sees it flagged, adds a one-off recruitment fee, and the saved bid shows
  *    the fee in the contract value and the warning, after a reload.
  */
 const path = require('node:path');
 const { chromium } = require('playwright');
-const { Client } = require(require.resolve('pg', { paths: [path.join(__dirname, '../apps/api')] }));
+const { MongoClient } = require(require.resolve('mongodb', { paths: [path.join(__dirname, '../apps/api')] }));
 
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 const PASSWORD = process.env.CREW_DEMO_PASSWORD;
@@ -163,15 +163,14 @@ const watch = (page) => {
     // 5. The client accepts online. The link is read from the email in the mail queue (as the client would open it
     //    from their inbox); the browser that opens it has no SampCrew session.
     const link = async (to) => {
-      const db = new Client({ connectionString: process.env.DATABASE_ADMIN_URL });
-      await db.connect();
+      const client = await MongoClient.connect(process.env.MONGODB_URL);
       try {
-        const r = await db.query(`select text_body from email_messages where to_email = $1 and template = 'bid.proposal' and status <> 'cancelled' order by created_at desc limit 1`, [to]);
-        const m = r.rows[0]?.text_body.match(/https?:\/\/\S+\/proposal\/[A-Za-z0-9_-]{32}/);
+        const email = await client.db().collection('email_messages').findOne({ to_email: to.toLowerCase(), template: 'bid.proposal', status: { $ne: 'cancelled' } }, { sort: { created_at: -1 } });
+        const m = email?.text_body.match(/https?:\/\/\S+\/proposal\/[A-Za-z0-9_-]{32}/);
         expect(m, `no acceptance link in the email to ${to}`);
         return m[0].replace(/^https?:\/\/[^/]+/, BASE);
       } finally {
-        await db.end();
+        await client.close();
       }
     };
     const clientCtx = await b.newContext({ viewport: { width: 1280, height: 900 } });

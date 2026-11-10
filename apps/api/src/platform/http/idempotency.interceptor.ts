@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import { catchError, from, map, type Observable, of, switchMap, throwError } from 'rxjs';
 import { sha256 } from '../auth/crypto';
 import { requestContext } from '../context/request-context';
-import { DatabaseService, one } from '../database/database.service';
+import { MongoService as DatabaseService } from '../database/mongo.service';
 import { Errors } from './errors';
 
 /**
@@ -26,11 +26,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     return from(
       this.db.tenant((tx) =>
-        one<{ request_hash: string; response_status: number | null; response_body: unknown }>(
-          tx,
-          'select request_hash, response_status, response_body from idempotency_keys where actor_id = $1 and key = $2',
-          [actor.userId, key],
-        ),
+        tx.collection<{ request_hash: string; response_status: number | null; response_body: unknown }>('idempotency_keys').findOne({ actor_id: actor.userId, key }),
       ),
     ).pipe(
       switchMap((existing) => {
@@ -42,20 +38,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
           return of(existing.response_body);
         }
         return from(
-          this.db.tenant((tx) =>
-            tx.query('insert into idempotency_keys (tenant_id, key, actor_id, request_hash) values ($1, $2, $3, $4)', [actor.tenantId, key, actor.userId, requestHash]),
-          ),
+          this.db.tenant((tx) => tx.collection('idempotency_keys').insert({ key, actor_id: actor.userId, request_hash: requestHash })).catch((err: { code?: string }) => {
+            // Two retries raced: the other one holds the key.
+            if (err.code === '23505') throw Errors.conflict('request_in_progress', 'A request with this Idempotency-Key is still being processed');
+            throw err;
+          }),
         ).pipe(
           switchMap(() => next.handle()),
           switchMap((body) =>
             from(
               this.db.tenant((tx) =>
-                tx.query('update idempotency_keys set response_status = $3, response_body = $4 where actor_id = $1 and key = $2', [actor.userId, key, res.statusCode, JSON.stringify(body ?? null)]),
+                tx.collection('idempotency_keys').updateOne({ actor_id: actor.userId, key }, { $set: { response_status: res.statusCode, response_body: JSON.parse(JSON.stringify(body ?? null)) } }),
               ),
             ).pipe(map(() => body)),
           ),
           catchError((err) =>
-            from(this.db.tenant((tx) => tx.query('delete from idempotency_keys where actor_id = $1 and key = $2', [actor.userId, key]))).pipe(
+            from(this.db.tenant((tx) => tx.collection('idempotency_keys').deleteOne({ actor_id: actor.userId, key }))).pipe(
               switchMap(() => throwError(() => err)),
             ),
           ),

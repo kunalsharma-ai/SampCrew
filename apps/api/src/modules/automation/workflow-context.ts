@@ -1,20 +1,19 @@
 import { automation, caseRef, type TriggerEvent } from '@crew/contracts';
-import { one, type Tx } from '../../platform/database/database.service';
+import type { TenantTx as Tx } from '../../platform/database/mongo.service';
+import { displayName, fieldById } from '../employees/employee-view';
 
 export type RunContext = automation.Context;
 
 /** Fields about an employee that workflows may use. Pay, bank, tax and national IDs are never included. */
 export async function employeeContext(tx: Tx, employeeId: string): Promise<RunContext | null> {
-  const e = await one<Record<string, string | null>>(
-    tx,
-    `select trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name, g.name as title, d.name as department, l.name as location,
-            le.name as "legalEntity", e.employment_type as "employmentType", to_char(e.date_of_joining, 'YYYY-MM-DD') as "dateOfJoining", e.status
-       from employees e left join designations g on g.id = e.current_designation_id left join departments d on d.id = e.current_department_id
-       left join locations l on l.id = e.current_location_id left join legal_entities le on le.id = e.current_legal_entity_id
-      where e.id = $1`,
-    [employeeId],
-  );
-  if (!e) return null;
+  const doc = await tx.collection('employees').findOne({ id: employeeId });
+  if (!doc) return null;
+  const nameIn = async (table: string, id: unknown) => (await fieldById(tx, table, [id])).get(id as string) ?? null;
+  const e: Record<string, string | null> = {
+    name: displayName(doc as never), title: await nameIn('designations', doc.current_designation_id), department: await nameIn('departments', doc.current_department_id),
+    location: await nameIn('locations', doc.current_location_id), legalEntity: await nameIn('legal_entities', doc.current_legal_entity_id),
+    employmentType: doc.employment_type ?? null, dateOfJoining: doc.date_of_joining ?? null, status: doc.status ?? null,
+  };
   return Object.fromEntries(Object.entries(e).map(([k, v]) => [`employee.${k}`, v]));
 }
 
@@ -39,21 +38,16 @@ export async function contextForEvent(tx: Tx, event: TriggerEvent, payload: Reco
       return { employeeId, context: { ...base, 'change.kind': changeKind((payload.changed as string[] | undefined) ?? []), 'change.effectiveDate': (payload.effectiveFrom as string | undefined) ?? null } };
     case 'leave.requested':
     case 'leave.approved': {
-      const l = await one<{ type: string; days: string; from: string; to: string }>(
-        tx,
-        `select t.name as type, r.days::text as days, to_char(r.start_date, 'YYYY-MM-DD') as "from", to_char(r.end_date, 'YYYY-MM-DD') as "to"
-           from leave_requests r join leave_types t on t.id = r.leave_type_id where r.id = $1`,
-        [payload.leaveRequestId],
-      );
+      const l = await tx.collection('leave_requests').findOne({ id: payload.leaveRequestId });
       if (!l) return null;
-      return { employeeId, context: { ...base, 'leave.type': l.type, 'leave.days': Number(l.days), 'leave.from': l.from, 'leave.to': l.to } };
+      const type = (await fieldById(tx, 'leave_types', [l.leave_type_id])).get(l.leave_type_id) ?? null;
+      return { employeeId, context: { ...base, 'leave.type': type, 'leave.days': Number(l.days), 'leave.from': l.start_date, 'leave.to': l.end_date } };
     }
     case 'helpdesk.case_created': {
-      const c = await one<{ number: number; category: string; priority: string; confidential: boolean }>(
-        tx, `select c.number, k.name as category, c.priority, c.confidential from helpdesk_cases c join helpdesk_categories k on k.id = c.category_id where c.id = $1`, [payload.caseId],
-      );
+      const c = await tx.collection('helpdesk_cases').findOne({ id: payload.caseId });
       if (!c || c.confidential) return null;
-      return { employeeId, context: { ...base, 'case.ref': caseRef(c.number), 'case.category': c.category, 'case.priority': c.priority } };
+      const category = (await fieldById(tx, 'helpdesk_categories', [c.category_id])).get(c.category_id) ?? null;
+      return { employeeId, context: { ...base, 'case.ref': caseRef(c.number), 'case.category': category, 'case.priority': c.priority } };
     }
   }
 }

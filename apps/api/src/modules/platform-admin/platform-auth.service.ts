@@ -5,7 +5,7 @@ import { generateMfaSecret, mfaUri, verifyTotp } from '../../platform/auth/mfa';
 import { TokenService } from '../../platform/auth/token.service';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type PlatformTx as Tx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 
 interface AdminRow {
@@ -31,7 +31,7 @@ export class PlatformAuthService {
   ) {}
 
   async login(email: string, password: string, code?: string) {
-    const admin = await this.db.platform((tx) => one<AdminRow>(tx, 'select * from platform_admins where email = $1', [email]));
+    const admin = await this.db.platform((tx) => tx.collection<AdminRow>('platform_admins').findOne({ email }));
     if (admin?.locked_until && admin.locked_until > new Date()) throw Errors.tooMany();
     const ok = await verifyPassword(admin?.password_hash ?? null, password);
     if (!admin || !ok || admin.status !== 'active') {
@@ -48,7 +48,7 @@ export class PlatformAuthService {
       mfa = true;
     }
     return this.db.platform(async (tx) => {
-      await tx.query('update platform_admins set failed_login_count = 0, locked_until = null, last_login_at = now() where id = $1', [admin.id]);
+      await tx.collection('platform_admins').updateOne({ id: admin.id }, { $set: { failed_login_count: 0, locked_until: null, last_login_at: new Date() } });
       const pair = await this.issue(tx, admin, mfa);
       await this.audit.record(tx, { tenantId: null, action: 'platform.login', resourceType: 'platform_admin', resourceId: admin.id, metadata: { mfa } });
       return { status: 'ok' as const, ...pair, mfaEnrolmentRequired: !admin.mfa_enabled };
@@ -57,11 +57,9 @@ export class PlatformAuthService {
 
   private async failed(id: string) {
     await this.db.platform(async (tx) => {
-      await tx.query(
-        `update platform_admins set failed_login_count = failed_login_count + 1,
-           locked_until = case when failed_login_count + 1 >= 5 then now() + interval '15 minutes' else locked_until end where id = $1`,
-        [id],
-      );
+      const admins = tx.collection<{ failed_login_count: number }>('platform_admins');
+      const a = await admins.updateAndGet({ id }, { $inc: { failed_login_count: 1 } });
+      if ((a?.failed_login_count ?? 0) >= 5) await admins.updateOne({ id }, { $set: { locked_until: new Date(Date.now() + 15 * 60_000) } });
       await this.audit.record(tx, { tenantId: null, action: 'platform.login_failed', resourceType: 'platform_admin', resourceId: id });
     });
   }
@@ -69,51 +67,46 @@ export class PlatformAuthService {
   private async issue(tx: Tx, admin: Pick<AdminRow, 'id' | 'role'>, mfa: boolean) {
     const refreshToken = randomToken(32);
     const ctx = requestContext.get();
-    const s = (await one<{ id: string }>(
-      tx,
-      `insert into platform_sessions (admin_id, refresh_token_hash, mfa_verified, ip, user_agent, expires_at) values ($1, $2, $3, $4, $5, now() + interval '12 hours') returning id`,
-      [admin.id, sha256(refreshToken), mfa, ctx?.ip ?? null, ctx?.userAgent?.slice(0, 400) ?? null],
-    ))!;
+    const s = await tx.collection<{ id: string }>('platform_sessions').insert({
+      admin_id: admin.id, refresh_token_hash: sha256(refreshToken), mfa_verified: mfa,
+      ip: ctx?.ip ?? null, user_agent: ctx?.userAgent?.slice(0, 400) ?? null, expires_at: new Date(Date.now() + 12 * 3_600_000),
+    });
     const accessToken = await this.tokens.signPlatform({ sub: admin.id, role: admin.role, sid: s.id, mfa });
     return { accessToken, refreshToken, expiresIn: this.tokens.accessTtl };
   }
 
   async refresh(refreshToken: string) {
     return this.db.platform(async (tx) => {
-      const s = await one<{ id: string; admin_id: string; mfa_verified: boolean; role: string; ok: boolean }>(
-        tx,
-        `select s.id, s.admin_id, s.mfa_verified, a.role, (s.revoked_at is null and s.expires_at > now() and a.status = 'active') as ok
-           from platform_sessions s join platform_admins a on a.id = s.admin_id where s.refresh_token_hash = $1 for update of s`,
-        [sha256(refreshToken)],
-      );
-      if (!s?.ok) throw Errors.unauthorized();
-      await tx.query('update platform_sessions set revoked_at = now() where id = $1', [s.id]);
-      return this.issue(tx, { id: s.admin_id, role: s.role }, s.mfa_verified);
+      const sessions = tx.collection<{ id: string; admin_id: string; mfa_verified: boolean; revoked_at: Date | null; expires_at: Date }>('platform_sessions');
+      const s = await sessions.findOne({ refresh_token_hash: sha256(refreshToken) });
+      if (!s || s.revoked_at || s.expires_at <= new Date()) throw Errors.unauthorized();
+      const a = await tx.collection<AdminRow>('platform_admins').findOne({ id: s.admin_id });
+      if (!a || a.status !== 'active') throw Errors.unauthorized();
+      // Revoking only an unrevoked session makes a second use of the same token lose the race.
+      if (!(await sessions.update({ id: s.id, revoked_at: null }, { $set: { revoked_at: new Date() } }, { limit: 1 }))) throw Errors.unauthorized();
+      return this.issue(tx, { id: s.admin_id, role: a.role }, s.mfa_verified);
     });
   }
 
   async logout() {
     const a = requestContext.platformActor();
-    await this.db.platform((tx) => tx.query('update platform_sessions set revoked_at = now() where id = $1', [a.sessionId]));
+    await this.db.platform((tx) => tx.collection('platform_sessions').updateOne({ id: a.sessionId }, { $set: { revoked_at: new Date() } }));
   }
 
   async me() {
     const a = requestContext.platformActor();
-    const row = await this.db.platform((tx) => one<{ id: string; email: string; fullName: string; role: string; mfaEnabled: boolean }>(
-      tx,
-      `select id, email::text, full_name as "fullName", role, mfa_enabled as "mfaEnabled" from platform_admins where id = $1`,
-      [a.adminId],
-    ));
+    const r = await this.db.platform((tx) => tx.collection<AdminRow>('platform_admins').findOne({ id: a.adminId }));
+    const row = r ? { id: r.id, email: r.email, fullName: r.full_name, role: r.role, mfaEnabled: r.mfa_enabled } : undefined;
     return { ...row, session: { mfa: a.mfa } };
   }
 
   async mfaSetup() {
     const a = requestContext.platformActor();
     return this.db.platform(async (tx) => {
-      const admin = (await one<{ email: string; mfa_enabled: boolean }>(tx, 'select email::text, mfa_enabled from platform_admins where id = $1', [a.adminId]))!;
+      const admin = (await tx.collection<AdminRow>('platform_admins').findOne({ id: a.adminId }))!;
       if (admin.mfa_enabled) throw Errors.conflict('mfa_already_enabled', 'MFA is already enabled');
       const secret = generateMfaSecret();
-      await tx.query('update platform_admins set mfa_secret_enc = $2 where id = $1', [a.adminId, encryptField(secret, this.config.fieldKeys)]);
+      await tx.collection('platform_admins').updateOne({ id: a.adminId }, { $set: { mfa_secret_enc: encryptField(secret, this.config.fieldKeys) } });
       return { secret, otpauthUri: mfaUri(admin.email, secret, 'SampCrew Console (SAMPLEDGE)') };
     });
   }
@@ -121,11 +114,11 @@ export class PlatformAuthService {
   async mfaEnable(code: string) {
     const a = requestContext.platformActor();
     return this.db.platform(async (tx) => {
-      const admin = (await one<{ mfa_secret_enc: string | null; role: string }>(tx, 'select mfa_secret_enc, role from platform_admins where id = $1', [a.adminId]))!;
+      const admin = (await tx.collection<AdminRow>('platform_admins').findOne({ id: a.adminId }))!;
       if (!admin.mfa_secret_enc) throw Errors.badRequest('mfa_not_started', 'Start MFA setup first');
       if (!verifyTotp(decryptField(admin.mfa_secret_enc, this.config.fieldKeys), code)) throw Errors.badRequest('invalid_code', 'That code is not valid');
-      await tx.query('update platform_admins set mfa_enabled = true where id = $1', [a.adminId]);
-      await tx.query('update platform_sessions set revoked_at = now() where id = $1', [a.sessionId]);
+      await tx.collection('platform_admins').updateOne({ id: a.adminId }, { $set: { mfa_enabled: true } });
+      await tx.collection('platform_sessions').updateOne({ id: a.sessionId }, { $set: { revoked_at: new Date() } });
       await this.audit.record(tx, { tenantId: null, action: 'platform.mfa_enabled', resourceType: 'platform_admin', resourceId: a.adminId });
       return this.issue(tx, { id: a.adminId, role: admin.role }, true);
     });

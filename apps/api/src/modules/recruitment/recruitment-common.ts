@@ -1,6 +1,6 @@
 import type { ResourceAttributes } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { many, one, type Tx } from '../../platform/database/database.service';
+import { membershipUserNames, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 
 /**
@@ -14,6 +14,26 @@ export const REQ_SCOPE = {
   departmentId: 'r.department_id',
   locationId: 'r.location_id',
 };
+
+/** MongoDB fields of a requisition document, for AuthzService.filter. */
+export const REQ_FIELDS = {
+  membershipId: 'hiring_manager_membership_id',
+  legalEntityId: 'legal_entity_id',
+  departmentId: 'department_id',
+  locationId: 'location_id',
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
+
+/** A candidate's display name, as the SQL `trim(first_name || ' ' || last_name)`. */
+export const candidateName = (c: { first_name?: string | null; last_name?: string | null }) => `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim();
+
+/** Requisition ids the member may see with `permission`, or null when they may see every requisition. */
+export async function visibleRequisitionIds(tx: TenantTx, scope: Record<string, unknown>): Promise<string[] | null> {
+  if (!Object.keys(scope).length) return null;
+  return tx.collection('job_requisitions').distinct<string>('id', scope);
+}
 
 export interface RequisitionRow {
   id: string;
@@ -42,16 +62,17 @@ export const reqAttrs = (r: Pick<RequisitionRow, 'hiring_manager_membership_id' 
   locationId: r.location_id,
 });
 
-export async function loadRequisition(tx: Tx, id: string, lock = false): Promise<RequisitionRow> {
-  const r = await one<RequisitionRow>(
-    tx,
-    `select id, code, title, status, legal_entity_id, department_id, location_id, designation_id, hiring_manager_membership_id, created_by_membership_id,
-            employment_type, headcount, hired_count, salary_min::text, salary_max::text, currency, scorecard
-       from job_requisitions where id = $1${lock ? ' for update' : ''}`,
-    [id],
-  );
+export async function loadRequisition(tx: TenantTx, id: string, lock = false): Promise<RequisitionRow> {
+  const reqs = tx.collection('job_requisitions');
+  if (lock) await reqs.lock({ id });
+  const r = await reqs.findOne({ id });
   if (!r) throw Errors.notFound('Requisition');
-  return r;
+  return {
+    id: r.id, code: r.code, title: r.title, status: r.status, legal_entity_id: r.legal_entity_id, department_id: r.department_id, location_id: r.location_id ?? null,
+    designation_id: r.designation_id ?? null, hiring_manager_membership_id: r.hiring_manager_membership_id, created_by_membership_id: r.created_by_membership_id ?? null,
+    employment_type: r.employment_type, headcount: r.headcount, hired_count: r.hired_count, salary_min: r.salary_min ?? null, salary_max: r.salary_max ?? null,
+    currency: r.currency, scorecard: r.scorecard ?? [],
+  };
 }
 
 export interface ApplicationRow {
@@ -67,50 +88,52 @@ export interface ApplicationRow {
   req: RequisitionRow;
 }
 
-export async function loadApplication(tx: Tx, id: string, lock = false): Promise<ApplicationRow> {
-  const a = await one<Omit<ApplicationRow, 'req'>>(
-    tx,
-    `select a.id, a.candidate_id, a.requisition_id, a.stage_id, s.kind as stage_kind, a.status,
-            trim(c.first_name || ' ' || c.last_name) as candidate_name, c.email as candidate_email, c.anonymized_at is not null as anonymized
-       from applications a join candidates c on c.id = a.candidate_id join recruitment_stages s on s.id = a.stage_id
-      where a.id = $1${lock ? ' for update of a' : ''}`,
-    [id],
-  );
+export async function loadApplication(tx: TenantTx, id: string, lock = false): Promise<ApplicationRow> {
+  const apps = tx.collection('applications');
+  if (lock) await apps.lock({ id });
+  const a = await apps.findOne({ id });
   if (!a) throw Errors.notFound('Application');
-  return { ...a, req: await loadRequisition(tx, a.requisition_id) };
+  const c = (await tx.collection('candidates').findOne({ id: a.candidate_id }))!;
+  const stage = (await tx.collection('recruitment_stages').findOne({ id: a.stage_id }))!;
+  return {
+    id: a.id, candidate_id: a.candidate_id, requisition_id: a.requisition_id, stage_id: a.stage_id, stage_kind: stage.kind, status: a.status,
+    candidate_name: candidateName(c), candidate_email: c.email ?? null, anonymized: !!c.anonymized_at,
+    req: await loadRequisition(tx, a.requisition_id),
+  };
 }
 
 /** Appends to the pipeline history. Kept free of personal free text so erasure never has to rewrite it. */
 export async function recordEvent(
-  tx: Tx,
+  tx: TenantTx,
   applicationId: string,
   kind: string,
   extra: { fromStageId?: string | null; toStageId?: string | null; detail?: Record<string, unknown> } = {},
 ) {
   const actor = requestContext.get()?.actor;
-  await tx.query(
-    `insert into application_events (tenant_id, application_id, kind, from_stage_id, to_stage_id, detail, actor_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5, $6)`,
-    [applicationId, kind, extra.fromStageId ?? null, extra.toStageId ?? null, JSON.stringify(extra.detail ?? {}), actor?.kind === 'user' ? actor.membershipId : null],
-  );
-  await tx.query(`update candidates set last_activity_at = now() where id = (select candidate_id from applications where id = $1)`, [applicationId]);
+  await tx.collection('application_events').insert({
+    application_id: applicationId, kind, from_stage_id: extra.fromStageId ?? null, to_stage_id: extra.toStageId ?? null, detail: extra.detail ?? {},
+    actor_membership_id: actor?.kind === 'user' ? actor.membershipId : null,
+  });
+  const app = await tx.collection('applications').findOne({ id: applicationId }, { projection: { candidate_id: 1 } });
+  if (app) await tx.collection('candidates').updateOne({ id: app.candidate_id }, { $set: { last_activity_at: new Date() } });
 }
 
-export async function stageOfKind(tx: Tx, kind: 'new' | 'hired') {
-  const s = await one<{ id: string }>(tx, `select id from recruitment_stages where kind = $1 and archived_at is null`, [kind]);
+export async function stageOfKind(tx: TenantTx, kind: 'new' | 'hired') {
+  const s = await tx.collection('recruitment_stages').findOne({ kind, archived_at: null });
   if (!s) throw Errors.conflict('pipeline_incomplete', `The pipeline has no "${kind}" stage. Add one under Recruitment settings.`);
-  return s.id;
+  return s.id as string;
 }
 
 /** Name of a workspace member, for summaries and emails. */
-export async function memberName(tx: Tx, membershipId: string | null) {
+export async function memberName(tx: TenantTx, membershipId: string | null) {
   if (!membershipId) return null;
-  return (await one<{ name: string }>(tx, `select u.full_name as name from memberships m join users u on u.id = m.user_id where m.id = $1`, [membershipId]))?.name ?? null;
+  return (await membershipUserNames(tx, [membershipId])).get(membershipId) ?? null;
 }
 
 /** The employee record of a member (for approvals and for setting the new hire's manager). */
-export async function employeeOfMember(tx: Tx, membershipId: string | null) {
+export async function employeeOfMember(tx: TenantTx, membershipId: string | null) {
   if (!membershipId) return null;
-  return (await one<{ id: string }>(tx, `select id from employees where membership_id = $1 and status <> 'exited'`, [membershipId]))?.id ?? null;
+  return ((await tx.collection('employees').findOne({ membership_id: membershipId, status: { $ne: 'exited' } }, { projection: { id: 1 } }))?.id as string | undefined) ?? null;
 }
 
 export const CANDIDATE_FOOTER = 'Sent by SampCrew by SAMPLEDGE on behalf of the hiring organisation named above. You received this because you applied for a role or were put forward for one.';
@@ -128,17 +151,14 @@ export function moneyText(amount: string | null, currency: string) {
  * Withdraws an application's open offers when the application closes, cancelling any approval still waiting
  * so approvers are not asked to sign off an offer for someone who is no longer in the process.
  */
-export async function withdrawOpenOffers(tx: Tx, applicationId: string, includeAccepted = false) {
+export async function withdrawOpenOffers(tx: TenantTx, applicationId: string, includeAccepted = false) {
   const statuses = ['draft', 'pending_approval', 'approved', 'sent', ...(includeAccepted ? ['accepted'] : [])];
-  const rows = await many<{ id: string; approval_request_id: string | null; status: string }>(
-    tx,
-    `update offers o set status = 'withdrawn' from offers prev where prev.id = o.id and o.application_id = $1 and o.status = any($2::text[])
-     returning o.id, o.approval_request_id, prev.status`,
-    [applicationId, statuses],
-  );
+  const offers = tx.collection('offers');
+  const rows = (await offers.find({ application_id: applicationId, status: { $in: statuses } }, { projection: { id: 1, approval_request_id: 1, status: 1 } })) as Doc[];
+  if (rows.length) await offers.update({ id: { $in: rows.map((r) => r.id) } }, { $set: { status: 'withdrawn' } });
   for (const r of rows.filter((x) => x.status === 'pending_approval' && x.approval_request_id)) {
-    await tx.query(`update approval_steps set status = 'cancelled' where request_id = $1 and status in ('pending', 'waiting')`, [r.approval_request_id]);
-    await tx.query(`update approval_requests set status = 'cancelled', decided_at = now() where id = $1 and status = 'pending'`, [r.approval_request_id]);
+    await tx.collection('approval_steps').update({ request_id: r.approval_request_id, status: { $in: ['pending', 'waiting'] } }, { $set: { status: 'cancelled' } });
+    await tx.collection('approval_requests').updateOne({ id: r.approval_request_id, status: 'pending' }, { $set: { status: 'cancelled', decided_at: new Date() } });
   }
   for (const r of rows) await recordEvent(tx, applicationId, 'offer_withdrawn', { detail: { offerId: r.id } });
   return rows.length;

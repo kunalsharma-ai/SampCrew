@@ -3,17 +3,22 @@ import { zonedTime } from '@crew/contracts';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { grantsFor, hasPermission, type Subject } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx as Tx } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { Doc } from '../../platform/openapi/openapi';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AttendanceService } from '../attendance/attendance.service';
-import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
+import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
+import { displayName, fieldById } from '../employees/employee-view';
 import { OnboardingService } from '../onboarding/onboarding.service';
-import { ENTITY_SCOPE } from '../payroll/payroll-common';
-import { REQ_SCOPE } from '../recruitment/recruitment-common';
+import { ENTITY_FIELDS } from '../payroll/payroll-common';
+import { candidateName, REQ_FIELDS, visibleRequisitionIds } from '../recruitment/recruitment-common';
 
 const { localToday } = zonedTime;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** PostgreSQL's to_char(date, 'Mon YYYY'). */
+const monYear = (d: string) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
+const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 /** Beyond the member's own record: a manager, HR or finance view rather than self-service. */
 const wide = (s: Subject, permission: string) => grantsFor(s, permission).some((g) => g.scope !== 'own');
@@ -41,7 +46,7 @@ export class DashboardService {
     const core = await this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
       const { features } = await this.entitlements.current(tx);
-      const tz = (await one<{ tz: string }>(tx, 'select timezone as tz from tenants where id = app_tenant_id()'))!.tz;
+      const tz = (await tx.collection('tenants').findOne({}))!.timezone as string;
       const today = localToday(tz);
       const people = wide(s, 'employees:read');
       return {
@@ -103,108 +108,94 @@ export class DashboardService {
     };
   }
 
+  /** Everyone in the member's employees:read scope. */
+  private async visible(tx: Tx) {
+    const scope = await this.authz.filter('employees:read', EMPLOYEE_FIELDS, tx);
+    return tx.collection('employees').find(scope, {
+      projection: { status: 1, date_of_joining: 1, last_working_day: 1, current_department_id: 1, probation_end_date: 1, preferred_name: 1, first_name: 1, last_name: 1 },
+    });
+  }
+
   private async people(tx: Tx, today: string) {
-    const params: unknown[] = [];
-    const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
-    const n = params.length;
-    const p = [...params, today];
-    const at = (d: string) => `(e.date_of_joining <= ${d} and (e.last_working_day is null or e.last_working_day >= ${d}) and e.status <> 'pre_boarding')`;
-    const row = (await one<{ headcount: number; active: number; probation: number; notice: number; new_hires: number; exits: number; year_ago: number }>(
-      tx,
-      `select count(*) filter (where ${at(`$${n + 1}::date`)})::int as headcount,
-              count(*) filter (where e.status = 'active')::int as active,
-              count(*) filter (where e.status = 'probation')::int as probation,
-              count(*) filter (where e.status = 'notice')::int as notice,
-              count(*) filter (where e.date_of_joining between $${n + 1}::date - 30 and $${n + 1}::date)::int as new_hires,
-              count(*) filter (where e.status = 'exited' and e.last_working_day between $${n + 1}::date - 365 and $${n + 1}::date)::int as exits,
-              count(*) filter (where ${at(`($${n + 1}::date - 365)`)})::int as year_ago
-         from employees e where ${scope}`,
-      p,
-    ))!;
+    const all = await this.visible(tx);
+    const employedOn = (d: string) => all.filter((e) => e.status !== 'pre_boarding' && e.date_of_joining <= d && (!e.last_working_day || e.last_working_day >= d));
+    const yearAgo = addDays(today, -365);
+    const now = employedOn(today);
+    const row = {
+      headcount: now.length,
+      active: all.filter((e) => e.status === 'active').length,
+      probation: all.filter((e) => e.status === 'probation').length,
+      notice: all.filter((e) => e.status === 'notice').length,
+      new_hires: all.filter((e) => e.date_of_joining >= addDays(today, -30) && e.date_of_joining <= today).length,
+      exits: all.filter((e) => e.status === 'exited' && e.last_working_day && e.last_working_day >= yearAgo && e.last_working_day <= today).length,
+      year_ago: employedOn(yearAgo).length,
+    };
     const months = [5, 4, 3, 2, 1, 0].map((m) => (m === 0 ? today : monthEnd(today, m)));
-    const trendRow = await one<Record<string, number>>(
-      tx,
-      `select ${months.map((d, i) => `count(*) filter (where ${at(`'${d}'::date`)})::int as m${i}`).join(', ')} from employees e where ${scope}`,
-      params,
-    );
-    const departments = await many<{ id: string | null; name: string; count: number }>(
-      tx,
-      `select d.id, coalesce(d.name, 'No department') as name, count(*)::int as count
-         from employees e left join departments d on d.id = e.current_department_id
-        where ${scope} and ${at(`$${n + 1}::date`)}
-        group by d.id, d.name order by count desc, name limit 8`,
-      p,
-    );
+    const names = await fieldById(tx, 'departments', now.map((e) => e.current_department_id));
+    const byDept = new Map<string, { id: string | null; name: string; count: number }>();
+    for (const e of now) {
+      const id = (e.current_department_id as string | null) ?? null;
+      const key = id ?? '';
+      const g = byDept.get(key) ?? { id, name: (id && names.get(id)) || 'No department', count: 0 };
+      g.count++;
+      byDept.set(key, g);
+    }
+    const departments = [...byDept.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 8);
     const avg = (row.headcount + row.year_ago) / 2;
     return {
       headcount: row.headcount, active: row.active, probation: row.probation, notice: row.notice, newHires: row.new_hires, exits: row.exits,
       attrition: avg > 0 ? Math.round((row.exits / avg) * 1000) / 10 : 0,
-      trend: months.map((_, i) => trendRow?.[`m${i}`] ?? 0),
+      trend: months.map((d) => employedOn(d).length),
       departments,
     };
   }
 
   private async probation(tx: Tx, today: string) {
-    const params: unknown[] = [];
-    const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
-    params.push(today);
-    return many<{ id: string; name: string; department: string | null; probationEnd: string }>(
-      tx,
-      `select e.id, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name, d.name as department, e.probation_end_date::text as "probationEnd"
-         from employees e left join departments d on d.id = e.current_department_id
-        where ${scope} and e.status = 'probation' and e.probation_end_date between $${params.length}::date and $${params.length}::date + 30
-        order by e.probation_end_date limit 5`,
-      params,
-    );
+    const ending = (await this.visible(tx))
+      .filter((e) => e.status === 'probation' && e.probation_end_date && e.probation_end_date >= today && e.probation_end_date <= addDays(today, 30))
+      .sort((a, b) => (a.probation_end_date as string).localeCompare(b.probation_end_date))
+      .slice(0, 5);
+    const names = await fieldById(tx, 'departments', ending.map((e) => e.current_department_id));
+    return ending.map((e) => ({ id: e.id as string, name: displayName(e as never), department: names.get(e.current_department_id) ?? null, probationEnd: e.probation_end_date as string }));
   }
 
   private async hiring(tx: Tx) {
-    const params: unknown[] = [];
-    const scope = await this.authz.predicate('requisitions:read', REQ_SCOPE, params, tx);
-    const totals = (await one<{ open_positions: number; open_requisitions: number }>(
-      tx,
-      `select coalesce(sum(r.headcount) filter (where r.status = 'open'), 0)::int as open_positions, count(*) filter (where r.status = 'open')::int as open_requisitions
-         from job_requisitions r where ${scope}`,
-      params,
-    ))!;
-    const funnel = await many<{ stage: string; kind: string; count: number }>(
-      tx,
-      `select s.name as stage, s.kind, count(a.id)::int as count
-         from recruitment_stages s
-         left join applications a on a.stage_id = s.id and a.status = 'active' and a.requisition_id in (select r.id from job_requisitions r where ${scope})
-        where s.archived_at is null group by s.id, s.name, s.kind, s.position order by s.position`,
-      params,
-    );
-    return { openPositions: totals.open_positions, openRequisitions: totals.open_requisitions, active: funnel.reduce((t, f) => t + f.count, 0), funnel };
+    const scope = await this.authz.filter('requisitions:read', REQ_FIELDS, tx);
+    const open = await tx.collection('job_requisitions').find({ $and: [scope, { status: 'open' }] }, { projection: { headcount: 1 } });
+    const visible = await visibleRequisitionIds(tx, scope);
+    const active = await tx.collection('applications').find({ status: 'active', ...(visible ? { requisition_id: { $in: visible } } : {}) }, { projection: { stage_id: 1 } });
+    const perStage = new Map<string, number>();
+    for (const a of active) perStage.set(a.stage_id, (perStage.get(a.stage_id) ?? 0) + 1);
+    const funnel = (await tx.collection('recruitment_stages').find({ archived_at: null }, { sort: { position: 1 } }))
+      .map((st) => ({ stage: st.name as string, kind: st.kind as string, count: perStage.get(st.id) ?? 0 }));
+    return {
+      openPositions: open.reduce((t, x) => t + (Number(x.headcount) || 0), 0), openRequisitions: open.length,
+      active: funnel.reduce((t, f) => t + f.count, 0), funnel,
+    };
   }
 
   private async payroll(tx: Tx, preparer: boolean) {
-    const params: unknown[] = [];
-    const scope = await this.authz.predicate('payroll:read', ENTITY_SCOPE('r.legal_entity_id'), params, tx);
-    const cols = `r.id, to_char(r.period_start, 'Mon YYYY') as period, r.status, r.net::text as net, r.currency, r.pay_date::text as "payDate", le.name as entity`;
-    const latest = await one<{ id: string; period: string; status: string; net: string; currency: string }>(
-      tx,
-      `select ${cols} from payroll_runs r join legal_entities le on le.id = r.legal_entity_id where ${scope} and r.status <> 'cancelled' order by r.period_start desc, r.created_at desc limit 1`,
-      params,
-    );
-    const awaitingAction = !preparer ? [] : await many<{ id: string; period: string; status: string; payDate: string; entity: string }>(
-      tx,
-      `select ${cols} from payroll_runs r join legal_entities le on le.id = r.legal_entity_id where ${scope} and r.status in ('draft', 'computed') order by r.pay_date limit 3`,
-      params,
-    );
-    return { latest: latest ?? null, awaitingAction };
+    const scope = await this.authz.filter('payroll:read', ENTITY_FIELDS('legal_entity_id'), tx);
+    const runs = await tx.collection('payroll_runs').find({ $and: [scope, { status: { $ne: 'cancelled' } }] });
+    const entities = await fieldById(tx, 'legal_entities', runs.map((x) => x.legal_entity_id));
+    const view = (x: Record<string, unknown>) => ({
+      id: x.id as string, period: monYear(x.period_start as string), status: x.status as string, net: String(x.net), currency: x.currency as string,
+      payDate: x.pay_date as string, entity: entities.get(x.legal_entity_id as string) ?? '',
+    });
+    const latest = [...runs].sort((a, b) => (b.period_start as string).localeCompare(a.period_start) || (b.created_at as Date).getTime() - (a.created_at as Date).getTime())[0];
+    const awaitingAction = !preparer ? [] : runs.filter((x) => ['draft', 'computed'].includes(x.status)).sort((a, b) => (a.pay_date as string).localeCompare(b.pay_date)).slice(0, 3).map(view);
+    return { latest: latest ? view(latest) : null, awaitingAction };
   }
 
-  private interviews(tx: Tx, membershipId: string) {
-    return many<{ id: string; title: string; startsAt: string; candidate: string }>(
-      tx,
-      `select i.id, i.title, i.starts_at as "startsAt", trim(c.first_name || ' ' || c.last_name) as candidate
-         from interviews i join interview_panelists p on p.interview_id = i.id and p.membership_id = $1
-         join applications a on a.id = i.application_id join candidates c on c.id = a.candidate_id
-        where i.status = 'scheduled' and i.starts_at between now() - interval '1 hour' and now() + interval '7 days'
-        order by i.starts_at limit 5`,
-      [membershipId],
+  private async interviews(tx: Tx, membershipId: string) {
+    const mine = await tx.collection('interview_panelists').distinct<string>('interview_id', { membership_id: membershipId });
+    const list = await tx.collection('interviews').find(
+      { id: { $in: mine }, status: 'scheduled', starts_at: { $gte: new Date(Date.now() - 3_600_000), $lte: new Date(Date.now() + 7 * 86_400_000) } },
+      { sort: { starts_at: 1 }, limit: 5 },
     );
+    const apps = new Map((await tx.collection('applications').find({ id: { $in: list.map((i) => i.application_id) } }, { projection: { candidate_id: 1 } })).map((a) => [a.id, a.candidate_id]));
+    const candidates = new Map((await tx.collection('candidates').find({ id: { $in: [...apps.values()] } }, { projection: { first_name: 1, last_name: 1 } })).map((c) => [c.id, candidateName(c)]));
+    return list.map((i) => ({ id: i.id as string, title: i.title as string, startsAt: i.starts_at as string, candidate: candidates.get(apps.get(i.application_id)) ?? '' }));
   }
 
   private async attendanceToday(today: string) {

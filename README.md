@@ -10,7 +10,7 @@ This repository is being built phase by phase. See [docs/architecture](docs/arch
 
 ## What works today (Phases 1 to 8)
 
-- Multi-tenant API with PostgreSQL Row-Level Security underneath every query
+- Multi-tenant API on MongoDB, with every query confined to its workspace by the data layer (`packages/db/src/mongo`), which also enforces the schema's types, unique and foreign keys and CHECK rules
 - Sign-up, sign-in, TOTP MFA, refresh-token rotation, workspace switching, invitations
 - Organisation structure: legal entities, business units, locations (with geofences), department tree
 - 12 system roles plus custom roles, with RBAC + ABAC scopes (own / team / department / entity / all)
@@ -40,16 +40,16 @@ Not connected yet, and labelled as such in the product: payment collection (invo
 
 ## Getting started
 
-Requirements: Node.js 26 (the current Active LTS; the exact version CI and the Docker images use is in `.nvmrc`), pnpm 10, PostgreSQL 16 (or Docker).
+Requirements: Node.js 26 (the current Active LTS; the exact version CI and the Docker images use is in `.nvmrc`), pnpm 10, MongoDB 8.0 as a replica set or MongoDB Atlas (or Docker).
 
 Node.js 25 and later no longer include Corepack, so install it once with `npm install --global corepack && corepack enable`; it then runs the pnpm version pinned in `package.json`.
 
 ```bash
 pnpm install
-docker compose -f infra/docker/docker-compose.yml up -d postgres   # or use a local PostgreSQL
+docker compose -f infra/docker/docker-compose.yml up -d mongo      # a one-node replica set, or use Atlas
 cp .env.example .env                                               # fill in the secrets (see comments)
 pnpm build:packages
-pnpm db:migrate && pnpm db:seed                                    # schema, catalogue, first admin, demo tenant
+pnpm db:migrate && pnpm db:seed                                    # collections, catalogue, first admin, demo tenant
 pnpm dev:api                                                       # API on http://localhost:4000
 pnpm dev:web                                                       # Web Portal on http://localhost:3000
 pnpm dev:console                                                   # Super Admin Console on http://localhost:3001
@@ -64,7 +64,8 @@ The demo tenant `demo-northwind` ("Northwind Manufacturing (Demo)") is fictional
 ## Tests
 
 ```bash
-pnpm test           # unit + integration; integration tests create and use a separate crew_test database
+pnpm test           # unit + integration; integration tests drop and recreate a separate crew_test database
+pnpm test:mongo     # the data layer itself: scoping, keys, CHECK rules, row guards, migrations, audit chain
 pnpm e2e:web        # browser test of the Web Portal (needs a fresh `pnpm db:reset` and running API + web)
 pnpm e2e:hr         # Core HR flow: hire, onboard, apply for leave, approve (run after e2e:web, API + web)
 pnpm e2e:talent     # Talent flow: goals, review cycle to release, learning, survey, recognition (fresh db, before e2e:recruitment)
@@ -92,7 +93,7 @@ CI runs all of these on every pull request.
 ## Running in production
 
 `infra/deploy/` has everything to run SampCrew on a host with Docker: one Dockerfile for the API, Web Portal, Console and
-the tools image (migrations, backups, restore), a compose file with a TLS proxy, PostgreSQL, Redis and daily encrypted
+the tools image (migrations, backups, restore), a compose file with a TLS proxy, a MongoDB replica set, Redis and daily encrypted
 backups, an environment template and a secret generator. The steps, upgrades, rollback, restore and secret rotation
 are in [docs/ops/runbook.md](docs/ops/runbook.md); the security review is in
 [docs/security-review.md](docs/security-review.md).

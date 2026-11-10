@@ -13,3 +13,12 @@ export const EMPLOYEE_SCOPE = {
   locationId: 'e.current_location_id',
   employeeId: 'e.id',
 };
+
+/** MongoDB fields of an employee document, for AuthzService.filter on employee lists. */
+export const EMPLOYEE_FIELDS = {
+  membershipId: 'membership_id',
+  legalEntityId: 'current_legal_entity_id',
+  departmentId: 'current_department_id',
+  locationId: 'current_location_id',
+  employeeId: 'id',
+};

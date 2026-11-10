@@ -1,15 +1,14 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AiGatewayService } from '../src/modules/ai/ai-gateway.service';
 import { AiService } from '../src/modules/ai/ai.service';
 import { AnthropicProvider } from '../src/modules/ai/ai-provider';
 import { WorkflowRunnerService } from '../src/modules/automation/workflow-runner.service';
-import { DatabaseService } from '../src/platform/database/database.service';
+import { MongoService as DatabaseService } from '../src/platform/database/mongo.service';
 import { OutboxService } from '../src/platform/events/outbox.service';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 /**
  * A stand-in for the Claude Messages API on localhost, so the real HTTP client and gateway run without a key or
@@ -43,7 +42,7 @@ function stubServer() {
 
 describe('AI copilots, Automation Studio and insights', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let stub: ReturnType<typeof stubServer>;
@@ -107,7 +106,7 @@ describe('AI copilots, Automation Studio and insights', () => {
     await hire('asha', 'Asha', { departmentId: ops, managerEmployeeId: people.manager.employeeId });
     for (const who of ['manager', 'asha', 'auditor']) tokens[who] = (await login(app, people[who]!.email)).accessToken;
     // Employee records created above published events; clear them so workflow tests start clean.
-    await pool.query('update outbox_events set published_at = now() where tenant_id = $1', [t.id]);
+    await pool.update('outbox_events', { tenant_id: t.id }, { $set: { published_at: new Date() } });
   });
 
   afterAll(async () => {
@@ -138,8 +137,8 @@ describe('AI copilots, Automation Studio and insights', () => {
       fails(await as('owner').put('/ai/settings').send({ features: { assistant: true } }), 422);
       const s = ok(await as('owner').put('/ai/settings').send({ features: { assistant: true, helpdesk_draft: true, workflow_draft: true }, promptLogDays: 30 }));
       expect(s).toMatchObject({ configured: true, provider: 'anthropic', model: 'claude-opus-5-5', promptLogDays: 30, features: { assistant: true }, usage: { used: 0, limit: 5000 } });
-      const audit = await pool.query(`select changes from audit_events where tenant_id = $1 and action = 'ai.settings_changed'`, [t.id]);
-      expect(audit.rows[0].changes.after.features.assistant).toBe(true);
+      const audit = await pool.find('audit_events', { tenant_id: t.id, action: 'ai.settings_changed' });
+      expect(audit[0]!.changes.after.features.assistant).toBe(true);
       expect(ok(await as('asha').get('/ai/status')).features.assistant.available).toBe(true);
     });
 
@@ -148,8 +147,8 @@ describe('AI copilots, Automation Studio and insights', () => {
       expect(r).toMatchObject({ answered: false, sources: [], model: null });
       expect(r.answer).toContain("couldn't find this");
       expect(stub.requests).toHaveLength(0);
-      const row = await pool.query('select status, credits from ai_interactions where id = $1', [r.interactionId]);
-      expect(row.rows[0]).toEqual({ status: 'no_sources', credits: 0 });
+      const row = (await pool.one('ai_interactions', { id: r.interactionId }))!;
+      expect({ status: row.status, credits: row.credits }).toEqual({ status: 'no_sources', credits: 0 });
     });
 
     it('answers from published articles with citations, removing personal identifiers from the prompt', async () => {
@@ -167,7 +166,7 @@ describe('AI copilots, Automation Studio and insights', () => {
       expect(sent.body.system).toContain('Provident fund is 12% of basic pay');
       expect(sent.body.system).not.toContain('not final yet');
       expect(sent.body.messages[0].content).toBe('How much provident fund is deducted? Reply to [email] or [phone].');
-      const row = (await pool.query('select status, credits, input_tokens, output_tokens, redactions, evidence, prompt_version from ai_interactions where id = $1', [r.interactionId])).rows[0];
+      const row = (await pool.one('ai_interactions', { id: r.interactionId }))!;
       expect(row).toMatchObject({ status: 'ok', credits: 3, input_tokens: 1500, output_tokens: 600, redactions: { email: 1, phone: 1 }, prompt_version: 'assistant-v1' });
       expect(row.evidence).toEqual([{ kind: 'helpdesk_article', id: a.id, title: 'Provident fund deductions' }]);
       ids.answer = r.interactionId;
@@ -186,16 +185,16 @@ describe('AI copilots, Automation Studio and insights', () => {
       fails(await as('asha').post('/ai/assistant').send({ question: 'Explain provident fund rules' }), 409, 'ai_refused');
       stub.reply({ status: 500 }, { status: 500 }, { status: 500 });
       fails(await as('asha').post('/ai/assistant').send({ question: 'Explain provident fund rules' }), 503, 'ai_unavailable');
-      const rows = await pool.query(`select status, error from ai_interactions where tenant_id = $1 and status in ('refused', 'error') order by created_at`, [t.id]);
-      expect(rows.rows.map((r) => r.status)).toEqual(['refused', 'error']);
-      expect(rows.rows[1].error).toBe('The AI provider returned an error (500)');
+      const rows = await pool.find('ai_interactions', { tenant_id: t.id, status: { $in: ['refused', 'error'] } }, { sort: { created_at: 1 } });
+      expect(rows.map((r) => r.status)).toEqual(['refused', 'error']);
+      expect(rows[1]!.error).toBe('The AI provider returned an error (500)');
     });
 
     it('stops at the monthly AI credit allowance', async () => {
-      await pool.query(`update subscriptions set feature_overrides = '{"ai_credits_monthly": 3}' where tenant_id = $1`, [t.id]);
+      await pool.update('subscriptions', { tenant_id: t.id }, { $set: { feature_overrides: { ai_credits_monthly: 3 } } });
       fails(await as('asha').post('/ai/assistant').send({ question: 'Explain provident fund rules' }), 402, 'ai_credits_used');
       expect(ok(await as('asha').get('/ai/status')).features.assistant.reason).toContain("used this month's AI credits");
-      await pool.query(`update subscriptions set feature_overrides = '{}' where tenant_id = $1`, [t.id]);
+      await pool.update('subscriptions', { tenant_id: t.id }, { $set: { feature_overrides: {} } });
     });
 
     it('lets auditors read the prompt log, audits each view, and keeps other workspaces out', async () => {
@@ -205,24 +204,22 @@ describe('AI copilots, Automation Studio and insights', () => {
       const one = ok(await as('auditor').get(`/ai/interactions/${ids.answer}`));
       expect(one.request.user).toContain('[email]');
       expect(one).toMatchObject({ response: 'Provident fund is 12% of your basic pay [1].', helpful: true, byName: 'Asha Test' });
-      const viewed = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'ai.interaction_viewed' and resource_id = $2`, [t.id, ids.answer]);
-      expect(viewed.rows[0].n).toBe(1);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'ai.interaction_viewed', resource_id: ids.answer })).toBe(1);
       fails(await as('otherOwner').get(`/ai/interactions/${ids.answer}`), 404);
     });
 
     it('removes prompt text after the retention period but keeps usage, and the log cannot be rewritten', async () => {
-      await pool.query(`update ai_interactions set request = null where id = $1`, [ids.answer]).catch(() => undefined);
-      await pool.query(`alter table ai_interactions disable trigger ai_interactions_guard`);
-      await pool.query(`update ai_interactions set created_at = now() - interval '40 days' where id = $1`, [ids.answer]);
-      await pool.query(`alter table ai_interactions enable trigger ai_interactions_guard`);
+      await pool.update('ai_interactions', { id: ids.answer }, { $set: { request: null } }).catch(() => undefined);
+      // Past the data rules, straight in the database, as if 40 days had gone by.
+      await (await pool.database()).collection('ai_interactions').updateOne({ _id: ids.answer }, { $set: { created_at: new Date(Date.now() - 40 * 86_400_000) } });
       const n = await app.get(DatabaseService).tenant((tx) => app.get(AiService).purgeExpired(tx), { tenantId: t.id });
       expect(n).toBe(1);
-      const row = (await pool.query('select request, response, credits, purged_at from ai_interactions where id = $1', [ids.answer])).rows[0];
-      expect(row).toMatchObject({ request: null, response: null, credits: 3 });
-      expect(row.purged_at).not.toBeNull();
-      await expect(pool.query(`update ai_interactions set credits = 0 where id = $1`, [ids.answer])).rejects.toThrow(/cannot be changed/);
-      await expect(pool.query(`update ai_interactions set response = 'rewritten' where id = $1`, [ids.answer])).rejects.toThrow(/can only be removed/);
-      await expect(pool.query(`delete from ai_interactions where id = $1`, [ids.answer])).rejects.toThrow(/cannot be deleted/);
+      const row = (await pool.one('ai_interactions', { id: ids.answer }))!;
+      expect({ request: row.request ?? null, response: row.response ?? null, credits: row.credits }).toMatchObject({ request: null, response: null, credits: 3 });
+      expect(row.purged_at).toBeTruthy();
+      await expect(pool.update('ai_interactions', { id: ids.answer }, { $set: { credits: 0 } })).rejects.toThrow(/cannot be changed/);
+      await expect(pool.update('ai_interactions', { id: ids.answer }, { $set: { response: 'rewritten' } })).rejects.toThrow(/can only be removed/);
+      await expect(pool.delete('ai_interactions', { id: ids.answer })).rejects.toThrow(/cannot be deleted/);
     });
   });
 
@@ -267,7 +264,7 @@ describe('AI copilots, Automation Studio and insights', () => {
     });
 
     beforeAll(async () => {
-      ids.course = (await pool.query<{ id: string }>(`insert into courses (tenant_id, title, format) values ($1, 'Safety induction', 'online') returning id`, [t.id])).rows[0]!.id;
+      ids.course = (await pool.insert('courses', { tenant_id: t.id, title: 'Safety induction', format: 'online' })).id;
     });
 
     it('is for workflow administrators with MFA only', async () => {
@@ -299,7 +296,7 @@ describe('AI copilots, Automation Studio and insights', () => {
       expect(w).toMatchObject({ status: 'draft', canActivate: false, latest: { version: 1, testedAt: null } });
       expect(w.latest.steps[2].summary).toBe('Ask the employee\'s manager to approve: "Enrol {{employee.name}} in safety induction"');
       fails(await as('hr').post(`/automation/workflows/${w.id}/activate`), 409, 'not_tested');
-      const before = (await pool.query('select count(*)::int as n from notifications where tenant_id = $1', [t.id])).rows[0].n;
+      const before = (await pool.count('notifications', { tenant_id: t.id }));
       const stopped = ok(await as('hr').post(`/automation/workflows/${w.id}/test`).send({ sample: { 'employee.name': 'Test Person', 'employee.department': 'Quality' } }));
       expect(stopped).toMatchObject({ status: 'stopped', passed: true });
       expect(stopped.steps).toHaveLength(1);
@@ -310,8 +307,8 @@ describe('AI copilots, Automation Studio and insights', () => {
       expect(full.steps[3].detail).toBe('Would assign "Safety induction", due in 14 days');
       const rejected = ok(await as('hr').post(`/automation/workflows/${w.id}/test`).send({ sample: { 'employee.department': 'Operations' }, approvals: 'reject' }));
       expect(rejected.status).toBe('stopped');
-      expect((await pool.query('select count(*)::int as n from notifications where tenant_id = $1', [t.id])).rows[0].n).toBe(before);
-      expect((await pool.query(`select count(*)::int as n from approval_requests where tenant_id = $1 and resource_type = 'workflow_run'`, [t.id])).rows[0].n).toBe(0);
+      expect((await pool.count('notifications', { tenant_id: t.id }))).toBe(before);
+      expect((await pool.count('approval_requests', { tenant_id: t.id, resource_type: 'workflow_run' }))).toBe(0);
       const a = ok(await as('hr').post(`/automation/workflows/${w.id}/activate`));
       expect(a).toMatchObject({ status: 'active', canActivate: false });
     });
@@ -322,22 +319,21 @@ describe('AI copilots, Automation Studio and insights', () => {
       await hire('nia', 'Nia', { departmentId: ops, managerEmployeeId: people.manager.employeeId });
       await hire('none', 'Quinn', { departmentId: null });
       await outbox.dispatchOnce();
-      const runs = await pool.query(`select id, status, context from workflow_runs where workflow_id = $1 and mode = 'live' order by created_at`, [ids.wf]);
-      expect(runs.rows).toHaveLength(2);
-      ids.run = runs.rows.find((r) => r.context['employee.name'] === 'Nia Test')!.id;
-      expect(runs.rows.find((r) => r.id === ids.run)!.context).not.toHaveProperty('employee.salary');
+      const runs = await pool.find('workflow_runs', { workflow_id: ids.wf, mode: 'live' }, { sort: { created_at: 1 } });
+      expect(runs).toHaveLength(2);
+      ids.run = runs.find((r) => r.context['employee.name'] === 'Nia Test')!.id;
+      expect(runs.find((r) => r.id === ids.run)!.context).not.toHaveProperty('employee.salary');
       await runner.runDue();
       let run = ok(await as('hr').get(`/automation/runs/${ids.run}`));
       expect(run).toMatchObject({ status: 'waiting', stepIndex: 2, canCancel: true });
       expect(run.steps.map((s: any) => `${s.stepId}:${s.status}`)).toEqual(['only_ops:succeeded', 'tell_manager:succeeded', 'manager_ok:waiting']);
-      const quinn = runs.rows.find((r) => r.context['employee.name'] === 'Quinn Test')!.id;
+      const quinn = runs.find((r) => r.context['employee.name'] === 'Quinn Test')!.id;
       expect(ok(await as('hr').get(`/automation/runs/${quinn}`))).toMatchObject({ status: 'stopped' });
-      const told = await pool.query(`select title from notifications where membership_id = $1 and kind = 'workflow.notice'`, [people.manager.membershipId]);
-      expect(told.rows.map((r) => r.title)).toEqual(['Nia Test joins your team']);
+      const told = await pool.find('notifications', { membership_id: people.manager.membershipId, kind: 'workflow.notice' });
+      expect(told.map((r) => r.title)).toEqual(['Nia Test joins your team']);
 
       // The same event delivered again starts nothing new.
-      const ev = await pool.query(`select id, tenant_id, type, payload, occurred_at from outbox_events where tenant_id = $1 and type = 'employee.created' and payload->>'employeeId' = $2`, [t.id, people.nia!.employeeId]);
-      const e = ev.rows[0];
+      const e = (await pool.one('outbox_events', { tenant_id: t.id, type: 'employee.created', 'payload.employeeId': people.nia!.employeeId }))!;
       expect(await runner.onEvent({ id: e.id, tenantId: e.tenant_id, type: e.type, payload: e.payload, occurredAt: e.occurred_at })).toBe(0);
 
       const inbox = ok(await as('manager').get('/approvals/inbox')) as unknown as any[];
@@ -349,29 +345,29 @@ describe('AI copilots, Automation Studio and insights', () => {
       expect(run.status).toBe('succeeded');
       expect(run.steps.map((s: any) => `${s.stepId}:${s.status}`)).toEqual(['only_ops:succeeded', 'tell_manager:succeeded', 'manager_ok:waiting', 'manager_ok:succeeded', 'induction:succeeded', 'welcome:succeeded']);
       expect(run.steps[3].detail).toMatch(/^Approved by /);
-      const assigned = await pool.query(`select assigned_by_membership_id, due_on from course_assignments where employee_id = $1 and course_id = $2`, [people.nia!.employeeId, ids.course]);
-      expect(assigned.rows[0].assigned_by_membership_id).toBe(people.hr.membershipId);
-      const audit = await pool.query(`select actor_label from audit_events where tenant_id = $1 and action = 'learning.assigned' order by created_at desc limit 1`, [t.id]);
-      expect(audit.rows[0].actor_label).toBe('Workflow "Operations joiner" (as Hana HR)');
+      const assigned = (await pool.one('course_assignments', { employee_id: people.nia!.employeeId, course_id: ids.course }))!;
+      expect(assigned.assigned_by_membership_id).toBe(people.hr.membershipId);
+      const audit = (await pool.one('audit_events', { tenant_id: t.id, action: 'learning.assigned' }, { sort: { created_at: -1 } }))!;
+      expect(audit.actor_label).toBe('Workflow "Operations joiner" (as Hana HR)');
     });
 
     it('retries a failing step, fails the run with a notice, and replays it from that step', async () => {
-      await pool.query('update courses set archived_at = now() where id = $1', [ids.course]);
+      await pool.update('courses', { id: ids.course }, { $set: { archived_at: new Date() } });
       const m = await addMember(pool, t, { departmentId: ops, managerId: people.manager.membershipId, name: 'Omar' });
       people.omar = m;
       await hire('omar', 'Omar', { departmentId: ops, managerEmployeeId: people.manager.employeeId });
       await outbox.dispatchOnce();
       await runner.runDue();
-      const id = (await pool.query(`select id from workflow_runs where workflow_id = $1 and context->>'employee.name' = 'Omar Test'`, [ids.wf])).rows[0].id;
+      const id = (await pool.find('workflow_runs', { workflow_id: ids.wf })).find((x) => x.context['employee.name'] === 'Omar Test')!.id;
       const inbox = ok(await as('manager').get('/approvals/inbox')) as unknown as any[];
       ok(await as('manager').post(`/approvals/${inbox.find((x) => x.resourceType === 'workflow_run').id}/approve`).send({}));
       await runner.runDue();
       let run = ok(await as('hr').get(`/automation/runs/${id}`));
       expect(run).toMatchObject({ status: 'failed', canRetry: true, error: 'The course no longer exists or is archived' });
       expect((ok(await as('hr').get('/automation/runs?status=failed')) as unknown as any[]).map((r) => r.id)).toContain(id);
-      const notice = await pool.query(`select title from notifications where membership_id = $1 and kind = 'workflow.failed'`, [people.hr.membershipId]);
-      expect(notice.rows[0].title).toBe('Workflow "Operations joiner" failed at step 4');
-      await pool.query('update courses set archived_at = null where id = $1', [ids.course]);
+      const notice = await pool.find('notifications', { membership_id: people.hr.membershipId, kind: 'workflow.failed' });
+      expect(notice[0]!.title).toBe('Workflow "Operations joiner" failed at step 4');
+      await pool.update('courses', { id: ids.course }, { $set: { archived_at: null } });
       ok(await as('hr').post(`/automation/runs/${id}/retry`));
       await runner.runDue();
       run = ok(await as('hr').get(`/automation/runs/${id}`));
@@ -389,12 +385,12 @@ describe('AI copilots, Automation Studio and insights', () => {
       await hire('none', 'Della', {});
       await outbox.dispatchOnce();
       await runner.runDue();
-      const r = (await pool.query(`select id, status, wake_at from workflow_runs where workflow_id = $1`, [w.id])).rows[0];
+      const r = (await pool.one('workflow_runs', { workflow_id: w.id, mode: 'live' }))!;
       expect(r.status).toBe('waiting');
       expect(new Date(r.wake_at).getTime()).toBeGreaterThan(Date.now() + 47 * 3_600_000);
       await runner.runDue();
-      expect((await pool.query('select status from workflow_runs where id = $1', [r.id])).rows[0].status).toBe('waiting');
-      await pool.query(`update workflow_runs set wake_at = now() - interval '1 second' where id = $1`, [r.id]);
+      expect((await pool.one('workflow_runs', { id: r.id }))!.status).toBe('waiting');
+      await pool.update('workflow_runs', { id: r.id }, { $set: { wake_at: new Date(Date.now() - 1000) } });
       await runner.runDue();
       const done = ok(await as('hr').get(`/automation/runs/${r.id}`));
       expect(done.status).toBe('succeeded');
@@ -404,22 +400,23 @@ describe('AI copilots, Automation Studio and insights', () => {
 
     it('pauses itself when its owner loses permission, and keeps other workspaces out', async () => {
       // Take the owner's HR role away; the next run notices.
-      await pool.query(`delete from role_assignments ra using roles r where r.id = ra.role_id and ra.membership_id = $1 and r.key = 'hr_admin'`, [people.hr.membershipId]);
+      const hrRole = (await pool.one('roles', { tenant_id: t.id, key: 'hr_admin' }))!;
+      await pool.delete('role_assignments', { membership_id: people.hr.membershipId, role_id: hrRole.id });
       const e = ok(await as('hr2').post('/employees').send({ legalEntityId: t.legalEntityId, firstName: 'Ravi', lastName: 'Test', dateOfJoining: '2024-01-01', probationMonths: 0, departmentId: ops, managerEmployeeId: people.manager.employeeId, onboardingTemplateId: null }), 201);
       await outbox.dispatchOnce();
       await runner.runDue();
-      const run = (await pool.query(`select status, error from workflow_runs where workflow_id = $1 and subject_employee_id = $2`, [ids.wf, e.employee.id])).rows[0];
+      const run = (await pool.one('workflow_runs', { workflow_id: ids.wf, subject_employee_id: e.employee.id }))!;
       expect(run.status).toBe('failed');
       expect(run.error).toContain('no longer has permission');
       const w = ok(await as('hr2').get(`/automation/workflows/${ids.wf}`));
       expect(w).toMatchObject({ status: 'paused', statusReason: 'The workflow owner no longer has permission to manage workflows, so the workflow was paused.' });
-      await pool.query(`insert into role_assignments (tenant_id, membership_id, role_id) select $1, $2, id from roles where tenant_id = $1 and key = 'hr_admin'`, [t.id, people.hr.membershipId]);
+      await pool.insert('role_assignments', { tenant_id: t.id, membership_id: people.hr.membershipId, role_id: hrRole.id });
       fails(await as('otherOwner').get(`/automation/workflows/${ids.wf}`), 404);
       fails(await as('otherOwner').get(`/automation/runs/${ids.run}`), 404);
     });
 
     it('keeps versions immutable and drafts workflows from plain English with AI', async () => {
-      await expect(pool.query(`update workflow_versions set definition = '{}' where workflow_id = $1`, [ids.wf])).rejects.toThrow(/cannot be changed/);
+      await expect(pool.update('workflow_versions', { workflow_id: ids.wf }, { $set: { definition: {} } })).rejects.toThrow(/cannot be changed/);
       stub.reply({ text: JSON.stringify({ trigger: { event: 'leave.requested' }, steps: [
         { id: 'long', type: 'condition', field: 'leave.days', op: 'gte', value: 5 },
         { id: 'tell_hr', type: 'notify', to: 'role', role: 'hr_admin', title: '{{employee.name}} asked for {{leave.days}} days' },
@@ -440,8 +437,11 @@ describe('AI copilots, Automation Studio and insights', () => {
   describe('insights', () => {
     it('scores attrition risk with named factors for HR only, and records reviews', async () => {
       // Asha: in the company 3+ years with no move and no recognition, and a spike of sick leave.
-      await pool.query(`update employees set date_of_joining = current_date - interval '40 months' where id = $1`, [people.asha!.employeeId]);
-      await pool.query(`update employment_records set effective_from = current_date - interval '40 months' where employee_id = $1`, [people.asha!.employeeId]);
+      const joined = new Date();
+      joined.setUTCMonth(joined.getUTCMonth() - 40);
+      const fortyMonthsAgo = joined.toISOString().slice(0, 10);
+      await pool.update('employees', { id: people.asha!.employeeId }, { $set: { date_of_joining: fortyMonthsAgo } });
+      await pool.update('employment_records', { employee_id: people.asha!.employeeId }, { $set: { effective_from: fortyMonthsAgo } });
       fails(await as('manager').get('/insights/attrition'), 403);
       fails(await as('asha').get(`/insights/attrition/${people.asha!.employeeId}`), 403);
       ok(await as('hr').post('/insights/attrition/recalculate'));
@@ -456,26 +456,27 @@ describe('AI copilots, Automation Studio and insights', () => {
       const one = ok(await as('hr').get(`/insights/attrition/${people.asha!.employeeId}`));
       expect(one.reviews[0]).toMatchObject({ outcome: 'action_planned', note: 'Career conversation booked', score: 30, byName: 'Hana Test' });
       expect(one.history[0].inputs).toMatchObject({ recognitions180: 0, monthsSinceJobChange: null });
-      const viewed = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'insights.attrition_viewed'`, [t.id]);
-      expect(viewed.rows[0].n).toBeGreaterThanOrEqual(2);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'insights.attrition_viewed' })).toBeGreaterThanOrEqual(2);
       fails(await as('otherOwner').get(`/insights/attrition/${people.asha!.employeeId}`), 404);
     });
 
     it('checks a payroll run against each person\'s own finalised months', async () => {
-      const run = async (period: string, status: string) => (await pool.query<{ id: string }>(
-        `insert into payroll_runs (tenant_id, legal_entity_id, period_start, period_end, pay_date, currency, status)
-         values ($1, $2, $3::date, ($3::date + interval '1 month' - interval '1 day')::date, ($3::date + interval '1 month' - interval '1 day')::date, 'INR', $4) returning id`,
-        [t.id, t.legalEntityId, period, status],
-      )).rows[0]!.id;
-      const item = (runId: string, employeeId: string, gross: string, net: string, codes: string[]) => pool.query(
-        `insert into payroll_items (tenant_id, run_id, employee_id, days_in_period, employed_days, paid_days, gross, net, lines) values ($1, $2, $3, 30, 30, 30, $4, $5, $6)`,
-        [t.id, runId, employeeId, gross, net, JSON.stringify(codes.map((c) => ({ code: c, name: c, kind: 'earning', amount: '100.00', explanation: '' })))],
-      );
+      const monthEnd = (start: string) => {
+        const [y, m] = start.split('-').map(Number) as [number, number];
+        return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+      };
+      const run = async (period: string, status: string) => (await pool.insert('payroll_runs', {
+        tenant_id: t.id, legal_entity_id: t.legalEntityId, period_start: period, period_end: monthEnd(period), pay_date: monthEnd(period), currency: 'INR', status,
+      })).id as string;
+      const item = (runId: string, employeeId: string, gross: string, net: string, codes: string[]) => pool.insert('payroll_items', {
+        tenant_id: t.id, run_id: runId, employee_id: employeeId, days_in_period: 30, employed_days: 30, paid_days: 30, gross, net,
+        lines: codes.map((c) => ({ code: c, name: c, kind: 'earning', amount: '100.00', explanation: '' })),
+      });
       for (const [p, n] of [['2026-07-01', '45000.00'], ['2026-08-01', '45000.00'], ['2026-09-01', '46000.00']] as const) {
         const r = await run(p, 'computed');
         await item(r, people.asha!.employeeId, '50000.00', n, ['BASIC', 'HRA', 'PF']);
         await item(r, people.manager!.employeeId!, '80000.00', '70000.00', ['BASIC', 'HRA', 'PF']);
-        await pool.query(`update payroll_runs set status = 'finalised', finalised_at = now() where id = $1`, [r]);
+        await pool.update('payroll_runs', { id: r }, { $set: { status: 'finalised', finalised_at: new Date() } });
       }
       const current = await run('2026-10-01', 'computed');
       await item(current, people.asha!.employeeId, '65000.00', '58000.00', ['BASIC', 'HRA', 'PF', 'BONUS']);

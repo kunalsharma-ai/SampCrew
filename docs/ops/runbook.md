@@ -18,7 +18,7 @@ them, **real keys** for the Claude API and Expo push. Everything below is alread
 | `api` | `api` | 4000 (internal) | NestJS API, background loops (outbox, email, webhooks, workflows, daily HR jobs) |
 | `migrate` | `tools` | none | One-shot job before every API start: migrations, catalogue sync, first Super Admin |
 | `backup` | `tools` | none | Database and uploaded-file backups every `BACKUP_INTERVAL_HOURS` |
-| `postgres` | `postgres:16-alpine` | internal | Bundled database (replace with a managed PostgreSQL 16 for production) |
+| `mongo` | `mongo:8.0` | internal | Bundled database: a one-node replica set with authentication (or use MongoDB Atlas, see docs/ops/mongodb.md) |
 | `redis` | `redis:7-alpine` | internal | Rate-limit counters shared by API servers (nothing persistent) |
 
 The database and Redis sit on an internal network the proxy cannot reach. All images run as non-root users and read
@@ -88,24 +88,27 @@ docker compose pull && docker compose up -d --wait                    # migrate 
 ```
 
 - **Rollback**: set `CREW_VERSION` back and run `docker compose up -d --wait`. Check the release's migrations first:
-  when they only add tables, columns or functions (true of migrations 0001 to 0020: none drops, renames or retypes a column or table), the previous images keep working
-  against the upgraded database. When a release says a migration changes or removes something, restore the
+  when they only add collections, fields or indexes, the previous images keep working against the upgraded
+  database. A migration that tightens a validator or renames a field is called out in its release notes. When a release says a migration changes or removes something, restore the
   pre-upgrade backup instead (section 5).
 - **Zero downtime** needs two or more API servers behind a load balancer (Kubernetes or similar). With more than one API
   server, `REDIS_URL` must be set (compose sets it), and the daily HR jobs already run on one server at a time.
 
 ## 4. Backups
 
-The `backup` service writes `crew-db-<time>.dump` (pg_dump custom format) and `crew-files-<time>.tar.gz` (uploaded
+The `backup` service writes `crew-db-<time>.archive.gz` (a gzip `mongodump` archive) and `crew-files-<time>.tar.gz` (uploaded
 documents, CVs, receipts) to the `backups` volume every `BACKUP_INTERVAL_HOURS` (24), keeps `BACKUP_KEEP_DAYS` (14),
 and encrypts both with `BACKUP_PASSPHRASE` (AES-256-GCM; a changed or truncated file refuses to decrypt).
 
 - **Copy them off the host** every day (object storage with versioning and a retention lock is best):
   `docker run --rm -v crew_backups:/b alpine ls /b` shows them; sync that volume with your tool of choice.
 - **Backup now**: `docker compose run --rm backup /app/infra/deploy/scripts/backup.sh`
-- **With a managed database**, turn on its point-in-time recovery too; the dumps are the portable second copy.
+- **On MongoDB Atlas**, turn on continuous cloud backup (point-in-time recovery) too; the archives are the portable
+  second copy. Each collection in an archive is consistent, but writes made during the dump can be in some
+  collections and not others, so the archives are a daily safety copy, not point-in-time recovery.
 - **Restore drill**: `docker compose run --rm migrate sh -c 'cd /app/db && ./node_modules/.bin/tsx scripts/dr-drill.ts'`
-  restores the live database into a scratch copy and checks tables, rows, Row-Level Security and every audit chain.
+  restores the live database into a scratch copy and checks collections, documents, validators, indexes and every
+  audit chain.
   Run it monthly and after upgrades; the CI smoke test does a full backup and restore on every change.
 
 ## 5. Restore
@@ -113,14 +116,16 @@ and encrypts both with `BACKUP_PASSPHRASE` (AES-256-GCM; a changed or truncated 
 Restore into a **new, empty** database (the script refuses to overwrite one), check it, then point the API at it:
 
 ```sh
-docker compose exec postgres psql -U postgres -c 'create database crew_restored'
-docker compose run --rm -e RESTORE_DATABASE_URL=postgres://postgres:$POSTGRES_PASSWORD@postgres:5432/crew_restored \
-  backup /app/infra/deploy/scripts/restore.sh /backups/crew-db-<time>.dump.enc
+docker compose run --rm \
+  -e RESTORE_MONGODB_URL="mongodb://root:$MONGO_ROOT_PASSWORD@mongo:27017/crew_restored?replicaSet=rs0&authSource=admin" \
+  -e MONGODB_API_PASSWORD="$MONGODB_API_PASSWORD" \
+  backup /app/infra/deploy/scripts/restore.sh /backups/crew-db-<time>.archive.gz.enc
 ```
 
-It recreates the database roles if the server is new, restores, applies any newer migrations, sets the API login's
-password from `DATABASE_API_PASSWORD`, and verifies Row-Level Security and every workspace's audit chain. Then set
-`POSTGRES_DB=crew_restored` in `.env` and `docker compose up -d --wait`. Restore the files with
+It restores the archive under the new database's name, applies any newer migrations, creates the API's `crew_api`
+user in it, and checks that every collection has its validator and every audit chain (each workspace's and the
+platform's) verifies. Then point the API at it: set `MONGODB_URL` and `MONGODB_ADMIN_URL` in `.env` to the
+`crew_restored` database (`authSource=crew_restored` for `crew_api`) and `docker compose up -d --wait`. Restore the files with
 `tar -xzf crew-files-<time>.tar.gz -C <files volume>` (decrypt first with
 `node /app/infra/deploy/scripts/crypt.mjs decrypt <in> <out>`).
 
@@ -131,9 +136,10 @@ minutes). Recovery time measured by the drill: seconds for the demo data size, g
 
 | Secret | Rotate how |
 |---|---|
-| `JWT_ACCESS_SECRET`, `JWT_PLATFORM_SECRET` | Change and restart the API. Tokens signed with the old secret stop working within the access-token lifetime (15 minutes); to sign everyone out at once, also run `update sessions set revoked_at = now(), revoked_reason = 'rotation' where revoked_at is null;` in psql. |
-| `DATABASE_API_PASSWORD` | Change in `.env`, run `docker compose up -d --wait` (the migrate job sets the role's password before the API starts). |
-| `POSTGRES_PASSWORD` | `alter role postgres password '...'` in psql, then update `.env`. |
+| `JWT_ACCESS_SECRET`, `JWT_PLATFORM_SECRET` | Change and restart the API. Tokens signed with the old secret stop working within the access-token lifetime (15 minutes); to sign everyone out at once, also run `db.sessions.updateMany({ revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'rotation' } })` in mongosh. |
+| `MONGODB_API_PASSWORD` | Change in `.env`, run `docker compose up -d --wait` (the migrate job sets the `crew_api` user's password before the API starts). |
+| `MONGO_ROOT_PASSWORD` | `db.getSiblingDB('admin').changeUserPassword('root', '...')` in mongosh, then update `.env`. (`MONGO_INITDB_ROOT_PASSWORD` only applies on the first start.) |
+| `MONGO_REPLICA_KEY` | Only matters when you add members to the replica set; change it on every member at once and restart them. |
 | `REDIS_PASSWORD` | Change and `docker compose up -d --wait`; counters reset, which is harmless. |
 | `FIELD_ENCRYPTION_KEY` | In three steps, below. Never just replace it: values written with the old key (MFA secrets, bank and tax identifiers, webhook, Slack and single sign-on secrets, and the keys and passwords saved in Console > Integrations) need it to be read. |
 | `BACKUP_PASSPHRASE` | Change for new backups; keep the old one for as long as older backups are kept. |
@@ -186,8 +192,9 @@ environment variables from it instead of using `.env`.
   shown to the person. Caddy logs requests as JSON. Ship both to your log platform.
 - **Monitoring**: alert on `/api/v1/health/ready` from outside, on container restarts, on disk use of the database and
   backups volumes, and on the Console's System health page (database, migrations, outbox backlog, audit chain).
-- **Scaling**: raise `DATABASE_POOL_MAX` with care (connections per API server × servers must stay under the
-  database's limit). Measured capacity on one 4-core machine is in `docs/ops/load-latest.md` and
+- **Scaling**: raise `MONGODB_POOL_MAX` with care (connections per API server × servers must stay under the
+  database's limit; on Atlas it depends on the cluster tier). For high availability run a three-member replica set
+  or Atlas; one node has no failover. Measured capacity on one 4-core machine is in `docs/ops/load-latest.md` and
   `docs/ops/load-workflows-latest.md`; measure again on the production hardware.
 - **Attendance devices** that use the ZKTeco push protocol call `https://<API address>/iclock/...`. Devices that can
   only speak plain http need a separate http listener for `/iclock` only; it is not enabled by default.

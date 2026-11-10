@@ -2,11 +2,14 @@ import { Injectable } from '@nestjs/common';
 import type { DeviceRegisterInput } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one } from '../../platform/database/database.service';
+import { MongoService as DatabaseService } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 
-const COLS = `id, platform, app_version as "appVersion", model, os_version as "osVersion", (push_token is not null) as "pushEnabled",
-  registered_at as "registeredAt", last_seen_at as "lastSeenAt", last_sync_at as "lastSyncAt", revoked_at as "revokedAt"`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const deviceView = (d: Record<string, any>) => ({
+  id: d.id, platform: d.platform, appVersion: d.app_version, model: d.model ?? null, osVersion: d.os_version ?? null, pushEnabled: d.push_token != null,
+  registeredAt: d.registered_at, lastSeenAt: d.last_seen_at ?? null, lastSyncAt: d.last_sync_at ?? null, revokedAt: d.revoked_at ?? null,
+});
 
 /**
  * Phones and tablets signed in to the mobile app. Each device belongs to one workspace membership and is
@@ -22,45 +25,46 @@ export class MobileService {
 
   async register(input: DeviceRegisterInput) {
     const actor = requestContext.tenantActor();
-    const family = await this.db.platform((tx) => one<{ family_id: string }>(tx, 'select family_id from sessions where id = $1', [actor.sessionId]));
+    const family = await this.db.platform((tx) => tx.collection('sessions').findOne({ id: actor.sessionId }, { projection: { family_id: 1 } }));
     return this.db.tenant(async (tx) => {
-      const existing = await one<{ id: string; revoked_at: Date | null }>(tx, 'select id, revoked_at from mobile_devices where membership_id = $1 and installation_id = $2', [actor.membershipId, input.installationId]);
+      const devices = tx.collection('mobile_devices');
+      const existing = await devices.findOne({ membership_id: actor.membershipId, installation_id: input.installationId });
+      const fields = { platform: input.platform, app_version: input.appVersion, model: input.model, os_version: input.osVersion, session_family_id: (family?.family_id as string | undefined) ?? null };
       let id: string;
       if (existing) {
-        id = existing.id;
-        await tx.query(
-          `update mobile_devices set platform = $2, app_version = $3, model = $4, os_version = $5, session_family_id = $6, last_seen_at = now(),
-                  revoked_at = null, push_token = case when revoked_at is null then push_token end where id = $1`,
-          [id, input.platform, input.appVersion, input.model, input.osVersion, family?.family_id ?? null],
-        );
+        id = existing.id as string;
+        // A device signed out earlier comes back without its old push token.
+        await devices.updateOne({ id }, { $set: { ...fields, last_seen_at: new Date(), revoked_at: null, ...(existing.revoked_at ? { push_token: null } : {}) } });
       } else {
-        id = (await one<{ id: string }>(
-          tx,
-          `insert into mobile_devices (tenant_id, membership_id, installation_id, platform, app_version, model, os_version, session_family_id)
-           values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7) returning id`,
-          [actor.membershipId, input.installationId, input.platform, input.appVersion, input.model, input.osVersion, family?.family_id ?? null],
-        ))!.id;
+        id = (await devices.insert({ membership_id: actor.membershipId, installation_id: input.installationId, ...fields })).id as string;
       }
       if (!existing || existing.revoked_at) {
         await this.audit.record(tx, { action: 'mobile.device_registered', resourceType: 'mobile_device', resourceId: id, metadata: { platform: input.platform, model: input.model, appVersion: input.appVersion } });
       }
-      return one(tx, `select ${COLS} from mobile_devices where id = $1`, [id]);
+      return deviceView((await devices.findOne({ id }))!);
     });
   }
 
   async list() {
     const actor = requestContext.tenantActor();
-    return this.db.tenant((tx) => many(tx, `select ${COLS} from mobile_devices where membership_id = $1 order by revoked_at nulls first, last_seen_at desc`, [actor.membershipId]));
+    return this.db.tenant(async (tx) => {
+      const t = (d: unknown) => (d instanceof Date ? d.getTime() : 0);
+      const list = await tx.collection('mobile_devices').find({ membership_id: actor.membershipId });
+      // Signed-in devices first (PostgreSQL's "revoked_at nulls first"), each group most recently seen first.
+      list.sort((a, b) => (a.revoked_at ? 1 : 0) - (b.revoked_at ? 1 : 0) || t(a.revoked_at) - t(b.revoked_at) || t(b.last_seen_at) - t(a.last_seen_at));
+      return list.map(deviceView);
+    });
   }
 
   async setPushToken(id: string, token: string | null) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const d = await one(tx, 'select id from mobile_devices where id = $1 and membership_id = $2 and revoked_at is null', [id, actor.membershipId]);
-      if (!d) throw Errors.notFound('Device');
+      const devices = tx.collection('mobile_devices');
+      if (!(await devices.exists({ id, membership_id: actor.membershipId, revoked_at: null }))) throw Errors.notFound('Device');
+      const now = new Date();
       // A phone has one token. If someone else signed in on it before, they stop getting pushes here.
-      if (token) await tx.query('update mobile_devices set push_token = null, push_token_updated_at = now() where push_token = $1 and id <> $2', [token, id]);
-      await tx.query('update mobile_devices set push_token = $2, push_token_updated_at = now(), last_seen_at = now() where id = $1', [id, token]);
+      if (token) await devices.update({ push_token: token, id: { $ne: id } }, { $set: { push_token: null, push_token_updated_at: now } });
+      await devices.updateOne({ id }, { $set: { push_token: token, push_token_updated_at: now, last_seen_at: now } });
       return { pushEnabled: token !== null };
     });
   }
@@ -69,16 +73,16 @@ export class MobileService {
   async revoke(id: string) {
     const actor = requestContext.tenantActor();
     const d = await this.db.tenant(async (tx) => {
-      const row = await one<{ session_family_id: string | null }>(tx, 'select session_family_id from mobile_devices where id = $1 and membership_id = $2 and revoked_at is null', [id, actor.membershipId]);
+      const row = await tx.collection('mobile_devices').findOne({ id, membership_id: actor.membershipId, revoked_at: null });
       if (!row) throw Errors.notFound('Device');
-      await tx.query('update mobile_devices set revoked_at = now(), push_token = null where id = $1', [id]);
+      await tx.collection('mobile_devices').updateOne({ id }, { $set: { revoked_at: new Date(), push_token: null } });
       await this.audit.record(tx, { action: 'mobile.device_signed_out', resourceType: 'mobile_device', resourceId: id });
       return row;
     });
     if (d.session_family_id) {
-      await this.db.platform((tx) => tx.query(
-        `update sessions set revoked_at = now(), revoked_reason = 'device_signed_out' where family_id = $1 and user_id = $2 and revoked_at is null`,
-        [d.session_family_id, actor.userId],
+      await this.db.platform((tx) => tx.collection('sessions').update(
+        { family_id: d.session_family_id, user_id: actor.userId, revoked_at: null },
+        { $set: { revoked_at: new Date(), revoked_reason: 'device_signed_out' } },
       ));
     }
   }

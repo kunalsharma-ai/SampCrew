@@ -1,8 +1,8 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 1)]);
 const MONTH = '2026-09';
@@ -10,7 +10,7 @@ const MONTH = '2026-09';
 /** Phase 5 through the HTTP API: settings, salaries, a full payroll run with approval, payslips, expenses and exports. */
 describe('payroll', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let engineering: string;
@@ -33,10 +33,7 @@ describe('payroll', () => {
     return items.length;
   };
   const punch = (employeeId: string, date: string, time: string, direction: 'in' | 'out') =>
-    pool.query(
-      `insert into attendance_events (tenant_id, employee_id, source, source_event_id, captured_at, direction) values ($1, $2, 'import', gen_random_uuid()::text, $3, $4)`,
-      [t.id, employeeId, `${date}T${time}:00+05:30`, direction],
-    );
+    pool.insert('attendance_events', { tenant_id: t.id, employee_id: employeeId, source: 'import', source_event_id: randomUUID(), captured_at: new Date(`${date}T${time}:00+05:30`), direction });
 
   beforeAll(async () => {
     app = await createApp();
@@ -44,10 +41,7 @@ describe('payroll', () => {
     t = await createTenant(pool);
     other = await createTenant(pool);
     engineering = await department(pool, t, 'Engineering');
-    mumbai = (await pool.query<{ id: string }>(
-      `insert into locations (tenant_id, legal_entity_id, name, timezone, city, region, country_code) values ($1, $2, 'Mumbai office', 'Asia/Kolkata', 'Mumbai', 'Maharashtra', 'IN') returning id`,
-      [t.id, t.legalEntityId],
-    )).rows[0]!.id;
+    mumbai = (await pool.insert('locations', { tenant_id: t.id, legal_entity_id: t.legalEntityId, name: 'Mumbai office', timezone: 'Asia/Kolkata', city: 'Mumbai', region: 'Maharashtra', country_code: 'IN' })).id;
     people.hr = await addMember(pool, t, { roles: ['hr_admin'], name: 'Hana HR' });
     people.payroll = await addMember(pool, t, { roles: ['payroll_admin'], name: 'Pat Payroll' });
     people.finance = await addMember(pool, t, { roles: ['finance_manager'], name: 'Fin Finance' });
@@ -81,8 +75,8 @@ describe('payroll', () => {
       await punch(people.asha.employeeId!, date, '09:00', 'in');
       await punch(people.asha.employeeId!, date, d === 9 ? '14:30' : '18:00', 'out');
     }
-    const lwp = (await pool.query<{ id: string }>(`insert into leave_types (tenant_id, code, name, paid) values ($1, 'LWP', 'Leave without pay', false) returning id`, [t.id])).rows[0]!.id;
-    await pool.query(`insert into leave_requests (tenant_id, employee_id, leave_type_id, start_date, end_date, days, status) values ($1, $2, $3, '2026-09-15', '2026-09-15', 1, 'approved')`, [t.id, people.asha.employeeId, lwp]);
+    const lwp = (await pool.insert('leave_types', { tenant_id: t.id, code: 'LWP', name: 'Leave without pay', paid: false })).id;
+    await pool.insert('leave_requests', { tenant_id: t.id, employee_id: people.asha.employeeId, leave_type_id: lwp, start_date: '2026-09-15', end_date: '2026-09-15', days: 1, status: 'approved' });
   });
 
   afterAll(async () => {
@@ -156,8 +150,9 @@ describe('payroll', () => {
       expect(list.find((r) => r.name === 'Asha Rao')!.annualCtc).toBe('600000.00');
       expect(list.find((r) => r.name === 'Cleo NoSalary')!.annualCtc).toBeNull();
       // The audit trail records the revision without the pay amount.
-      const audit = await pool.query(`select changes, metadata from audit_events where tenant_id = $1 and action = 'employee_salary.assigned'`, [t.id]);
-      expect(JSON.stringify(audit.rows)).not.toContain('600000');
+      const audit = await pool.find('audit_events', { tenant_id: t.id, action: 'employee_salary.assigned' });
+      expect(audit.length).toBeGreaterThan(0);
+      expect(JSON.stringify(audit.map((a) => [a.changes, a.metadata]))).not.toContain('600000');
     });
 
     it('refuses a structure that does not fit the CTC', async () => {
@@ -246,7 +241,7 @@ describe('payroll', () => {
       // Joined on the 16th: 15 of 30 days. ESI applies below the ceiling (rounded up), Maharashtra PT 175, the approved cab claim is reimbursed.
       expect(bala).toMatchObject({ employedDays: 15, lopDays: '0.00', paidDays: '15.00', gross: '9400.00', deductions: '846.00', reimbursements: '1200.50', net: '9754.50' });
       expect(run).toMatchObject({ employeeCount: 2, gross: '53583.34', net: '51937.84' });
-      expect((await pool.query('select payroll_run_id from expense_claims where id = $1', [claimId])).rows[0].payroll_run_id).toBe(runId);
+      expect((await pool.one('expense_claims', { id: claimId }))!.payroll_run_id).toBe(runId);
     });
 
     it('applies adjustments and loss-of-pay overrides with a reason, then recomputes', async () => {
@@ -277,15 +272,15 @@ describe('payroll', () => {
       expect(run.can.exportBankFile).toBe(true);
 
       // Frozen in the database, not just in the API.
-      await expect(pool.query(`update payroll_items set net = 1 where run_id = $1`, [runId])).rejects.toThrow(/finalised payroll run cannot be changed/);
-      await expect(pool.query(`update payroll_runs set net = 1 where id = $1`, [runId])).rejects.toThrow(/finalised/);
+      await expect(pool.update('payroll_items', { run_id: runId }, { $set: { net: '1' } })).rejects.toThrow(/finalised payroll run cannot be changed/);
+      await expect(pool.update('payroll_runs', { id: runId }, { $set: { net: '1' } })).rejects.toThrow(/finalised/);
+      await expect(pool.insert('payroll_adjustments', { tenant_id: t.id, run_id: runId, employee_id: people.asha.employeeId, kind: 'earning', label: 'Late', amount: '1', reason: 'x' })).rejects.toThrow(/finalised/);
       expect((await as('payroll').post(`/payroll/runs/${runId}/cancel`).send({ reason: 'Too late now' })).status).toBe(409);
       // Attendance for the month is locked, the claim is paid, and payslips were announced.
-      const lock = await pool.query(`select 1 from attendance_periods where tenant_id = $1 and period_start = '2026-09-01' and period_end = '2026-09-30' and unlocked_at is null`, [t.id]);
-      expect(lock.rowCount).toBe(1);
-      expect((await pool.query('select status from expense_claims where id = $1', [claimId])).rows[0].status).toBe('paid');
-      const notes = await pool.query(`select title from notifications where tenant_id = $1 and kind = 'payslip.published' and membership_id = $2`, [t.id, people.asha.membershipId]);
-      expect(notes.rows[0].title).toBe('Your payslip for September 2026 is ready');
+      expect(await pool.count('attendance_periods', { tenant_id: t.id, period_start: '2026-09-01', period_end: '2026-09-30', unlocked_at: null })).toBe(1);
+      expect((await pool.one('expense_claims', { id: claimId }))!.status).toBe('paid');
+      const notes = await pool.find('notifications', { tenant_id: t.id, kind: 'payslip.published', membership_id: people.asha.membershipId });
+      expect(notes[0]!.title).toBe('Your payslip for September 2026 is ready');
     });
 
     it('carries this year’s pay and tax into the next month', async () => {
@@ -315,8 +310,7 @@ describe('payroll', () => {
       expect(ok(await as('asha').get('/payslips')) as unknown as unknown[]).toHaveLength(1);
       expect((await as('manager').get(`/payslips/${mine[0]!.id}`)).status).toBe(404);
       ok(await as('payroll').get(`/payslips/${bala.id}`));
-      const viewed = await pool.query(`select 1 from audit_events where tenant_id = $1 and action = 'payslip.viewed'`, [t.id]);
-      expect(viewed.rowCount).toBe(1);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'payslip.viewed' })).toBe(1);
     });
 
     it('exports the register and an audited bank file with decrypted accounts', async () => {
@@ -332,9 +326,9 @@ describe('payroll', () => {
       expect(bank.text).toContain('123456789012');
       expect(bank.text).toContain('MISSING'); // Bala has no bank details yet
       expect(bank.headers['x-missing-bank-details']).toBe('1');
-      const audit = await pool.query(`select metadata from audit_events where tenant_id = $1 and action = 'payroll_run.bank_file_exported'`, [t.id]);
-      expect(audit.rows[0].metadata.rows).toBe(2);
-      expect(JSON.stringify(audit.rows)).not.toContain('123456789012');
+      const audit = await pool.find('audit_events', { tenant_id: t.id, action: 'payroll_run.bank_file_exported' });
+      expect(audit[0]!.metadata.rows).toBe(2);
+      expect(JSON.stringify(audit)).not.toContain('123456789012');
     });
   });
 
@@ -342,20 +336,11 @@ describe('payroll', () => {
     it('keeps every Phase 5 record inside its workspace', async () => {
       const tables = ['pay_components', 'salary_structures', 'salary_structure_lines', 'employee_salaries', 'employee_salary_lines', 'statutory_settings',
         'payroll_runs', 'payroll_items', 'payroll_adjustments', 'expense_categories', 'expense_claims'];
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        await client.query('set local role crew_app');
-        await client.query(`select set_config('app.tenant_id', $1, true)`, [other.id]);
-        for (const table of tables) {
-          const r = await client.query(`select count(*)::int as n from ${table} where tenant_id = $1`, [t.id]);
-          expect(r.rows[0].n, table).toBe(0);
-        }
-        await expect(client.query(`insert into expense_categories (tenant_id, name) values ($1, 'Injected')`, [t.id])).rejects.toThrow();
-        await client.query('rollback');
-      } finally {
-        client.release();
+      for (const table of tables) {
+        const ids = (await pool.find(table, { tenant_id: t.id })).map((x) => x.id);
+        expect(await pool.tenant(other.id, (tx) => tx.collection(table).count({ id: { $in: ids } })), table).toBe(0);
       }
+      await expect(pool.tenant(other.id, (tx) => tx.collection('expense_categories').insert({ tenant_id: t.id, name: 'Injected' }))).rejects.toThrow();
       const otherOwner = (await loginWithMfa(app, pool, other.ownerEmail)).accessToken;
       expect((await api(app, otherOwner).get(`/payroll/runs/${runId}`)).status).toBe(404);
       expect((await api(app, otherOwner).get(`/expenses/claims/${claimId}`)).status).toBe(404);

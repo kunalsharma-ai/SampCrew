@@ -2,6 +2,7 @@
 # Smoke test of the production stack: builds the images, starts compose.yml with TLS on localhost, then checks it
 # from the outside: health, TLS and security headers, sign-in and the main pages in a browser, the Console's IP
 # allowlist, a backup, and a restore of that backup into a new database with its checks.
+# The API signs in to MongoDB as its own crew_api user, which the migration job creates.
 #
 #   infra/deploy/smoke.sh            build and test
 #   SMOKE_SKIP_BUILD=1 smoke.sh      reuse images already built
@@ -46,15 +47,19 @@ WEB_URL=https://localhost:8443 CONSOLE_URL=https://localhost:8444 API_URL=https:
 dc exec -T backup /app/infra/deploy/scripts/backup.sh
 file=$(dc exec -T backup sh -c 'ls -1t /backups/crew-db-* | head -1')
 echo "latest backup: $file"
-dc exec -T postgres psql -U postgres -qc 'create database crew_restore_check'
-pg_pw=$(grep '^POSTGRES_PASSWORD=' .env.smoke | cut -d= -f2-)
-api_pw=$(grep '^DATABASE_API_PASSWORD=' .env.smoke | cut -d= -f2-)
-# Same cluster as the live database, so the crew_api password must stay the live one (roles are cluster-wide).
-dc exec -T -e RESTORE_DATABASE_URL="postgres://postgres:$pg_pw@postgres:5432/crew_restore_check" -e DATABASE_API_PASSWORD="$api_pw" \
+root_pw=$(grep '^MONGO_ROOT_PASSWORD=' .env.smoke | cut -d= -f2-)
+api_pw=$(grep '^MONGODB_API_PASSWORD=' .env.smoke | cut -d= -f2-)
+admin() { echo "mongodb://root:$root_pw@mongo:27017/$1?replicaSet=rs0&authSource=admin"; }
+count() { dc exec -T mongo mongosh --quiet "$(admin "$1")" --eval 'db.employees.countDocuments()'; }
+dc exec -T -e RESTORE_MONGODB_URL="$(admin crew_restore_check)" -e MONGODB_API_PASSWORD="$api_pw" \
   backup /app/infra/deploy/scripts/restore.sh "$file"
-src=$(dc exec -T postgres psql -U postgres -d crew -Atc 'select count(*) from employees')
-dst=$(dc exec -T postgres psql -U postgres -d crew_restore_check -Atc 'select count(*) from employees')
+src=$(count crew)
+dst=$(count crew_restore_check)
 [ "$src" = "$dst" ] || { echo "restore has $dst employees, source has $src" >&2; exit 1; }
 echo "restore matches the source ($src employees)"
-dc exec -T postgres psql -U postgres -qc 'drop database crew_restore_check'
+# A restore never overwrites: a second one into the same database is refused.
+if dc exec -T -e RESTORE_MONGODB_URL="$(admin crew_restore_check)" backup /app/infra/deploy/scripts/restore.sh "$file" > /dev/null 2>&1; then
+  echo "restore.sh overwrote a database that was not empty" >&2; exit 1
+fi
+dc exec -T mongo mongosh --quiet "$(admin crew_restore_check)" --eval 'db.dropDatabase()' > /dev/null
 echo "production stack smoke test passed"

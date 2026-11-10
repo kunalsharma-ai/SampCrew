@@ -13,13 +13,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
       # Shared rate-limit counters (apps/api/test/rate-limits.spec.ts runs two API instances against it).
       redis:
         image: redis:7
@@ -27,7 +20,7 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/crew_test
+      TEST_MONGODB_URL: mongodb://localhost:27017/crew_test?replicaSet=rs0
       REDIS_TEST_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v5
@@ -39,23 +32,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:packages
       - run: pnpm typecheck
-      - run: pnpm test
-      # MongoDB data layer (replacing PostgreSQL module by module). A replica set, because it relies on transactions.
+      # A replica set, because SampCrew relies on multi-document transactions.
       - name: Start MongoDB replica set
-        run: |
-          # mongo:8.0 refuses to start on Linux 6.19+ (SERVER-121912). Turning off tcmalloc's rseq use lets it run (docker-library/mongo#765).
-          docker run -d --name mongo -p 27017:27017 -e GLIBC_TUNABLES=glibc.pthread.rseq=1 mongo:8.0 mongod --replSet rs0 --bind_ip_all
-          ready() { docker exec mongo mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' >/dev/null 2>&1; }
-          for i in $(seq 1 60); do ready && break; sleep 1; done
-          # Show why mongod stopped or never answered, instead of failing on the next command with no clue.
-          ready || { docker ps -a --filter name=mongo; docker logs mongo 2>&1 | tail -80; exit 1; }
-          docker exec mongo mongosh --quiet --eval 'rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] })'
-          for i in $(seq 1 60); do [ "$(docker exec mongo mongosh --quiet --eval 'db.hello().isWritablePrimary')" = "true" ] && break; sleep 1; done
-          [ "$(docker exec mongo mongosh --quiet --eval 'db.hello().isWritablePrimary')" = "true" ] || { docker logs mongo 2>&1 | tail -80; exit 1; }
-      - name: MongoDB tests
+        run: infra/ci/start-mongo.sh
+      - run: pnpm test
+      - name: Data-layer engine tests
         run: pnpm test:mongo
-        env:
-          TEST_MONGODB_URL: mongodb://localhost:27017/crew_test?replicaSet=rs0
       - name: Outlook signature test kit builds
         run: pnpm signature:test-kit
       - name: Build apps
@@ -67,7 +49,7 @@ jobs:
           cd apps/api && node dist/openapi-export.js > /tmp/openapi.json
           diff -q /tmp/openapi.json ../../docs/api/openapi.json || (echo "Run: pnpm --filter @crew/api build && pnpm --filter @crew/api openapi" && exit 1)
         env:
-          DATABASE_URL: postgres://unused
+          MONGODB_URL: mongodb://unused:27017/crew
           JWT_ACCESS_SECRET: ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-access
           JWT_PLATFORM_SECRET: ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-platform
           FIELD_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
@@ -76,21 +58,10 @@ jobs:
     # Drives the real Web Portal, the mobile app's browser build and the Super Admin Console in Chromium against a seeded database.
     runs-on: ubuntu-latest
     needs: test
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: crew
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     # Throwaway values for a disposable CI database; nothing here is used outside this job.
     env:
       CREW_ENV: local
-      DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/crew
-      DATABASE_API_PASSWORD: ci-api-password-not-secret
-      DATABASE_URL: postgres://crew_api:ci-api-password-not-secret@localhost:5432/crew
+      MONGODB_URL: mongodb://localhost:27017/crew?replicaSet=rs0
       WEB_PUBLIC_URL: http://localhost:3000
       CREW_API_URL: http://localhost:4000
       SESSION_COOKIE_SECURE: "false"
@@ -113,6 +84,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      - name: Start MongoDB replica set
+        run: infra/ci/start-mongo.sh
       - run: pnpm build
       - name: Build the mobile app for the browser
         run: pnpm --filter @crew/mobile export:web
@@ -175,15 +148,15 @@ jobs:
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:hardening
       - name: Backup and restore drill
-        # The client tools must match the server's major version, and the runner's own are newer. Run them from the
-        # same postgres:16 image as the service (already pulled), sharing /tmp where the drill keeps its dump file.
+        # mongodump and mongorestore come from the mongo:8.0 container that runs the database, so they always match
+        # the server; the archive is streamed through stdin and stdout.
         run: |
-          mkdir -p "$RUNNER_TEMP/pg16"
-          for t in pg_dump pg_restore; do
-            printf '#!/bin/sh\nexec docker run --rm --network host -v /tmp:/tmp postgres:16 %s "$@"\n' "$t" > "$RUNNER_TEMP/pg16/$t"
+          mkdir -p "$RUNNER_TEMP/mongo-tools"
+          for t in mongodump mongorestore; do
+            printf '#!/bin/sh\nexec docker exec -i mongo %s "$@"\n' "$t" > "$RUNNER_TEMP/mongo-tools/$t"
           done
-          chmod +x "$RUNNER_TEMP/pg16/"*
-          PG_BIN="$RUNNER_TEMP/pg16" pnpm --filter @crew/db dr-drill
+          chmod +x "$RUNNER_TEMP/mongo-tools/"*
+          MONGO_TOOLS="$RUNNER_TEMP/mongo-tools" pnpm --filter @crew/db dr-drill
       - name: Super Admin Console smoke test
         run: |
           pkill -f "dist/main.js" || true
@@ -254,7 +227,7 @@ jobs:
         run: tail -n 200 api.log web.log console.log stub.log || true
 
   deploy:
-    # Builds the production images and runs infra/deploy/compose.yml as a real stack (TLS proxy, PostgreSQL, Redis,
+    # Builds the production images and runs infra/deploy/compose.yml as a real stack (TLS proxy, MongoDB, Redis,
     # migration job, backups), then checks it from outside and restores a backup into a new database.
     runs-on: ubuntu-latest
     needs: test
@@ -277,16 +250,8 @@ jobs:
     # instead of the protocol stub the "test" job uses. ClamAV downloads its signatures when the container starts.
     runs-on: ubuntu-latest
     needs: test
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/crew_test
+      TEST_MONGODB_URL: mongodb://localhost:27017/crew_test?replicaSet=rs0
       CLAMAV_TEST_URL: tcp://127.0.0.1:3310
     steps:
       - uses: actions/checkout@v5
@@ -297,6 +262,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:packages
+      - name: Start MongoDB replica set
+        run: infra/ci/start-mongo.sh
       - name: Start ClamAV and wait for its signatures
         run: |
           docker run -d --name clamav -p 3310:3310 clamav/clamav:1.4

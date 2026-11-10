@@ -2,12 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AI_FEATURE_LABEL, type AiFeature, creditsFor, redact, redactionCount } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { AppError, Errors } from '../../platform/http/errors';
 import { HttpStatus } from '@nestjs/common';
 import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
 import { AnthropicProvider, type AiProvider, ProviderError } from './ai-provider';
+
+/** The start of the current calendar month in UTC, from which AI credits are counted. */
+export const monthStart = () => new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
 
 export interface Evidence { kind: string; id: string; title: string }
 
@@ -67,19 +70,20 @@ export class AiGatewayService {
     return p ? { configured: true, provider: p.name, model: p.model } : { configured: false, provider: 'none', model: '' };
   }
 
-  async settings(tx: Tx): Promise<AiSettingsRow> {
-    return (await one<AiSettingsRow>(tx, 'select features, prompt_log_days from ai_settings')) ?? { features: {}, prompt_log_days: 90 };
+  async settings(tx: TenantTx): Promise<AiSettingsRow> {
+    const s = await tx.collection<AiSettingsRow>('ai_settings').findOne({});
+    return s ? { features: s.features, prompt_log_days: s.prompt_log_days } : { features: {}, prompt_log_days: 90 };
   }
 
   /** Credits used this calendar month (UTC) and the plan's monthly allowance (-1: unlimited). */
-  async usage(tx: Tx): Promise<{ used: number; limit: number }> {
-    const r = await one<{ used: number }>(tx, `select coalesce(sum(credits), 0)::int as used from ai_interactions where created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'`);
+  async usage(tx: TenantTx): Promise<{ used: number; limit: number }> {
+    const [r] = await tx.collection('ai_interactions').aggregate<{ used: number }>([{ $match: { created_at: { $gte: monthStart() } } }, { $group: { _id: null, used: { $sum: '$credits' } } }]);
     const e = await this.entitlements.current(tx);
-    return { used: r!.used, limit: e.limits.ai_credits_monthly ?? 0 };
+    return { used: r?.used ?? 0, limit: e.limits.ai_credits_monthly ?? 0 };
   }
 
   /** Whether a feature can be used right now, and why not. */
-  async availability(tx: Tx, feature: AiFeature): Promise<{ available: boolean; reason: string | null }> {
+  async availability(tx: TenantTx, feature: AiFeature): Promise<{ available: boolean; reason: string | null }> {
     if (!(await this.provider())) return { available: false, reason: 'AI is not set up for this SampCrew installation.' };
     const e = await this.entitlements.current(tx);
     if (!e.features.has('ai_copilot')) return { available: false, reason: 'Your plan does not include SampCrew AI.' };
@@ -90,23 +94,19 @@ export class AiGatewayService {
     return { available: true, reason: null };
   }
 
-  private async record(tx: Tx, row: {
+  private async record(tx: TenantTx, row: {
     provider: string; feature: AiFeature; status: string; promptVersion: string; model: string; subject?: { type: string; id: string };
     request: unknown; response: string | null; evidence: Evidence[]; redactions: Record<string, number>;
     inputTokens?: number; outputTokens?: number; credits?: number; latencyMs?: number; error?: string | null;
   }): Promise<string> {
     const actor = requestContext.tenantActor();
-    const r = await one<{ id: string }>(
-      tx,
-      `insert into ai_interactions (tenant_id, membership_id, feature, status, provider, model, prompt_version, subject_type, subject_id, request, response,
-                                    evidence, redactions, input_tokens, output_tokens, credits, latency_ms, error)
-       values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning id`,
-      [actor.membershipId, row.feature, row.status, row.provider, row.model, row.promptVersion, row.subject?.type ?? null, row.subject?.id ?? null,
-        row.request === null ? null : JSON.stringify(row.request), row.response, JSON.stringify(row.evidence), JSON.stringify(row.redactions),
-        row.inputTokens ?? 0, row.outputTokens ?? 0, row.credits ?? 0, row.latencyMs ?? 0, row.error ?? null],
-    );
-    await this.audit.record(tx, { action: 'ai.called', resourceType: 'ai_interaction', resourceId: r!.id, metadata: { feature: row.feature, status: row.status, credits: row.credits ?? 0 } });
-    return r!.id;
+    const r = await tx.collection('ai_interactions').insert({
+      membership_id: actor.membershipId, feature: row.feature, status: row.status, provider: row.provider, model: row.model, prompt_version: row.promptVersion,
+      subject_type: row.subject?.type ?? null, subject_id: row.subject?.id ?? null, request: row.request ?? null, response: row.response, evidence: row.evidence,
+      redactions: row.redactions, input_tokens: row.inputTokens ?? 0, output_tokens: row.outputTokens ?? 0, credits: row.credits ?? 0, latency_ms: row.latencyMs ?? 0, error: row.error ?? null,
+    });
+    await this.audit.record(tx, { action: 'ai.called', resourceType: 'ai_interaction', resourceId: r.id, metadata: { feature: row.feature, status: row.status, credits: row.credits ?? 0 } });
+    return r.id as string;
   }
 
   /** Throws the reason a feature cannot be used right now (not set up, not in the plan, switched off). */

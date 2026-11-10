@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { DepartmentInput, LegalEntityInput } from '@crew/contracts';
 import { AuditService, diff } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { countBy, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
@@ -20,16 +20,24 @@ const COLUMNS: Record<string, Record<string, string>> = {
   departments: { name: 'name', code: 'code', parentId: 'parent_id', legalEntityId: 'legal_entity_id', businessUnitId: 'business_unit_id', headMembershipId: 'head_membership_id' },
 };
 
-const SELECT: Record<string, string> = {
-  legal_entities: `id, name, legal_name as "legalName", country_code as "countryCode", currency, timezone, registration_number as "registrationNumber",
-    tax_id as "taxId", fiscal_year_start_month as "fiscalYearStartMonth", address, archived_at as "archivedAt", created_at as "createdAt"`,
-  business_units: `id, name, code, description, archived_at as "archivedAt", created_at as "createdAt"`,
-  locations: `id, name, code, kind, legal_entity_id as "legalEntityId", timezone, address_line as "addressLine", city, region, country_code as "countryCode",
-    postal_code as "postalCode", latitude::float8 as latitude, longitude::float8 as longitude, geofence_radius_m as "geofenceRadiusM", archived_at as "archivedAt", created_at as "createdAt"`,
-  departments: `id, name, code, parent_id as "parentId", legal_entity_id as "legalEntityId", business_unit_id as "businessUnitId",
-    head_membership_id as "headMembershipId", archived_at as "archivedAt", created_at as "createdAt",
-    (select count(*)::int from memberships m where m.department_id = departments.id and m.status <> 'suspended') as "memberCount"`,
-};
+/** A stored row as the API shows it: the mapped fields in camelCase, plus id, archivedAt and createdAt. */
+function view(table: OrgTable, row: Row, memberCount?: number): Row {
+  const out: Row = { id: row.id };
+  for (const [field, col] of Object.entries(COLUMNS[table]!)) out[field] = row[col] ?? null;
+  if (table === 'locations') {
+    out.latitude = row.latitude == null ? null : Number(row.latitude);
+    out.longitude = row.longitude == null ? null : Number(row.longitude);
+  }
+  out.archivedAt = row.archived_at ?? null;
+  out.createdAt = row.created_at;
+  if (table === 'departments') out.memberCount = memberCount ?? 0;
+  return out;
+}
+
+async function views(tx: TenantTx, table: OrgTable, rows: Row[]): Promise<Row[]> {
+  const counts = table === 'departments' ? await countBy(tx, 'memberships', 'department_id', rows.map((r) => r.id as string), { status: { $ne: 'suspended' } }) : new Map<string, number>();
+  return rows.map((r) => view(table, r, counts.get(r.id as string)));
+}
 
 export type OrgTable = 'legal_entities' | 'business_units' | 'locations' | 'departments';
 
@@ -45,11 +53,14 @@ export class OrganizationService {
   ) {}
 
   list(table: OrgTable, includeArchived = false) {
-    return this.db.tenant((tx) => many(tx, `select ${SELECT[table]} from ${table} ${includeArchived ? '' : 'where archived_at is null'} order by name`));
+    return this.db.tenant(async (tx) => views(tx, table, await tx.collection(table).find(includeArchived ? {} : { archived_at: null }, { sort: { name: 1 } })));
   }
 
   async get(table: OrgTable, id: string) {
-    const row = await this.db.tenant((tx) => one(tx, `select ${SELECT[table]} from ${table} where id = $1`, [id]));
+    const row = await this.db.tenant(async (tx) => {
+      const found = await tx.collection(table).findOne({ id });
+      return found && (await views(tx, table, [found]))[0];
+    });
     if (!row) throw Errors.notFound(RESOURCE[table].replace('_', ' '));
     return row;
   }
@@ -57,7 +68,7 @@ export class OrganizationService {
   async create(table: OrgTable, input: Row) {
     return this.db.tenant(async (tx) => {
       if (table === 'legal_entities') {
-        const { count } = (await one<{ count: number }>(tx, 'select count(*)::int as count from legal_entities where archived_at is null'))!;
+        const count = await tx.collection('legal_entities').count({ archived_at: null });
         // A second legal entity needs the multi-entity module as well as room under the plan's entity limit.
         await this.entitlements.requireWithinLimit('max_legal_entities', count, tx);
         if (count >= 1) await this.entitlements.requireFeature('multi_entity', tx);
@@ -65,30 +76,25 @@ export class OrganizationService {
       if (table === 'departments') await this.checkDepartmentRefs(tx, input as DepartmentInput);
       const cols = COLUMNS[table]!;
       const entries = Object.entries(input).filter(([k, v]) => cols[k] && v !== undefined);
-      const names = ['tenant_id', ...entries.map(([k]) => cols[k]!)];
-      const values = [requestTenant(), ...entries.map(([, v]) => v)];
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into ${table} (${names.join(', ')}) values (${names.map((_, i) => `$${i + 1}`).join(', ')}) returning id`,
-        values,
-      ))!;
+      const row = await tx.collection(table).insert(Object.fromEntries(entries.map(([k, v]) => [cols[k]!, v])));
       await this.audit.record(tx, { action: `${RESOURCE[table]}.created`, resourceType: RESOURCE[table], resourceId: row.id, changes: input });
       await this.outbox.publish(tx, requestTenant(), `org.${RESOURCE[table]}.created`, { id: row.id });
-      return one(tx, `select ${SELECT[table]} from ${table} where id = $1`, [row.id]);
+      return (await views(tx, table, [row]))[0];
     });
   }
 
   async update(table: OrgTable, id: string, input: Row) {
     return this.db.tenant(async (tx) => {
-      const before = await one<Row>(tx, `select ${SELECT[table]} from ${table} where id = $1 for update`, [id]);
-      if (!before) throw Errors.notFound(RESOURCE[table].replace('_', ' '));
-      if (table === 'departments') await this.checkDepartmentRefs(tx, input as DepartmentInput);
+      const stored = await tx.collection(table).findOne({ id });
+      if (!stored) throw Errors.notFound(RESOURCE[table].replace('_', ' '));
+      const before = (await views(tx, table, [stored]))[0]!;
+      if (table === 'departments') await this.checkDepartmentRefs(tx, input as DepartmentInput, id);
       const cols = COLUMNS[table]!;
       const entries = Object.entries(input).filter(([k, v]) => cols[k] && v !== undefined);
       if (entries.length) {
-        await tx.query(`update ${table} set ${entries.map(([k], i) => `${cols[k]} = $${i + 2}`).join(', ')} where id = $1`, [id, ...entries.map(([, v]) => v)]);
+        await tx.collection(table).updateOne({ id }, { $set: Object.fromEntries(entries.map(([k, v]) => [cols[k]!, v])) });
       }
-      const after = (await one<Row>(tx, `select ${SELECT[table]} from ${table} where id = $1`, [id]))!;
+      const after = (await views(tx, table, [(await tx.collection(table).findOne({ id }))!]))[0]!;
       const changes = diff(before, Object.fromEntries(entries.map(([k]) => [k, after[k]])));
       if (Object.keys(changes).length) {
         await this.audit.record(tx, { action: `${RESOURCE[table]}.updated`, resourceType: RESOURCE[table], resourceId: id, changes });
@@ -101,24 +107,20 @@ export class OrganizationService {
   /** Records are archived, never hard-deleted, because employees, payroll and audit history reference them. */
   async archive(table: OrgTable, id: string) {
     return this.db.tenant(async (tx) => {
-      const row = await one<{ archived_at: Date | null }>(tx, `select archived_at from ${table} where id = $1 for update`, [id]);
+      const row = await tx.collection(table).findOne({ id });
       if (!row) throw Errors.notFound(RESOURCE[table].replace('_', ' '));
       if (row.archived_at) return;
       if (table === 'departments') {
-        const busy = await one<{ n: number }>(
-          tx,
-          `select (select count(*) from departments where parent_id = $1 and archived_at is null) + (select count(*) from memberships where department_id = $1 and status <> 'suspended') as n`,
-          [id],
-        );
-        if (Number(busy!.n) > 0) throw Errors.conflict('department_in_use', 'Move its members and sub-departments first');
+        const busy = (await tx.collection('departments').count({ parent_id: id, archived_at: null })) + (await tx.collection('memberships').count({ department_id: id, status: { $ne: 'suspended' } }));
+        if (busy > 0) throw Errors.conflict('department_in_use', 'Move its members and sub-departments first');
       }
       if (table === 'legal_entities') {
-        const { n } = (await one<{ n: number }>(tx, 'select count(*)::int as n from legal_entities where archived_at is null'))!;
+        const n = await tx.collection('legal_entities').count({ archived_at: null });
         if (n <= 1) throw Errors.conflict('last_legal_entity', 'A workspace needs at least one legal entity');
-        const used = await one(tx, `select 1 from memberships where legal_entity_id = $1 and status <> 'suspended' limit 1`, [id]);
+        const used = await tx.collection('memberships').exists({ legal_entity_id: id, status: { $ne: 'suspended' } });
         if (used) throw Errors.conflict('legal_entity_in_use', 'Move its members to another legal entity first');
       }
-      await tx.query(`update ${table} set archived_at = now() where id = $1`, [id]);
+      await tx.collection(table).updateOne({ id }, { $set: { archived_at: new Date() } });
       await this.audit.record(tx, { action: `${RESOURCE[table]}.archived`, resourceType: RESOURCE[table], resourceId: id });
     });
   }
@@ -137,24 +139,28 @@ export class OrganizationService {
   }
 
   async overview() {
-    return this.db.tenant(async (tx) =>
-      one(
-        tx,
-        `select (select count(*)::int from legal_entities where archived_at is null) as "legalEntities",
-                (select count(*)::int from business_units where archived_at is null) as "businessUnits",
-                (select count(*)::int from locations where archived_at is null) as "locations",
-                (select count(*)::int from departments where archived_at is null) as "departments",
-                (select count(*)::int from memberships where status = 'active') as "activeMembers",
-                (select count(*)::int from memberships where status = 'invited') as "pendingInvites",
-                (select count(distinct country_code)::int from legal_entities where archived_at is null) as "countries"`,
-      ),
-    );
+    return this.db.tenant(async (tx) => ({
+      legalEntities: await tx.collection('legal_entities').count({ archived_at: null }),
+      businessUnits: await tx.collection('business_units').count({ archived_at: null }),
+      locations: await tx.collection('locations').count({ archived_at: null }),
+      departments: await tx.collection('departments').count({ archived_at: null }),
+      activeMembers: await tx.collection('memberships').count({ status: 'active' }),
+      pendingInvites: await tx.collection('memberships').count({ status: 'invited' }),
+      countries: (await tx.collection('legal_entities').distinct('country_code', { archived_at: null })).length,
+    }));
   }
 
-  private async checkDepartmentRefs(tx: Tx, input: Partial<DepartmentInput>) {
-    if (input.parentId) {
-      const p = await one(tx, 'select 1 from departments where id = $1 and archived_at is null', [input.parentId]);
-      if (!p) throw Errors.badRequest('invalid_parent', 'Parent department not found');
+  /**
+   * The parent must be a current department, and (the departments_no_cycle trigger in PostgreSQL) a department cannot
+   * be moved under itself or one of its own sub-departments.
+   */
+  private async checkDepartmentRefs(tx: TenantTx, input: Partial<DepartmentInput>, id?: string) {
+    if (!input.parentId) return;
+    if (!(await tx.collection('departments').exists({ id: input.parentId, archived_at: null }))) throw Errors.badRequest('invalid_parent', 'Parent department not found');
+    if (!id) return;
+    const parents = new Map((await tx.collection('departments').find({}, { projection: { parent_id: 1 } })).map((d) => [d.id as string, (d.parent_id as string | null) ?? null]));
+    for (let at: string | null = input.parentId, steps = 0; at && steps <= parents.size; at = parents.get(at) ?? null, steps++) {
+      if (at === id) throw Errors.badRequest('department_cycle', 'A department cannot be placed under itself or one of its sub-departments');
     }
   }
 }

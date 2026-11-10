@@ -1,11 +1,10 @@
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { AttendanceService } from '../src/modules/attendance/attendance.service';
 import { HrJobsService } from '../src/modules/hr-jobs/hr-jobs.service';
-import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const samlStub = require('../../../e2e/saml-stub.cjs') as {
@@ -25,7 +24,7 @@ const pkce = () => {
 
 describe('Phase 11 hardening', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let idp: SamlStub;
   let oidc: OidcStub;
   let ent: TestTenant;
@@ -141,9 +140,9 @@ describe('Phase 11 hardening', () => {
       fails(await api(app).post('/auth/sso/saml/callback').send({ samlResponse: form.samlResponse, relayState: form.relayState }), 401);
       // A SAML response cannot finish an OpenID Connect state, and the other way round.
       fails(await api(app).post('/auth/sso/callback').send({ code: 'x', state: form.relayState }), 401);
-      const failed = await pool.query(`select metadata->>'reason' as reason from audit_events where tenant_id = $1 and action = 'auth.sso_failed' order by id`, [ent.id]);
-      expect(failed.rows.length).toBe(7); // six bad responses and the foreign domain; replays name no workspace
-      expect(failed.rows.map((x) => x.reason).join(' | ')).toMatch(/did not verify.*domains/s);
+      const failed = await pool.find('audit_events', { tenant_id: ent.id, action: 'auth.sso_failed' }, { sort: { chain_seq: 1 } });
+      expect(failed.length).toBe(7); // six bad responses and the foreign domain; replays name no workspace
+      expect(failed.map((x) => x.metadata?.reason).join(' | ')).toMatch(/did not verify.*domains/s);
     });
 
     it('needs a new test when the certificate changes', async () => {
@@ -205,29 +204,27 @@ describe('Phase 11 hardening', () => {
       // The code alone, or with someone else's verifier, gets nothing; and it is then spent.
       fails(await mobile().post('/auth/sso/exchange').send({ code, verifier: pkce().verifier }), 401);
       fails(await mobile().post('/auth/sso/exchange').send({ code, verifier }), 401);
-      const failed = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'auth.sso_failed' and metadata->>'protocol' = 'handoff'`, [mob.id]);
-      expect(failed.rows[0].n).toBe(1);
+      expect(await pool.count('audit_events', { tenant_id: mob.id, action: 'auth.sso_failed', 'metadata.protocol': 'handoff' })).toBe(1);
 
       const s2 = ok(await start({ email: people.mobile.email, returnTo: 'crew://sso', appChallenge: challenge }));
       const code2 = new URL(ok(await browser(s2.authorizationUrl)).redirectTo).searchParams.get('code')!;
       const session = ok(await mobile().post('/auth/sso/exchange').send({ code: code2, verifier }));
       expect(session.status).toBe('ok');
       expect(claims(session.accessToken)).toMatchObject({ tid: mob.id, mid: people.mobile.membershipId, mfa: true });
-      const row = await pool.query(`select client from sessions where id = $1`, [claims(session.accessToken).sid]);
-      expect(row.rows[0].client).toBe('mobile');
+      expect((await pool.one('sessions', { id: claims(session.accessToken).sid }))!.client).toBe('mobile');
       ok(await api(app, session.accessToken).get('/me'));
       // Used once.
       fails(await mobile().post('/auth/sso/exchange').send({ code: code2, verifier }), 401);
       // Stored hashed.
-      const stored = await pool.query(`select code_hash from sso_handoffs where tenant_id = $1`, [mob.id]);
-      expect(stored.rows.map((x) => x.code_hash)).not.toContain(code2);
+      const stored = await pool.find('sso_handoffs', { tenant_id: mob.id });
+      expect(stored.map((x) => x.code_hash)).not.toContain(code2);
     });
 
     it('expires codes after two minutes', async () => {
       const { verifier, challenge } = pkce();
       const s = ok(await start({ email: people.mobile.email, returnTo: 'crew://sso', appChallenge: challenge }));
       const code = new URL(ok(await browser(s.authorizationUrl)).redirectTo).searchParams.get('code')!;
-      await pool.query(`update sso_handoffs set expires_at = now() - interval '1 second' where tenant_id = $1 and used_at is null`, [mob.id]);
+      await pool.update('sso_handoffs', { tenant_id: mob.id, used_at: null }, { $set: { expires_at: new Date(Date.now() - 1000) } });
       fails(await mobile().post('/auth/sso/exchange').send({ code, verifier }), 401);
     });
   });
@@ -245,9 +242,12 @@ describe('Phase 11 hardening', () => {
       };
     };
     const PATCH = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
-    const roleId = async (t: TestTenant, key: string) => (await pool.query(`select id from roles where tenant_id = $1 and key = $2`, [t.id, key])).rows[0].id as string;
-    const rolesOf = async (membershipId: string) =>
-      (await pool.query(`select r.key, ra.source from role_assignments ra join roles r on r.id = ra.role_id where ra.membership_id = $1 order by r.key`, [membershipId])).rows.map((x) => `${x.key}:${x.source}`);
+    const roleId = async (t: TestTenant, key: string) => (await pool.one('roles', { tenant_id: t.id, key }))!.id as string;
+    const rolesOf = async (membershipId: string) => {
+      const ras = await pool.find('role_assignments', { membership_id: membershipId });
+      const keys = new Map((await pool.find('roles', { id: { $in: ras.map((x) => x.role_id) } })).map((r) => [r.id, r.key as string]));
+      return ras.map((x) => `${keys.get(x.role_id)}:${x.source}`).sort();
+    };
     const groups: Record<string, string> = {};
 
     beforeAll(async () => {
@@ -284,13 +284,12 @@ describe('Phase 11 hardening', () => {
       const mapped = ok(await as('owner').put(`/security/scim/groups/${groups.payroll}/role`).send({ roleId: await roleId(ent, 'payroll_admin') }));
       expect(mapped[0], JSON.stringify(mapped)).toMatchObject({ roleKey: 'payroll_admin' });
       expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual', 'payroll_admin:scim']);
-      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'scim_group.role_mapped'`, [ent.id]);
-      expect(audit.rows[0].n).toBe(1);
+      expect(await pool.count('audit_events', { tenant_id: ent.id, action: 'scim_group.role_mapped' })).toBe(1);
     });
 
     it('follows membership changes the way providers send them, and keeps roles given by hand', async () => {
       // The manager already holds payroll_admin by hand, then joins the group.
-      await pool.query(`insert into role_assignments (tenant_id, membership_id, role_id) values ($1, $2, $3)`, [ent.id, people.manager.membershipId, await roleId(ent, 'payroll_admin')]);
+      await pool.insert('role_assignments', { tenant_id: ent.id, membership_id: people.manager.membershipId, role_id: await roleId(ent, 'payroll_admin') });
       const add = await scim(tokens.scim).patch(`/Groups/${groups.payroll}`, { schemas: [PATCH], Operations: [{ op: 'add', path: 'members', value: [{ value: people.manager.membershipId }] }] });
       expect(add.status, JSON.stringify(add.body)).toBe(200);
       expect(add.body.members.map((m: { value: string }) => m.value).sort()).toEqual([people.worker.membershipId, people.manager.membershipId].sort());
@@ -322,10 +321,10 @@ describe('Phase 11 hardening', () => {
       expect(await rolesOf(people.worker.membershipId)).toEqual(['auditor:scim', 'employee:manual', 'recruiter:manual']);
       expect((await scim(tokens.scim).del(`/Groups/${groups.finance}`)).status).toBe(204);
       expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual', 'recruiter:manual']);
-      const log = await pool.query(`select method, path from scim_events where tenant_id = $1 and path like '/Groups%' order by created_at`, [ent.id]);
-      expect(log.rows.map((x) => x.method)).toEqual(expect.arrayContaining(['POST', 'PATCH', 'PUT', 'DELETE']));
-      const changed = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'membership.roles_changed' and metadata->>'via' = 'scim_group'`, [ent.id]);
-      expect(changed.rows[0].n).toBeGreaterThanOrEqual(5);
+      const log = await pool.find('scim_events', { tenant_id: ent.id, path: /^\/Groups/ }, { sort: { created_at: 1 } });
+      expect(log.map((x) => x.method)).toEqual(expect.arrayContaining(['POST', 'PATCH', 'PUT', 'DELETE']));
+      const changed = await pool.count('audit_events', { tenant_id: ent.id, action: 'membership.roles_changed', 'metadata.via': 'scim_group' });
+      expect(changed).toBeGreaterThanOrEqual(5);
     });
   });
   describe('erasure reaches free text, and the retention schedule', () => {
@@ -340,32 +339,30 @@ describe('Phase 11 hardening', () => {
       people.leaver = await addMember(pool, ent, { name: 'Lou Leaver' });
       ids.leaver = await employee('Lou', people.leaver.membershipId);
       ids.colleague = await employee('Cara');
-      const q = (sql: string, params: unknown[]) => pool.query(sql, [ent.id, ...params]);
       const t = ent.id;
-      const cat = (await q(`select id from expense_categories where tenant_id = $1 limit 1`, [])).rows[0]?.id ?? (await q(`insert into expense_categories (tenant_id, name) values ($1, 'Travel test') returning id`, [])).rows[0].id;
-      await q(`insert into expense_claims (tenant_id, employee_id, category_id, spent_on, amount, currency, description) values ($1, $2, $3, '2024-03-01', 1250.50, 'INR', $4)`, [ids.leaver, cat, `Taxi to clinic: ${SECRET}`]);
-      const goal = (await q(`insert into goals (tenant_id, employee_id, title, description, period_start, period_end) values ($1, $2, $3, $4, '2024-01-01', '2024-12-31') returning id`, [ids.leaver, `Goal about ${SECRET}`, SECRET])).rows[0].id;
-      await q(`insert into goal_checkins (tenant_id, goal_id, progress, confidence, note, by_membership_id) values ($1, $2, 40, 'at_risk', $3, $4)`, [goal, SECRET, people.leaver.membershipId]);
-      const cycle = (await q(`insert into review_cycles (tenant_id, name, period_start, period_end, questions, rating_scale) values ($1, 'FY24 review', '2024-01-01', '2024-12-31', '[]', '[]') returning id`, [])).rows[0].id;
-      const review = (await q(
-        `insert into reviews (tenant_id, cycle_id, employee_id, self_status, self_answers, self_rating, self_submitted_at, manager_status, manager_answers, manager_rating, manager_submitted_at, final_rating, released_at, employee_comment)
-         values ($1, $2, $3, 'submitted', $4, 3, now(), 'submitted', $4, 4, now(), 4, now(), $5) returning id`,
-        [cycle, ids.leaver, JSON.stringify({ q1: SECRET }), SECRET],
-      )).rows[0].id;
+      const now = new Date();
+      const cat = (await pool.one('expense_categories', { tenant_id: t }))?.id ?? (await pool.insert('expense_categories', { tenant_id: t, name: 'Travel test' })).id;
+      await pool.insert('expense_claims', { tenant_id: t, employee_id: ids.leaver, category_id: cat, spent_on: '2024-03-01', amount: '1250.50', currency: 'INR', description: `Taxi to clinic: ${SECRET}` });
+      const goal = (await pool.insert('goals', { tenant_id: t, employee_id: ids.leaver, title: `Goal about ${SECRET}`, description: SECRET, period_start: '2024-01-01', period_end: '2024-12-31' })).id;
+      await pool.insert('goal_checkins', { tenant_id: t, goal_id: goal, progress: '40', confidence: 'at_risk', note: SECRET, by_membership_id: people.leaver.membershipId });
+      const cycle = (await pool.insert('review_cycles', { tenant_id: t, name: 'FY24 review', period_start: '2024-01-01', period_end: '2024-12-31', questions: [], rating_scale: [] })).id;
+      const review = (await pool.insert('reviews', {
+        tenant_id: t, cycle_id: cycle, employee_id: ids.leaver, self_status: 'submitted', self_answers: { q1: SECRET }, self_rating: 3, self_submitted_at: now,
+        manager_status: 'submitted', manager_answers: { q1: SECRET }, manager_rating: 4, manager_submitted_at: now, final_rating: 4, released_at: now, employee_comment: SECRET,
+      })).id;
       ids.review = review;
-      await q(`insert into review_feedback (tenant_id, review_id, reviewer_employee_id, requested_by_membership_id, status, answers, submitted_at) values ($1, $2, $3, $4, 'submitted', $5, now())`, [review, ids.colleague, people.manager.membershipId, JSON.stringify({ q1: SECRET })]);
-      await q(`insert into recognitions (tenant_id, from_employee_id, to_employee_id, message) values ($1, $2, $3, $4)`, [ids.colleague, ids.leaver, `Thanks Lou, ${SECRET}`]);
-      await q(`insert into recognitions (tenant_id, from_employee_id, to_employee_id, message) values ($1, $2, $3, 'Thanks Cara, great work')`, [ids.leaver, ids.colleague]);
-      await q(`insert into attendance_corrections (tenant_id, employee_id, work_date, punches, reason, status) values ($1, $2, '2024-02-02', '[{"at": "2024-02-02T09:00:00Z", "direction": "in"}]', $3, 'approved')`, [ids.leaver, SECRET]);
-      await q(`insert into overtime_claims (tenant_id, employee_id, work_date, minutes, computed_minutes, reason, status) values ($1, $2, '2024-02-03', 60, 60, $3, 'approved')`, [ids.leaver, SECRET]);
-      await q(`insert into approval_requests (tenant_id, resource_type, resource_id, subject_employee_id, summary, status) values ($1, 'leave_request', gen_random_uuid(), $2, $3, 'approved')`, [ids.leaver, `Leave for Lou: ${SECRET}`]);
-      await q(`insert into attrition_scores (tenant_id, employee_id, computed_on, score, band, factors, inputs, rules_version) values ($1, $2, '2024-05-01', 70, 'high', '[]', '{}', 'v1')`, [ids.leaver]);
-      const conv = (await q(`insert into iq_conversations (tenant_id, membership_id, title) values ($1, $2, 'My leave') returning id`, [people.leaver.membershipId])).rows[0].id;
-      await q(`insert into iq_messages (tenant_id, conversation_id, membership_id, question, intent, match, answer) values ($1, $2, $3, $4, 'help', '{}', '{}')`, [conv, people.leaver.membershipId, SECRET]);
-      await q(`insert into notifications (tenant_id, membership_id, kind, title) values ($1, $2, 'info', 'Hello Lou')`, [people.leaver.membershipId]);
-      await q(`insert into member_preferences (tenant_id, membership_id, notes) values ($1, $2, $3)`, [people.leaver.membershipId, SECRET]);
-      await q(`insert into mobile_devices (tenant_id, membership_id, installation_id, platform) values ($1, $2, 'install-0123456789abcdef', 'android')`, [people.leaver.membershipId]);
-      void t;
+      await pool.insert('review_feedback', { tenant_id: t, review_id: review, reviewer_employee_id: ids.colleague, requested_by_membership_id: people.manager.membershipId, status: 'submitted', answers: { q1: SECRET }, submitted_at: now });
+      await pool.insert('recognitions', { tenant_id: t, from_employee_id: ids.colleague, to_employee_id: ids.leaver, message: `Thanks Lou, ${SECRET}` });
+      await pool.insert('recognitions', { tenant_id: t, from_employee_id: ids.leaver, to_employee_id: ids.colleague, message: 'Thanks Cara, great work' });
+      await pool.insert('attendance_corrections', { tenant_id: t, employee_id: ids.leaver, work_date: '2024-02-02', punches: [{ at: '2024-02-02T09:00:00Z', direction: 'in' }], reason: SECRET, status: 'approved' });
+      await pool.insert('overtime_claims', { tenant_id: t, employee_id: ids.leaver, work_date: '2024-02-03', minutes: 60, computed_minutes: 60, reason: SECRET, status: 'approved' });
+      await pool.insert('approval_requests', { tenant_id: t, resource_type: 'leave_request', resource_id: randomUUID(), subject_employee_id: ids.leaver, summary: `Leave for Lou: ${SECRET}`, status: 'approved' });
+      await pool.insert('attrition_scores', { tenant_id: t, employee_id: ids.leaver, computed_on: '2024-05-01', score: 70, band: 'high', factors: [], inputs: {}, rules_version: 'v1' });
+      const conv = (await pool.insert('iq_conversations', { tenant_id: t, membership_id: people.leaver.membershipId, title: 'My leave' })).id;
+      await pool.insert('iq_messages', { tenant_id: t, conversation_id: conv, membership_id: people.leaver.membershipId, question: SECRET, intent: 'help', match: {}, answer: {} });
+      await pool.insert('notifications', { tenant_id: t, membership_id: people.leaver.membershipId, kind: 'info', title: 'Hello Lou' });
+      await pool.insert('member_preferences', { tenant_id: t, membership_id: people.leaver.membershipId, notes: SECRET });
+      await pool.insert('mobile_devices', { tenant_id: t, membership_id: people.leaver.membershipId, installation_id: 'install-0123456789abcdef', platform: 'android' });
     });
 
     it('erases text written by or about the person, and keeps amounts, ratings and what they wrote to others', async () => {
@@ -376,31 +373,23 @@ describe('Phase 11 hardening', () => {
       // Nothing in the workspace still holds the text.
       const tables = ['expense_claims', 'goals', 'goal_checkins', 'reviews', 'review_feedback', 'recognitions', 'attendance_corrections', 'overtime_claims', 'approval_requests', 'iq_messages', 'member_preferences'];
       for (const t of tables) {
-        const hit = await pool.query(`select count(*)::int as n from ${t} x where tenant_id = $1 and to_jsonb(x)::text like '%' || $2 || '%'`, [ent.id, SECRET]);
-        expect(hit.rows[0].n, t).toBe(0);
+        const hit = (await pool.find(t, { tenant_id: ent.id })).filter((x) => JSON.stringify(x).includes(SECRET));
+        expect(hit.length, t).toBe(0);
       }
-      const claim = (await pool.query(`select amount::text, description from expense_claims where employee_id = $1`, [ids.leaver])).rows[0];
-      expect(claim).toEqual({ amount: '1250.50', description: '[erased]' });
-      const review = (await pool.query(`select self_rating, manager_rating, final_rating, self_answers, employee_comment, released_at from reviews where id = $1`, [ids.review])).rows[0];
+      const c = (await pool.one('expense_claims', { employee_id: ids.leaver }))!;
+      expect({ amount: c.amount, description: c.description }).toEqual({ amount: '1250.50', description: '[erased]' });
+      const review = (await pool.one('reviews', { id: ids.review }))!;
       expect(review).toMatchObject({ self_rating: 3, manager_rating: 4, final_rating: 4, self_answers: { erased: true }, employee_comment: null });
       expect(review.released_at).not.toBeNull();
       // What Lou wrote to a colleague stays; their own app data and attrition scores are gone.
-      expect((await pool.query(`select message from recognitions where to_employee_id = $1`, [ids.colleague])).rows[0].message).toBe('Thanks Cara, great work');
+      expect((await pool.one('recognitions', { to_employee_id: ids.colleague }))!.message).toBe('Thanks Cara, great work');
       for (const t of ['iq_conversations', 'notifications', 'member_preferences', 'mobile_devices']) {
-        expect((await pool.query(`select count(*)::int as n from ${t} where membership_id = $1`, [people.leaver.membershipId])).rows[0].n, t).toBe(0);
+        expect(await pool.count(t, { membership_id: people.leaver.membershipId }), t).toBe(0);
       }
-      expect((await pool.query(`select count(*)::int as n from attrition_scores where employee_id = $1`, [ids.leaver])).rows[0].n).toBe(0);
+      expect(await pool.count('attrition_scores', { employee_id: ids.leaver })).toBe(0);
       // The frozen-record guards still refuse anything but the erasure marker, even with the erasure flag on.
-      const c = await pool.connect();
-      try {
-        await c.query('begin');
-        await c.query(`set local crew.erasure = 'on'`);
-        await expect(c.query(`update reviews set self_rating = 1 where id = $1`, [ids.review])).rejects.toThrow(/erasure may only blank/);
-      } finally {
-        await c.query('rollback');
-        c.release();
-      }
-      await expect(pool.query(`update reviews set final_rating = 1 where id = $1`, [ids.review])).rejects.toThrow(/released review/);
+      await expect(pool.tenant(ent.id, (tx) => tx.collection('reviews', { flags: ['erasure'] }).update({ id: ids.review }, { $set: { self_rating: 1 } }))).rejects.toThrow(/erasure may only blank/);
+      await expect(pool.update('reviews', { id: ids.review }, { $set: { final_rating: 1 } })).rejects.toThrow(/released review/);
     });
 
     it('keeps a retention schedule that only owners and HR change, with automatic erasure off by default', async () => {
@@ -417,32 +406,37 @@ describe('Phase 11 hardening', () => {
     it('erases long-gone leavers, deletes old exports and logs, and never touches attendance punches', async () => {
       ids.old = await employee('Olga');
       ids.recent = await employee('Rita');
-      await pool.query(`update employees set status = 'exited', last_working_day = current_date - interval '7 years', exit_reason = 'Moved abroad' where id = $1`, [ids.old]);
-      await pool.query(`update employees set status = 'exited', last_working_day = current_date - interval '2 years' where id = $1`, [ids.recent]);
+      const yearsAgo = (n: number) => {
+        const d = new Date();
+        d.setUTCFullYear(d.getUTCFullYear() - n);
+        return d.toISOString().slice(0, 10);
+      };
+      await pool.update('employees', { id: ids.old }, { $set: { status: 'exited', last_working_day: yearsAgo(7), exit_reason: 'Moved abroad' } });
+      await pool.update('employees', { id: ids.recent }, { $set: { status: 'exited', last_working_day: yearsAgo(2) } });
       expect(ok(await as('owner').get('/privacy/retention')).dueForErasure).toBe(1);
       // An access export from 40 days ago (closed requests are frozen, so the test back-dates it with triggers off).
       const access = ok(await as('owner').post('/privacy/requests').send({ employeeId: ids.recent, kind: 'access', source: 'Portal' }), 201);
       ok(await as('owner').post(`/privacy/requests/${access.id}/export`).send({ note: 'Prepared' }));
-      await pool.query(`set session_replication_role = replica; update privacy_requests set completed_at = now() - interval '40 days' where id = '${access.id}'; set session_replication_role = origin;`);
-      await pool.query(`insert into scim_events (tenant_id, method, path, status, created_at) values ($1, 'GET', '/Users', 200, now() - interval '31 days')`, [ent.id]);
-      const punchesBefore = (await pool.query(`select count(*)::int as n from attendance_events where tenant_id = $1`, [ent.id])).rows[0].n;
+      await (await pool.database()).collection('privacy_requests').updateOne({ _id: access.id }, { $set: { completed_at: new Date(Date.now() - 40 * 86_400_000) } });
+      await pool.insert('scim_events', { tenant_id: ent.id, method: 'GET', path: '/Users', status: 200, created_at: new Date(Date.now() - 31 * 86_400_000) });
+      const punchesBefore = await pool.count('attendance_events', { tenant_id: ent.id });
 
       const run = ok(await as('owner').post('/privacy/retention/run'));
       expect(run).toMatchObject({ trigger: 'manual', erased: 1, heldByPayroll: 0, exportsDeleted: 1 });
       expect(run.provisioningCalls).toBeGreaterThanOrEqual(1);
-      const olga = (await pool.query(`select first_name, exit_reason, erased_at from employees where id = $1`, [ids.old])).rows[0];
+      const olga = (await pool.one('employees', { id: ids.old }))!;
       expect(olga).toMatchObject({ first_name: 'Erased', exit_reason: null });
-      expect((await pool.query(`select erased_at from employees where id = $1`, [ids.recent])).rows[0].erased_at).toBeNull();
+      expect((await pool.one('employees', { id: ids.recent }))!.erased_at ?? null).toBeNull();
       // It went through a privacy request like any other, decided by the schedule.
-      const req = (await pool.query(`select source, status, decided_by_membership_id, decision_note from privacy_requests where employee_id = $1 and kind = 'erasure'`, [ids.old])).rows[0];
+      const req = (await pool.one('privacy_requests', { employee_id: ids.old, kind: 'erasure' }))!;
       expect(req).toMatchObject({ source: 'Retention schedule', status: 'completed', decided_by_membership_id: null });
       fails(await as('owner').get(`/privacy/requests/${access.id}/export`), 409, 'export_deleted');
-      expect((await pool.query(`select count(*)::int as n from scim_events where tenant_id = $1 and created_at < now() - interval '30 days'`, [ent.id])).rows[0].n).toBe(0);
-      expect((await pool.query(`select count(*)::int as n from attendance_events where tenant_id = $1`, [ent.id])).rows[0].n).toBe(punchesBefore);
+      expect(await pool.count('scim_events', { tenant_id: ent.id, created_at: { $lt: new Date(Date.now() - 30 * 86_400_000) } })).toBe(0);
+      expect(await pool.count('attendance_events', { tenant_id: ent.id })).toBe(punchesBefore);
       // Recorded, and in the audit trail as the system.
       const after = ok(await as('owner').get('/privacy/retention'));
       expect(after.runs[0].result).toMatchObject({ trigger: 'manual', erased: 1 });
-      const audit = (await pool.query(`select actor_type from audit_events where tenant_id = $1 and action = 'privacy.erased' and metadata->>'by' = 'retention_schedule'`, [ent.id])).rows;
+      const audit = (await pool.find('audit_events', { tenant_id: ent.id, action: 'privacy.erased', 'metadata.by': 'retention_schedule' })).map((x) => ({ actor_type: x.actor_type }));
       expect(audit).toEqual([{ actor_type: 'user' }]);
     });
 
@@ -452,9 +446,9 @@ describe('Phase 11 hardening', () => {
       expect(first.retentionApplied).toBe(true);
       const second = await jobs.runTenant(ent.id, today());
       expect(second.retentionApplied).toBe(false);
-      const runs = (await pool.query(`select result->>'trigger' as t from retention_runs where tenant_id = $1 order by ran_at`, [ent.id])).rows.map((x) => x.t);
+      const runs = (await pool.find('retention_runs', { tenant_id: ent.id }, { sort: { ran_at: 1 } })).map((x) => x.result?.trigger);
       expect(runs).toEqual(['manual', 'schedule']);
-      const sys = (await pool.query(`select actor_type from audit_events where tenant_id = $1 and action = 'privacy.retention_applied' order by id desc limit 1`, [ent.id])).rows[0];
+      const sys = (await pool.one('audit_events', { tenant_id: ent.id, action: 'privacy.retention_applied' }, { sort: { chain_seq: -1 } }))!;
       expect(sys.actor_type).toBe('system');
     });
   });
@@ -469,7 +463,7 @@ describe('Phase 11 hardening', () => {
       const date = new Date().toISOString().slice(0, 10);
       for (let round = 0; round < 3; round++) {
         // Stale days force every caller to rewrite them.
-        await pool.query(`update attendance_days set computed_at = now() - interval '1 hour' where tenant_id = $1`, [t.id]);
+        await pool.update('attendance_days', { tenant_id: t.id }, { $set: { computed_at: new Date(Date.now() - 3_600_000) } });
         const results = await Promise.allSettled([
           attendance.refreshRecent(t.id),
           ...Array.from({ length: 4 }, () => api(app, owner).get(`/attendance/team?date=${date}`)),

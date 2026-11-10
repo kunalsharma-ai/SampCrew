@@ -9,6 +9,12 @@ import { ScopeViolationError, type Scope, type Table } from './mongo-scope';
 type Row = Record<string, any>;
 
 const MAX_ATTEMPTS = 8;
+/**
+ * How long a transaction keeps retrying write conflicts. Writers to one hot document (a workspace's audit-chain head)
+ * succeed one per round, so a burst of N of them needs about N rounds: retry on time, not on a small count, as
+ * PostgreSQL made them wait on the row lock instead of failing.
+ */
+const CONFLICT_RETRY_MS = 30_000;
 
 function hasLabel(err: unknown, label: string): boolean {
   return typeof (err as { hasErrorLabel?: unknown })?.hasErrorLabel === 'function' && (err as { hasErrorLabel(l: string): boolean }).hasErrorLabel(label);
@@ -36,6 +42,8 @@ const TRANSACTION: TransactionOptions = {
 /** Work queued to run inside the transaction just before it commits (the audit trail), in the order it was asked. */
 abstract class BaseTx {
   private readonly jobs: Array<() => Promise<unknown>> = [];
+  /** @internal Chains this transaction wrote events to (tenant id, or null for the platform), linked after commit. */
+  readonly auditedChains = new Set<string | null>();
 
   constructor(
     readonly session: ClientSession,
@@ -48,10 +56,14 @@ abstract class BaseTx {
     this.jobs.push(job);
   }
 
-  /** Appends to the workspace's (or the platform's) audit chain as the transaction's last write. */
+  /**
+   * Records an audit event with this transaction's changes; it takes its place in the workspace's (or the platform's)
+   * hash chain as soon as the transaction commits (see linkAuditChain).
+   */
   audit(input: mongo.AuditEventInput): void {
     // Checked now, so a bad action fails where it is written rather than at commit.
     if (!mongo.AUDIT_ACTION.test(input.action)) throw new Error(`Invalid audit action "${input.action}"`);
+    this.auditedChains.add(input.tenant_id ?? null);
     this.defer(() => mongo.appendAuditEvent(this.db, this.session, input));
   }
 
@@ -71,14 +83,27 @@ export class TenantTx extends BaseTx {
   }
 
   /** A table seen from this workspace: its own rows only, shared reference data read-only. */
-  collection<T extends Row = Row>(name: string): Table<T> {
-    return new mongo.Table<T>(this.db, name, this.session, { scope: this.scope, tables: this.tables, readOnly: name === mongo.AUDIT_EVENTS });
+  collection<T extends Row = Row>(name: string, options: { flags?: string[] } = {}): Table<T> {
+    return new mongo.Table<T>(this.db, name, this.session, { scope: this.scope, tables: this.tables, readOnly: name === mongo.AUDIT_EVENTS, flags: options.flags });
   }
 
   /** People who are members of this workspace (invited, active or suspended), without password hashes or MFA secrets. */
   async users(): Promise<Table<Row>> {
     const ids = await this.db.collection('memberships').distinct('user_id', { tenant_id: this.tenantId }, { session: this.session });
     return new mongo.Table(this.db, 'users', this.session, { scope: null, tables: this.tables, readOnly: true, workspaceColumns: true, within: { _id: { $in: ids } } });
+  }
+
+  /**
+   * A table without the workspace restriction, in this same transaction: for the few reviewed places where a workspace
+   * action creates or changes a global record (a person's identity when they are invited). Prefer collection().
+   */
+  unscoped<T extends Row = Row>(name: string, options: { flags?: string[] } = {}): Table<T> {
+    return new mongo.Table<T>(this.db, name, this.session, { scope: null, tables: this.tables, flags: options.flags });
+  }
+
+  /** Recomputes this workspace's audit hash chain. */
+  verifyAuditChain(): Promise<{ checked: number; firstBrokenSeq: number | null }> {
+    return mongo.verifyAuditChain(this.db, this.tenantId);
   }
 
   /** Appends to this workspace's audit chain; an event for any other workspace is refused. */
@@ -129,23 +154,17 @@ export class PlatformTx extends BaseTx {
  * Each runs as one multi-document transaction (snapshot reads, majority commit). MongoDB aborts one of two
  * transactions that write the same document, and the driver then runs the whole callback again, so callbacks must
  * not have side effects outside the database: queue email and webhooks through the outbox as today.
- *
- * Until the cut-over, MONGODB_URL is optional and nothing connects unless it is set.
  */
 @Injectable()
 export class MongoService implements OnModuleDestroy {
   private readonly logger = new Logger('MongoDB');
   private client: MongoClient | null = null;
   private connecting: Promise<MongoClient> | null = null;
-  private readonly dbName: string | null;
+  private readonly dbName: string;
   tables: Record<string, mongo.TableSpec> = mongo.TABLES;
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
-    this.dbName = config.MONGODB_URL ? mongo.databaseName(config.MONGODB_URL) : null;
-  }
-
-  get configured(): boolean {
-    return !!this.config.MONGODB_URL;
+    this.dbName = mongo.databaseName(config.MONGODB_URL);
   }
 
   async onModuleDestroy() {
@@ -167,6 +186,11 @@ export class MongoService implements OnModuleDestroy {
     } catch {
       return false;
     }
+  }
+
+  /** A cluster-wide lock for work only one API server should do at a time; null when another server holds it. */
+  async tryLease(key: string, ttlMs: number): Promise<(() => Promise<void>) | null> {
+    return mongo.tryLease(await this.database(), key, ttlMs);
   }
 
   tenant<T>(fn: (tx: TenantTx) => Promise<T>, scope?: { tenantId: string; userId?: string }): Promise<T> {
@@ -193,6 +217,7 @@ export class MongoService implements OnModuleDestroy {
     try {
       // Two transactions writing the same document: MongoDB aborts one with a transient error and the whole callback
       // runs again, a bounded number of times. Anything else ends the transaction, as an error did in PostgreSQL.
+      const started = Date.now();
       for (let attempt = 1; ; attempt++) {
         session.startTransaction(TRANSACTION);
         try {
@@ -201,11 +226,12 @@ export class MongoService implements OnModuleDestroy {
           const result = await fn(tx);
           await tx.flush();
           await commitWithRetry(session);
+          await this.linkAudit(client, db, tx.auditedChains);
           return result;
         } catch (err) {
           if (session.inTransaction()) await session.abortTransaction().catch(() => undefined);
-          if (attempt < MAX_ATTEMPTS && hasLabel(err, 'TransientTransactionError')) {
-            await new Promise((r) => setTimeout(r, Math.min(5 * 2 ** attempt, 200) * Math.random()));
+          if (hasLabel(err, 'TransientTransactionError') && Date.now() - started < CONFLICT_RETRY_MS) {
+            await new Promise((r) => setTimeout(r, Math.min(5 * 2 ** Math.min(attempt, 6), 200) * Math.random()));
             continue;
           }
           throw err;
@@ -216,11 +242,27 @@ export class MongoService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * Gives the events a committed transaction recorded their place in the audit chain, before the caller sees the
+   * result. The change is already committed, so a failure here is logged, not thrown: the outbox loop links whatever
+   * is left (linkPendingAudit).
+   */
+  private async linkAudit(client: MongoClient, db: Db, chains: Set<string | null>): Promise<void> {
+    for (const tenant of chains) {
+      await mongo.linkAuditChain(client, db, tenant).catch((err: Error) => this.logger.error(`Linking audit chain ${tenant ?? 'platform'} failed: ${err.message}`));
+    }
+  }
+
+  /** Links audit events still pending after a crash between a commit and its linking. Returns how many. */
+  async linkPendingAudit(): Promise<number> {
+    const client = await this.connect();
+    return mongo.linkPendingAuditEvents(client, client.db(this.dbName));
+  }
+
   private connect(): Promise<MongoClient> {
     if (this.client) return Promise.resolve(this.client);
-    if (!this.config.MONGODB_URL) return Promise.reject(new Error('MongoDB is not configured: set MONGODB_URL'));
     this.connecting ??= (async () => {
-      const client = mongo.createMongoClient({ url: this.config.MONGODB_URL!, maxPoolSize: this.config.MONGODB_POOL_MAX });
+      const client = mongo.createMongoClient({ url: this.config.MONGODB_URL, maxPoolSize: this.config.MONGODB_POOL_MAX });
       try {
         await client.connect();
         await mongo.assertTransactionsSupported(client);
@@ -235,4 +277,38 @@ export class MongoService implements OnModuleDestroy {
     })();
     return this.connecting;
   }
+}
+
+/** How many rows of `table` point at each of `ids` through `field` (the SQL `select count(*) ... group by`). */
+export async function countBy(tx: TenantTx | PlatformTx, table: string, field: string, ids: string[], filter: Record<string, unknown> = {}): Promise<Map<string, number>> {
+  // Aggregation results come back with the group key as `id` (see Table.aggregate).
+  const rows = await tx.collection(table).aggregate<{ id: string; n: number }>([{ $match: { ...filter, [field]: { $in: ids } } }, { $group: { _id: '$' + field, n: { $sum: 1 } } }]);
+  return new Map(rows.map((r) => [r.id, r.n]));
+}
+
+/** Any of the three transaction kinds. */
+export type AnyTx = TenantTx | UserTx | PlatformTx;
+
+/** The users table as this transaction may see it: a workspace sees only its members, without secrets. */
+export async function usersTable(tx: TenantTx | PlatformTx): Promise<Table<Row>> {
+  return tx instanceof TenantTx ? tx.users() : tx.collection('users');
+}
+
+/** The full name of the login behind each membership (users.full_name), by membership id. */
+export async function membershipUserNames(tx: TenantTx | PlatformTx, ids: unknown[]): Promise<Map<string, string | null>> {
+  const wanted = [...new Set(ids.filter((x): x is string => typeof x === 'string'))];
+  if (!wanted.length) return new Map();
+  const ms = await tx.collection('memberships').find({ id: { $in: wanted } }, { projection: { user_id: 1 } });
+  const users = new Map((await (await usersTable(tx)).find({ id: { $in: ms.map((m) => m.user_id) } }, { projection: { full_name: 1 } })).map((u) => [u.id as string, (u.full_name as string | null) ?? null]));
+  return new Map(ms.map((m) => [m.id as string, users.get(m.user_id) ?? null]));
+}
+
+/** A case-insensitive "contains" match for user-typed search text (the SQL `ilike '%q%'`), with the text escaped. */
+export function ilike(q: string): { $regex: string; $options: 'i' } {
+  return { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+}
+
+/** Matches the whole value without regard to case (PostgreSQL's citext equality). */
+export function ieq(q: string): { $regex: string; $options: 'i' } {
+  return { $regex: `^${ilike(q).$regex}$`, $options: 'i' };
 }

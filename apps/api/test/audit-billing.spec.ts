@@ -1,11 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { adminPool, api, createApp, createTenant, login, type TestTenant } from './helpers';
+import { adminPool, api, createApp, createTenant, login, type TestDb, type TestTenant } from './helpers';
 
 describe('audit trail', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let token: string;
 
@@ -32,16 +31,16 @@ describe('audit trail', () => {
   });
 
   it('does not write an audit event when the change fails', async () => {
-    const before = (await pool.query('select count(*)::int as n from audit_events where tenant_id = $1', [t.id])).rows[0].n;
+    const before = await pool.count('audit_events', { tenant_id: t.id });
     const res = await api(app, token).post('/org/locations').send({ name: 'Bad', legalEntityId: '00000000-0000-0000-0000-000000000000', timezone: 'Asia/Kolkata', countryCode: 'IN' });
     expect(res.status).toBe(422);
-    const after = (await pool.query('select count(*)::int as n from audit_events where tenant_id = $1', [t.id])).rows[0].n;
+    const after = await pool.count('audit_events', { tenant_id: t.id });
     expect(after).toBe(before);
   });
 
   it('is append-only, even for the platform role', async () => {
-    await expect(pool.query('update audit_events set action = $1 where tenant_id = $2', ['x.y', t.id])).rejects.toThrow(/append-only/);
-    await expect(pool.query('delete from audit_events where tenant_id = $1', [t.id])).rejects.toThrow(/append-only/);
+    await expect(pool.update('audit_events', { tenant_id: t.id }, { $set: { action: 'x.y' } })).rejects.toThrow(/append-only|not allowed/);
+    await expect(pool.delete('audit_events', { tenant_id: t.id })).rejects.toThrow(/append-only|not allowed/);
   });
 
   it('detects tampering through the hash chain', async () => {
@@ -49,9 +48,8 @@ describe('audit trail', () => {
     expect(ok.body.intact).toBe(true);
     expect(ok.body.checked).toBeGreaterThan(2);
     // Simulate a DBA editing history behind the application's back.
-    await pool.query('alter table audit_events disable trigger audit_events_immutable');
-    await pool.query(`update audit_events set changes = '{"name":"forged"}' where tenant_id = $1 and chain_seq = 2`, [t.id]);
-    await pool.query('alter table audit_events enable trigger audit_events_immutable');
+    // Tamper below the data rules, as someone with direct database access could.
+    await (await pool.database()).collection('audit_events').updateOne({ tenant_id: t.id, chain_seq: 2 }, { $set: { changes: { name: 'forged' } } });
     const broken = await api(app, token).get('/audit-events/verify');
     expect(broken.body).toMatchObject({ intact: false, firstBrokenSeq: 2 });
   });
@@ -64,7 +62,7 @@ describe('audit trail', () => {
 
 describe('subscriptions and entitlements', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
 
   beforeAll(async () => {
     app = await createApp();
@@ -89,10 +87,10 @@ describe('subscriptions and entitlements', () => {
 
   it('blocks a downgrade that current usage does not fit, and allows an upgrade', async () => {
     const t = await createTenant(pool, { plan: 'business' });
-    await pool.query(`insert into legal_entities (tenant_id, name, country_code, currency, timezone) values ($1, 'Second', 'IN', 'INR', 'Asia/Kolkata')`, [t.id]);
+    await pool.insert('legal_entities', { tenant_id: t.id, name: 'Second', country_code: 'IN', currency: 'INR', timezone: 'Asia/Kolkata' });
     // billing:manage requires MFA: mark the session as MFA-verified for this test.
     const s = await login(app, t.ownerEmail);
-    await pool.query(`update sessions set mfa_verified = true where tenant_id = $1`, [t.id]);
+    await pool.update('sessions', { tenant_id: t.id }, { $set: { mfa_verified: true } });
     const refreshed = await api(app).post('/auth/refresh').send({ refreshToken: s.refreshToken });
     const http = api(app, refreshed.body.accessToken);
     const down = await http.put('/billing/subscription').send({ planKey: 'starter', billingCycle: 'monthly', seats: 10 });
@@ -107,7 +105,7 @@ describe('subscriptions and entitlements', () => {
 
   it('honours platform feature overrides', async () => {
     const t = await createTenant(pool, { plan: 'starter' });
-    await pool.query(`update subscriptions set feature_overrides = '{"recruitment": true, "max_legal_entities": 3}' where tenant_id = $1`, [t.id]);
+    await pool.update('subscriptions', { tenant_id: t.id }, { $set: { feature_overrides: { recruitment: true, max_legal_entities: 3 } } });
     const { accessToken } = await login(app, t.ownerEmail);
     const me = await api(app, accessToken).get('/me');
     expect(me.body.features).toContain('recruitment');
@@ -117,7 +115,7 @@ describe('subscriptions and entitlements', () => {
 
 describe('idempotency', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   beforeAll(async () => {
     app = await createApp();
     pool = adminPool();
@@ -137,8 +135,7 @@ describe('idempotency', () => {
     expect(second.status).toBe(201);
     expect(second.headers['idempotent-replayed']).toBe('true');
     expect(second.body.id).toBe(first.body.id);
-    const count = await pool.query(`select count(*)::int as n from business_units where tenant_id = $1 and name = 'Retail'`, [t.id]);
-    expect(count.rows[0].n).toBe(1);
+    expect(await pool.count('business_units', { tenant_id: t.id, name: 'Retail' })).toBe(1);
     expect((await send({ name: 'Different' })).status).toBe(409);
   });
 });

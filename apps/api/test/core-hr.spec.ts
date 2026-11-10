@@ -1,9 +1,8 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HrJobsService } from '../src/modules/hr-jobs/hr-jobs.service';
 import { MailerService } from '../src/platform/notify/mailer.service';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 const Y = new Date().getUTCFullYear() + 1; // leave tests use next year so every date is in the future
 const weekday = (month: number, nth = 1, dow = 1) => {
@@ -18,7 +17,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** Phase 2 end-to-end through the HTTP API: hiring, scopes, job history, leave with approvals, documents, email. */
 describe('core HR', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let owner: string;
@@ -69,16 +68,16 @@ describe('core HR', () => {
       expect(hr.employeeCode).toBe('EMP0001');
       expect(helper.employeeCode).toBe('EMP0005');
       expect(helper.status).toBe('probation');
-      const rec = await pool.query(`select change_reason, effective_from::text from employment_records where employee_id = $1`, [op.id]);
-      expect(rec.rows).toEqual([{ change_reason: 'hire', effective_from: '2024-01-15' }]);
-      const tasks = await pool.query(`select owner, assignee_membership_id from onboarding_tasks where employee_id = $1 order by sort`, [op.id]);
-      expect(tasks.rowCount).toBe(8);
+      const rec = await pool.find('employment_records', { employee_id: op.id });
+      expect(rec.map((x) => ({ change_reason: x.change_reason, effective_from: x.effective_from }))).toEqual([{ change_reason: 'hire', effective_from: '2024-01-15' }]);
+      const tasks = { rows: await pool.find('onboarding_tasks', { employee_id: op.id }, { sort: { sort: 1 } }) };
+      expect(tasks.rows).toHaveLength(8);
       // Manager tasks go to the manager, the joiner's own tasks to their login.
-      expect(tasks.rows.find((r) => r.owner === 'manager').assignee_membership_id).toBe(people.supervisor!.membershipId);
-      expect(tasks.rows.find((r) => r.owner === 'employee').assignee_membership_id).toBe(people.operator!.membershipId);
+      expect(tasks.rows.find((r) => r.owner === 'manager')!.assignee_membership_id).toBe(people.supervisor!.membershipId);
+      expect(tasks.rows.find((r) => r.owner === 'employee')!.assignee_membership_id).toBe(people.operator!.membershipId);
       // The membership follows the employee placement, including the manager's login.
-      const m = await pool.query(`select manager_membership_id, department_id, employee_id from memberships where id = $1`, [people.operator!.membershipId]);
-      expect(m.rows[0]).toEqual({ manager_membership_id: people.supervisor!.membershipId, department_id: assembly, employee_id: op.id });
+      const m = (await pool.one('memberships', { id: people.operator!.membershipId }))!;
+      expect({ manager_membership_id: m.manager_membership_id, department_id: m.department_id, employee_id: m.employee_id }).toEqual({ manager_membership_id: people.supervisor!.membershipId, department_id: assembly, employee_id: op.id });
     });
 
     it('validates hiring input and refuses to link a login twice', async () => {
@@ -118,22 +117,20 @@ describe('core HR', () => {
       expect(put.body.error.code).toBe('mfa_required');
       const set = await api(app, hrAdmin).put(`/employees/${people.operator!.employeeId}/sensitive`).send({ bankName: 'Demo Bank', bankAccount: '123456789012', bankRouting: 'DEMO0001234', taxId: 'ABCDE1234F' });
       expect(set.status).toBe(200);
-      const raw = await pool.query(`select bank_account_enc, tax_id_enc from employee_sensitive where employee_id = $1`, [people.operator!.employeeId]);
-      expect(raw.rows[0].bank_account_enc).toMatch(/^v2\.[0-9a-f]{8}\./);
-      expect(JSON.stringify(raw.rows[0])).not.toContain('123456789012');
+      const raw = (await pool.one('employee_sensitive', { employee_id: people.operator!.employeeId }))!;
+      expect(raw.bank_account_enc).toMatch(/^v2\.[0-9a-f]{8}\./);
+      expect(JSON.stringify(raw)).not.toContain('123456789012');
       const mine = await loginWithMfa(app, pool, people.operator!.email);
       const got = await api(app, mine.accessToken).get(`/employees/${people.operator!.employeeId}/sensitive`);
       expect(got.status).toBe(200);
       expect(got.body.bankAccount).toBe('123456789012');
       const supervisor = await loginWithMfa(app, pool, people.supervisor!.email);
       expect((await api(app, supervisor.accessToken).get(`/employees/${people.operator!.employeeId}/sensitive`)).status).toBe(404);
-      const views = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'employee.sensitive_viewed'`, [t.id]);
-      expect(views.rows[0].n).toBe(1);
-      const audit = await pool.query(`select changes::text, metadata::text from audit_events where tenant_id = $1 and action = 'employee.sensitive_updated'`, [t.id]);
-      expect(audit.rows[0].changes + audit.rows[0].metadata).not.toContain('123456789012');
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'employee.sensitive_viewed' })).toBe(1);
+      const audit = (await pool.one('audit_events', { tenant_id: t.id, action: 'employee.sensitive_updated' }))!;
+      expect(JSON.stringify([audit.changes, audit.metadata])).not.toContain('123456789012');
       // The employee is told when someone else changes their bank details.
-      const note = await pool.query(`select 1 from notifications where membership_id = $1 and kind = 'employee.sensitive_changed'`, [people.operator!.membershipId]);
-      expect(note.rowCount).toBe(1);
+      expect(await pool.count('notifications', { membership_id: people.operator!.membershipId, kind: 'employee.sensitive_changed' })).toBe(1);
     });
   });
 
@@ -151,10 +148,10 @@ describe('core HR', () => {
       expect(later.status).toBe(409);
 
       await app.get(HrJobsService).runTenant(t.id, from);
-      const e = await pool.query(`select current_department_id, current_manager_employee_id from employees where id = $1`, [people.peer!.employeeId]);
-      expect(e.rows[0]).toEqual({ current_department_id: assembly, current_manager_employee_id: people.supervisor!.employeeId });
-      const m = await pool.query(`select department_id, manager_membership_id from memberships where id = $1`, [people.peer!.membershipId]);
-      expect(m.rows[0]).toEqual({ department_id: assembly, manager_membership_id: people.supervisor!.membershipId });
+      const e = (await pool.one('employees', { id: people.peer!.employeeId }))!;
+      expect({ current_department_id: e.current_department_id, current_manager_employee_id: e.current_manager_employee_id }).toEqual({ current_department_id: assembly, current_manager_employee_id: people.supervisor!.employeeId });
+      const m = (await pool.one('memberships', { id: people.peer!.membershipId }))!;
+      expect({ department_id: m.department_id, manager_membership_id: m.manager_membership_id }).toEqual({ department_id: assembly, manager_membership_id: people.supervisor!.membershipId });
       expect((await api(app, sup).get(`/employees/${people.peer!.employeeId}`)).status).toBe(200);
 
       const history = await api(app, hrAdmin).get(`/employees/${people.peer!.employeeId}/history`);
@@ -164,7 +161,7 @@ describe('core HR', () => {
     });
 
     it('lifecycle events cannot be edited', async () => {
-      await expect(pool.query(`update lifecycle_events set kind = 'confirmed' where employee_id = $1`, [people.peer!.employeeId])).rejects.toThrow();
+      await expect(pool.update('lifecycle_events', { employee_id: people.peer!.employeeId }, { $set: { kind: 'confirmed' } })).rejects.toThrow(/not allowed/);
     });
 
     it('confirms probation', async () => {
@@ -254,8 +251,7 @@ describe('core HR', () => {
       expect(after.body.approvalTrail[0]).toMatchObject({ status: 'approved', comment: 'Enjoy' });
       const bal = await api(app, op).get(`/leave/balances?year=${Y}`);
       expect(bal.body.balances.find((b: { code: string }) => b.code === 'CL')).toMatchObject({ taken: '1.50', balance: '4.50', pending: '0.00' });
-      const notes = await pool.query(`select kind from notifications where membership_id = $1 and kind = 'approval.approved'`, [people.operator!.membershipId]);
-      expect(notes.rowCount).toBe(1);
+      expect(await pool.count('notifications', { membership_id: people.operator!.membershipId, kind: 'approval.approved' })).toBe(1);
     });
 
     it('returns days through a reversal when approved leave is cancelled, and never edits the ledger', async () => {
@@ -263,9 +259,9 @@ describe('core HR', () => {
       const res = await api(app, op).post(`/leave/requests/${requestId}/cancel`).send({ reason: 'Plans changed' });
       expect(res.status).toBe(201);
       expect(res.body.status).toBe('cancelled');
-      const rows = await pool.query(`select kind, quantity::text from leave_ledger where leave_request_id = $1 order by created_at`, [requestId]);
-      expect(rows.rows).toEqual([{ kind: 'taken', quantity: '-1.50' }, { kind: 'reversal', quantity: '1.50' }]);
-      await expect(pool.query(`delete from leave_ledger where leave_request_id = $1`, [requestId])).rejects.toThrow();
+      const rows = await pool.find('leave_ledger', { leave_request_id: requestId }, { sort: { created_at: 1 } });
+      expect(rows.map((x) => ({ kind: x.kind, quantity: x.quantity }))).toEqual([{ kind: 'taken', quantity: '-1.50' }, { kind: 'reversal', quantity: '1.50' }]);
+      await expect(pool.delete('leave_ledger', { leave_request_id: requestId })).rejects.toThrow(/append-only|not allowed/);
       const bal = await api(app, op).get(`/leave/balances?year=${Y}`);
       expect(bal.body.balances.find((b: { code: string }) => b.code === 'CL').balance).toBe('6.00');
     });
@@ -373,8 +369,8 @@ describe('core HR', () => {
       const op = await token('operator');
       const list = await api(app, op).get('/notifications');
       expect(list.body.items.length).toBeGreaterThan(0);
-      const theirs = await pool.query(`select id from notifications where membership_id = $1 limit 1`, [people.supervisor!.membershipId]);
-      expect((await api(app, op).post(`/notifications/${theirs.rows[0].id}/read`)).status).toBe(404);
+      const theirs = (await pool.one('notifications', { membership_id: people.supervisor!.membershipId }))!;
+      expect((await api(app, op).post(`/notifications/${theirs.id}/read`)).status).toBe(404);
       expect((await api(app, op).post('/notifications/read-all')).status).toBe(204);
       expect((await api(app, op).get('/notifications/unread-count')).body.unread).toBe(0);
     });
@@ -382,8 +378,8 @@ describe('core HR', () => {
     it('marks email as not delivered when SMTP is not configured, instead of pretending', async () => {
       const r = await app.get(MailerService).sendBatch(500);
       expect(r.sent).toBe(0);
-      const rows = await pool.query(`select status, last_error from email_messages where tenant_id = $1 limit 1`, [t.id]);
-      expect(rows.rows[0]).toEqual({ status: 'skipped', last_error: 'Email delivery is not set up (Super Admin Console > Integrations > Email)' });
+      const row = (await pool.one('email_messages', { tenant_id: t.id }))!;
+      expect({ status: row.status, last_error: row.last_error }).toEqual({ status: 'skipped', last_error: 'Email delivery is not set up (Super Admin Console > Integrations > Email)' });
     });
   });
 
@@ -413,25 +409,16 @@ describe('core HR', () => {
       expect((await api(app, outsider).get(`/employees/${op}/documents`)).status).toBe(404);
       expect((await api(app, outsider).get(`/leave/balances?employeeId=${op}`)).status).toBe(404);
       expect((await api(app, outsider).get('/employees')).body.items).toEqual([]);
-      const req = await pool.query(`select id, approval_request_id from leave_requests where employee_id = $1 limit 1`, [op]);
-      expect((await api(app, outsider).get(`/leave/requests/${req.rows[0].id}`)).status).toBe(404);
-      expect((await api(app, outsider).post(`/approvals/${req.rows[0].approval_request_id}/approve`).send({})).status).toBe(404);
-      // RLS holds even for direct queries under the application role.
-      const c = await pool.connect();
-      try {
-        await c.query('begin');
-        await c.query('set local role crew_app');
-        await c.query(`select set_config('app.tenant_id', $1, true)`, [other.id]);
-        for (const table of ['employees', 'employment_records', 'leave_ledger', 'leave_requests', 'approval_requests', 'employee_documents', 'notifications', 'onboarding_tasks', 'employee_sensitive']) {
-          const n = await c.query(`select count(*)::int as n from ${table} where tenant_id = $1`, [t.id]);
-          expect(n.rows[0].n, table).toBe(0);
-        }
-        // The application role can queue email but never read it back.
-        await expect(c.query(`select count(*) from email_messages`)).rejects.toThrow(/permission denied/);
-      } finally {
-        await c.query('rollback');
-        c.release();
+      const req = (await pool.one('leave_requests', { employee_id: op }))!;
+      expect((await api(app, outsider).get(`/leave/requests/${req.id}`)).status).toBe(404);
+      expect((await api(app, outsider).post(`/approvals/${req.approval_request_id}/approve`).send({})).status).toBe(404);
+      // The workspace scope holds even for direct use of the database layer.
+      for (const table of ['employees', 'employment_records', 'leave_ledger', 'leave_requests', 'approval_requests', 'employee_documents', 'notifications', 'onboarding_tasks', 'employee_sensitive']) {
+        const ids = (await pool.find(table, { tenant_id: t.id })).map((x) => x.id);
+        expect(await pool.tenant(other.id, (tx) => tx.collection(table).count({ id: { $in: ids } })), table).toBe(0);
       }
+      // A workspace can queue email but never read it back.
+      await expect(pool.tenant(other.id, (tx) => tx.collection('email_messages').count({}))).rejects.toThrow(/not allowed/);
     });
   });
 });

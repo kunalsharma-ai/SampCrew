@@ -156,3 +156,50 @@ export function scopePredicate(
   });
   return `(${clauses.join(' or ')})`;
 }
+
+/**
+ * The MongoDB form of scopePredicate: the subject's grants for a permission as a query filter over documents
+ * (or, inside an aggregation after a $lookup, joined fields such as `m.legal_entity_id`). Returns null when the
+ * subject has no grant, and a filter that matches nothing when a grant cannot apply.
+ */
+export function scopeFilter(
+  subject: Subject,
+  permission: string,
+  fields: { membershipId: string; legalEntityId: string; departmentId: string; locationId: string; employeeId?: string },
+): Record<string, unknown> | null {
+  const grants = grantsFor(subject, permission);
+  if (!grants.length) return null;
+  const none = { _id: { $in: [] } };
+  const anyOf = (field: string, values: Iterable<string>) => ({ [field]: { $in: [...values] } });
+  const clauses = grants.map((g) => {
+    const parts: Record<string, unknown>[] = [];
+    const c = g.constraints;
+    if (c.legalEntityIds?.length) parts.push(anyOf(fields.legalEntityId, c.legalEntityIds));
+    if (c.departmentIds?.length) parts.push(anyOf(fields.departmentId, subject.departmentSubtree(c.departmentIds)));
+    if (c.locationIds?.length) parts.push(anyOf(fields.locationId, c.locationIds));
+    switch (g.scope) {
+      case 'tenant':
+        break;
+      case 'entity':
+        if (!c.legalEntityIds?.length) parts.push(subject.legalEntityId ? { [fields.legalEntityId]: subject.legalEntityId } : none);
+        break;
+      case 'department':
+        if (!c.departmentIds?.length) parts.push(anyOf(fields.departmentId, subject.ownDepartmentSubtree));
+        break;
+      case 'team': {
+        const byMembership = anyOf(fields.membershipId, [subject.membershipId, ...subject.reportIds]);
+        const team = [...(subject.employeeId ? [subject.employeeId] : []), ...(subject.reportEmployeeIds ?? [])];
+        parts.push(fields.employeeId && team.length ? { $or: [byMembership, anyOf(fields.employeeId, team)] } : byMembership);
+        break;
+      }
+      case 'own': {
+        const byMembership = { [fields.membershipId]: subject.membershipId };
+        parts.push(fields.employeeId && subject.employeeId ? { $or: [byMembership, { [fields.employeeId]: subject.employeeId }] } : byMembership);
+        break;
+      }
+    }
+    return parts.length === 0 ? {} : parts.length === 1 ? parts[0]! : { $and: parts };
+  });
+  if (clauses.some((c) => Object.keys(c).length === 0)) return {};
+  return clauses.length === 1 ? clauses[0]! : { $or: clauses };
+}

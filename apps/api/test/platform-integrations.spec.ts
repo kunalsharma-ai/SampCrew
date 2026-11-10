@@ -2,7 +2,6 @@ import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer as createTcpServer, type Server as TcpServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { SMTPServer } from 'smtp-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AiGatewayService } from '../src/modules/ai/ai-gateway.service';
@@ -11,7 +10,7 @@ import { currentTotp } from '../src/platform/auth/mfa';
 import { resetConfigForTests } from '../src/platform/config/config';
 import { PlatformIntegrationsService } from '../src/platform/integrations/platform-integrations.service';
 import { MailerService } from '../src/platform/notify/mailer.service';
-import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
+import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 /**
  * Installation-wide integrations set up in the Super Admin Console instead of the environment file: Claude AI, SMTP
@@ -21,7 +20,7 @@ import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type T
  */
 describe('Platform integrations (Super Admin Console)', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let superToken: string;
   let supportToken: string;
@@ -51,7 +50,7 @@ describe('Platform integrations (Super Admin Console)', () => {
 
   async function platformToken(role: string) {
     const email = `${role}.integrations.${stamp}@sampledge.test`;
-    await pool.query(`insert into platform_admins (email, full_name, password_hash, role) values ($1, $2, $3, $4)`, [email, `${role} admin`, await hashPassword(PASSWORD), role]);
+    await pool.insert('platform_admins', { email, full_name: `${role} admin`, password_hash: await hashPassword(PASSWORD), role });
     const res = await api(app).post('/platform/auth/login').send({ email, password: PASSWORD });
     const setup = await api(app, res.body.accessToken).post('/platform/auth/mfa/setup');
     return (await api(app, res.body.accessToken).post('/platform/auth/mfa/enable').send({ code: currentTotp(setup.body.secret) })).body.accessToken as string;
@@ -125,14 +124,14 @@ describe('Platform integrations (Super Admin Console)', () => {
     resetConfigForTests();
     app = await createApp();
     pool = adminPool();
-    await pool.query('delete from platform_integrations');
+    await pool.delete('platform_integrations', {});
     t = await createTenant(pool, { plan: 'business' });
     superToken = await platformToken('super_admin');
     supportToken = await platformToken('support');
   });
 
   afterAll(async () => {
-    await pool.query('delete from platform_integrations');
+    await pool.delete('platform_integrations', {});
     await app.close();
     await pool.end();
     await Promise.all([
@@ -198,7 +197,8 @@ describe('Platform integrations (Super Admin Console)', () => {
       expect(saved).toMatchObject({ source: 'console', enabled: true, settings: { model: 'claude-opus-5-5', baseUrl: aiUrl }, secrets: { apiKey: { set: true, hint: '••••1234' } } });
       const listed = await as(superToken).get('/platform/integrations');
       expect(JSON.stringify(listed.body)).not.toContain('sk-ant-test-good-key');
-      const row = (await pool.query(`select secrets_enc, settings::text from platform_integrations where key = 'ai'`)).rows[0];
+      const stored = (await pool.one('platform_integrations', { key: 'ai' }))!;
+      const row = { secrets_enc: stored.secrets_enc as string, settings: JSON.stringify(stored.settings) };
       expect(row.secrets_enc).toMatch(/^v2\./);
       expect(row.secrets_enc).not.toContain('good-key');
       expect(row.settings).not.toContain('good-key');
@@ -272,17 +272,17 @@ describe('Platform integrations (Super Admin Console)', () => {
       ok(await as(superToken).put('/platform/integrations/email').send(values()));
       expect(await mailer.isConfigured()).toBe(true);
       const to = `queued.${stamp}@crew.test`;
-      await pool.query(`insert into email_messages (tenant_id, to_email, subject, text_body, template) values ($1, $2, 'Queued via Console SMTP', 'Hello', 'test')`, [t.id, to]);
+      await pool.insert('email_messages', { tenant_id: t.id, to_email: to, subject: 'Queued via Console SMTP', text_body: 'Hello', template: 'test' });
       const r = await mailer.sendBatch(500);
       expect(r.sent).toBeGreaterThan(0);
       expect(mails.find((m) => m.to === to)?.body).toContain('Queued via Console SMTP');
-      expect((await pool.query('select status from email_messages where to_email = $1', [to])).rows[0].status).toBe('sent');
+      expect((await pool.one('email_messages', { to_email: to }))!.status).toBe('sent');
 
       ok(await as(superToken).put('/platform/integrations/email').send(values({ password: '', enabled: false })));
       const off = `off.${stamp}@crew.test`;
-      await pool.query(`insert into email_messages (tenant_id, to_email, subject, text_body, template) values ($1, $2, 'Should not go', 'x', 'test')`, [t.id, off]);
+      await pool.insert('email_messages', { tenant_id: t.id, to_email: off, subject: 'Should not go', text_body: 'x', template: 'test' });
       await mailer.sendBatch(500);
-      expect((await pool.query('select status, last_error from email_messages where to_email = $1', [off])).rows[0]).toEqual({ status: 'skipped', last_error: 'Email delivery is not set up (Super Admin Console > Integrations > Email)' });
+      expect(await pool.one('email_messages', { to_email: off })).toMatchObject({ status: 'skipped', last_error: 'Email delivery is not set up (Super Admin Console > Integrations > Email)' });
       ok(await as(superToken).delete('/platform/integrations/email'));
     });
   });
@@ -349,7 +349,8 @@ describe('Platform integrations (Super Admin Console)', () => {
   });
 
   it('writes every change and test to the platform audit trail, without secrets', async () => {
-    const audit = (await pool.query(`select action, resource_id, changes::text, metadata::text from audit_events where tenant_id is null and resource_type = 'platform_integration' order by chain_seq`)).rows;
+    const audit = (await pool.find('audit_events', { tenant_id: null, resource_type: 'platform_integration' }, { sort: { chain_seq: 1 } }))
+      .map((a) => ({ action: a.action, resource_id: a.resource_id, changes: JSON.stringify(a.changes), metadata: JSON.stringify(a.metadata) }));
     const actions = new Set(audit.map((a) => a.action));
     expect(actions).toEqual(new Set(['platform.integration_saved', 'platform.integration_tested', 'platform.integration_reset']));
     const all = JSON.stringify(audit);

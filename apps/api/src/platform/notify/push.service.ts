@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/config';
-import { DatabaseService } from '../database/database.service';
+import { MongoService as DatabaseService } from '../database/mongo.service';
 import { PlatformIntegrationsService } from '../integrations/platform-integrations.service';
 
+const LEASE_SECONDS = 120;
 const MAX_ATTEMPTS = 5;
 
 interface Due {
@@ -63,24 +64,21 @@ export class PushService implements OnApplicationBootstrap, OnModuleDestroy {
     this.running = true;
     try {
       const settings = await this.integrations.push();
-      await this.db.platform(async (tx) => {
-        const { rows } = await tx.query<Due>(
-          `select p.id, p.notification_id, n.link, d.push_token, d.revoked_at is not null as revoked, p.attempts, d.id as device_id
-             from push_messages p join mobile_devices d on d.id = p.mobile_device_id left join notifications n on n.id = p.notification_id
-            where p.status = 'queued' and p.next_attempt_at <= now() order by p.created_at limit $1 for update of p skip locked`,
-          [batch],
-        );
-        const skip = async (id: string, reason: string) => {
-          await tx.query(`update push_messages set status = 'skipped', last_error = $2 where id = $1`, [id, reason]);
-          out.skipped++;
-        };
-        const sendable: Due[] = [];
-        for (const m of rows) {
-          if (!settings.enabled) await skip(m.id, 'Push delivery is not set up (Super Admin Console > Integrations > Mobile push)');
-          else if (m.revoked || !m.push_token) await skip(m.id, 'The device was signed out or turned push off');
-          else sendable.push(m);
-        }
-        if (!sendable.length) return;
+      // Due messages are taken under a short lease, sent outside any transaction (a retried transaction must not
+      // push twice), and their outcome is written afterwards.
+      const rows = await this.claim(batch);
+      const outcomes: Array<{ id: string; set: Record<string, unknown>; inc?: boolean; clearDevice?: string }> = [];
+      const skip = (id: string, reason: string) => {
+        outcomes.push({ id, set: { status: 'skipped', last_error: reason } });
+        out.skipped++;
+      };
+      const sendable: Due[] = [];
+      for (const m of rows) {
+        if (!settings.enabled) skip(m.id, 'Push delivery is not set up (Super Admin Console > Integrations > Mobile push)');
+        else if (m.revoked || !m.push_token) skip(m.id, 'The device was signed out or turned push off');
+        else sendable.push(m);
+      }
+      if (sendable.length) {
         let tickets: ExpoTicket[] | null = null;
         let failure: string | null = null;
         try {
@@ -109,31 +107,54 @@ export class PushService implements OnApplicationBootstrap, OnModuleDestroy {
         for (const [i, m] of sendable.entries()) {
           const t = tickets?.[i];
           if (t?.status === 'ok') {
-            await tx.query(`update push_messages set status = 'sent', sent_at = now(), attempts = attempts + 1, ticket_id = $2, last_error = null where id = $1`, [m.id, t.id ?? null]);
+            outcomes.push({ id: m.id, set: { status: 'sent', sent_at: new Date(), ticket_id: t.id ?? null, last_error: null }, inc: true });
             out.sent++;
             continue;
           }
           const error = t ? `${t.details?.error ?? 'error'}: ${t.message ?? ''}`.slice(0, 1000) : (failure ?? 'No answer for this message').slice(0, 1000);
           if (t?.details?.error === 'DeviceNotRegistered') {
             // The app was uninstalled or the token expired: stop sending to it.
-            await tx.query(`update mobile_devices set push_token = null, push_token_updated_at = now() where id = $1`, [m.device_id]);
-            await tx.query(`update push_messages set status = 'failed', attempts = attempts + 1, last_error = $2 where id = $1`, [m.id, error]);
+            outcomes.push({ id: m.id, set: { status: 'failed', last_error: error }, inc: true, clearDevice: m.device_id });
             out.failed++;
             continue;
           }
           const attempts = m.attempts + 1;
-          await tx.query(
-            `update push_messages set attempts = $2, last_error = $3, status = case when $4 then 'failed' else 'queued' end,
-               next_attempt_at = now() + make_interval(secs => $5) where id = $1`,
-            [m.id, attempts, error, attempts >= MAX_ATTEMPTS, Math.min(30 * 2 ** attempts, 3600)],
-          );
+          outcomes.push({
+            id: m.id,
+            set: { attempts, last_error: error, status: attempts >= MAX_ATTEMPTS ? 'failed' : 'queued', next_attempt_at: new Date(Date.now() + Math.min(30 * 2 ** attempts, 3600) * 1000) },
+          });
           out.failed++;
         }
         if (failure) this.logger.warn(`Push batch failed: ${failure}`);
-      });
+      }
+      if (outcomes.length) {
+        await this.db.platform(async (tx) => {
+          for (const o of outcomes) {
+            await tx.collection('push_messages').updateOne({ id: o.id }, { $set: o.set, ...(o.inc ? { $inc: { attempts: 1 } } : {}) });
+            if (o.clearDevice) await tx.collection('mobile_devices').updateOne({ id: o.clearDevice }, { $set: { push_token: null, push_token_updated_at: new Date() } });
+          }
+        });
+      }
     } finally {
       this.running = false;
     }
     return out;
+  }
+
+  private claim(batch: number): Promise<Due[]> {
+    return this.db.platform(async (tx) => {
+      const now = new Date();
+      const pushes = tx.collection('push_messages');
+      const due = await pushes.find({ status: 'queued', next_attempt_at: { $lte: now } }, { sort: { created_at: 1 }, limit: batch });
+      if (!due.length) return [];
+      // Concurrent senders taking the same message write the same document; MongoDB lets only one commit.
+      await pushes.update({ id: { $in: due.map((p) => p.id) } }, { $set: { next_attempt_at: new Date(now.getTime() + LEASE_SECONDS * 1000) } });
+      const devices = new Map((await tx.collection('mobile_devices').find({ id: { $in: due.map((p) => p.mobile_device_id) } })).map((d) => [d.id as string, d]));
+      const links = new Map((await tx.collection('notifications').find({ id: { $in: due.map((p) => p.notification_id).filter(Boolean) } }, { projection: { link: 1 } })).map((n) => [n.id as string, n.link]));
+      return due.map((p) => {
+        const d = devices.get(p.mobile_device_id);
+        return { id: p.id, notification_id: p.notification_id, link: links.get(p.notification_id) ?? null, push_token: d?.push_token ?? null, revoked: !d || !!d.revoked_at, attempts: p.attempts, device_id: p.mobile_device_id } as Due;
+      });
+    });
   }
 }

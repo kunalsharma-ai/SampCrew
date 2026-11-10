@@ -2,26 +2,23 @@
   "name": "@crew/db",
   "version": "0.1.0",
   "private": true,
-  "description": "SampCrew database: SQL migrations (with Row-Level Security), MongoDB migrations and audit chain (in progress), migration runner, catalogue sync, tenant provisioning, demo seed",
+  "description": "SampCrew database on MongoDB: collection schema and validators, migrations, the data-rules engine (tenant scoping, unique and foreign keys, CHECK rules, row guards), the audit hash chain, tenant provisioning, catalogue sync and the demo seed",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "tsx scripts/migrate.ts",
-    "migrate:mongo": "tsx scripts/migrate-mongo.ts",
     "seed": "tsx scripts/seed.ts",
     "dr-drill": "tsx scripts/dr-drill.ts",
     "reset": "tsx scripts/reset.ts && tsx scripts/migrate.ts && tsx scripts/seed.ts"
   },
   "dependencies": {
     "@crew/contracts": "workspace:*",
-    "mongodb": "7.7.0",
-    "pg": "8.23.1"
+    "mongodb": "7.7.0"
   },
   "devDependencies": {
     "@node-rs/argon2": "2.2.2",
-    "@types/pg": "8.23.1",
     "tsx": "4.23.15",
     "typescript": "5.9.3"
   }

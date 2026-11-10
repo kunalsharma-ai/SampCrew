@@ -13,13 +13,14 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor, type ResourceAttributes } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, membershipUserNames, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService, type ApprovalRequestRow } from '../approvals/approvals.service';
 import { AttendanceService } from '../attendance/attendance.service';
-import { employeeAttrs } from '../employees/employee-attrs';
+import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
+import { displayName, employeeNames, fieldById } from '../employees/employee-view';
 
 
 interface PolicyRow {
@@ -60,19 +61,91 @@ interface RequestRow {
   requested_by_membership_id: string | null;
 }
 
-const POLICY_COLUMNS = `p.id, p.leave_type_id as "leaveTypeId", t.name as "leaveTypeName", t.code as "leaveTypeCode", p.legal_entity_id as "legalEntityId",
-  le.name as "legalEntityName", p.accrual_method as "accrualMethod", p.annual_entitlement::text as "annualEntitlement",
-  p.carry_forward_max::text as "carryForwardMax", p.allow_negative_balance as "allowNegativeBalance", p.min_notice_days as "minNoticeDays",
-  p.max_consecutive_days::text as "maxConsecutiveDays", p.available_during_probation as "availableDuringProbation", p.rounding, p.created_at as "createdAt"`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
 
-const REQUEST_COLUMNS = `r.id, r.employee_id as "employeeId", trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "employeeName",
-  e.employee_code as "employeeCode", r.leave_type_id as "leaveTypeId", t.name as "leaveTypeName", t.code as "leaveTypeCode", t.color,
-  r.start_date as "startDate", r.end_date as "endDate", r.start_half as "startHalf", r.end_half as "endHalf", r.days::text as days, r.reason,
-  r.status, r.approval_request_id as "approvalId", r.created_at as "createdAt", r.decided_at as "decidedAt", r.cancelled_at as "cancelledAt",
-  r.cancel_reason as "cancelReason", ru.full_name as "requestedBy"`;
-const REQUEST_FROM = `from leave_requests r join employees e on e.id = r.employee_id join leave_types t on t.id = r.leave_type_id
-  left join memberships rm on rm.id = r.requested_by_membership_id left join users ru on ru.id = rm.user_id`;
-const REQUEST_SCOPE = { membershipId: 'e.membership_id', legalEntityId: 'e.current_legal_entity_id', departmentId: 'e.current_department_id', locationId: 'e.current_location_id', employeeId: 'e.id' };
+/** Leave policies as the API shows them, with the leave type and legal entity names. */
+async function policyViews(tx: TenantTx, policies: Doc[]) {
+  const types = new Map((await tx.collection('leave_types').find({ id: { $in: policies.map((p) => p.leave_type_id) } })).map((t) => [t.id as string, t]));
+  const entities = await fieldById(tx, 'legal_entities', policies.map((p) => p.legal_entity_id));
+  return policies
+    .filter((p) => types.has(p.leave_type_id))
+    .map((p) => {
+      const t = types.get(p.leave_type_id)!;
+      return {
+        id: p.id,
+        leaveTypeId: p.leave_type_id,
+        leaveTypeName: t.name,
+        leaveTypeCode: t.code,
+        legalEntityId: p.legal_entity_id ?? null,
+        legalEntityName: entities.get(p.legal_entity_id) ?? null,
+        accrualMethod: p.accrual_method,
+        annualEntitlement: p.annual_entitlement,
+        carryForwardMax: p.carry_forward_max,
+        allowNegativeBalance: p.allow_negative_balance,
+        minNoticeDays: p.min_notice_days,
+        maxConsecutiveDays: p.max_consecutive_days ?? null,
+        availableDuringProbation: p.available_during_probation,
+        rounding: p.rounding,
+        createdAt: p.created_at,
+        typeArchived: !!t.archived_at,
+      };
+    });
+}
+
+/** Leave requests as the API shows them (the PostgreSQL REQUEST_COLUMNS join). */
+async function requestViews(tx: TenantTx, requests: Doc[]) {
+  const people = await employeeNames(tx, requests.map((r) => r.employee_id));
+  const types = new Map((await tx.collection('leave_types').find({ id: { $in: [...new Set(requests.map((r) => r.leave_type_id))] } })).map((t) => [t.id as string, t]));
+  const requesters = await membershipUserNames(tx, requests.map((r) => r.requested_by_membership_id));
+  return requests
+    .filter((r) => people.has(r.employee_id) && types.has(r.leave_type_id))
+    .map((r) => {
+      const e = people.get(r.employee_id)!;
+      const t = types.get(r.leave_type_id)!;
+      return {
+        id: r.id as string,
+        employeeId: r.employee_id as string,
+        employeeName: e.name,
+        employeeCode: e.doc.employee_code as string,
+        leaveTypeId: r.leave_type_id as string,
+        leaveTypeName: t.name as string,
+        leaveTypeCode: t.code as string,
+        color: t.color as string,
+        startDate: r.start_date as string,
+        endDate: r.end_date as string,
+        startHalf: r.start_half,
+        endHalf: r.end_half,
+        days: r.days as string,
+        reason: r.reason ?? null,
+        status: r.status as string,
+        approvalId: (r.approval_request_id as string | null) ?? null,
+        createdAt: r.created_at,
+        decidedAt: r.decided_at ?? null,
+        cancelledAt: r.cancelled_at ?? null,
+        cancelReason: r.cancel_reason ?? null,
+        requestedBy: requesters.get(r.requested_by_membership_id) ?? null,
+      };
+    });
+}
+
+/** Employee documents as the leave rules read them. */
+function lite(e: Doc): EmployeeLite {
+  return {
+    id: e.id,
+    membership_id: e.membership_id ?? null,
+    status: e.status,
+    date_of_joining: e.date_of_joining,
+    last_working_day: e.last_working_day ?? null,
+    legal_entity_id: e.current_legal_entity_id ?? null,
+    department_id: e.current_department_id ?? null,
+    location_id: e.current_location_id ?? null,
+    name: displayName(e as never),
+  };
+}
+
+const sumBy = <T>(rows: T[], value: (r: T) => unknown) => rows.reduce((t, r) => t + toH(String(value(r) ?? '0')), 0);
+const typeView = (t: Doc) => ({ id: t.id, code: t.code, name: t.name, description: t.description ?? null, paid: t.paid, allowHalfDay: t.allow_half_day, color: t.color });
 
 const { accrualsDue, addDays, countLeaveDays, fromH, toH, yearEnd, yearOf } = leaveMath;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -104,12 +177,12 @@ export class LeaveService implements OnModuleInit {
       label: 'Leave request',
       link: () => '/leave',
       attributes: async (tx, id) => {
-        const r = await one<{ employee_id: string }>(tx, 'select employee_id from leave_requests where id = $1', [id]);
+        const r = await tx.collection('leave_requests').findOne({ id });
         return this.attrsOf(await this.employee(tx, r!.employee_id));
       },
       onApproved: (tx, req) => this.onApproved(tx, req),
       onRejected: async (tx, req) => {
-        await tx.query(`update leave_requests set status = 'rejected', decided_at = now() where id = $1 and status = 'pending'`, [req.resource_id]);
+        await tx.collection('leave_requests').updateOne({ id: req.resource_id, status: 'pending' }, { $set: { status: 'rejected', decided_at: new Date() } });
         await this.audit.record(tx, { action: 'leave_request.rejected', resourceType: 'leave_request', resourceId: req.resource_id });
       },
     });
@@ -120,18 +193,17 @@ export class LeaveService implements OnModuleInit {
   // ---------------------------------------------------------------------------------------------------------
 
   listTypes(includeArchived = false) {
-    return this.db.tenant((tx) =>
-      many(tx, `select id, code, name, description, paid, allow_half_day as "allowHalfDay", color, archived_at as "archivedAt" from leave_types
-                 ${includeArchived ? '' : 'where archived_at is null'} order by name`),
+    return this.db.tenant(async (tx) =>
+      (await tx.collection('leave_types').find(includeArchived ? {} : { archived_at: null }, { sort: { name: 1 } })).map((t) => ({ ...typeView(t), archivedAt: t.archived_at ?? null })),
     );
   }
 
   createType(input: z.infer<typeof leaveTypeInput>) {
     return this.db.tenant(async (tx) => {
-      const row = await one<{ id: string }>(
-        tx, `insert into leave_types (tenant_id, code, name, description, paid, allow_half_day, color) values (app_tenant_id(), $1, $2, $3, $4, $5, $6) returning id`,
-        [input.code, input.name, input.description ?? null, input.paid, input.allowHalfDay, input.color],
-      ).catch(conflictOn('23505', 'leave_type_exists', 'A leave type with this code already exists'));
+      const row = await tx
+        .collection('leave_types')
+        .insert({ code: input.code, name: input.name, description: input.description ?? null, paid: input.paid, allow_half_day: input.allowHalfDay, color: input.color })
+        .catch(conflictOn('23505', 'leave_type_exists', 'A leave type with this code already exists'));
       await this.audit.record(tx, { action: 'leave_type.created', resourceType: 'leave_type', resourceId: row!.id, changes: input });
       return { id: row!.id, ...input };
     });
@@ -140,72 +212,73 @@ export class LeaveService implements OnModuleInit {
   updateType(id: string, input: Partial<z.infer<typeof leaveTypeInput>>) {
     return this.db.tenant(async (tx) => {
       const entries = Object.entries(input).filter(([k, v]) => v !== undefined && k in LEAVE_TYPE_COLUMNS);
-      if (!(await one(tx, 'select 1 from leave_types where id = $1', [id]))) throw Errors.notFound('Leave type');
+      if (!(await tx.collection('leave_types').exists({ id }))) throw Errors.notFound('Leave type');
       if (entries.length) {
-        await tx.query(`update leave_types set ${entries.map(([k], i) => `${LEAVE_TYPE_COLUMNS[k as keyof typeof LEAVE_TYPE_COLUMNS]} = $${i + 2}`).join(', ')} where id = $1`, [id, ...entries.map(([, v]) => v)])
+        await tx
+          .collection('leave_types')
+          .updateOne({ id }, { $set: Object.fromEntries(entries.map(([k, v]) => [LEAVE_TYPE_COLUMNS[k as keyof typeof LEAVE_TYPE_COLUMNS], v])) })
           .catch(conflictOn('23505', 'leave_type_exists', 'A leave type with this code already exists'));
         await this.audit.record(tx, { action: 'leave_type.updated', resourceType: 'leave_type', resourceId: id, changes: Object.fromEntries(entries) });
       }
-      return one(tx, `select id, code, name, description, paid, allow_half_day as "allowHalfDay", color from leave_types where id = $1`, [id]);
+      return typeView((await tx.collection('leave_types').findOne({ id }))!);
     });
   }
 
   archiveType(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await tx.query('update leave_types set archived_at = now() where id = $1 and archived_at is null', [id]);
-      if (!r.rowCount) throw Errors.notFound('Leave type');
-      await tx.query('update leave_policies set active = false where leave_type_id = $1 and active', [id]);
+      if (!(await tx.collection('leave_types').updateOne({ id, archived_at: null }, { $set: { archived_at: new Date() } }))) throw Errors.notFound('Leave type');
+      await tx.collection('leave_policies').update({ leave_type_id: id, active: true }, { $set: { active: false } });
       await this.audit.record(tx, { action: 'leave_type.archived', resourceType: 'leave_type', resourceId: id });
     });
   }
 
   listPolicies() {
-    return this.db.tenant((tx) =>
-      many(tx, `select ${POLICY_COLUMNS} from leave_policies p join leave_types t on t.id = p.leave_type_id left join legal_entities le on le.id = p.legal_entity_id
-                 where p.active and t.archived_at is null order by t.name, le.name nulls first`),
-    );
+    return this.db.tenant(async (tx) => {
+      const rows = (await policyViews(tx, await tx.collection('leave_policies').find({ active: true }))).filter((p) => !p.typeArchived);
+      // By leave type, then the workspace-wide policy before entity ones.
+      rows.sort((a, b) => cmp(a.leaveTypeName, b.leaveTypeName) || Number(a.legalEntityName !== null) - Number(b.legalEntityName !== null) || cmp(a.legalEntityName, b.legalEntityName));
+      return rows.map(({ typeArchived: _t, ...p }) => p);
+    });
   }
 
   /** Saving a policy for a type and entity replaces the active one; the old version is kept for history. */
   setPolicy(input: z.infer<typeof leavePolicyInput>) {
     return this.db.tenant(async (tx) => {
-      if (!(await one(tx, 'select 1 from leave_types where id = $1 and archived_at is null', [input.leaveTypeId]))) throw Errors.badRequest('invalid_leave_type', 'Leave type not found');
-      if (input.legalEntityId && !(await one(tx, 'select 1 from legal_entities where id = $1 and archived_at is null', [input.legalEntityId]))) {
+      if (!(await tx.collection('leave_types').exists({ id: input.leaveTypeId, archived_at: null }))) throw Errors.badRequest('invalid_leave_type', 'Leave type not found');
+      if (input.legalEntityId && !(await tx.collection('legal_entities').exists({ id: input.legalEntityId, archived_at: null }))) {
         throw Errors.badRequest('invalid_legal_entity', 'Legal entity not found');
       }
-      const prev = await one<{ id: string }>(
-        tx, `update leave_policies set active = false where active and leave_type_id = $1 and legal_entity_id is not distinct from $2 returning id`,
-        [input.leaveTypeId, input.legalEntityId],
-      );
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into leave_policies (tenant_id, leave_type_id, legal_entity_id, accrual_method, annual_entitlement, carry_forward_max, allow_negative_balance,
-                                     min_notice_days, max_consecutive_days, available_during_probation, rounding)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
-        [input.leaveTypeId, input.legalEntityId, input.accrualMethod, input.annualEntitlement, input.carryForwardMax, input.allowNegativeBalance,
-          input.minNoticeDays, input.maxConsecutiveDays, input.availableDuringProbation, input.rounding],
-      ))!;
+      const prev = await tx.collection('leave_policies').updateAndGet({ active: true, leave_type_id: input.leaveTypeId, legal_entity_id: input.legalEntityId ?? null }, { $set: { active: false } });
+      const row = await tx.collection('leave_policies').insert({
+        leave_type_id: input.leaveTypeId,
+        legal_entity_id: input.legalEntityId ?? null,
+        accrual_method: input.accrualMethod,
+        annual_entitlement: input.annualEntitlement,
+        carry_forward_max: input.carryForwardMax,
+        allow_negative_balance: input.allowNegativeBalance,
+        min_notice_days: input.minNoticeDays,
+        max_consecutive_days: input.maxConsecutiveDays ?? null,
+        available_during_probation: input.availableDuringProbation,
+        rounding: input.rounding,
+      });
       await this.audit.record(tx, { action: 'leave_policy.saved', resourceType: 'leave_policy', resourceId: row.id, changes: input, metadata: { replaces: prev?.id ?? null } });
-      return one(tx, `select ${POLICY_COLUMNS} from leave_policies p join leave_types t on t.id = p.leave_type_id left join legal_entities le on le.id = p.legal_entity_id where p.id = $1`, [row.id]);
+      const [view] = await policyViews(tx, [row]);
+      const { typeArchived: _t, ...out } = view!;
+      return out;
     });
   }
 
   removePolicy(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await tx.query('update leave_policies set active = false where id = $1 and active', [id]);
-      if (!r.rowCount) throw Errors.notFound('Leave policy');
+      if (!(await tx.collection('leave_policies').updateOne({ id, active: true }, { $set: { active: false } }))) throw Errors.notFound('Leave policy');
       await this.audit.record(tx, { action: 'leave_policy.removed', resourceType: 'leave_policy', resourceId: id });
     });
   }
 
-  private async policyFor(tx: Tx, leaveTypeId: string, legalEntityId: string | null): Promise<PolicyRow | undefined> {
-    return one<PolicyRow>(
-      tx,
-      `select p.*, p.annual_entitlement::text as annual_entitlement, p.carry_forward_max::text as carry_forward_max, p.max_consecutive_days::text as max_consecutive_days
-         from leave_policies p where p.active and p.leave_type_id = $1 and (p.legal_entity_id = $2 or p.legal_entity_id is null)
-        order by p.legal_entity_id nulls last limit 1`,
-      [leaveTypeId, legalEntityId],
-    );
+  private async policyFor(tx: TenantTx, leaveTypeId: string, legalEntityId: string | null): Promise<PolicyRow | undefined> {
+    // The entity's own policy wins over the workspace-wide one.
+    const rows = await tx.collection<PolicyRow>('leave_policies').find({ active: true, leave_type_id: leaveTypeId, legal_entity_id: { $in: [legalEntityId, null] } });
+    return rows.find((p) => p.legal_entity_id !== null && p.legal_entity_id === legalEntityId) ?? rows.find((p) => p.legal_entity_id === null);
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -213,35 +286,37 @@ export class LeaveService implements OnModuleInit {
   // ---------------------------------------------------------------------------------------------------------
 
   listCalendars() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select c.id, c.name, c.legal_entity_id as "legalEntityId", le.name as "legalEntityName", c.location_id as "locationId", l.name as "locationName",
-                c.is_default as "isDefault", c.weekly_offs as "weeklyOffs",
-                coalesce((select json_agg(json_build_object('id', h.id, 'date', h.holiday_date, 'name', h.name, 'isOptional', h.is_optional) order by h.holiday_date)
-                            from holidays h where h.calendar_id = c.id), '[]') as holidays
-           from holiday_calendars c left join legal_entities le on le.id = c.legal_entity_id left join locations l on l.id = c.location_id
-          order by c.is_default desc, c.name`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const calendars = await tx.collection('holiday_calendars').find({}, { sort: { is_default: -1, name: 1 } });
+      const entities = await fieldById(tx, 'legal_entities', calendars.map((c) => c.legal_entity_id));
+      const locations = await fieldById(tx, 'locations', calendars.map((c) => c.location_id));
+      const holidays = await tx.collection('holidays').find({ calendar_id: { $in: calendars.map((c) => c.id) } }, { sort: { holiday_date: 1 } });
+      return calendars.map((c) => ({
+        id: c.id,
+        name: c.name,
+        legalEntityId: c.legal_entity_id ?? null,
+        legalEntityName: entities.get(c.legal_entity_id) ?? null,
+        locationId: c.location_id ?? null,
+        locationName: locations.get(c.location_id) ?? null,
+        isDefault: c.is_default,
+        weeklyOffs: c.weekly_offs,
+        holidays: holidays.filter((h) => h.calendar_id === c.id).map((h) => ({ id: h.id, date: h.holiday_date, name: h.name, isOptional: h.is_optional })),
+      }));
+    });
   }
 
   saveCalendar(id: string | null, input: z.infer<typeof holidayCalendarInput>) {
     return this.db.tenant(async (tx) => {
-      if (input.isDefault) await tx.query('update holiday_calendars set is_default = false where is_default and id is distinct from $1', [id]);
+      if (input.isDefault) await tx.collection('holiday_calendars').update({ is_default: true, ...(id ? { id: { $ne: id } } : {}) }, { $set: { is_default: false } });
       const offs = [...new Set(input.weeklyOffs)].sort();
       let calendarId = id;
       if (id) {
-        const r = await tx.query(
-          'update holiday_calendars set name = $2, legal_entity_id = $3, location_id = $4, is_default = $5, weekly_offs = $6 where id = $1',
-          [id, input.name, input.legalEntityId, input.locationId, input.isDefault, offs],
-        );
-        if (!r.rowCount) throw Errors.notFound('Holiday calendar');
+        const values = { name: input.name, legal_entity_id: input.legalEntityId ?? null, location_id: input.locationId ?? null, is_default: input.isDefault, weekly_offs: offs };
+        if (!(await tx.collection('holiday_calendars').updateOne({ id }, { $set: values }))) throw Errors.notFound('Holiday calendar');
       } else {
-        calendarId = (await one<{ id: string }>(
-          tx, `insert into holiday_calendars (tenant_id, name, legal_entity_id, location_id, is_default, weekly_offs) values (app_tenant_id(), $1, $2, $3, $4, $5) returning id`,
-          [input.name, input.legalEntityId, input.locationId, input.isDefault, offs],
-        ))!.id;
+        calendarId = (
+          await tx.collection('holiday_calendars').insert({ name: input.name, legal_entity_id: input.legalEntityId ?? null, location_id: input.locationId ?? null, is_default: input.isDefault, weekly_offs: offs })
+        ).id as string;
       }
       await this.audit.record(tx, { action: id ? 'holiday_calendar.updated' : 'holiday_calendar.created', resourceType: 'holiday_calendar', resourceId: calendarId, changes: input });
       return { id: calendarId, ...input, weeklyOffs: offs };
@@ -250,19 +325,18 @@ export class LeaveService implements OnModuleInit {
 
   deleteCalendar(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await tx.query('delete from holiday_calendars where id = $1', [id]);
-      if (!r.rowCount) throw Errors.notFound('Holiday calendar');
+      if (!(await tx.collection('holiday_calendars').deleteOne({ id }))) throw Errors.notFound('Holiday calendar');
       await this.audit.record(tx, { action: 'holiday_calendar.deleted', resourceType: 'holiday_calendar', resourceId: id });
     });
   }
 
   addHoliday(calendarId: string, input: z.infer<typeof holidayInput>) {
     return this.db.tenant(async (tx) => {
-      if (!(await one(tx, 'select 1 from holiday_calendars where id = $1', [calendarId]))) throw Errors.notFound('Holiday calendar');
-      const row = await one<{ id: string }>(
-        tx, `insert into holidays (tenant_id, calendar_id, holiday_date, name, is_optional) values (app_tenant_id(), $1, $2, $3, $4) returning id`,
-        [calendarId, input.date, input.name, input.isOptional],
-      ).catch(conflictOn('23505', 'holiday_exists', 'This calendar already has a holiday on that date'));
+      if (!(await tx.collection('holiday_calendars').exists({ id: calendarId }))) throw Errors.notFound('Holiday calendar');
+      const row = await tx
+        .collection('holidays')
+        .insert({ calendar_id: calendarId, holiday_date: input.date, name: input.name, is_optional: input.isOptional })
+        .catch(conflictOn('23505', 'holiday_exists', 'This calendar already has a holiday on that date'));
       await this.audit.record(tx, { action: 'holiday.added', resourceType: 'holiday_calendar', resourceId: calendarId, changes: input });
       return { id: row!.id, ...input };
     });
@@ -270,40 +344,33 @@ export class LeaveService implements OnModuleInit {
 
   removeHoliday(calendarId: string, holidayId: string) {
     return this.db.tenant(async (tx) => {
-      const r = await tx.query('delete from holidays where id = $1 and calendar_id = $2', [holidayId, calendarId]);
-      if (!r.rowCount) throw Errors.notFound('Holiday');
+      if (!(await tx.collection('holidays').deleteOne({ id: holidayId, calendar_id: calendarId }))) throw Errors.notFound('Holiday');
       await this.audit.record(tx, { action: 'holiday.removed', resourceType: 'holiday_calendar', resourceId: calendarId, metadata: { holidayId } });
     });
   }
 
   /** The calendar for an employee: their location's, else their legal entity's, else the workspace default. */
-  private async calendarFor(tx: Tx, e: Pick<EmployeeLite, 'legal_entity_id' | 'location_id'>): Promise<WorkCalendar & { id: string | null }> {
-    const cal = await one<{ id: string; weekly_offs: number[] }>(
-      tx,
-      `select id, weekly_offs from holiday_calendars
-        where (location_id = $2) or (location_id is null and legal_entity_id = $1) or is_default
-        order by (location_id = $2) desc nulls last, (legal_entity_id = $1) desc nulls last, is_default desc limit 1`,
-      [e.legal_entity_id, e.location_id],
-    );
+  private async calendarFor(tx: TenantTx, e: Pick<EmployeeLite, 'legal_entity_id' | 'location_id'>): Promise<WorkCalendar & { id: string | null }> {
+    const calendars = await tx.collection('holiday_calendars').find({
+      $or: [...(e.location_id ? [{ location_id: e.location_id }] : []), ...(e.legal_entity_id ? [{ location_id: null, legal_entity_id: e.legal_entity_id }] : []), { is_default: true }],
+    });
+    const cal =
+      calendars.find((c) => e.location_id && c.location_id === e.location_id) ??
+      calendars.find((c) => !c.location_id && e.legal_entity_id && c.legal_entity_id === e.legal_entity_id) ??
+      calendars.find((c) => c.is_default);
     if (!cal) return { id: null, weeklyOffs: [0, 6], holidays: new Set() };
-    const hs = await many<{ d: string }>(tx, 'select holiday_date as d from holidays where calendar_id = $1 and not is_optional', [cal.id]);
-    return { id: cal.id, weeklyOffs: cal.weekly_offs.map(Number), holidays: new Set(hs.map((h) => h.d)) };
+    const hs = await tx.collection('holidays').find({ calendar_id: cal.id, is_optional: false }, { projection: { holiday_date: 1 } });
+    return { id: cal.id, weeklyOffs: (cal.weekly_offs as number[]).map(Number), holidays: new Set(hs.map((h) => h.holiday_date as string)) };
   }
 
   // ---------------------------------------------------------------------------------------------------------
   // Balances
   // ---------------------------------------------------------------------------------------------------------
 
-  private async employee(tx: Tx, id: string): Promise<EmployeeLite> {
-    const e = await one<EmployeeLite>(
-      tx,
-      `select id, membership_id, status, date_of_joining, last_working_day, current_legal_entity_id as legal_entity_id, current_department_id as department_id,
-              current_location_id as location_id, trim(coalesce(preferred_name, first_name) || ' ' || last_name) as name
-         from employees where id = $1`,
-      [id],
-    );
+  private async employee(tx: TenantTx, id: string): Promise<EmployeeLite> {
+    const e = await tx.collection('employees').findOne({ id });
     if (!e) throw Errors.notFound('Employee');
-    return e;
+    return lite(e);
   }
 
   private attrsOf(e: EmployeeLite): ResourceAttributes {
@@ -311,7 +378,7 @@ export class LeaveService implements OnModuleInit {
   }
 
   /** The caller's employee id, or a clear error when their login is not linked to an employee record. */
-  private async myEmployeeId(tx: Tx): Promise<string> {
+  private async myEmployeeId(tx: TenantTx): Promise<string> {
     const s = await this.authz.subject(tx);
     if (!s.employeeId) throw Errors.badRequest('no_employee_record', 'Your login is not linked to an employee record yet. Ask HR to link it.');
     return s.employeeId;
@@ -326,28 +393,22 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
-  private async balanceRows(tx: Tx, e: EmployeeLite, year: number) {
-    const types = await many<{ id: string; code: string; name: string; color: string; paid: boolean; allow_half_day: boolean }>(
-      tx, 'select id, code, name, color, paid, allow_half_day from leave_types where archived_at is null order by name',
-    );
-    const sums = await many<{ leave_type_id: string; kind: string; q: string }>(
-      tx, `select leave_type_id, kind, sum(quantity)::text as q from leave_ledger where employee_id = $1 and leave_year = $2 group by 1, 2`, [e.id, year],
-    );
-    const pending = await many<{ leave_type_id: string; q: string }>(
-      tx, `select leave_type_id, sum(days)::text as q from leave_requests where employee_id = $1 and status = 'pending' and extract(year from start_date) = $2 group by 1`, [e.id, year],
-    );
+  private async balanceRows(tx: TenantTx, e: EmployeeLite, year: number) {
+    const types = await tx.collection('leave_types').find({ archived_at: null }, { sort: { name: 1 } });
+    const ledger = await tx.collection('leave_ledger').find({ employee_id: e.id, leave_year: year }, { projection: { leave_type_id: 1, kind: 1, quantity: 1 } });
+    const open = await tx.collection('leave_requests').find({ employee_id: e.id, status: 'pending', start_date: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } }, { projection: { leave_type_id: 1, days: 1 } });
     const out = [];
     for (const t of types) {
       const policy = await this.policyFor(tx, t.id, e.legal_entity_id);
       if (!policy) continue;
-      const k = (kind: string) => toH(sums.find((s) => s.leave_type_id === t.id && s.kind === kind)?.q ?? '0');
+      const k = (kind: string) => sumBy(ledger.filter((l) => l.leave_type_id === t.id && l.kind === kind), (l) => l.quantity);
       const accrued = k('accrual');
       const carried = k('carry_forward');
       const adjusted = k('adjustment');
       const taken = -(k('taken') + k('reversal'));
       const lapsed = -k('lapse');
       const balance = accrued + carried + adjusted - taken - lapsed;
-      const pend = toH(pending.find((p) => p.leave_type_id === t.id)?.q ?? '0');
+      const pend = sumBy(open.filter((p) => p.leave_type_id === t.id), (p) => p.days);
       const tracked = policy.accrual_method !== 'none';
       out.push({
         leaveTypeId: t.id, code: t.code, name: t.name, color: t.color, paid: t.paid, allowHalfDay: t.allow_half_day,
@@ -364,14 +425,21 @@ export class LeaveService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const e = await this.employee(tx, employeeId);
       await this.authz.require('leave:read', this.attrsOf(e), tx);
-      return many(
-        tx,
-        `select l.id, l.kind, l.quantity::text as quantity, l.effective_on as "effectiveOn", l.note, l.leave_request_id as "leaveRequestId",
-                l.created_at as "createdAt", u.full_name as "by"
-           from leave_ledger l left join users u on u.id = l.created_by
-          where l.employee_id = $1 and l.leave_type_id = $2 and l.leave_year = $3 order by l.effective_on, l.created_at`,
-        [employeeId, leaveTypeId, year],
+      const lines = (await tx.collection('leave_ledger').find({ employee_id: employeeId, leave_type_id: leaveTypeId, leave_year: year })).sort(
+        (a, b) => cmp(a.effective_on, b.effective_on) || a.created_at - b.created_at,
       );
+      const users = await (await usersTable(tx)).find({ id: { $in: [...new Set(lines.map((l) => l.created_by).filter(Boolean))] } }, { projection: { full_name: 1 } });
+      const by = new Map(users.map((u) => [u.id, u.full_name ?? null]));
+      return lines.map((l) => ({
+        id: l.id,
+        kind: l.kind,
+        quantity: l.quantity,
+        effectiveOn: l.effective_on,
+        note: l.note ?? null,
+        leaveRequestId: l.leave_request_id ?? null,
+        createdAt: l.created_at,
+        by: by.get(l.created_by) ?? null,
+      }));
     });
   }
 
@@ -387,7 +455,7 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
-  private async requestTarget(tx: Tx, employeeId: string | undefined) {
+  private async requestTarget(tx: TenantTx, employeeId: string | undefined) {
     const mine = (await this.authz.subject(tx)).employeeId;
     const id = employeeId ?? (await this.myEmployeeId(tx));
     const e = await this.employee(tx, id);
@@ -397,8 +465,8 @@ export class LeaveService implements OnModuleInit {
     return { e, onBehalf };
   }
 
-  private async evaluate(tx: Tx, e: EmployeeLite, input: LeaveRequestInput, onBehalf: boolean) {
-    const type = await one<{ id: string; name: string; allow_half_day: boolean }>(tx, 'select id, name, allow_half_day from leave_types where id = $1 and archived_at is null', [input.leaveTypeId]);
+  private async evaluate(tx: TenantTx, e: EmployeeLite, input: LeaveRequestInput, onBehalf: boolean) {
+    const type = await tx.collection<{ id: string; name: string; allow_half_day: boolean }>('leave_types').findOne({ id: input.leaveTypeId, archived_at: null });
     if (!type) throw Errors.badRequest('invalid_leave_type', 'Leave type not found');
     const policy = await this.policyFor(tx, type.id, e.legal_entity_id);
     if (!policy) throw Errors.badRequest('no_policy', `${type.name} is not available for this employee's legal entity`);
@@ -441,21 +509,31 @@ export class LeaveService implements OnModuleInit {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
       const { e, onBehalf } = await this.requestTarget(tx, input.employeeId);
-      await tx.query('select 1 from employees where id = $1 for update', [e.id]);
+      // One request at a time per person, so the overlap and balance checks see every other request.
+      await tx.collection('employees').lock({ id: e.id });
       const preview = await this.evaluate(tx, e, input, onBehalf);
-      const type = (await one<{ name: string }>(tx, 'select name from leave_types where id = $1', [input.leaveTypeId]))!;
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into leave_requests (tenant_id, employee_id, leave_type_id, start_date, end_date, start_half, end_half, days, reason, requested_by_membership_id)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
-        [e.id, input.leaveTypeId, input.startDate, input.endDate, input.startHalf, input.endHalf, preview.days, input.reason ?? null, actor.membershipId],
-      ).catch(conflictOn('23P01', 'overlapping_leave', 'There is already a pending or approved request on these dates')))!;
+      const type = (await tx.collection('leave_types').findOne({ id: input.leaveTypeId }))!;
+      // No two pending or approved requests of one person overlap (an exclusion constraint in PostgreSQL).
+      if (await tx.collection('leave_requests').exists({ employee_id: e.id, status: { $in: ['pending', 'approved'] }, start_date: { $lte: input.endDate }, end_date: { $gte: input.startDate } })) {
+        throw Errors.conflict('overlapping_leave', 'There is already a pending or approved request on these dates');
+      }
+      const row = await tx.collection('leave_requests').insert({
+        employee_id: e.id,
+        leave_type_id: input.leaveTypeId,
+        start_date: input.startDate,
+        end_date: input.endDate,
+        start_half: input.startHalf,
+        end_half: input.endHalf,
+        days: preview.days,
+        reason: input.reason ?? null,
+        requested_by_membership_id: actor.membershipId,
+      });
       const range = input.startDate === input.endDate ? input.startDate : `${input.startDate} to ${input.endDate}`;
       const approvalId = await this.approvals.start(tx, {
         resourceType: 'leave_request', resourceId: row.id, subjectEmployeeId: e.id,
         summary: `${e.name}: ${type.name}, ${range} (${preview.days} days)${input.reason ? `. "${input.reason}"` : ''}`,
       });
-      await tx.query('update leave_requests set approval_request_id = $2 where id = $1', [row.id, approvalId]);
+      await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
       await this.audit.record(tx, {
         action: 'leave_request.submitted', resourceType: 'leave_request', resourceId: row.id,
         changes: { employeeId: e.id, leaveTypeId: input.leaveTypeId, startDate: input.startDate, endDate: input.endDate, days: preview.days },
@@ -466,15 +544,20 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
-  private async onApproved(tx: Tx, req: ApprovalRequestRow) {
-    const r = (await one<RequestRow>(tx, `select *, days::text as days from leave_requests where id = $1 for update`, [req.resource_id]))!;
-    if (r.status !== 'pending') return;
-    await tx.query(`update leave_requests set status = 'approved', decided_at = now() where id = $1`, [r.id]);
-    await tx.query(
-      `insert into leave_ledger (tenant_id, employee_id, leave_type_id, leave_year, kind, quantity, effective_on, leave_request_id, created_by)
-       values (app_tenant_id(), $1, $2, $3, 'taken', $4, $5, $6, $7)`,
-      [r.employee_id, r.leave_type_id, yearOf(r.start_date), fromH(-toH(r.days)), r.start_date, r.id, requestContext.tenantActor().userId],
-    );
+  private async onApproved(tx: TenantTx, req: ApprovalRequestRow) {
+    // The status check is part of the write, so a cancellation made meanwhile is not overwritten.
+    const r = await tx.collection<RequestRow>('leave_requests').findOne({ id: req.resource_id });
+    if (!r || !(await tx.collection('leave_requests').updateOne({ id: r.id, status: 'pending' }, { $set: { status: 'approved', decided_at: new Date() } }))) return;
+    await tx.collection('leave_ledger').insert({
+      employee_id: r.employee_id,
+      leave_type_id: r.leave_type_id,
+      leave_year: yearOf(r.start_date),
+      kind: 'taken',
+      quantity: fromH(-toH(r.days)),
+      effective_on: r.start_date,
+      leave_request_id: r.id,
+      created_by: requestContext.tenantActor().userId,
+    });
     await this.audit.record(tx, { action: 'leave_request.approved', resourceType: 'leave_request', resourceId: r.id, metadata: { days: r.days } });
     // Attendance days already past show the leave instead of an absence.
     await this.attendance.recomputeFor(tx, r.employee_id, r.start_date, r.end_date);
@@ -488,8 +571,9 @@ export class LeaveService implements OnModuleInit {
   async cancel(id: string, reason?: string) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const r = await one<RequestRow>(tx, `select *, days::text as days from leave_requests where id = $1 for update`, [id]);
+      const r = await tx.collection<RequestRow>('leave_requests').findOne({ id });
       if (!r) throw Errors.notFound('Leave request');
+      await tx.collection('leave_requests').lock({ id });
       const e = await this.employee(tx, r.employee_id);
       const s = await this.authz.subject(tx);
       const attrs = this.attrsOf(e);
@@ -504,20 +588,28 @@ export class LeaveService implements OnModuleInit {
         throw Errors.forbidden('Leave that has started can only be cancelled by your approver or HR');
       }
       if (isApprover && !isOwner) await this.authz.require('leave:approve', attrs, tx);
-      await tx.query(`update leave_requests set status = 'cancelled', cancelled_at = now(), cancel_reason = $2 where id = $1`, [id, reason ?? null]);
+      if (!(await tx.collection('leave_requests').updateOne({ id, status: r.status }, { $set: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason ?? null } }))) {
+        throw Errors.conflict('invalid_state', 'This request changed meanwhile. Refresh and try again.');
+      }
       if (r.status === 'pending' && r.approval_request_id) await this.approvals.cancel(tx, r.approval_request_id);
       if (r.status === 'approved') {
-        await tx.query(
-          `insert into leave_ledger (tenant_id, employee_id, leave_type_id, leave_year, kind, quantity, effective_on, leave_request_id, note, created_by)
-           values (app_tenant_id(), $1, $2, $3, 'reversal', $4, $5, $6, $7, $8)`,
-          [r.employee_id, r.leave_type_id, yearOf(r.start_date), r.days, r.start_date, id, reason ?? 'Cancelled', actor.userId],
-        );
+        await tx.collection('leave_ledger').insert({
+          employee_id: r.employee_id,
+          leave_type_id: r.leave_type_id,
+          leave_year: yearOf(r.start_date),
+          kind: 'reversal',
+          quantity: r.days,
+          effective_on: r.start_date,
+          leave_request_id: id,
+          note: reason ?? 'Cancelled',
+          created_by: actor.userId,
+        });
       }
       if (r.status === 'approved') await this.attendance.recomputeFor(tx, r.employee_id, r.start_date, r.end_date);
       await this.audit.record(tx, { action: 'leave_request.cancelled', resourceType: 'leave_request', resourceId: id, metadata: { from: r.status, reason: reason ?? null } });
       if (!isOwner || r.status === 'approved') {
         const approvers = r.approval_request_id
-          ? (await many<{ m: string | null }>(tx, 'select coalesce(decided_by_membership_id, approver_membership_id) as m from approval_steps where request_id = $1', [r.approval_request_id])).map((x) => x.m)
+          ? (await tx.collection('approval_steps').find({ request_id: r.approval_request_id })).map((x) => (x.decided_by_membership_id ?? x.approver_membership_id ?? null) as string | null)
           : [];
         await this.notifications.notify(tx, {
           membershipIds: (isOwner ? approvers : [e.membership_id]).filter((m) => m !== actor.membershipId),
@@ -534,60 +626,49 @@ export class LeaveService implements OnModuleInit {
 
   async listRequests(q: { employeeId?: string; status?: string; from?: string; to?: string; scope?: 'mine' | 'visible'; limit: number }) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const where: string[] = [];
+      const and: Record<string, unknown>[] = [];
       if (q.scope === 'mine' || (!q.employeeId && q.scope !== 'visible')) {
-        params.push(await this.myEmployeeId(tx));
-        where.push(`r.employee_id = $${params.length}`);
+        and.push({ employee_id: await this.myEmployeeId(tx) });
       } else {
-        where.push(await this.authz.predicate('leave:read', REQUEST_SCOPE, params, tx));
-        if (q.employeeId) {
-          params.push(q.employeeId);
-          where.push(`r.employee_id = $${params.length}`);
-        }
+        and.push({ employee_id: { $in: await this.visibleEmployeeIds(tx, 'leave:read') } });
+        if (q.employeeId) and.push({ employee_id: q.employeeId });
       }
-      if (q.status) {
-        params.push(q.status);
-        where.push(`r.status = $${params.length}`);
-      }
-      if (q.from) {
-        params.push(q.from);
-        where.push(`r.end_date >= $${params.length}`);
-      }
-      if (q.to) {
-        params.push(q.to);
-        where.push(`r.start_date <= $${params.length}`);
-      }
-      params.push(q.limit);
-      return many(tx, `select ${REQUEST_COLUMNS} ${REQUEST_FROM} where ${where.join(' and ')} order by r.start_date desc, r.created_at desc limit $${params.length}`, params);
+      if (q.status) and.push({ status: q.status });
+      if (q.from) and.push({ end_date: { $gte: q.from } });
+      if (q.to) and.push({ start_date: { $lte: q.to } });
+      const rows = await tx.collection('leave_requests').find({ $and: and }, { sort: { start_date: -1, created_at: -1 }, limit: q.limit });
+      return requestViews(tx, rows);
     });
+  }
+
+  /** Ids of the employees whose records the caller may see for a permission (the scope of a list). */
+  private async visibleEmployeeIds(tx: TenantTx, permission: string): Promise<string[]> {
+    const scope = await this.authz.filter(permission, EMPLOYEE_FIELDS, tx);
+    return (await tx.collection('employees').find(scope, { projection: { _id: 1 } })).map((e) => e.id as string);
   }
 
   async getRequest(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await one<{ employee_id: string }>(tx, 'select employee_id from leave_requests where id = $1', [id]);
+      const r = await tx.collection('leave_requests').findOne({ id });
       if (!r) throw Errors.notFound('Leave request');
       await this.authz.require('leave:read', this.attrsOf(await this.employee(tx, r.employee_id)), tx);
       return this.loadRequest(tx, id);
     });
   }
 
-  private async loadRequest(tx: Tx, id: string) {
-    const row = (await one<{ approvalId: string | null }>(tx, `select ${REQUEST_COLUMNS} ${REQUEST_FROM} where r.id = $1`, [id]))!;
+  private async loadRequest(tx: TenantTx, id: string) {
+    const row = (await requestViews(tx, [(await tx.collection('leave_requests').findOne({ id }))!]))[0]!;
     return { ...row, approvalTrail: row.approvalId ? await this.approvals.trail(tx, row.approvalId) : [] };
   }
 
   /** Who is away in a date range, for team calendars. Limited to records the caller can read. */
   async whoIsAway(from: string, to: string) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [from, to];
-      const scope = await this.authz.predicate('leave:read', REQUEST_SCOPE, params, tx);
-      return many(
-        tx,
-        `select ${REQUEST_COLUMNS} ${REQUEST_FROM} where r.status in ('approved', 'pending') and r.end_date >= $1 and r.start_date <= $2 and ${scope}
-          order by r.start_date limit 500`,
-        params,
+      const rows = await tx.collection('leave_requests').find(
+        { status: { $in: ['approved', 'pending'] }, end_date: { $gte: from }, start_date: { $lte: to }, employee_id: { $in: await this.visibleEmployeeIds(tx, 'leave:read') } },
+        { sort: { start_date: 1 }, limit: 500 },
       );
+      return requestViews(tx, rows);
     });
   }
 
@@ -602,13 +683,18 @@ export class LeaveService implements OnModuleInit {
       await this.authz.require('leave:approve', this.attrsOf(e), tx);
       const s = await this.authz.subject(tx);
       if (s.employeeId === e.id) throw Errors.forbidden('You cannot adjust your own leave balance');
-      if (!(await one(tx, 'select 1 from leave_types where id = $1', [input.leaveTypeId]))) throw Errors.badRequest('invalid_leave_type', 'Leave type not found');
+      if (!(await tx.collection('leave_types').exists({ id: input.leaveTypeId }))) throw Errors.badRequest('invalid_leave_type', 'Leave type not found');
       const year = yearOf(today());
-      await tx.query(
-        `insert into leave_ledger (tenant_id, employee_id, leave_type_id, leave_year, kind, quantity, effective_on, note, created_by)
-         values (app_tenant_id(), $1, $2, $3, 'adjustment', $4, current_date, $5, $6)`,
-        [e.id, input.leaveTypeId, year, input.quantity, input.note, actor.userId],
-      );
+      await tx.collection('leave_ledger').insert({
+        employee_id: e.id,
+        leave_type_id: input.leaveTypeId,
+        leave_year: year,
+        kind: 'adjustment',
+        quantity: input.quantity,
+        effective_on: today(),
+        note: input.note,
+        created_by: actor.userId,
+      });
       await this.audit.record(tx, { action: 'leave_balance.adjusted', resourceType: 'employee', resourceId: e.id, changes: { leaveTypeId: input.leaveTypeId, quantity: input.quantity, note: input.note } });
       await this.notifications.notify(tx, {
         membershipIds: [e.membership_id], kind: 'leave.adjusted', title: `Your leave balance was adjusted by ${input.quantity} days`, body: input.note, link: '/leave',
@@ -618,16 +704,22 @@ export class LeaveService implements OnModuleInit {
   }
 
   /** Posts every accrual due up to asOf. Idempotent: each period is credited at most once per employee and type. */
-  async runAccruals(tx: Tx, asOf: string, employeeId?: string): Promise<number> {
-    const employees = await many<EmployeeLite>(
-      tx,
-      `select id, membership_id, status, date_of_joining, last_working_day, current_legal_entity_id as legal_entity_id, current_department_id as department_id,
-              current_location_id as location_id, first_name as name
-         from employees where date_of_joining <= $1 and (status <> 'exited' or last_working_day >= date_trunc('year', $1::date))
-          and ($2::uuid is null or id = $2)`,
-      [asOf, employeeId ?? null],
+  async runAccruals(tx: TenantTx, asOf: string, employeeId?: string): Promise<number> {
+    const yearStart = `${asOf.slice(0, 4)}-01-01`;
+    const employees = (
+      await tx.collection('employees').find({
+        date_of_joining: { $lte: asOf },
+        $or: [{ status: { $ne: 'exited' } }, { last_working_day: { $gte: yearStart } }],
+        ...(employeeId ? { id: employeeId } : {}),
+      })
+    ).map(lite);
+    const types = await tx.collection('leave_types').find({ archived_at: null }, { projection: { _id: 1 } });
+    // Credits already posted, so each period is credited once (the accrual_key unique index enforces it too).
+    const posted_ = new Set(
+      (await tx.collection('leave_ledger').find({ employee_id: { $in: employees.map((e) => e.id) }, accrual_key: { $ne: null } }, { projection: { employee_id: 1, leave_type_id: 1, accrual_key: 1 } })).map(
+        (l) => `${l.employee_id}|${l.leave_type_id}|${l.accrual_key}`,
+      ),
     );
-    const types = await many<{ id: string }>(tx, 'select id from leave_types where archived_at is null');
     let posted = 0;
     for (const e of employees) {
       for (const t of types) {
@@ -636,12 +728,18 @@ export class LeaveService implements OnModuleInit {
         const credits = accrualsDue({ accrualMethod: p.accrual_method, annualEntitlement: toH(p.annual_entitlement), rounding: p.rounding },
           { dateOfJoining: e.date_of_joining, lastWorkingDay: e.last_working_day }, asOf);
         for (const c of credits) {
-          const r = await tx.query(
-            `insert into leave_ledger (tenant_id, employee_id, leave_type_id, leave_year, kind, quantity, effective_on, accrual_key, note)
-             values (app_tenant_id(), $1, $2, $3, 'accrual', $4, $5, $6, $7) on conflict do nothing`,
-            [e.id, t.id, yearOf(c.effectiveOn), fromH(c.quantity), c.effectiveOn, c.key, `Accrual ${c.key.slice(1)}`],
-          );
-          posted += r.rowCount ?? 0;
+          if (posted_.has(`${e.id}|${t.id}|${c.key}`)) continue;
+          await tx.collection('leave_ledger').insert({
+            employee_id: e.id,
+            leave_type_id: t.id,
+            leave_year: yearOf(c.effectiveOn),
+            kind: 'accrual',
+            quantity: fromH(c.quantity),
+            effective_on: c.effectiveOn,
+            accrual_key: c.key,
+            note: `Accrual ${c.key.slice(1)}`,
+          });
+          posted++;
         }
       }
     }
@@ -660,22 +758,30 @@ export class LeaveService implements OnModuleInit {
   async closeYear(year: number) {
     if (year >= yearOf(today())) throw Errors.badRequest('year_open', 'Only a past leave year can be closed');
     return this.db.tenant(async (tx) => {
-      const rows = await many<{ employee_id: string; leave_type_id: string; legal_entity_id: string | null; q: string }>(
-        tx,
-        `select l.employee_id, l.leave_type_id, e.current_legal_entity_id as legal_entity_id, sum(l.quantity)::text as q
-           from leave_ledger l join employees e on e.id = l.employee_id where l.leave_year = $1 group by 1, 2, 3`,
-        [year],
+      const lines = await tx.collection('leave_ledger').find({ leave_year: year }, { projection: { employee_id: 1, leave_type_id: 1, quantity: 1 } });
+      const keyed = new Map<string, { employee_id: string; leave_type_id: string; q: number }>();
+      for (const l of lines) {
+        const k = `${l.employee_id}|${l.leave_type_id}`;
+        const cur = keyed.get(k) ?? { employee_id: l.employee_id, leave_type_id: l.leave_type_id, q: 0 };
+        cur.q += toH(l.quantity);
+        keyed.set(k, cur);
+      }
+      const entityOf = new Map((await tx.collection('employees').find({ id: { $in: [...new Set(lines.map((l) => l.employee_id))] } }, { projection: { current_legal_entity_id: 1 } })).map((e) => [e.id as string, (e.current_legal_entity_id as string | null) ?? null]));
+      const rows = [...keyed.values()].filter((r) => entityOf.has(r.employee_id)).map((r) => ({ ...r, legal_entity_id: entityOf.get(r.employee_id)! }));
+      const done = new Set(
+        (await tx.collection('leave_ledger').find({ accrual_key: { $in: [`L${year}`, `CO${year}`, `CI${year}`] } }, { projection: { employee_id: 1, leave_type_id: 1, accrual_key: 1 } })).map(
+          (l) => `${l.employee_id}|${l.leave_type_id}|${l.accrual_key}`,
+        ),
       );
       let carried = 0;
       let lapsed = 0;
-      const ins = (r: (typeof rows)[number], leaveYear: number, kind: string, q: number, on: string, key: string, note: string) =>
-        tx.query(
-          `insert into leave_ledger (tenant_id, employee_id, leave_type_id, leave_year, kind, quantity, effective_on, accrual_key, note)
-           values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8) on conflict do nothing`,
-          [r.employee_id, r.leave_type_id, leaveYear, kind, fromH(q), on, key, note],
-        );
+      // Each closing line has its own key, so running the close again adds nothing.
+      const ins = async (r: (typeof rows)[number], leaveYear: number, kind: string, q: number, on: string, key: string, note: string) => {
+        if (done.has(`${r.employee_id}|${r.leave_type_id}|${key}`)) return;
+        await tx.collection('leave_ledger').insert({ employee_id: r.employee_id, leave_type_id: r.leave_type_id, leave_year: leaveYear, kind, quantity: fromH(q), effective_on: on, accrual_key: key, note });
+      };
       for (const r of rows) {
-        const bal = toH(r.q);
+        const bal = r.q;
         if (bal === 0) continue;
         const p = await this.policyFor(tx, r.leave_type_id, r.legal_entity_id);
         if (!p || p.accrual_method === 'none') continue;
@@ -694,6 +800,12 @@ export class LeaveService implements OnModuleInit {
       return { year, carried, lapsed };
     });
   }
+}
+
+function cmp(a: unknown, b: unknown): number {
+  const x = String(a ?? '');
+  const y = String(b ?? '');
+  return x < y ? -1 : x > y ? 1 : 0;
 }
 
 function conflictOn(pgCode: string, code: string, message: string) {

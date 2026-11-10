@@ -5,7 +5,7 @@ import type { Request } from 'express';
 import { AuthzService } from '../authz/authz.service';
 import { ALLOW_WITHOUT_MFA_KEY, FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY } from '../authz/decorators';
 import { requestContext } from '../context/request-context';
-import { DatabaseService, one } from '../database/database.service';
+import { MongoService as DatabaseService } from '../database/mongo.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
 import { Errors } from '../http/errors';
 import { ApiKeysService } from '../../modules/integrations/api-keys.service';
@@ -54,21 +54,26 @@ export class AuthGuard implements CanActivate {
     const claims = await this.tokens.verifyAccess(token).catch(() => {
       throw Errors.unauthorized('Your session has expired. Sign in again.');
     });
-    const row = await this.db.platform((tx) =>
-      one<{ session_ok: boolean; membership_status: string; tenant_status: string; require_mfa: boolean; full_name: string; email: string; client: 'web' | 'mobile' | 'api'; web_on: boolean; mobile_on: boolean }>(
-        tx,
-        `select (s.revoked_at is null and s.expires_at > now()) as session_ok, m.status as membership_status,
-                t.status as tenant_status, t.require_mfa, u.full_name, u.email::text, s.client,
-                coalesce(c.web_portal_enabled, true) as web_on, coalesce(c.mobile_app_enabled, true) as mobile_on
-           from sessions s
-           join memberships m on m.id = $2 and m.user_id = s.user_id and m.tenant_id = $3
-           join tenants t on t.id = m.tenant_id
-           join users u on u.id = s.user_id and u.status = 'active'
-           left join tenant_access_controls c on c.tenant_id = t.id
-          where s.id = $1 and s.user_id = $4 and s.tenant_id = $3`,
-        [claims.sid, claims.mid, claims.tid, claims.sub],
-      ),
-    );
+    const row = await this.db.platform(async (tx) => {
+      const session = await tx.collection('sessions').findOne({ id: claims.sid, user_id: claims.sub, tenant_id: claims.tid });
+      if (!session) return undefined;
+      const membership = await tx.collection('memberships').findOne({ id: claims.mid, user_id: session.user_id, tenant_id: claims.tid });
+      const tenant = membership && (await tx.collection('tenants').findOne({ id: membership.tenant_id }));
+      const user = tenant && (await tx.collection('users').findOne({ id: session.user_id, status: 'active' }));
+      if (!membership || !tenant || !user) return undefined;
+      const controls = await tx.collection('tenant_access_controls').findOne({ tenant_id: tenant.id });
+      return {
+        session_ok: !session.revoked_at && session.expires_at > new Date(),
+        membership_status: membership.status as string,
+        tenant_status: tenant.status as string,
+        require_mfa: tenant.require_mfa as boolean,
+        full_name: user.full_name as string,
+        email: user.email as string,
+        client: session.client as 'web' | 'mobile' | 'api',
+        web_on: controls?.web_portal_enabled ?? true,
+        mobile_on: controls?.mobile_app_enabled ?? true,
+      };
+    });
     if (!row?.session_ok || row.membership_status !== 'active') throw Errors.unauthorized('Your session is no longer valid. Sign in again.');
     if (row.tenant_status !== 'active') throw Errors.tenantSuspended();
     // An app SAMPLEDGE switched off for the workspace is closed on every request, not only at sign-in.
@@ -123,14 +128,11 @@ export class AuthGuard implements CanActivate {
     const claims = await this.tokens.verifyPlatform(token).catch(() => {
       throw Errors.unauthorized('Your console session has expired. Sign in again.');
     });
-    const row = await this.db.platform((tx) =>
-      one<{ ok: boolean; email: string }>(
-        tx,
-        `select (s.revoked_at is null and s.expires_at > now() and a.status = 'active') as ok, a.email::text
-           from platform_sessions s join platform_admins a on a.id = s.admin_id where s.id = $1 and a.id = $2`,
-        [claims.sid, claims.sub],
-      ),
-    );
+    const row = await this.db.platform(async (tx) => {
+      const session = await tx.collection('platform_sessions').findOne({ id: claims.sid, admin_id: claims.sub });
+      const admin = session && (await tx.collection('platform_admins').findOne({ id: claims.sub }));
+      return admin ? { ok: !session!.revoked_at && session!.expires_at > new Date() && admin.status === 'active', email: admin.email as string } : undefined;
+    });
     if (!row?.ok) throw Errors.unauthorized('Your console session is no longer valid.');
     requestContext.setActor({ kind: 'platform_admin', adminId: claims.sub, role: claims.role, sessionId: claims.sid, mfa: claims.mfa, label: `SAMPLEDGE ${row.email}` });
     // MFA is mandatory for every platform action except enrolling MFA itself.

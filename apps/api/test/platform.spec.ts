@@ -1,13 +1,12 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
-import { adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
+import { adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 describe('SAMPLEDGE Super Admin Console API', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let token: string;
   const email = `ops.${Date.now()}@sampledge.test`;
@@ -16,7 +15,7 @@ describe('SAMPLEDGE Super Admin Console API', () => {
     app = await createApp();
     pool = adminPool();
     t = await createTenant(pool);
-    await pool.query(`insert into platform_admins (email, full_name, password_hash, role) values ($1, 'Ops', $2, 'super_admin')`, [email, await hashPassword(PASSWORD)]);
+    await pool.insert('platform_admins', { email, full_name: 'Ops', password_hash: await hashPassword(PASSWORD), role: 'super_admin' });
   });
   afterAll(async () => {
     await app.close();
@@ -59,8 +58,8 @@ describe('SAMPLEDGE Super Admin Console API', () => {
     });
     expect(res.status).toBe(201);
     expect(res.body.ownerInviteUrl).toContain('/accept-invite?token=');
-    const tenant = await pool.query('select region from tenants where id = $1', [res.body.tenantId]);
-    expect(tenant.rows[0].region).toBe('me');
+    const tenant = await pool.one('tenants', { id: res.body.tenantId });
+    expect(tenant!.region).toBe('me');
   });
 
   it('suspending a tenant signs its users out and blocks access', async () => {
@@ -85,8 +84,8 @@ describe('SAMPLEDGE Super Admin Console API', () => {
     expect(view.status).toBe(200);
     expect(view.body.overview.activeMembers).toBeGreaterThan(0);
 
-    const trail = await pool.query(`select action from audit_events where tenant_id = $1 and action like 'support_access.%' order by chain_seq`, [t.id]);
-    expect(trail.rows.map((r) => r.action)).toEqual(['support_access.requested', 'support_access.approved', 'support_access.viewed']);
+    const trail = await pool.find('audit_events', { tenant_id: t.id, action: /^support_access\./ }, { sort: { chain_seq: 1 } });
+    expect(trail.map((r) => r.action)).toEqual(['support_access.requested', 'support_access.approved', 'support_access.viewed']);
 
     expect((await api(app, owner.accessToken).post(`/support-access/${req.body.id}/revoke`)).status).toBe(200);
     expect((await api(app, token).get(`/platform/tenants/${t.id}/support-view`)).status).toBe(403);

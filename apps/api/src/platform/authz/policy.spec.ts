@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { can, effectivePermissions, hasPermission, scopePredicate, type Grant, type Subject } from './policy';
+import { can, effectivePermissions, hasPermission, scopeFilter, scopePredicate, type Grant, type Subject } from './policy';
 
 const tree: Record<string, string[]> = { mfg: ['asm', 'qa'], asm: [], qa: [], hr: [] };
 const subtree = (ids: string[]) => {
@@ -88,5 +88,23 @@ describe('policy engine', () => {
     expect(sql).toBe('((m.id = $1::uuid) or (m.id = any($2::uuid[])))');
     expect(params[1]).toEqual(['me', 'r1', 'r2']);
     expect(scopePredicate(subject([]), 'users:read', { membershipId: 'a', legalEntityId: 'b', departmentId: 'c', locationId: 'd' }, [])).toBeNull();
+  });
+
+  describe('scopeFilter (MongoDB)', () => {
+    const fields = { membershipId: 'm', legalEntityId: 'le', departmentId: 'd', locationId: 'loc', employeeId: 'e' };
+    it('returns null without a grant and an empty filter for tenant scope', () => {
+      expect(scopeFilter(subject([]), 'users:read', fields)).toBeNull();
+      expect(scopeFilter(subject([{ permission: 'users:read', scope: 'tenant' }, { permission: 'users:read', scope: 'own' }]), 'users:read', fields)).toEqual({});
+    });
+    it('narrows to the department subtree, team and constraints', () => {
+      expect(scopeFilter(subject([{ permission: 'users:read', scope: 'department' }]), 'users:read', fields)).toEqual({ d: { $in: ['mfg', 'asm', 'qa'] } });
+      expect(scopeFilter(subject([{ permission: 'users:read', scope: 'team' }]), 'users:read', fields)).toEqual({ m: { $in: ['me', 'r1', 'r2'] } });
+      expect(
+        scopeFilter(subject([{ permission: 'users:read', scope: 'tenant', constraints: { legalEntityIds: ['in'] } }, { permission: 'users:read', scope: 'own' }], { employeeId: 'emp' }), 'users:read', fields),
+      ).toEqual({ $or: [{ le: { $in: ['in'] } }, { $or: [{ m: 'me' }, { e: 'emp' }] }] });
+    });
+    it('matches nothing for entity scope without an entity', () => {
+      expect(scopeFilter(subject([{ permission: 'users:read', scope: 'entity' }], { legalEntityId: null }), 'users:read', fields)).toEqual({ _id: { $in: [] } });
+    });
   });
 });

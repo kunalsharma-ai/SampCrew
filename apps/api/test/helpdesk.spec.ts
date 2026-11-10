@@ -1,14 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HelpdeskService } from '../src/modules/helpdesk/helpdesk.service';
-import { DatabaseService } from '../src/platform/database/database.service';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestTenant } from './helpers';
+import { MongoService as DatabaseService } from '../src/platform/database/mongo.service';
+import { addMember, adminPool, api, createApp, createTenant, department, expectHiddenFrom, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 /** Phase 7 through the HTTP API: the HR helpdesk and announcements. */
 describe('helpdesk and announcements', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let ukEntity: string;
@@ -28,8 +27,8 @@ describe('helpdesk and announcements', () => {
     if (code) expect(res.body.error.code).toBe(code);
   };
   const unread = async (who: string, kind: string) => {
-    const r = await pool.query(`select title from notifications where membership_id = $1 and kind = $2 order by created_at desc`, [people[who]!.membershipId, kind]);
-    return r.rows.map((x) => x.title as string);
+    const r = await pool.find('notifications', { membership_id: people[who]!.membershipId, kind }, { sort: { created_at: -1 } });
+    return r.map((x) => x.title as string);
   };
 
   beforeAll(async () => {
@@ -37,12 +36,10 @@ describe('helpdesk and announcements', () => {
     pool = adminPool();
     t = await createTenant(pool);
     other = await createTenant(pool);
-    ukEntity = (await pool.query<{ id: string }>(`insert into legal_entities (tenant_id, name, legal_name, country_code, currency, timezone) values ($1, 'Northwind UK', 'Northwind UK Ltd', 'GB', 'GBP', 'Europe/London') returning id`, [t.id])).rows[0]!.id;
+    ukEntity = (await pool.insert('legal_entities', { tenant_id: t.id, name: 'Northwind UK', legal_name: 'Northwind UK Ltd', country_code: 'GB', currency: 'GBP', timezone: 'Europe/London' })).id;
     ops = await department(pool, t, 'Operations');
     const line = await department(pool, t, 'Line 1', ops);
-    plant = (await pool.query<{ id: string }>(
-      `insert into locations (tenant_id, legal_entity_id, name, kind, timezone, country_code) values ($1, $2, 'Plant', 'factory', 'Asia/Kolkata', 'IN') returning id`, [t.id, t.legalEntityId],
-    )).rows[0]!.id;
+    plant = (await pool.insert('locations', { tenant_id: t.id, legal_entity_id: t.legalEntityId, name: 'Plant', kind: 'factory', timezone: 'Asia/Kolkata', country_code: 'IN' })).id;
     people.hr = await addMember(pool, t, { roles: ['hr_admin'], name: 'Hana HR' });
     people.hr2 = await addMember(pool, t, { roles: ['hr_admin'], name: 'Hugo HR' });
     people.ukhr = await addMember(pool, t, { roles: ['hr_manager'], legalEntityId: ukEntity, constraints: { legalEntityIds: [ukEntity] }, name: 'Uma UK HR' });
@@ -174,24 +171,15 @@ describe('helpdesk and announcements', () => {
       ok(await as('asha').post(`/helpdesk/cases/${ids.case1}/status`).send({ status: 'closed' }));
       fails(await as('hr').post(`/helpdesk/cases/${ids.case1}/messages`).send({ body: 'One more thing' }), 409, 'case_closed');
       // The database itself refuses changes to a closed case.
-      await expect(pool.query(`update helpdesk_cases set subject = 'edited' where id = $1`, [ids.case1])).rejects.toThrow(/closed helpdesk cases/);
-      await expect(pool.query(`delete from helpdesk_cases where id = $1`, [ids.case1])).rejects.toThrow(/cannot be deleted/);
-      // Messages are insert-only for the API role.
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        await client.query('set local role crew_app');
-        await client.query(`select set_config('app.tenant_id', $1, true)`, [t.id]);
-        await expect(client.query(`update helpdesk_messages set body = 'x' where case_id = $1`, [ids.case1])).rejects.toThrow(/permission denied/);
-        await client.query('rollback');
-      } finally {
-        client.release();
-      }
+      await expect(pool.update('helpdesk_cases', { id: ids.case1 }, { $set: { subject: 'edited' } })).rejects.toThrow(/closed helpdesk cases/);
+      await expect(pool.delete('helpdesk_cases', { id: ids.case1 })).rejects.toThrow(/cannot be deleted/);
+      // Messages are insert-only from a workspace.
+      await expect(pool.tenant(t.id, (tx) => tx.collection('helpdesk_messages').update({ case_id: ids.case1 }, { $set: { body: 'x' } }))).rejects.toThrow(/not allowed/);
     });
 
     it('closes resolved cases after 7 days without an answer', async () => {
       ok(await as('hr2').post(`/helpdesk/cases/${ids.case2}/status`).send({ status: 'resolved', message: 'Declare rent in the tax declaration window in January.' }));
-      await pool.query(`update helpdesk_cases set resolved_at = now() - interval '8 days' where id = $1`, [ids.case2]);
+      await pool.update('helpdesk_cases', { id: ids.case2 }, { $set: { resolved_at: new Date(Date.now() - 8 * 86_400_000) } });
       const db = app.get(DatabaseService);
       const closed = await db.tenant((tx) => app.get(HelpdeskService).autoClose(tx), { tenantId: t.id });
       expect(closed).toBe(1);
@@ -209,16 +197,15 @@ describe('helpdesk and announcements', () => {
       fails(await as('hr2').put(`/helpdesk/cases/${g.id}/assignee`).send({ assigneeMembershipId: people.hr.membershipId }), 400, 'assignee_cannot_handle');
       const d = ok(await as('hr2').get(`/helpdesk/cases/${g.id}`));
       expect(d).toMatchObject({ confidential: true, role: 'handler' });
-      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'helpdesk.case_viewed' and resource_id = $2`, [t.id, g.id]);
-      expect(audit.rows[0].n).toBe(1);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'helpdesk.case_viewed', resource_id: g.id })).toBe(1);
       // A case moved into a confidential category becomes confidential, and the case text never reaches the audit trail.
       const moved = ok(await as('bala').post('/helpdesk/cases').send({ categoryId: ids.pay, subject: 'About my team lead', description: 'Something happened that I would rather discuss privately.' }), 201);
       const handler = ok(await as('bala').get(`/helpdesk/cases/${moved.id}`)).assigneeName === 'Hana Test' ? 'hr' : 'hr2';
       ok(await as(handler).put(`/helpdesk/cases/${moved.id}/category`).send({ categoryId: ids.grievance }));
       fails(await as('hr').get(`/helpdesk/cases/${moved.id}`), 404);
       expect(ok(await as('hr2').get(`/helpdesk/cases/${moved.id}`))).toMatchObject({ confidential: true, assigneeName: 'Hugo Test' });
-      const leaked = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and (changes::text ilike '%team lead%' or metadata::text ilike '%team lead%')`, [t.id]);
-      expect(leaked.rows[0].n).toBe(0);
+      const events = await pool.find('audit_events', { tenant_id: t.id });
+      expect(events.filter((x) => JSON.stringify([x.changes, x.metadata]).toLowerCase().includes('team lead'))).toHaveLength(0);
     });
 
     it('lets HR log a case for someone, and recalculates targets on a priority change', async () => {
@@ -271,14 +258,14 @@ describe('helpdesk and announcements', () => {
       ]);
       const list = ok(await as('hr').get('/announcements/manage')) as unknown as { id: string; readCount: number; ackCount: number; audienceSize: number }[];
       expect(list.find((a) => a.id === ids.ann)).toMatchObject({ readCount: 1, ackCount: 1, audienceSize: 3 });
-      await expect(pool.query(`update announcement_receipts set acknowledged_at = null where announcement_id = $1`, [ids.ann])).rejects.toThrow(/acknowledgement cannot be changed/);
+      await expect(pool.update('announcement_receipts', { announcement_id: ids.ann }, { $set: { acknowledged_at: null } })).rejects.toThrow(/acknowledgement cannot be changed/);
     });
 
     it('freezes the wording once published; only pinning and expiry change, then archive', async () => {
       ok(await as('hr').put(`/announcements/${ids.ann}`).send({ title: 'Changed title', body: 'Changed body', pinned: true }));
       const a = ok(await as('hr').get(`/announcements/manage/${ids.ann}`));
       expect(a).toMatchObject({ title: 'Plant shutdown on Friday', pinned: true });
-      await expect(pool.query(`update announcements set body = 'tampered' where id = $1`, [ids.ann])).rejects.toThrow(/cannot be reworded/);
+      await expect(pool.update('announcements', { id: ids.ann }, { $set: { body: 'tampered' } })).rejects.toThrow(/cannot be reworded/);
       fails(await as('hr').delete(`/announcements/${ids.ann}`), 409, 'not_draft');
       ok(await as('hr').post(`/announcements/${ids.ann}/archive`));
       expect((ok(await as('asha').get('/announcements')) as unknown as { title: string }[]).map((x) => x.title)).toEqual(['Town hall']);
@@ -290,23 +277,9 @@ describe('helpdesk and announcements', () => {
     it('keeps every Phase 7 record inside its workspace', async () => {
       const tables = ['helpdesk_categories', 'helpdesk_category_handlers', 'helpdesk_articles', 'helpdesk_counters', 'helpdesk_cases', 'helpdesk_messages',
         'helpdesk_events', 'announcements', 'announcement_receipts', 'mobile_devices'];
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        await client.query('set local role crew_app');
-        await client.query(`select set_config('app.tenant_id', $1, true)`, [other.id]);
-        for (const table of tables) {
-          const r = await client.query(`select count(*)::int as n from ${table} where tenant_id = $1`, [t.id]);
-          expect(r.rows[0].n, table).toBe(0);
-        }
-        await client.query('savepoint s1');
-        await expect(client.query(`insert into helpdesk_categories (tenant_id, name) values ($1, 'Injected')`, [t.id])).rejects.toThrow();
-        await client.query('rollback to savepoint s1');
-        await expect(client.query(`select count(*) from push_messages`)).rejects.toThrow(/permission denied/);
-        await client.query('rollback');
-      } finally {
-        client.release();
-      }
+      await expectHiddenFrom(pool, t, other, tables);
+      await expect(pool.tenant(other.id, (tx) => tx.collection('helpdesk_categories').insert({ tenant_id: t.id, name: 'Injected' }))).rejects.toThrow();
+      await expect(pool.tenant(other.id, (tx) => tx.collection('push_messages').count({}))).rejects.toThrow(/not allowed/);
       const owner = (await loginWithMfa(app, pool, other.ownerEmail)).accessToken;
       const o = api(app, owner);
       fails(await o.get(`/helpdesk/cases/${ids.grievanceCase}`), 404);

@@ -4,12 +4,25 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { can } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
-import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
-import { attrsOf, nameOf, talentEmployee } from '../talent/talent-common';
+import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
+import { displayName, employeeNames, fieldById, memberNames } from '../employees/employee-view';
+import { attrsOf, talentEmployee } from '../talent/talent-common';
 
 export const RULES_VERSION = 'attrition-rules-v1';
+
+const CURRENT = ['probation', 'active', 'notice'];
+
+/** Whole months from `from` to `to` ('YYYY-MM-DD'), as PostgreSQL age() counts them. */
+export function monthsBetween(from: string, to: string): number {
+  const [y1, m1, d1] = from.split('-').map(Number) as [number, number, number];
+  const [y2, m2, d2] = to.split('-').map(Number) as [number, number, number];
+  return (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
+}
+
+const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const dayStart = (date: string) => new Date(`${date}T00:00:00Z`);
 
 /**
  * Explainable insights. Attrition risk is a transparent rule score per employee, recalculated daily and kept
@@ -25,56 +38,62 @@ export class InsightsService {
   ) {}
 
   /** The inputs for every current employee, gathered in one pass. */
-  private async inputs(tx: Tx, asOf: string): Promise<{ employeeId: string; input: AttritionInput }[]> {
-    const rows = await many<Record<string, string | number | null> & { id: string }>(
-      tx,
-      `select e.id,
-              (extract(year from age($1::date, e.date_of_joining)) * 12 + extract(month from age($1::date, e.date_of_joining)))::int as tenure,
-              (select (extract(year from age($1::date, max(r.effective_from))) * 12 + extract(month from age($1::date, max(r.effective_from))))::int
-                 from employment_records r where r.employee_id = e.id and r.change_reason in ('promotion', 'transfer') and r.effective_from <= $1::date) as since_change,
-              coalesce((select sum(l.days) from leave_requests l join leave_types t on t.id = l.leave_type_id
-                 where l.employee_id = e.id and l.status = 'approved' and (t.code in ('SL', 'CL') or not t.paid)
-                   and l.start_date > $1::date - 90 and l.start_date <= $1::date), 0)::float as leave_recent,
-              coalesce((select sum(l.days) from leave_requests l join leave_types t on t.id = l.leave_type_id
-                 where l.employee_id = e.id and l.status = 'approved' and (t.code in ('SL', 'CL') or not t.paid)
-                   and l.start_date > $1::date - 180 and l.start_date <= $1::date - 90), 0)::float as leave_prior,
-              (select count(*) from attendance_days d where d.employee_id = e.id and d.work_date > $1::date - 30 and d.work_date <= $1::date
-                  and (d.status = 'absent' or 'late' = any(d.flags)))::int as late_absent,
-              (select rv.final_rating::float / nullif(jsonb_array_length(c.rating_scale), 0) from reviews rv join review_cycles c on c.id = rv.cycle_id
-                 where rv.employee_id = e.id and rv.released_at is not null and rv.final_rating is not null order by rv.released_at desc limit 1) as rating_share,
-              (select count(*) from recognitions g where g.to_employee_id = e.id and g.hidden_at is null and g.created_at > $1::date - 180)::int as recognitions,
-              (select count(*) from helpdesk_cases h join helpdesk_categories k on k.id = h.category_id
-                 where h.employee_id = e.id and not h.confidential and k.name ilike '%pay%' and h.created_at > $1::date - 90)::int as pay_queries
-         from employees e where e.status in ('probation', 'active', 'notice')`,
-      [asOf],
-    );
-    return rows.map((r) => ({
-      employeeId: r.id,
-      input: {
-        tenureMonths: Number(r.tenure ?? 0),
-        monthsSinceJobChange: r.since_change === null ? null : Number(r.since_change),
-        unplannedLeaveRecent: Number(r.leave_recent),
-        unplannedLeavePrior: Number(r.leave_prior),
-        lateOrAbsentDays30: Number(r.late_absent),
-        lastRatingShare: r.rating_share === null ? null : Math.round(Number(r.rating_share) * 100) / 100,
-        recognitions180: Number(r.recognitions),
-        payQueries90: Number(r.pay_queries),
-      },
-    }));
+  private async inputs(tx: TenantTx, asOf: string): Promise<{ employeeId: string; input: AttritionInput }[]> {
+    const emps = await tx.collection('employees').find({ status: { $in: CURRENT } }, { projection: { date_of_joining: 1 } });
+    const ids = emps.map((e) => e.id as string);
+    const byEmployee = <T extends Record<string, unknown>>(rows: T[], field = 'employee_id') => {
+      const m = new Map<string, T[]>();
+      for (const x of rows) m.set(x[field] as string, [...(m.get(x[field] as string) ?? []), x]);
+      return m;
+    };
+    const changes = byEmployee(await tx.collection('employment_records').find({ employee_id: { $in: ids }, change_reason: { $in: ['promotion', 'transfer'] }, effective_from: { $lte: asOf } }, { projection: { employee_id: 1, effective_from: 1 } }));
+    const unplannedTypes = (await tx.collection('leave_types').find({ $or: [{ code: { $in: ['SL', 'CL'] } }, { paid: false }] }, { projection: { _id: 1 } })).map((t) => t.id);
+    const leave = byEmployee(await tx.collection('leave_requests').find(
+      { employee_id: { $in: ids }, status: 'approved', leave_type_id: { $in: unplannedTypes }, start_date: { $gt: addDays(asOf, -180), $lte: asOf } },
+      { projection: { employee_id: 1, start_date: 1, days: 1 } },
+    ));
+    const days = byEmployee(await tx.collection('attendance_days').find(
+      { employee_id: { $in: ids }, work_date: { $gt: addDays(asOf, -30), $lte: asOf }, $or: [{ status: 'absent' }, { flags: 'late' }] },
+      { projection: { employee_id: 1 } },
+    ));
+    const reviews = byEmployee(await tx.collection('reviews').find({ employee_id: { $in: ids }, released_at: { $ne: null }, final_rating: { $ne: null } }, { sort: { released_at: -1 }, projection: { employee_id: 1, final_rating: 1, cycle_id: 1 } }));
+    const scales = new Map((await tx.collection('review_cycles').find({ id: { $in: [...reviews.values()].flat().map((x) => x.cycle_id) } }, { projection: { rating_scale: 1 } })).map((c) => [c.id as string, (c.rating_scale as unknown[]).length]));
+    const recognitions = byEmployee(await tx.collection('recognitions').find({ to_employee_id: { $in: ids }, hidden_at: null, created_at: { $gt: dayStart(addDays(asOf, -180)) } }, { projection: { to_employee_id: 1 } }), 'to_employee_id');
+    const payCategories = (await tx.collection('helpdesk_categories').find({ name: { $regex: 'pay', $options: 'i' } }, { projection: { _id: 1 } })).map((k) => k.id);
+    const payQueries = byEmployee(await tx.collection('helpdesk_cases').find(
+      { employee_id: { $in: ids }, confidential: false, category_id: { $in: payCategories }, created_at: { $gt: dayStart(addDays(asOf, -90)) } },
+      { projection: { employee_id: 1 } },
+    ));
+    const sumDays = (rows: Array<Record<string, unknown>>) => rows.reduce((a, x) => a + Number(x.days ?? 0), 0);
+    return emps.map((e) => {
+      const lastChange = (changes.get(e.id) ?? []).map((x) => x.effective_from as string).sort().pop();
+      const mine = leave.get(e.id) ?? [];
+      const recentFrom = addDays(asOf, -90);
+      const last = (reviews.get(e.id) ?? [])[0];
+      const scale = last ? scales.get(last.cycle_id) : undefined;
+      return {
+        employeeId: e.id as string,
+        input: {
+          tenureMonths: monthsBetween(e.date_of_joining, asOf),
+          monthsSinceJobChange: lastChange ? monthsBetween(lastChange, asOf) : null,
+          unplannedLeaveRecent: sumDays(mine.filter((x) => (x.start_date as string) > recentFrom)),
+          unplannedLeavePrior: sumDays(mine.filter((x) => (x.start_date as string) <= recentFrom)),
+          lateOrAbsentDays30: (days.get(e.id) ?? []).length,
+          lastRatingShare: last && scale ? Math.round((Number(last.final_rating) / scale) * 100) / 100 : null,
+          recognitions180: (recognitions.get(e.id) ?? []).length,
+          payQueries90: (payQueries.get(e.id) ?? []).length,
+        },
+      };
+    });
   }
 
   /** Calculates today's scores for everyone (idempotent per day). Used by the daily job and "Recalculate". */
-  async computeAttrition(tx: Tx, asOf = new Date().toISOString().slice(0, 10)): Promise<number> {
+  async computeAttrition(tx: TenantTx, asOf = new Date().toISOString().slice(0, 10)): Promise<number> {
     const all = await this.inputs(tx, asOf);
     for (const { employeeId, input } of all) {
       const r = insights.attritionRisk(input);
-      await tx.query(
-        `insert into attrition_scores (tenant_id, employee_id, computed_on, score, band, factors, inputs, rules_version)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7)
-         on conflict (employee_id, computed_on) do update set score = excluded.score, band = excluded.band, factors = excluded.factors,
-                inputs = excluded.inputs, rules_version = excluded.rules_version, created_at = now()`,
-        [employeeId, asOf, r.score, r.band, JSON.stringify(r.factors), JSON.stringify(input), RULES_VERSION],
-      );
+      const values = { score: r.score, band: r.band, factors: r.factors, inputs: input, rules_version: RULES_VERSION };
+      await tx.collection('attrition_scores').upsert({ employee_id: employeeId, computed_on: asOf }, { employee_id: employeeId, computed_on: asOf, ...values }, { $set: { ...values, created_at: new Date() } });
     }
     return all.length;
   }
@@ -91,27 +110,32 @@ export class InsightsService {
   /** Latest score per person in the caller's scope, highest first. */
   async attrition(q: { band?: 'low' | 'medium' | 'high' }) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [q.band ?? null];
-      const pred = await this.authz.predicate('insights:attrition', EMPLOYEE_SCOPE, params, tx);
-      const rows = await many(
-        tx,
-        `select e.id as "employeeId", ${nameOf('e')} as name, d.name as department, s.score, s.band, s.factors, s.computed_on as "computedOn",
-                rv.outcome as "reviewOutcome", rv.created_at as "reviewedAt"
-           from employees e
-           join lateral (select * from attrition_scores x where x.employee_id = e.id order by x.computed_on desc limit 1) s on true
-           left join departments d on d.id = e.current_department_id
-           left join lateral (select outcome, created_at from attrition_reviews r where r.employee_id = e.id and r.score_id = s.id order by created_at desc limit 1) rv on true
-          where e.status in ('probation', 'active', 'notice') and ($1::text is null or s.band = $1) and ${pred}
-          order by s.score desc, name limit 500`,
-        params,
-      );
+      const scope = await this.authz.filter('insights:attrition', EMPLOYEE_FIELDS, tx);
+      const emps = await tx.collection('employees').find({ $and: [scope, { status: { $in: CURRENT } }] });
+      const scores = await tx.collection('attrition_scores').find({ employee_id: { $in: emps.map((e) => e.id) } }, { sort: { computed_on: -1 } });
+      const latest = new Map<string, (typeof scores)[number]>();
+      for (const x of scores) if (!latest.has(x.employee_id)) latest.set(x.employee_id, x);
+      const reviewDocs = await tx.collection('attrition_reviews').find({ score_id: { $in: [...latest.values()].map((x) => x.id) } }, { sort: { created_at: -1 } });
+      const departments = await fieldById(tx, 'departments', emps.map((e) => e.current_department_id));
+      const rows = emps
+        .filter((e) => latest.has(e.id) && (!q.band || latest.get(e.id)!.band === q.band))
+        .map((e) => {
+          const sc = latest.get(e.id)!;
+          const rv = reviewDocs.find((x) => x.employee_id === e.id && x.score_id === sc.id);
+          return {
+            employeeId: e.id, name: displayName(e as never), department: departments.get(e.current_department_id) ?? null, score: sc.score, band: sc.band, factors: sc.factors,
+            computedOn: sc.computed_on, reviewOutcome: rv?.outcome ?? null, reviewedAt: rv?.created_at ?? null,
+          };
+        })
+        .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+        .slice(0, 500);
       await this.audit.record(tx, { action: 'insights.attrition_viewed', resourceType: 'attrition_scores', metadata: { band: q.band ?? 'all', rows: rows.length } });
-      const lastRun = await one<{ on: string | null }>(tx, 'select max(computed_on)::text as on from attrition_scores');
-      return { rulesVersion: RULES_VERSION, rules: insights.ATTRITION_RULES, computedOn: lastRun?.on ?? null, people: rows };
+      const lastRun = await tx.collection('attrition_scores').findOne({}, { sort: { computed_on: -1 }, projection: { computed_on: 1 } });
+      return { rulesVersion: RULES_VERSION, rules: insights.ATTRITION_RULES, computedOn: lastRun?.computed_on ?? null, people: rows };
     });
   }
 
-  private async scoped(tx: Tx, employeeId: string) {
+  private async scoped(tx: TenantTx, employeeId: string) {
     const e = await talentEmployee(tx, employeeId);
     const s = await this.authz.subject(tx);
     if (!can(s, 'insights:attrition', attrsOf(e)).allowed) throw Errors.notFound('Employee');
@@ -121,14 +145,15 @@ export class InsightsService {
   async attritionFor(employeeId: string) {
     return this.db.tenant(async (tx) => {
       const e = await this.scoped(tx, employeeId);
-      const history = await many(tx, `select id, computed_on as "computedOn", score, band, factors, inputs, rules_version as "rulesVersion" from attrition_scores where employee_id = $1 order by computed_on desc limit 60`, [employeeId]);
-      const reviews = await many(
-        tx,
-        `select r.id, r.outcome, r.note, r.created_at as "createdAt", s.score, s.computed_on as "scoreOn", coalesce(nullif(${nameOf('be')}, ''), u.full_name) as "byName"
-           from attrition_reviews r join attrition_scores s on s.id = r.score_id join memberships m on m.id = r.by_membership_id join users u on u.id = m.user_id
-           left join employees be on be.id = m.employee_id where r.employee_id = $1 order by r.created_at desc`,
-        [employeeId],
-      );
+      const scoreDocs = await tx.collection('attrition_scores').find({ employee_id: employeeId }, { sort: { computed_on: -1 }, limit: 60 });
+      const history = scoreDocs.map((x) => ({ id: x.id, computedOn: x.computed_on, score: x.score, band: x.band, factors: x.factors, inputs: x.inputs, rulesVersion: x.rules_version }));
+      const reviewDocs = await tx.collection('attrition_reviews').find({ employee_id: employeeId }, { sort: { created_at: -1 } });
+      const reviewed = new Map((await tx.collection('attrition_scores').find({ id: { $in: reviewDocs.map((x) => x.score_id) } })).map((x) => [x.id as string, x]));
+      const by = await memberNames(tx, reviewDocs.map((x) => x.by_membership_id));
+      const reviews = reviewDocs.map((x) => ({
+        id: x.id, outcome: x.outcome, note: x.note, createdAt: x.created_at, score: reviewed.get(x.score_id)?.score ?? null, scoreOn: reviewed.get(x.score_id)?.computed_on ?? null,
+        byName: by.get(x.by_membership_id) ?? null,
+      }));
       await this.audit.record(tx, { action: 'insights.attrition_viewed', resourceType: 'employee', resourceId: employeeId });
       return { employeeId, name: e.name, history, reviews };
     });
@@ -137,12 +162,9 @@ export class InsightsService {
   async review(employeeId: string, input: AttritionReviewInput) {
     return this.db.tenant(async (tx) => {
       await this.scoped(tx, employeeId);
-      const s = await one<{ id: string }>(tx, 'select id from attrition_scores where employee_id = $1 order by computed_on desc limit 1', [employeeId]);
+      const s = await tx.collection('attrition_scores').findOne({ employee_id: employeeId }, { sort: { computed_on: -1 } });
       if (!s) throw Errors.notFound('Score');
-      await tx.query(
-        `insert into attrition_reviews (tenant_id, employee_id, score_id, outcome, note, by_membership_id) values (app_tenant_id(), $1, $2, $3, $4, $5)`,
-        [employeeId, s.id, input.outcome, input.note, requestContext.tenantActor().membershipId],
-      );
+      await tx.collection('attrition_reviews').insert({ employee_id: employeeId, score_id: s.id, outcome: input.outcome, note: input.note, by_membership_id: requestContext.tenantActor().membershipId });
       await this.audit.record(tx, { action: 'insights.attrition_reviewed', resourceType: 'employee', resourceId: employeeId, metadata: { outcome: input.outcome } });
       return { ok: true };
     });
@@ -153,22 +175,22 @@ export class InsightsService {
   /** Checks each person's pay in a run against their own earlier finalised months. Advisory; nothing is changed. */
   async payrollChecks(runId: string) {
     return this.db.tenant(async (tx) => {
-      const run = await one<{ id: string; legal_entity_id: string; period_start: string; status: string }>(tx, `select id, legal_entity_id, period_start::text, status from payroll_runs where id = $1`, [runId]);
+      const run = await tx.collection<{ id: string; legal_entity_id: string; period_start: string; status: string }>('payroll_runs').findOne({ id: runId });
       if (!run) throw Errors.notFound('Payroll run');
       await this.authz.require('payroll:read', { legalEntityId: run.legal_entity_id }, tx);
-      const items = await many<{ id: string; employee_id: string; name: string; gross: string; net: string; lop: string; days: number; lines: { code: string; amount: string }[] }>(
-        tx,
-        `select i.id, i.employee_id, ${nameOf('e')} as name, i.gross::text, i.net::text, coalesce(i.lop_override, i.lop_days)::text as lop, i.days_in_period as days, i.lines
-           from payroll_items i join employees e on e.id = i.employee_id where i.run_id = $1 and i.status = 'included' order by name`,
-        [runId],
-      );
-      const history = await many<{ employee_id: string; gross: string; net: string; lines: { code: string; amount: string }[] }>(
-        tx,
-        `select i.employee_id, i.gross::text, i.net::text, i.lines from payroll_items i join payroll_runs r on r.id = i.run_id
-          where r.status = 'finalised' and r.legal_entity_id = $1 and r.period_start < $2::date and i.status = 'included'
-            and i.employee_id = any($3::uuid[]) order by r.period_start desc`,
-        [run.legal_entity_id, run.period_start, items.map((i) => i.employee_id)],
-      );
+      const docs = await tx.collection('payroll_items').find({ run_id: runId, status: 'included' });
+      const names = await employeeNames(tx, docs.map((i) => i.employee_id));
+      const items = docs
+        .map((i) => ({
+          id: i.id as string, employee_id: i.employee_id as string, name: names.get(i.employee_id)?.name ?? '', gross: i.gross as string, net: i.net as string,
+          lop: (i.lop_override ?? i.lop_days) as string, days: i.days_in_period as number, lines: i.lines as { code: string; amount: string }[],
+        }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+      const earlier = await tx.collection('payroll_runs').find({ status: 'finalised', legal_entity_id: run.legal_entity_id, period_start: { $lt: run.period_start } }, { sort: { period_start: -1 } });
+      const order = new Map(earlier.map((x, i) => [x.id as string, i]));
+      const history = (await tx.collection('payroll_items').find({ run_id: { $in: earlier.map((x) => x.id) }, status: 'included', employee_id: { $in: items.map((i) => i.employee_id) } }))
+        .sort((a, b) => order.get(a.run_id)! - order.get(b.run_id)!)
+        .map((x) => ({ employee_id: x.employee_id as string, gross: x.gross as string, net: x.net as string, lines: x.lines as { code: string; amount: string }[] }));
       const paid = (lines: { code: string; amount: string }[]) => lines.filter((l) => Number(l.amount) !== 0 && !l.code.startsWith('ADJ') && !l.code.startsWith('REIMB')).map((l) => l.code);
       const people = items.map((i) => {
         const h = history.filter((x) => x.employee_id === i.employee_id).slice(0, 6).map((x) => ({ gross: x.gross, net: x.net, components: paid(x.lines) }));

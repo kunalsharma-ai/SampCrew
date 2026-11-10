@@ -3,7 +3,7 @@ import { ERASURE_RULES, PRIVACY_DUE_DAYS, RETENTION_DEFAULTS, type RetentionPoli
 import { createHash, randomUUID } from 'node:crypto';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, membershipUserNames, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { StorageService } from '../../platform/storage/storage.service';
 
@@ -16,6 +16,14 @@ const EXPORT_SKIPPED: Record<string, string> = {
 /** Columns never copied into an export (secrets and storage internals). */
 const SECRET_COLUMNS = /(_enc|_hash|storage_key|secret|token)$/;
 const MAX_ROWS = 5000;
+const ERASURE = { flags: ['erasure'] };
+
+const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const minusYears = (date: string, years: number) => `${Number(date.slice(0, 4)) - years}${date.slice(4)}`;
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
 
 /**
  * Privacy requests from people about their own data: a copy of it (access, also serving portability as a
@@ -34,34 +42,35 @@ export class PrivacyService {
   ) {}
 
   async list(status?: string) {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select r.id, r.kind, r.status, r.source, r.due_on as "dueOn", r.created_at as "createdAt", r.completed_at as "completedAt",
-                r.employee_id as "employeeId", trim(e.first_name || ' ' || e.last_name) as "employeeName", e.employee_code as "employeeCode", e.status as "employeeStatus",
-                (r.status = 'open' and r.due_on < current_date) as overdue
-           from privacy_requests r join employees e on e.id = r.employee_id
-          where ($1::text is null or r.status = $1) order by r.status = 'open' desc, r.due_on, r.created_at desc limit 500`,
-        [status ?? null],
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const reqs = await tx.collection('privacy_requests').find(status ? { status } : {});
+      const emps = new Map((await tx.collection('employees').find({ id: { $in: reqs.map((x) => x.employee_id) } })).map((e) => [e.id as string, e]));
+      const now = today();
+      return reqs
+        .sort((a, b) => Number(b.status === 'open') - Number(a.status === 'open') || String(a.due_on).localeCompare(String(b.due_on)) || b.created_at - a.created_at)
+        .slice(0, 500)
+        .map((x) => {
+          const e = emps.get(x.employee_id);
+          return {
+            id: x.id, kind: x.kind, status: x.status, source: x.source, dueOn: x.due_on, createdAt: x.created_at, completedAt: x.completed_at ?? null, employeeId: x.employee_id,
+            employeeName: e ? `${e.first_name} ${e.last_name ?? ''}`.trim() : null, employeeCode: e?.employee_code ?? null, employeeStatus: e?.status ?? null,
+            overdue: x.status === 'open' && x.due_on < now,
+          };
+        });
+    });
   }
 
   async get(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await one(
-        tx,
-        `select r.id, r.kind, r.status, r.source, r.due_on as "dueOn", r.created_at as "createdAt", r.completed_at as "completedAt", r.decision_note as "decisionNote",
-                r.result, r.export_sha256 as "exportSha256", (r.export_storage_key is not null) as "hasExport",
-                r.employee_id as "employeeId", trim(e.first_name || ' ' || e.last_name) as "employeeName", e.employee_code as "employeeCode",
-                e.status as "employeeStatus", e.last_working_day as "lastWorkingDay", e.erased_at as "erasedAt",
-                ru.full_name as "requestedBy", du.full_name as "decidedBy"
-           from privacy_requests r join employees e on e.id = r.employee_id
-           join memberships rm on rm.id = r.requested_by_membership_id join users ru on ru.id = rm.user_id
-           left join memberships dm on dm.id = r.decided_by_membership_id left join users du on du.id = dm.user_id
-          where r.id = $1`,
-        [id],
-      );
+      const x = await tx.collection('privacy_requests').findOne({ id });
+      const e = x ? await tx.collection('employees').findOne({ id: x.employee_id }) : undefined;
+      const people = x ? await membershipUserNames(tx, [x.requested_by_membership_id, x.decided_by_membership_id]) : new Map();
+      const r = x && e && {
+        id: x.id, kind: x.kind, status: x.status, source: x.source, dueOn: x.due_on, createdAt: x.created_at, completedAt: x.completed_at ?? null, decisionNote: x.decision_note ?? null,
+        result: x.result ?? null, exportSha256: x.export_sha256 ?? null, hasExport: !!x.export_storage_key, employeeId: x.employee_id,
+        employeeName: `${e.first_name} ${e.last_name ?? ''}`.trim(), employeeCode: e.employee_code, employeeStatus: e.status, lastWorkingDay: e.last_working_day ?? null,
+        erasedAt: e.erased_at ?? null, requestedBy: people.get(x.requested_by_membership_id) ?? null, decidedBy: x.decided_by_membership_id ? (people.get(x.decided_by_membership_id) ?? null) : null,
+      };
       if (!r) throw Errors.notFound('Privacy request');
       return { ...r, erasureRules: ERASURE_RULES };
     });
@@ -70,18 +79,15 @@ export class PrivacyService {
   async create(input: { employeeId: string; kind: 'access' | 'erasure'; source: string }) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const e = await one<{ erased_at: string | null }>(tx, 'select erased_at from employees where id = $1', [input.employeeId]);
+      const e = await tx.collection('employees').findOne({ id: input.employeeId });
       if (!e) throw Errors.notFound('Employee');
       if (e.erased_at) throw Errors.conflict('already_erased', 'This person\'s details were already erased.');
-      if (await one(tx, `select 1 from privacy_requests where employee_id = $1 and kind = $2 and status = 'open'`, [input.employeeId, input.kind])) {
+      if (await tx.collection('privacy_requests').exists({ employee_id: input.employeeId, kind: input.kind, status: 'open' })) {
         throw Errors.conflict('request_open', 'There is already an open request of this kind for this person.');
       }
-      const r = (await one<{ id: string }>(
-        tx,
-        `insert into privacy_requests (tenant_id, employee_id, kind, source, due_on, requested_by_membership_id)
-         values (app_tenant_id(), $1, $2, $3, current_date + $4::int, $5) returning id`,
-        [input.employeeId, input.kind, input.source, PRIVACY_DUE_DAYS, actor.membershipId],
-      ))!;
+      const r = await tx.collection('privacy_requests').insert({
+        employee_id: input.employeeId, kind: input.kind, source: input.source, due_on: addDays(today(), PRIVACY_DUE_DAYS), requested_by_membership_id: actor.membershipId,
+      });
       await this.audit.record(tx, { action: 'privacy.request_logged', resourceType: 'privacy_request', resourceId: r.id, metadata: { kind: input.kind, employeeId: input.employeeId } });
       return { id: r.id };
     });
@@ -91,14 +97,16 @@ export class PrivacyService {
     const actor = requestContext.tenantActor();
     await this.db.tenant(async (tx) => {
       await this.open(tx, id);
-      await tx.query(`update privacy_requests set status = 'rejected', decided_by_membership_id = $2, decision_note = $3, completed_at = now(), updated_at = now() where id = $1`, [id, actor.membershipId, note]);
+      await tx.collection('privacy_requests').updateOne({ id }, { $set: { status: 'rejected', decided_by_membership_id: actor.membershipId, decision_note: note, completed_at: new Date(), updated_at: new Date() } });
       await this.audit.record(tx, { action: 'privacy.request_rejected', resourceType: 'privacy_request', resourceId: id, metadata: { note } });
     });
     return { ok: true };
   }
 
-  private async open(tx: Tx, id: string) {
-    const r = await one<{ id: string; kind: string; status: string; employee_id: string }>(tx, 'select id, kind, status, employee_id from privacy_requests where id = $1 for update', [id]);
+  private async open(tx: TenantTx, id: string) {
+    const reqs = tx.collection<{ id: string; kind: string; status: string; employee_id: string }>('privacy_requests');
+    await reqs.lock({ id });
+    const r = await reqs.findOne({ id });
     if (!r) throw Errors.notFound('Privacy request');
     if (r.status !== 'open') throw Errors.conflict('request_closed', 'This request is already closed.');
     return r;
@@ -118,57 +126,56 @@ export class PrivacyService {
       await this.storage.put(key, body);
       const sha = createHash('sha256').update(body).digest('hex');
       const summary = Object.fromEntries(Object.entries(data.records).map(([k, v]) => [k, (v as unknown[]).length]));
-      await tx.query(
-        `update privacy_requests set status = 'completed', decided_by_membership_id = $2, decision_note = $3, export_storage_key = $4, export_sha256 = $5,
-                result = $6, completed_at = now(), updated_at = now() where id = $1`,
-        [id, actor.membershipId, note, key, sha, JSON.stringify({ records: summary, bytes: body.length, skipped: EXPORT_SKIPPED })],
-      );
+      await tx.collection('privacy_requests').updateOne({ id }, {
+        $set: {
+          status: 'completed', decided_by_membership_id: actor.membershipId, decision_note: note, export_storage_key: key, export_sha256: sha,
+          result: { records: summary, bytes: body.length, skipped: EXPORT_SKIPPED }, completed_at: new Date(), updated_at: new Date(),
+        },
+      });
       await this.audit.record(tx, { action: 'privacy.export_prepared', resourceType: 'privacy_request', resourceId: id, metadata: { employeeId: r.employee_id, bytes: body.length, sha256: sha } });
       return { ok: true, records: summary };
     });
   }
 
   /** Everything SampCrew holds about the person in this workspace, by table. */
-  private async collect(tx: Tx, employeeId: string) {
-    const employee = (await one<Record<string, unknown>>(tx, 'select * from employees where id = $1', [employeeId]))!;
-    const tables = await many<{ table_name: string }>(
-      tx,
-      `select c.table_name from information_schema.columns c join information_schema.tables t on t.table_name = c.table_name and t.table_schema = c.table_schema
-        where c.table_schema = 'public' and c.column_name = 'employee_id' and t.table_type = 'BASE TABLE' order by c.table_name`,
-    );
+  private async collect(tx: TenantTx, employeeId: string) {
+    const employee = (await tx.collection('employees').findOne({ id: employeeId }))!;
+    const tables = Object.entries(this.db.tables)
+      .filter(([, spec]) => spec.access === 'tenant' && 'employee_id' in spec.columns && spec.grants.includes('select'))
+      .map(([name]) => name)
+      .sort();
     const records: Record<string, unknown[]> = {};
     const unreadable: string[] = [];
-    for (const { table_name: t } of tables) {
+    for (const t of tables) {
       if (EXPORT_SKIPPED[t]) continue;
       try {
-        await tx.query('savepoint export_table');
-        const rows = await many<Record<string, unknown>>(tx, `select * from ${quoteIdent(t)} where employee_id = $1 limit ${MAX_ROWS}`, [employeeId]);
-        await tx.query('release savepoint export_table');
-        if (rows.length) records[t] = rows.map((row) => Object.fromEntries(Object.entries(row).filter(([k]) => !SECRET_COLUMNS.test(k))));
+        const rows = await tx.collection(t).find({ employee_id: employeeId }, { limit: MAX_ROWS });
+        if (rows.length) records[t] = rows.map((row) => Object.fromEntries(Object.entries(row).filter(([k]) => !SECRET_COLUMNS.test(k) && !k.startsWith('_'))));
       } catch {
-        await tx.query('rollback to savepoint export_table');
         unreadable.push(t);
       }
     }
     // Helpdesk conversations: what the person and handlers wrote to each other (internal notes excluded).
     if (records.helpdesk_cases) {
-      records.helpdesk_messages = await many(
-        tx,
-        `select m.case_id, m.body, m.created_at from helpdesk_messages m join helpdesk_cases c on c.id = m.case_id where c.employee_id = $1 and not m.internal order by m.created_at limit ${MAX_ROWS}`,
-        [employeeId],
-      );
+      const caseIds = (records.helpdesk_cases as Doc[]).map((c) => c.id);
+      records.helpdesk_messages = (await tx.collection('helpdesk_messages').find({ case_id: { $in: caseIds }, internal: false }, { sort: { created_at: 1 }, limit: MAX_ROWS }))
+        .map((m) => ({ case_id: m.case_id, body: m.body, created_at: m.created_at }));
     }
-    const sensitive = await one<Record<string, unknown>>(tx, `select bank_name, (bank_account_enc is not null) as bank_account_on_file, (tax_id_enc is not null) as tax_id_on_file, (national_id_enc is not null) as national_id_on_file from employee_sensitive where employee_id = $1`, [employeeId]);
-    const account = employee.membership_id
-      ? await one(tx, `select u.email::text, u.full_name, u.last_login_at, u.mfa_enabled, m.status, m.created_at from memberships m join users u on u.id = m.user_id where m.id = $1`, [employee.membership_id])
-      : null;
-    const workspace = (await one<{ name: string }>(tx, 'select name from tenants where id = app_tenant_id()'))!;
+    const sens = await tx.collection('employee_sensitive').findOne({ employee_id: employeeId });
+    const sensitive = sens ? { bank_name: sens.bank_name ?? null, bank_account_on_file: !!sens.bank_account_enc, tax_id_on_file: !!sens.tax_id_enc, national_id_on_file: !!sens.national_id_enc } : null;
+    let account: Doc | null = null;
+    if (employee.membership_id) {
+      const m = await tx.collection('memberships').findOne({ id: employee.membership_id });
+      const u = m ? await (await tx.users()).findOne({ id: m.user_id }) : undefined;
+      if (m && u) account = { email: u.email, full_name: u.full_name, last_login_at: u.last_login_at ?? null, mfa_enabled: u.mfa_enabled, status: m.status, created_at: m.created_at };
+    }
+    const workspace = (await tx.collection<{ name: string }>('tenants').findOne({ id: tx.tenantId }))!;
     return {
       format: 'crew-personal-data-export/1',
       generatedAt: new Date().toISOString(),
       workspace: workspace.name,
       about: 'A copy of the personal data this workspace holds about you in SampCrew, by record type. Dates are ISO 8601; amounts are in the currency of the record.',
-      employee: Object.fromEntries(Object.entries(employee).filter(([k]) => !SECRET_COLUMNS.test(k))),
+      employee: Object.fromEntries(Object.entries(employee).filter(([k]) => !SECRET_COLUMNS.test(k) && !k.startsWith('_'))),
       account,
       sensitive: sensitive ?? null,
       records,
@@ -178,9 +185,9 @@ export class PrivacyService {
 
   async download(id: string) {
     const r = await this.db.tenant(async (tx) => {
-      const row = await one<{ export_storage_key: string | null; export_deleted_at: Date | null; employee_code: string }>(
-        tx, 'select r.export_storage_key, r.export_deleted_at, e.employee_code from privacy_requests r join employees e on e.id = r.employee_id where r.id = $1', [id],
-      );
+      const x = await tx.collection('privacy_requests').findOne({ id });
+      const e = x ? await tx.collection('employees').findOne({ id: x.employee_id }) : undefined;
+      const row = x && e ? { export_storage_key: (x.export_storage_key ?? null) as string | null, export_deleted_at: (x.export_deleted_at ?? null) as Date | null, employee_code: e.employee_code as string } : undefined;
       if (row?.export_deleted_at) throw Errors.conflict('export_deleted', 'The export file was deleted: exports are kept for the period in the retention schedule, and deleted when the person is erased.');
       if (!row?.export_storage_key) throw Errors.notFound('Export');
       await this.audit.record(tx, { action: 'privacy.export_downloaded', resourceType: 'privacy_request', resourceId: id });
@@ -207,62 +214,61 @@ export class PrivacyService {
   }
 
   /** Erases the person behind an open erasure request. decidedBy is null when the retention schedule does it. */
-  private async eraseRequest(tx: Tx, id: string, note: string, decidedBy: string | null, tenantId: string, files: string[]) {
+  private async eraseRequest(tx: TenantTx, id: string, note: string, decidedBy: string | null, tenantId: string, files: string[]) {
       const r = await this.open(tx, id);
       if (r.kind !== 'erasure') throw Errors.badRequest('wrong_kind', 'This is not an erasure request.');
-      const e = (await one<{ status: string; last_working_day: string | null; membership_id: string | null; past: boolean }>(
-        tx,
-        'select status, last_working_day, membership_id, (last_working_day < current_date) as past from employees where id = $1',
-        [r.employee_id],
-      ))!;
+      const emp = (await tx.collection('employees').findOne({ id: r.employee_id }))!;
+      const e = { status: emp.status as string, membership_id: (emp.membership_id ?? null) as string | null, past: !!emp.last_working_day && emp.last_working_day < today() };
       if (e.status !== 'exited' || !e.past) {
         throw Errors.conflict('still_employed', 'Only people who have left (after their last working day) can be erased. While someone works here, SampCrew needs their details to employ and pay them.');
       }
-      if (await one(tx, `select 1 from payroll_items i join payroll_runs pr on pr.id = i.run_id where i.employee_id = $1 and pr.status not in ('finalised', 'cancelled') limit 1`, [r.employee_id])) {
+      if (await this.inOpenPayroll(tx, r.employee_id)) {
         throw Errors.conflict('payroll_open', 'This person is in a payroll run that is not finalised. Finish or cancel it first.');
       }
-      // Lets the helpdesk guard accept the one change erasure makes to case text (see migration 0010).
-      await tx.query(`select set_config('crew.erasure', 'on', true)`);
+      // Erasure is the one change frozen records accept (the row guards check the erasure flag; see row-guards.ts).
       const counts: Record<string, number> = {};
       const code = `ERASED-${r.employee_id.slice(0, 8).toUpperCase()}`;
-      await tx.query(
-        `update employees set first_name = 'Erased', last_name = 'person', preferred_name = null, employee_code = $2, work_email = null, personal_email = null,
-                phone = null, date_of_birth = null, gender = null, exit_reason = null, erased_at = now() where id = $1`,
-        [r.employee_id, code],
-      );
-      counts.sensitive = (await tx.query('delete from employee_sensitive where employee_id = $1', [r.employee_id])).rowCount ?? 0;
-      const docs = await many<{ storage_key: string }>(tx, 'delete from employee_documents where employee_id = $1 returning storage_key', [r.employee_id]);
-      files.push(...docs.map((d) => d.storage_key));
+      await tx.collection('employees', ERASURE).updateOne({ id: r.employee_id }, {
+        $set: {
+          first_name: 'Erased', last_name: 'person', preferred_name: null, employee_code: code, work_email: null, personal_email: null, phone: null, date_of_birth: null,
+          gender: null, exit_reason: null, erased_at: new Date(),
+        },
+      });
+      counts.sensitive = await tx.collection('employee_sensitive').delete({ employee_id: r.employee_id });
+      const docs = await tx.collection('employee_documents').find({ employee_id: r.employee_id }, { projection: { storage_key: 1 } });
+      await tx.collection('employee_documents').delete({ employee_id: r.employee_id });
+      files.push(...docs.map((d) => d.storage_key as string));
       counts.documents = docs.length;
-      counts.helpdeskCases = (await tx.query(`update helpdesk_cases set subject = '[erased]', description = '[erased] (personal details removed on request)', satisfaction_comment = null where employee_id = $1`, [r.employee_id])).rowCount ?? 0;
-      counts.leaveReasons = (await tx.query(`update leave_requests set reason = null, cancel_reason = null where employee_id = $1 and (reason is not null or cancel_reason is not null)`, [r.employee_id])).rowCount ?? 0;
+      counts.helpdeskCases = await tx.collection('helpdesk_cases', ERASURE).update(
+        { employee_id: r.employee_id },
+        { $set: { subject: '[erased]', description: '[erased] (personal details removed on request)', satisfaction_comment: null } },
+      );
+      counts.leaveReasons = await tx.collection('leave_requests').update(
+        { employee_id: r.employee_id, $or: [{ reason: { $ne: null } }, { cancel_reason: { $ne: null } }] },
+        { $set: { reason: null, cancel_reason: null } },
+      );
       counts.freeText = await this.eraseFreeText(tx, r.employee_id, e.membership_id, tenantId);
       if (e.membership_id) {
-        counts.helpdeskMessages = (await this.db.platform((ptx) => ptx.query(`update helpdesk_messages set body = '[erased]' where author_membership_id = $1 and tenant_id = $2`, [e.membership_id, tenantId]))).rowCount ?? 0;
-        await tx.query(`update memberships set status = 'suspended', scim_external_id = null where id = $1`, [e.membership_id]);
+        // Messages are insert-only for the workspace; erasure rewrites them in the same transaction, limited to this workspace.
+        counts.helpdeskMessages = await tx.unscoped('helpdesk_messages', ERASURE).update({ tenant_id: tenantId, author_membership_id: e.membership_id }, { $set: { body: '[erased]' } });
+        await tx.collection('memberships').updateOne({ id: e.membership_id }, { $set: { status: 'suspended', scim_external_id: null } });
         // The login is global: it is anonymised only when it belongs to no other workspace.
-        await this.db.platform(async (ptx) => {
-          const u = (await one<{ id: string; others: number }>(ptx, `select u.id, (select count(*)::int from memberships o where o.user_id = u.id and o.id <> m.id) as others from memberships m join users u on u.id = m.user_id where m.id = $1`, [e.membership_id]))!;
-          await ptx.query(`update sessions set revoked_at = now(), revoked_reason = 'erased' where user_id = $1 and tenant_id = $2 and revoked_at is null`, [u.id, tenantId]);
-          if (u.others === 0) {
-            await ptx.query(
-              `update users set email = $2, full_name = 'Erased person', password_hash = null, mfa_secret_enc = null, mfa_enabled = false, status = 'disabled' where id = $1`,
-              [u.id, `erased-${u.id}@erased.invalid`],
-            );
-            counts.loginErased = 1;
-          }
-        });
+        const userId = (await tx.collection('memberships').findOne({ id: e.membership_id }))!.user_id as string;
+        const others = await tx.unscoped('memberships').count({ user_id: userId, _id: { $ne: e.membership_id } });
+        await tx.unscoped('sessions').update({ user_id: userId, tenant_id: tenantId, revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'erased' } });
+        if (others === 0) {
+          await tx.unscoped('users').updateOne({ id: userId }, {
+            $set: { email: `erased-${userId}@erased.invalid`, full_name: 'Erased person', password_hash: null, mfa_secret_enc: null, mfa_enabled: false, status: 'disabled' },
+          });
+          counts.loginErased = 1;
+        }
       }
       const resultJson = { removed: counts, rules: ERASURE_RULES };
-      await tx.query(
-        `update privacy_requests set status = 'completed', decided_by_membership_id = $2, decision_note = $3, result = $4, completed_at = now(), updated_at = now() where id = $1`,
-        [id, decidedBy, note, JSON.stringify(resultJson)],
-      );
+      await tx.collection('privacy_requests').updateOne({ id }, {
+        $set: { status: 'completed', decided_by_membership_id: decidedBy, decision_note: note, result: resultJson, completed_at: new Date(), updated_at: new Date() },
+      });
       // An access export made earlier would now be the only copy of the erased details, so it goes too.
-      const exports = await many<{ export_storage_key: string }>(
-        tx, `update privacy_requests p set export_storage_key = null, export_deleted_at = now() from (select id, export_storage_key from privacy_requests where employee_id = $1 and export_storage_key is not null) o where p.id = o.id returning o.export_storage_key`, [r.employee_id],
-      );
-      files.push(...exports.map((x) => x.export_storage_key));
+      files.push(...(await this.dropExports(tx, { employee_id: r.employee_id })));
       await this.audit.record(tx, { tenantId, action: 'privacy.erased', resourceType: 'employee', resourceId: r.employee_id, metadata: { requestId: id, removed: counts, by: decidedBy ? 'hr' : 'retention_schedule' } });
       return resultJson;
   }
@@ -271,65 +277,83 @@ export class PrivacyService {
    * dates and statuses are kept for payroll and workforce reports; only the words go. Frozen records (released
    * reviews, submitted feedback, completed courses) accept exactly this change while crew.erasure is on.
    */
-  private async eraseFreeText(tx: Tx, employeeId: string, membershipId: string | null, tenantId: string) {
-    const n = async (sql: string, params: unknown[] = [employeeId]) => (await tx.query(sql, params)).rowCount ?? 0;
-    const platform = async (sql: string, params: unknown[]) => (await this.db.platform((ptx) => ptx.query(sql, params))).rowCount ?? 0;
+  private async eraseFreeText(tx: TenantTx, employeeId: string, membershipId: string | null, tenantId: string) {
     const ERASED = '[erased]';
+    const ERASED_JSON = { erased: true };
+    const t = (name: string) => tx.collection(name, ERASURE);
     let total = 0;
-    total += await n(`update expense_claims set description = $2 where employee_id = $1 and description is not null and description <> $2`, [employeeId, ERASED]);
-    total += await n(`update goals set title = $2, description = '' where employee_id = $1`, [employeeId, ERASED]);
-    // Check-ins are insert-only for the app, so the platform role blanks them, limited to this workspace.
-    total += await platform(`update goal_checkins set note = '' where tenant_id = $1 and note <> '' and goal_id in (select id from goals where tenant_id = $1 and employee_id = $2)`, [tenantId, employeeId]);
-    total += await n(`update review_feedback set answers = '{"erased": true}'::jsonb where review_id in (select id from reviews where employee_id = $1) and answers is distinct from '{"erased": true}'::jsonb`);
-    total += await n(`update reviews set self_answers = '{"erased": true}'::jsonb, manager_answers = '{"erased": true}'::jsonb, employee_comment = null, excluded_reason = null where employee_id = $1`);
-    total += await n(`update recognitions set message = $2 where to_employee_id = $1 and message <> $2`, [employeeId, ERASED]);
-    total += await n(`update attendance_corrections set reason = $2 where employee_id = $1 and reason is not null and reason <> $2`, [employeeId, ERASED]);
-    total += await n(`update overtime_claims set reason = null where employee_id = $1 and reason is not null`);
-    total += await n(`update employment_records set note = null where employee_id = $1 and note is not null`);
-    total += await n(`update course_assignments set completion_note = null, cancelled_reason = null where employee_id = $1 and (completion_note is not null or cancelled_reason is not null)`);
-    total += await n(`update approval_requests set summary = $2 where subject_employee_id = $1 and summary <> $2`, [employeeId, ERASED]);
+    total += await t('expense_claims').update({ employee_id: employeeId, description: { $nin: [null, ERASED] } }, { $set: { description: ERASED } });
+    const goalIds = await tx.collection('goals').distinct<string>('id', { employee_id: employeeId });
+    total += await t('goals').update({ employee_id: employeeId }, { $set: { title: ERASED, description: '' } });
+    // Check-ins are insert-only for the workspace, so erasure blanks them unscoped, limited to this workspace.
+    total += await tx.unscoped('goal_checkins', ERASURE).update({ tenant_id: tenantId, note: { $ne: '' }, goal_id: { $in: goalIds } }, { $set: { note: '' } });
+    const reviewIds = await tx.collection('reviews').distinct<string>('id', { employee_id: employeeId });
+    total += await t('review_feedback').update({ review_id: { $in: reviewIds }, answers: { $ne: ERASED_JSON } }, { $set: { answers: ERASED_JSON } });
+    total += await t('reviews').update({ employee_id: employeeId }, { $set: { self_answers: ERASED_JSON, manager_answers: ERASED_JSON, employee_comment: null, excluded_reason: null } });
+    total += await t('recognitions').update({ to_employee_id: employeeId, message: { $ne: ERASED } }, { $set: { message: ERASED } });
+    total += await t('attendance_corrections').update({ employee_id: employeeId, reason: { $nin: [null, ERASED] } }, { $set: { reason: ERASED } });
+    total += await t('overtime_claims').update({ employee_id: employeeId, reason: { $ne: null } }, { $set: { reason: null } });
+    total += await t('employment_records').update({ employee_id: employeeId, note: { $ne: null } }, { $set: { note: null } });
+    total += await t('course_assignments').update(
+      { employee_id: employeeId, $or: [{ completion_note: { $ne: null } }, { cancelled_reason: { $ne: null } }] },
+      { $set: { completion_note: null, cancelled_reason: null } },
+    );
+    total += await t('approval_requests').update({ subject_employee_id: employeeId, summary: { $ne: ERASED } }, { $set: { summary: ERASED } });
     // Attrition risk is an inference about the person: scores and the notes on them (cascade) go.
-    total += await n(`delete from attrition_scores where employee_id = $1`);
+    total += await t('attrition_scores').delete({ employee_id: employeeId });
     if (membershipId) {
-      for (const t of ['iq_messages', 'iq_conversations', 'saved_views', 'notifications', 'employee_drafts']) {
-        total += await n(`delete from ${quoteIdent(t)} where membership_id = $1`, [membershipId]);
+      for (const name of ['iq_messages', 'iq_conversations', 'saved_views', 'notifications', 'employee_drafts']) {
+        total += await tx.unscoped(name, ERASURE).delete({ tenant_id: tenantId, membership_id: membershipId });
       }
-      // Not deletable by the app role; the platform role does it, limited to this workspace.
-      total += await platform(`delete from member_preferences where tenant_id = $1 and membership_id = $2`, [tenantId, membershipId]);
-      total += await platform(`delete from mobile_devices where tenant_id = $1 and membership_id = $2`, [tenantId, membershipId]);
+      // Not deletable by the workspace; erasure removes them unscoped, limited to this workspace.
+      total += await tx.unscoped('member_preferences', ERASURE).delete({ tenant_id: tenantId, membership_id: membershipId });
+      total += await tx.unscoped('mobile_devices', ERASURE).delete({ tenant_id: tenantId, membership_id: membershipId });
     }
     return total;
   }
+
+  /** Whether the employee is in a payroll run that is neither finalised nor cancelled. */
+  private async inOpenPayroll(tx: TenantTx, employeeId: string): Promise<boolean> {
+    const runs = await tx.collection('payroll_items').distinct<string>('run_id', { employee_id: employeeId });
+    return tx.collection('payroll_runs').exists({ id: { $in: runs }, status: { $nin: ['finalised', 'cancelled'] } });
+  }
+
+  /** Deletes the export files of matching requests (recording when), and returns their storage keys. */
+  private async dropExports(tx: TenantTx, filter: Doc): Promise<string[]> {
+    const reqs = tx.collection('privacy_requests');
+    const found = await reqs.find({ ...filter, export_storage_key: { $ne: null } }, { projection: { export_storage_key: 1 } });
+    for (const x of found) await reqs.updateOne({ id: x.id }, { $set: { export_storage_key: null, export_deleted_at: new Date() } });
+    return found.map((x) => x.export_storage_key as string);
+  }
+
   // Retention schedule ---------------------------------------------------------------------------------------------
 
   async retention() {
     return this.db.tenant(async (tx) => {
-      const p = await one<{ exitedErasureYears: number | null; exportDays: number; signInLogDays: number; updatedAt: Date; updatedBy: string | null }>(
-        tx,
-        `select p.exited_erasure_years as "exitedErasureYears", p.export_days as "exportDays", p.sign_in_log_days as "signInLogDays", p.updated_at as "updatedAt", u.full_name as "updatedBy"
-           from retention_policies p left join memberships m on m.id = p.updated_by_membership_id left join users u on u.id = m.user_id`,
-      );
-      const runs = await many(tx, `select id, ran_at as "ranAt", result from retention_runs order by ran_at desc limit 10`);
-      const due = await one<{ n: number }>(
-        tx,
-        `select count(*)::int as n from employees where status = 'exited' and erased_at is null and $1::int is not null and last_working_day < current_date - make_interval(years => $1::int)`,
-        [p?.exitedErasureYears ?? null],
-      );
-      return { policy: p ?? { ...RETENTION_DEFAULTS, updatedAt: null, updatedBy: null }, isDefault: !p, dueForErasure: due!.n, runs };
+      const pol = await tx.collection('retention_policies').findOne({});
+      const by = pol ? await membershipUserNames(tx, [pol.updated_by_membership_id]) : new Map();
+      const p = pol && {
+        exitedErasureYears: (pol.exited_erasure_years ?? null) as number | null, exportDays: pol.export_days as number, signInLogDays: pol.sign_in_log_days as number,
+        updatedAt: pol.updated_at as Date, updatedBy: (pol.updated_by_membership_id && by.get(pol.updated_by_membership_id)) ?? null,
+      };
+      const runs = (await tx.collection('retention_runs').find({}, { sort: { ran_at: -1 }, limit: 10 })).map((x) => ({ id: x.id, ranAt: x.ran_at, result: x.result }));
+      const due = {
+        n: p?.exitedErasureYears
+          ? await tx.collection('employees').count({ status: 'exited', erased_at: null, last_working_day: { $lt: minusYears(today(), p.exitedErasureYears) } })
+          : 0,
+      };
+      return { policy: p ?? { ...RETENTION_DEFAULTS, updatedAt: null, updatedBy: null }, isDefault: !p, dueForErasure: due.n, runs };
     });
   }
 
   async setRetention(input: RetentionPolicyInput) {
     const actor = requestContext.tenantActor();
     await this.db.tenant(async (tx) => {
-      const before = await one(tx, 'select exited_erasure_years, export_days, sign_in_log_days from retention_policies');
-      await tx.query(
-        `insert into retention_policies (tenant_id, exited_erasure_years, export_days, sign_in_log_days, updated_by_membership_id)
-         values (app_tenant_id(), $1, $2, $3, $4)
-         on conflict (tenant_id) do update set exited_erasure_years = excluded.exited_erasure_years, export_days = excluded.export_days,
-            sign_in_log_days = excluded.sign_in_log_days, updated_by_membership_id = excluded.updated_by_membership_id, updated_at = now()`,
-        [input.exitedErasureYears, input.exportDays, input.signInLogDays, actor.membershipId],
-      );
+      const policies = tx.collection('retention_policies');
+      const cur = await policies.findOne({});
+      const before = cur ? { exited_erasure_years: cur.exited_erasure_years ?? null, export_days: cur.export_days, sign_in_log_days: cur.sign_in_log_days } : undefined;
+      const values = { exited_erasure_years: input.exitedErasureYears ?? null, export_days: input.exportDays, sign_in_log_days: input.signInLogDays, updated_by_membership_id: actor.membershipId };
+      await policies.upsert({}, values, { $set: { ...values, updated_at: new Date() } });
       await this.audit.record(tx, { action: 'privacy.retention_changed', resourceType: 'retention_policy', resourceId: actor.tenantId, changes: { before, after: input } });
     });
     return this.retention();
@@ -344,53 +368,37 @@ export class PrivacyService {
   async applyRetention(tenantId: string, trigger: 'schedule' | 'manual') {
     const files: string[] = [];
     const result = await this.db.tenant(async (tx) => {
-      const row = await one<{ exited_erasure_years: number | null; export_days: number; sign_in_log_days: number; updated_by_membership_id: string | null }>(
-        tx, 'select exited_erasure_years, export_days, sign_in_log_days, updated_by_membership_id from retention_policies',
-      );
+      const row = await tx.collection<{ exited_erasure_years: number | null; export_days: number; sign_in_log_days: number; updated_by_membership_id: string | null }>('retention_policies').findOne({});
       const p = row ?? { exited_erasure_years: RETENTION_DEFAULTS.exitedErasureYears, export_days: RETENTION_DEFAULTS.exportDays, sign_in_log_days: RETENTION_DEFAULTS.signInLogDays, updated_by_membership_id: null };
       const erased: string[] = [];
       let heldByPayroll = 0;
       if (p.exited_erasure_years && p.updated_by_membership_id) {
-        const due = await many<{ id: string; open_payroll: boolean }>(
-          tx,
-          `select e.id, exists (select 1 from payroll_items i join payroll_runs pr on pr.id = i.run_id where i.employee_id = e.id and pr.status not in ('finalised', 'cancelled')) as open_payroll
-             from employees e
-            where e.status = 'exited' and e.erased_at is null and e.last_working_day < current_date - make_interval(years => $1::int)
-            order by e.last_working_day limit 25`,
-          [p.exited_erasure_years],
+        const candidates = await tx.collection('employees').find(
+          { status: 'exited', erased_at: null, last_working_day: { $lt: minusYears(today(), p.exited_erasure_years) } },
+          { sort: { last_working_day: 1 }, limit: 25, projection: { _id: 1 } },
         );
+        const due: { id: string; open_payroll: boolean }[] = [];
+        for (const c of candidates) due.push({ id: c.id as string, open_payroll: await this.inOpenPayroll(tx, c.id) });
         for (const e of due) {
           if (e.open_payroll) {
             heldByPayroll++;
             continue;
           }
-          const open = await one<{ id: string }>(tx, `select id from privacy_requests where employee_id = $1 and kind = 'erasure' and status = 'open'`, [e.id]);
-          const reqId = open?.id ?? (await one<{ id: string }>(
-            tx,
-            `insert into privacy_requests (tenant_id, employee_id, kind, source, due_on, requested_by_membership_id)
-             values (app_tenant_id(), $1, 'erasure', 'Retention schedule', current_date, $2) returning id`,
-            [e.id, p.updated_by_membership_id],
-          ))!.id;
+          const open = await tx.collection('privacy_requests').findOne({ employee_id: e.id, kind: 'erasure', status: 'open' });
+          const reqId = (open?.id as string | undefined) ?? ((await tx.collection('privacy_requests').insert({
+            employee_id: e.id, kind: 'erasure', source: 'Retention schedule', due_on: today(), requested_by_membership_id: p.updated_by_membership_id,
+          })).id as string);
           await this.eraseRequest(tx, reqId, `Erased by the retention schedule: more than ${p.exited_erasure_years} years after the last working day.`, null, tenantId, files);
           erased.push(e.id);
         }
       }
-      const exports = await many<{ export_storage_key: string }>(
-        tx,
-        `update privacy_requests p set export_storage_key = null, export_deleted_at = now()
-           from (select id, export_storage_key from privacy_requests where export_storage_key is not null and completed_at < now() - make_interval(days => $1::int)) o
-          where p.id = o.id returning o.export_storage_key`,
-        [p.export_days],
-      );
-      files.push(...exports.map((x) => x.export_storage_key));
-      // These logs are append-only for the app; the platform role deletes them, limited to this workspace.
-      const logs = await this.db.platform(async (ptx) => {
-        const del = async (table: string) =>
-          (await ptx.query(`delete from ${quoteIdent(table)} where tenant_id = $1 and created_at < now() - make_interval(days => $2::int)`, [tenantId, p.sign_in_log_days])).rowCount ?? 0;
-        return { signInStates: await del('sso_login_states'), mobileHandoffs: await del('sso_handoffs'), provisioningCalls: await del('scim_events') };
-      });
+      const exports = await this.dropExports(tx, { completed_at: { $lt: daysAgo(p.export_days) } });
+      files.push(...exports);
+      // These logs are append-only for the workspace; they are deleted unscoped, limited to this workspace.
+      const del = (table: string) => tx.unscoped(table).delete({ tenant_id: tenantId, created_at: { $lt: daysAgo(p.sign_in_log_days) } });
+      const logs = { signInStates: await del('sso_login_states'), mobileHandoffs: await del('sso_handoffs'), provisioningCalls: await del('scim_events') };
       const out = { trigger, erased: erased.length, heldByPayroll, exportsDeleted: exports.length, ...logs, policy: { exitedErasureYears: p.exited_erasure_years, exportDays: p.export_days, signInLogDays: p.sign_in_log_days } };
-      await tx.query('insert into retention_runs (tenant_id, result) values (app_tenant_id(), $1)', [JSON.stringify(out)]);
+      await tx.collection('retention_runs').insert({ result: out });
       await this.audit.record(tx, { tenantId, action: 'privacy.retention_applied', resourceType: 'retention_policy', resourceId: tenantId, metadata: out });
       return out;
     }, { tenantId });
@@ -400,14 +408,8 @@ export class PrivacyService {
 
   /** Once a day per workspace, from the hourly HR jobs. */
   async applyRetentionDaily(tenantId: string) {
-    const ranToday = await this.db.tenant((tx) => one(tx, `select 1 from retention_runs where ran_at > now() - interval '1 day' and result->>'trigger' = 'schedule' limit 1`), { tenantId });
+    const ranToday = await this.db.tenant((tx) => tx.collection('retention_runs').exists({ ran_at: { $gt: daysAgo(1) }, 'result.trigger': 'schedule' }), { tenantId });
     if (ranToday) return null;
     return this.applyRetention(tenantId, 'schedule');
   }
-}
-
-
-function quoteIdent(name: string) {
-  if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error('bad identifier');
-  return `"${name}"`;
 }

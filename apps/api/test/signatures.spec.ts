@@ -1,9 +1,8 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { imageSize } from '../src/modules/signatures/signatures.service';
-import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 // A real 1x1 PNG, and a 3x1 PNG for the logo's proportions.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -13,7 +12,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** Outlook email signatures: designs, company settings, and the Windows sync that installs them. */
 describe('email signatures', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let owner: string;
   let me: { email: string; membershipId: string };
@@ -131,7 +130,7 @@ describe('email signatures', () => {
       token = tokenOf(file);
       agentId = r.body.id;
       // Only a hash is stored.
-      const row = (await pool.query('select token_hash, token_hint from signature_agents where id = $1', [agentId])).rows[0];
+      const row = (await pool.one('signature_agents', { id: agentId }))!;
       expect(row.token_hash).not.toContain(token);
       expect(token.endsWith(row.token_hint)).toBe(true);
       expect((await api(app, meToken).get('/signatures/me')).body.agents).toEqual([expect.objectContaining({ id: agentId, name: 'Office laptop', lastAppliedAt: null })]);
@@ -183,13 +182,13 @@ describe('email signatures', () => {
     });
 
     it('leaves out a WebP photo, which Outlook 2013 cannot show', async () => {
-      await pool.query(`update employees set photo_content_type = 'image/webp' where id = $1`, [empId]);
+      await pool.update('employees', { id: empId }, { $set: { photo_content_type: 'image/webp' } });
       const r = await agent(token).sync({});
       expect(r.body.html).not.toContain('photo.');
       expect(r.body.images.map((i: { name: string }) => i.name)).toEqual(['logo.png']);
       expect((await agent(token).image('photo')).status).toBe(404);
       expect((await api(app, meToken).get('/signatures/me')).body.photoNotForOutlook).toBe(true);
-      await pool.query(`update employees set photo_content_type = 'image/png' where id = $1`, [empId]);
+      await pool.update('employees', { id: empId }, { $set: { photo_content_type: 'image/png' } });
     });
 
     it('refuses unknown, disconnected and other people\'s computers', async () => {

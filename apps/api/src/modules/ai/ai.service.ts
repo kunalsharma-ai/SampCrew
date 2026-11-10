@@ -4,11 +4,11 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { hasPermission } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
+import { memberNames } from '../employees/employee-view';
 import { Errors } from '../../platform/http/errors';
-import { AiGatewayService } from './ai-gateway.service';
+import { AiGatewayService, monthStart } from './ai-gateway.service';
 
-const WHO = `coalesce(nullif(trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name), ''), u.full_name)`;
 
 /** AI settings, usage, the prompt log for auditors, feedback, and removal of old prompt text. */
 @Injectable()
@@ -47,12 +47,8 @@ export class AiService {
     await this.db.tenant(async (tx) => {
       const before = await this.gateway.settings(tx);
       const actor = requestContext.tenantActor();
-      await tx.query(
-        `insert into ai_settings (tenant_id, features, prompt_log_days, updated_by_membership_id) values (app_tenant_id(), $1, $2, $3)
-         on conflict (tenant_id) do update set features = excluded.features, prompt_log_days = excluded.prompt_log_days,
-                updated_by_membership_id = excluded.updated_by_membership_id, updated_at = now()`,
-        [JSON.stringify(input.features), input.promptLogDays, actor.membershipId],
-      );
+      const values = { features: input.features, prompt_log_days: input.promptLogDays, updated_by_membership_id: actor.membershipId };
+      await tx.collection('ai_settings').upsert({}, values, { $set: { ...values, updated_at: new Date() } });
       await this.audit.record(tx, {
         action: 'ai.settings_changed', resourceType: 'ai_settings', resourceId: actor.tenantId,
         changes: { before: { features: before.features, promptLogDays: before.prompt_log_days }, after: { features: input.features, promptLogDays: input.promptLogDays } },
@@ -64,48 +60,51 @@ export class AiService {
   /** Credits and calls this month, by feature and by day. */
   async usageReport() {
     return this.db.tenant(async (tx) => {
-      const month = `created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'`;
-      const byFeature = await many(
-        tx,
-        `select feature, count(*)::int as calls, coalesce(sum(credits), 0)::int as credits, coalesce(sum(input_tokens), 0)::int as "inputTokens",
-                coalesce(sum(output_tokens), 0)::int as "outputTokens", coalesce(round(avg(latency_ms) filter (where status = 'ok')), 0)::int as "avgLatencyMs",
-                count(*) filter (where helpful)::int as helpful, count(*) filter (where helpful = false)::int as "notHelpful"
-           from ai_interactions where ${month} group by feature order by feature`,
-      );
-      const byStatus = await many(tx, `select status, count(*)::int as calls from ai_interactions where ${month} group by status order by status`);
+      const rows = await tx.collection('ai_interactions').find({ created_at: { $gte: monthStart() } }, {
+        projection: { feature: 1, status: 1, credits: 1, input_tokens: 1, output_tokens: 1, latency_ms: 1, helpful: 1 },
+      });
+      const group = <K extends string>(key: (r: (typeof rows)[number]) => K) => {
+        const m = new Map<K, typeof rows>();
+        for (const r of rows) m.set(key(r), [...(m.get(key(r)) ?? []), r]);
+        return [...m.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      };
+      const sumOf = (rs: typeof rows, f: string) => rs.reduce((a, r) => a + Number(r[f] ?? 0), 0);
+      const byFeature = group((r) => r.feature as string).map(([feature, rs]) => {
+        const ok = rs.filter((r) => r.status === 'ok');
+        return {
+          feature, calls: rs.length, credits: sumOf(rs, 'credits'), inputTokens: sumOf(rs, 'input_tokens'), outputTokens: sumOf(rs, 'output_tokens'),
+          avgLatencyMs: ok.length ? Math.round(sumOf(ok, 'latency_ms') / ok.length) : 0,
+          helpful: rs.filter((r) => r.helpful === true).length, notHelpful: rs.filter((r) => r.helpful === false).length,
+        };
+      });
+      const byStatus = group((r) => r.status as string).map(([status, rs]) => ({ status, calls: rs.length }));
       return { ...(await this.gateway.usage(tx)), byFeature, byStatus };
     });
   }
 
   async interactions(q: { feature?: string; status?: string; limit: number }) {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select i.id, i.created_at as "createdAt", i.feature, i.status, i.model, i.prompt_version as "promptVersion", i.credits,
-                i.input_tokens as "inputTokens", i.output_tokens as "outputTokens", i.latency_ms as "latencyMs", i.helpful,
-                i.subject_type as "subjectType", ${WHO} as "byName", (i.purged_at is not null) as purged,
-                jsonb_array_length(i.evidence) as "sourceCount"
-           from ai_interactions i left join memberships m on m.id = i.membership_id left join users u on u.id = m.user_id
-           left join employees e on e.id = m.employee_id
-          where ($1::text is null or i.feature = $1) and ($2::text is null or i.status = $2)
-          order by i.created_at desc limit $3`,
-        [q.feature ?? null, q.status ?? null, q.limit],
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const docs = await tx.collection('ai_interactions').find({ ...(q.feature ? { feature: q.feature } : {}), ...(q.status ? { status: q.status } : {}) }, { sort: { created_at: -1 }, limit: q.limit });
+      const names = await memberNames(tx, docs.map((i) => i.membership_id));
+      return docs.map((i) => ({
+        id: i.id, createdAt: i.created_at, feature: i.feature, status: i.status, model: i.model, promptVersion: i.prompt_version, credits: i.credits,
+        inputTokens: i.input_tokens, outputTokens: i.output_tokens, latencyMs: i.latency_ms, helpful: i.helpful ?? null, subjectType: i.subject_type ?? null,
+        byName: names.get(i.membership_id) ?? null, purged: !!i.purged_at, sourceCount: (i.evidence as unknown[]).length,
+      }));
+    });
   }
 
   /** The full record of one call. Reading it is itself audited. */
   async interaction(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await one<Record<string, unknown>>(
-        tx,
-        `select i.id, i.created_at as "createdAt", i.feature, i.status, i.provider, i.model, i.prompt_version as "promptVersion", i.request, i.response,
-                i.evidence, i.redactions, i.input_tokens as "inputTokens", i.output_tokens as "outputTokens", i.credits, i.latency_ms as "latencyMs",
-                i.error, i.helpful, i.feedback, i.purged_at as "purgedAt", i.subject_type as "subjectType", i.subject_id as "subjectId", ${WHO} as "byName"
-           from ai_interactions i left join memberships m on m.id = i.membership_id left join users u on u.id = m.user_id
-           left join employees e on e.id = m.employee_id where i.id = $1`,
-        [id],
-      );
+      const i = await tx.collection('ai_interactions').findOne({ id });
+      const names = i ? await memberNames(tx, [i.membership_id]) : new Map();
+      const r = i && {
+        id: i.id, createdAt: i.created_at, feature: i.feature, status: i.status, provider: i.provider, model: i.model, promptVersion: i.prompt_version,
+        request: i.request ?? null, response: i.response ?? null, evidence: i.evidence, redactions: i.redactions, inputTokens: i.input_tokens, outputTokens: i.output_tokens,
+        credits: i.credits, latencyMs: i.latency_ms, error: i.error ?? null, helpful: i.helpful ?? null, feedback: i.feedback ?? null, purgedAt: i.purged_at ?? null,
+        subjectType: i.subject_type ?? null, subjectId: i.subject_id ?? null, byName: names.get(i.membership_id) ?? null,
+      };
       if (!r) throw Errors.notFound('AI interaction');
       await this.audit.record(tx, { action: 'ai.interaction_viewed', resourceType: 'ai_interaction', resourceId: id });
       return r;
@@ -115,19 +114,19 @@ export class AiService {
   async feedback(id: string, input: AiFeedbackInput) {
     return this.db.tenant(async (tx) => {
       const actor = requestContext.tenantActor();
-      const r = await one<{ membership_id: string; status: string }>(tx, 'select membership_id, status from ai_interactions where id = $1', [id]);
+      const r = await tx.collection<{ membership_id: string; status: string }>('ai_interactions').findOne({ id });
       if (!r || r.membership_id !== actor.membershipId) throw Errors.notFound('AI answer');
-      await tx.query('update ai_interactions set helpful = $2, feedback = nullif($3, \'\'), feedback_at = now() where id = $1', [id, input.helpful, input.comment]);
+      await tx.collection('ai_interactions').updateOne({ id }, { $set: { helpful: input.helpful, feedback: input.comment || null, feedback_at: new Date() } });
       return { ok: true };
     });
   }
 
   /** Removes prompt and answer text older than the workspace's retention period. Usage numbers stay. */
-  async purgeExpired(tx: Tx): Promise<number> {
-    const r = await tx.query(
-      `update ai_interactions i set request = null, response = null, purged_at = now()
-        where i.purged_at is null and i.created_at < now() - make_interval(days => coalesce((select prompt_log_days from ai_settings), 90))`,
+  async purgeExpired(tx: TenantTx): Promise<number> {
+    const days = ((await tx.collection('ai_settings').findOne({}))?.prompt_log_days as number | undefined) ?? 90;
+    return tx.collection('ai_interactions').update(
+      { purged_at: null, created_at: { $lt: new Date(Date.now() - days * 86_400_000) } },
+      { $set: { request: null, response: null, purged_at: new Date() } },
     );
-    return r.rowCount ?? 0;
   }
 }

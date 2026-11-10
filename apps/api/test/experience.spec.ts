@@ -1,12 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 /** Workspace experience: per-member appearance and shortcuts, and the permission-aware Home dashboard. */
 describe('workspace experience', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   const people: Record<string, { email: string; membershipId: string }> = {};
@@ -80,8 +79,8 @@ describe('workspace experience', () => {
     it('keeps each member’s preferences to themselves, within and across workspaces', async () => {
       expect(ok(await as('sam').get('/me/preferences')).appearance.preset).toBe('midnight');
       expect(ok(await as('stranger').get('/me/preferences')).appearance.preset).toBe('midnight');
-      const rows = await pool.query('select tenant_id from member_preferences where membership_id = $1', [people.asha!.membershipId]);
-      expect(rows.rows).toEqual([{ tenant_id: t.id }]);
+      const rows = await pool.find('member_preferences', { membership_id: people.asha!.membershipId });
+      expect(rows.map((r) => ({ tenant_id: r.tenant_id }))).toEqual([{ tenant_id: t.id }]);
     });
 
     it('resets to the default appearance', async () => {
@@ -245,8 +244,8 @@ describe('workspace experience', () => {
     });
 
     it('exports the chosen columns as CSV, within scope, neutralising formulas, and audits it', async () => {
-      const samLast = (await pool.query(`select last_name from employees where tenant_id = $1 and first_name = 'Sam'`, [t.id])).rows[0].last_name;
-      await pool.query(`update employees set preferred_name = '=HYPERLINK("x")' where tenant_id = $1 and first_name = 'Sam'`, [t.id]);
+      const samLast = (await pool.one('employees', { tenant_id: t.id, first_name: 'Sam' }))!.last_name;
+      await pool.update('employees', { tenant_id: t.id, first_name: 'Sam' }, { $set: { preferred_name: '=HYPERLINK("x")' } });
       const r = await as('hr').get('/employees/export.csv?columns=name,department,status&sort=name');
       expect(r.status).toBe(200);
       expect(r.headers['content-type']).toContain('text/csv');
@@ -255,12 +254,11 @@ describe('workspace experience', () => {
       expect(lines).toHaveLength(4);
       expect(lines).toContain(`"'=HYPERLINK(""x"") Patel",Sales,active`.replace(' Patel', ` ${samLast}`));
       expect(r.text).not.toMatch(/(^|,|")=HYPERLINK/m);
-      await pool.query(`update employees set preferred_name = null where tenant_id = $1 and first_name = 'Sam'`, [t.id]);
+      await pool.update('employees', { tenant_id: t.id, first_name: 'Sam' }, { $set: { preferred_name: null } });
       const m = await as('manager').get('/employees/export.csv?columns=name');
       expect(m.text.replace(/^\ufeff/, '').trim().split('\r\n')).toHaveLength(3);
       expect((await as('hr').get('/employees/export.csv?columns=salary')).status).toBe(422);
-      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'employee.directory_exported'`, [t.id]);
-      expect(audit.rows[0].n).toBe(2);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'employee.directory_exported' })).toBe(2);
     });
   });
 

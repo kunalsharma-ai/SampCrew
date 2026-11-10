@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import type { BidPricing, ProposalAcceptInput, ProposalDeclineInput, PublicProposal } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx as Tx } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
@@ -56,24 +56,26 @@ export class ProposalsPublicService {
   private async withLink<T>(token: string, fn: (tx: Tx, c: Context, tenantId: string) => Promise<T>, lock = false): Promise<T> {
     if (!TOKEN.test(token)) throw Errors.notFound('Proposal');
     const hash = createHash('sha256').update(token).digest('hex');
-    const t = await this.db.platform((tx) =>
-      one<{ tenant_id: string }>(tx, `select l.tenant_id from bid_acceptance_links l join tenants t on t.id = l.tenant_id where l.token_hash = $1 and t.status = 'active'`, [hash]),
-    );
+    const t = await this.db.platform(async (tx) => {
+      const l = await tx.collection('bid_acceptance_links').findOne({ token_hash: hash }, { projection: { tenant_id: 1 } });
+      if (!l || !(await tx.collection('tenants').exists({ id: l.tenant_id, status: 'active' }))) return undefined;
+      return { tenant_id: l.tenant_id as string };
+    });
     if (!t) throw Errors.notFound('Proposal');
     return this.db.tenant(async (tx) => {
       const e = await this.entitlements.current(tx);
       if (!e.features.has('staffing_bids')) throw Errors.notFound('Proposal');
-      const link = await one<LinkRow>(
-        tx,
-        `select id, bid_id, version_id, bid_email_id, sent_to::text, active_from, expires_at, revoked_at, decision, decided_at, signer_name, signer_title, decline_reason
-           from bid_acceptance_links where token_hash = $1${lock ? ' for update' : ''}`,
-        [hash],
-      );
+      const links = tx.collection('bid_acceptance_links');
+      if (lock) await links.lock({ token_hash: hash });
+      const link = (await links.findOne({ token_hash: hash }, {
+        projection: { id: 1, bid_id: 1, version_id: 1, bid_email_id: 1, sent_to: 1, active_from: 1, expires_at: 1, revoked_at: 1, decision: 1, decided_at: 1, signer_name: 1, signer_title: 1, decline_reason: 1 },
+      })) as unknown as LinkRow | undefined;
       if (!link || (link.revoked_at && !link.decision) || link.active_from.getTime() > Date.now()) throw Errors.notFound('Proposal');
-      const bid = (await one<Context['bid']>(tx, `select code, title, status, version, owner_membership_id from staffing_bids where id = $1${lock ? ' for update' : ''}`, [link.bid_id]))!;
-      const version = (await one<Context['version']>(tx, 'select version, snapshot, pricing, pdf_storage_key from bid_versions where id = $1', [link.version_id]))!;
+      if (lock) await tx.collection('staffing_bids').lock({ id: link.bid_id });
+      const bid = (await tx.collection('staffing_bids').findOne({ id: link.bid_id }, { projection: { code: 1, title: 1, status: 1, version: 1, owner_membership_id: 1 } })) as unknown as Context['bid'];
+      const version = (await tx.collection('bid_versions').findOne({ id: link.version_id }, { projection: { version: 1, snapshot: 1, pricing: 1, pdf_storage_key: 1 } })) as unknown as Context['version'];
       const sentTo = link.sent_to;
-      const answered = !!(await one(tx, 'select 1 from bid_acceptance_links where bid_id = $1 and decision is not null', [link.bid_id]));
+      const answered = await links.exists({ bid_id: link.bid_id, decision: { $ne: null } });
       return fn(tx, { link, bid, version, sentTo, answered }, t.tenant_id);
     }, { tenantId: t.tenant_id });
   }
@@ -109,8 +111,9 @@ export class ProposalsPublicService {
   /** Opens the proposal. Counts the view; the first view tells the bid owner. */
   async get(token: string): Promise<PublicProposal> {
     return this.withLink(token, async (tx, c, tenantId) => {
-      const first = !(await one(tx, 'select 1 from bid_acceptance_links where id = $1 and first_viewed_at is not null', [c.link.id]));
-      await tx.query('update bid_acceptance_links set view_count = view_count + 1, first_viewed_at = coalesce(first_viewed_at, now()) where id = $1', [c.link.id]);
+      const links = tx.collection('bid_acceptance_links');
+      const first = !(await links.exists({ id: c.link.id, first_viewed_at: { $ne: null } }));
+      await links.updateOne({ id: c.link.id }, first ? { $inc: { view_count: 1 }, $set: { first_viewed_at: new Date() } } : { $inc: { view_count: 1 } });
       if (first && this.status(c) === 'open') {
         await this.notifications.notify(tx, {
           membershipIds: [c.bid.owner_membership_id], kind: 'bid.viewed',
@@ -126,7 +129,7 @@ export class ProposalsPublicService {
   async pdf(token: string): Promise<{ fileName: string; content: Buffer }> {
     return this.withLink(token, async (tx, c) => {
       const signed = c.link.decision === 'accepted'
-        ? (await one<{ k: string | null }>(tx, 'select signed_pdf_storage_key as k from bid_acceptance_links where id = $1', [c.link.id]))!.k
+        ? ((await tx.collection('bid_acceptance_links').findOne({ id: c.link.id }, { projection: { signed_pdf_storage_key: 1 } }))?.signed_pdf_storage_key as string | null)
         : null;
       return { fileName: `${c.bid.code}-v${c.version.version}${signed ? '-signed' : ''}.pdf`, content: await this.read(signed ?? c.version.pdf_storage_key) };
     });
@@ -160,11 +163,10 @@ export class ProposalsPublicService {
       });
       const key = this.storage.newKey(tenantId);
       await this.storage.put(key, signed);
-      await tx.query(
-        `update bid_acceptance_links set decision = 'accepted', decided_at = $2, signer_name = $3, signer_title = $4, signer_email = $5, signature = $6,
-                decided_ip = $7, decided_user_agent = $8, pdf_sha256 = $9, signed_pdf_storage_key = $10 where id = $1`,
-        [c.link.id, at.toISOString(), input.signerName, input.signerTitle, input.signerEmail, input.signature, ctx?.ip ?? null, ctx?.userAgent?.slice(0, 500) ?? null, sha, key],
-      );
+      await tx.collection('bid_acceptance_links').updateOne({ id: c.link.id }, { $set: {
+        decision: 'accepted', decided_at: at, signer_name: input.signerName, signer_title: input.signerTitle, signer_email: input.signerEmail, signature: input.signature,
+        decided_ip: ctx?.ip ?? null, decided_user_agent: ctx?.userAgent?.slice(0, 500) ?? null, pdf_sha256: sha, signed_pdf_storage_key: key,
+      } });
       await this.close(tx, c, 'won', `Accepted online by ${input.signerName}, ${input.signerTitle}`);
       await this.notifications.notify(tx, {
         membershipIds: [c.bid.owner_membership_id], kind: 'bid.accepted', email: true,
@@ -185,10 +187,10 @@ export class ProposalsPublicService {
     return this.withLink(token, async (tx, c, tenantId) => {
       this.open(c);
       const at = new Date();
-      await tx.query(
-        `update bid_acceptance_links set decision = 'declined', decided_at = $2, signer_name = $3, signer_email = $4, decline_reason = $5, decided_ip = $6, decided_user_agent = $7 where id = $1`,
-        [c.link.id, at.toISOString(), input.signerName, input.signerEmail, input.reason, ctx?.ip ?? null, ctx?.userAgent?.slice(0, 500) ?? null],
-      );
+      await tx.collection('bid_acceptance_links').updateOne({ id: c.link.id }, { $set: {
+        decision: 'declined', decided_at: at, signer_name: input.signerName, signer_email: input.signerEmail, decline_reason: input.reason,
+        decided_ip: ctx?.ip ?? null, decided_user_agent: ctx?.userAgent?.slice(0, 500) ?? null,
+      } });
       await this.close(tx, c, 'lost', `Declined online by ${input.signerName}: ${input.reason}`.slice(0, 1000));
       await this.notifications.notify(tx, {
         membershipIds: [c.bid.owner_membership_id], kind: 'bid.declined', email: true,
@@ -205,7 +207,7 @@ export class ProposalsPublicService {
 
   /** Records the outcome on the bid. Other links for the bid then show it as answered. */
   private async close(tx: Tx, c: Context, status: 'won' | 'lost', reason: string) {
-    await tx.query(`update staffing_bids set status = $2, decided_at = now(), outcome_reason = $3 where id = $1`, [c.link.bid_id, status, reason]);
+    await tx.collection('staffing_bids').updateOne({ id: c.link.bid_id }, { $set: { status, decided_at: new Date(), outcome_reason: reason } });
   }
 
   private async read(key: string) {

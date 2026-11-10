@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { createTransport, type Transporter } from 'nodemailer';
 import { APP_CONFIG, type AppConfig } from '../config/config';
-import { DatabaseService } from '../database/database.service';
+import { MongoService as DatabaseService } from '../database/mongo.service';
 import { PlatformIntegrationsService } from '../integrations/platform-integrations.service';
 import { StorageService } from '../storage/storage.service';
 
@@ -9,6 +9,10 @@ import { StorageService } from '../storage/storage.service';
 export interface EmailAttachment { filename: string; contentType: string; storageKey: string }
 
 const MAX_ATTEMPTS = 5;
+/** How long a sender holds a message it took, so another server does not send it too. */
+const LEASE_SECONDS = 120;
+
+interface QueuedEmail { id: string; to_email: string; subject: string; text_body: string; attempts: number; attachments: EmailAttachment[]; next_attempt_at: Date }
 
 /**
  * Sends queued email over SMTP, with the email settings SAMPLEDGE saved in the Super Admin Console (Integrations),
@@ -70,39 +74,50 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
     this.running = true;
     try {
       const smtp = await this.transport();
-      await this.db.platform(async (tx) => {
-        const { rows } = await tx.query<{ id: string; to_email: string; subject: string; text_body: string; attempts: number; attachments: EmailAttachment[] }>(
-          `select id, to_email::text, subject, text_body, attempts, attachments from email_messages
-            where status = 'queued' and next_attempt_at <= now() order by created_at limit $1 for update skip locked`,
-          [batch],
-        );
-        for (const m of rows) {
-          if (!smtp) {
-            await tx.query(`update email_messages set status = 'skipped', last_error = 'Email delivery is not set up (Super Admin Console > Integrations > Email)' where id = $1`, [m.id]);
-            out.skipped++;
-            continue;
-          }
-          try {
-            const attachments = await Promise.all((m.attachments ?? []).map(async (a) => ({ filename: a.filename, contentType: a.contentType, content: await this.read(a.storageKey) })));
-            await smtp.transport.sendMail({ from: smtp.from, to: m.to_email, subject: m.subject, text: m.text_body, attachments });
-            await tx.query(`update email_messages set status = 'sent', sent_at = now(), attempts = attempts + 1, last_error = null where id = $1`, [m.id]);
-            out.sent++;
-          } catch (err) {
-            const attempts = m.attempts + 1;
-            const final = attempts >= MAX_ATTEMPTS;
-            await tx.query(
-              `update email_messages set attempts = $2, last_error = $3, status = case when $4 then 'failed' else 'queued' end,
-                 next_attempt_at = now() + make_interval(secs => $5) where id = $1`,
-              [m.id, attempts, (err as Error).message.slice(0, 1000), final, Math.min(30 * 2 ** attempts, 3600)],
-            );
-            this.logger.warn(`Email ${m.id} failed (attempt ${attempts}): ${(err as Error).message}`);
-            out.failed++;
-          }
+      const update = (id: string, set: Record<string, unknown>, inc?: Record<string, number>) =>
+        this.db.platform((tx) => tx.collection('email_messages').updateOne({ id }, { $set: set, ...(inc ? { $inc: inc } : {}) }));
+      for (let n = 0; n < batch; n++) {
+        // Each message is taken under a short lease and sent outside any transaction, so a retried transaction
+        // never sends an email twice.
+        const m = await this.claim();
+        if (!m) break;
+        if (!smtp) {
+          await update(m.id, { status: 'skipped', last_error: 'Email delivery is not set up (Super Admin Console > Integrations > Email)' });
+          out.skipped++;
+          continue;
         }
-      });
+        try {
+          const attachments = await Promise.all((m.attachments ?? []).map(async (a) => ({ filename: a.filename, contentType: a.contentType, content: await this.read(a.storageKey) })));
+          await smtp.transport.sendMail({ from: smtp.from, to: m.to_email, subject: m.subject, text: m.text_body, attachments });
+          await update(m.id, { status: 'sent', sent_at: new Date(), last_error: null }, { attempts: 1 });
+          out.sent++;
+        } catch (err) {
+          const attempts = m.attempts + 1;
+          const final = attempts >= MAX_ATTEMPTS;
+          await update(m.id, {
+            attempts, last_error: (err as Error).message.slice(0, 1000), status: final ? 'failed' : 'queued',
+            next_attempt_at: new Date(Date.now() + Math.min(30 * 2 ** attempts, 3600) * 1000),
+          });
+          this.logger.warn(`Email ${m.id} failed (attempt ${attempts}): ${(err as Error).message}`);
+          out.failed++;
+        }
+      }
     } finally {
       this.running = false;
     }
     return out;
+  }
+
+  /** Takes the oldest message that is due, moving next_attempt_at past the lease. */
+  private claim(): Promise<QueuedEmail | undefined> {
+    return this.db.platform(async (tx) => {
+      const messages = tx.collection<QueuedEmail>('email_messages');
+      const now = new Date();
+      const m = await messages.findOne({ status: 'queued', next_attempt_at: { $lte: now } }, { sort: { created_at: 1 } });
+      if (!m) return undefined;
+      // Two senders taking the same message write the same document; MongoDB lets only one transaction commit.
+      await messages.updateOne({ id: m.id, next_attempt_at: m.next_attempt_at }, { $set: { next_attempt_at: new Date(now.getTime() + LEASE_SECONDS * 1000) } });
+      return m;
+    });
   }
 }

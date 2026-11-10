@@ -3,7 +3,7 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService, loadSubject } from '../../platform/authz/authz.service';
 import { can, type ResourceAttributes } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, membershipUserNames, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 
@@ -30,9 +30,9 @@ export interface ApprovalHandler {
   fallbackRole: string;
   label: string;
   link: (resourceId: string) => string;
-  attributes: (tx: Tx, resourceId: string) => Promise<ResourceAttributes>;
-  onApproved: (tx: Tx, req: ApprovalRequestRow) => Promise<void>;
-  onRejected: (tx: Tx, req: ApprovalRequestRow) => Promise<void>;
+  attributes: (tx: TenantTx, resourceId: string) => Promise<ResourceAttributes>;
+  onApproved: (tx: TenantTx, req: ApprovalRequestRow) => Promise<void>;
+  onRejected: (tx: TenantTx, req: ApprovalRequestRow) => Promise<void>;
 }
 
 interface StepRow {
@@ -71,13 +71,13 @@ export class ApprovalsService {
     return h;
   }
 
-  async steps(tx: Tx, resourceType: string): Promise<StepDef[]> {
-    const row = await one<{ steps: StepDef[] }>(tx, 'select steps from approval_policies where resource_type = $1', [resourceType]);
+  async steps(tx: TenantTx, resourceType: string): Promise<StepDef[]> {
+    const row = await tx.collection<{ steps: StepDef[] }>('approval_policies').findOne({ resource_type: resourceType });
     return row?.steps ?? this.handler(resourceType).defaultSteps;
   }
 
   /** Starts an approval in the caller's transaction and notifies the first approver(s). */
-  async start(tx: Tx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[] }): Promise<string> {
+  async start(tx: TenantTx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[] }): Promise<string> {
     const h = this.handler(input.resourceType);
     const actor = requestContext.tenantActor();
     // A caller can set the chain for one request (a workflow's approval step names its own approver).
@@ -85,17 +85,16 @@ export class ApprovalsService {
 
     // Some requests (for example an offer to a candidate) are not about an employee; manager steps then resolve to
     // nobody and the role steps or the fallback role decide.
-    const subject = input.subjectEmployeeId
-      ? await one<{ manager_id: string | null; membership_id: string | null }>(
-        tx, 'select current_manager_employee_id as manager_id, membership_id from employees where id = $1', [input.subjectEmployeeId],
-      )
-      : { manager_id: null, membership_id: null };
-    if (!subject) throw Errors.notFound('Employee');
-    const managerOf = async (employeeId: string | null) =>
-      employeeId ? await one<{ id: string; membership_id: string | null; manager_id: string | null }>(
-        tx, `select e.id, e.membership_id, e.current_manager_employee_id as manager_id from employees e
-              join memberships m on m.id = e.membership_id where e.id = $1 and m.status = 'active'`, [employeeId],
-      ) : undefined;
+    const subjectDoc = input.subjectEmployeeId ? await tx.collection('employees').findOne({ id: input.subjectEmployeeId }) : null;
+    if (subjectDoc === undefined) throw Errors.notFound('Employee');
+    const subject = { manager_id: (subjectDoc?.current_manager_employee_id as string | null | undefined) ?? null, membership_id: (subjectDoc?.membership_id as string | null | undefined) ?? null };
+    // A manager counts only while their login is active.
+    const managerOf = async (employeeId: string | null) => {
+      if (!employeeId) return undefined;
+      const e = await tx.collection('employees').findOne({ id: employeeId });
+      if (!e?.membership_id || !(await tx.collection('memberships').exists({ id: e.membership_id, status: 'active' }))) return undefined;
+      return { id: e.id as string, membership_id: e.membership_id as string, manager_id: (e.current_manager_employee_id as string | null) ?? null };
+    };
 
     const requester = actor.membershipId;
     const resolved: { kind: StepDef['type']; membershipId: string | null; role: string | null }[] = [];
@@ -112,37 +111,35 @@ export class ApprovalsService {
     }
     if (!resolved.length) resolved.push({ kind: 'role', membershipId: null, role: h.fallbackRole });
 
-    const req = (await one<{ id: string }>(
-      tx,
-      `insert into approval_requests (tenant_id, resource_type, resource_id, subject_employee_id, requested_by_membership_id, summary)
-       values ($1, $2, $3, $4, $5, $6) returning id`,
-      [actor.tenantId, input.resourceType, input.resourceId, input.subjectEmployeeId, requester, input.summary],
-    ))!;
-    for (const [i, s] of resolved.entries()) {
-      await tx.query(
-        `insert into approval_steps (tenant_id, request_id, seq, kind, approver_membership_id, approver_role_key, status) values ($1, $2, $3, $4, $5, $6, $7)`,
-        [actor.tenantId, req.id, i + 1, s.kind, s.membershipId, s.role, i === 0 ? 'pending' : 'waiting'],
-      );
-    }
+    const req = await tx.collection('approval_requests').insert({
+      resource_type: input.resourceType,
+      resource_id: input.resourceId,
+      subject_employee_id: input.subjectEmployeeId,
+      requested_by_membership_id: requester,
+      summary: input.summary,
+    });
+    await tx.collection('approval_steps').insertMany(
+      resolved.map((st, i) => ({ request_id: req.id, seq: i + 1, kind: st.kind, approver_membership_id: st.membershipId, approver_role_key: st.role, status: i === 0 ? 'pending' : 'waiting' })),
+    );
     await this.notifyApprovers(tx, req.id);
     return req.id;
   }
 
   /** People who can act on the request's current step. Role steps are narrowed to holders whose scope covers the record. */
-  private async currentApprovers(tx: Tx, requestId: string): Promise<string[]> {
-    const req = (await one<ApprovalRequestRow>(tx, 'select * from approval_requests where id = $1', [requestId]))!;
-    const step = await one<StepRow>(tx, `select * from approval_steps where request_id = $1 and status = 'pending'`, [requestId]);
+  private async currentApprovers(tx: TenantTx, requestId: string): Promise<string[]> {
+    const req = (await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId }))!;
+    const step = await tx.collection<StepRow>('approval_steps').findOne({ request_id: requestId, status: 'pending' });
     if (!step) return [];
     if (step.approver_membership_id) return [step.approver_membership_id];
     const h = this.handler(req.resource_type);
     const attrs = await h.attributes(tx, req.resource_id);
     const eligible = async (role: string) => {
-      const holders = await many<{ membership_id: string; user_id: string }>(
-        tx,
-        `select distinct ra.membership_id, m.user_id from role_assignments ra join roles r on r.id = ra.role_id
-           join memberships m on m.id = ra.membership_id where r.key = $1 and m.status = 'active'`,
-        [role],
-      );
+      const roleRow = await tx.collection('roles').findOne({ key: role });
+      const holderIds = roleRow ? await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: roleRow.id }) : [];
+      const holders = (await tx.collection('memberships').find({ id: { $in: holderIds }, status: 'active' }, { projection: { user_id: 1 } })).map((m) => ({
+        membership_id: m.id as string,
+        user_id: m.user_id as string,
+      }));
       const out: string[] = [];
       for (const holder of holders) {
         if (holder.membership_id === req.requested_by_membership_id) continue;
@@ -158,8 +155,8 @@ export class ApprovalsService {
     return out.length || step.approver_role_key === 'tenant_owner' ? out : eligible('tenant_owner');
   }
 
-  private async notifyApprovers(tx: Tx, requestId: string) {
-    const req = (await one<ApprovalRequestRow>(tx, 'select * from approval_requests where id = $1', [requestId]))!;
+  private async notifyApprovers(tx: TenantTx, requestId: string) {
+    const req = (await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId }))!;
     const h = this.handler(req.resource_type);
     await this.notifications.notify(tx, {
       membershipIds: await this.currentApprovers(tx, requestId),
@@ -175,8 +172,10 @@ export class ApprovalsService {
   async decide(requestId: string, decision: 'approve' | 'reject', comment?: string) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const req = await one<ApprovalRequestRow>(tx, 'select * from approval_requests where id = $1 for update', [requestId]);
+      const req = await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId });
       if (!req) throw Errors.notFound('Approval');
+      // Two approvers deciding at once: one commits, the other is retried and then sees the decision.
+      await tx.collection('approval_requests').lock({ id: requestId });
       const h = this.handler(req.resource_type);
       // Nobody may decide on their own request or on a request about themselves.
       const subject = await this.authz.subject(tx);
@@ -184,23 +183,23 @@ export class ApprovalsService {
         throw Errors.forbidden('You cannot approve your own request');
       }
       if (req.status !== 'pending') throw Errors.conflict('invalid_state', `This request is already ${req.status}`);
-      const step = (await one<StepRow>(tx, `select * from approval_steps where request_id = $1 and status = 'pending' for update`, [requestId]))!;
+      const step = (await tx.collection<StepRow>('approval_steps').findOne({ request_id: requestId, status: 'pending' }))!;
       const approvers = await this.currentApprovers(tx, requestId);
       if (!approvers.includes(actor.membershipId)) throw Errors.notFound('Approval');
       // Re-check the permission with the caller's live session (including MFA requirements).
       await this.authz.require(h.permission, await h.attributes(tx, req.resource_id), tx);
 
-      await tx.query(
-        `update approval_steps set status = $2, decided_by_membership_id = $3, decided_at = now(), comment = $4 where id = $1`,
-        [step.id, decision === 'approve' ? 'approved' : 'rejected', actor.membershipId, comment ?? null],
+      await tx.collection('approval_steps').updateOne(
+        { id: step.id },
+        { $set: { status: decision === 'approve' ? 'approved' : 'rejected', decided_by_membership_id: actor.membershipId, decided_at: new Date(), comment: comment ?? null } },
       );
       let final: 'approved' | 'rejected' | null = null;
       if (decision === 'reject') {
-        await tx.query(`update approval_steps set status = 'cancelled' where request_id = $1 and status = 'waiting'`, [requestId]);
+        await tx.collection('approval_steps').update({ request_id: requestId, status: 'waiting' }, { $set: { status: 'cancelled' } });
         final = 'rejected';
       } else {
-        const next = await one<{ id: string }>(tx, `select id from approval_steps where request_id = $1 and status = 'waiting' order by seq limit 1`, [requestId]);
-        if (next) await tx.query(`update approval_steps set status = 'pending' where id = $1`, [next.id]);
+        const next = await tx.collection('approval_steps').findOne({ request_id: requestId, status: 'waiting' }, { sort: { seq: 1 } });
+        if (next) await tx.collection('approval_steps').updateOne({ id: next.id }, { $set: { status: 'pending' } });
         else final = 'approved';
       }
       await this.audit.record(tx, {
@@ -210,11 +209,12 @@ export class ApprovalsService {
         metadata: { approvalId: requestId, step: step.seq, comment: comment ?? null },
       });
       if (final) {
-        await tx.query(`update approval_requests set status = $2, decided_at = now() where id = $1`, [requestId, final]);
+        await tx.collection('approval_requests').updateOne({ id: requestId }, { $set: { status: final, decided_at: new Date() } });
         const updated = { ...req, status: final };
         if (final === 'approved') await h.onApproved(tx, updated);
         else await h.onRejected(tx, updated);
-        const requesterIds = [req.requested_by_membership_id, (await one<{ membership_id: string | null }>(tx, 'select membership_id from employees where id = $1', [req.subject_employee_id]))?.membership_id];
+        const subjectEmployee = req.subject_employee_id ? await tx.collection('employees').findOne({ id: req.subject_employee_id }) : undefined;
+        const requesterIds = [req.requested_by_membership_id, subjectEmployee?.membership_id as string | null | undefined];
         await this.notifications.notify(tx, {
           membershipIds: requesterIds,
           kind: `approval.${final}`,
@@ -231,28 +231,41 @@ export class ApprovalsService {
   }
 
   /** Withdraws a pending request (called by the owning module, e.g. when leave is cancelled). */
-  async cancel(tx: Tx, requestId: string) {
-    await tx.query(`update approval_steps set status = 'cancelled' where request_id = $1 and status in ('pending', 'waiting')`, [requestId]);
-    await tx.query(`update approval_requests set status = 'cancelled', decided_at = now() where id = $1 and status = 'pending'`, [requestId]);
+  async cancel(tx: TenantTx, requestId: string) {
+    await tx.collection('approval_steps').update({ request_id: requestId, status: { $in: ['pending', 'waiting'] } }, { $set: { status: 'cancelled' } });
+    await tx.collection('approval_requests').updateOne({ id: requestId, status: 'pending' }, { $set: { status: 'cancelled', decided_at: new Date() } });
   }
 
   /** Requests waiting for the caller, newest first. */
   async inbox() {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const candidates = await many<{ id: string; resourceType: string; resourceId: string; summary: string; createdAt: string; stepSeq: number; stepCount: number; requestedBy: string | null; subjectName: string | null; viaRole: string | null }>(
-        tx,
-        `select r.id, r.resource_type as "resourceType", r.resource_id as "resourceId", r.summary, r.created_at as "createdAt",
-                s.seq as "stepSeq", (select count(*)::int from approval_steps x where x.request_id = r.id) as "stepCount",
-                ru.full_name as "requestedBy", nullif(trim(e.first_name || ' ' || e.last_name), '') as "subjectName", s.approver_role_key as "viaRole"
-           from approval_requests r
-           join approval_steps s on s.request_id = r.id and s.status = 'pending'
-           left join memberships rm on rm.id = r.requested_by_membership_id left join users ru on ru.id = rm.user_id
-           left join employees e on e.id = r.subject_employee_id
-          where r.status = 'pending' and (s.approver_membership_id = $1 or s.approver_role_key is not null)
-          order by r.created_at desc limit 200`,
-        [actor.membershipId],
+      const steps = await tx.collection('approval_steps').find({ status: 'pending', $or: [{ approver_membership_id: actor.membershipId }, { approver_role_key: { $ne: null } }] });
+      const stepOf = new Map(steps.map((st) => [st.request_id as string, st]));
+      const requests = await tx.collection('approval_requests').find({ id: { $in: [...stepOf.keys()] }, status: 'pending' }, { sort: { created_at: -1 }, limit: 200 });
+      const counts = new Map<string, number>();
+      for (const st of await tx.collection('approval_steps').find({ request_id: { $in: requests.map((x) => x.id) } }, { projection: { request_id: 1 } })) {
+        counts.set(st.request_id, (counts.get(st.request_id) ?? 0) + 1);
+      }
+      const requesters = await membershipUserNames(tx, requests.map((x) => x.requested_by_membership_id));
+      const subjects = new Map(
+        (await tx.collection('employees').find({ id: { $in: requests.map((x) => x.subject_employee_id).filter(Boolean) } }, { projection: { first_name: 1, last_name: 1 } })).map((e) => [
+          e.id as string,
+          `${e.first_name} ${e.last_name ?? ''}`.trim() || null,
+        ]),
       );
+      const candidates = requests.map((x) => ({
+        id: x.id as string,
+        resourceType: x.resource_type as string,
+        resourceId: x.resource_id as string,
+        summary: x.summary as string,
+        createdAt: x.created_at,
+        stepSeq: stepOf.get(x.id)!.seq as number,
+        stepCount: counts.get(x.id) ?? 0,
+        requestedBy: requesters.get(x.requested_by_membership_id) ?? null,
+        subjectName: subjects.get(x.subject_employee_id) ?? null,
+        viaRole: (stepOf.get(x.id)!.approver_role_key as string | null) ?? null,
+      }));
       const out = [];
       for (const c of candidates) {
         if ((await this.currentApprovers(tx, c.id)).includes(actor.membershipId)) out.push({ ...c, link: this.handler(c.resourceType).link(c.resourceId), label: this.handler(c.resourceType).label });
@@ -262,16 +275,19 @@ export class ApprovalsService {
   }
 
   /** The chain for one resource, for showing progress on the record itself. */
-  async trail(tx: Tx, requestId: string) {
-    return many(
-      tx,
-      `select s.seq, s.kind, s.status, s.approver_role_key as "role", au.full_name as "approver", du.full_name as "decidedBy", s.decided_at as "decidedAt", s.comment
-         from approval_steps s
-         left join memberships am on am.id = s.approver_membership_id left join users au on au.id = am.user_id
-         left join memberships dm on dm.id = s.decided_by_membership_id left join users du on du.id = dm.user_id
-        where s.request_id = $1 order by s.seq`,
-      [requestId],
-    );
+  async trail(tx: TenantTx, requestId: string) {
+    const steps = await tx.collection('approval_steps').find({ request_id: requestId }, { sort: { seq: 1 } });
+    const names = await membershipUserNames(tx, steps.flatMap((st) => [st.approver_membership_id, st.decided_by_membership_id]));
+    return steps.map((st) => ({
+      seq: st.seq,
+      kind: st.kind,
+      status: st.status,
+      role: st.approver_role_key ?? null,
+      approver: names.get(st.approver_membership_id) ?? null,
+      decidedBy: names.get(st.decided_by_membership_id) ?? null,
+      decidedAt: st.decided_at ?? null,
+      comment: st.comment ?? null,
+    }));
   }
 
   async policy(resourceType: string) {
@@ -285,14 +301,10 @@ export class ApprovalsService {
     await this.authz.require(h.configurePermission);
     return this.db.tenant(async (tx) => {
       for (const s of steps) {
-        if (s.type === 'role' && !(await one(tx, 'select 1 from roles where key = $1', [s.role]))) throw Errors.badRequest('unknown_role', `There is no role ${s.role}`);
+        if (s.type === 'role' && !(await tx.collection('roles').exists({ key: s.role }))) throw Errors.badRequest('unknown_role', `There is no role ${s.role}`);
       }
       const before = await this.steps(tx, resourceType);
-      await tx.query(
-        `insert into approval_policies (tenant_id, resource_type, steps) values (app_tenant_id(), $1, $2)
-         on conflict (tenant_id, resource_type) do update set steps = excluded.steps`,
-        [resourceType, JSON.stringify(steps)],
-      );
+      await tx.collection('approval_policies').upsert({ resource_type: resourceType }, { resource_type: resourceType, steps }, { $set: { steps } });
       await this.audit.record(tx, { action: 'approval_policy.updated', resourceType: 'approval_policy', resourceId: resourceType, changes: { from: before, to: steps } });
       return { resourceType, steps };
     });

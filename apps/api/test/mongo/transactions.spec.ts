@@ -89,6 +89,13 @@ describe('MongoDB transactions, concurrency and the audit chain', () => {
     expect(await mongo.verifyAuditChain(database, tenantId)).toEqual({ checked: 7, firstBrokenSeq: 7 });
   });
 
+  it('lets a burst of writers to one workspace all commit, one after another', async () => {
+    const tenantId = id();
+    // Each round of conflicts lets one writer through, so this needs far more rounds than a fixed retry count gives.
+    await Promise.all(Array.from({ length: 60 }, (_, i) => db.tenant(async (tx) => tx.audit(auditInput({ action: 'item.created', resource_id: `b${i}` })), { tenantId })));
+    expect(await mongo.verifyAuditChain(await db.database(), tenantId)).toEqual({ checked: 60, firstBrokenSeq: null });
+  });
+
   it('keeps platform events on their own chain and refuses cross-workspace events', async () => {
     const tenantId = id();
     await db.platform(async (tx) => {

@@ -1,12 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, login, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, login, type TestDb, type TestTenant } from './helpers';
 
 /** RBAC + ABAC through the API, using an org with a reporting line, a department tree and two legal entities. */
 describe('authorization (RBAC + ABAC)', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let ukEntity: string;
   const p: Record<string, { email: string; membershipId: string }> = {};
@@ -18,7 +17,7 @@ describe('authorization (RBAC + ABAC)', () => {
     app = await createApp();
     pool = adminPool();
     t = await createTenant(pool);
-    ukEntity = (await pool.query(`insert into legal_entities (tenant_id, name, country_code, currency, timezone) values ($1, 'UK Ltd', 'GB', 'GBP', 'Europe/London') returning id`, [t.id])).rows[0].id;
+    ukEntity = (await pool.insert('legal_entities', { tenant_id: t.id, name: 'UK Ltd', country_code: 'GB', currency: 'GBP', timezone: 'Europe/London' })).id;
     mfg = await department(pool, t, 'Manufacturing');
     assembly = await department(pool, t, 'Assembly', mfg);
     hr = await department(pool, t, 'HR');

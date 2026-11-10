@@ -6,13 +6,13 @@ import {
 import { z } from 'zod';
 import { AllowWithoutMfa } from '../../platform/authz/decorators';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx as Tx } from '../../platform/database/mongo.service';
 import { ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 
 interface Row { appearance: unknown; favourites: string[]; recents: { href: string; label: string; at: string }[]; dashboard: unknown; notes: string; updated_at: string | null }
 
-const SELECT = 'select appearance, favourites, recents, dashboard, notes, updated_at from member_preferences where membership_id = $1';
+const load = async (tx: Tx, membershipId: string) => (await tx.collection('member_preferences').findOne({ membership_id: membershipId })) as Row | undefined;
 
 function shape(r: Row | undefined): MemberPreferences {
   return {
@@ -35,12 +35,12 @@ export class PreferencesController {
 
   private async upsert(tx: Tx, column: 'appearance' | 'favourites' | 'recents' | 'dashboard' | 'notes', value: unknown) {
     const me = requestContext.tenantActor();
-    await tx.query(
-      `insert into member_preferences (tenant_id, membership_id, ${column}) values (app_tenant_id(), $1, $2)
-       on conflict (tenant_id, membership_id) do update set ${column} = excluded.${column}`,
-      [me.membershipId, value],
+    await tx.collection('member_preferences').upsert(
+      { membership_id: me.membershipId },
+      { membership_id: me.membershipId, [column]: value },
+      { $set: { [column]: value, updated_at: new Date() } },
     );
-    return shape(await one<Row>(tx, SELECT, [me.membershipId]));
+    return shape(await load(tx, me.membershipId));
   }
 
   @Get()
@@ -48,7 +48,7 @@ export class PreferencesController {
   @Doc({ summary: 'Your appearance, favourite and recent pages, Home layout and notes' })
   get() {
     const me = requestContext.tenantActor();
-    return this.db.tenant(async (tx) => shape(await one<Row>(tx, SELECT, [me.membershipId])));
+    return this.db.tenant(async (tx) => shape(await load(tx, me.membershipId)));
   }
 
   @Put('appearance')
@@ -57,7 +57,7 @@ export class PreferencesController {
   appearance(@Body(new ZodPipe(appearancePatch)) body: z.infer<typeof appearancePatch>) {
     const me = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const current = shape(await one<Row>(tx, SELECT, [me.membershipId])).appearance;
+      const current = shape(await load(tx, me.membershipId)).appearance;
       return this.upsert(tx, 'appearance', normaliseAppearance({ ...current, ...body }));
     });
   }
@@ -82,9 +82,10 @@ export class PreferencesController {
   recent(@Body(new ZodPipe(recentVisitInput)) body: z.infer<typeof recentVisitInput>) {
     const me = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const current = shape(await one<Row>(tx, `${SELECT} for update`, [me.membershipId])).recents;
+      await tx.collection('member_preferences').lock({ membership_id: me.membershipId });
+      const current = shape(await load(tx, me.membershipId)).recents;
       const next = [{ href: body.href, label: body.label, at: new Date().toISOString() }, ...current.filter((r) => r.href !== body.href)].slice(0, MAX_RECENTS);
-      return this.upsert(tx, 'recents', JSON.stringify(next));
+      return this.upsert(tx, 'recents', next);
     });
   }
 

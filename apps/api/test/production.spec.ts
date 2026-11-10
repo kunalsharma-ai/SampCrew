@@ -2,20 +2,19 @@ import { type INestApplication, RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { CONTROLLERS } from '../src/app.module';
 import { PUBLIC_KEY } from '../src/platform/authz/decorators';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AttendanceDaysService } from '../src/modules/attendance/attendance-days.service';
 import { HrJobsService } from '../src/modules/hr-jobs/hr-jobs.service';
 import { AuditService } from '../src/platform/audit/audit.service';
 import { loadConfig, productionProblems, resetConfigForTests } from '../src/platform/config/config';
-import { DatabaseService } from '../src/platform/database/database.service';
+import { MongoService as DatabaseService } from '../src/platform/database/mongo.service';
 import { OutboxService } from '../src/platform/events/outbox.service';
-import { adminPool, api, createApp, createTenant, login, type TestTenant } from './helpers';
+import { adminPool, api, createApp, createTenant, login, type TestDb, type TestTenant } from './helpers';
 
 /** Phase 12: what production readiness changed in the API. */
 describe('Phase 12 production readiness', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let owner: string;
 
@@ -34,7 +33,7 @@ describe('Phase 12 production readiness', () => {
   describe('production configuration', () => {
     const good = {
       CREW_ENV: 'production',
-      DATABASE_URL: 'postgres://crew_api:9f1c2b7e4d8a6f3c0b5e1d7a@db.internal:5432/crew',
+      MONGODB_URL: 'mongodb://crew_api:9f1c2b7e4d8a6f3c0b5e1d7a@db1.internal:27017,db2.internal:27017,db3.internal:27017/crew?replicaSet=rs0&authSource=admin',
       WEB_PUBLIC_URL: 'https://crew.acme.test',
       API_PUBLIC_URL: 'https://api.crew.acme.test',
       CORS_ORIGINS: 'https://crew.acme.test,https://console.crew.acme.test',
@@ -71,8 +70,10 @@ describe('Phase 12 production readiness', () => {
 
     it('refuses secrets and passwords still holding template values', () => {
       expect(() => load({ JWT_ACCESS_SECRET: 'change-me-change-me-change-me-change-me-12' })).toThrow(/JWT_ACCESS_SECRET still holds a template value/);
-      expect(() => load({ DATABASE_URL: 'postgres://crew_api:change-me-local-only@db:5432/crew' })).toThrow(/DATABASE_URL needs a real password/);
-      expect(() => load({ DATABASE_URL: 'postgres://crew_api@db:5432/crew' })).toThrow(/DATABASE_URL needs a real password/);
+      expect(() => load({ MONGODB_URL: 'mongodb://crew_api:change-me-local-only@mongo:27017/crew?replicaSet=rs0' })).toThrow(/MONGODB_URL needs a database user with a real password/);
+      expect(() => load({ MONGODB_URL: 'mongodb://mongo:27017/crew?replicaSet=rs0' })).toThrow(/MONGODB_URL needs a database user/);
+      expect(load({ MONGODB_URL: 'mongodb+srv://crew-api:Qm7Xt2Vr9Lp4Nz8K@crew.abc12.mongodb.net/crew?retryWrites=true' }).isProductionLike).toBe(true);
+      expect(load({ MONGODB_URL: 'mongodb+srv://crew.abc12.mongodb.net/crew?authMechanism=MONGODB-X509&tls=true' }).isProductionLike).toBe(true);
       expect(() => load({ REDIS_URL: 'redis://:changeme@redis:6379' })).toThrow(/REDIS_URL/);
       // Every problem is listed at once, so one restart fixes them all.
       const all = productionProblems({ ...(load({ CREW_ENV: 'local' }) as never), WEB_PUBLIC_URL: 'http://a.test', API_PUBLIC_URL: 'http://b.test' });
@@ -84,11 +85,11 @@ describe('Phase 12 production readiness', () => {
     it('writes the audit row with the transaction, only when it commits', async () => {
       const db = app.get(DatabaseService);
       const audit = app.get(AuditService);
-      const count = async () => Number((await pool.query(`select count(*) as n from audit_events where tenant_id = $1 and action = 'test.deferred'`, [t.id])).rows[0].n);
+      const count = () => pool.count('audit_events', { tenant_id: t.id, action: 'test.deferred' });
       const before = await count();
       const seenInside = await db.tenant(async (tx) => {
         await audit.record(tx, { tenantId: t.id, action: 'test.deferred', resourceType: 'test' });
-        return Number((await tx.query(`select count(*) as n from audit_events where action = 'test.deferred'`)).rows[0].n);
+        return tx.collection('audit_events').count({ action: 'test.deferred' });
       }, { tenantId: t.id });
       expect(seenInside).toBe(before); // not yet: it is written just before commit
       expect(await count()).toBe(before + 1);
@@ -99,22 +100,21 @@ describe('Phase 12 production readiness', () => {
         }, { tenantId: t.id }),
       ).rejects.toThrow('roll back');
       expect(await count()).toBe(before + 1); // rolled back with the change
-      const chain = await pool.query('select * from audit_verify_chain($1)', [t.id]);
-      expect(chain.rows[0].first_broken_seq).toBeNull();
+      const chain = await pool.tenant(t.id, (tx) => tx.verifyAuditChain());
+      expect(chain.firstBrokenSeq).toBeNull();
     });
 
     it('two requests that audit and lock the same row in opposite order both succeed (no deadlock)', async () => {
       const db = app.get(DatabaseService);
       const audit = app.get(AuditService);
-      const loc = await pool.query<{ id: string }>(`select id from legal_entities where tenant_id = $1 limit 1`, [t.id]);
-      const id = loc.rows[0]!.id;
+      const id = (await pool.one('legal_entities', { tenant_id: t.id }))!.id as string;
       let rowLocked!: () => void;
       const locked = new Promise<void>((r) => (rowLocked = r));
       const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
       // B locks the row first, then audits. A audits first, then wants the row. Before Phase 12 the audit-chain lock
       // was taken at A's audit, so B's audit waited for A while A waited for B's row: PostgreSQL failed one of them.
       const b = db.tenant(async (tx) => {
-        await tx.query(`update legal_entities set updated_at = now() where id = $1`, [id]);
+        await tx.collection('legal_entities').updateOne({ id }, { $set: { updated_at: new Date() } });
         rowLocked();
         await pause(400);
         await audit.record(tx, { tenantId: t.id, action: 'test.order_b', resourceType: 'legal_entity', resourceId: id });
@@ -124,18 +124,18 @@ describe('Phase 12 production readiness', () => {
         await locked;
         return db.tenant(async (tx) => {
           await audit.record(tx, { tenantId: t.id, action: 'test.order_a', resourceType: 'legal_entity', resourceId: id });
-          await tx.query(`update legal_entities set updated_at = now() where id = $1`, [id]);
+          await tx.collection('legal_entities').updateOne({ id }, { $set: { updated_at: new Date() } });
           return 'a';
         }, { tenantId: t.id });
       })();
       expect(await Promise.all([a, b])).toEqual(['a', 'b']);
-      const chain = await pool.query('select * from audit_verify_chain($1)', [t.id]);
-      expect(chain.rows[0].first_broken_seq).toBeNull();
+      const chain = await pool.tenant(t.id, (tx) => tx.verifyAuditChain());
+      expect(chain.firstBrokenSeq).toBeNull();
     });
   });
 
   describe('attendance recomputes', () => {
-    it('a single person\'s recompute waits for a bulk recompute instead of deadlocking with it', async () => {
+    it('a single person\'s recompute and a bulk recompute of the same day both finish, and one correct day is stored', async () => {
       const hire = await api(app, owner).post('/employees').send({ legalEntityId: t.legalEntityId, firstName: 'Ravi', lastName: 'Shift', dateOfJoining: '2024-01-15', probationMonths: 0 });
       expect(hire.status, JSON.stringify(hire.body)).toBe(201);
       const id = hire.body.employee.id as string;
@@ -158,7 +158,12 @@ describe('Phase 12 production readiness', () => {
         order.push('single done');
       }, { tenantId: t.id });
       await Promise.all([bulk, single]);
-      expect(order).toEqual(['bulk done', 'single done']);
+      // MongoDB lets the first to commit win and runs the other again from the start, so neither waits or fails.
+      expect(order).toEqual(expect.arrayContaining(['bulk done', 'single done']));
+      const stored = await pool.find('attendance_days', { employee_id: id, work_date: today });
+      expect(stored).toHaveLength(1);
+      const fresh = await db.tenant((tx) => days.recompute(tx, id, today, today), { tenantId: t.id });
+      expect(stored[0]).toMatchObject({ status: fresh.get(today)!.status, worked_minutes: fresh.get(today)!.workedMinutes });
     });
   });
 
@@ -171,17 +176,16 @@ describe('Phase 12 production readiness', () => {
 
     it('runs the daily HR jobs on one server at a time', async () => {
       const jobs = app.get(HrJobsService);
-      const other = await pool.connect();
+      // Another API server holds the lease: this one skips the run instead of doing the same work twice.
+      const release = await pool.svc.tryLease('hr_jobs', 60_000);
+      expect(release).not.toBeNull();
       try {
-        // Another API server holds the lock: this one skips the run instead of doing the same work twice.
-        await other.query(`select pg_advisory_lock(hashtext('crew.hr_jobs'))`);
         expect(await jobs.runAll()).toEqual([]);
-        await other.query(`select pg_advisory_unlock(hashtext('crew.hr_jobs'))`);
-        const ran = await jobs.runAll();
-        expect(ran.some((r) => r.tenantId === t.id)).toBe(true);
       } finally {
-        other.release();
+        await release!();
       }
+      const ran = await jobs.runAll();
+      expect(ran.some((r) => r.tenantId === t.id)).toBe(true);
     });
   });
 

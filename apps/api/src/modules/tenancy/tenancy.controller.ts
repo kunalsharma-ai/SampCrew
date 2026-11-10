@@ -4,12 +4,30 @@ import type { z } from 'zod';
 import { AuditService, diff } from '../../platform/audit/audit.service';
 import { RequirePermission } from '../../platform/authz/decorators';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 
-const SETTINGS = `id, slug::text, name, status, region, timezone, currency, locale, country_code as "countryCode", brand_color as "brandColor", require_mfa as "requireMfa", is_demo as "isDemo", created_at as "createdAt"`;
+/** The workspace's settings as the API shows them. */
+async function settings(tx: TenantTx) {
+  const t = (await tx.collection('tenants').findOne({}))!;
+  return {
+    id: t.id as string,
+    slug: t.slug as string,
+    name: t.name as string,
+    status: t.status as string,
+    region: t.region as string,
+    timezone: t.timezone as string,
+    currency: t.currency as string,
+    locale: t.locale as string,
+    countryCode: t.country_code as string,
+    brandColor: (t.brand_color as string | null) ?? null,
+    requireMfa: t.require_mfa as boolean,
+    isDemo: t.is_demo as boolean,
+    createdAt: t.created_at as Date,
+  };
+}
 
 @Controller('tenant')
 export class TenancyController {
@@ -22,7 +40,7 @@ export class TenancyController {
   @RequirePermission('tenant:read')
   @Doc({ summary: 'Workspace settings' })
   get() {
-    return this.db.tenant((tx) => one(tx, `select ${SETTINGS} from tenants where id = app_tenant_id()`));
+    return this.db.tenant(settings);
   }
 
   @Patch()
@@ -30,15 +48,15 @@ export class TenancyController {
   @Doc({ summary: 'Update workspace settings (name, time zone, currency, locale, brand colour, MFA policy)', body: tenantSettingsInput })
   update(@Body(new ZodPipe(tenantSettingsInput)) body: z.infer<typeof tenantSettingsInput>) {
     return this.db.tenant(async (tx) => {
-      const before = (await one<Record<string, unknown>>(tx, `select ${SETTINGS} from tenants where id = app_tenant_id()`))!;
+      const before = await settings(tx);
       const map: Record<string, string> = { name: 'name', timezone: 'timezone', currency: 'currency', locale: 'locale', brandColor: 'brand_color', requireMfa: 'require_mfa' };
       const entries = Object.entries(body).filter(([k, v]) => map[k] && v !== undefined);
       if (body.requireMfa) {
-        const me = await this.db.platform((ptx) => one<{ mfa_enabled: boolean }>(ptx, 'select mfa_enabled from users where id = $1', [requestContext.tenantActor().userId]));
+        const me = await this.db.platform((ptx) => ptx.collection('users').findOne({ id: requestContext.tenantActor().userId }, { projection: { mfa_enabled: 1 } }));
         if (!me?.mfa_enabled) throw Errors.badRequest('enable_mfa_first', 'Turn on MFA for your own account before requiring it for everyone');
       }
-      if (entries.length) await tx.query(`update tenants set ${entries.map(([k], i) => `${map[k]} = $${i + 1}`).join(', ')} where id = app_tenant_id()`, entries.map(([, v]) => v));
-      const after = (await one<Record<string, unknown>>(tx, `select ${SETTINGS} from tenants where id = app_tenant_id()`))!;
+      if (entries.length) await tx.collection('tenants').updateOne({ id: before.id }, { $set: Object.fromEntries(entries.map(([k, v]) => [map[k]!, v])) });
+      const after = await settings(tx);
       await this.audit.record(tx, { action: 'tenant.settings_updated', resourceType: 'tenant', resourceId: after.id as string, changes: diff(before, after) });
       return after;
     });
@@ -57,14 +75,20 @@ export class SupportAccessController {
   @RequirePermission('tenant:read')
   @Doc({ summary: 'Support access requests from SAMPLEDGE' })
   list() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select g.id, g.reason, g.duration_minutes as "durationMinutes", g.status, g.created_at as "createdAt", g.decided_at as "decidedAt", g.expires_at as "expiresAt",
-                case when g.status = 'approved' and g.expires_at < now() then 'expired' else g.status end as "effectiveStatus"
-           from support_access_grants g order by g.created_at desc limit 50`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const now = new Date();
+      const grants = await tx.collection('support_access_grants').find({}, { sort: { created_at: -1 }, limit: 50 });
+      return grants.map((g) => ({
+        id: g.id,
+        reason: g.reason,
+        durationMinutes: g.duration_minutes,
+        status: g.status,
+        createdAt: g.created_at,
+        decidedAt: g.decided_at ?? null,
+        expiresAt: g.expires_at ?? null,
+        effectiveStatus: g.status === 'approved' && g.expires_at && g.expires_at < now ? 'expired' : g.status,
+      }));
+    });
   }
 
   @Post(':id/approve')
@@ -94,16 +118,14 @@ export class SupportAccessController {
   private decide(id: string, status: 'approved' | 'rejected' | 'revoked') {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const g = await one<{ status: string; duration_minutes: number }>(tx, 'select status, duration_minutes from support_access_grants where id = $1 for update', [id]);
+      const g = await tx.collection('support_access_grants').findOne({ id });
       if (!g) throw Errors.notFound('Support request');
       const allowed = status === 'revoked' ? g.status === 'approved' : g.status === 'pending';
       if (!allowed) throw Errors.conflict('invalid_state', `This request is ${g.status}`);
-      await tx.query(
-        `update support_access_grants set status = $2, decided_by = $3, decided_at = now(),
-           expires_at = case when $2 = 'approved' then now() + make_interval(mins => $4) when $2 = 'revoked' then now() else expires_at end
-         where id = $1`,
-        [id, status, actor.membershipId, g.duration_minutes],
-      );
+      const now = new Date();
+      const expires = status === 'approved' ? { expires_at: new Date(now.getTime() + g.duration_minutes * 60_000) } : status === 'revoked' ? { expires_at: now } : {};
+      // Writing the grant in this transaction is what keeps two decisions from both passing the state check above.
+      await tx.collection('support_access_grants').updateOne({ id, status: g.status }, { $set: { status, decided_by: actor.membershipId, decided_at: now, ...expires } });
       await this.audit.record(tx, { action: `support_access.${status}`, resourceType: 'support_access_grant', resourceId: id });
       return { id, status };
     });

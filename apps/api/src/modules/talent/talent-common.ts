@@ -1,7 +1,8 @@
 import type { ResourceAttributes } from '../../platform/authz/policy';
-import { one, type Tx } from '../../platform/database/database.service';
+import type { TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { employeeAttrs } from '../employees/employee-attrs';
+import { displayName } from '../employees/employee-view';
 
 export interface TalentEmployee {
   id: string;
@@ -15,21 +16,15 @@ export interface TalentEmployee {
   status: string;
 }
 
-/** Display name of an employee row aliased `alias`. */
-export const nameOf = (alias: string) => `trim(coalesce(${alias}.preferred_name, ${alias}.first_name) || ' ' || ${alias}.last_name)`;
-
-export async function talentEmployee(tx: Tx, id: string, what = 'Employee'): Promise<TalentEmployee> {
-  const e = await one<TalentEmployee>(
-    tx,
-    `select e.id, e.membership_id, e.current_legal_entity_id as legal_entity_id, e.current_department_id as department_id,
-            e.current_location_id as location_id, e.current_manager_employee_id as manager_employee_id, m.membership_id as manager_membership_id,
-            ${nameOf('e')} as name, e.status
-       from employees e left join employees m on m.id = e.current_manager_employee_id
-      where e.id = $1`,
-    [id],
-  );
+export async function talentEmployee(tx: TenantTx, id: string, what = 'Employee'): Promise<TalentEmployee> {
+  const e = await tx.collection('employees').findOne({ id });
   if (!e) throw Errors.notFound(what);
-  return e;
+  const manager = e.current_manager_employee_id ? await tx.collection('employees').findOne({ id: e.current_manager_employee_id }, { projection: { membership_id: 1 } }) : undefined;
+  return {
+    id: e.id, membership_id: e.membership_id ?? null, legal_entity_id: e.current_legal_entity_id ?? null, department_id: e.current_department_id ?? null,
+    location_id: e.current_location_id ?? null, manager_employee_id: e.current_manager_employee_id ?? null, manager_membership_id: manager?.membership_id ?? null,
+    name: displayName(e as never), status: e.status,
+  };
 }
 
 export const attrsOf = (e: TalentEmployee): ResourceAttributes =>

@@ -7,11 +7,12 @@ import { randomToken, sha256 } from '../../platform/auth/crypto';
 import { AuditService } from '../../platform/audit/audit.service';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
-import { AttendanceDaysService, EVENT_EMPLOYEE } from './attendance-days.service';
+import { employeeNames, fieldById } from '../employees/employee-view';
+import { AttendanceDaysService, eventEmployees, isLocked } from './attendance-days.service';
 import { attlogLines, handshakeResponse, parseAttlog, parseInfo, type ParseResult } from './zk-push';
 
 /** Machine tokens for the device API start with this, so they are easy to recognise (and to find in leaked text). */
@@ -66,13 +67,54 @@ function ipAllowed(list: string[], ip: string | null): boolean {
   return block.check(addr, family);
 }
 
-const DEVICE_COLUMNS = `d.id, d.name, d.vendor, d.model, d.serial_number as "serialNumber", d.protocol, d.location_id as "locationId", l.name as "locationName",
-  d.time_zone as "timeZone", d.direction_from_device as "directionFromDevice", d.allowed_ips as "allowedIps", d.simulated, d.expected_interval_seconds as "expectedIntervalSeconds",
-  d.firmware, d.reported_user_count as "reportedUserCount", d.reported_punch_count as "reportedPunchCount", d.last_seen_at as "lastSeenAt", d.last_punch_at as "lastPunchAt",
-  d.last_error as "lastError", d.last_error_at as "lastErrorAt", d.records_accepted::int as "recordsAccepted", d.records_duplicate::int as "recordsDuplicate",
-  d.records_rejected::int as "recordsRejected", d.archived_at as "archivedAt", d.created_at as "createdAt", d.last_error_at as last_error_at, d.last_seen_at as last_seen_at,
-  d.paused_at as "pausedAt", d.paused_reason as "pausedReason", d.api_token_hint as "tokenHint",
-  d.vendor = any(coalesce((select c.device_vendors_disabled from tenant_access_controls c), '{}')) as "integrationOff"`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
+
+/** Devices as the API shows them (the PostgreSQL DEVICE_COLUMNS view), before shape() adds the status. */
+async function deviceViews(tx: TenantTx, devices: Doc[]) {
+  const locations = await fieldById(tx, 'locations', devices.map((d) => d.location_id));
+  const off = new Set(((await tx.collection('tenant_access_controls').findOne({}))?.device_vendors_disabled as string[] | undefined) ?? []);
+  return devices
+    .filter((d) => locations.has(d.location_id))
+    .map((d) => ({
+      id: d.id as string,
+      name: d.name as string,
+      vendor: d.vendor as string,
+      model: d.model ?? null,
+      serialNumber: d.serial_number as string,
+      protocol: d.protocol as string,
+      locationId: d.location_id as string,
+      locationName: locations.get(d.location_id)!,
+      timeZone: d.time_zone as string,
+      directionFromDevice: d.direction_from_device as boolean,
+      allowedIps: d.allowed_ips as string[],
+      simulated: d.simulated as boolean,
+      expectedIntervalSeconds: d.expected_interval_seconds as number,
+      firmware: d.firmware ?? null,
+      reportedUserCount: d.reported_user_count ?? null,
+      reportedPunchCount: d.reported_punch_count ?? null,
+      lastSeenAt: (d.last_seen_at as Date | null) ?? null,
+      lastPunchAt: (d.last_punch_at as Date | null) ?? null,
+      lastError: d.last_error ?? null,
+      lastErrorAt: (d.last_error_at as Date | null) ?? null,
+      recordsAccepted: Number(d.records_accepted ?? 0),
+      recordsDuplicate: Number(d.records_duplicate ?? 0),
+      recordsRejected: Number(d.records_rejected ?? 0),
+      archivedAt: d.archived_at ?? null,
+      createdAt: d.created_at,
+      last_error_at: (d.last_error_at as Date | null) ?? null,
+      last_seen_at: (d.last_seen_at as Date | null) ?? null,
+      pausedAt: (d.paused_at as Date | null) ?? null,
+      pausedReason: d.paused_reason ?? null,
+      tokenHint: (d.api_token_hint as string | null) ?? null,
+      integrationOff: off.has(d.vendor),
+    }));
+}
+
+/** Only the given fields that have a value: the PostgreSQL coalesce($n, column) update. */
+const present = (values: Record<string, unknown>) => Object.fromEntries(Object.entries(values).filter(([, v]) => v !== null && v !== undefined));
+
+const escapeRegex = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Attendance devices: registration, health, enrolment-number mappings, and the ZKTeco/eSSL push endpoint.
@@ -99,42 +141,58 @@ export class DevicesService {
   /** The machine integrations this workspace may use (SAMPLEDGE chooses them in the Console). */
   async integrations() {
     return this.db.tenant(async (tx) => {
-      const c = await one<{ off: string[] }>(tx, 'select device_vendors_disabled as off from tenant_access_controls');
-      const off = new Set(c?.off ?? []);
+      const c = await tx.collection('tenant_access_controls').findOne({});
+      const off = new Set((c?.device_vendors_disabled as string[] | undefined) ?? []);
       return DEVICE_INTEGRATIONS.map((i) => ({ ...i, enabled: !off.has(i.key) }));
     });
   }
 
   async list() {
     return this.db.tenant(async (tx) => {
-      const rows = await many<{ id: string; simulated: boolean; last_seen_at: Date | null; last_error_at: Date | null; expectedIntervalSeconds: number }>(
-        tx,
-        `select ${DEVICE_COLUMNS},
-                (select count(distinct ev.device_user_id)::int from attendance_events ev where ev.device_id = d.id and ${EVENT_EMPLOYEE} is null) as "unmappedUsers"
-           from attendance_devices d join locations l on l.id = d.location_id
-          where d.archived_at is null order by d.name`,
-      );
-      return rows.map((r) => this.shape(r));
+      const rows = await deviceViews(tx, await tx.collection('attendance_devices').find({ archived_at: null }, { sort: { name: 1 } }));
+      // Enrolment numbers seen on each machine that nobody is mapped to yet.
+      const events = await tx.collection('attendance_events').find({ device_id: { $in: rows.map((d) => d.id) }, employee_id: null }, { projection: { device_id: 1, device_user_id: 1, employee_id: 1 } });
+      const owner = await eventEmployees(tx, events);
+      const unmapped = new Map<string, Set<string>>();
+      for (const ev of events) {
+        if (owner.has(ev.id) || !ev.device_user_id) continue;
+        unmapped.set(ev.device_id, (unmapped.get(ev.device_id) ?? new Set()).add(ev.device_user_id));
+      }
+      return rows.map((r) => this.shape({ ...r, unmappedUsers: unmapped.get(r.id)?.size ?? 0 }));
     });
   }
 
   async get(id: string) {
     return this.db.tenant(async (tx) => {
-      const row = await one<{ id: string; simulated: boolean; serialNumber: string; last_seen_at: Date | null; last_error_at: Date | null; expectedIntervalSeconds: number }>(
-        tx, `select ${DEVICE_COLUMNS} from attendance_devices d join locations l on l.id = d.location_id where d.id = $1`, [id],
-      );
+      const found = await tx.collection('attendance_devices').findOne({ id });
+      const row = found && (await deviceViews(tx, [found]))[0];
       if (!row) throw Errors.notFound('Device');
-      const seenUsers = await many<{ deviceUserId: string; punches: number; lastPunchAt: string; employeeId: string | null; employeeName: string | null }>(
-        tx,
-        `select ev.device_user_id as "deviceUserId", count(*)::int as punches, max(ev.captured_at) as "lastPunchAt", x.employee_id as "employeeId",
-                trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "employeeName"
-           from attendance_events ev
-           left join lateral (select ${EVENT_EMPLOYEE} as employee_id) x on true
-           left join employees e on e.id = x.employee_id
-          where ev.device_id = $1 group by ev.device_user_id, x.employee_id, e.preferred_name, e.first_name, e.last_name order by ev.device_user_id`,
-        [id],
-      );
-      const log = await many(tx, `select id, kind, records, accepted, duplicates, rejected, detail, remote_ip as "remoteIp", created_at as "createdAt" from device_ingest_log where device_id = $1 order by created_at desc limit 50`, [id]);
+      const events = await tx.collection('attendance_events').find({ device_id: id }, { projection: { device_user_id: 1, device_id: 1, employee_id: 1, captured_at: 1 } });
+      const owner = await eventEmployees(tx, events);
+      const groups = new Map<string, { deviceUserId: string; punches: number; lastPunchAt: Date; employeeId: string | null }>();
+      for (const ev of events) {
+        const employeeId = owner.get(ev.id) ?? null;
+        const key = `${ev.device_user_id}|${employeeId}`;
+        const g = groups.get(key) ?? { deviceUserId: ev.device_user_id, punches: 0, lastPunchAt: ev.captured_at, employeeId };
+        g.punches++;
+        if (ev.captured_at > g.lastPunchAt) g.lastPunchAt = ev.captured_at;
+        groups.set(key, g);
+      }
+      const names = await employeeNames(tx, [...groups.values()].map((g) => g.employeeId));
+      const seenUsers = [...groups.values()]
+        .sort((a, b) => (a.deviceUserId < b.deviceUserId ? -1 : a.deviceUserId > b.deviceUserId ? 1 : 0))
+        .map((g) => ({ ...g, employeeName: g.employeeId ? (names.get(g.employeeId)?.name ?? null) : null }));
+      const log = (await tx.collection('device_ingest_log').find({ device_id: id }, { sort: { created_at: -1 }, limit: 50 })).map((l) => ({
+        id: l.id,
+        kind: l.kind,
+        records: l.records ?? null,
+        accepted: l.accepted ?? null,
+        duplicates: l.duplicates ?? null,
+        rejected: l.rejected ?? null,
+        detail: l.detail ?? null,
+        remoteIp: l.remote_ip ?? null,
+        createdAt: l.created_at,
+      }));
       const base = this.config.API_PUBLIC_URL.replace(/\/$/, '');
       const url = new URL(base);
       return {
@@ -169,18 +227,26 @@ export class DevicesService {
       const integration = DEVICE_INTEGRATIONS.find((i) => i.key === input.vendor)!;
       const protocol = deviceProtocolFor(input.vendor, input.protocol);
       if (!integration.protocols.includes(protocol)) throw Errors.badRequest('protocol_not_supported', `${integration.name} machines connect through the device API, not the ZKTeco push protocol.`);
-      const off = (await one<{ off: string[] }>(tx, 'select device_vendors_disabled as off from tenant_access_controls'))?.off ?? [];
+      const off = ((await tx.collection('tenant_access_controls').findOne({}))?.device_vendors_disabled as string[] | undefined) ?? [];
       if (off.includes(input.vendor)) throw Errors.forbidden(`The ${integration.name} integration is switched off for this workspace by SAMPLEDGE.`);
-      const loc = await one<{ timezone: string }>(tx, 'select timezone from locations where id = $1 and archived_at is null', [input.locationId]);
+      const loc = await tx.collection('locations').findOne({ id: input.locationId, archived_at: null });
       if (!loc) throw Errors.badRequest('invalid_location', 'Location not found');
       const token = protocol === 'device_api' && !input.simulated ? `${DEVICE_TOKEN_PREFIX}${randomToken(32)}` : protocol === 'device_api' ? `${DEVICE_TOKEN_PREFIX}sim_${randomToken(16)}` : null;
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into attendance_devices (tenant_id, name, vendor, model, serial_number, location_id, time_zone, direction_from_device, allowed_ips, simulated, expected_interval_seconds, protocol, api_token_hash, api_token_hint)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id`,
-        [input.name, input.vendor, input.model ?? null, input.serialNumber, input.locationId, input.timeZone ?? loc.timezone, input.directionFromDevice, input.allowedIps, input.simulated, input.expectedIntervalSeconds,
-          protocol, token ? sha256(token) : null, token ? token.slice(-4) : null],
-      ).catch((err: { code?: string }) => {
+      const row = (await tx.collection('attendance_devices').insert({
+        name: input.name,
+        vendor: input.vendor,
+        model: input.model ?? null,
+        serial_number: input.serialNumber,
+        location_id: input.locationId,
+        time_zone: input.timeZone ?? loc.timezone,
+        direction_from_device: input.directionFromDevice,
+        allowed_ips: input.allowedIps,
+        simulated: input.simulated,
+        expected_interval_seconds: input.expectedIntervalSeconds,
+        protocol,
+        api_token_hash: token ? sha256(token) : null,
+        api_token_hint: token ? token.slice(-4) : null,
+      }).catch((err: { code?: string }) => {
         if (err.code === '23505') throw Errors.conflict('serial_registered', 'A device with this serial number is already registered. Archive it there first.');
         throw err;
       }))!;
@@ -193,11 +259,11 @@ export class DevicesService {
   /** Issues a new device API token; the old one stops working at once. */
   async rotateToken(id: string) {
     return this.db.tenant(async (tx) => {
-      const d = await one<{ protocol: string }>(tx, 'select protocol from attendance_devices where id = $1 and archived_at is null', [id]);
+      const d = await tx.collection('attendance_devices').findOne({ id, archived_at: null });
       if (!d) throw Errors.notFound('Device');
       if (d.protocol !== 'device_api') throw Errors.badRequest('no_token', 'This machine uses the ZKTeco push protocol, which identifies it by serial number. It has no token.');
       const token = `${DEVICE_TOKEN_PREFIX}${randomToken(32)}`;
-      await tx.query('update attendance_devices set api_token_hash = $2, api_token_hint = $3 where id = $1', [id, sha256(token), token.slice(-4)]);
+      await tx.collection('attendance_devices').updateOne({ id }, { $set: { api_token_hash: sha256(token), api_token_hint: token.slice(-4) } });
       await this.audit.record(tx, { action: 'device.token_rotated', resourceType: 'attendance_device', resourceId: id });
       return { id, token };
     });
@@ -208,9 +274,9 @@ export class DevicesService {
       const cols: Record<string, string> = { name: 'name', model: 'model', locationId: 'location_id', timeZone: 'time_zone', directionFromDevice: 'direction_from_device', allowedIps: 'allowed_ips', expectedIntervalSeconds: 'expected_interval_seconds' };
       const entries = Object.entries(input).filter(([k, v]) => cols[k] && v !== undefined);
       if (!entries.length) throw Errors.badRequest('nothing_to_change', 'Send at least one field to change');
-      if (input.locationId && !(await one(tx, 'select 1 from locations where id = $1', [input.locationId]))) throw Errors.badRequest('invalid_location', 'Location not found');
-      const r = await tx.query(`update attendance_devices set ${entries.map(([k], i) => `${cols[k]} = $${i + 2}`).join(', ')} where id = $1 and archived_at is null`, [id, ...entries.map(([, v]) => v)]);
-      if (!r.rowCount) throw Errors.notFound('Device');
+      if (input.locationId && !(await tx.collection('locations').exists({ id: input.locationId }))) throw Errors.badRequest('invalid_location', 'Location not found');
+      const n = await tx.collection('attendance_devices').updateOne({ id, archived_at: null }, { $set: Object.fromEntries(entries.map(([k, v]) => [cols[k]!, v])) });
+      if (!n) throw Errors.notFound('Device');
       await this.audit.record(tx, { action: 'device.updated', resourceType: 'attendance_device', resourceId: id, changes: Object.fromEntries(entries) });
       return { id };
     });
@@ -218,8 +284,7 @@ export class DevicesService {
 
   async archive(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await tx.query('update attendance_devices set archived_at = now() where id = $1 and archived_at is null', [id]);
-      if (!r.rowCount) throw Errors.notFound('Device');
+      if (!(await tx.collection('attendance_devices').updateOne({ id, archived_at: null }, { $set: { archived_at: new Date() } }))) throw Errors.notFound('Device');
       await this.audit.record(tx, { action: 'device.archived', resourceType: 'attendance_device', resourceId: id });
     });
   }
@@ -229,39 +294,47 @@ export class DevicesService {
   // ---------------------------------------------------------------------------------------------------------
 
   listMappings() {
-    return this.db.tenant((tx) =>
-      many(tx, `select m.id, m.device_id as "deviceId", d.name as "deviceName", m.device_user_id as "deviceUserId", m.employee_id as "employeeId",
-                       trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "employeeName", e.employee_code as "employeeCode", m.created_at as "createdAt"
-                  from device_user_mappings m join employees e on e.id = m.employee_id left join attendance_devices d on d.id = m.device_id
-                 order by m.device_user_id`),
-    );
+    return this.db.tenant(async (tx) => {
+      const mappings = await tx.collection('device_user_mappings').find({}, { sort: { device_user_id: 1 } });
+      const people = await employeeNames(tx, mappings.map((m) => m.employee_id));
+      const devices = await fieldById(tx, 'attendance_devices', mappings.map((m) => m.device_id));
+      return mappings
+        .filter((m) => people.has(m.employee_id))
+        .map((m) => ({
+          id: m.id,
+          deviceId: m.device_id ?? null,
+          deviceName: devices.get(m.device_id) ?? null,
+          deviceUserId: m.device_user_id,
+          employeeId: m.employee_id,
+          employeeName: people.get(m.employee_id)!.name,
+          employeeCode: people.get(m.employee_id)!.doc.employee_code,
+          createdAt: m.created_at,
+        }));
+    });
   }
 
   async map(input: z.infer<typeof deviceMappingInput>) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      if (!(await one(tx, 'select 1 from employees where id = $1', [input.employeeId]))) throw Errors.badRequest('invalid_employee', 'Employee not found');
-      if (input.deviceId && !(await one(tx, 'select 1 from attendance_devices where id = $1', [input.deviceId]))) throw Errors.badRequest('invalid_device', 'Device not found');
-      const row = (await one<{ id: string }>(
-        tx, `insert into device_user_mappings (tenant_id, device_id, device_user_id, employee_id, created_by) values (app_tenant_id(), $1, $2, $3, $4) returning id`,
-        [input.deviceId, input.deviceUserId, input.employeeId, actor.userId],
-      ).catch((err: { code?: string }) => {
+      if (!(await tx.collection('employees').exists({ id: input.employeeId }))) throw Errors.badRequest('invalid_employee', 'Employee not found');
+      if (input.deviceId && !(await tx.collection('attendance_devices').exists({ id: input.deviceId }))) throw Errors.badRequest('invalid_device', 'Device not found');
+      const row = (await tx.collection('device_user_mappings').insert({ device_id: input.deviceId ?? null, device_user_id: input.deviceUserId, employee_id: input.employeeId, created_by: actor.userId }).catch((err: { code?: string }) => {
         if (err.code === '23505') throw Errors.conflict('already_mapped', `Enrolment number ${input.deviceUserId} is already mapped${input.deviceId ? ' on this device' : ''}.`);
         throw err;
       }))!;
       await this.audit.record(tx, { action: 'device_mapping.created', resourceType: 'employee', resourceId: input.employeeId, changes: input });
       // Punches already received from this enrolment number now count for the employee.
-      await this.recomputeMapped(tx, input.employeeId, input.deviceUserId, input.deviceId);
+      await this.recomputeMapped(tx, input.employeeId, input.deviceUserId, input.deviceId ?? null);
       return { id: row.id };
     });
   }
 
-  async recomputeMapped(tx: Tx, employeeId: string, deviceUserId: string, deviceId: string | null) {
-    const span = await one<{ first: Date | null; last: Date | null }>(
-      tx, `select min(captured_at) as first, max(captured_at) as last from attendance_events where device_user_id = $1 and ($2::uuid is null or device_id = $2) and captured_at > now() - interval '62 days'`,
-      [deviceUserId, deviceId],
-    );
-    if (!span?.first || !span.last) return;
+  async recomputeMapped(tx: TenantTx, employeeId: string, deviceUserId: string, deviceId: string | null) {
+    const recent = { device_user_id: deviceUserId, ...(deviceId ? { device_id: deviceId } : {}), captured_at: { $gt: new Date(Date.now() - 62 * 86_400_000) } };
+    const firstEv = await tx.collection('attendance_events').findOne(recent, { sort: { captured_at: 1 }, projection: { captured_at: 1 } });
+    const lastEv = await tx.collection('attendance_events').findOne(recent, { sort: { captured_at: -1 }, projection: { captured_at: 1 } });
+    const span = { first: (firstEv?.captured_at as Date | undefined) ?? null, last: (lastEv?.captured_at as Date | undefined) ?? null };
+    if (!span.first || !span.last) return;
     const e = await this.days.employee(tx, employeeId);
     if (!e) return;
     const from = addDays(toLocal(span.first.getTime(), e.tz).date, -1);
@@ -274,8 +347,8 @@ export class DevicesService {
 
   async unmap(id: string) {
     return this.db.tenant(async (tx) => {
-      const m = await one<{ employee_id: string; device_user_id: string; device_id: string | null }>(tx, 'delete from device_user_mappings where id = $1 returning employee_id, device_user_id, device_id', [id]);
-      if (!m) throw Errors.notFound('Mapping');
+      const m = await tx.collection('device_user_mappings').findOne({ id });
+      if (!m || !(await tx.collection('device_user_mappings').deleteOne({ id }))) throw Errors.notFound('Mapping');
       await this.audit.record(tx, { action: 'device_mapping.removed', resourceType: 'employee', resourceId: m.employee_id, metadata: { deviceUserId: m.device_user_id } });
       await this.recomputeMapped(tx, m.employee_id, m.device_user_id, m.device_id);
     });
@@ -287,16 +360,14 @@ export class DevicesService {
 
   private async findDevice(by: { serial: string } | { tokenHash: string }): Promise<DeviceRow | undefined> {
     const bySerial = 'serial' in by;
-    return this.db.platform((tx) =>
-      one<DeviceRow>(
-        tx,
-        `select d.id, d.tenant_id, d.name, d.vendor, d.protocol, d.serial_number, d.time_zone, d.direction_from_device, d.allowed_ips, d.simulated, d.expected_interval_seconds,
-                d.last_seen_at, d.last_error_at, d.paused_at, d.vendor = any(coalesce(c.device_vendors_disabled, '{}')) as vendor_off
-           from attendance_devices d join tenants t on t.id = d.tenant_id left join tenant_access_controls c on c.tenant_id = d.tenant_id
-          where ${bySerial ? `upper(d.serial_number) = upper($1) and d.protocol = 'push_http'` : 'd.api_token_hash = $1'} and d.archived_at is null and t.status = 'active'`,
-        [bySerial ? by.serial : by.tokenHash],
-      ),
-    );
+    return this.db.platform(async (tx) => {
+      const d = await tx.collection('attendance_devices').findOne(
+        bySerial ? { serial_number: { $regex: `^${escapeRegex(by.serial)}$`, $options: 'i' }, protocol: 'push_http', archived_at: null } : { api_token_hash: by.tokenHash, archived_at: null },
+      );
+      if (!d || !(await tx.collection('tenants').exists({ id: d.tenant_id, status: 'active' }))) return undefined;
+      const c = await tx.collection('tenant_access_controls').findOne({ tenant_id: d.tenant_id });
+      return { ...(d as DeviceRow), allowed_ips: (d.allowed_ips as string[]) ?? [], vendor_off: ((c?.device_vendors_disabled as string[] | undefined) ?? []).includes(d.vendor) };
+    });
   }
 
   private async authorise(serial: string | undefined, ip: string | null): Promise<DeviceRow> {
@@ -313,8 +384,8 @@ export class DevicesService {
     if (d.simulated) throw Errors.forbidden('This device is registered as simulated');
     const refuse = async (detail: string, error: string) => {
       await this.db.tenant(async (tx) => {
-        await tx.query(`insert into device_ingest_log (tenant_id, device_id, kind, detail, remote_ip) values ($1, $2, 'rejected', $3, $4)`, [d.tenant_id, d.id, detail, ip]);
-        await tx.query(`update attendance_devices set last_error = $2, last_error_at = now() where id = $1`, [d.id, error]);
+        await tx.collection('device_ingest_log').insert({ device_id: d.id, kind: 'rejected', detail, remote_ip: ip });
+        await tx.collection('attendance_devices').updateOne({ id: d.id }, { $set: { last_error: error, last_error_at: new Date() } });
       }, { tenantId: d.tenant_id });
     };
     if (!ipAllowed(d.allowed_ips, ip)) {
@@ -352,11 +423,11 @@ export class DevicesService {
   async apiHeartbeat(authorization: string | undefined, body: { firmware?: string; users?: number; records?: number }, ip: string | null) {
     const d = await this.byToken(authorization, ip);
     await this.db.tenant(async (tx) => {
-      await tx.query(
-        `update attendance_devices set last_seen_at = now(), firmware = coalesce($2, firmware), reported_user_count = coalesce($3, reported_user_count), reported_punch_count = coalesce($4, reported_punch_count) where id = $1`,
-        [d.id, body.firmware ?? null, body.users ?? null, body.records ?? null],
+      await tx.collection('attendance_devices').updateOne(
+        { id: d.id },
+        { $set: { last_seen_at: new Date(), ...present({ firmware: body.firmware, reported_user_count: body.users, reported_punch_count: body.records }) } },
       );
-      await tx.query(`insert into device_ingest_log (tenant_id, device_id, kind, remote_ip) values ($1, $2, 'heartbeat', $3)`, [d.tenant_id, d.id, ip]);
+      await tx.collection('device_ingest_log').insert({ device_id: d.id, kind: 'heartbeat', remote_ip: ip });
     }, { tenantId: d.tenant_id });
     return { ok: true, device: d.name, serverTime: new Date().toISOString() };
   }
@@ -366,8 +437,8 @@ export class DevicesService {
     const parsed = parseDeviceApi(body, d.id, d.time_zone, d.direction_from_device);
     const r = await this.db.tenant(async (tx) => {
       if (body.device) {
-        await tx.query(`update attendance_devices set firmware = coalesce($2, firmware), reported_user_count = coalesce($3, reported_user_count), reported_punch_count = coalesce($4, reported_punch_count) where id = $1`,
-          [d.id, body.device.firmware ?? null, body.device.users ?? null, body.device.records ?? null]);
+        const values = present({ firmware: body.device.firmware, reported_user_count: body.device.users, reported_punch_count: body.device.records });
+        if (Object.keys(values).length) await tx.collection('attendance_devices').updateOne({ id: d.id }, { $set: values });
       }
       return this.storeParsed(tx, d, parsed, ip, 'device_api');
     }, { tenantId: d.tenant_id });
@@ -377,8 +448,8 @@ export class DevicesService {
   async handshake(serial: string | undefined, query: Record<string, string>, ip: string | null) {
     const d = await this.authorise(serial, ip);
     await this.db.tenant(async (tx) => {
-      await tx.query(`update attendance_devices set last_seen_at = now(), firmware = coalesce($2, firmware) where id = $1`, [d.id, query.pushver ? `push ${query.pushver}`.slice(0, 80) : null]);
-      await tx.query(`insert into device_ingest_log (tenant_id, device_id, kind, detail, remote_ip) values ($1, $2, 'handshake', $3, $4)`, [d.tenant_id, d.id, query.pushver ? `push version ${query.pushver}` : null, ip]);
+      await tx.collection('attendance_devices').updateOne({ id: d.id }, { $set: { last_seen_at: new Date(), ...present({ firmware: query.pushver ? `push ${query.pushver}`.slice(0, 80) : null }) } });
+      await tx.collection('device_ingest_log').insert({ device_id: d.id, kind: 'handshake', detail: query.pushver ? `push version ${query.pushver}` : null, remote_ip: ip });
     }, { tenantId: d.tenant_id });
     return handshakeResponse(d.serial_number);
   }
@@ -386,18 +457,21 @@ export class DevicesService {
   async heartbeat(serial: string | undefined, query: Record<string, string>, ip: string | null) {
     const d = await this.authorise(serial, ip);
     const info = parseInfo(query.INFO);
-    await this.db.tenant((tx) =>
-      tx.query(
-        `update attendance_devices set last_seen_at = now(), firmware = coalesce($2, firmware), reported_user_count = coalesce($3, reported_user_count), reported_punch_count = coalesce($4, reported_punch_count) where id = $1`,
-        [d.id, info.firmware, info.users, info.records],
-      ), { tenantId: d.tenant_id });
+    await this.db.tenant(
+      (tx) =>
+        tx.collection('attendance_devices').updateOne(
+          { id: d.id },
+          { $set: { last_seen_at: new Date(), ...present({ firmware: info.firmware, reported_user_count: info.users, reported_punch_count: info.records }) } },
+        ),
+      { tenantId: d.tenant_id },
+    );
     // No commands are sent to devices in this version.
     return 'OK';
   }
 
   async commandResult(serial: string | undefined, ip: string | null) {
     const d = await this.authorise(serial, ip);
-    await this.db.tenant((tx) => tx.query(`insert into device_ingest_log (tenant_id, device_id, kind, remote_ip) values ($1, $2, 'command_result', $3)`, [d.tenant_id, d.id, ip]), { tenantId: d.tenant_id });
+    await this.db.tenant((tx) => tx.collection('device_ingest_log').insert({ device_id: d.id, kind: 'command_result', remote_ip: ip }), { tenantId: d.tenant_id });
     return 'OK';
   }
 
@@ -408,8 +482,8 @@ export class DevicesService {
       // Operation logs, photos and user records are acknowledged so the device does not resend them, and not stored.
       const lines = body.split(/\r?\n/).filter(Boolean).length;
       await this.db.tenant(async (tx) => {
-        await tx.query(`update attendance_devices set last_seen_at = now() where id = $1`, [d.id]);
-        await tx.query(`insert into device_ingest_log (tenant_id, device_id, kind, records, detail, remote_ip) values ($1, $2, 'operlog', $3, $4, $5)`, [d.tenant_id, d.id, lines, `table ${table || 'unknown'} acknowledged, not stored`, ip]);
+        await tx.collection('attendance_devices').updateOne({ id: d.id }, { $set: { last_seen_at: new Date() } });
+        await tx.collection('device_ingest_log').insert({ device_id: d.id, kind: 'operlog', records: lines, detail: `table ${table || 'unknown'} acknowledged, not stored`, remote_ip: ip });
       }, { tenantId: d.tenant_id });
       return `OK: ${lines}`;
     }
@@ -418,30 +492,42 @@ export class DevicesService {
   }
 
   /** Parses and stores an ATTLOG body, then recomputes the days it touches. Shared by the push endpoint and the simulator. */
-  private async store(tx: Tx, d: Pick<DeviceRow, 'id' | 'tenant_id' | 'serial_number' | 'time_zone' | 'direction_from_device'>, body: string, ip: string | null, kind: 'attlog' | 'simulated') {
+  private async store(tx: TenantTx, d: Pick<DeviceRow, 'id' | 'tenant_id' | 'serial_number' | 'time_zone' | 'direction_from_device'>, body: string, ip: string | null, kind: 'attlog' | 'simulated') {
     return this.storeParsed(tx, d, parseAttlog(body, d.serial_number, d.time_zone, d.direction_from_device), ip, kind);
   }
 
-  private async storeParsed(tx: Tx, d: Pick<DeviceRow, 'id' | 'tenant_id'>, parsed: ParseResult, ip: string | null, kind: 'attlog' | 'simulated' | 'device_api') {
+  private async storeParsed(tx: TenantTx, d: Pick<DeviceRow, 'id' | 'tenant_id'>, parsed: ParseResult, ip: string | null, kind: 'attlog' | 'simulated' | 'device_api') {
     let accepted = 0;
     let duplicates = 0;
     const touched = new Map<string, number[]>();
+    const events = tx.collection('attendance_events');
     for (const p of parsed.punches) {
-      const mapped = await one<{ employee_id: string }>(
-        tx, `select employee_id from device_user_mappings where device_user_id = $1 and (device_id = $2 or device_id is null) order by device_id nulls last limit 1`,
-        [p.deviceUserId, d.id],
-      );
+      // A mapping for this machine wins over one for every machine.
+      const candidates = await tx.collection('device_user_mappings').find({ device_user_id: p.deviceUserId, device_id: { $in: [d.id, null] } });
+      const mapped = candidates.find((m) => m.device_id === d.id) ?? candidates.find((m) => !m.device_id);
       let locked = false;
       if (mapped) {
         const e = await this.days.employee(tx, mapped.employee_id);
-        if (e) locked = (await one<{ locked: boolean }>(tx, 'select attendance_is_locked($1, $2) as locked', [e.id, toLocal(p.capturedAt, e.tz).date]))!.locked;
+        if (e) locked = await isLocked(tx, e.id, toLocal(p.capturedAt, e.tz).date);
       }
-      const ins = await tx.query(
-        `insert into attendance_events (tenant_id, device_id, device_user_id, source, source_event_id, captured_at, device_local_time, direction, verify_method, geofence_result, raw, payload_sha256, remote_ip, arrived_after_lock)
-         values ($1, $2, $3, 'device', $4, $5, $6, $7, $8, 'not_required', $9, $4, $10, $11) on conflict (tenant_id, source, source_event_id) do nothing`,
-        [d.tenant_id, d.id, p.deviceUserId, p.sourceEventId, new Date(p.capturedAt), p.localTime, p.direction, p.verifyMethod, JSON.stringify({ line: p.raw }), ip, locked],
-      );
-      if (ins.rowCount) {
+      // A record already received (the machine resends after a lost reply) counts as a duplicate.
+      const duplicate = await events.exists({ source: 'device', source_event_id: p.sourceEventId });
+      if (!duplicate) {
+        await events.insert({
+          device_id: d.id,
+          device_user_id: p.deviceUserId,
+          source: 'device',
+          source_event_id: p.sourceEventId,
+          captured_at: new Date(p.capturedAt),
+          device_local_time: p.localTime,
+          direction: p.direction,
+          verify_method: p.verifyMethod ?? null,
+          geofence_result: 'not_required',
+          raw: { line: p.raw },
+          payload_sha256: p.sourceEventId,
+          remote_ip: ip,
+          arrived_after_lock: locked,
+        });
         accepted++;
         if (mapped && !locked) touched.set(mapped.employee_id, [...(touched.get(mapped.employee_id) ?? []), p.capturedAt]);
       } else duplicates++;
@@ -455,17 +541,28 @@ export class DevicesService {
       if (from <= to) await this.days.recompute(tx, employeeId, from, to);
     }
     const last = parsed.punches.reduce((m, p) => Math.max(m, p.capturedAt), 0);
-    await tx.query(
-      `update attendance_devices set last_seen_at = case when $6 then last_seen_at else now() end, last_punch_at = greatest(last_punch_at, $2),
-              records_accepted = records_accepted + $3, records_duplicate = records_duplicate + $4, records_rejected = records_rejected + $5,
-              last_error = case when $5 > 0 then $7 else last_error end, last_error_at = case when $5 > 0 then now() else last_error_at end
-        where id = $1`,
-      [d.id, last ? new Date(last) : null, accepted, duplicates, parsed.rejected.length, kind === 'simulated', parsed.rejected[0] ? `${parsed.rejected.length} record(s) could not be read: ${parsed.rejected[0].reason}` : null],
+    const rejected = parsed.rejected.length;
+    await tx.collection('attendance_devices').updateOne(
+      { id: d.id },
+      {
+        $inc: { records_accepted: accepted, records_duplicate: duplicates, records_rejected: rejected },
+        ...(last ? { $max: { last_punch_at: new Date(last) } } : {}),
+        $set: {
+          ...(kind === 'simulated' ? {} : { last_seen_at: new Date() }),
+          ...(rejected > 0 ? { last_error: `${rejected} record(s) could not be read: ${parsed.rejected[0]!.reason}`, last_error_at: new Date() } : {}),
+        },
+      },
     );
-    await tx.query(
-      `insert into device_ingest_log (tenant_id, device_id, kind, records, accepted, duplicates, rejected, detail, remote_ip) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [d.tenant_id, d.id, kind, parsed.punches.length + parsed.rejected.length, accepted, duplicates, parsed.rejected.length, parsed.rejected.map((r) => `${r.reason}: ${r.line}`).join('\n').slice(0, 2000) || null, ip],
-    );
+    await tx.collection('device_ingest_log').insert({
+      device_id: d.id,
+      kind,
+      records: parsed.punches.length + rejected,
+      accepted,
+      duplicates,
+      rejected,
+      detail: parsed.rejected.map((x) => `${x.reason}: ${x.line}`).join('\n').slice(0, 2000) || null,
+      remote_ip: ip,
+    });
     return { accepted, duplicates, rejected: parsed.rejected.length };
   }
 
@@ -475,11 +572,11 @@ export class DevicesService {
    */
   async simulate(id: string, input: z.infer<typeof simulateInput>) {
     return this.db.tenant(async (tx) => {
-      const d = await one<DeviceRow & { tenant_id: string }>(tx, 'select * from attendance_devices where id = $1 and archived_at is null', [id]);
+      const d = await tx.collection<DeviceRow & { tenant_id: string }>('attendance_devices').findOne({ id, archived_at: null });
       if (!d) throw Errors.notFound('Device');
       if (!d.simulated) throw Errors.badRequest('not_simulated', 'Only devices registered as simulated can generate test punches. Real devices send their own.');
       const date = input.date ?? localToday(d.time_zone);
-      const pins = (await many<{ device_user_id: string }>(tx, `select device_user_id from device_user_mappings where device_id = $1 or device_id is null order by device_user_id limit 20`, [id])).map((m) => m.device_user_id);
+      const pins = (await tx.collection('device_user_mappings').find({ device_id: { $in: [id, null] } }, { sort: { device_user_id: 1 }, limit: 20 })).map((m) => m.device_user_id as string);
       if (!pins.length && input.scenario !== 'unknown_user') throw Errors.badRequest('no_mappings', 'Map at least one enrolment number to an employee first, or use the "unknown user" scenario.');
       const at = (h: string) => `${date} ${h}:00`;
       const rows: Parameters<typeof attlogLines>[0] = [];
@@ -507,22 +604,21 @@ export class DevicesService {
   /** Alerts device managers once when a real device stops reporting. Called by the hourly job. */
   async alertOffline(tenantId: string) {
     return this.db.tenant(async (tx) => {
-      const devices = await many<DeviceRow & { name: string; offline_alerted_at: Date | null }>(
-        tx, `select * from attendance_devices where archived_at is null and not simulated and last_seen_at is not null and (offline_alerted_at is null or offline_alerted_at < last_seen_at)`,
+      const devices = (await tx.collection<DeviceRow & { name: string; offline_alerted_at: Date | null }>('attendance_devices').find({ archived_at: null, simulated: false, last_seen_at: { $ne: null } })).filter(
+        (d) => !d.offline_alerted_at || d.offline_alerted_at < d.last_seen_at!,
       );
       let alerted = 0;
       for (const d of devices) {
         if (deviceStatus(d) !== 'offline') continue;
-        const holders = await many<{ membership_id: string }>(
-          tx, `select distinct ra.membership_id from role_assignments ra join role_permissions rp on rp.role_id = ra.role_id join memberships m on m.id = ra.membership_id
-                where rp.permission = 'devices:manage' and m.status = 'active'`,
-        );
+        const roles = await tx.collection('role_permissions').distinct<string>('role_id', { permission: 'devices:manage' });
+        const assigned = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: { $in: roles } });
+        const holders = (await tx.collection('memberships').find({ id: { $in: assigned }, status: 'active' }, { projection: { _id: 1 } })).map((m) => ({ membership_id: m.id as string }));
         await this.notifications.notify(tx, {
           membershipIds: holders.map((h) => h.membership_id), kind: 'device.offline', title: `Attendance device offline: ${d.name}`,
           body: `Last heard from at ${d.last_seen_at!.toISOString()}. Punches made on it are kept on the device and arrive when it reconnects.`,
           link: `/settings/devices/${d.id}`, email: true,
         });
-        await tx.query('update attendance_devices set offline_alerted_at = now() where id = $1', [d.id]);
+        await tx.collection('attendance_devices').updateOne({ id: d.id }, { $set: { offline_alerted_at: new Date() } });
         alerted++;
       }
       return alerted;

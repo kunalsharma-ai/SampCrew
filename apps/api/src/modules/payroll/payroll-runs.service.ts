@@ -7,14 +7,15 @@ import { AuthzService } from '../../platform/authz/authz.service';
 import { can } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AttendanceDaysService } from '../attendance/attendance-days.service';
-import { EMPLOYEE_SCOPE } from '../employees/employee-attrs';
-import { csv, dayCount, ENTITY_SCOPE, employedDays, legalEntity, lossOfPay, monthPeriod, periodLabel, statutoryOn, type StatutoryRow } from './payroll-common';
+import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
+import { displayName, employeeNames, fieldById } from '../employees/employee-view';
+import { csv, dayCount, ENTITY_FIELDS, employedDays, legalEntity, lossOfPay, monthPeriod, periodLabel, statutoryOn, type StatutoryRow } from './payroll-common';
 
 interface RunRow {
   id: string;
@@ -28,10 +29,18 @@ interface RunRow {
   created_by: string | null;
 }
 
-const RUN_COLS = `id, legal_entity_id, to_char(period_start, 'YYYY-MM-DD') as period_start, to_char(period_end, 'YYYY-MM-DD') as period_end,
-                  to_char(pay_date, 'YYYY-MM-DD') as pay_date, currency, status, approval_request_id, created_by`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
+
+const runRow = (d: Doc): RunRow => ({
+  id: d.id, legal_entity_id: d.legal_entity_id, period_start: d.period_start, period_end: d.period_end, pay_date: d.pay_date, currency: d.currency,
+  status: d.status, approval_request_id: d.approval_request_id ?? null, created_by: d.created_by ?? null,
+});
 
 const { toMinor, fromMinor, sum } = money;
+
+/** The exact total of a decimal field over rows, as "1234.50". */
+const total = (rows: Doc[], field: string) => fromMinor(sum(rows.map((x) => toMinor(String(x[field] ?? '0')))));
 
 /**
  * Payroll runs: one legal entity, one calendar month. Draft, computed (any number of times), sent for approval,
@@ -62,24 +71,29 @@ export class PayrollRunsService implements OnModuleInit {
       attributes: async (tx, id) => ({ legalEntityId: (await this.load(tx, id)).legal_entity_id }),
       onApproved: (tx, req) => this.finalise(tx, req.resource_id),
       onRejected: async (tx, req) => {
-        const r = await one<{ id: string }>(tx, `update payroll_runs set status = 'computed', approval_request_id = null, status_note = 'Sent back by the approver. Make changes, compute again and resubmit.' where id = $1 and status = 'pending_approval' returning id`, [req.resource_id]);
-        if (!r) return;
+        const n = await tx.collection('payroll_runs').updateOne(
+          { id: req.resource_id, status: 'pending_approval' },
+          { $set: { status: 'computed', approval_request_id: null, status_note: 'Sent back by the approver. Make changes, compute again and resubmit.' } },
+        );
+        if (!n) return;
         await this.audit.record(tx, { action: 'payroll_run.rejected', resourceType: 'payroll_run', resourceId: req.resource_id });
         const run = await this.load(tx, req.resource_id);
-        const by = await one<{ id: string }>(tx, 'select id from memberships where user_id = $1', [run.created_by]);
+        const by = run.created_by ? await tx.collection('memberships').findOne({ user_id: run.created_by }) : undefined;
         await this.notifications.notify(tx, { membershipIds: [by?.id ?? null], kind: 'payroll_run.rejected', title: `Payroll for ${periodLabel(run.period_start)} was sent back`, link: `/payroll/runs/${run.id}` });
       },
     });
   }
 
-  private async load(tx: Tx, id: string, lock = false) {
-    const r = await one<RunRow>(tx, `select ${RUN_COLS} from payroll_runs where id = $1${lock ? ' for update' : ''}`, [id]);
+  private async load(tx: TenantTx, id: string, lock = false) {
+    const runs = tx.collection('payroll_runs');
+    if (lock && !(await runs.lock({ id }))) throw Errors.notFound('Payroll run');
+    const r = await runs.findOne({ id });
     if (!r) throw Errors.notFound('Payroll run');
-    return r;
+    return runRow(r);
   }
 
   /** Loads a run the caller may act on with `permission` (404 when the entity is out of their scope). */
-  private async access(tx: Tx, id: string, permission: string, lock = false) {
+  private async access(tx: TenantTx, id: string, permission: string, lock = false) {
     const r = await this.load(tx, id, lock);
     await this.authz.require('payroll:read', { legalEntityId: r.legal_entity_id }, tx);
     if (permission !== 'payroll:read') await this.authz.require(permission, { legalEntityId: r.legal_entity_id }, tx);
@@ -95,61 +109,58 @@ export class PayrollRunsService implements OnModuleInit {
 
   async list(q: { legalEntityId?: string; status?: string }) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [q.legalEntityId ?? null, q.status ?? null];
-      const pred = await this.authz.predicate('payroll:read', ENTITY_SCOPE('r.legal_entity_id'), params, tx);
-      return many(
-        tx,
-        `select r.id, r.legal_entity_id as "legalEntityId", le.name as "legalEntityName", to_char(r.period_start, 'YYYY-MM') as month,
-                to_char(r.period_start, 'YYYY-MM-DD') as "periodStart", to_char(r.period_end, 'YYYY-MM-DD') as "periodEnd", to_char(r.pay_date, 'YYYY-MM-DD') as "payDate",
-                r.currency, r.status, r.employee_count as "employeeCount", r.gross::text, r.deductions::text, r.reimbursements::text, r.net::text,
-                r.employer_contributions::text as "employerContributions", r.computed_at as "computedAt", r.finalised_at as "finalisedAt"
-           from payroll_runs r join legal_entities le on le.id = r.legal_entity_id
-          where ${pred} and ($1::uuid is null or r.legal_entity_id = $1) and ($2::text is null or r.status = $2)
-          order by r.period_start desc, le.name limit 200`,
-        params,
-      );
+      const scope = await this.authz.filter('payroll:read', ENTITY_FIELDS('legal_entity_id'), tx);
+      const runs = await tx.collection('payroll_runs').find({ $and: [scope, q.legalEntityId ? { legal_entity_id: q.legalEntityId } : {}, q.status ? { status: q.status } : {}] });
+      const entities = await fieldById(tx, 'legal_entities', runs.map((x) => x.legal_entity_id));
+      return runs
+        .map((x) => ({
+          id: x.id, legalEntityId: x.legal_entity_id, legalEntityName: entities.get(x.legal_entity_id) ?? null, month: (x.period_start as string).slice(0, 7),
+          periodStart: x.period_start, periodEnd: x.period_end, payDate: x.pay_date, currency: x.currency, status: x.status, employeeCount: x.employee_count,
+          gross: x.gross, deductions: x.deductions, reimbursements: x.reimbursements, net: x.net, employerContributions: x.employer_contributions,
+          computedAt: x.computed_at ?? null, finalisedAt: x.finalised_at ?? null,
+        }))
+        .sort((a, b) => b.periodStart.localeCompare(a.periodStart) || String(a.legalEntityName).localeCompare(String(b.legalEntityName)))
+        .slice(0, 200);
     });
   }
 
   async get(id: string) {
     return this.db.tenant(async (tx) => {
       const r = await this.access(tx, id, 'payroll:read');
-      const run = await one<Record<string, unknown>>(
-        tx,
-        `select r.id, r.legal_entity_id as "legalEntityId", le.name as "legalEntityName", to_char(r.period_start, 'YYYY-MM') as month,
-                to_char(r.period_start, 'YYYY-MM-DD') as "periodStart", to_char(r.period_end, 'YYYY-MM-DD') as "periodEnd", to_char(r.pay_date, 'YYYY-MM-DD') as "payDate",
-                r.currency, r.status, r.status_note as "statusNote", r.employee_count as "employeeCount", r.gross::text, r.deductions::text,
-                r.reimbursements::text, r.net::text, r.employer_contributions::text as "employerContributions", r.computed_at as "computedAt",
-                r.finalised_at as "finalisedAt", r.approval_request_id as "approvalRequestId", u.full_name as "createdBy",
-                to_char(s.effective_from, 'YYYY-MM-DD') as "statutoryEffectiveFrom", s.lop_source as "lopSource"
-           from payroll_runs r join legal_entities le on le.id = r.legal_entity_id left join users u on u.id = r.created_by
-           left join statutory_settings s on s.id = r.statutory_settings_id where r.id = $1`,
-        [id],
-      );
-      const items = await many(
-        tx,
-        `select i.id, i.employee_id as "employeeId", e.employee_code as code, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name,
-                d.name as "departmentName", i.status, i.hold_reason as "holdReason", i.days_in_period as "daysInPeriod", i.employed_days as "employedDays",
-                i.lop_days::text as "lopDays", i.lop_override::text as "lopOverride", i.lop_override_reason as "lopOverrideReason", i.paid_days::text as "paidDays",
-                i.gross::text, i.deductions::text, i.reimbursements::text, i.net::text, i.employer_contributions::text as "employerContributions", i.tds::text,
-                jsonb_array_length(i.warnings) as "warningCount"
-           from payroll_items i join employees e on e.id = i.employee_id left join departments d on d.id = e.current_department_id
-          where i.run_id = $1 order by name`,
-        [id],
-      );
-      const adjustments = await many(
-        tx,
-        `select a.id, a.employee_id as "employeeId", trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "employeeName", a.kind, a.label,
-                a.amount::text, a.taxable, a.reason, a.created_at as "createdAt"
-           from payroll_adjustments a join employees e on e.id = a.employee_id where a.run_id = $1 order by a.created_at`,
-        [id],
-      );
-      const warnings = await many<{ name: string; w: string }>(
-        tx,
-        `select trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name, w from payroll_items i join employees e on e.id = i.employee_id,
-                jsonb_array_elements_text(i.warnings) w where i.run_id = $1 order by name`,
-        [id],
-      );
+      const x = (await tx.collection('payroll_runs').findOne({ id }))!;
+      const le = await tx.collection('legal_entities').findOne({ id: x.legal_entity_id });
+      const creator = x.created_by ? await (await usersTable(tx)).findOne({ id: x.created_by }, { projection: { full_name: 1 } }) : undefined;
+      const st = x.statutory_settings_id ? await tx.collection('statutory_settings').findOne({ id: x.statutory_settings_id }) : undefined;
+      const run = {
+        id: x.id, legalEntityId: x.legal_entity_id, legalEntityName: le?.name ?? null, month: (x.period_start as string).slice(0, 7), periodStart: x.period_start,
+        periodEnd: x.period_end, payDate: x.pay_date, currency: x.currency, status: x.status, statusNote: x.status_note ?? null, employeeCount: x.employee_count,
+        gross: x.gross, deductions: x.deductions, reimbursements: x.reimbursements, net: x.net, employerContributions: x.employer_contributions,
+        computedAt: x.computed_at ?? null, finalisedAt: x.finalised_at ?? null, approvalRequestId: x.approval_request_id ?? null, createdBy: creator?.full_name ?? null,
+        statutoryEffectiveFrom: st?.effective_from ?? null, lopSource: st?.lop_source ?? null,
+      };
+      const docs = await tx.collection('payroll_items').find({ run_id: id });
+      const emps = await employeeNames(tx, docs.map((i) => i.employee_id));
+      const departments = await fieldById(tx, 'departments', [...emps.values()].map((e) => e.doc.current_department_id));
+      const nameOf = (employeeId: string) => emps.get(employeeId)?.name ?? '';
+      const byName = <T extends { name: string }>(a: T, b: T) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+      const items = docs
+        .map((i) => {
+          const e = emps.get(i.employee_id);
+          return {
+            id: i.id, employeeId: i.employee_id, code: e?.doc.employee_code ?? null, name: nameOf(i.employee_id), departmentName: departments.get(e?.doc.current_department_id) ?? null,
+            status: i.status, holdReason: i.hold_reason ?? null, daysInPeriod: i.days_in_period, employedDays: i.employed_days, lopDays: i.lop_days,
+            lopOverride: i.lop_override ?? null, lopOverrideReason: i.lop_override_reason ?? null, paidDays: i.paid_days, gross: i.gross, deductions: i.deductions,
+            reimbursements: i.reimbursements, net: i.net, employerContributions: i.employer_contributions, tds: i.tds, warningCount: (i.warnings as unknown[]).length,
+          };
+        })
+        .sort(byName);
+      const adjDocs = await tx.collection('payroll_adjustments').find({ run_id: id }, { sort: { created_at: 1 } });
+      const adjNames = await employeeNames(tx, adjDocs.map((a) => a.employee_id));
+      const adjustments = adjDocs.map((a) => ({
+        id: a.id, employeeId: a.employee_id, employeeName: adjNames.get(a.employee_id)?.name ?? null, kind: a.kind, label: a.label, amount: a.amount,
+        taxable: a.taxable, reason: a.reason, createdAt: a.created_at,
+      }));
+      const warnings = docs.flatMap((i) => (i.warnings as string[]).map((w) => ({ name: nameOf(i.employee_id), w }))).sort(byName);
       const runWarnings = r.status === 'draft' || r.status === 'computed' ? await this.missingSalaries(tx, r) : [];
       const s = await this.authz.subject(tx);
       const attrs = { legalEntityId: r.legal_entity_id };
@@ -172,31 +183,29 @@ export class PayrollRunsService implements OnModuleInit {
   async item(runId: string, itemId: string) {
     return this.db.tenant(async (tx) => {
       await this.access(tx, runId, 'payroll:read');
-      const i = await one(
-        tx,
-        `select i.id, i.employee_id as "employeeId", e.employee_code as code, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name,
-                i.status, i.hold_reason as "holdReason", i.days_in_period as "daysInPeriod", i.employed_days as "employedDays", i.lop_days::text as "lopDays",
-                i.lop_override::text as "lopOverride", i.lop_override_reason as "lopOverrideReason", i.paid_days::text as "paidDays", i.gross::text,
-                i.deductions::text, i.reimbursements::text, i.net::text, i.employer_contributions::text as "employerContributions", i.taxable::text, i.tds::text,
-                i.lines, i.explanation, i.warnings, i.inputs, i.computed_at as "computedAt"
-           from payroll_items i join employees e on e.id = i.employee_id where i.id = $1 and i.run_id = $2`,
-        [itemId, runId],
-      );
+      const d = await tx.collection('payroll_items').findOne({ id: itemId, run_id: runId });
+      const e = d ? await tx.collection('employees').findOne({ id: d.employee_id }) : undefined;
+      const i = d && {
+        id: d.id, employeeId: d.employee_id, code: e?.employee_code ?? null, name: e ? displayName(e as never) : null, status: d.status, holdReason: d.hold_reason ?? null,
+        daysInPeriod: d.days_in_period, employedDays: d.employed_days, lopDays: d.lop_days, lopOverride: d.lop_override ?? null, lopOverrideReason: d.lop_override_reason ?? null,
+        paidDays: d.paid_days, gross: d.gross, deductions: d.deductions, reimbursements: d.reimbursements, net: d.net, employerContributions: d.employer_contributions,
+        taxable: d.taxable, tds: d.tds, lines: d.lines, explanation: d.explanation, warnings: d.warnings, inputs: d.inputs, computedAt: d.computed_at,
+      };
       if (!i) throw Errors.notFound('Payroll item');
       return i;
     });
   }
 
-  private async missingSalaries(tx: Tx, r: RunRow) {
-    const rows = await many<{ name: string }>(
-      tx,
-      `select trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name from employees e
-        where e.current_legal_entity_id = $1 and e.date_of_joining <= $3 and (e.last_working_day is null or e.last_working_day >= $2)
-          and not exists (select 1 from employee_salaries s where s.employee_id = e.id and s.effective_from <= $3)
-        order by name`,
-      [r.legal_entity_id, r.period_start, r.period_end],
-    );
-    return rows.map((x) => `${x.name} has no salary for this month and is left out. Assign a salary to include them.`);
+  private async missingSalaries(tx: TenantTx, r: RunRow) {
+    const emps = await this.inPeriod(tx, r.legal_entity_id, r.period_start, r.period_end);
+    const paid = new Set(await tx.collection('employee_salaries').distinct<string>('employee_id', { employee_id: { $in: emps.map((e) => e.id) }, effective_from: { $lte: r.period_end } }));
+    const names = emps.filter((e) => !paid.has(e.id)).map((e) => displayName(e as never)).sort();
+    return names.map((name) => `${name} has no salary for this month and is left out. Assign a salary to include them.`);
+  }
+
+  /** Employees of a legal entity employed at some point in [start, end]. */
+  private inPeriod(tx: TenantTx, legalEntityId: string, start: string, end: string) {
+    return tx.collection('employees').find({ current_legal_entity_id: legalEntityId, date_of_joining: { $lte: end }, $or: [{ last_working_day: null }, { last_working_day: { $gte: start } }] });
   }
 
   // Preparing -----------------------------------------------------------------------------------------------
@@ -208,14 +217,13 @@ export class PayrollRunsService implements OnModuleInit {
       const le = await legalEntity(tx, input.legalEntityId);
       const p = monthPeriod(input.month);
       if (input.payDate < p.start) throw Errors.badRequest('pay_date', 'The pay date cannot be before the month starts');
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into payroll_runs (tenant_id, legal_entity_id, period_start, period_end, pay_date, currency, created_by) values (app_tenant_id(), $1, $2, $3, $4, $5, $6) returning id`,
-        [input.legalEntityId, p.start, p.end, input.payDate, le.currency, actor.userId],
-      ).catch((err: { code?: string }) => {
-        if (err.code === '23505') throw Errors.conflict('run_exists', `There is already a payroll run for ${le.name} for ${periodLabel(p.start)}`);
-        throw err;
-      }))!;
+      const inserted = await tx.collection('payroll_runs')
+        .insert({ legal_entity_id: input.legalEntityId, period_start: p.start, period_end: p.end, pay_date: input.payDate, currency: le.currency, created_by: actor.userId })
+        .catch((err: { code?: string }) => {
+          if (err.code === '23505') throw Errors.conflict('run_exists', `There is already a payroll run for ${le.name} for ${periodLabel(p.start)}`);
+          throw err;
+        });
+      const row = { id: inserted.id as string };
       await this.audit.record(tx, { action: 'payroll_run.created', resourceType: 'payroll_run', resourceId: row.id, changes: input });
       return row;
     });
@@ -232,50 +240,49 @@ export class PayrollRunsService implements OnModuleInit {
   }
 
   /** (Re)computes every item of a run. Overrides and holds survive a recompute. */
-  private async computeIn(tx: Tx, r: RunRow) {
+  private async computeIn(tx: TenantTx, r: RunRow) {
     const statutory = await statutoryOn(tx, r.legal_entity_id, r.period_start);
     if (!statutory) throw Errors.conflict('statutory_missing', 'Review and save statutory settings for this legal entity first (Settings, Payroll).');
     const period = monthPeriod(r.period_start.slice(0, 7));
+    const items = tx.collection('payroll_items');
+    const claimsTable = tx.collection('expense_claims');
     const overrides = new Map(
-      (await many<{ employee_id: string; status: string; hold_reason: string | null; lop_override: string | null; lop_override_reason: string | null }>(
-        tx, 'select employee_id, status, hold_reason, lop_override::text, lop_override_reason from payroll_items where run_id = $1', [r.id],
-      )).map((o) => [o.employee_id, o]),
+      (await items.find({ run_id: r.id })).map((o) => [
+        o.employee_id as string,
+        { employee_id: o.employee_id as string, status: o.status as string, hold_reason: (o.hold_reason ?? null) as string | null, lop_override: (o.lop_override ?? null) as string | null, lop_override_reason: (o.lop_override_reason ?? null) as string | null },
+      ]),
     );
-    await tx.query('delete from payroll_items where run_id = $1', [r.id]);
-    await tx.query(`update expense_claims set payroll_run_id = null where payroll_run_id = $1 and status = 'approved'`, [r.id]);
+    await items.delete({ run_id: r.id });
+    await claimsTable.update({ payroll_run_id: r.id, status: 'approved' }, { $set: { payroll_run_id: null } });
 
-    const people = await many<{ id: string; membership_id: string | null; date_of_joining: string; last_working_day: string | null; legal_entity_id: string; location_id: string | null; region: string | null }>(
-      tx,
-      `select e.id, e.membership_id, to_char(e.date_of_joining, 'YYYY-MM-DD') as date_of_joining, to_char(e.last_working_day, 'YYYY-MM-DD') as last_working_day,
-              e.current_legal_entity_id as legal_entity_id, e.current_location_id as location_id, l.region
-         from employees e left join locations l on l.id = e.current_location_id
-        where e.current_legal_entity_id = $1 and e.date_of_joining <= $3 and (e.last_working_day is null or e.last_working_day >= $2)`,
-      [r.legal_entity_id, period.start, period.end],
-    );
+    const emps = await this.inPeriod(tx, r.legal_entity_id, period.start, period.end);
+    const regions = await fieldById(tx, 'locations', emps.map((e) => e.current_location_id), 'region');
+    const people = emps.map((e) => ({
+      id: e.id as string, membership_id: (e.membership_id ?? null) as string | null, date_of_joining: e.date_of_joining as string, last_working_day: (e.last_working_day ?? null) as string | null,
+      legal_entity_id: e.current_legal_entity_id as string, location_id: (e.current_location_id ?? null) as string | null, region: (e.current_location_id ? regions.get(e.current_location_id) : null) ?? null,
+    }));
+    const categoryNames = new Map((await tx.collection('expense_categories').find({})).map((c) => [c.id as string, c.name as string]));
+    const ytdRuns = await tx.collection('payroll_runs').distinct<string>('id', { status: 'finalised', period_start: { $gte: payrollEngine.fyStart(period.start), $lt: period.start } });
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
     let count = 0;
     for (const p of people) {
-      const salary = await one<{ id: string; effective_from: string; currency: string; pf_enabled: boolean; esi_enabled: boolean; pt_enabled: boolean; tds_enabled: boolean }>(
-        tx,
-        `select id, to_char(effective_from, 'YYYY-MM-DD') as effective_from, currency, pf_enabled, esi_enabled, pt_enabled, tds_enabled from employee_salaries
-          where employee_id = $1 and effective_from <= $2 order by effective_from desc limit 1`,
-        [p.id, period.end],
-      );
+      const salary = await tx.collection<{ id: string; effective_from: string; currency: string; pf_enabled: boolean; esi_enabled: boolean; pt_enabled: boolean; tds_enabled: boolean }>('employee_salaries')
+        .findOne({ employee_id: p.id, effective_from: { $lte: period.end } }, { sort: { effective_from: -1 } });
       if (!salary) continue;
       count++;
       const prior = overrides.get(p.id);
       const warnings: string[] = [];
       if (salary.currency !== r.currency) warnings.push(`The salary is in ${salary.currency} but this run pays ${r.currency}. Fix the salary before finalising.`);
       if (salary.effective_from > period.start) {
-        const earlier = await one(tx, 'select 1 from employee_salaries where employee_id = $1 and effective_from < $2', [p.id, salary.effective_from]);
+        const earlier = await tx.collection('employee_salaries').exists({ employee_id: p.id, effective_from: { $lt: salary.effective_from } });
         if (earlier) warnings.push(`The salary changed on ${salary.effective_from}; this month uses the new salary for every day. Add an adjustment if the change should be split.`);
       }
-      const components = await many<{ code: string; name: string; kind: 'earning' | 'deduction'; monthly: string; prorate: boolean; taxable: boolean; pf_wage: boolean }>(
-        tx,
-        `select c.code, c.name, c.kind, l.monthly::text, c.prorate, c.taxable, c.pf_wage from employee_salary_lines l join pay_components c on c.id = l.component_id
-          where l.salary_id = $1 order by l.position`,
-        [salary.id],
-      );
+      const salaryLines = await tx.collection('employee_salary_lines').find({ salary_id: salary.id }, { sort: { position: 1 } });
+      const comps = new Map((await tx.collection('pay_components').find({ id: { $in: salaryLines.map((l) => l.component_id) } })).map((c) => [c.id as string, c]));
+      const components = salaryLines.map((l) => {
+        const c = comps.get(l.component_id)!;
+        return { code: c.code as string, name: c.name as string, kind: c.kind as 'earning' | 'deduction', monthly: l.monthly as string, prorate: c.prorate as boolean, taxable: c.taxable as boolean, pf_wage: c.pf_wage as boolean };
+      });
       const employed = employedDays(period.start, period.end, p.date_of_joining, p.last_working_day);
       const from = p.date_of_joining > period.start ? p.date_of_joining : period.start;
       const to = [period.end, yesterday, p.last_working_day ?? period.end].sort()[0]!;
@@ -286,24 +293,18 @@ export class PayrollRunsService implements OnModuleInit {
       if (period.end > yesterday) warnings.push('The month is not over yet; days after today are treated as paid.');
       const lopDays = prior?.lop_override ?? dayCount(lop.total);
 
-      const adjustments = await many<{ kind: 'earning' | 'deduction'; label: string; amount: string; taxable: boolean }>(
-        tx, 'select kind, label, amount::text, taxable from payroll_adjustments where run_id = $1 and employee_id = $2 order by created_at', [r.id, p.id],
-      );
+      const adjustments = (await tx.collection('payroll_adjustments').find({ run_id: r.id, employee_id: p.id }, { sort: { created_at: 1 } })).map((a) => ({
+        kind: a.kind as 'earning' | 'deduction', label: a.label as string, amount: a.amount as string, taxable: a.taxable as boolean,
+      }));
       const held = prior?.status === 'on_hold';
       const claims = held
         ? []
-        : await many<{ id: string; amount: string; label: string }>(
-            tx,
-            `select c.id, c.amount::text, cat.name || ': ' || case when length(c.description) > 60 then left(c.description, 59) || '…' else c.description end as label from expense_claims c join expense_categories cat on cat.id = c.category_id
-              where c.employee_id = $1 and c.status = 'approved' and c.payroll_run_id is null and c.currency = $2 and c.spent_on <= $3 order by c.spent_on`,
-            [p.id, r.currency, period.end],
-          );
-      const ytd = await one<{ taxable: string; tds: string }>(
-        tx,
-        `select coalesce(sum(i.taxable), 0)::text as taxable, coalesce(sum(i.tds), 0)::text as tds from payroll_items i join payroll_runs x on x.id = i.run_id
-          where i.employee_id = $1 and x.status = 'finalised' and i.status = 'included' and x.period_start >= $2 and x.period_start < $3`,
-        [p.id, payrollEngine.fyStart(period.start), period.start],
-      );
+        : (await claimsTable.find({ employee_id: p.id, status: 'approved', payroll_run_id: null, currency: r.currency, spent_on: { $lte: period.end } }, { sort: { spent_on: 1 } })).map((c) => {
+            const d = c.description as string;
+            return { id: c.id as string, amount: c.amount as string, label: `${categoryNames.get(c.category_id) ?? ''}: ${d.length > 60 ? d.slice(0, 59) + '…' : d}` };
+          });
+      const ytdItems = await items.find({ employee_id: p.id, status: 'included', run_id: { $in: ytdRuns } }, { projection: { taxable: 1, tds: 1 } });
+      const ytd = { taxable: total(ytdItems, 'taxable'), tds: total(ytdItems, 'tds') };
       const input: payrollEngine.PayrollInput = {
         currency: r.currency,
         month: period.month,
@@ -322,31 +323,27 @@ export class PayrollRunsService implements OnModuleInit {
       if (prior?.lop_override !== null && prior?.lop_override !== undefined) explanation.splice(1, 0, `Loss-of-pay days set by hand to ${dayCount(Number(toMinor(prior.lop_override)))} (calculated ${dayCount(lop.total)}): ${prior.lop_override_reason}.`);
       else explanation.splice(1, 0, ...lop.notes);
       const tds = out.lines.find((l) => l.code === 'TDS')?.amount ?? '0.00';
-      await tx.query(
-        `insert into payroll_items (tenant_id, run_id, employee_id, salary_id, status, hold_reason, days_in_period, employed_days, lop_days, lop_override, lop_override_reason,
-                                    paid_days, gross, deductions, reimbursements, net, employer_contributions, taxable, tds, lines, explanation, warnings, inputs)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
-        [
-          r.id, p.id, salary.id, held ? 'on_hold' : 'included', held ? prior?.hold_reason : null, period.days, employed, dayCount(lop.total),
-          prior?.lop_override ?? null, prior?.lop_override ? prior.lop_override_reason : null, out.paidDays, out.gross, out.deductions, out.reimbursements, out.net,
-          out.employerContributions, out.taxableThisMonth, tds, JSON.stringify(out.lines), JSON.stringify(explanation), JSON.stringify([...warnings, ...out.warnings]),
-          JSON.stringify({ lop, ytd, salaryId: salary.id, statutorySettingsId: statutory.id, expenseClaimIds: claims.map((c) => c.id) }),
-        ],
-      );
-      if (claims.length) await tx.query('update expense_claims set payroll_run_id = $1 where id = any($2::uuid[])', [r.id, claims.map((c) => c.id)]);
+      await items.insert({
+        run_id: r.id, employee_id: p.id, salary_id: salary.id, status: held ? 'on_hold' : 'included', hold_reason: held ? (prior?.hold_reason ?? null) : null,
+        days_in_period: period.days, employed_days: employed, lop_days: dayCount(lop.total), lop_override: prior?.lop_override ?? null,
+        lop_override_reason: prior?.lop_override ? prior.lop_override_reason : null, paid_days: out.paidDays, gross: out.gross, deductions: out.deductions,
+        reimbursements: out.reimbursements, net: out.net, employer_contributions: out.employerContributions, taxable: out.taxableThisMonth, tds,
+        lines: out.lines, explanation, warnings: [...warnings, ...out.warnings],
+        inputs: { lop, ytd, salaryId: salary.id, statutorySettingsId: statutory.id, expenseClaimIds: claims.map((c) => c.id) },
+      });
+      if (claims.length) await claimsTable.update({ id: { $in: claims.map((c) => c.id) } }, { $set: { payroll_run_id: r.id } });
     }
-    const totals = (await one<Record<string, string>>(
-      tx,
-      `select count(*)::int as n, coalesce(sum(gross), 0)::text as gross, coalesce(sum(deductions), 0)::text as deductions, coalesce(sum(reimbursements), 0)::text as reimbursements,
-              coalesce(sum(net), 0)::text as net, coalesce(sum(employer_contributions), 0)::text as employer
-         from payroll_items where run_id = $1 and status = 'included'`,
-      [r.id],
-    ))!;
-    await tx.query(
-      `update payroll_runs set status = 'computed', statutory_settings_id = $2, employee_count = $3, gross = $4, deductions = $5, reimbursements = $6, net = $7,
-              employer_contributions = $8, computed_at = now(), status_note = null where id = $1`,
-      [r.id, statutory.id, totals.n, totals.gross, totals.deductions, totals.reimbursements, totals.net, totals.employer],
-    );
+    const included = await items.find({ run_id: r.id, status: 'included' });
+    const totals = {
+      n: included.length, gross: total(included, 'gross'), deductions: total(included, 'deductions'), reimbursements: total(included, 'reimbursements'),
+      net: total(included, 'net'), employer: total(included, 'employer_contributions'),
+    };
+    await tx.collection('payroll_runs').updateOne({ id: r.id }, {
+      $set: {
+        status: 'computed', statutory_settings_id: statutory.id, employee_count: totals.n, gross: totals.gross, deductions: totals.deductions,
+        reimbursements: totals.reimbursements, net: totals.net, employer_contributions: totals.employer, computed_at: new Date(), status_note: null,
+      },
+    });
     return { employees: count, included: Number(totals.n), gross: totals.gross, net: totals.net };
   }
 
@@ -355,13 +352,13 @@ export class PayrollRunsService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const r = await this.access(tx, id, 'payroll:run', true);
       this.editable(r);
-      const e = await one<{ legal_entity_id: string | null }>(tx, 'select current_legal_entity_id as legal_entity_id from employees where id = $1', [input.employeeId]);
-      if (!e || e.legal_entity_id !== r.legal_entity_id) throw Errors.badRequest('not_in_run', 'That employee is not paid by this legal entity');
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into payroll_adjustments (tenant_id, run_id, employee_id, kind, label, amount, taxable, reason, created_by) values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8) returning id`,
-        [id, input.employeeId, input.kind, input.label, input.amount, input.kind === 'earning' ? input.taxable : false, input.reason, actor.userId],
-      ))!;
+      const e = await tx.collection('employees').findOne({ id: input.employeeId });
+      if (!e || e.current_legal_entity_id !== r.legal_entity_id) throw Errors.badRequest('not_in_run', 'That employee is not paid by this legal entity');
+      const adj = await tx.collection('payroll_adjustments').insert({
+        run_id: id, employee_id: input.employeeId, kind: input.kind, label: input.label, amount: input.amount,
+        taxable: input.kind === 'earning' ? input.taxable : false, reason: input.reason, created_by: actor.userId,
+      });
+      const row = { id: adj.id as string };
       await this.audit.record(tx, { action: 'payroll_adjustment.added', resourceType: 'payroll_run', resourceId: id, changes: input, metadata: { adjustmentId: row.id } });
       if (r.status === 'computed') await this.computeIn(tx, r);
       return row;
@@ -372,8 +369,7 @@ export class PayrollRunsService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const r = await this.access(tx, id, 'payroll:run', true);
       this.editable(r);
-      const d = await tx.query('delete from payroll_adjustments where id = $1 and run_id = $2', [adjustmentId, id]);
-      if (!d.rowCount) throw Errors.notFound('Adjustment');
+      if (!(await tx.collection('payroll_adjustments').deleteOne({ id: adjustmentId, run_id: id }))) throw Errors.notFound('Adjustment');
       await this.audit.record(tx, { action: 'payroll_adjustment.removed', resourceType: 'payroll_run', resourceId: id, metadata: { adjustmentId } });
       if (r.status === 'computed') await this.computeIn(tx, r);
     });
@@ -384,26 +380,24 @@ export class PayrollRunsService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const r = await this.access(tx, id, 'payroll:run', true);
       this.editable(r);
-      const item = await one<{ employee_id: string; employed_days: number; lop_override: string | null; status: string }>(
-        tx, 'select employee_id, employed_days, lop_override::text, status from payroll_items where id = $1 and run_id = $2', [itemId, id],
-      );
+      const items = tx.collection('payroll_items');
+      const item = await items.findOne({ id: itemId, run_id: id });
       if (!item) throw Errors.notFound('Payroll item');
-      const sets: string[] = [];
-      const params: unknown[] = [itemId];
+      const set: Doc = {};
       if (input.lopDays !== undefined) {
         if (input.lopDays !== null && Number(input.lopDays) > item.employed_days) throw Errors.badRequest('lop_too_many', `At most ${item.employed_days} day(s)`);
-        params.push(input.lopDays, input.lopDays === null ? null : input.reason);
-        sets.push(`lop_override = $${params.length - 1}`, `lop_override_reason = $${params.length}`);
+        set.lop_override = input.lopDays;
+        set.lop_override_reason = input.lopDays === null ? null : input.reason;
       }
       if (input.hold !== undefined) {
-        params.push(input.hold ? 'on_hold' : 'included', input.hold ? input.reason : null);
-        sets.push(`status = $${params.length - 1}`, `hold_reason = $${params.length}`);
+        set.status = input.hold ? 'on_hold' : 'included';
+        set.hold_reason = input.hold ? input.reason : null;
       }
-      if (!sets.length) throw Errors.badRequest('nothing_to_change', 'Set loss-of-pay days or the hold');
-      await tx.query(`update payroll_items set ${sets.join(', ')} where id = $1`, params);
+      if (!Object.keys(set).length) throw Errors.badRequest('nothing_to_change', 'Set loss-of-pay days or the hold');
+      await items.updateOne({ id: itemId }, { $set: set });
       await this.audit.record(tx, { action: 'payroll_item.overridden', resourceType: 'payroll_run', resourceId: id, changes: input, metadata: { itemId, employeeId: item.employee_id } });
       await this.computeIn(tx, r);
-      return { id: (await one<{ id: string }>(tx, 'select id from payroll_items where run_id = $1 and employee_id = $2', [id, item.employee_id]))?.id };
+      return { id: (await items.findOne({ run_id: id, employee_id: item.employee_id }))?.id };
     });
   }
 
@@ -415,58 +409,44 @@ export class PayrollRunsService implements OnModuleInit {
       if (r.status !== 'computed') throw Errors.conflict('invalid_state', r.status === 'draft' ? 'Compute the run first' : `This run is ${r.status.replace('_', ' ')}`);
       // Stale inputs (an adjustment changed, leave approved since) would otherwise slip through: recompute right before submitting.
       await this.computeIn(tx, r);
-      const t = (await one<{ n: number; net: string; gross: string; negative: number }>(
-        tx,
-        `select count(*)::int as n, coalesce(sum(net), 0)::text as net, coalesce(sum(gross), 0)::text as gross, count(*) filter (where net < 0)::int as negative
-           from payroll_items where run_id = $1 and status = 'included'`,
-        [id],
-      ))!;
+      const included = await tx.collection('payroll_items').find({ run_id: id, status: 'included' }, { projection: { net: 1, gross: 1 } });
+      const t = { n: included.length, net: total(included, 'net'), gross: total(included, 'gross'), negative: included.filter((i) => toMinor(i.net) < 0n).length };
       if (!t.n) throw Errors.conflict('empty_run', 'Nobody is included in this run');
       if (t.negative) throw Errors.conflict('negative_net', `${t.negative} payslip(s) have deductions above pay. Hold them or change the adjustments.`);
       const le = await legalEntity(tx, r.legal_entity_id);
       const summary = `Payroll for ${le.name}, ${periodLabel(r.period_start)}: ${t.n} employee(s), gross ${money.formatMoney(toMinor(t.gross), r.currency)}, net pay ${money.formatMoney(toMinor(t.net), r.currency)}, paid on ${r.pay_date}.`;
       const approvalId = await this.approvals.start(tx, { resourceType: 'payroll_run', resourceId: id, subjectEmployeeId: null, summary });
-      await tx.query(`update payroll_runs set status = 'pending_approval', approval_request_id = $2 where id = $1`, [id, approvalId]);
+      await tx.collection('payroll_runs').updateOne({ id }, { $set: { status: 'pending_approval', approval_request_id: approvalId } });
       await this.audit.record(tx, { action: 'payroll_run.submitted', resourceType: 'payroll_run', resourceId: id });
       return { status: 'pending_approval' };
     });
   }
 
-  private async finalise(tx: Tx, id: string) {
+  private async finalise(tx: TenantTx, id: string) {
     const r = await this.load(tx, id, true);
     if (r.status !== 'pending_approval') return;
     // Lock attendance for the month unless a lock already covers it.
-    const lockedAlready = await one(
-      tx,
-      `select 1 from attendance_periods where unlocked_at is null and (legal_entity_id = $1 or legal_entity_id is null) and period_start <= $2 and period_end >= $3`,
-      [r.legal_entity_id, r.period_start, r.period_end],
-    );
+    const periods = tx.collection('attendance_periods');
+    const sameEntity = { unlocked_at: null, $or: [{ legal_entity_id: r.legal_entity_id }, { legal_entity_id: null }] };
+    const lockedAlready = await periods.exists({ ...sameEntity, period_start: { $lte: r.period_start }, period_end: { $gte: r.period_end } });
     let lockId: string | null = null;
     if (!lockedAlready) {
-      const overlap = await one(tx, `select 1 from attendance_periods where unlocked_at is null and (legal_entity_id = $1 or legal_entity_id is null) and daterange(period_start, period_end, '[]') && daterange($2, $3, '[]')`, [r.legal_entity_id, r.period_start, r.period_end]);
+      const overlap = await periods.exists({ ...sameEntity, period_start: { $lte: r.period_end }, period_end: { $gte: r.period_start } });
       if (!overlap) {
-        lockId = (await one<{ id: string }>(
-          tx,
-          `insert into attendance_periods (tenant_id, legal_entity_id, period_start, period_end, note, locked_by) values (app_tenant_id(), $1, $2, $3, $4, $5) returning id`,
-          [r.legal_entity_id, r.period_start, r.period_end, `Locked by payroll for ${periodLabel(r.period_start)}`, r.created_by],
-        ))!.id;
+        lockId = (await periods.insert({ legal_entity_id: r.legal_entity_id, period_start: r.period_start, period_end: r.period_end, note: `Locked by payroll for ${periodLabel(r.period_start)}`, locked_by: r.created_by })).id as string;
       }
     }
-    const claimIds = (await many<{ id: string }>(
-      tx,
-      `select c.id from expense_claims c join payroll_items i on i.employee_id = c.employee_id and i.run_id = $1 and i.status = 'included'
-        where c.payroll_run_id = $1 and c.status = 'approved'`,
-      [id],
-    )).map((c) => c.id);
-    await tx.query(`update expense_claims set payroll_run_id = null where payroll_run_id = $1 and status = 'approved' and not (id = any($2::uuid[]))`, [id, claimIds]);
-    if (claimIds.length) await tx.query(`update expense_claims set status = 'paid', paid_at = now() where id = any($1::uuid[])`, [claimIds]);
-    await tx.query(`update payroll_runs set status = 'finalised', finalised_at = now(), status_note = null where id = $1`, [id]);
+    const paidEmployees = await tx.collection('payroll_items').distinct<string>('employee_id', { run_id: id, status: 'included' });
+    const claims = tx.collection('expense_claims');
+    const claimIds = await claims.distinct<string>('id', { payroll_run_id: id, status: 'approved', employee_id: { $in: paidEmployees } });
+    await claims.update({ payroll_run_id: id, status: 'approved', id: { $nin: claimIds } }, { $set: { payroll_run_id: null } });
+    if (claimIds.length) await claims.update({ id: { $in: claimIds } }, { $set: { status: 'paid', paid_at: new Date() } });
+    await tx.collection('payroll_runs').updateOne({ id }, { $set: { status: 'finalised', finalised_at: new Date(), status_note: null } });
     await this.audit.record(tx, { action: 'payroll_run.finalised', resourceType: 'payroll_run', resourceId: id, metadata: { attendanceLockId: lockId, expenseClaimsPaid: claimIds.length } });
-    const tenant = (await one<{ id: string }>(tx, 'select app_tenant_id() as id'))!.id;
-    await this.outbox.publish(tx, tenant, 'payroll.run_finalised', { runId: id, legalEntityId: r.legal_entity_id, periodStart: String(r.period_start).slice(0, 10), periodEnd: String(r.period_end).slice(0, 10) });
-    const people = await many<{ id: string; membership_id: string | null }>(
-      tx, `select i.id, e.membership_id from payroll_items i join employees e on e.id = i.employee_id where i.run_id = $1 and i.status = 'included'`, [id],
-    );
+    await this.outbox.publish(tx, tx.tenantId, 'payroll.run_finalised', { runId: id, legalEntityId: r.legal_entity_id, periodStart: String(r.period_start).slice(0, 10), periodEnd: String(r.period_end).slice(0, 10) });
+    const paidItems = await tx.collection('payroll_items').find({ run_id: id, status: 'included' }, { projection: { employee_id: 1 } });
+    const logins = await employeeNames(tx, paidItems.map((i) => i.employee_id));
+    const people = paidItems.map((i) => ({ id: i.id as string, membership_id: logins.get(i.employee_id)?.membershipId ?? null }));
     for (const p of people) {
       if (!p.membership_id) continue;
       await this.notifications.notify(tx, { membershipIds: [p.membership_id], kind: 'payslip.published', title: `Your payslip for ${periodLabel(r.period_start)} is ready`, link: `/payslips/${p.id}` });
@@ -478,8 +458,8 @@ export class PayrollRunsService implements OnModuleInit {
       const r = await this.access(tx, id, 'payroll:run', true);
       if (!['draft', 'computed', 'pending_approval'].includes(r.status)) throw Errors.conflict('run_closed', `This run is ${r.status}`);
       if (r.status === 'pending_approval' && r.approval_request_id) await this.approvals.cancel(tx, r.approval_request_id);
-      await tx.query(`update expense_claims set payroll_run_id = null where payroll_run_id = $1 and status = 'approved'`, [id]);
-      await tx.query(`update payroll_runs set status = 'cancelled', status_note = $2 where id = $1`, [id, reason]);
+      await tx.collection('expense_claims').update({ payroll_run_id: id, status: 'approved' }, { $set: { payroll_run_id: null } });
+      await tx.collection('payroll_runs').updateOne({ id }, { $set: { status: 'cancelled', status_note: reason } });
       await this.audit.record(tx, { action: 'payroll_run.cancelled', resourceType: 'payroll_run', resourceId: id, metadata: { reason } });
       return { status: 'cancelled' };
     });
@@ -491,7 +471,7 @@ export class PayrollRunsService implements OnModuleInit {
       const r = await this.access(tx, id, 'payroll:run', true);
       if (r.status !== 'pending_approval') throw Errors.conflict('invalid_state', 'Only a run waiting for approval can be withdrawn');
       if (r.approval_request_id) await this.approvals.cancel(tx, r.approval_request_id);
-      await tx.query(`update payroll_runs set status = 'computed', approval_request_id = null where id = $1`, [id]);
+      await tx.collection('payroll_runs').updateOne({ id }, { $set: { status: 'computed', approval_request_id: null } });
       await this.audit.record(tx, { action: 'payroll_run.withdrawn', resourceType: 'payroll_run', resourceId: id });
       return { status: 'computed' };
     });
@@ -504,14 +484,15 @@ export class PayrollRunsService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const r = await this.access(tx, id, 'payroll:read');
       if (r.status === 'draft' || r.status === 'cancelled') throw Errors.conflict('not_computed', 'Compute the run first');
-      const items = await many<{ code: string; name: string; status: string; paid_days: string; lop_days: string; gross: string; deductions: string; reimbursements: string; net: string; employer_contributions: string; lines: payrollEngine.PayLine[] }>(
-        tx,
-        `select e.employee_code as code, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name, i.status, i.paid_days::text,
-                coalesce(i.lop_override, i.lop_days)::text as lop_days, i.gross::text, i.deductions::text, i.reimbursements::text, i.net::text,
-                i.employer_contributions::text, i.lines
-           from payroll_items i join employees e on e.id = i.employee_id where i.run_id = $1 order by e.employee_code`,
-        [id],
-      );
+      const docs = await tx.collection('payroll_items').find({ run_id: id });
+      const emps = await employeeNames(tx, docs.map((i) => i.employee_id));
+      const items = docs
+        .map((i) => ({
+          code: emps.get(i.employee_id)?.doc.employee_code as string, name: emps.get(i.employee_id)?.name ?? '', status: i.status as string, paid_days: i.paid_days as string,
+          lop_days: (i.lop_override ?? i.lop_days) as string, gross: i.gross as string, deductions: i.deductions as string, reimbursements: i.reimbursements as string,
+          net: i.net as string, employer_contributions: i.employer_contributions as string, lines: i.lines as payrollEngine.PayLine[],
+        }))
+        .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
       const cols = new Map<string, string>();
       for (const i of items) for (const l of i.lines) if (!l.code.startsWith('ADJ') && !l.code.startsWith('REIMB')) cols.set(l.code, l.name);
       const codes = [...cols.keys()];
@@ -535,13 +516,19 @@ export class PayrollRunsService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const r = await this.access(tx, id, 'payroll:run');
       if (r.status !== 'finalised') throw Errors.conflict('not_finalised', 'The bank file is available once the run is finalised');
-      const rows = await many<{ code: string; name: string; net: string; bank_name: string | null; bank_account_enc: string | null; bank_routing_enc: string | null }>(
-        tx,
-        `select e.employee_code as code, trim(e.first_name || ' ' || e.last_name) as name, i.net::text, s.bank_name, s.bank_account_enc, s.bank_routing_enc
-           from payroll_items i join employees e on e.id = i.employee_id left join employee_sensitive s on s.employee_id = e.id
-          where i.run_id = $1 and i.status = 'included' and i.net > 0 order by e.employee_code`,
-        [id],
-      );
+      const paid = (await tx.collection('payroll_items').find({ run_id: id, status: 'included' })).filter((i) => toMinor(i.net) > 0n);
+      const emps = await employeeNames(tx, paid.map((i) => i.employee_id));
+      const sensitive = new Map((await tx.collection('employee_sensitive').find({ employee_id: { $in: paid.map((i) => i.employee_id) } })).map((x) => [x.employee_id as string, x]));
+      const rows = paid
+        .map((i) => {
+          const e = emps.get(i.employee_id)!.doc;
+          const x = sensitive.get(i.employee_id);
+          return {
+            code: e.employee_code as string, name: `${e.first_name} ${e.last_name ?? ''}`.trim(), net: i.net as string, bank_name: (x?.bank_name ?? null) as string | null,
+            bank_account_enc: (x?.bank_account_enc ?? null) as string | null, bank_routing_enc: (x?.bank_routing_enc ?? null) as string | null,
+          };
+        })
+        .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
       const key = this.config.fieldKeys;
       const out: unknown[][] = [['Employee code', 'Beneficiary name', 'Bank', 'Account number', 'IFSC / routing', 'Amount', 'Currency', 'Reference']];
       const missing: string[] = [];
@@ -558,10 +545,10 @@ export class PayrollRunsService implements OnModuleInit {
   async employeesForRun(id: string) {
     return this.db.tenant(async (tx) => {
       const r = await this.access(tx, id, 'payroll:read');
-      const params: unknown[] = [r.legal_entity_id];
-      const pred = await this.authz.predicate('payroll:read', EMPLOYEE_SCOPE, params, tx);
-      return many(tx, `select e.id, e.employee_code as code, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name from employees e
-                        where e.current_legal_entity_id = $1 and e.status <> 'exited' and ${pred} order by name`, params);
+      const scope = await this.authz.filter('payroll:read', EMPLOYEE_FIELDS, tx);
+      return (await tx.collection('employees').find({ $and: [scope, { current_legal_entity_id: r.legal_entity_id, status: { $ne: 'exited' } }] }))
+        .map((e) => ({ id: e.id, code: e.employee_code, name: displayName(e as never) }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     });
   }
 }

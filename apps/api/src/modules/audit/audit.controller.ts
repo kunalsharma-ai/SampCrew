@@ -4,7 +4,7 @@ import { paginationQuery } from '@crew/contracts';
 import { z } from 'zod';
 import { AuditService } from '../../platform/audit/audit.service';
 import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { csv } from '../payroll/payroll-common';
 import { decodeCursor, page } from '../../platform/http/pagination';
 import { ZodPipe } from '../../platform/http/zod';
@@ -57,8 +57,8 @@ export class AuditController {
   @Doc({ summary: 'Recompute the tamper-evident hash chain for this workspace' })
   verify() {
     return this.db.tenant(async (tx) => {
-      const r = await one<{ checked: string; first_broken_seq: string | null }>(tx, 'select * from audit_verify_chain(app_tenant_id())');
-      return { checked: Number(r!.checked), intact: r!.first_broken_seq === null, firstBrokenSeq: r!.first_broken_seq ? Number(r!.first_broken_seq) : null, verifiedAt: new Date().toISOString() };
+      const r = await tx.verifyAuditChain();
+      return { checked: r.checked, intact: r.firstBrokenSeq === null, firstBrokenSeq: r.firstBrokenSeq, verifiedAt: new Date().toISOString() };
     });
   }
 }
@@ -68,33 +68,39 @@ const BOM = String.fromCharCode(0xfeff);
 
 interface AuditRow {
   id: string; seq: number; actorType: string; actorId: string | null; actorLabel: string | null; action: string; resourceType: string | null;
-  resourceId: string | null; changes: unknown; ip: string | null; requestId: string | null; createdAt: string; hash: string;
+  resourceId: string | null; changes: unknown; metadata?: unknown; ip: string | null; requestId: string | null; createdAt: string | Date; hash: string;
 }
 
-function search(tx: Tx, q: z.infer<typeof auditQuery>, limit: number) {
-  const where: string[] = ['true'];
-  const params: unknown[] = [];
-  const add = (sql: string, v: unknown) => {
-    params.push(v);
-    where.push(sql.replace('?', `$${params.length}`));
-  };
-  if (q.action) add('action like ?', `${q.action}%`);
-  if (q.resourceType) add('resource_type = ?', q.resourceType);
-  if (q.resourceId) add('resource_id = ?', q.resourceId);
-  if (q.actorId) add('actor_id = ?', q.actorId);
-  if (q.from) add('created_at >= ?', q.from);
-  if (q.to) add('created_at <= ?', q.to);
-  if (q.q) add(`(actor_label ilike ? or action ilike $${params.length + 1})`, `%${q.q}%`);
-  if (q.q) params.push(`%${q.q}%`);
+const escape = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+async function search(tx: TenantTx, q: z.infer<typeof auditQuery>, limit: number): Promise<AuditRow[]> {
+  const filter: Record<string, unknown> = {};
+  if (q.action) filter.action = { $regex: `^${escape(q.action)}` };
+  if (q.resourceType) filter.resource_type = q.resourceType;
+  if (q.resourceId) filter.resource_id = q.resourceId;
+  if (q.actorId) filter.actor_id = q.actorId;
+  if (q.from || q.to) filter.created_at = { ...(q.from ? { $gte: new Date(q.from) } : {}), ...(q.to ? { $lte: new Date(q.to) } : {}) };
+  if (q.q) {
+    const like = { $regex: escape(q.q), $options: 'i' };
+    filter.$or = [{ actor_label: like }, { action: like }];
+  }
   const cursor = decodeCursor(q.cursor);
-  if (cursor) add('chain_seq < ?', Number(cursor[0]));
-  params.push(limit);
-  return many<AuditRow>(
-    tx,
-    `select id::text, chain_seq as seq, actor_type as "actorType", actor_id as "actorId", actor_label as "actorLabel", action,
-            resource_type as "resourceType", resource_id as "resourceId", changes, metadata, host(ip) as ip, request_id as "requestId",
-            created_at as "createdAt", encode(hash, 'hex') as hash
-       from audit_events where ${where.join(' and ')} order by chain_seq desc limit $${params.length}`,
-    params,
-  );
+  if (cursor) filter.chain_seq = { $lt: Number(cursor[0]) };
+  const rows = await tx.collection('audit_events').find(filter, { sort: { chain_seq: -1 }, limit });
+  return rows.map((e) => ({
+    id: e.id,
+    seq: e.chain_seq,
+    actorType: e.actor_type,
+    actorId: e.actor_id ?? null,
+    actorLabel: e.actor_label ?? null,
+    action: e.action,
+    resourceType: e.resource_type ?? null,
+    resourceId: e.resource_id ?? null,
+    changes: e.changes,
+    metadata: e.metadata,
+    ip: e.ip ?? null,
+    requestId: e.request_id ?? null,
+    createdAt: e.created_at,
+    hash: e.hash,
+  }));
 }

@@ -16,7 +16,7 @@ import { AuditService } from '../audit/audit.service';
 import { decryptField, encryptField } from '../auth/crypto';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { requestContext } from '../context/request-context';
-import { DatabaseService, many, one } from '../database/database.service';
+import { MongoService as DatabaseService } from '../database/mongo.service';
 import { Errors } from '../http/errors';
 import { pingClamd } from '../storage/malware-scan';
 
@@ -52,6 +52,7 @@ interface Row {
   last_test_hash: string | null;
   updated_at: string;
   updated_by: string | null;
+  updated_by_admin_id?: string | null;
 }
 
 /** How long a server keeps using what it read before checking the database again (other API servers pick up a change within this). */
@@ -88,7 +89,7 @@ export class PlatformIntegrationsService {
     const hit = this.cache.get(key);
     let saved = hit && Date.now() - hit.at < CACHE_MS ? hit.value : undefined;
     if (saved === undefined) {
-      const row = await this.db.platform((tx) => one<Row>(tx, 'select key, enabled, settings, secrets_enc, config_hash from platform_integrations where key = $1', [key]));
+      const row = await this.db.platform((tx) => tx.collection<Row>('platform_integrations').findOne({ key }));
       saved = row ? this.fromRow(row) : null;
       this.cache.set(key, { at: Date.now(), value: saved });
     }
@@ -150,14 +151,11 @@ export class PlatformIntegrationsService {
   // ---------------------------------------------------------------------------------------------------------------
 
   async list(): Promise<PlatformIntegrationView[]> {
-    const rows = await this.db.platform((tx) =>
-      many<Row>(
-        tx,
-        `select i.key, i.enabled, i.settings, i.secrets_enc, i.secret_hints, i.config_hash, i.last_test_ok, i.last_test_detail, i.last_test_at, i.last_test_hash,
-                i.updated_at, a.full_name as updated_by
-           from platform_integrations i left join platform_admins a on a.id = i.updated_by_admin_id`,
-      ),
-    );
+    const rows = await this.db.platform(async (tx) => {
+      const saved = await tx.collection<Row>('platform_integrations').find({});
+      const admins = new Map((await tx.collection('platform_admins').find({ id: { $in: saved.map((x) => x.updated_by_admin_id).filter(Boolean) } }, { projection: { full_name: 1 } })).map((a) => [a.id as string, a.full_name as string]));
+      return saved.map((x) => ({ ...x, updated_by: (x.updated_by_admin_id && admins.get(x.updated_by_admin_id as string)) ?? null }));
+    });
     return PLATFORM_INTEGRATIONS.map((d) => {
       const row = rows.find((r) => r.key === d.key);
       const env = this.fromEnvironment(d.key);
@@ -190,14 +188,14 @@ export class PlatformIntegrationsService {
     const hash = hashOf(settings, secrets);
     const hints = Object.fromEntries(Object.entries(secrets).map(([k, v]) => [k, hint(v)]));
     await this.db.platform(async (tx) => {
-      const before = await one<{ enabled: boolean; settings: Values; config_hash: string }>(tx, 'select enabled, settings, config_hash from platform_integrations where key = $1 for update', [key]);
-      await tx.query(
-        `insert into platform_integrations (key, enabled, settings, secrets_enc, secret_hints, config_hash, updated_by_admin_id)
-         values ($1, $2, $3, $4, $5, $6, $7)
-         on conflict (key) do update set enabled = excluded.enabled, settings = excluded.settings, secrets_enc = excluded.secrets_enc,
-                secret_hints = excluded.secret_hints, config_hash = excluded.config_hash, updated_by_admin_id = excluded.updated_by_admin_id, updated_at = now()`,
-        [key, enabled, JSON.stringify(settings), Object.keys(secrets).length ? encryptField(JSON.stringify(secrets), this.config.fieldKeys) : '', JSON.stringify(hints), hash, admin.adminId],
-      );
+      const table = tx.collection<{ enabled: boolean; settings: Values; config_hash: string }>('platform_integrations');
+      await table.lock({ key });
+      const before = await table.findOne({ key });
+      const values = {
+        enabled, settings, secrets_enc: Object.keys(secrets).length ? encryptField(JSON.stringify(secrets), this.config.fieldKeys) : '', secret_hints: hints,
+        config_hash: hash, updated_by_admin_id: admin.adminId,
+      };
+      await table.upsert({ key }, { key, ...values }, { $set: { ...values, updated_at: new Date() } });
       await this.audit.record(tx, {
         tenantId: null, action: 'platform.integration_saved', resourceType: 'platform_integration', resourceId: key,
         changes: { before: before ? { enabled: before.enabled, settings: before.settings } : { source: 'environment' }, after: { enabled, settings }, secretsChanged: !before || before.config_hash !== hash ? Object.keys(secrets) : [] },
@@ -210,8 +208,7 @@ export class PlatformIntegrationsService {
   /** Forgets the Console setting, so the server's environment variables apply again. */
   async reset(key: PlatformIntegrationKey): Promise<PlatformIntegrationView> {
     await this.db.platform(async (tx) => {
-      const r = await tx.query('delete from platform_integrations where key = $1', [key]);
-      if (!r.rowCount) throw Errors.notFound('Saved setting');
+      if (!(await tx.collection('platform_integrations').deleteOne({ key }))) throw Errors.notFound('Saved setting');
       await this.audit.record(tx, { tenantId: null, action: 'platform.integration_reset', resourceType: 'platform_integration', resourceId: key });
     });
     this.cache.delete(key);
@@ -237,12 +234,12 @@ export class PlatformIntegrationsService {
     detail = `${detail} (${Date.now() - started} ms)`;
     const hash = hashOf(settings, secrets);
     const recorded = await this.db.platform(async (tx) => {
-      const r = await tx.query(
-        `update platform_integrations set last_test_ok = $2, last_test_detail = $3, last_test_at = now(), last_test_hash = $4 where key = $1 and config_hash = $4`,
-        [key, ok, detail, hash],
+      const n = await tx.collection('platform_integrations').updateOne(
+        { key, config_hash: hash },
+        { $set: { last_test_ok: ok, last_test_detail: detail, last_test_at: new Date(), last_test_hash: hash } },
       );
-      await this.audit.record(tx, { tenantId: null, action: 'platform.integration_tested', resourceType: 'platform_integration', resourceId: key, metadata: { ok, detail, savedValues: Boolean(r.rowCount) } });
-      return Boolean(r.rowCount);
+      await this.audit.record(tx, { tenantId: null, action: 'platform.integration_tested', resourceType: 'platform_integration', resourceId: key, metadata: { ok, detail, savedValues: Boolean(n) } });
+      return Boolean(n);
     });
     return { ok, detail, recorded };
   }

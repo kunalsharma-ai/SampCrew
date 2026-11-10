@@ -1,15 +1,15 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:net';
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
+import { mongo } from '@crew/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decryptField, encryptField, fieldKeyId, keyIdOf } from '../src/platform/auth/crypto';
 import { ENCRYPTED_COLUMNS, fieldKeyStatus, rotateFieldKeys } from '../src/platform/auth/field-key-rotation';
 import { currentTotp, generateMfaSecret } from '../src/platform/auth/mfa';
 import { loadConfig, resetConfigForTests } from '../src/platform/config/config';
-import { DatabaseService } from '../src/platform/database/database.service';
+import { MongoService as DatabaseService } from '../src/platform/database/mongo.service';
 import { scanWithClamd } from '../src/platform/storage/malware-scan';
-import { adminPool, api, createApp, createTenant, login, PASSWORD, type TestTenant } from './helpers';
+import { adminPool, api, createApp, createTenant, login, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 /**
  * A value as SampCrew wrote it before key ids existed (v1.<iv>.<tag>.<ciphertext>), to check old data stays readable.
@@ -60,7 +60,7 @@ describe('Phase 13: closing the remaining gaps', () => {
   let stub: { server: Server; url: string } | undefined;
   let scanner: string;
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let owner: string;
   let employeeId: string;
@@ -105,23 +105,19 @@ describe('Phase 13: closing the remaining gaps', () => {
     });
 
     it('lists every encrypted column in the database, so the re-encryption job misses none', async () => {
-      const cols = await pool.query<{ t: string; c: string }>(
-        `select table_name as t, column_name as c from information_schema.columns where table_schema = 'public' and column_name like '%\\_enc' order by 1, 2`,
-      );
+      const cols = Object.entries(mongo.TABLES).flatMap(([table, spec]) => Object.keys(spec.columns).filter((c) => c.endsWith('_enc')).map((c) => `${table}.${c}`));
+      expect(cols.length).toBeGreaterThan(3);
       const listed = new Set(ENCRYPTED_COLUMNS.map((x) => `${x.table}.${x.column}`));
-      expect(cols.rows.map((r) => `${r.t}.${r.c}`).filter((c) => !listed.has(c))).toEqual([]);
+      expect(cols.filter((c) => !listed.has(c))).toEqual([]);
     });
 
     it('keeps sign-in working during a rotation and re-encrypts everything with the current key', async () => {
       // Data as an installation had it before the rotation: an MFA seed and bank details under the old key.
       const seed = generateMfaSecret();
-      const ownerId = (await pool.query<{ id: string }>('select id from users where email = $1', [t.ownerEmail])).rows[0]!.id;
-      await pool.query('update users set mfa_secret_enc = $2, mfa_enabled = true where id = $1', [ownerId, legacyV1(seed, oldKey)]);
-      await pool.query(
-        `insert into employee_sensitive (employee_id, tenant_id, bank_name, bank_account_enc, tax_id_enc) values ($1, $2, 'Test Bank', $3, $4)
-         on conflict (employee_id) do update set bank_account_enc = excluded.bank_account_enc, tax_id_enc = excluded.tax_id_enc`,
-        [employeeId, t.id, encryptField('000123456789', oldKey), legacyV1('ABCDE1234F', oldKey)],
-      );
+      const ownerId = (await pool.one('users', { email: t.ownerEmail }))!.id as string;
+      await pool.update('users', { id: ownerId }, { $set: { mfa_secret_enc: legacyV1(seed, oldKey), mfa_enabled: true } });
+      const bank = { bank_account_enc: encryptField('000123456789', oldKey), tax_id_enc: legacyV1('ABCDE1234F', oldKey) };
+      await pool.platform((tx) => tx.collection('employee_sensitive').upsert({ employee_id: employeeId }, { employee_id: employeeId, tenant_id: t.id, bank_name: 'Test Bank', ...bank }, { $set: bank }));
 
       // The API, restarted with the new key and the old one as previous, still signs the owner in with MFA.
       const first = await api(app).post('/auth/login').send({ email: t.ownerEmail, password: PASSWORD });
@@ -145,29 +141,27 @@ describe('Phase 13: closing the remaining gaps', () => {
       }
 
       // Everything now opens with the current key alone, so the old key can be removed.
-      const u = (await pool.query<{ v: string }>('select mfa_secret_enc as v from users where id = $1', [ownerId])).rows[0]!.v;
+      const u = (await pool.one('users', { id: ownerId }))!.mfa_secret_enc as string;
       expect(fieldKeyId(u)).toBe(keyIdOf(current()));
       expect(decryptField(u, current())).toBe(seed);
-      const s = (await pool.query<{ a: string; x: string }>('select bank_account_enc as a, tax_id_enc as x from employee_sensitive where employee_id = $1', [employeeId])).rows[0]!;
+      const sens = (await pool.one('employee_sensitive', { employee_id: employeeId }))!;
+      const s = { a: sens.bank_account_enc as string, x: sens.tax_id_enc as string };
       expect([decryptField(s.a, current()), decryptField(s.x, current())]).toEqual(['000123456789', 'ABCDE1234F']);
 
-      const audit = await pool.query(`select metadata from audit_events where tenant_id is null and action = 'platform.field_key_rotated' order by id desc limit 1`);
-      expect(audit.rows[0].metadata.keyId).toBe(keyIdOf(current()));
-      await pool.query('update users set mfa_secret_enc = null, mfa_enabled = false where id = $1', [ownerId]);
+      const audit = (await pool.one('audit_events', { tenant_id: null, action: 'platform.field_key_rotated' }, { sort: { chain_seq: -1 } }))!;
+      expect(audit.metadata.keyId).toBe(keyIdOf(current()));
+      await pool.update('users', { id: ownerId }, { $set: { mfa_secret_enc: null, mfa_enabled: false } });
     });
 
     it('stops with the table and row named when a value cannot be opened with any key', async () => {
       const stray = encryptField('lost', randomBytes(32).toString('base64'));
-      const w = await pool.query<{ id: string }>(
-        `insert into webhook_endpoints (tenant_id, name, url, events, secret_enc, created_by_membership_id) values ($1, 'Stray', 'https://hooks.example.test/x', '{employee.created}', $2, $3) returning id`,
-        [t.id, stray, t.ownerMembershipId],
-      );
+      const w = await pool.insert('webhook_endpoints', { tenant_id: t.id, name: 'Stray', url: 'https://hooks.example.test/x', events: ['employee.created'], secret_enc: stray, created_by_membership_id: t.ownerMembershipId });
       const db = new DatabaseService(loadConfig());
       try {
-        await expect(rotateFieldKeys(db, loadConfig().fieldKeys)).rejects.toThrow(new RegExp(`webhook_endpoints.secret_enc for id ${w.rows[0]!.id}`));
+        await expect(rotateFieldKeys(db, loadConfig().fieldKeys)).rejects.toThrow(new RegExp(`webhook_endpoints.secret_enc for id ${w.id}`));
       } finally {
         await db.onModuleDestroy();
-        await pool.query('delete from webhook_endpoints where id = $1', [w.rows[0]!.id]);
+        await pool.delete('webhook_endpoints', { id: w.id });
       }
     });
   });

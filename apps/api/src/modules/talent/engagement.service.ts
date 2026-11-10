@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { type SurveyAnswers, type SurveyInput, type SurveyQuestion, talentMath } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
-import { AuthzService } from '../../platform/authz/authz.service';
+import { AuthzService, descendants } from '../../platform/authz/authz.service';
 import { hasPermission } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
-import { nameOf, needEmployee, talentEmployee } from './talent-common';
+import { employeeNames, fieldById } from '../employees/employee-view';
+import { needEmployee, talentEmployee } from './talent-common';
 
 interface SurveyRow {
   id: string;
@@ -21,9 +22,12 @@ interface SurveyRow {
 }
 
 const RECOGNITIONS_PER_DAY = 20;
-const SURVEY_SELECT = `id, title, status, min_responses, questions, legal_entity_id, department_id, to_char(closes_on, 'YYYY-MM-DD') as closes_on`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Doc = Record<string, any>;
+
+const today = () => new Date().toISOString().slice(0, 10);
 /** A survey past its closing date accepts no more answers, even before an admin closes it. */
-const effectiveStatus = `case when s.status = 'open' and s.closes_on < current_date then 'closed' else s.status end`;
+const effectiveStatus = (s: Doc): string => (s.status === 'open' && s.closes_on && s.closes_on < today() ? 'closed' : s.status);
 
 /**
  * Engagement: anonymous pulse surveys and the recognition wall.
@@ -41,63 +45,63 @@ export class EngagementService {
     private readonly notifications: NotificationService,
   ) {}
 
-  private async survey(tx: Tx, id: string, lock = false) {
-    const s = await one<SurveyRow>(tx, `select ${SURVEY_SELECT} from surveys where id = $1${lock ? ' for update' : ''}`, [id]);
+  private async survey(tx: TenantTx, id: string, lock = false): Promise<SurveyRow> {
+    const surveys = tx.collection('surveys');
+    if (lock) await surveys.lock({ id });
+    const s = await surveys.findOne({ id });
     if (!s) throw Errors.notFound('Survey');
-    return s;
+    return {
+      id: s.id, title: s.title, status: s.status, min_responses: s.min_responses, questions: s.questions, legal_entity_id: s.legal_entity_id ?? null,
+      department_id: s.department_id ?? null, closes_on: s.closes_on ?? null,
+    };
   }
 
   // Surveys (admin) -----------------------------------------------------------------------------------------------
 
   listSurveys() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select s.id, s.title, ${effectiveStatus} as status, s.min_responses as "minResponses", to_char(s.closes_on, 'YYYY-MM-DD') as "closesOn",
-                le.name as "legalEntityName", d.name as "departmentName", s.opened_at as "openedAt", s.closed_at as "closedAt", jsonb_array_length(s.questions) as questions,
-                (select count(*)::int from survey_invitations i where i.survey_id = s.id) as invited,
-                (select count(*)::int from survey_invitations i where i.survey_id = s.id and i.responded) as responded
-           from surveys s left join legal_entities le on le.id = s.legal_entity_id left join departments d on d.id = s.department_id
-          order by s.created_at desc limit 200`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const surveys = await tx.collection('surveys').find({}, { sort: { created_at: -1 }, limit: 200 });
+      const entities = await fieldById(tx, 'legal_entities', surveys.map((x) => x.legal_entity_id));
+      const depts = await fieldById(tx, 'departments', surveys.map((x) => x.department_id));
+      const invitations = await tx.collection('survey_invitations').find({ survey_id: { $in: surveys.map((x) => x.id) } }, { projection: { survey_id: 1, responded: 1 } });
+      return surveys.map((x) => {
+        const mine = invitations.filter((i) => i.survey_id === x.id);
+        return {
+          id: x.id, title: x.title, status: effectiveStatus(x), minResponses: x.min_responses, closesOn: x.closes_on ?? null,
+          legalEntityName: entities.get(x.legal_entity_id) ?? null, departmentName: depts.get(x.department_id) ?? null, openedAt: x.opened_at ?? null, closedAt: x.closed_at ?? null,
+          questions: (x.questions ?? []).length, invited: mine.length, responded: mine.filter((i) => i.responded).length,
+        };
+      });
+    });
   }
 
   async getSurvey(id: string) {
     return this.db.tenant(async (tx) => {
       await this.survey(tx, id);
-      return one(
-        tx,
-        `select s.id, s.title, s.description, ${effectiveStatus} as status, s.min_responses as "minResponses", s.questions, s.legal_entity_id as "legalEntityId",
-                s.department_id as "departmentId", to_char(s.closes_on, 'YYYY-MM-DD') as "closesOn", s.opened_at as "openedAt", s.closed_at as "closedAt"
-           from surveys s where s.id = $1`,
-        [id],
-      );
+      const x = (await tx.collection('surveys').findOne({ id }))!;
+      return {
+        id: x.id, title: x.title, description: x.description, status: effectiveStatus(x), minResponses: x.min_responses, questions: x.questions, legalEntityId: x.legal_entity_id ?? null,
+        departmentId: x.department_id ?? null, closesOn: x.closes_on ?? null, openedAt: x.opened_at ?? null, closedAt: x.closed_at ?? null,
+      };
     });
   }
 
-  private audience(tx: Tx, s: { legal_entity_id: string | null; department_id: string | null }) {
-    return many<{ id: string; membership_id: string | null }>(
-      tx,
-      `with recursive deps(id) as (select $2::uuid where $2::uuid is not null union select d.id from departments d join deps on d.parent_id = deps.id)
-       select e.id, e.membership_id from employees e
-        where e.status in ('probation', 'active', 'notice') and e.membership_id is not null
-          and ($1::uuid is null or e.current_legal_entity_id = $1) and ($2::uuid is null or e.current_department_id in (select id from deps))`,
-      [s.legal_entity_id, s.department_id],
-    );
+  private async audience(tx: TenantTx, s: { legal_entity_id: string | null; department_id: string | null }) {
+    const filter: Doc = { status: { $in: ['probation', 'active', 'notice'] }, membership_id: { $ne: null } };
+    if (s.legal_entity_id) filter.current_legal_entity_id = s.legal_entity_id;
+    if (s.department_id) filter.current_department_id = { $in: [s.department_id, ...(await descendants(tx, 'departments', 'parent_id', s.department_id))] };
+    return (await tx.collection('employees').find(filter, { projection: { membership_id: 1 } })).map((e) => ({ id: e.id as string, membership_id: (e.membership_id as string | null) ?? null }));
   }
 
   createSurvey(input: SurveyInput) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const r = (await one<{ id: string }>(
-        tx,
-        `insert into surveys (tenant_id, title, description, min_responses, questions, legal_entity_id, department_id, closes_on, created_by_membership_id)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8) returning id`,
-        [input.title, input.description, input.minResponses, JSON.stringify(input.questions), input.legalEntityId, input.departmentId, input.closesOn, actor.membershipId],
-      ))!;
+      const r = await tx.collection('surveys').insert({
+        title: input.title, description: input.description, min_responses: input.minResponses, questions: input.questions, legal_entity_id: input.legalEntityId ?? null,
+        department_id: input.departmentId ?? null, closes_on: input.closesOn ?? null, created_by_membership_id: actor.membershipId,
+      });
       await this.audit.record(tx, { action: 'survey.created', resourceType: 'survey', resourceId: r.id, changes: input });
-      return { id: r.id };
+      return { id: r.id as string };
     });
   }
 
@@ -105,10 +109,12 @@ export class EngagementService {
     return this.db.tenant(async (tx) => {
       const s = await this.survey(tx, id, true);
       if (s.status !== 'draft') throw Errors.conflict('invalid_state', 'Only a draft survey can be changed, so every answer responds to the same questions');
-      await tx.query(
-        `update surveys set title = $2, description = $3, min_responses = $4, questions = $5, legal_entity_id = $6, department_id = $7, closes_on = $8 where id = $1`,
-        [id, input.title, input.description, input.minResponses, JSON.stringify(input.questions), input.legalEntityId, input.departmentId, input.closesOn],
-      );
+      await tx.collection('surveys').updateOne({ id }, {
+        $set: {
+          title: input.title, description: input.description, min_responses: input.minResponses, questions: input.questions, legal_entity_id: input.legalEntityId ?? null,
+          department_id: input.departmentId ?? null, closes_on: input.closesOn ?? null,
+        },
+      });
       await this.audit.record(tx, { action: 'survey.updated', resourceType: 'survey', resourceId: id, changes: input });
       return { id };
     });
@@ -118,7 +124,7 @@ export class EngagementService {
     return this.db.tenant(async (tx) => {
       const s = await this.survey(tx, id, true);
       if (s.status !== 'draft') throw Errors.conflict('invalid_state', 'Only a draft survey can be deleted. Close it instead.');
-      await tx.query('delete from surveys where id = $1', [id]);
+      await tx.collection('surveys').deleteOne({ id });
       await this.audit.record(tx, { action: 'survey.deleted', resourceType: 'survey', resourceId: id });
     });
   }
@@ -127,17 +133,13 @@ export class EngagementService {
     return this.db.tenant(async (tx) => {
       const s = await this.survey(tx, id, true);
       if (s.status !== 'draft') throw Errors.conflict('invalid_state', 'This survey has already been opened');
-      const today = new Date().toISOString().slice(0, 10);
-      if (s.closes_on && s.closes_on < today) throw Errors.badRequest('closes_in_past', 'The closing date has passed');
+      if (s.closes_on && s.closes_on < today()) throw Errors.badRequest('closes_in_past', 'The closing date has passed');
       const people = await this.audience(tx, s);
       if (people.length < s.min_responses) {
         throw Errors.badRequest('audience_too_small', `Only ${people.length} people can answer, fewer than the anonymity threshold of ${s.min_responses}, so results could never be shown. Widen the audience or lower the threshold (at least 3).`);
       }
-      await tx.query(
-        `insert into survey_invitations (tenant_id, survey_id, employee_id) select app_tenant_id(), $1, x from unnest($2::uuid[]) x`,
-        [id, people.map((p) => p.id)],
-      );
-      await tx.query(`update surveys set status = 'open', opened_at = now() where id = $1`, [id]);
+      await tx.collection('survey_invitations').insertMany(people.map((p) => ({ survey_id: id, employee_id: p.id })));
+      await tx.collection('surveys').updateOne({ id }, { $set: { status: 'open', opened_at: new Date() } });
       await this.notifications.notify(tx, { membershipIds: people.map((p) => p.membership_id), kind: 'survey.opened', title: `New anonymous survey: ${s.title}`, link: '/surveys' });
       await this.audit.record(tx, { action: 'survey.opened', resourceType: 'survey', resourceId: id, metadata: { invited: people.length } });
       return { invited: people.length };
@@ -148,7 +150,7 @@ export class EngagementService {
     return this.db.tenant(async (tx) => {
       const s = await this.survey(tx, id, true);
       if (s.status !== 'open') throw Errors.conflict('invalid_state', 'Only an open survey can be closed');
-      await tx.query(`update surveys set status = 'closed', closed_at = now() where id = $1`, [id]);
+      await tx.collection('surveys').updateOne({ id }, { $set: { status: 'closed', closed_at: new Date() } });
       await this.audit.record(tx, { action: 'survey.closed', resourceType: 'survey', resourceId: id });
       return { status: 'closed' };
     });
@@ -159,18 +161,15 @@ export class EngagementService {
     return this.db.tenant(async (tx) => {
       const s = await this.survey(tx, id);
       if (s.status === 'draft') throw Errors.conflict('invalid_state', 'This survey has not been opened yet');
-      const counts = (await one<{ invited: number; responded: number }>(
-        tx, `select count(*)::int as invited, count(*) filter (where responded)::int as responded from survey_invitations where survey_id = $1`, [id],
-      ))!;
+      const invitations = tx.collection('survey_invitations');
+      const counts = { invited: await invitations.count({ survey_id: id }), responded: await invitations.count({ survey_id: id, responded: true }) };
       const k = s.min_responses;
       await this.audit.record(tx, { action: 'survey.results_viewed', resourceType: 'survey', resourceId: id });
       const base = { id, title: s.title, minResponses: k, invited: counts.invited, responded: counts.responded, notice: `Results appear only when at least ${k} people have answered, and groups smaller than ${k} are never shown on their own.` };
       if (counts.responded < k) return { ...base, shown: false, reason: `Fewer than ${k} responses so far` };
-      const responses = await many<{ answers: SurveyAnswers; department_id: string | null; department_name: string | null }>(
-        tx,
-        `select r.answers, r.department_id, d.name as department_name from survey_responses r left join departments d on d.id = r.department_id where r.survey_id = $1`,
-        [id],
-      );
+      const rows = await tx.collection('survey_responses').find({ survey_id: id }, { projection: { answers: 1, department_id: 1 } });
+      const deptNames = await fieldById(tx, 'departments', rows.map((x) => x.department_id));
+      const responses = rows.map((x) => ({ answers: x.answers as SurveyAnswers, department_id: (x.department_id as string | null) ?? null, department_name: deptNames.get(x.department_id) ?? null }));
       const groups = new Map<string, { key: string; label: string; answers: SurveyAnswers[] }>();
       for (const r of responses) {
         const key = r.department_id ?? 'none';
@@ -207,26 +206,24 @@ export class EngagementService {
     return this.db.tenant(async (tx) => {
       const me = (await this.authz.subject(tx)).employeeId;
       if (!me) return [];
-      return many(
-        tx,
-        `select s.id, s.title, s.description, ${effectiveStatus} as status, to_char(s.closes_on, 'YYYY-MM-DD') as "closesOn", i.responded, jsonb_array_length(s.questions) as questions
-           from survey_invitations i join surveys s on s.id = i.survey_id where i.employee_id = $1 and s.status <> 'draft'
-          order by (${effectiveStatus} = 'open' and not i.responded) desc, s.opened_at desc limit 50`,
-        [me],
-      );
+      const invitations = await tx.collection('survey_invitations').find({ employee_id: me }, { projection: { survey_id: 1, responded: 1 } });
+      const responded = new Map(invitations.map((i) => [i.survey_id as string, i.responded as boolean]));
+      const surveys = await tx.collection('surveys').find({ id: { $in: [...responded.keys()] }, status: { $ne: 'draft' } });
+      const pending = (x: Doc) => effectiveStatus(x) === 'open' && !responded.get(x.id);
+      surveys.sort((a, b) => Number(pending(b)) - Number(pending(a)) || new Date(b.opened_at ?? 0).getTime() - new Date(a.opened_at ?? 0).getTime());
+      return surveys.slice(0, 50).map((x) => ({
+        id: x.id, title: x.title, description: x.description, status: effectiveStatus(x), closesOn: x.closes_on ?? null, responded: responded.get(x.id) ?? false, questions: (x.questions ?? []).length,
+      }));
     });
   }
 
   async form(id: string) {
     return this.db.tenant(async (tx) => {
       const me = (await this.authz.subject(tx)).employeeId;
-      const r = await one<Record<string, unknown>>(
-        tx,
-        `select s.id, s.title, s.description, ${effectiveStatus} as status, s.questions, to_char(s.closes_on, 'YYYY-MM-DD') as "closesOn", i.responded
-           from survey_invitations i join surveys s on s.id = i.survey_id where s.id = $1 and i.employee_id = $2 and s.status <> 'draft'`,
-        [id, me ?? null],
-      );
-      if (!r) throw Errors.notFound('Survey');
+      const inv = me ? await tx.collection('survey_invitations').findOne({ survey_id: id, employee_id: me }, { projection: { responded: 1 } }) : undefined;
+      const x = inv ? await tx.collection('surveys').findOne({ id, status: { $ne: 'draft' } }) : undefined;
+      if (!inv || !x) throw Errors.notFound('Survey');
+      const r = { id: x.id, title: x.title, description: x.description, status: effectiveStatus(x), questions: x.questions, closesOn: x.closes_on ?? null, responded: inv.responded };
       return { ...r, notice: 'This survey is anonymous. SampCrew stores your answers without your name, keeping only your department and the date, and shows results only for groups large enough that nobody can be singled out.' };
     });
   }
@@ -235,10 +232,11 @@ export class EngagementService {
     return this.db.tenant(async (tx) => {
       const me = needEmployee((await this.authz.subject(tx)).employeeId);
       const s = await this.survey(tx, id);
-      const inv = await one<{ responded: boolean }>(tx, 'select responded from survey_invitations where survey_id = $1 and employee_id = $2 for update', [id, me]);
+      const invitations = tx.collection('survey_invitations');
+      await invitations.lock({ survey_id: id, employee_id: me });
+      const inv = await invitations.findOne({ survey_id: id, employee_id: me }, { projection: { responded: 1 } });
       if (!inv || s.status === 'draft') throw Errors.notFound('Survey');
-      const today = new Date().toISOString().slice(0, 10);
-      if (s.status !== 'open' || (s.closes_on && s.closes_on < today)) throw Errors.conflict('survey_closed', 'This survey is closed');
+      if (s.status !== 'open' || (s.closes_on && s.closes_on < today())) throw Errors.conflict('survey_closed', 'This survey is closed');
       if (inv.responded) throw Errors.conflict('already_responded', 'You have already answered this survey');
       const problem = talentMath.validateSurveyAnswers(s.questions, answers);
       if (problem) throw Errors.badRequest('invalid_answers', problem);
@@ -248,11 +246,8 @@ export class EngagementService {
         if (v !== undefined && v !== null && v !== '') clean[q.id] = typeof v === 'string' ? v.trim() : v;
       }
       const e = await talentEmployee(tx, me);
-      await tx.query(
-        `insert into survey_responses (tenant_id, survey_id, department_id, legal_entity_id, answers) values (app_tenant_id(), $1, $2, $3, $4)`,
-        [id, e.department_id, e.legal_entity_id, JSON.stringify(clean)],
-      );
-      await tx.query('update survey_invitations set responded = true where survey_id = $1 and employee_id = $2', [id, me]);
+      await tx.collection('survey_responses').insert({ survey_id: id, department_id: e.department_id, legal_entity_id: e.legal_entity_id, answers: clean });
+      await invitations.updateOne({ survey_id: id, employee_id: me }, { $set: { responded: true } });
       // The audit trail records that someone answered, not who: no actor-specific metadata is added here.
       return { responded: true };
     });
@@ -261,22 +256,24 @@ export class EngagementService {
   // Company values and recognition -------------------------------------------------------------------------------
 
   values(includeArchived = false) {
-    return this.db.tenant((tx) =>
-      many(tx, `select id, name, description, archived_at as "archivedAt" from company_values where ($1 or archived_at is null) order by archived_at is not null, name`, [includeArchived]),
-    );
+    return this.db.tenant(async (tx) => {
+      const rows = await tx.collection('company_values').find(includeArchived ? {} : { archived_at: null });
+      rows.sort((a, b) => Number(!!a.archived_at) - Number(!!b.archived_at) || String(a.name).localeCompare(String(b.name)));
+      return rows.map((v) => ({ id: v.id, name: v.name, description: v.description, archivedAt: v.archived_at ?? null }));
+    });
   }
 
   createValue(input: { name: string; description: string }) {
     return this.db.tenant(async (tx) => {
-      const r = (await one<{ id: string }>(tx, 'insert into company_values (tenant_id, name, description) values (app_tenant_id(), $1, $2) returning id', [input.name, input.description]))!;
+      const r = await tx.collection('company_values').insert({ name: input.name, description: input.description });
       await this.audit.record(tx, { action: 'company_value.created', resourceType: 'company_value', resourceId: r.id, changes: input });
-      return { id: r.id };
+      return { id: r.id as string };
     });
   }
 
   updateValue(id: string, input: { name: string; description: string }) {
     return this.db.tenant(async (tx) => {
-      const r = await one(tx, 'update company_values set name = $2, description = $3 where id = $1 and archived_at is null returning id', [id, input.name, input.description]);
+      const r = await tx.collection('company_values').updateOne({ id, archived_at: null }, { $set: { name: input.name, description: input.description } });
       if (!r) throw Errors.notFound('Value');
       await this.audit.record(tx, { action: 'company_value.updated', resourceType: 'company_value', resourceId: id, changes: input });
       return { id };
@@ -285,7 +282,7 @@ export class EngagementService {
 
   archiveValue(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await one(tx, 'update company_values set archived_at = now() where id = $1 and archived_at is null returning id', [id]);
+      const r = await tx.collection('company_values').updateOne({ id, archived_at: null }, { $set: { archived_at: new Date() } });
       if (!r) throw Errors.notFound('Value');
       await this.audit.record(tx, { action: 'company_value.archived', resourceType: 'company_value', resourceId: id });
     });
@@ -295,18 +292,21 @@ export class EngagementService {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
       const moderator = hasPermission(s, 'engagement:manage').allowed;
-      return many(
-        tx,
-        `select r.id, r.from_employee_id as "fromEmployeeId", ${nameOf('f')} as "fromName", r.to_employee_id as "toEmployeeId", ${nameOf('t')} as "toName",
-                d.name as "toDepartmentName", v.name as "valueName", r.message, r.created_at as "createdAt",
-                case when $1 then r.hidden_at end as "hiddenAt", case when $1 then r.hidden_reason end as "hiddenReason"
-           from recognitions r join employees f on f.id = r.from_employee_id join employees t on t.id = r.to_employee_id
-           left join departments d on d.id = t.current_department_id left join company_values v on v.id = r.value_id
-          where ($1 or r.hidden_at is null) and ($2::uuid is null or r.to_employee_id = $2 or r.from_employee_id = $2)
-            and ($3::timestamptz is null or r.created_at < $3)
-          order by r.created_at desc limit 50`,
-        [moderator, q.employeeId ?? null, q.before ?? null],
-      );
+      const filter: Doc = {};
+      if (!moderator) filter.hidden_at = null;
+      if (q.employeeId) filter.$or = [{ to_employee_id: q.employeeId }, { from_employee_id: q.employeeId }];
+      if (q.before) filter.created_at = { $lt: new Date(q.before) };
+      const rows = await tx.collection('recognitions').find(filter, { sort: { created_at: -1 }, limit: 50 });
+      const people = await employeeNames(tx, rows.flatMap((r) => [r.from_employee_id, r.to_employee_id]));
+      const depts = await fieldById(tx, 'departments', [...people.values()].map((p) => p.doc.current_department_id));
+      const values = await fieldById(tx, 'company_values', rows.map((r) => r.value_id));
+      return rows
+        .filter((r) => people.has(r.from_employee_id) && people.has(r.to_employee_id))
+        .map((r) => ({
+          id: r.id, fromEmployeeId: r.from_employee_id, fromName: people.get(r.from_employee_id)!.name, toEmployeeId: r.to_employee_id, toName: people.get(r.to_employee_id)!.name,
+          toDepartmentName: depts.get(people.get(r.to_employee_id)!.doc.current_department_id) ?? null, valueName: values.get(r.value_id) ?? null, message: r.message, createdAt: r.created_at,
+          hiddenAt: moderator ? (r.hidden_at ?? null) : null, hiddenReason: moderator ? (r.hidden_reason ?? null) : null,
+        }));
     });
   }
 
@@ -317,29 +317,25 @@ export class EngagementService {
       if (input.toEmployeeId === from.id) throw Errors.badRequest('self_recognition', 'Recognise a colleague, not yourself');
       const to = await talentEmployee(tx, input.toEmployeeId, 'Colleague');
       if (to.status === 'exited') throw Errors.badRequest('employee_exited', `${to.name} has left`);
-      if (input.valueId && !(await one(tx, 'select 1 from company_values where id = $1 and archived_at is null', [input.valueId]))) {
+      if (input.valueId && !(await tx.collection('company_values').exists({ id: input.valueId, archived_at: null }))) {
         throw Errors.badRequest('unknown_value', 'Choose one of the company values');
       }
-      const today = (await one<{ n: number }>(tx, `select count(*)::int as n from recognitions where from_employee_id = $1 and created_at > now() - interval '1 day'`, [from.id]))!;
-      if (today.n >= RECOGNITIONS_PER_DAY) throw Errors.tooMany(`You can post up to ${RECOGNITIONS_PER_DAY} recognitions a day`);
-      const r = (await one<{ id: string }>(
-        tx,
-        'insert into recognitions (tenant_id, from_employee_id, to_employee_id, value_id, message) values (app_tenant_id(), $1, $2, $3, $4) returning id',
-        [from.id, to.id, input.valueId, input.message],
-      ))!;
+      const lastDay = await tx.collection('recognitions').count({ from_employee_id: from.id, created_at: { $gt: new Date(Date.now() - 86_400_000) } });
+      if (lastDay >= RECOGNITIONS_PER_DAY) throw Errors.tooMany(`You can post up to ${RECOGNITIONS_PER_DAY} recognitions a day`);
+      const r = await tx.collection('recognitions').insert({ from_employee_id: from.id, to_employee_id: to.id, value_id: input.valueId, message: input.message });
       await this.notifications.notify(tx, { membershipIds: [to.membership_id], kind: 'recognition.received', title: `${from.name} recognised you: "${input.message.slice(0, 80)}${input.message.length > 80 ? '…' : ''}"`, link: '/recognition' });
       if (to.manager_membership_id && to.manager_membership_id !== s.membershipId) {
         await this.notifications.notify(tx, { membershipIds: [to.manager_membership_id], kind: 'recognition.team', title: `${from.name} recognised ${to.name}`, link: '/recognition' });
       }
       await this.audit.record(tx, { action: 'recognition.given', resourceType: 'recognition', resourceId: r.id, metadata: { to: to.id } });
-      return { id: r.id };
+      return { id: r.id as string };
     });
   }
 
   async hide(id: string, reason: string) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const r = await one(tx, 'update recognitions set hidden_at = now(), hidden_by_membership_id = $2, hidden_reason = $3 where id = $1 and hidden_at is null returning id', [id, actor.membershipId, reason]);
+      const r = await tx.collection('recognitions').updateOne({ id, hidden_at: null }, { $set: { hidden_at: new Date(), hidden_by_membership_id: actor.membershipId, hidden_reason: reason } });
       if (!r) throw Errors.notFound('Recognition');
       await this.audit.record(tx, { action: 'recognition.hidden', resourceType: 'recognition', resourceId: id, metadata: { reason } });
     });

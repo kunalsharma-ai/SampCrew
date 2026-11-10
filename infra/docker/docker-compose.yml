@@ -1,19 +1,8 @@
 # Local development services. `docker compose -f infra/docker/docker-compose.yml up -d`
 # Redis, MinIO and Mailpit are provisioned now so later phases (queues, documents, email) work locally;
-# Phase 1 code only requires PostgreSQL.
+# The API needs MongoDB (and Redis for shared rate limits when several API instances run).
 name: crew
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: crew
-    ports: ["5432:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      retries: 10
   # Single-node replica set: SampCrew needs MongoDB transactions, which a standalone mongod does not offer.
   # The health check initiates the replica set on first start.
   mongo:
@@ -42,6 +31,5 @@ services:
     image: axllent/mailpit:v1.24
     ports: ["1025:1025", "8025:8025"]
 volumes:
-  pgdata:
   mongodata:
   minio:

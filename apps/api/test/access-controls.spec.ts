@@ -1,14 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
-import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 /** Super Admin Console switches: modules and permissions per workspace, modules per member, all enforced by the API. */
 describe('Workspace access controls', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let other: TestTenant;
   let superToken: string;
@@ -18,7 +17,7 @@ describe('Workspace access controls', () => {
 
   async function platformToken(role: string) {
     const email = `${role}.${stamp}@sampledge.test`;
-    await pool.query(`insert into platform_admins (email, full_name, password_hash, role) values ($1, $2, $3, $4)`, [email, role, await hashPassword(PASSWORD), role]);
+    await pool.insert('platform_admins', { email, full_name: role, password_hash: await hashPassword(PASSWORD), role });
     const res = await api(app).post('/platform/auth/login').send({ email, password: PASSWORD });
     const setup = await api(app, res.body.accessToken).post('/platform/auth/mfa/setup');
     return (await api(app, res.body.accessToken).post('/platform/auth/mfa/enable').send({ code: currentTotp(setup.body.secret) })).body.accessToken as string;
@@ -119,16 +118,8 @@ describe('Workspace access controls', () => {
 
   it('the workspace cannot change its own switches from the database role it uses', async () => {
     // crew_app (all customer traffic) can read the controls but never write them.
-    const c = await pool.connect();
-    try {
-      await c.query('begin');
-      await c.query('set local role crew_app');
-      await c.query(`select set_config('app.tenant_id', $1, true)`, [t.id]);
-      await expect(c.query(`insert into tenant_access_controls (tenant_id) values ($1)`, [t.id])).rejects.toThrow(/permission denied/);
-    } finally {
-      await c.query('rollback');
-      c.release();
-    }
+    await expect(pool.tenant(t.id, (tx) => tx.collection('tenant_access_controls').update({ tenant_id: t.id }, { $set: { disabled_permissions: [] } }))).rejects.toThrow(/not allowed/);
+    await expect(pool.tenant(t.id, (tx) => tx.collection('tenant_access_controls').delete({ tenant_id: t.id }))).rejects.toThrow(/not allowed/);
   });
 
   it('per-member module access: one person loses a module, others keep it', async () => {
@@ -172,10 +163,10 @@ describe('Workspace access controls', () => {
   });
 
   it('every change is in the customer audit trail and the platform audit log', async () => {
-    const tenantAudit = await pool.query(`select action from audit_events where tenant_id = $1 and action like 'access.%' order by created_at`, [t.id]);
-    const actions = tenantAudit.rows.map((r) => r.action);
+    const tenantAudit = await pool.find('audit_events', { tenant_id: t.id, action: /^access\./ }, { sort: { chain_seq: 1 } });
+    const actions = tenantAudit.map((r) => r.action);
     expect(actions).toEqual(expect.arrayContaining(['access.modules_switched', 'access.permissions_switched', 'access.member_modules_changed']));
-    const platformAudit = await pool.query(`select count(*)::int as n from audit_events where tenant_id is null and resource_id = $1 and action like 'platform.access_%'`, [t.id]);
-    expect(platformAudit.rows[0].n).toBeGreaterThanOrEqual(actions.length);
+    const platformAudit = await pool.count('audit_events', { tenant_id: null, resource_id: t.id, action: /^platform\.access_/ });
+    expect(platformAudit).toBeGreaterThanOrEqual(actions.length);
   });
 });

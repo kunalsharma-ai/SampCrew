@@ -12,8 +12,9 @@
 
 # Pin by digest in your registry for repeatable builds, e.g. --build-arg NODE_IMAGE=node:26.12.1-alpine@sha256:...
 ARG NODE_IMAGE=node:26.12.1-alpine
-# Must be the same major version as the database server (PostgreSQL 16).
-ARG POSTGRES_IMAGE=postgres:16-alpine
+# MongoDB Database Tools for backups and restores (mongodump, mongorestore), from Alpine's community repository.
+# 100.x supports MongoDB 4.2 to 8.0. Pin a newer release here when upgrading the server.
+ARG MONGO_TOOLS_VERSION=100.14.1-r5
 
 FROM ${NODE_IMAGE} AS base
 # Node.js 25 and later no longer ship Corepack, so install a pinned copy; it then runs the pnpm version named in
@@ -76,20 +77,20 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=20s CMD wget -qO- http://
 CMD ["node", "apps/console/server.js"]
 
 # --- Tools: migrations, seed, backups and the restore drill ----------------------------------------------------
-# Built on the PostgreSQL image itself, so pg_dump, pg_restore and psql are exactly the server's major version, with
-# Node.js copied in from the Node image (both Alpine). No packages are downloaded for this stage.
-FROM ${POSTGRES_IMAGE} AS tools
-COPY --from=base /usr/local/bin/node /usr/local/bin/node
-# Node.js 26 also links libatomic, which the PostgreSQL image lacks; both images are the same Alpine release.
-COPY --from=base /usr/lib/libatomic.so.1 /usr/lib/libatomic.so.1
-# The database package with its migrations and scripts (and tsx to run them), nothing from the apps.
-COPY --from=build /out/db /app/db
+FROM ${NODE_IMAGE} AS tools
+ARG MONGO_TOOLS_VERSION
+RUN --mount=type=secret,id=ca,required=false \
+    if [ -f /run/secrets/ca ]; then cat /etc/ssl/certs/ca-certificates.crt /run/secrets/ca > /tmp/build-ca.pem; export SSL_CERT_FILE=/tmp/build-ca.pem; fi; \
+    apk add --no-cache "mongodb-tools=${MONGO_TOOLS_VERSION}" \
+ && rm -f /tmp/build-ca.pem \
+ && mongodump --version | head -1
+# The database package with its scripts (and tsx to run them), nothing from the apps.
+COPY --from=build --chown=node:node /out/db /app/db
 COPY infra/deploy/scripts /app/infra/deploy/scripts
 RUN chmod +x /app/infra/deploy/scripts/*.sh \
- && mkdir -p /backups /data/files && chown postgres:postgres /backups /data/files \
- && node --version
+ && mkdir -p /backups /data/files && chown node:node /backups /data/files
 WORKDIR /app
-USER postgres
+USER node
 ENTRYPOINT []
 # Default job: apply migrations, then sync the catalogue and bootstrap the first Super Admin. Both are safe to repeat.
 CMD ["/app/infra/deploy/scripts/migrate.sh"]

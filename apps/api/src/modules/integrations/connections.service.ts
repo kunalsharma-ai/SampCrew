@@ -4,9 +4,9 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { decryptField, encryptField } from '../../platform/auth/crypto';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one } from '../../platform/database/database.service';
+import { MongoService as DatabaseService } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
-import { BY, WHO } from './common';
+import { activeWorkflowUsing, membershipNames } from './common';
 import { postJson } from './safe-http';
 
 /** A Slack post that did not go through. `retryable` is false when trying again will not help (bad or removed webhook). */
@@ -50,25 +50,26 @@ export class ConnectionsService {
   }
 
   async list() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select c.id, c.provider, c.name, c.display, c.status, c.status_reason as "statusReason", c.verified_at as "verifiedAt", c.last_used_at as "lastUsedAt",
-                c.created_at as "createdAt", ${WHO('cu', 'ce')} as "createdBy"
-           from integration_connections c ${BY('c.created_by_membership_id', 'c')} where c.status <> 'disconnected' order by c.name`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const list = (await tx.collection('integration_connections').find({ status: { $ne: 'disconnected' } })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      const names = await membershipNames(tx, list.map((c) => c.created_by_membership_id));
+      return list.map((c) => ({
+        id: c.id, provider: c.provider, name: c.name, display: c.display, status: c.status, statusReason: c.status_reason ?? null, verifiedAt: c.verified_at ?? null,
+        lastUsedAt: c.last_used_at ?? null, createdAt: c.created_at, createdBy: names.get(c.created_by_membership_id)?.name ?? null,
+      }));
+    });
   }
 
   async logs(id: string) {
     return this.db.tenant(async (tx) => {
-      if (!(await one(tx, 'select 1 from integration_connections where id = $1', [id]))) throw Errors.notFound('Connection');
-      return many(tx, `select action, ok, detail, duration_ms as "durationMs", created_at as "createdAt" from integration_logs where connection_id = $1 order by created_at desc limit 100`, [id]);
+      if (!(await tx.collection('integration_connections').exists({ id }))) throw Errors.notFound('Connection');
+      return (await tx.collection('integration_logs').find({ connection_id: id }, { sort: { created_at: -1 }, limit: 100 }))
+        .map((l) => ({ action: l.action, ok: l.ok, detail: l.detail ?? null, durationMs: l.duration_ms ?? null, createdAt: l.created_at }));
     });
   }
 
   async connectSlack(input: SlackConnectionInput) {
-    const workspace = await this.db.tenant((tx) => one<{ name: string }>(tx, 'select name from tenants where id = app_tenant_id()'));
+    const workspace = await this.db.tenant((tx) => tx.collection('tenants').findOne({}, { projection: { name: 1 } }));
     const started = Date.now();
     try {
       await this.postToSlack(input.webhookUrl, `SampCrew is now connected to this channel as "${input.name}" for ${workspace!.name}. Workflows can post here.`);
@@ -76,13 +77,11 @@ export class ConnectionsService {
       throw Errors.badRequest('slack_not_verified', `${(err as Error).message}. Check the webhook URL in Slack and try again; nothing was saved.`);
     }
     return this.db.tenant(async (tx) => {
-      const c = (await one<{ id: string }>(
-        tx,
-        `insert into integration_connections (tenant_id, provider, name, credentials_enc, display, verified_at, created_by_membership_id)
-         values (app_tenant_id(), 'slack', $1, $2, $3, now(), $4) returning id`,
-        [input.name, encryptField(JSON.stringify({ webhookUrl: input.webhookUrl }), this.config.fieldKeys), JSON.stringify({ webhook: `…${input.webhookUrl.slice(-6)}` }), requestContext.tenantActor().membershipId],
-      ))!;
-      await tx.query(`insert into integration_logs (tenant_id, connection_id, action, ok, detail, duration_ms) values (app_tenant_id(), $1, 'connect', true, 'Confirmation message accepted by Slack', $2)`, [c.id, Date.now() - started]);
+      const c = (await tx.collection('integration_connections').insert({
+        provider: 'slack', name: input.name, credentials_enc: encryptField(JSON.stringify({ webhookUrl: input.webhookUrl }), this.config.fieldKeys),
+        display: { webhook: `…${input.webhookUrl.slice(-6)}` }, verified_at: new Date(), created_by_membership_id: requestContext.tenantActor().membershipId,
+      })) as { id: string };
+      await tx.collection('integration_logs').insert({ connection_id: c.id, action: 'connect', ok: true, detail: 'Confirmation message accepted by Slack', duration_ms: Date.now() - started });
       await this.audit.record(tx, { action: 'integration.connected', resourceType: 'integration_connection', resourceId: c.id, metadata: { provider: 'slack', name: input.name } });
       return { id: c.id };
     });
@@ -95,17 +94,12 @@ export class ConnectionsService {
 
   async disconnect(id: string) {
     await this.db.tenant(async (tx) => {
-      const c = await one<{ name: string; status: string }>(tx, 'select name, status from integration_connections where id = $1', [id]);
+      const c = await tx.collection('integration_connections').findOne({ id });
       if (!c || c.status === 'disconnected') throw Errors.notFound('Connection');
-      const used = await one<{ name: string }>(
-        tx,
-        `select w.name from workflows w join workflow_versions v on v.id = w.active_version_id
-          where w.status = 'active' and exists (select 1 from jsonb_array_elements(v.definition->'steps') s where s->>'connectionId' = $1::text) limit 1`,
-        [id],
-      );
-      if (used) throw Errors.conflict('connection_in_use', `The active workflow "${used.name}" posts through this connection. Pause it or change that step first.`);
+      const used = await activeWorkflowUsing(tx, 'connectionId', id);
+      if (used) throw Errors.conflict('connection_in_use', `The active workflow "${used}" posts through this connection. Pause it or change that step first.`);
       // The credentials are wiped, not just hidden.
-      await tx.query(`update integration_connections set status = 'disconnected', credentials_enc = '', updated_at = now() where id = $1`, [id]);
+      await tx.collection('integration_connections').updateOne({ id }, { $set: { status: 'disconnected', credentials_enc: '', updated_at: new Date() } });
       await this.audit.record(tx, { action: 'integration.disconnected', resourceType: 'integration_connection', resourceId: id, metadata: { name: c.name } });
     });
     return { ok: true };
@@ -116,22 +110,23 @@ export class ConnectionsService {
    * steps (which run as the workflow's owner, inside their workspace).
    */
   async post(id: string, text: string, action = 'post'): Promise<{ durationMs: number }> {
-    const c = await this.db.tenant((tx) => one<{ credentials_enc: string; status: string; provider: string }>(tx, 'select credentials_enc, status, provider from integration_connections where id = $1', [id]));
+    const c = (await this.db.tenant((tx) => tx.collection('integration_connections').findOne({ id }))) as { credentials_enc: string; status: string; provider: string } | undefined;
     if (!c || c.status === 'disconnected') throw new ConnectorError('The Slack connection no longer exists', false);
     const { webhookUrl } = JSON.parse(decryptField(c.credentials_enc, this.config.fieldKeys)) as { webhookUrl: string };
     const started = Date.now();
     try {
       await this.postToSlack(webhookUrl, text.slice(0, 3000));
       await this.db.tenant(async (tx) => {
-        await tx.query(`update integration_connections set status = 'active', status_reason = null, last_used_at = now(), updated_at = now() where id = $1`, [id]);
-        await tx.query(`insert into integration_logs (tenant_id, connection_id, action, ok, duration_ms) values (app_tenant_id(), $1, $2, true, $3)`, [id, action, Date.now() - started]);
+        const now = new Date();
+        await tx.collection('integration_connections').updateOne({ id }, { $set: { status: 'active', status_reason: null, last_used_at: now, updated_at: now } });
+        await tx.collection('integration_logs').insert({ connection_id: id, action, ok: true, duration_ms: Date.now() - started });
       });
       return { durationMs: Date.now() - started };
     } catch (err) {
       const e = err as ConnectorError;
       await this.db.tenant(async (tx) => {
-        await tx.query(`insert into integration_logs (tenant_id, connection_id, action, ok, detail, duration_ms) values (app_tenant_id(), $1, $2, false, $3, $4)`, [id, action, e.message.slice(0, 1000), Date.now() - started]);
-        if (!e.retryable) await tx.query(`update integration_connections set status = 'error', status_reason = $2, updated_at = now() where id = $1`, [id, e.message.slice(0, 500)]);
+        await tx.collection('integration_logs').insert({ connection_id: id, action, ok: false, detail: e.message.slice(0, 1000), duration_ms: Date.now() - started });
+        if (!e.retryable) await tx.collection('integration_connections').updateOne({ id }, { $set: { status: 'error', status_reason: e.message.slice(0, 500), updated_at: new Date() } });
       });
       if (action === 'test') throw Errors.badRequest('slack_failed', e.message);
       throw e;

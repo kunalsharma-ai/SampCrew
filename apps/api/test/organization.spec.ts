@@ -1,11 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { adminPool, api, createApp, createTenant, login, type TestTenant } from './helpers';
+import { adminPool, api, createApp, createTenant, login, type TestDb, type TestTenant } from './helpers';
 
 describe('organization structure updates', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let token: string;
 

@@ -6,7 +6,7 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, membershipUserNames, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
@@ -20,8 +20,14 @@ export interface UploadedFile {
   buffer: Buffer;
 }
 
-const DOC_COLUMNS = `d.id, d.employee_id as "employeeId", d.category, d.title, d.file_name as "fileName", d.content_type as "contentType",
-  d.size_bytes as "sizeBytes", d.sha256, d.visibility, u.full_name as "uploadedBy", d.created_at as "createdAt"`;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function docViews(tx: TenantTx, docs: Record<string, any>[]) {
+  const by = await membershipUserNames(tx, docs.map((d) => d.uploaded_by_membership_id));
+  return docs.map((d) => ({
+    id: d.id, employeeId: d.employee_id, category: d.category, title: d.title, fileName: d.file_name, contentType: d.content_type, sizeBytes: d.size_bytes,
+    sha256: d.sha256, visibility: d.visibility, uploadedBy: by.get(d.uploaded_by_membership_id) ?? null, createdAt: d.created_at,
+  }));
+}
 
 /**
  * Employee documents. Files are checked (type, size, magic bytes), hashed, stored by the storage driver and
@@ -37,10 +43,9 @@ export class DocumentsService {
     private readonly notifications: NotificationService,
   ) {}
 
-  private async access(tx: Tx, employeeId: string) {
-    const e = await one<{ id: string; membership_id: string | null; le: string | null; d: string | null; l: string | null }>(
-      tx, 'select id, membership_id, current_legal_entity_id as le, current_department_id as d, current_location_id as l from employees where id = $1', [employeeId],
-    );
+  private async access(tx: TenantTx, employeeId: string) {
+    const doc = await tx.collection('employees').findOne({ id: employeeId });
+    const e = doc && { id: doc.id as string, membership_id: (doc.membership_id ?? null) as string | null, le: doc.current_legal_entity_id ?? null, d: doc.current_department_id ?? null, l: doc.current_location_id ?? null };
     if (!e) throw Errors.notFound('Employee');
     const attrs = employeeAttrs({ id: e.id, membershipId: e.membership_id, legalEntityId: e.le, departmentId: e.d, locationId: e.l });
     const s = await this.authz.subject(tx);
@@ -52,12 +57,11 @@ export class DocumentsService {
     return this.db.tenant(async (tx) => {
       const a = await this.access(tx, employeeId);
       await this.authz.require('documents:read', a.attrs, tx);
-      return many(
-        tx,
-        `select ${DOC_COLUMNS} from employee_documents d left join memberships m on m.id = d.uploaded_by_membership_id left join users u on u.id = m.user_id
-          where d.employee_id = $1 and d.archived_at is null and (d.visibility = 'employee' or $2) order by d.created_at desc`,
-        [employeeId, a.canManage],
+      const docs = await tx.collection('employee_documents').find(
+        { employee_id: employeeId, archived_at: null, ...(a.canManage ? {} : { visibility: 'employee' }) },
+        { sort: { created_at: -1 } },
       );
+      return docViews(tx, docs);
     });
   }
 
@@ -82,22 +86,20 @@ export class DocumentsService {
       const sha = createHash('sha256').update(file.buffer).digest('hex');
       const name = safeFileName(file.originalname, 'file');
       await this.storage.put(key, file.buffer, { upload: true });
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into employee_documents (tenant_id, employee_id, category, title, file_name, content_type, size_bytes, sha256, storage_key, visibility, uploaded_by_membership_id)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
-        [employeeId, meta.category, meta.title, name, file.mimetype, file.size, sha, key, meta.visibility, actor.membershipId],
-      ))!;
+      const row = await tx.collection('employee_documents').insert({
+        employee_id: employeeId, category: meta.category, title: meta.title, file_name: name, content_type: file.mimetype, size_bytes: file.size, sha256: sha,
+        storage_key: key, visibility: meta.visibility, uploaded_by_membership_id: actor.membershipId,
+      });
       await this.audit.record(tx, { action: 'document.uploaded', resourceType: 'employee', resourceId: employeeId, metadata: { documentId: row.id, category: meta.category, title: meta.title, sha256: sha } });
       if (!a.isSelf && meta.visibility === 'employee') {
         await this.notifications.notify(tx, { membershipIds: [a.e.membership_id], kind: 'document.added', title: `New document: ${meta.title}`, link: `/employees/${employeeId}?tab=documents` });
       }
-      return one(tx, `select ${DOC_COLUMNS} from employee_documents d left join memberships m on m.id = d.uploaded_by_membership_id left join users u on u.id = m.user_id where d.id = $1`, [row.id]);
+      return (await docViews(tx, [row]))[0];
     });
   }
 
-  private async loadForAccess(tx: Tx, id: string) {
-    const d = await one<{ id: string; employee_id: string; visibility: string; title: string }>(tx, 'select id, employee_id, visibility, title from employee_documents where id = $1 and archived_at is null', [id]);
+  private async loadForAccess(tx: TenantTx, id: string) {
+    const d = await tx.collection<{ id: string; employee_id: string; visibility: string; title: string }>('employee_documents').findOne({ id, archived_at: null });
     if (!d) throw Errors.notFound('Document');
     const a = await this.access(tx, d.employee_id);
     await this.authz.require('documents:read', a.attrs, tx);
@@ -118,7 +120,7 @@ export class DocumentsService {
     return this.db.tenant(async (tx) => {
       const { d, a } = await this.loadForAccess(tx, id);
       if (!a.canManage) throw Errors.forbidden();
-      await tx.query('update employee_documents set archived_at = now() where id = $1', [id]);
+      await tx.collection('employee_documents').updateOne({ id }, { $set: { archived_at: new Date() } });
       await this.audit.record(tx, { action: 'document.archived', resourceType: 'employee', resourceId: d.employee_id, metadata: { documentId: id } });
     });
   }
@@ -127,7 +129,7 @@ export class DocumentsService {
   async open(id: string, exp: number, sig: string) {
     if (!this.storage.verify(id, exp, sig)) throw Errors.notFound('File');
     const d = await this.db.platform((tx) =>
-      one<{ storage_key: string; file_name: string; content_type: string }>(tx, 'select storage_key, file_name, content_type from employee_documents where id = $1 and archived_at is null', [id]),
+      tx.collection<{ storage_key: string; file_name: string; content_type: string }>('employee_documents').findOne({ id, archived_at: null }),
     );
     if (!d) throw Errors.notFound('File');
     const f = await this.storage.open(d.storage_key);

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { automation, TRIGGER_EVENTS, webhookBody, type TriggerEvent, type WorkflowDefinition, type WorkflowStep } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
@@ -5,7 +6,7 @@ import { loadSubject } from '../../platform/authz/authz.service';
 import { hasPermission } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext, type TenantActor } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { membershipUserNames, MongoService as DatabaseService, type TenantTx as Tx } from '../../platform/database/mongo.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { type DomainEvent, OutboxService } from '../../platform/events/outbox.service';
 import { NotificationService } from '../../platform/notify/notification.service';
@@ -30,6 +31,16 @@ interface RunRow {
 }
 
 interface WorkflowRow { id: string; name: string; status: string; owner_membership_id: string }
+
+/** PostgreSQL's md5(text)::uuid: a stable id from a text. */
+const md5Uuid = (text: string) => createHash('md5').update(text).digest('hex').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+
+/** Members holding a role (by key) whose membership is active. */
+async function activeHolders(tx: Tx, roleKey: string): Promise<string[]> {
+  const roleIds = await tx.collection('roles').distinct<string>('id', { key: roleKey });
+  const holders = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: { $in: roleIds } });
+  return tx.collection('memberships').distinct<string>('id', { id: { $in: holders }, status: 'active' });
+}
 
 /** A step that could not run; the runner retries it with back-off and then fails the run. */
 class StepError extends Error {
@@ -78,8 +89,8 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
       label: 'Workflow approval',
       link: () => '/approvals',
       attributes: async (tx, id) => {
-        const r = await one<{ subject_employee_id: string }>(tx, 'select subject_employee_id from workflow_runs where id = $1', [id]);
-        return attrsOf(await talentEmployee(tx, r!.subject_employee_id));
+        const r = await tx.collection('workflow_runs').findOne({ id }, { projection: { subject_employee_id: 1 } });
+        return attrsOf(await talentEmployee(tx, r!.subject_employee_id as string));
       },
       onApproved: (tx, req) => this.onDecision(tx, req, true),
       onRejected: (tx, req) => this.onDecision(tx, req, false),
@@ -103,9 +114,7 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
     if (!e.tenantId) return 0;
     const tenantId = e.tenantId;
     return this.db.tenant(async (tx) => {
-      const flows = await many<{ id: string; active_version_id: string }>(
-        tx, `select id, active_version_id from workflows where status = 'active' and trigger_event = $1 and active_version_id is not null`, [e.type],
-      );
+      const flows = await tx.collection('workflows').find({ status: 'active', trigger_event: e.type, active_version_id: { $ne: null } }, { projection: { active_version_id: 1 } });
       if (!flows.length) return 0;
       const ent = await this.entitlementsFor(tx);
       if (!ent) return 0;
@@ -113,12 +122,12 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
       if (!ctx) return 0;
       let started = 0;
       for (const f of flows) {
-        const r = await tx.query(
-          `insert into workflow_runs (tenant_id, workflow_id, version_id, mode, event_id, subject_employee_id, context, status, wake_at)
-           values (app_tenant_id(), $1, $2, 'live', $3, $4, $5, 'running', now()) on conflict (workflow_id, event_id) do nothing`,
-          [f.id, f.active_version_id, e.id, ctx.employeeId, JSON.stringify(ctx.context)],
-        );
-        started += r.rowCount ?? 0;
+        // One run per workflow and event, however often the event is delivered.
+        if (await tx.collection('workflow_runs').exists({ workflow_id: f.id, event_id: e.id })) continue;
+        await tx.collection('workflow_runs').insert({
+          workflow_id: f.id, version_id: f.active_version_id, mode: 'live', event_id: e.id, subject_employee_id: ctx.employeeId, context: ctx.context, status: 'running', wake_at: new Date(),
+        });
+        started++;
       }
       return started;
     }, { tenantId });
@@ -136,18 +145,20 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
     if (this.ticking) return 0;
     this.ticking = true;
     try {
-      const due = await this.db.platform((tx) =>
-        many<{ id: string; tenant_id: string }>(
-          tx,
-          `update workflow_runs set wake_at = null, updated_at = now()
-            where id in (select id from workflow_runs
-                          where mode = 'live' and ((status in ('running', 'waiting') and wake_at <= now())
-                             or (status = 'running' and wake_at is null and updated_at < now() - interval '5 minutes'))
-                          order by wake_at nulls first limit $1 for update skip locked)
-            returning id, tenant_id`,
-          [limit],
-        ),
-      );
+      const dueFilter = () => ({
+        mode: 'live',
+        $or: [
+          { status: { $in: ['running', 'waiting'] }, wake_at: { $lte: new Date() } },
+          { status: 'running', wake_at: null, updated_at: { $lt: new Date(Date.now() - 5 * 60_000) } },
+        ],
+      });
+      const candidates = await this.db.platform((tx) => tx.collection('workflow_runs').find(dueFilter(), { sort: { wake_at: 1 }, limit, projection: { tenant_id: 1 } }));
+      // Each run is claimed on its own: one that another worker claimed first no longer matches and is skipped.
+      const due: { id: string; tenant_id: string }[] = [];
+      for (const c of candidates) {
+        const claimed = await this.db.platform((tx) => tx.collection('workflow_runs').update({ id: c.id, ...dueFilter() }, { $set: { wake_at: null, updated_at: new Date() } }, { limit: 1 })).catch(() => 0);
+        if (claimed) due.push({ id: c.id as string, tenant_id: c.tenant_id as string });
+      }
       for (const r of due) {
         try {
           await this.advance(r.tenant_id, r.id);
@@ -165,14 +176,13 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
   async advance(tenantId: string, runId: string): Promise<void> {
     for (let guard = 0; guard < 50; guard++) {
       const loaded = await this.db.tenant(async (tx) => {
-        const run = await one<RunRow>(tx, 'select * from workflow_runs where id = $1', [runId]);
+        const run = (await tx.collection('workflow_runs').findOne({ id: runId })) as RunRow | undefined;
         if (!run || !['running', 'waiting'].includes(run.status)) return null;
-        const wf = (await one<WorkflowRow>(tx, 'select id, name, status, owner_membership_id from workflows where id = $1', [run.workflow_id]))!;
-        const v = (await one<{ definition: WorkflowDefinition }>(tx, 'select definition from workflow_versions where id = $1', [run.version_id]))!;
-        const owner = await one<{ user_id: string; status: string; label: string }>(
-          tx, `select m.user_id, m.status, u.full_name as label from memberships m join users u on u.id = m.user_id where m.id = $1`, [wf.owner_membership_id],
-        );
-        return { run, wf, def: v.definition, owner };
+        const wf = (await tx.collection('workflows').findOne({ id: run.workflow_id })) as unknown as WorkflowRow;
+        const v = (await tx.collection('workflow_versions').findOne({ id: run.version_id }))!;
+        const m = await tx.collection('memberships').findOne({ id: wf.owner_membership_id });
+        const owner = m ? { user_id: m.user_id as string, status: m.status as string, label: (await membershipUserNames(tx, [m.id])).get(m.id as string) ?? '' } : undefined;
+        return { run, wf, def: v.definition as WorkflowDefinition, owner };
       }, { tenantId });
       if (!loaded) return;
       const { run, wf, def, owner } = loaded;
@@ -215,31 +225,35 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
   /** Writes the step's result and moves the run. Returns whether to keep going. */
   private async record(tx: Tx, run: RunRow, step: WorkflowStep, o: StepOutcome): Promise<boolean> {
     const status = o.kind === 'next' ? o.status : o.kind === 'stop' ? 'stopped' : 'waiting';
-    await tx.query(
-      `insert into workflow_step_runs (tenant_id, run_id, step_index, step_id, type, attempt, status, detail) values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7)
-       on conflict (run_id, step_index, attempt, status) do nothing`,
-      [run.id, run.step_index, step.id, step.type, run.attempt + 1, status, o.detail.slice(0, 2000)],
-    );
+    await this.stepRun(tx, { run_id: run.id, step_index: run.step_index, step_id: step.id, type: step.type, attempt: run.attempt + 1, status, detail: o.detail.slice(0, 2000) });
+    const runs = tx.collection('workflow_runs');
     if (o.kind === 'next') {
-      await tx.query(`update workflow_runs set step_index = step_index + 1, attempt = 0, status = 'running', wake_at = null where id = $1`, [run.id]);
+      await runs.updateOne({ id: run.id }, { $inc: { step_index: 1 }, $set: { attempt: 0, status: 'running', wake_at: null } });
       return true;
     }
     if (o.kind === 'stop') {
-      await tx.query(`update workflow_runs set status = 'stopped', outcome = $2, finished_at = now(), wake_at = null where id = $1`, [run.id, o.detail.slice(0, 500)]);
+      await runs.updateOne({ id: run.id }, { $set: { status: 'stopped', outcome: o.detail.slice(0, 500), finished_at: new Date(), wake_at: null } });
       return false;
     }
-    await tx.query(`update workflow_runs set status = 'waiting', wake_at = $2, approval_request_id = coalesce($3, approval_request_id) where id = $1`, [run.id, o.wakeAt, o.approvalRequestId ?? null]);
+    await runs.updateOne({ id: run.id }, { $set: { status: 'waiting', wake_at: o.wakeAt, ...(o.approvalRequestId ? { approval_request_id: o.approvalRequestId } : {}) } });
     return false;
   }
 
+  /** Records a step attempt once: a repeat of the same attempt and outcome is ignored. */
+  private async stepRun(tx: Tx, row: { run_id: string; step_index: number; step_id: string; type: string; attempt: number; status: string; detail: string; error?: string }) {
+    const steps = tx.collection('workflow_step_runs');
+    if (await steps.exists({ run_id: row.run_id, step_index: row.step_index, attempt: row.attempt, status: row.status })) return;
+    await steps.insert(row);
+  }
+
   private async finish(tenantId: string, runId: string, status: 'succeeded' | 'cancelled', outcome: string) {
-    await this.db.tenant((tx) => tx.query(`update workflow_runs set status = $2, outcome = $3, finished_at = now(), wake_at = null where id = $1 and status in ('running', 'waiting')`, [runId, status, outcome]), { tenantId });
+    await this.db.tenant((tx) => tx.collection('workflow_runs').update({ id: runId, status: { $in: ['running', 'waiting'] } }, { $set: { status, outcome, finished_at: new Date(), wake_at: null } }), { tenantId });
   }
 
   private async failAndPause(tenantId: string, run: RunRow, wf: WorkflowRow, reason: string) {
     await this.db.tenant(async (tx) => {
-      await tx.query(`update workflow_runs set status = 'failed', error = $2, finished_at = now(), wake_at = null where id = $1`, [run.id, reason]);
-      await tx.query(`update workflows set status = 'paused', status_reason = $2 where id = $1 and status = 'active'`, [wf.id, reason]);
+      await tx.collection('workflow_runs').updateOne({ id: run.id }, { $set: { status: 'failed', error: reason, finished_at: new Date(), wake_at: null } });
+      await tx.collection('workflows').update({ id: wf.id, status: 'active' }, { $set: { status: 'paused', status_reason: reason } });
       await this.audit.record(tx, { tenantId, action: 'workflow.paused_automatically', resourceType: 'workflow', resourceId: wf.id, metadata: { reason } });
     }, { tenantId });
   }
@@ -248,31 +262,30 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
     const attempt = run.attempt + 1;
     const final = !err.retryable || attempt >= automation.MAX_STEP_ATTEMPTS;
     await this.db.tenant(async (tx) => {
-      await tx.query(
-        `insert into workflow_step_runs (tenant_id, run_id, step_index, step_id, type, attempt, status, detail, error) values (app_tenant_id(), $1, $2, $3, $4, $5, 'failed', $6, $7)
-         on conflict (run_id, step_index, attempt, status) do nothing`,
-        [run.id, run.step_index, step.id, step.type, attempt, final ? 'Gave up' : `Will retry (attempt ${attempt} of ${automation.MAX_STEP_ATTEMPTS})`, err.message.slice(0, 2000)],
-      );
+      await this.stepRun(tx, {
+        run_id: run.id, step_index: run.step_index, step_id: step.id, type: step.type, attempt, status: 'failed',
+        detail: final ? 'Gave up' : `Will retry (attempt ${attempt} of ${automation.MAX_STEP_ATTEMPTS})`, error: err.message.slice(0, 2000),
+      });
       if (final) {
-        await tx.query(`update workflow_runs set status = 'failed', attempt = $2, error = $3, finished_at = now(), wake_at = null where id = $1`, [run.id, attempt, err.message.slice(0, 2000)]);
-        const wf = (await one<{ owner_membership_id: string; name: string }>(tx, 'select owner_membership_id, name from workflows where id = $1', [run.workflow_id]))!;
+        await tx.collection('workflow_runs').updateOne({ id: run.id }, { $set: { status: 'failed', attempt, error: err.message.slice(0, 2000), finished_at: new Date(), wake_at: null } });
+        const wf = (await tx.collection('workflows').findOne({ id: run.workflow_id }))!;
         await this.notifications.notify(tx, { membershipIds: [wf.owner_membership_id], kind: 'workflow.failed', title: `Workflow "${wf.name}" failed at step ${run.step_index + 1}`, body: err.message, link: `/automation/runs/${run.id}` });
       } else {
-        await tx.query(`update workflow_runs set status = 'running', attempt = $2, error = $3, wake_at = now() + make_interval(secs => $4) where id = $1`, [run.id, attempt, err.message.slice(0, 2000), automation.retryDelayMs(attempt) / 1000]);
+        await tx.collection('workflow_runs').updateOne({ id: run.id }, { $set: { status: 'running', attempt, error: err.message.slice(0, 2000), wake_at: new Date(Date.now() + automation.retryDelayMs(attempt)) } });
       }
     }, { tenantId });
   }
 
   /** Resumes a run parked on an approval step. Runs inside the approver's decision transaction. */
   private async onDecision(tx: Tx, req: ApprovalRequestRow, approved: boolean) {
-    const run = await one<RunRow>(tx, `select * from workflow_runs where id = $1 and status = 'waiting' and approval_request_id = $2`, [req.resource_id, req.id]);
+    const run = (await tx.collection('workflow_runs').findOne({ id: req.resource_id, status: 'waiting', approval_request_id: req.id })) as RunRow | undefined;
     if (!run) return;
-    const v = (await one<{ definition: WorkflowDefinition }>(tx, 'select definition from workflow_versions where id = $1', [run.version_id]))!;
-    const step = v.definition.steps[run.step_index]!;
+    const v = (await tx.collection('workflow_versions').findOne({ id: run.version_id }))!;
+    const step = (v.definition as WorkflowDefinition).steps[run.step_index]!;
     const who = requestContext.tenantActor().label;
     if (approved) {
       await this.record(tx, run, step, { kind: 'next', status: 'succeeded', detail: `Approved by ${who}` });
-      await tx.query(`update workflow_runs set wake_at = now(), approval_request_id = null where id = $1`, [run.id]);
+      await tx.collection('workflow_runs').updateOne({ id: run.id }, { $set: { wake_at: new Date(), approval_request_id: null } });
     } else {
       await this.record(tx, run, step, { kind: 'stop', detail: `Rejected by ${who}` });
     }
@@ -289,7 +302,7 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
         return r.met ? { kind: 'next', status: 'succeeded', detail: `Met: ${detail}` } : { kind: 'stop', detail: `Stopped: ${detail}` };
       }
       case 'delay': {
-        const waited = await this.db.tenant((tx) => one(tx, `select 1 from workflow_step_runs where run_id = $1 and step_index = $2 and status = 'waiting'`, [run.id, run.step_index]));
+        const waited = await this.db.tenant((tx) => tx.collection('workflow_step_runs').exists({ run_id: run.id, step_index: run.step_index, status: 'waiting' }));
         if (waited) return { kind: 'next', status: 'succeeded', detail: 'Waited' };
         const wakeAt = new Date(Date.now() + automation.delayMs(step));
         return { kind: 'wait', detail: `${automation.describeStep(step)}, until ${wakeAt.toISOString()}`, wakeAt };
@@ -304,7 +317,7 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
       case 'approval': {
         if (!run.subject_employee_id) throw new StepError('This run is not about an employee, so nobody can be asked to approve', false);
         if (step.approver === 'role') {
-          const role = await this.db.tenant((tx) => one(tx, 'select 1 from roles where key = $1', [step.role]));
+          const role = await this.db.tenant((tx) => tx.collection('roles').exists({ key: step.role }));
           if (!role) throw new StepError(`Role "${step.role}" no longer exists`, false);
         }
         return this.db.tenant(async (tx) => {
@@ -317,7 +330,7 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
       }
       case 'assign_course': {
         if (!run.subject_employee_id) throw new StepError('This run is not about an employee', false);
-        const course = await this.db.tenant((tx) => one<{ title: string }>(tx, 'select title from courses where id = $1 and archived_at is null', [step.courseId]));
+        const course = await this.db.tenant((tx) => tx.collection('courses').findOne({ id: step.courseId, archived_at: null }));
         if (!course) throw new StepError('The course no longer exists or is archived', false);
         const dueOn = step.dueInDays ? new Date(Date.now() + step.dueInDays * 86_400_000).toISOString().slice(0, 10) : null;
         try {
@@ -330,7 +343,7 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
         }
       }
       case 'slack': {
-        const conn = await this.db.tenant((tx) => one<{ name: string; status: string }>(tx, 'select name, status from integration_connections where id = $1', [step.connectionId]));
+        const conn = await this.db.tenant((tx) => tx.collection('integration_connections').findOne({ id: step.connectionId }));
         if (!conn || conn.status === 'disconnected') throw new StepError('The Slack connection no longer exists', false);
         try {
           await this.connections.post(step.connectionId, automation.render(step.text, ctx), 'workflow');
@@ -341,11 +354,11 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
       }
       case 'webhook':
         return this.db.tenant(async (tx) => {
-          const w = await one<{ name: string; status: string }>(tx, 'select name, status from webhook_endpoints where id = $1', [step.endpointId]);
+          const w = await tx.collection('webhook_endpoints').findOne({ id: step.endpointId });
           if (!w) throw new StepError('The webhook endpoint no longer exists', false);
           if (w.status !== 'active') throw new StepError(`The webhook endpoint "${w.name}" is ${w.status}`, true);
           // One delivery per run and step, however often the step is retried.
-          const eventId = (await one<{ id: string }>(tx, 'select md5($1)::uuid as id', [`${run.id}:${step.id}`]))!.id;
+          const eventId = md5Uuid(`${run.id}:${step.id}`);
           const body = webhookBody({
             id: eventId, type: 'workflow.webhook', occurredAt: new Date().toISOString(), tenantId: run.tenant_id,
             payload: { workflowId: wf.id, workflowName: wf.name, runId: run.id, message: automation.render(step.message, ctx), values: ctx },
@@ -365,9 +378,7 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
         return [step.to === 'employee' ? e.membership_id : e.manager_membership_id].filter((x): x is string => !!x);
       }
       case 'role':
-        return (await many<{ membership_id: string }>(
-          tx, `select distinct ra.membership_id from role_assignments ra join roles r on r.id = ra.role_id join memberships m on m.id = ra.membership_id where r.key = $1 and m.status = 'active'`, [step.role],
-        )).map((r) => r.membership_id);
+        return activeHolders(tx, step.role!);
       case 'member':
         return step.membershipId ? [step.membershipId] : [];
     }

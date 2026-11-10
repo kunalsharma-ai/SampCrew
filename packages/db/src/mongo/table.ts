@@ -8,6 +8,7 @@ import {
   type FindOptions,
 } from 'mongodb';
 import {
+  LOCK_FIELD,
   ConstraintError,
   guardKey,
   guardedKeys,
@@ -18,6 +19,7 @@ import {
   tableSpec,
   toRow,
 } from './engine';
+import { ROW_GUARDS, type GuardOp, type RowGuard } from './row-guards';
 import type { TableSpec } from './schema';
 import { TABLES } from './schema.generated';
 
@@ -93,9 +95,11 @@ export interface TableOptions {
   within?: Document;
   /** Apply the table's workspace column limits even without a scope (users seen from a workspace). */
   workspaceColumns?: boolean;
+  /** Flags passed to row guards (see row-guards.ts). */
+  flags?: string[];
 }
 
-type Row = Document;
+export type Row = Document;
 
 /**
  * One collection seen through a transaction. It applies the PostgreSQL rules (defaults, types, NOT NULL, enums,
@@ -120,6 +124,15 @@ export class Table<T extends Row = Row> {
     this.restriction = restrictionFor(name, this.spec, opts.scope);
     this.ops = opts.readOnly ? new Set<Op>(['select']) : allowedOps(this.spec, opts.scope);
     this.columns = (opts.scope || opts.workspaceColumns) && this.spec.tenantColumns ? this.spec.tenantColumns : null;
+    this.guards = (this.spec.triggers ?? []).map((t) => ROW_GUARDS[t]).filter((g): g is RowGuard => !!g);
+  }
+
+  private readonly guards: RowGuard[];
+
+  private async runGuards(op: GuardOp, pairs: Array<[Document | null, Document | null]>) {
+    if (!this.guards.length) return;
+    const ctx = { db: this.db, session: this.session, table: this.name, flags: new Set(this.opts.flags ?? []) };
+    for (const [before, after] of pairs) for (const g of this.guards) await g(ctx, op, before, after);
   }
 
   private readonly columns: { select: string[]; update: string[] } | null;
@@ -136,7 +149,7 @@ export class Table<T extends Row = Row> {
     const docs = await this.coll
       .find(this.filter(filter), { ...options, sort: mapIdKeys(options.sort), projection: mapIdKeys(options.projection), session: this.session })
       .toArray();
-    return docs.map((d) => this.visible(toRow<T>(d)));
+    return docs.map((d) => this.visible(this.complete(toRow<T>(d), options.projection)));
   }
 
   async findOne(filter: Document = {}, options: FindOptions & { sort?: Document; projection?: Document } = {}): Promise<T | undefined> {
@@ -147,6 +160,17 @@ export class Table<T extends Row = Row> {
   async count(filter: Document = {}): Promise<number> {
     this.need('select');
     return this.coll.countDocuments(this.filter(filter), { session: this.session });
+  }
+
+  /**
+   * SELECT ... FOR UPDATE: writes to the matching row, so another transaction that locks or changes it before this one
+   * commits gets a write conflict and is retried, and checks made after the lock see no concurrent change. Returns
+   * whether a row matched. Needs only read access: the counter it writes is internal and never returned.
+   */
+  async lock(filter: Document): Promise<boolean> {
+    this.need('select');
+    const r = await this.coll.updateOne(this.filter(filter), { $inc: { [LOCK_FIELD]: 1 } }, { session: this.session });
+    return r.matchedCount > 0;
   }
 
   async exists(filter: Document = {}): Promise<boolean> {
@@ -190,10 +214,11 @@ export class Table<T extends Row = Row> {
       }
       docs.push(doc);
     }
+    await this.runGuards('insert', docs.map((d) => [null, d]));
     for (const doc of docs) await this.checkForeignKeys(doc);
     await this.addGuards(docs);
     await this.wrap(() => this.coll.insertMany(docs, { session: this.session, ordered: true }));
-    return docs.map((d) => toRow<T>(d));
+    return docs.map((d) => this.complete(toRow<T>(d)));
   }
 
   /** Updates matching rows. Returns how many matched. */
@@ -202,7 +227,7 @@ export class Table<T extends Row = Row> {
     this.checkUpdateScope(update);
     const prepared = prepareUpdate(this.name, this.spec, update);
     const f = this.filter(filter);
-    const needRows = this.needsRowsOnUpdate(prepared);
+    const needRows = this.guards.length > 0 || this.needsRowsOnUpdate(prepared);
     if (!needRows) {
       const r = await this.wrap(() =>
         options.limit === 1 ? this.coll.updateOne(f, prepared, { session: this.session }) : this.coll.updateMany(f, prepared, { session: this.session }),
@@ -214,6 +239,14 @@ export class Table<T extends Row = Row> {
     const ids = before.map((d) => d._id);
     await this.wrap(() => this.coll.updateMany({ _id: { $in: ids } }, prepared, { session: this.session }));
     const after = await this.coll.find({ _id: { $in: ids } }, { session: this.session }).toArray();
+    const afterById = new Map(after.map((d) => [String(d._id), d]));
+    try {
+      await this.runGuards('update', before.map((x) => [x, afterById.get(String(x._id)) ?? null]));
+    } catch (err) {
+      // Put the rows back, so a caller that catches the error does not keep a change the guard refused.
+      for (const doc of before) await this.coll.replaceOne({ _id: doc._id }, doc, { session: this.session });
+      throw err;
+    }
     const changed = changedColumns(prepared);
     for (const doc of after) await this.checkForeignKeys(doc, changed);
     await this.removeGuards(before);
@@ -232,7 +265,7 @@ export class Table<T extends Row = Row> {
     const target = await this.coll.findOne(this.filter(filter), { session: this.session, projection: { _id: 1 } });
     if (!target) return undefined;
     await this.update({ _id: target._id }, update, { limit: 1 });
-    return toRow<T>(await this.coll.findOne({ _id: target._id }, { session: this.session }));
+    return this.complete(toRow<T>(await this.coll.findOne({ _id: target._id }, { session: this.session })));
   }
 
   /** Inserts `row` unless a row matches `filter`; then applies `update` (if given) to that row instead. */
@@ -240,7 +273,7 @@ export class Table<T extends Row = Row> {
     const existing = await this.coll.findOne(this.filter(filter), { session: this.session, projection: { _id: 1 } });
     if (!existing) return this.insert(row);
     if (update && Object.keys(update).length) await this.update({ _id: existing._id }, update, { limit: 1 });
-    return toRow<T>(await this.coll.findOne({ _id: existing._id }, { session: this.session }));
+    return this.complete(toRow<T>(await this.coll.findOne({ _id: existing._id }, { session: this.session })));
   }
 
   /** Deletes matching rows, applying ON DELETE rules of the tables that reference them. Returns how many. */
@@ -248,6 +281,7 @@ export class Table<T extends Row = Row> {
     this.need('delete');
     const docs = await this.coll.find(this.filter(filter), { session: this.session, ...(options.limit === 1 ? { limit: 1 } : {}) }).toArray();
     if (!docs.length) return 0;
+    await this.runGuards('delete', docs.map((d) => [d, null]));
     await removeRows(this.db, this.session, this.name, this.spec, docs, this.tables);
     return docs.length;
   }
@@ -265,6 +299,22 @@ export class Table<T extends Row = Row> {
   }
 
   /** Drops columns a workspace may not read (password hashes, MFA secrets). */
+  /**
+   * A row as PostgreSQL returned it: every column present, NULL where nothing is stored. A document written without
+   * a column has no field for it, and code that compares with null (`x.location_id === null`) must not see undefined.
+   * With a projection, only the columns it asks for are filled in.
+   */
+  private complete(row: T, projection?: Document): T {
+    if (!row) return row;
+    const r = row as Row;
+    const p = projection ? Object.entries(projection) : [];
+    const include = p.filter(([, v]) => v === 1 || v === true).map(([k]) => k);
+    const exclude = new Set(p.filter(([, v]) => v === 0 || v === false).map(([k]) => k));
+    const cols = include.length ? include : Object.keys(this.spec.columns).filter((c) => !exclude.has(c));
+    for (const c of cols) if (!c.includes('.') && this.spec.columns[c] && r[c] === undefined) r[c] = null;
+    return row;
+  }
+
   private visible(row: T): T {
     if (!this.columns) return row;
     const out: Row = {};
@@ -372,7 +422,8 @@ export async function wrapErrors<R>(table: string, fn: () => Promise<R>): Promis
       throw new ConstraintError('23505', `A ${table} row with these details already exists`, index, table);
     }
     if (err instanceof MongoServerError && err.code === 121) {
-      throw new ConstraintError('23514', `A ${table} row breaks the collection's rules`, undefined, table);
+      // The validator's explanation goes to the server log through `cause`, never to the client.
+      throw Object.assign(new ConstraintError('23514', `A ${table} row breaks the collection's rules`, undefined, table), { cause: err });
     }
     throw err;
   }

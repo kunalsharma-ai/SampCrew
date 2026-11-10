@@ -1,5 +1,5 @@
 import { leaveMath, type payrollEngine, type WorkCalendar } from '@crew/contracts';
-import { many, one, type Tx } from '../../platform/database/database.service';
+import type { TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 
 export type StatutorySettings = payrollEngine.StatutorySettings;
@@ -23,35 +23,27 @@ export interface StatutoryRow {
 }
 
 /** The statutory settings a legal entity saved that are in effect on a date, if any. */
-export async function statutoryOn(tx: Tx, legalEntityId: string, date: string): Promise<StatutoryRow | undefined> {
-  return one<StatutoryRow>(
-    tx,
-    `select id, legal_entity_id, to_char(effective_from, 'YYYY-MM-DD') as effective_from, lop_source, settings
-       from statutory_settings where legal_entity_id = $1 and effective_from <= $2 order by effective_from desc limit 1`,
-    [legalEntityId, date],
-  );
+export async function statutoryOn(tx: TenantTx, legalEntityId: string, date: string): Promise<StatutoryRow | undefined> {
+  const row = await tx.collection('statutory_settings').findOne({ legal_entity_id: legalEntityId, effective_from: { $lte: date } }, { sort: { effective_from: -1 } });
+  return row ? { id: row.id, legal_entity_id: row.legal_entity_id, effective_from: row.effective_from, lop_source: row.lop_source, settings: row.settings } : undefined;
 }
 
-export async function legalEntity(tx: Tx, id: string) {
-  const le = await one<{ id: string; name: string; legal_name: string; currency: string; country_code: string }>(
-    tx, 'select id, name, legal_name, currency, country_code from legal_entities where id = $1', [id],
-  );
+export async function legalEntity(tx: TenantTx, id: string) {
+  const le = await tx.collection<{ id: string; name: string; legal_name: string; currency: string; country_code: string }>('legal_entities').findOne({ id });
   if (!le) throw Errors.notFound('Legal entity');
-  return le;
+  return { id: le.id, name: le.name, legal_name: le.legal_name, currency: le.currency, country_code: le.country_code };
 }
 
 /** The holiday calendar for an employee: their location's, else their legal entity's, else the workspace default. */
-export async function calendarFor(tx: Tx, legalEntityId: string | null, locationId: string | null): Promise<WorkCalendar> {
-  const cal = await one<{ id: string; weekly_offs: number[] }>(
-    tx,
-    `select id, weekly_offs from holiday_calendars
-      where (location_id = $2) or (location_id is null and legal_entity_id = $1) or is_default
-      order by (location_id = $2) desc nulls last, (legal_entity_id = $1) desc nulls last, is_default desc limit 1`,
-    [legalEntityId, locationId],
-  );
+export async function calendarFor(tx: TenantTx, legalEntityId: string | null, locationId: string | null): Promise<WorkCalendar> {
+  const candidates = await tx.collection('holiday_calendars').find({
+    $or: [...(locationId ? [{ location_id: locationId }] : []), ...(legalEntityId ? [{ location_id: null, legal_entity_id: legalEntityId }] : []), { is_default: true }],
+  });
+  const rank = (c: Record<string, unknown>) => (locationId && c.location_id === locationId ? 0 : legalEntityId && !c.location_id && c.legal_entity_id === legalEntityId ? 1 : 2);
+  const cal = candidates.sort((a, b) => rank(a) - rank(b))[0];
   if (!cal) return { weeklyOffs: [0, 6], holidays: new Set() };
-  const hs = await many<{ d: string }>(tx, `select to_char(holiday_date, 'YYYY-MM-DD') as d from holidays where calendar_id = $1 and not is_optional`, [cal.id]);
-  return { weeklyOffs: cal.weekly_offs.map(Number), holidays: new Set(hs.map((h) => h.d)) };
+  const hs = await tx.collection('holidays').find({ calendar_id: cal.id, is_optional: false }, { projection: { holiday_date: 1 } });
+  return { weeklyOffs: (cal.weekly_offs as number[]).map(Number), holidays: new Set(hs.map((h) => h.holiday_date as string)) };
 }
 
 /** Days of [start, end] the person was employed (joining date to last working day). */
@@ -86,7 +78,7 @@ export interface LopResult {
  *   them and only unpaid leave counts, with a warning.
  */
 export async function lossOfPay(
-  tx: Tx,
+  tx: TenantTx,
   e: { id: string; legal_entity_id: string | null; location_id: string | null },
   from: string,
   to: string,
@@ -95,13 +87,10 @@ export async function lossOfPay(
   const r: LopResult = { total: 0, absent: 0, halfDays: 0, unpaidLeave: 0, missingPunch: 0, source, notes: [] };
   if (to < from) return r;
   const cal = await calendarFor(tx, e.legal_entity_id, e.location_id);
-  const leaves = await many<{ start_date: string; end_date: string; start_half: 'full' | 'second_half'; end_half: 'full' | 'first_half'; name: string }>(
-    tx,
-    `select to_char(r.start_date, 'YYYY-MM-DD') as start_date, to_char(r.end_date, 'YYYY-MM-DD') as end_date, r.start_half, r.end_half, t.name
-       from leave_requests r join leave_types t on t.id = r.leave_type_id
-      where r.employee_id = $1 and r.status = 'approved' and not t.paid and r.start_date <= $3 and r.end_date >= $2`,
-    [e.id, from, to],
-  );
+  const unpaid = await tx.collection('leave_types').find({ paid: false }, { projection: { name: 1 } });
+  const leaves = await tx.collection<{ start_date: string; end_date: string; start_half: 'full' | 'second_half'; end_half: 'full' | 'first_half' }>('leave_requests').find({
+    employee_id: e.id, status: 'approved', leave_type_id: { $in: unpaid.map((t) => t.id) }, start_date: { $lte: to }, end_date: { $gte: from },
+  });
   for (const l of leaves) {
     const start = l.start_date < from ? from : l.start_date;
     const end = l.end_date > to ? to : l.end_date;
@@ -114,12 +103,8 @@ export async function lossOfPay(
   if (r.unpaidLeave) r.notes.push(`${dayCount(r.unpaidLeave)} day(s) of approved unpaid leave.`);
 
   if (source === 'attendance_and_leave') {
-    const days = await many<{ status: string; leave_part: string | null; punch_count: number; d: string }>(
-      tx,
-      `select status, leave_part, punch_count, to_char(work_date, 'YYYY-MM-DD') as d from attendance_days
-        where employee_id = $1 and work_date between $2 and $3 and day_type = 'working'`,
-      [e.id, from, to],
-    );
+    const days = (await tx.collection('attendance_days').find({ employee_id: e.id, work_date: { $gte: from, $lte: to }, day_type: 'working' }, { sort: { work_date: 1 } }))
+      .map((d) => ({ status: d.status as string, leave_part: (d.leave_part ?? null) as string | null, punch_count: Number(d.punch_count), d: d.work_date as string }));
     const punches = days.reduce((s, d) => s + d.punch_count, 0);
     if (!punches) {
       r.source = 'leave_only_no_attendance';
@@ -152,5 +137,5 @@ export function csvCell(v: unknown): string {
 }
 export const csv = (rows: unknown[][]) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
-/** ABAC columns for rows that belong to a legal entity only (runs, statutory settings). */
-export const ENTITY_SCOPE = (col: string) => ({ legalEntityId: col, membershipId: 'null::uuid', departmentId: 'null::uuid', locationId: 'null::uuid' });
+/** ABAC fields for rows that belong to a legal entity only (runs, statutory settings): team, department and location grants match none. */
+export const ENTITY_FIELDS = (field: string) => ({ legalEntityId: field, membershipId: '_no_membership', departmentId: '_no_department', locationId: '_no_location' });

@@ -29,6 +29,8 @@ export interface ColumnSpec {
   enum?: string[];
   /** A generated, increasing number (PostgreSQL identity column). */
   identity?: boolean;
+  /** Digits after the point of a decimal (numeric(p, s)): values are rounded to it on write, as PostgreSQL did. */
+  scale?: number;
 }
 
 export interface KeyColumn {
@@ -96,6 +98,6 @@ export interface TableSpec {
   unique: UniqueSpec[];
   fks: ForeignKeySpec[];
   indexes: IndexSpec[];
-  /** CHECK constraints, kept for reference. Enums and the common shapes are enforced by the collection validator. */
+  /** CHECK constraints in PostgreSQL syntax, compiled into the collection validator (see checks.ts). */
   checks: string[];
 }

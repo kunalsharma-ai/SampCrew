@@ -1,11 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { temporaryPasswordValue } from '../src/modules/employees/employees.service';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
-import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 // A real 1x1 PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -17,7 +16,7 @@ const today = () => new Date().toISOString().slice(0, 10);
  */
 describe('SAMPLEDGE feedback', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   let owner: string;
   let plain: { email: string; membershipId: string };
@@ -32,10 +31,8 @@ describe('SAMPLEDGE feedback', () => {
     owner = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
     plain = await addMember(pool, t, { name: 'Plain Member' });
     plainToken = (await login(app, plain.email)).accessToken;
-    generalShift = (await pool.query(`select id from shift_templates where tenant_id = $1 and code = 'GEN'`, [t.id])).rows[0].id;
-    nightShift = (await pool.query(
-      `insert into shift_templates (tenant_id, code, name, start_time, end_time, break_minutes) values ($1, 'NIGHT', 'Night shift', '22:00', '06:00', 30) returning id`, [t.id],
-    )).rows[0].id;
+    generalShift = (await pool.one('shift_templates', { tenant_id: t.id, code: 'GEN' }))!.id;
+    nightShift = (await pool.insert('shift_templates', { tenant_id: t.id, code: 'NIGHT', name: 'Night shift', start_time: '22:00', end_time: '06:00', break_minutes: 30 })).id;
   });
   afterAll(async () => {
     await app.close();
@@ -59,7 +56,9 @@ describe('SAMPLEDGE feedback', () => {
         registrationNumber: 'U12345MH2020PTC000001', taxId: '27AAACA1234A1Z5', address: 'Plot 4, MIDC, Pune',
       });
       expect(res.status, JSON.stringify(res.body)).toBe(200);
-      const row = (await pool.query(`select t.name, t.industry, t.company_size, t.setup_step, le.legal_name, le.tax_id from tenants t join legal_entities le on le.tenant_id = t.id where t.id = $1`, [t.id])).rows[0];
+      const tenant = (await pool.one('tenants', { id: t.id }))!;
+      const entity = (await pool.one('legal_entities', { tenant_id: t.id }))!;
+      const row = { name: tenant.name, industry: tenant.industry, company_size: tenant.company_size, setup_step: tenant.setup_step, legal_name: entity.legal_name, tax_id: entity.tax_id };
       expect(row).toMatchObject({ name: 'Acme Tools', industry: 'manufacturing', company_size: '51-200', legal_name: 'Acme Tools Private Limited', tax_id: '27AAACA1234A1Z5' });
       expect(row.setup_step).toBeGreaterThanOrEqual(1);
       // The suggestions now follow the industry.
@@ -82,7 +81,7 @@ describe('SAMPLEDGE feedback', () => {
       expect(again.body.skipped.departments).toEqual(['production']);
       expect(again.body.created.departments).toEqual(['Maintenance']);
       // A suggested code already taken is dropped instead of failing the batch.
-      expect((await pool.query(`select code from departments where tenant_id = $1 and name = 'Maintenance'`, [t.id])).rows[0].code).toBeNull();
+      expect((await pool.one('departments', { tenant_id: t.id, name: 'Maintenance' }))!.code ?? null).toBeNull();
       const list = await api(app, owner).get('/designations');
       expect(list.body.map((d: { name: string }) => d.name)).toEqual(['Machine Operator', 'Plant Head']);
     });
@@ -114,7 +113,7 @@ describe('SAMPLEDGE feedback', () => {
       expect(res.body.employee.membershipId).toBeTruthy();
       expect(res.body.employee.loginStatus).toBe('active');
       // The welcome email never carries the password.
-      const mail = (await pool.query(`select subject, text_body from email_messages where to_email = $1`, [email])).rows;
+      const mail = await pool.find('email_messages', { to_email: email });
       expect(mail).toHaveLength(1);
       expect(mail[0].text_body).not.toContain(temp);
 
@@ -154,7 +153,7 @@ describe('SAMPLEDGE feedback', () => {
       const res = await api(app, owner).post('/employees').send({ firstName: 'Dup', workEmail: plain.email, legalEntityId: t.legalEntityId, dateOfJoining: today(), loginMode: 'password' });
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe('account_exists');
-      expect((await pool.query(`select 1 from employees where tenant_id = $1 and first_name = 'Dup'`, [t.id])).rowCount).toBe(0);
+      expect(await pool.count('employees', { tenant_id: t.id, first_name: 'Dup' })).toBe(0);
     });
 
     it('gives an existing employee a login from their profile, by invitation or temporary password', async () => {
@@ -208,7 +207,7 @@ describe('SAMPLEDGE feedback', () => {
       const res = await api(app, owner).post('/employees').send({ firstName: 'Clash', legalEntityId: t.legalEntityId, dateOfJoining: today(), attendanceEnrolments: [{ deviceUserId: '1042' }] });
       expect(res.status).toBe(409);
       expect(res.body.error.message).toContain('Meena');
-      expect((await pool.query(`select 1 from employees where tenant_id = $1 and first_name = 'Clash'`, [t.id])).rowCount).toBe(0);
+      expect(await pool.count('employees', { tenant_id: t.id, first_name: 'Clash' })).toBe(0);
       expect((await api(app, owner).post('/employees').send({ firstName: 'Bad', legalEntityId: t.legalEntityId, dateOfJoining: today(), attendanceEnrolments: [{ deviceUserId: 'has space' }] })).status).toBe(422);
     });
 
@@ -217,12 +216,11 @@ describe('SAMPLEDGE feedback', () => {
       expect(res.status, JSON.stringify(res.body)).toBe(200);
       expect(res.body.defaultShift.code).toBe('GEN');
       expect(res.body.enrolments.map((x: { deviceUserId: string }) => x.deviceUserId)).toEqual(['2001', '2002']);
-      expect((await pool.query(`select device_user_id from device_user_mappings where employee_id = $1 order by 1`, [emp])).rows.map((r) => r.device_user_id)).toEqual(['2001', '2002']);
+      expect((await pool.find('device_user_mappings', { employee_id: emp }, { sort: { device_user_id: 1 } })).map((r) => r.device_user_id)).toEqual(['2001', '2002']);
       const cleared = await api(app, owner).put(`/employees/${emp}/attendance-registration`).send({ defaultShiftId: null, enrolments: [] });
       expect(cleared.body).toMatchObject({ registered: false, defaultShift: null, enrolments: [] });
       expect([403, 404]).toContain((await api(app, plainToken).put(`/employees/${emp}/attendance-registration`).send({ defaultShiftId: null, enrolments: [] })).status);
-      const audit = await pool.query(`select count(*)::int as n from audit_events where tenant_id = $1 and action = 'employee.attendance_registration_updated' and resource_id = $2`, [t.id, emp]);
-      expect(audit.rows[0].n).toBe(2);
+      expect(await pool.count('audit_events', { tenant_id: t.id, action: 'employee.attendance_registration_updated', resource_id: emp })).toBe(2);
     });
   });
 
@@ -249,7 +247,8 @@ describe('SAMPLEDGE feedback', () => {
       expect((await api(app, owner).put(`/employees/${emp}/photo`).attach('file', PNG, { filename: 'again.png', contentType: 'image/png' })).status).toBe(200);
       expect((await api(app, owner).delete(`/employees/${emp}/photo`)).status).toBe(204);
       expect((await api(app, owner).get(`/employees/${emp}/photo`)).status).toBe(404);
-      expect((await pool.query(`select photo_key, photo_updated_at from employees where id = $1`, [emp])).rows[0]).toEqual({ photo_key: null, photo_updated_at: null });
+      const after = (await pool.one('employees', { id: emp }))!;
+      expect({ photo_key: after.photo_key ?? null, photo_updated_at: after.photo_updated_at ?? null }).toEqual({ photo_key: null, photo_updated_at: null });
     });
 
     it('checks the file type and content', async () => {
@@ -325,7 +324,7 @@ describe('SAMPLEDGE feedback', () => {
       expect(typed.body.temporaryPassword).toBeUndefined();
       await setOwn('Meera-Temp-Pass-77', 'Meera-Own-Password-3');
       expect((await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'lock', initialPassword: 'Meera-Temp-Pass-77' })).status).toBe(422);
-      const audit = (await pool.query(`select action from audit_events where tenant_id = $1 and resource_id = $2 and action like 'employee.login_%'`, [t.id, emp])).rows.map((x) => x.action);
+      const audit = (await pool.find('audit_events', { tenant_id: t.id, resource_id: emp, action: /^employee\.login_/ }, { sort: { chain_seq: 1 } })).map((x) => x.action);
       expect(audit.filter((a) => a === 'employee.login_reset_password')).toHaveLength(2);
     });
 
@@ -354,18 +353,18 @@ describe('SAMPLEDGE feedback', () => {
       const self = (await api(app, owner).get('/employees/me')).body.employee?.id;
       if (self) expect((await api(app, owner).post(`/employees/${self}/login/actions`).send({ action: 'lock' })).body.error.code).toBe('own_login');
       const other = await createTenant(pool);
-      const user = (await pool.query(`select user_id from memberships where id = $1`, [membershipId])).rows[0].user_id;
-      await pool.query(`insert into memberships (tenant_id, user_id, status) values ($1, $2, 'active')`, [other.id, user]);
+      const user = (await pool.one('memberships', { id: membershipId }))!.user_id;
+      await pool.insert('memberships', { tenant_id: other.id, user_id: user, status: 'active' });
       const r = await api(app, owner).post(`/employees/${emp}/login/actions`).send({ action: 'reset_password' });
       expect(r.status).toBe(409);
       expect(r.body.error.code).toBe('shared_account');
       expect((await api(app, owner).get(`/employees/${emp}/login`)).body.otherWorkspaces).toBe(1);
-      await pool.query(`delete from memberships where tenant_id = $1 and user_id = $2`, [other.id, user]);
+      await pool.delete('memberships', { tenant_id: other.id, user_id: user });
     });
 
     it('lets the Super Admin reset, force a change, lock and unlock from the console, with a reason', async () => {
       const opsEmail = `ops.fb.${Date.now()}@sampledge.test`;
-      await pool.query(`insert into platform_admins (email, full_name, password_hash, role) values ($1, 'Ops', $2, 'super_admin')`, [opsEmail, await hashPassword(PASSWORD)]);
+      await pool.insert('platform_admins', { email: opsEmail, full_name: 'Ops', password_hash: await hashPassword(PASSWORD), role: 'super_admin' });
       const first = await api(app).post('/platform/auth/login').send({ email: opsEmail, password: PASSWORD });
       const setup = await api(app, first.body.accessToken).post('/platform/auth/mfa/setup');
       const ops = (await api(app, first.body.accessToken).post('/platform/auth/mfa/enable').send({ code: currentTotp(setup.body.secret) })).body.accessToken as string;

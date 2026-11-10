@@ -1,14 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
 /** SampCrew IQ: answers from the workspace under the asker's permissions; actions only open prefilled forms. */
 describe('SampCrew IQ', () => {
   let app: INestApplication;
-  let pool: Pool;
+  let pool: TestDb;
   let t: TestTenant;
   const tokens: Record<string, string> = {};
   const ids: Record<string, string> = {};
@@ -40,18 +39,14 @@ describe('SampCrew IQ', () => {
     ids.ada = await hire({ firstName: 'Ada', lastName: 'Ops', departmentId: ops, dateOfJoining: day(-20) });
     ids.sal = await hire({ firstName: 'Sal', lastName: 'Seller', departmentId: sales, dateOfJoining: '2023-02-01' });
     // Overtime: Operations doubled theirs in the last 30 days; Sales did less.
-    const ot = async (emp: string, n: number, minutes: number) => pool.query(
-      `insert into attendance_days (tenant_id, employee_id, work_date, day_type, status, worked_minutes, overtime_minutes, engine_version) values ($1, $2, $3, 'working', 'present', 540, $4, 1)`,
-      [t.id, emp, day(n), minutes],
-    );
+    const ot = async (emp: string, n: number, minutes: number) => pool.insert('attendance_days', {
+      tenant_id: t.id, employee_id: emp, work_date: day(n), day_type: 'working', status: 'present', worked_minutes: 540, overtime_minutes: minutes, engine_version: 1,
+    });
     await ot(ids.olu!, -40, 60); await ot(ids.olu!, -10, 60); await ot(ids.olu!, -5, 60);
     await ot(ids.sal!, -45, 120); await ot(ids.sal!, -3, 30);
-    const lt = await pool.query<{ id: string }>(`insert into leave_types (tenant_id, code, name) values ($1, 'IQTEST', 'Casual leave') returning id`, [t.id]);
-    await pool.query(
-      `insert into leave_requests (tenant_id, employee_id, leave_type_id, start_date, end_date, days, status) values ($1, $2, $3, current_date, current_date, 1, 'approved')`,
-      [t.id, ids.sal, lt.rows[0]!.id],
-    );
-    await pool.query(`insert into helpdesk_articles (tenant_id, title, body) values ($1, 'Sick leave policy', 'Everyone gets twelve days of sick leave a year. Tell your manager on the first morning.')`, [t.id]);
+    const lt = await pool.insert('leave_types', { tenant_id: t.id, code: 'IQTEST', name: 'Casual leave' });
+    await pool.insert('leave_requests', { tenant_id: t.id, employee_id: ids.sal, leave_type_id: lt.id, start_date: day(0), end_date: day(0), days: 1, status: 'approved' });
+    await pool.insert('helpdesk_articles', { tenant_id: t.id, title: 'Sick leave policy', body: 'Everyone gets twelve days of sick leave a year. Tell your manager on the first morning.' });
   });
 
   afterAll(async () => {
@@ -88,12 +83,12 @@ describe('SampCrew IQ', () => {
   });
 
   it('opens prefilled forms for actions and changes nothing', async () => {
-    const before = (await pool.query(`select count(*)::int as n from staffing_bids where tenant_id = $1`, [t.id])).rows[0].n;
+    const before = (await pool.count('staffing_bids', { tenant_id: t.id }));
     const bid = await ask('recruiter', 'Create a staffing proposal for five recruiters');
     expect(bid).toMatchObject({ intent: 'draft_bid', confidence: 'exact' });
     expect(bid.action.href).toBe('/staffing/bids/new?mode=quick&people=5&role=Recruiter');
     expect(bid.action.preview).toEqual(expect.arrayContaining([{ label: 'Role', value: 'Recruiter' }, { label: 'People', value: '5' }]));
-    expect((await pool.query(`select count(*)::int as n from staffing_bids where tenant_id = $1`, [t.id])).rows[0].n).toBe(before);
+    expect((await pool.count('staffing_bids', { tenant_id: t.id }))).toBe(before);
     const job = await ask('recruiter', 'Prepare a draft job description for a Senior HR Manager.');
     const href = new URL(job.action.href, 'http://x');
     expect(href.pathname).toBe('/recruitment');
@@ -131,15 +126,18 @@ describe('SampCrew IQ', () => {
       const today = new Date();
       const thisMonth = (d: number) => new Date(Date.UTC(today.getUTCFullYear() - 3, today.getUTCMonth(), d)).toISOString().slice(0, 10);
       const lw = new Date(Date.UTC(today.getUTCFullYear(), 0, 2)).toISOString().slice(0, 10);
-      await pool.query(`insert into employees (tenant_id, employee_code, first_name, last_name, date_of_joining, status, last_working_day, exit_reason, current_department_id, current_legal_entity_id)
-                        values ($1, 'IQ-L1', 'Lee', 'Leaver', '2020-01-06', 'exited', $2, 'Moved city', (select current_department_id from employees where id = $3), $4)`, [t.id, lw, ids.olu, t.legalEntityId]);
-      await pool.query(`update employees set status = 'probation', probation_end_date = current_date + 5 where id = $1`, [ids.ada]);
-      await pool.query(`update employees set date_of_joining = $2 where id = $1`, [ids.sal, thisMonth(Math.min(28, today.getUTCDate()))]);
-      await pool.query(`insert into attendance_days (tenant_id, employee_id, work_date, day_type, status, worked_minutes, engine_version) values ($1, $2, current_date, 'working', 'absent', 0, 1)`, [t.id, ids.olu]);
-      await pool.query(`insert into goals (tenant_id, employee_id, title, period_start, period_end, status, progress, confidence) values ($1, $2, 'Halve scrap on line 3', current_date - 30, current_date + 60, 'active', 20, 'at_risk')`, [t.id, ids.olu]);
-      await pool.query(`insert into payroll_runs (tenant_id, legal_entity_id, period_start, period_end, pay_date, currency, status, employee_count, gross, net, employer_contributions)
-                        values ($1, $2, '2026-09-01', '2026-09-30', '2026-09-30', 'INR', 'finalised', 3, 300000, 250000, 20000),
-                               ($1, $2, '2026-10-01', '2026-10-31', '2026-10-31', 'INR', 'pending_approval', 3, 330000, 275000, 22000)`, [t.id, t.legalEntityId]);
+      const olu = (await pool.one('employees', { id: ids.olu }))!;
+      await pool.insert('employees', {
+        tenant_id: t.id, employee_code: 'IQ-L1', first_name: 'Lee', last_name: 'Leaver', date_of_joining: '2020-01-06', status: 'exited', last_working_day: lw,
+        exit_reason: 'Moved city', current_department_id: olu.current_department_id, current_legal_entity_id: t.legalEntityId,
+      });
+      await pool.update('employees', { id: ids.ada }, { $set: { status: 'probation', probation_end_date: day(5) } });
+      await pool.update('employees', { id: ids.sal }, { $set: { date_of_joining: thisMonth(Math.min(28, today.getUTCDate())) } });
+      await pool.insert('attendance_days', { tenant_id: t.id, employee_id: ids.olu, work_date: day(0), day_type: 'working', status: 'absent', worked_minutes: 0, engine_version: 1 });
+      await pool.insert('goals', { tenant_id: t.id, employee_id: ids.olu, title: 'Halve scrap on line 3', period_start: day(-30), period_end: day(60), status: 'active', progress: 20, confidence: 'at_risk' });
+      const run = { tenant_id: t.id, legal_entity_id: t.legalEntityId, currency: 'INR', employee_count: 3 };
+      await pool.insert('payroll_runs', { ...run, period_start: '2026-09-01', period_end: '2026-09-30', pay_date: '2026-09-30', status: 'finalised', gross: 300000, net: 250000, employer_contributions: 20000 });
+      await pool.insert('payroll_runs', { ...run, period_start: '2026-10-01', period_end: '2026-10-31', pay_date: '2026-10-31', status: 'pending_approval', gross: 330000, net: 275000, employer_contributions: 22000 });
     });
 
     it('answers leavers, probation, anniversaries, absences and goals from records', async () => {
@@ -186,7 +184,7 @@ describe('SampCrew IQ', () => {
       expect((await api(app, tokens.olu).get('/iq/conversations')).body.every((c: { id: string }) => c.id !== first.conversationId)).toBe(true);
       expect((await api(app, tokens.hr).delete(`/iq/conversations/${first.conversationId}`)).status).toBe(200);
       expect((await api(app, tokens.hr).get(`/iq/conversations/${first.conversationId}`)).status).toBe(404);
-      expect((await pool.query(`select count(*)::int as n from iq_messages where conversation_id = $1`, [first.conversationId])).rows[0].n).toBe(0);
+      expect((await pool.count('iq_messages', { conversation_id: first.conversationId }))).toBe(0);
     });
   });
 });

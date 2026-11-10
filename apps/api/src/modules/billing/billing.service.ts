@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { UNLIMITED, type ChangeSubscriptionRequest } from '@crew/contracts';
+import { money, UNLIMITED, type ChangeSubscriptionRequest } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
 
@@ -33,17 +33,17 @@ export class BillingService {
     private readonly outbox: OutboxService,
   ) {}
 
-  async plans(tx?: Tx): Promise<PlanView[]> {
-    const run = async (t: Tx) => {
+  async plans(tx?: TenantTx): Promise<PlanView[]> {
+    const run = async (t: TenantTx) => {
       // Plans on sale, plus the workspace's own plan when SAMPLEDGE hid or archived it (so its contents still show).
-      const plans = await many<{ id: string; key: string; name: string; tagline: string; quote_only: boolean; minimum_seats: number; offered: boolean }>(
-        t,
-        `select p.*, (p.is_public and p.archived_at is null) as offered from plans p
-          where (p.is_public and p.archived_at is null) or p.id = (select plan_id from subscriptions limit 1)
-          order by p.sort_order, p.name`,
-      );
-      const prices = await many<{ plan_id: string; currency: string; monthly_per_seat: string; annual_per_seat_month: string }>(t, 'select * from plan_prices order by currency');
-      const pf = await many<{ plan_id: string; feature_key: string; limit_value: number | null; kind: string }>(t, 'select pf.*, f.kind from plan_features pf join features f on f.key = pf.feature_key');
+      const own = (await t.collection('subscriptions').findOne({}))?.plan_id ?? null;
+      const plans = (
+        await t.collection('plans').find({ $or: [{ is_public: true, archived_at: null }, { id: own }] }, { sort: { sort_order: 1, name: 1 } })
+      ).map((p) => ({ ...p, offered: p.is_public && !p.archived_at })) as { id: string; key: string; name: string; tagline: string; quote_only: boolean; minimum_seats: number; offered: boolean }[];
+      const prices = await t.collection('plan_prices').find({ plan_id: { $in: plans.map((p) => p.id) } }, { sort: { currency: 1 } });
+      const features = await t.collection('plan_features').find({ plan_id: { $in: plans.map((p) => p.id) } });
+      const kinds = new Map((await t.collection('features').find({})).map((f) => [f.key as string, f.kind as string]));
+      const pf = features.filter((x) => kinds.has(x.feature_key)).map((x) => ({ plan_id: x.plan_id as string, feature_key: x.feature_key as string, limit_value: (x.limit_value ?? null) as number | null, kind: kinds.get(x.feature_key)! }));
       return plans.map((p) => ({
         id: p.id,
         key: p.key,
@@ -62,20 +62,36 @@ export class BillingService {
 
   subscription() {
     return this.db.tenant(async (tx) => {
-      const sub = await one(
-        tx,
-        `select s.id, p.key as "planKey", p.name as "planName", s.status, s.billing_cycle as "billingCycle", s.currency, s.seats, s.unit_price as "unitPrice",
-                to_char(s.trial_ends_on, 'YYYY-MM-DD') as "trialEndsOn", to_char(s.current_period_start, 'YYYY-MM-DD') as "currentPeriodStart",
-                to_char(s.current_period_end, 'YYYY-MM-DD') as "currentPeriodEnd", s.cancel_at_period_end as "cancelAtPeriodEnd", s.provider,
-                (s.seats * s.unit_price * case when s.billing_cycle = 'annual' then 12 else 1 end)::numeric(14,2)::text as "periodAmount"
-           from subscriptions s join plans p on p.id = s.plan_id`,
-      );
-      const usage = await one(
-        tx,
-        `select (select count(*)::int from memberships where status <> 'suspended') as "members",
-                (select count(*)::int from legal_entities where archived_at is null) as "legalEntities",
-                (select coalesce(sum(quantity), 0)::float8 from usage_records where metric = 'ai_credits' and occurred_at >= date_trunc('month', now())) as "aiCreditsThisMonth"`,
-      );
+      const s = await tx.collection('subscriptions').findOne({});
+      const p = s && (await tx.collection('plans').findOne({ id: s.plan_id }));
+      const sub = s && p && {
+        id: s.id,
+        planKey: p.key,
+        planName: p.name,
+        status: s.status,
+        billingCycle: s.billing_cycle,
+        currency: s.currency,
+        seats: s.seats,
+        unitPrice: s.unit_price,
+        trialEndsOn: s.trial_ends_on ?? null,
+        currentPeriodStart: s.current_period_start ?? null,
+        currentPeriodEnd: s.current_period_end ?? null,
+        cancelAtPeriodEnd: s.cancel_at_period_end,
+        provider: s.provider,
+        periodAmount: money.fromMinor(money.toMinor(s.unit_price) * BigInt(s.seats * (s.billing_cycle === 'annual' ? 12 : 1))),
+      };
+      const monthStart = new Date();
+      monthStart.setUTCDate(1);
+      monthStart.setUTCHours(0, 0, 0, 0);
+      const credits = await tx.collection('usage_records').aggregate<{ total: number }>([
+        { $match: { metric: 'ai_credits', occurred_at: { $gte: monthStart } } },
+        { $group: { _id: null, total: { $sum: { $toDouble: '$quantity' } } } },
+      ]);
+      const usage = {
+        members: await tx.collection('memberships').count({ status: { $ne: 'suspended' } }),
+        legalEntities: await tx.collection('legal_entities').count({ archived_at: null }),
+        aiCreditsThisMonth: credits[0]?.total ?? 0,
+      };
       return { subscription: sub, usage, paymentProvider: { connected: false, note: 'Online card and UPI payments are not connected yet. Invoices are issued by SAMPLEDGE finance.' } };
     });
   }
@@ -86,13 +102,15 @@ export class BillingService {
       const plans = await this.plans(tx);
       const plan = plans.find((p) => p.key === input.planKey);
       if (!plan) {
-        if (await one(tx, 'select 1 from plans where key = $1', [input.planKey])) throw Errors.badRequest('plan_not_offered', 'This plan is not offered. Choose another plan.');
+        if (await tx.collection('plans').exists({ key: input.planKey })) throw Errors.badRequest('plan_not_offered', 'This plan is not offered. Choose another plan.');
         throw Errors.notFound('Plan');
       }
       if (plan.quoteOnly) throw Errors.badRequest('quote_only', `${plan.name} is sold by quotation. Send SAMPLEDGE a request from Plan & billing.`);
       if (input.seats < plan.minimumSeats) throw Errors.badRequest('seats_below_minimum', `${plan.name} needs at least ${plan.minimumSeats} seats`);
 
-      const current = (await one<{ currency: string; status: string; plan_key: string }>(tx, 'select s.currency, s.status, p.key as plan_key from subscriptions s join plans p on p.id = s.plan_id'))!;
+      const subscription = (await tx.collection('subscriptions').findOne({}))!;
+      const currentPlan = (await tx.collection('plans').findOne({ id: subscription.plan_id }))!;
+      const current = { currency: subscription.currency as string, status: subscription.status as string, plan_key: currentPlan.key as string };
       if (current.status === 'suspended' || current.status === 'cancelled') throw Errors.badRequest('subscription_inactive', 'Contact SAMPLEDGE support to reactivate this subscription');
       // A plan that is no longer on sale can only be kept (seats or cycle), not moved to.
       if (!plan.offered && plan.key !== current.plan_key) throw Errors.badRequest('plan_not_offered', `${plan.name} is not offered. Choose another plan.`);
@@ -100,12 +118,12 @@ export class BillingService {
       const price = plan.prices.find((p) => p.currency === currency);
       if (!price) throw Errors.badRequest('currency_unavailable', `${plan.name} is not priced in ${currency}`);
 
-      const usage = (await one<{ members: number; entities: number; custom_roles: number }>(
-        tx,
-        `select (select count(*)::int from memberships where status <> 'suspended') as members,
-                (select count(*)::int from legal_entities where archived_at is null) as entities,
-                (select count(*)::int from roles r where not r.is_system and exists (select 1 from role_assignments ra where ra.role_id = r.id)) as custom_roles`,
-      ))!;
+      const customRoleIds = (await tx.collection('roles').find({ is_system: false }, { projection: { _id: 1 } })).map((r) => r.id);
+      const usage = {
+        members: await tx.collection('memberships').count({ status: { $ne: 'suspended' } }),
+        entities: await tx.collection('legal_entities').count({ archived_at: null }),
+        custom_roles: (await tx.collection('role_assignments').distinct('role_id', { role_id: { $in: customRoleIds } })).length,
+      };
       const blockers: string[] = [];
       const maxEmployees = plan.limits.max_employees ?? UNLIMITED;
       const maxEntities = plan.limits.max_legal_entities ?? UNLIMITED;
@@ -117,12 +135,23 @@ export class BillingService {
       if (blockers.length) throw Errors.conflict('downgrade_blocked', blockers.join(' '));
 
       const unit = input.billingCycle === 'annual' ? price.annualPerMonth : price.monthly;
-      const before = await one(tx, `select p.key as plan, s.billing_cycle as cycle, s.seats, s.currency from subscriptions s join plans p on p.id = s.plan_id`);
-      await tx.query(
-        `update subscriptions set plan_id = $1, billing_cycle = $2, seats = $3, currency = $4, unit_price = $5,
-           status = case when status = 'trialing' then 'trialing' else 'active' end,
-           current_period_end = case when billing_cycle <> $2 then current_date + case when $2 = 'annual' then 365 else 30 end else current_period_end end`,
-        [plan.id, input.billingCycle, input.seats, currency, unit],
+      const before = { plan: current.plan_key, cycle: subscription.billing_cycle, seats: subscription.seats, currency: subscription.currency };
+      const cycleChanged = subscription.billing_cycle !== input.billingCycle;
+      const periodEnd = new Date();
+      periodEnd.setUTCDate(periodEnd.getUTCDate() + (input.billingCycle === 'annual' ? 365 : 30));
+      await tx.collection('subscriptions').updateOne(
+        { id: subscription.id },
+        {
+          $set: {
+            plan_id: plan.id,
+            billing_cycle: input.billingCycle,
+            seats: input.seats,
+            currency,
+            unit_price: unit,
+            status: subscription.status === 'trialing' ? 'trialing' : 'active',
+            ...(cycleChanged ? { current_period_end: periodEnd.toISOString().slice(0, 10) } : {}),
+          },
+        },
       );
       await this.audit.record(tx, {
         action: 'subscription.changed', resourceType: 'subscription', resourceId: requestContext.tenantActor().tenantId,
@@ -138,32 +167,46 @@ export class BillingService {
   // ---------------------------------------------------------------------------------------------------------
 
   planRequests() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select r.id, p.key as "planKey", p.name as "planName", r.seats, r.billing_cycle as "billingCycle", r.message, r.status, r.requested_by_label as "requestedBy",
-                r.created_at as "createdAt", r.decision_note as "decisionNote", r.decided_at as "decidedAt"
-           from plan_requests r join plans p on p.id = r.plan_id order by r.created_at desc limit 50`,
-      ),
-    );
+    return this.db.tenant(async (tx) => {
+      const requests = await tx.collection('plan_requests').find({}, { sort: { created_at: -1 }, limit: 50 });
+      const plans = new Map((await tx.collection('plans').find({ id: { $in: requests.map((r) => r.plan_id) } })).map((p) => [p.id as string, p]));
+      return requests
+        .filter((r) => plans.has(r.plan_id))
+        .map((r) => ({
+          id: r.id,
+          planKey: plans.get(r.plan_id)!.key,
+          planName: plans.get(r.plan_id)!.name,
+          seats: r.seats,
+          billingCycle: r.billing_cycle,
+          message: r.message ?? null,
+          status: r.status,
+          requestedBy: r.requested_by_label,
+          createdAt: r.created_at,
+          decisionNote: r.decision_note ?? null,
+          decidedAt: r.decided_at ?? null,
+        }));
+    });
   }
 
   async requestPlan(input: { planKey: string; seats: number; billingCycle: 'monthly' | 'annual'; message?: string }) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const plan = await one<{ id: string; name: string; quote_only: boolean; minimum_seats: number }>(
-        tx, 'select id, name, quote_only, minimum_seats from plans where key = $1 and is_public and archived_at is null', [input.planKey],
-      );
+      const plan = await tx.collection<{ id: string; name: string; quote_only: boolean; minimum_seats: number }>('plans').findOne({ key: input.planKey, is_public: true, archived_at: null });
       if (!plan) throw Errors.notFound('Plan');
       if (!plan.quote_only) throw Errors.badRequest('self_serve_plan', `${plan.name} can be chosen straight away on Plan & billing; no request is needed.`);
       if (input.seats < plan.minimum_seats) throw Errors.badRequest('seats_below_minimum', `${plan.name} needs at least ${plan.minimum_seats} seats`);
-      if (await one(tx, `select 1 from plan_requests where status = 'pending'`)) throw Errors.conflict('request_pending', 'Your workspace already has a plan request waiting for SAMPLEDGE. Withdraw it to send a new one.');
-      const label = (await one<{ label: string }>(tx, 'select coalesce(u.full_name, u.email::text) as label from memberships m join users u on u.id = m.user_id where m.id = $1', [actor.membershipId]))?.label ?? 'Workspace admin';
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into plan_requests (tenant_id, plan_id, seats, billing_cycle, message, requested_by_membership_id, requested_by_label) values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-        [actor.tenantId, plan.id, input.seats, input.billingCycle, input.message ?? null, actor.membershipId, label],
-      ))!;
+      if (await tx.collection('plan_requests').exists({ status: 'pending' })) throw Errors.conflict('request_pending', 'Your workspace already has a plan request waiting for SAMPLEDGE. Withdraw it to send a new one.');
+      const me = await tx.collection('memberships').findOne({ id: actor.membershipId });
+      const user = me && (await (await tx.users()).findOne({ id: me.user_id }));
+      const label = (user?.full_name as string | undefined) ?? (user?.email as string | undefined) ?? 'Workspace admin';
+      const row = await tx.collection('plan_requests').insert({
+        plan_id: plan.id,
+        seats: input.seats,
+        billing_cycle: input.billingCycle,
+        message: input.message ?? null,
+        requested_by_membership_id: actor.membershipId,
+        requested_by_label: label,
+      });
       await this.audit.record(tx, { action: 'subscription.plan_requested', resourceType: 'plan_request', resourceId: row.id, changes: { plan: input.planKey, seats: input.seats, cycle: input.billingCycle } });
       return { id: row.id, note: `Your request for ${plan.name} is with SAMPLEDGE. You will be notified when it is answered.` };
     });
@@ -171,23 +214,32 @@ export class BillingService {
 
   async withdrawPlanRequest(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await one<{ status: string }>(tx, 'select status from plan_requests where id = $1 for update', [id]);
+      const r = await tx.collection('plan_requests').findOne({ id });
       if (!r) throw Errors.notFound('Plan request');
       if (r.status !== 'pending') throw Errors.conflict('request_decided', 'This request has already been answered');
-      await tx.query(`update plan_requests set status = 'withdrawn', decided_at = now() where id = $1`, [id]);
+      // The status check is part of the write, so a decision made meanwhile is not overwritten.
+      if (!(await tx.collection('plan_requests').updateOne({ id, status: 'pending' }, { $set: { status: 'withdrawn', decided_at: new Date() } }))) throw Errors.conflict('request_decided', 'This request has already been answered');
       await this.audit.record(tx, { action: 'subscription.plan_request_withdrawn', resourceType: 'plan_request', resourceId: id });
       return { ok: true };
     });
   }
 
   invoices() {
-    return this.db.tenant((tx) =>
-      many(
-        tx,
-        `select id, number, status, currency, subtotal::text, tax::text, total::text, to_char(period_start, 'YYYY-MM-DD') as "periodStart",
-                to_char(period_end, 'YYYY-MM-DD') as "periodEnd", issued_at as "issuedAt", due_at as "dueAt", paid_at as "paidAt"
-           from invoices order by created_at desc limit 100`,
-      ),
+    return this.db.tenant(async (tx) =>
+      (await tx.collection('invoices').find({}, { sort: { created_at: -1 }, limit: 100 })).map((i) => ({
+        id: i.id,
+        number: i.number,
+        status: i.status,
+        currency: i.currency,
+        subtotal: i.subtotal,
+        tax: i.tax,
+        total: i.total,
+        periodStart: i.period_start ?? null,
+        periodEnd: i.period_end ?? null,
+        issuedAt: i.issued_at ?? null,
+        dueAt: i.due_at ?? null,
+        paidAt: i.paid_at ?? null,
+      })),
     );
   }
 }

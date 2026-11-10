@@ -25,7 +25,7 @@ import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { DatabaseService, many, one, type Tx } from '../../platform/database/database.service';
+import { countBy, MongoService as DatabaseService, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
@@ -36,29 +36,23 @@ import { DevicesService } from '../attendance/devices.service';
 import { LeaveService } from '../leave/leave.service';
 import { MembersService } from '../members/members.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
-import { EMPLOYEE_SCOPE, employeeAttrs } from './employee-attrs';
+import { EMPLOYEE_FIELDS, EMPLOYEE_SCOPE, employeeAttrs } from './employee-attrs';
+import { applyCurrentPlacement, displayName, type EmployeeRow, employeeNames, employeeViews, fieldById, managerCycle, syncMembership } from './employee-view';
 
-export { employeeAttrs };
+export { employeeAttrs, type EmployeeRow };
 
-export const EMPLOYEE_COLUMNS = `e.id, e.employee_code as "employeeCode", e.first_name as "firstName", e.last_name as "lastName",
-  e.preferred_name as "preferredName", trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "displayName",
-  e.work_email::text as "workEmail", e.personal_email::text as "personalEmail", e.phone, e.date_of_birth as "dateOfBirth", e.gender,
-  e.date_of_joining as "dateOfJoining", e.probation_end_date as "probationEndDate", e.confirmation_date as "confirmationDate",
-  e.employment_type as "employmentType", e.status, e.resignation_date as "resignationDate", e.last_working_day as "lastWorkingDay",
-  e.exit_type as "exitType", e.exit_reason as "exitReason",
-  e.current_legal_entity_id as "legalEntityId", le.name as "legalEntityName", e.current_department_id as "departmentId", d.name as "departmentName",
-  e.current_location_id as "locationId", l.name as "locationName", e.current_designation_id as "designationId", ds.name as "designationName",
-  e.current_manager_employee_id as "managerEmployeeId", trim(coalesce(mgr.preferred_name, mgr.first_name) || ' ' || mgr.last_name) as "managerName",
-  e.current_grade as "grade", e.membership_id as "membershipId", m.status as "loginStatus", e.created_at as "createdAt",
-  e.photo_updated_at as "photoUpdatedAt", e.default_shift_id as "defaultShiftId"`;
+/** Columns the ABAC scope predicate uses for employee rows (aliased e). */
+export { EMPLOYEE_SCOPE };
 
-const SORT_KEYS: Record<z.infer<typeof employeeListQuery>['sort'], string> = {
-  name: `lower(e.first_name || ' ' || e.last_name)`,
-  code: 'lower(e.employee_code)',
-  joined: `to_char(e.date_of_joining, 'YYYY-MM-DD')`,
-  department: `lower(coalesce(d.name, ''))`,
-  location: `lower(coalesce(l.name, ''))`,
-  status: 'e.status',
+type ListQuery = Omit<z.infer<typeof employeeListQuery>, 'cursor' | 'limit'>;
+
+const SORT_KEYS: Record<z.infer<typeof employeeListQuery>['sort'], (e: EmployeeRow) => string> = {
+  name: (e) => `${e.firstName} ${e.lastName}`.toLowerCase(),
+  code: (e) => e.employeeCode.toLowerCase(),
+  joined: (e) => e.dateOfJoining,
+  department: (e) => String(e.departmentName ?? '').toLowerCase(),
+  location: (e) => String(e.locationName ?? '').toLowerCase(),
+  status: (e) => e.status,
 };
 
 const EXPORT_HEADERS: Record<EmployeeColumn, string> = {
@@ -81,41 +75,6 @@ function exportValue(r: EmployeeRow, c: EmployeeColumn): unknown {
   }
 }
 
-export const EMPLOYEE_FROM = `from employees e
-  left join legal_entities le on le.id = e.current_legal_entity_id
-  left join departments d on d.id = e.current_department_id
-  left join locations l on l.id = e.current_location_id
-  left join designations ds on ds.id = e.current_designation_id
-  left join employees mgr on mgr.id = e.current_manager_employee_id
-  left join memberships m on m.id = e.membership_id`;
-
-/** Columns the ABAC scope predicate uses for employee rows (aliased e). */
-export { EMPLOYEE_SCOPE };
-
-export interface EmployeeRow {
-  id: string;
-  employeeCode: string;
-  firstName: string;
-  lastName: string;
-  displayName: string;
-  workEmail: string | null;
-  status: string;
-  dateOfJoining: string;
-  probationEndDate: string | null;
-  confirmationDate: string | null;
-  lastWorkingDay: string | null;
-  legalEntityId: string | null;
-  departmentId: string | null;
-  locationId: string | null;
-  designationId: string | null;
-  managerEmployeeId: string | null;
-  grade: string | null;
-  employmentType: string;
-  membershipId: string | null;
-  [key: string]: unknown;
-}
-
-
 const PROFILE_COLUMNS: Record<string, string> = {
   firstName: 'first_name', lastName: 'last_name', preferredName: 'preferred_name', workEmail: 'work_email', personalEmail: 'personal_email',
   phone: 'phone', dateOfBirth: 'date_of_birth', gender: 'gender',
@@ -126,6 +85,18 @@ const SENSITIVE_COLUMNS = { bankAccount: 'bank_account_enc', bankRouting: 'bank_
 const LIFECYCLE_KIND: Record<string, string> = { transfer: 'transferred', promotion: 'promoted', manager_change: 'manager_changed', correction: 'transferred', other: 'transferred' };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const DAY = 86_400_000;
+const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
+/** date + n months, clamped to the end of a shorter month (PostgreSQL interval arithmetic). */
+function addMonths(date: string, n: number): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const target = new Date(Date.UTC(y, m - 1 + n, 1));
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, last));
+  return target.toISOString().slice(0, 10);
+}
+const digitsOf = (v: unknown) => String(v ?? '').replace(/\D/g, '');
 
 /**
  * Employee records. The employee is the person record HR manages; a SampCrew login (membership) is optional and
@@ -154,30 +125,41 @@ export class EmployeesService {
   // ---------------------------------------------------------------------------------------------------------
 
   listDesignations() {
-    return this.db.tenant((tx) =>
-      many(tx, `select id, name, code, level, (select count(*)::int from employees e where e.current_designation_id = designations.id and e.status <> 'exited') as "employeeCount"
-                  from designations where archived_at is null order by level nulls last, name`),
-    );
+    return this.db.tenant(async (tx) => {
+      const rows = await tx.collection('designations').find({ archived_at: null });
+      const counts = await countBy(tx, 'employees', 'current_designation_id', rows.map((r) => r.id), { status: { $ne: 'exited' } });
+      return rows
+        .sort((a, b) => (a.level ?? Infinity) - (b.level ?? Infinity) || String(a.name).localeCompare(String(b.name)))
+        .map((r) => ({ id: r.id, name: r.name, code: r.code ?? null, level: r.level ?? null, employeeCount: counts.get(r.id) ?? 0 }));
+    });
   }
 
   createDesignation(input: z.infer<typeof designationInput>) {
     return this.db.tenant(async (tx) => {
-      const row = await one<{ id: string }>(
-        tx, `insert into designations (tenant_id, name, code, level) values (app_tenant_id(), $1, $2, $3) returning id, name, code, level`,
-        [input.name, input.code ?? null, input.level ?? null],
-      ).catch(uniqueAs('designation_exists', 'A designation with this name already exists'));
-      await this.audit.record(tx, { action: 'designation.created', resourceType: 'designation', resourceId: row!.id, changes: input });
-      return row;
+      const row = await tx
+        .collection('designations')
+        .insert({ name: input.name, code: input.code ?? null, level: input.level ?? null })
+        .catch(uniqueAs('designation_exists', 'A designation with this name already exists'));
+      await this.audit.record(tx, { action: 'designation.created', resourceType: 'designation', resourceId: row.id, changes: input });
+      return { id: row.id, name: row.name, code: row.code ?? null, level: row.level ?? null };
     });
   }
 
   updateDesignation(id: string, input: Partial<z.infer<typeof designationInput>>) {
     return this.db.tenant(async (tx) => {
-      const before = await one<Record<string, unknown>>(tx, 'select name, code, level from designations where id = $1 and archived_at is null for update', [id]);
-      if (!before) throw Errors.notFound('Designation');
+      const found = await tx.collection('designations').findOne({ id, archived_at: null });
+      if (!found) throw Errors.notFound('Designation');
+      const before = { name: found.name, code: found.code ?? null, level: found.level ?? null };
       const after = { name: input.name ?? before.name, code: input.code !== undefined ? input.code : before.code, level: input.level !== undefined ? input.level : before.level };
-      await tx.query('update designations set name = $2, code = $3, level = $4 where id = $1', [id, after.name, after.code, after.level])
+      await tx
+        .collection('designations')
+        .updateOne({ id }, { $set: after })
         .catch(uniqueAs('designation_exists', 'A designation with this name already exists'));
+      // Logins show the designation as their title.
+      if (after.name !== before.name) {
+        const holders = await tx.collection('employees').find({ current_designation_id: id, membership_id: { $ne: null } }, { projection: { membership_id: 1 } });
+        if (holders.length) await tx.collection('memberships').update({ id: { $in: holders.map((h) => h.membership_id) } }, { $set: { title: after.name } });
+      }
       await this.audit.record(tx, { action: 'designation.updated', resourceType: 'designation', resourceId: id, changes: diff(before, after) });
       return { id, ...after };
     });
@@ -185,10 +167,10 @@ export class EmployeesService {
 
   archiveDesignation(id: string) {
     return this.db.tenant(async (tx) => {
-      const used = await one(tx, `select 1 from employees where current_designation_id = $1 and status <> 'exited' limit 1`, [id]);
-      if (used) throw Errors.conflict('designation_in_use', 'Employees still hold this designation');
-      const r = await tx.query('update designations set archived_at = now() where id = $1 and archived_at is null', [id]);
-      if (!r.rowCount) throw Errors.notFound('Designation');
+      if (await tx.collection('employees').exists({ current_designation_id: id, status: { $ne: 'exited' } })) {
+        throw Errors.conflict('designation_in_use', 'Employees still hold this designation');
+      }
+      if (!(await tx.collection('designations').updateOne({ id, archived_at: null }, { $set: { archived_at: new Date() } }))) throw Errors.notFound('Designation');
       await this.audit.record(tx, { action: 'designation.archived', resourceType: 'designation', resourceId: id });
     });
   }
@@ -197,64 +179,47 @@ export class EmployeesService {
   // Directory and profile
   // ---------------------------------------------------------------------------------------------------------
 
-  /** Directory filters shared by the list and the CSV export. */
-  private async directoryWhere(tx: Tx, q: Omit<z.infer<typeof employeeListQuery>, 'cursor' | 'limit'>, params: unknown[]) {
-    const where = [await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx)];
+  /** The directory: people the caller may see that match the filters, as views, in the chosen order. */
+  private async directory(tx: TenantTx, q: ListQuery): Promise<EmployeeRow[]> {
+    const filter: Record<string, unknown> = { ...(await this.authz.filter('employees:read', EMPLOYEE_FIELDS, tx)) };
+    const and: Record<string, unknown>[] = [filter];
+    if (q.status) and.push({ status: q.status });
+    else if (q.includeExited !== 'true') and.push({ status: { $ne: 'exited' } });
+    if (q.departmentId) and.push({ current_department_id: q.departmentId });
+    if (q.legalEntityId) and.push({ current_legal_entity_id: q.legalEntityId });
+    let rows = await employeeViews(tx, await tx.collection('employees').find({ $and: and }));
     if (q.q) {
-      params.push(`%${q.q.toLowerCase()}%`);
-      const p = `$${params.length}`;
-      where.push(`(lower(e.first_name || ' ' || e.last_name) like ${p} or lower(coalesce(e.preferred_name, '')) like ${p} or lower(e.employee_code) like ${p} or lower(coalesce(e.work_email::text, '')) like ${p})`);
+      const needle = q.q.toLowerCase();
+      rows = rows.filter((e) =>
+        [`${e.firstName} ${e.lastName}`, e.preferredName ?? '', e.employeeCode, e.workEmail ?? ''].some((v) => String(v).toLowerCase().includes(needle)),
+      );
     }
-    if (q.status) {
-      params.push(q.status);
-      where.push(`e.status = $${params.length}`);
-    } else if (q.includeExited !== 'true') {
-      where.push(`e.status <> 'exited'`);
-    }
-    if (q.departmentId) {
-      params.push(q.departmentId);
-      where.push(`e.current_department_id = $${params.length}`);
-    }
-    if (q.legalEntityId) {
-      params.push(q.legalEntityId);
-      where.push(`e.current_legal_entity_id = $${params.length}`);
-    }
-    return where;
+    // Ordered on (sort key, id), in either direction, which is also the keyset for pagination.
+    const key = SORT_KEYS[q.sort];
+    const sign = q.dir === 'desc' ? -1 : 1;
+    return rows.sort((a, b) => sign * (cmp(key(a), key(b)) || cmp(a.id, b.id)));
   }
 
   async list(q: z.infer<typeof employeeListQuery>) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const where = await this.directoryWhere(tx, q, params);
-      const total = (await one<{ n: number }>(tx, `select count(*)::int as n from employees e where ${where.join(' and ')}`, params))!.n;
-      // Keyset pagination on (sort key as text, id), in either direction.
+      const all = await this.directory(tx, q);
       const key = SORT_KEYS[q.sort];
-      const cmp = q.dir === 'desc' ? '<' : '>';
       const cursor = decodeCursor(q.cursor);
-      if (cursor) {
-        params.push(String(cursor[0]), cursor[1]);
-        where.push(`(${key}, e.id) ${cmp} ($${params.length - 1}, $${params.length}::uuid)`);
-      }
-      params.push(q.limit + 1);
-      const rows = await many<EmployeeRow & { sortKey: string }>(
-        tx,
-        `select ${EMPLOYEE_COLUMNS}, ${key} as "sortKey" ${EMPLOYEE_FROM} where ${where.join(' and ')} order by ${key} ${q.dir}, e.id ${q.dir} limit $${params.length}`,
-        params,
-      );
+      const sign = q.dir === 'desc' ? -1 : 1;
+      const after = cursor ? all.filter((e) => sign * (cmp(key(e), cursor[0]) || cmp(e.id, cursor[1])) > 0) : all;
       // Personal contact details are not part of the directory listing.
-      const items = rows.map(({ personalEmail: _p, phone: _ph, dateOfBirth: _d, gender: _g, exitReason: _x, ...rest }) => rest);
+      const items = after
+        .slice(0, q.limit + 1)
+        .map(({ personalEmail: _p, phone: _ph, dateOfBirth: _d, gender: _g, exitReason: _x, ...rest }) => ({ ...rest, sortKey: key(rest as EmployeeRow) }));
       const out = page(items as (EmployeeRow & { sortKey: string })[], q.limit, (r) => r.sortKey);
-      return { ...out, items: out.items.map(({ sortKey: _k, ...r }) => r), total };
+      return { ...out, items: out.items.map(({ sortKey: _k, ...r }) => r), total: all.length };
     });
   }
 
   /** The directory as CSV with the chosen columns, same scope and filters as the list. Audited. */
   async exportCsv(q: z.infer<typeof employeeExportQuery>, format: 'csv' | 'xlsx' = 'csv') {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const where = await this.directoryWhere(tx, q, params);
-      const key = SORT_KEYS[q.sort];
-      const rows = await many<EmployeeRow>(tx, `select ${EMPLOYEE_COLUMNS} ${EMPLOYEE_FROM} where ${where.join(' and ')} order by ${key} ${q.dir}, e.id ${q.dir} limit 20001`, params);
+      const rows = await this.directory(tx, q);
       if (rows.length > 20000) throw Errors.badRequest('export_too_large', 'More than 20,000 people match. Narrow the filters and export again.');
       const cell = (v: unknown) => {
         let t = v === null || v === undefined ? '' : String(v);
@@ -265,48 +230,44 @@ export class EmployeesService {
       const lines = [q.columns.map((c) => EXPORT_HEADERS[c]).join(',')];
       for (const r of rows) lines.push(q.columns.map((c) => cell(exportValue(r, c))).join(','));
       await this.audit.record(tx, { action: 'employee.directory_exported', resourceType: 'employee', resourceId: null, changes: { format, rows: rows.length, columns: q.columns, filters: { q: q.q ?? null, status: q.status ?? null, departmentId: q.departmentId ?? null } } });
-      return { fileName: `employees-${new Date().toISOString().slice(0, 10)}.csv`, content: `\ufeff${lines.join('\r\n')}\r\n` };
+      return { fileName: `employees-${new Date().toISOString().slice(0, 10)}.csv`, content: `﻿${lines.join('\r\n')}\r\n` };
     });
   }
 
   /** People who may already have a record, so a hire is not entered twice. */
   async duplicates(input: z.infer<typeof duplicateCheckInput>) {
     return this.db.tenant(async (tx) => {
-      const params: unknown[] = [];
-      const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
-      const conds: string[] = [];
-      const reasons: string[] = [];
-      const add = (sql: string, value: unknown, reason: string) => {
-        params.push(value);
-        conds.push(sql.replace('$x', `$${params.length}`));
-        reasons.push(`case when ${sql.replace('$x', `$${params.length}`)} then '${reason}' end`);
-      };
-      if (input.workEmail?.includes('@')) add('lower(e.work_email::text) = lower($x)', input.workEmail, 'Same work email');
-      if (input.personalEmail?.includes('@')) add('lower(e.personal_email::text) = lower($x)', input.personalEmail, 'Same personal email');
-      const digits = (input.phone ?? '').replace(/\D/g, '');
-      if (digits.length >= 7) add(`right(regexp_replace(coalesce(e.phone, ''), '\\D', '', 'g'), 10) = right($x, 10)`, digits, 'Same phone number');
+      const tests: { reason: string; test: (e: Record<string, unknown>) => boolean }[] = [];
+      const eq = (a: unknown, b: string) => typeof a === 'string' && a.toLowerCase() === b.toLowerCase();
+      if (input.workEmail?.includes('@')) tests.push({ reason: 'Same work email', test: (e) => eq(e.work_email, input.workEmail!) });
+      if (input.personalEmail?.includes('@')) tests.push({ reason: 'Same personal email', test: (e) => eq(e.personal_email, input.personalEmail!) });
+      const digits = digitsOf(input.phone);
+      if (digits.length >= 7) tests.push({ reason: 'Same phone number', test: (e) => digitsOf(e.phone).slice(-10) === digits.slice(-10) });
       if (input.firstName && input.lastName) {
-        params.push(input.firstName.toLowerCase(), input.lastName.toLowerCase());
-        const nameSql = `(lower(e.first_name) = $${params.length - 1} and lower(e.last_name) = $${params.length})`;
+        const sameName = (e: Record<string, unknown>) => eq(e.first_name, input.firstName!) && eq(e.last_name, input.lastName!);
         if (input.dateOfBirth && /^\d{4}-\d{2}-\d{2}$/.test(input.dateOfBirth)) {
-          params.push(input.dateOfBirth);
-          const both = `(${nameSql} and e.date_of_birth = $${params.length}::date)`;
-          conds.push(both);
-          reasons.push(`case when ${both} then 'Same name and date of birth' end`);
+          tests.push({ reason: 'Same name and date of birth', test: (e) => sameName(e) && e.date_of_birth === input.dateOfBirth });
         }
-        conds.push(nameSql);
-        reasons.push(`case when ${nameSql} then 'Same name' end`);
+        tests.push({ reason: 'Same name', test: sameName });
       }
-      if (!conds.length) return { matches: [] };
-      const matches = await many<{ id: string; displayName: string; employeeCode: string; status: string; departmentName: string | null; reasons: string[] }>(
-        tx,
-        `select e.id, trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as "displayName", e.employee_code as "employeeCode", e.status,
-                d.name as "departmentName", array_remove(array[${reasons.join(', ')}], null) as reasons
-           from employees e left join departments d on d.id = e.current_department_id
-          where ${scope} and (${conds.join(' or ')}) order by e.status = 'exited', e.date_of_joining desc limit 5`,
-        params,
-      );
-      return { matches };
+      if (!tests.length) return { matches: [] };
+      const scope = await this.authz.filter('employees:read', EMPLOYEE_FIELDS, tx);
+      const found = (await tx.collection('employees').find(scope))
+        .map((e) => ({ e, reasons: tests.filter((t) => t.test(e)).map((t) => t.reason) }))
+        .filter((x) => x.reasons.length)
+        .sort((a, b) => Number(a.e.status === 'exited') - Number(b.e.status === 'exited') || cmp(b.e.date_of_joining, a.e.date_of_joining))
+        .slice(0, 5);
+      const departments = await fieldById(tx, 'departments', found.map((x) => x.e.current_department_id));
+      return {
+        matches: found.map(({ e, reasons }) => ({
+          id: e.id,
+          displayName: displayName(e as never),
+          employeeCode: e.employee_code,
+          status: e.status,
+          departmentName: departments.get(e.current_department_id) ?? null,
+          reasons,
+        })),
+      };
     });
   }
 
@@ -314,33 +275,33 @@ export class EmployeesService {
 
   async drafts() {
     const me = requestContext.tenantActor().membershipId;
-    return this.db.tenant((tx) => many(tx, `select id, step, data, updated_at as "updatedAt" from employee_drafts where membership_id = $1 order by updated_at desc limit 20`, [me]));
+    return this.db.tenant(async (tx) => (await tx.collection('employee_drafts').find({ membership_id: me }, { sort: { updated_at: -1 }, limit: 20 })).map(draftView));
   }
 
   async saveDraft(id: string | null, input: z.infer<typeof employeeDraftInput>) {
     const me = requestContext.tenantActor().membershipId;
     return this.db.tenant(async (tx) => {
       if (id) {
-        const r = await one(tx, `update employee_drafts set step = $3, data = $4 where id = $1 and membership_id = $2 returning id, step, data, updated_at as "updatedAt"`, [id, me, input.step, input.data]);
+        const r = await tx.collection('employee_drafts').updateAndGet({ id, membership_id: me }, { $set: { step: input.step, data: input.data } });
         if (!r) throw Errors.notFound('Draft');
-        return r;
+        return draftView(r);
       }
-      const n = (await one<{ n: number }>(tx, 'select count(*)::int as n from employee_drafts where membership_id = $1', [me]))!.n;
+      const n = await tx.collection('employee_drafts').count({ membership_id: me });
       if (n >= 20) throw Errors.conflict('too_many_drafts', 'You have 20 unfinished hires. Finish or discard one first.');
-      return one(tx, `insert into employee_drafts (tenant_id, membership_id, step, data) values (app_tenant_id(), $1, $2, $3) returning id, step, data, updated_at as "updatedAt"`, [me, input.step, input.data]);
+      return draftView(await tx.collection('employee_drafts').insert({ membership_id: me, step: input.step, data: input.data }));
     });
   }
 
   async deleteDraft(id: string) {
     const me = requestContext.tenantActor().membershipId;
-    const r = await this.db.tenant((tx) => tx.query('delete from employee_drafts where id = $1 and membership_id = $2', [id, me]));
-    if (!r.rowCount) throw Errors.notFound('Draft');
+    const n = await this.db.tenant((tx) => tx.collection('employee_drafts').deleteOne({ id, membership_id: me }));
+    if (!n) throw Errors.notFound('Draft');
   }
 
-  async load(tx: Tx, id: string): Promise<EmployeeRow> {
-    const row = await one<EmployeeRow>(tx, `select ${EMPLOYEE_COLUMNS} ${EMPLOYEE_FROM} where e.id = $1`, [id]);
-    if (!row) throw Errors.notFound('Employee');
-    return row;
+  async load(tx: TenantTx, id: string): Promise<EmployeeRow> {
+    const doc = await tx.collection('employees').findOne({ id });
+    if (!doc) throw Errors.notFound('Employee');
+    return (await employeeViews(tx, [doc]))[0]!;
   }
 
   /** Profile plus what the caller may do with it, so the UI only shows working actions. */
@@ -372,7 +333,7 @@ export class EmployeesService {
 
   async me() {
     const actor = requestContext.tenantActor();
-    const row = await this.db.tenant((tx) => one<{ id: string }>(tx, 'select id from employees where membership_id = $1', [actor.membershipId]));
+    const row = await this.db.tenant((tx) => tx.collection('employees').findOne({ membership_id: actor.membershipId }, { projection: { _id: 1 } }));
     if (!row) return { employee: null };
     return { employee: await this.get(row.id) };
   }
@@ -392,78 +353,73 @@ export class EmployeesService {
       const covers = (perm: string, broadOnly = false) => grantsFor(s, perm).some((g) => (!broadOnly || g.scope !== 'own') && grantCovers(s, g, a));
       const isSelf = !!s.employeeId && s.employeeId === e.id;
       const f = (await this.entitlements.current(tx)).features;
-      const today = new Date().toISOString().slice(0, 10);
-      const timeline: { at: string; kind: string; title: string; detail: string | null; link: string | null }[] = [];
+      const day = today();
+      const timeline: { at: string | Date; kind: string; title: string; detail: string | null; link: string | null }[] = [];
 
-      const tenure = await one<{ joined: string | null; days: number | null }>(
-        tx, `select to_char(min(effective_from), 'YYYY-MM-DD') as joined, (current_date - min(effective_from))::int as days from employment_records where employee_id = $1`, [id],
-      );
+      const first = await tx.collection('employment_records').findOne({ employee_id: id }, { sort: { effective_from: 1 } });
+      const tenure = first ? { joined: first.effective_from as string, days: daysBetween(first.effective_from, day) } : null;
 
       let attendance = null;
       if (f.has('attendance_basic') && covers('attendance:read')) {
-        const r = (await one<Record<string, number>>(
-          tx,
-          `select count(*) filter (where status in ('present', 'half_day'))::int as present, count(*) filter (where status = 'absent')::int as absent,
-                  count(*) filter (where status = 'missing_punch')::int as "missingPunch", count(*) filter (where status in ('on_leave', 'half_day_leave'))::int as "onLeave",
-                  count(*) filter (where late_minutes > 0)::int as late, count(*) filter (where day_type = 'working' and status not in ('in_progress', 'not_joined'))::int as "workingDays",
-                  coalesce(round(avg(worked_minutes) filter (where status in ('present', 'half_day'))), 0)::int as "avgWorkedMinutes",
-                  coalesce(sum(approved_overtime_minutes), 0)::int as "overtimeMinutes"
-             from attendance_days where employee_id = $1 and work_date between current_date - 29 and current_date`,
-          [id],
-        ))!;
-        attendance = { from: new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10), to: today, ...r };
+        const days = await tx.collection('attendance_days').find({ employee_id: id, work_date: { $gte: addDays(day, -29), $lte: day } });
+        const worked = days.filter((d) => ['present', 'half_day'].includes(d.status));
+        attendance = {
+          from: new Date(Date.now() - 29 * DAY).toISOString().slice(0, 10),
+          to: day,
+          present: worked.length,
+          absent: days.filter((d) => d.status === 'absent').length,
+          missingPunch: days.filter((d) => d.status === 'missing_punch').length,
+          onLeave: days.filter((d) => ['on_leave', 'half_day_leave'].includes(d.status)).length,
+          late: days.filter((d) => d.late_minutes > 0).length,
+          workingDays: days.filter((d) => d.day_type === 'working' && !['in_progress', 'not_joined'].includes(d.status)).length,
+          avgWorkedMinutes: worked.length ? Math.round(worked.reduce((t, d) => t + (d.worked_minutes ?? 0), 0) / worked.length) : 0,
+          overtimeMinutes: days.reduce((t, d) => t + (d.approved_overtime_minutes ?? 0), 0),
+        };
       }
 
       let leave = null;
       if (f.has('leave') && covers('leave:read')) {
-        const reqs = await many<{ id: string; type: string; startDate: string; endDate: string; days: string; status: string; createdAt: string }>(
-          tx,
-          `select r.id, t.name as type, to_char(r.start_date, 'YYYY-MM-DD') as "startDate", to_char(r.end_date, 'YYYY-MM-DD') as "endDate", r.days::text, r.status, r.created_at as "createdAt"
-             from leave_requests r join leave_types t on t.id = r.leave_type_id where r.employee_id = $1 order by r.created_at desc limit 20`,
-          [id],
-        );
-        const taken = (await one<{ d: string }>(tx, `select coalesce(sum(days), 0)::text as d from leave_requests where employee_id = $1 and status = 'approved' and date_part('year', start_date) = date_part('year', current_date)`, [id]))!.d;
+        const requests = await tx.collection('leave_requests').find({ employee_id: id }, { sort: { created_at: -1 } });
+        const types = await fieldById(tx, 'leave_types', requests.map((r) => r.leave_type_id));
+        const reqs = requests
+          .filter((r) => types.has(r.leave_type_id))
+          .slice(0, 20)
+          .map((r) => ({ id: r.id, type: types.get(r.leave_type_id)!, startDate: r.start_date, endDate: r.end_date, days: r.days as string, status: r.status, createdAt: r.created_at }));
+        const year = day.slice(0, 4);
+        const taken = requests.filter((r) => r.status === 'approved' && String(r.start_date).startsWith(year)).reduce((t, r) => t + Number(r.days), 0);
         leave = {
           pending: reqs.filter((r) => r.status === 'pending').length,
-          takenThisYear: taken,
-          next: reqs.filter((r) => r.status === 'approved' && r.startDate >= today).sort((x, y) => x.startDate.localeCompare(y.startDate))[0] ?? null,
+          takenThisYear: taken.toFixed(2).replace(/\.?0+$/, '') || '0',
+          next: reqs.filter((r) => r.status === 'approved' && r.startDate >= day).sort((x, y) => x.startDate.localeCompare(y.startDate))[0] ?? null,
         };
-        for (const r of reqs.slice(0, 8)) timeline.push({ at: r.createdAt, kind: 'leave', title: `${r.type}: ${r.days} day${r.days === '1.00' ? '' : 's'} from ${r.startDate}`, detail: r.status, link: null });
+        for (const r of reqs.slice(0, 8)) timeline.push({ at: r.createdAt, kind: 'leave', title: `${r.type}: ${r.days} day${Number(r.days) === 1 ? '' : 's'} from ${r.startDate}`, detail: r.status, link: null });
       }
 
       // Pay is sensitive: only people whose payroll access covers this employee see salary; the employee sees their own payslips.
       let pay = null;
       if (f.has('payroll') && (covers('payroll:read') || (isSelf && covers('payslips:read')))) {
-        const salary = covers('payroll:read')
-          ? await one<{ annualCtc: string; currency: string; effectiveFrom: string }>(
-            tx, `select annual_ctc::text as "annualCtc", currency, to_char(effective_from, 'YYYY-MM-DD') as "effectiveFrom" from employee_salaries where employee_id = $1 and effective_from <= current_date order by effective_from desc limit 1`, [id],
-          )
-          : null;
-        const payslip = await one<{ periodEnd: string; net: string; currency: string; payDate: string }>(
-          tx,
-          `select to_char(r.period_end, 'YYYY-MM-DD') as "periodEnd", i.net::text as net, r.currency, to_char(r.pay_date, 'YYYY-MM-DD') as "payDate"
-             from payroll_items i join payroll_runs r on r.id = i.run_id where i.employee_id = $1 and r.status = 'finalised' order by r.period_end desc limit 1`,
-          [id],
-        );
-        pay = { salary: salary ?? null, lastPayslip: payslip ?? null };
+        const salaryRow = covers('payroll:read') ? await tx.collection('employee_salaries').findOne({ employee_id: id, effective_from: { $lte: day } }, { sort: { effective_from: -1 } }) : undefined;
+        const items = await tx.collection('payroll_items').find({ employee_id: id });
+        const runs = await tx.collection('payroll_runs').find({ id: { $in: items.map((i) => i.run_id) }, status: 'finalised' }, { sort: { period_end: -1 } });
+        const run = runs[0];
+        const item = run && items.find((i) => i.run_id === run.id);
+        pay = {
+          salary: salaryRow ? { annualCtc: salaryRow.annual_ctc, currency: salaryRow.currency, effectiveFrom: salaryRow.effective_from } : null,
+          lastPayslip: run && item ? { periodEnd: run.period_end, net: item.net, currency: run.currency, payDate: run.pay_date ?? null } : null,
+        };
       }
 
       let performance = null;
       if (f.has('performance') && covers('performance:read')) {
-        const goals = await many<{ title: string; status: string; progress: string; confidence: string | null; periodEnd: string; updatedAt: string }>(
-          tx,
-          `select title, status, progress::text, confidence, to_char(period_end, 'YYYY-MM-DD') as "periodEnd", updated_at as "updatedAt" from goals
-            where employee_id = $1 and status <> 'cancelled' order by (status = 'active') desc, period_end desc limit 20`,
-          [id],
-        );
+        const goals = (await tx.collection('goals').find({ employee_id: id, status: { $ne: 'cancelled' } }))
+          .sort((x, y) => Number(y.status === 'active') - Number(x.status === 'active') || cmp(y.period_end, x.period_end))
+          .slice(0, 20)
+          .map((g) => ({ title: g.title, status: g.status, progress: g.progress as string, confidence: g.confidence ?? null, periodEnd: g.period_end, updatedAt: g.updated_at }));
         // Ratings: managers and HR see the latest finalised rating; the employee only once it is released to them.
         const broad = covers('performance:read', true) && !isSelf;
-        const review = await one<{ cycle: string; rating: number | null; releasedAt: string | null }>(
-          tx,
-          `select c.name as cycle, r.final_rating as rating, r.released_at as "releasedAt" from reviews r join review_cycles c on c.id = r.cycle_id
-            where r.employee_id = $1 and not r.excluded and r.final_rating is not null ${broad ? '' : 'and r.released_at is not null'} order by c.created_at desc limit 1`,
-          [id],
-        );
+        const reviews = await tx.collection('reviews').find({ employee_id: id, excluded: false, final_rating: { $ne: null }, ...(broad ? {} : { released_at: { $ne: null } }) });
+        const cycles = new Map((await tx.collection('review_cycles').find({ id: { $in: reviews.map((r) => r.cycle_id) } })).map((c) => [c.id, c]));
+        const latest = reviews.filter((r) => cycles.has(r.cycle_id)).sort((x, y) => cycles.get(y.cycle_id)!.created_at - cycles.get(x.cycle_id)!.created_at)[0];
         const active = goals.filter((g) => g.status === 'active');
         performance = {
           activeGoals: active.length,
@@ -471,68 +427,72 @@ export class EmployeesService {
           atRisk: active.filter((g) => g.confidence === 'at_risk' || g.confidence === 'off_track').length,
           averageProgress: active.length ? (active.reduce((t, g) => t + Number(g.progress), 0) / active.length).toFixed(0) : null,
           goals: active.slice(0, 5).map(({ updatedAt: _u, ...g }) => g),
-          latestReview: review ?? null,
+          latestReview: latest ? { cycle: cycles.get(latest.cycle_id)!.name, rating: latest.final_rating, releasedAt: latest.released_at ?? null } : null,
         };
         for (const g of goals.slice(0, 5)) timeline.push({ at: g.updatedAt, kind: 'goal', title: `Goal: ${g.title}`, detail: g.status === 'completed' ? 'completed' : `${Number(g.progress).toFixed(0)}%`, link: null });
       }
 
       let learning = null;
       if (f.has('learning') && covers('learning:read')) {
-        const r = (await one<Record<string, number>>(
-          tx,
-          `select count(*) filter (where status in ('assigned', 'in_progress'))::int as open, count(*) filter (where status = 'completed')::int as completed,
-                  count(*) filter (where status in ('assigned', 'in_progress') and due_on < current_date)::int as overdue,
-                  count(*) filter (where status = 'completed' and expires_on < current_date)::int as expired
-             from course_assignments where employee_id = $1`,
-          [id],
-        ))!;
-        const done = await many<{ title: string; completedOn: string }>(
-          tx, `select c.title, to_char(a.completed_on, 'YYYY-MM-DD') as "completedOn" from course_assignments a join courses c on c.id = a.course_id where a.employee_id = $1 and a.status = 'completed' order by a.completed_on desc limit 5`, [id],
-        );
-        learning = { ...r, recent: done };
+        const all = await tx.collection('course_assignments').find({ employee_id: id });
+        const open = all.filter((x) => ['assigned', 'in_progress'].includes(x.status));
+        const completed = all.filter((x) => x.status === 'completed');
+        const recentDone = completed.sort((x, y) => cmp(y.completed_on, x.completed_on)).slice(0, 5);
+        const titles = await fieldById(tx, 'courses', recentDone.map((x) => x.course_id), 'title');
+        const done = recentDone.filter((x) => titles.has(x.course_id)).map((x) => ({ title: titles.get(x.course_id)!, completedOn: x.completed_on ?? null }));
+        learning = {
+          open: open.length,
+          completed: completed.length,
+          overdue: open.filter((x) => x.due_on && x.due_on < day).length,
+          expired: completed.filter((x) => x.expires_on && x.expires_on < day).length,
+          recent: done,
+        };
         for (const d of done) timeline.push({ at: `${d.completedOn}T12:00:00Z`, kind: 'learning', title: `Completed ${d.title}`, detail: null, link: null });
       }
 
       // Recognition is posted to the whole workspace, so anyone who may see the employee may see what they received.
       let recognition = null;
       if (f.has('engagement')) {
-        const recent = await many<{ from: string; value: string | null; message: string; createdAt: string }>(
-          tx,
-          `select coalesce(f.preferred_name, f.first_name) || ' ' || f.last_name as "from", v.name as value, r.message, r.created_at as "createdAt"
-             from recognitions r join employees f on f.id = r.from_employee_id left join company_values v on v.id = r.value_id
-            where r.to_employee_id = $1 and r.hidden_at is null order by r.created_at desc limit 5`,
-          [id],
-        );
-        const n = (await one<{ n: number }>(tx, `select count(*)::int as n from recognitions where to_employee_id = $1 and hidden_at is null and created_at > now() - interval '90 days'`, [id]))!.n;
-        recognition = { last90Days: n, recent };
+        const received = await tx.collection('recognitions').find({ to_employee_id: id, hidden_at: null }, { sort: { created_at: -1 } });
+        const top = received.slice(0, 5);
+        const senders = await employeeNames(tx, top.map((r) => r.from_employee_id));
+        const values = await fieldById(tx, 'company_values', top.map((r) => r.value_id));
+        const recent = top
+          .filter((r) => senders.has(r.from_employee_id))
+          .map((r) => {
+            const from = senders.get(r.from_employee_id)!.doc;
+            return { from: `${from.preferred_name ?? from.first_name} ${from.last_name}`, value: values.get(r.value_id) ?? null, message: r.message, createdAt: r.created_at };
+          });
+        const since = new Date(Date.now() - 90 * DAY);
+        recognition = { last90Days: received.filter((r) => r.created_at > since).length, recent };
         for (const r of recent) timeline.push({ at: r.createdAt, kind: 'recognition', title: `Recognised by ${r.from}${r.value ? ` for ${r.value}` : ''}`, detail: r.message, link: null });
       }
 
       // Requests: helpdesk handlers see non-confidential cases; the employee sees all of their own.
       let requests = null;
       if (isSelf || covers('helpdesk:manage')) {
-        const cases = await many<{ id: string; number: number; subject: string; status: string; createdAt: string }>(
-          tx,
-          `select id, number, subject, status, created_at as "createdAt" from helpdesk_cases where employee_id = $1 ${isSelf ? '' : 'and not confidential'} order by created_at desc limit 10`,
-          [id],
-        );
+        const cases = (await tx.collection('helpdesk_cases').find({ employee_id: id, ...(isSelf ? {} : { confidential: false }) }, { sort: { created_at: -1 }, limit: 10 })).map((c) => ({
+          id: c.id as string,
+          number: c.number as number,
+          subject: c.subject as string,
+          status: c.status as string,
+          createdAt: c.created_at as Date,
+        }));
         requests = { open: cases.filter((c) => !['resolved', 'closed'].includes(c.status)).length, recent: cases.slice(0, 5) };
         for (const c of cases.slice(0, 5)) timeline.push({ at: c.createdAt, kind: 'request', title: `Request #${c.number}: ${c.subject}`, detail: c.status.replace(/_/g, ' '), link: `/helpdesk/${c.id}` });
       }
 
       let documents = null;
       if (f.has('documents') && covers('documents:read')) {
-        const docs = await many<{ title: string; category: string; createdAt: string }>(
-          tx, `select title, category, created_at as "createdAt" from employee_documents where employee_id = $1 and archived_at is null order by created_at desc limit 20`, [id],
-        );
-        documents = { count: docs.length, categories: [...new Set(docs.map((d) => d.category))] };
-        for (const d of docs.slice(0, 5)) timeline.push({ at: d.createdAt, kind: 'document', title: `Document added: ${d.title}`, detail: d.category.replace(/_/g, ' '), link: null });
+        const docs = await tx.collection('employee_documents').find({ employee_id: id, archived_at: null }, { sort: { created_at: -1 }, limit: 20 });
+        documents = { count: docs.length, categories: [...new Set(docs.map((d) => d.category as string))] };
+        for (const d of docs.slice(0, 5)) timeline.push({ at: d.created_at, kind: 'document', title: `Document added: ${d.title}`, detail: String(d.category).replace(/_/g, ' '), link: null });
       }
 
-      const events = await many<{ kind: string; effectiveOn: string; createdAt: string; details: Record<string, unknown> }>(
-        tx, `select kind, to_char(effective_on, 'YYYY-MM-DD') as "effectiveOn", created_at as "createdAt", details from lifecycle_events where employee_id = $1 order by created_at desc limit 10`, [id],
-      );
-      for (const ev of events) timeline.push({ at: `${ev.effectiveOn}T09:00:00Z`, kind: 'job', title: ev.kind.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()), detail: `effective ${ev.effectiveOn}`, link: null });
+      const events = await tx.collection('lifecycle_events').find({ employee_id: id }, { sort: { created_at: -1 }, limit: 10 });
+      for (const ev of events) {
+        timeline.push({ at: `${ev.effective_on}T09:00:00Z`, kind: 'job', title: String(ev.kind).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()), detail: `effective ${ev.effective_on}`, link: null });
+      }
 
       timeline.sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime());
       return {
@@ -548,26 +508,34 @@ export class EmployeesService {
     return this.db.tenant(async (tx) => {
       const e = await this.load(tx, id);
       await this.authz.require('employees:read', employeeAttrs(e), tx);
-      const records = await many(
-        tx,
-        `select r.id, r.effective_from as "effectiveFrom", r.effective_to as "effectiveTo", r.change_reason as "reason", r.note,
-                le.name as "legalEntityName", d.name as "departmentName", l.name as "locationName", ds.name as "designationName",
-                trim(coalesce(mgr.preferred_name, mgr.first_name) || ' ' || mgr.last_name) as "managerName", r.grade, r.employment_type as "employmentType",
-                r.effective_from > current_date as "scheduled"
-           from employment_records r
-           left join legal_entities le on le.id = r.legal_entity_id left join departments d on d.id = r.department_id
-           left join locations l on l.id = r.location_id left join designations ds on ds.id = r.designation_id
-           left join employees mgr on mgr.id = r.manager_employee_id
-          where r.employee_id = $1 order by r.effective_from desc`,
-        [id],
-      );
-      const events = await many(
-        tx,
-        `select ev.id, ev.kind, ev.effective_on as "effectiveOn", ev.details, ev.created_at as "createdAt", u.full_name as "by"
-           from lifecycle_events ev left join users u on u.id = ev.created_by
-          where ev.employee_id = $1 order by ev.effective_on desc, ev.created_at desc`,
-        [id],
-      );
+      const rows = await tx.collection('employment_records').find({ employee_id: id }, { sort: { effective_from: -1 } });
+      const [entities, departments, locations, designations, managers] = await Promise.all([
+        fieldById(tx, 'legal_entities', rows.map((r) => r.legal_entity_id)),
+        fieldById(tx, 'departments', rows.map((r) => r.department_id)),
+        fieldById(tx, 'locations', rows.map((r) => r.location_id)),
+        fieldById(tx, 'designations', rows.map((r) => r.designation_id)),
+        employeeNames(tx, rows.map((r) => r.manager_employee_id)),
+      ]);
+      const day = today();
+      const records = rows.map((r) => ({
+        id: r.id,
+        effectiveFrom: r.effective_from,
+        effectiveTo: r.effective_to ?? null,
+        reason: r.change_reason,
+        note: r.note ?? null,
+        legalEntityName: entities.get(r.legal_entity_id) ?? null,
+        departmentName: departments.get(r.department_id) ?? null,
+        locationName: locations.get(r.location_id) ?? null,
+        designationName: designations.get(r.designation_id) ?? null,
+        managerName: managers.get(r.manager_employee_id)?.name ?? null,
+        grade: r.grade ?? null,
+        employmentType: r.employment_type,
+        scheduled: r.effective_from > day,
+      }));
+      const evs = (await tx.collection('lifecycle_events').find({ employee_id: id })).sort((x, y) => cmp(y.effective_on, x.effective_on) || y.created_at - x.created_at);
+      const creators = await (await usersTable(tx)).find({ id: { $in: [...new Set(evs.map((ev) => ev.created_by).filter(Boolean))] } }, { projection: { full_name: 1 } });
+      const by = new Map(creators.map((u) => [u.id, u.full_name ?? null]));
+      const events = evs.map((ev) => ({ id: ev.id, kind: ev.kind, effectiveOn: ev.effective_on, details: ev.details, createdAt: ev.created_at, by: by.get(ev.created_by) ?? null }));
       return { records, events };
     });
   }
@@ -577,9 +545,9 @@ export class EmployeesService {
     return this.db.tenant(async (tx) => {
       const e = await this.load(tx, id);
       await this.authz.require('employees:read', employeeAttrs(e), tx);
-      const params: unknown[] = [id];
-      const scope = await this.authz.predicate('employees:read', EMPLOYEE_SCOPE, params, tx);
-      return many(tx, `select ${EMPLOYEE_COLUMNS} ${EMPLOYEE_FROM} where e.current_manager_employee_id = $1 and e.status <> 'exited' and ${scope} order by e.first_name`, params);
+      const scope = await this.authz.filter('employees:read', EMPLOYEE_FIELDS, tx);
+      const docs = await tx.collection('employees').find({ $and: [scope, { current_manager_employee_id: id, status: { $ne: 'exited' } }] }, { sort: { first_name: 1 } });
+      return employeeViews(tx, docs);
     });
   }
 
@@ -591,38 +559,65 @@ export class EmployeesService {
    * Hires an employee. `within` runs in the same transaction after the record exists, so a caller such as
    * recruitment can mark its own records (application hired, opening filled) atomically with the hire.
    */
-  async create(input: CreateEmployeeInput, within?: (tx: Tx, employeeId: string) => Promise<void>) {
+  async create(input: CreateEmployeeInput, within?: (tx: TenantTx, employeeId: string) => Promise<void>) {
     const actor = requestContext.tenantActor();
     let inviteToken: string | undefined;
     let temporaryPassword: string | undefined;
-    const created = await this.db.tenant(async (tx) => {
+    // The code is reserved in a short transaction of its own, like a database sequence: the series is one document
+    // every hire in the workspace updates, and holding it for the whole hire made concurrent hires abort and start
+    // again behind each other. A hire that then fails leaves a gap in the numbers.
+    const code = await this.db.tenant(async (tx) => {
       await this.authz.require('employees:create', { legalEntityId: input.legalEntityId }, tx);
-      const { count } = (await one<{ count: number }>(tx, `select count(*)::int as count from employees where status <> 'exited'`))!;
+      return this.nextEmployeeCode(tx);
+    });
+    const created = await this.db.tenant(async (tx) => {
+      inviteToken = undefined;
+      temporaryPassword = undefined;
+      await this.authz.require('employees:create', { legalEntityId: input.legalEntityId }, tx);
+      const count = await tx.collection('employees').count({ status: { $ne: 'exited' } });
       await this.entitlements.requireWithinLimit('max_employees', count, tx);
       await this.checkPlacement(tx, input, null);
 
-      const code = await this.nextEmployeeCode(tx);
       const startsLater = input.dateOfJoining > today();
       const status = startsLater ? 'pre_boarding' : input.probationMonths > 0 ? 'probation' : 'active';
-      const row = (await one<{ id: string }>(
-        tx,
-        `insert into employees (tenant_id, employee_code, first_name, last_name, preferred_name, work_email, personal_email, phone, date_of_birth, gender,
-                                date_of_joining, probation_end_date, confirmation_date, employment_type, status,
-                                current_legal_entity_id, current_department_id, current_location_id, current_designation_id, current_manager_employee_id, current_grade)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date,
-                 case when $11::int > 0 then ($10::date + make_interval(months => $11::int))::date - 1 end,
-                 case when $11::int = 0 then $10::date end, $12, $13, $14, $15, $16, $17, $18, $19)
-         returning id`,
-        [code, input.firstName, input.lastName, input.preferredName ?? null, input.workEmail ?? null, input.personalEmail ?? null, input.phone ?? null,
-          input.dateOfBirth ?? null, input.gender ?? null, input.dateOfJoining, input.probationMonths, input.employmentType, status,
-          input.legalEntityId, input.departmentId ?? null, input.locationId ?? null, input.designationId ?? null, input.managerEmployeeId ?? null, input.grade ?? null],
-      ).catch(uniqueAs('work_email_taken', 'Another current employee already uses this work email')))!;
-      await tx.query(
-        `insert into employment_records (tenant_id, employee_id, effective_from, legal_entity_id, department_id, location_id, designation_id, manager_employee_id, grade, employment_type, change_reason, created_by)
-         values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, 'hire', $10)`,
-        [row.id, input.dateOfJoining, input.legalEntityId, input.departmentId ?? null, input.locationId ?? null, input.designationId ?? null,
-          input.managerEmployeeId ?? null, input.grade ?? null, input.employmentType, actor.userId],
-      );
+      const row = await tx
+        .collection('employees')
+        .insert({
+          employee_code: code,
+          first_name: input.firstName,
+          last_name: input.lastName,
+          preferred_name: input.preferredName ?? null,
+          work_email: input.workEmail ?? null,
+          personal_email: input.personalEmail ?? null,
+          phone: input.phone ?? null,
+          date_of_birth: input.dateOfBirth ?? null,
+          gender: input.gender ?? null,
+          date_of_joining: input.dateOfJoining,
+          probation_end_date: input.probationMonths > 0 ? addDays(addMonths(input.dateOfJoining, input.probationMonths), -1) : null,
+          confirmation_date: input.probationMonths === 0 ? input.dateOfJoining : null,
+          employment_type: input.employmentType,
+          status,
+          current_legal_entity_id: input.legalEntityId,
+          current_department_id: input.departmentId ?? null,
+          current_location_id: input.locationId ?? null,
+          current_designation_id: input.designationId ?? null,
+          current_manager_employee_id: input.managerEmployeeId ?? null,
+          current_grade: input.grade ?? null,
+        })
+        .catch(uniqueAs('work_email_taken', 'Another current employee already uses this work email'));
+      await tx.collection('employment_records').insert({
+        employee_id: row.id,
+        effective_from: input.dateOfJoining,
+        legal_entity_id: input.legalEntityId,
+        department_id: input.departmentId ?? null,
+        location_id: input.locationId ?? null,
+        designation_id: input.designationId ?? null,
+        manager_employee_id: input.managerEmployeeId ?? null,
+        grade: input.grade ?? null,
+        employment_type: input.employmentType,
+        change_reason: 'hire',
+        created_by: actor.userId,
+      });
       await this.event(tx, row.id, 'hired', input.dateOfJoining, { employeeCode: code });
 
       const loginMode = input.loginMode ?? (input.inviteToCrew ? 'invite' : 'none');
@@ -637,9 +632,11 @@ export class EmployeesService {
 
       // Onboarding checklists are a plan module: without it the joiner is hired with no checklist.
       const onboardingOn = (await this.entitlements.current(tx)).features.has('onboarding');
-      const templateId = !onboardingOn ? undefined : input.onboardingTemplateId === undefined
-        ? (await one<{ id: string }>(tx, 'select id from onboarding_templates where is_default and archived_at is null'))?.id
-        : input.onboardingTemplateId;
+      const templateId = !onboardingOn
+        ? undefined
+        : input.onboardingTemplateId === undefined
+          ? ((await tx.collection('onboarding_templates').findOne({ is_default: true, archived_at: null }))?.id as string | undefined)
+          : input.onboardingTemplateId;
       if (templateId) await this.onboarding.instantiate(tx, row.id, templateId);
       // Credit leave already due (e.g. an up-front annual entitlement) so balances are right from day one.
       await this.leave.runAccruals(tx, today(), row.id);
@@ -652,7 +649,7 @@ export class EmployeesService {
       });
       await this.outbox.publish(tx, actor.tenantId, 'employee.created', { employeeId: row.id });
       if (input.managerEmployeeId) {
-        const mgr = await one<{ membership_id: string | null }>(tx, 'select membership_id from employees where id = $1', [input.managerEmployeeId]);
+        const mgr = await tx.collection('employees').findOne({ id: input.managerEmployeeId });
         await this.notifications.notify(tx, {
           membershipIds: [mgr?.membership_id],
           kind: 'employee.joining',
@@ -672,10 +669,10 @@ export class EmployeesService {
    * invitation, or a login that works now with a temporary password. A password SampCrew generates is returned once,
    * so HR can hand it over; one HR typed is not echoed back.
    */
-  private async giveLogin(tx: Tx, employeeId: string, mode: 'invite' | 'password', typedPassword?: string) {
+  private async giveLogin(tx: TenantTx, employeeId: string, mode: 'invite' | 'password', typedPassword?: string) {
     const e = await this.load(tx, employeeId);
     if (!e.workEmail) throw Errors.badRequest('work_email_required', 'Add a work email first: it is the sign-in name');
-    const manager = e.managerEmployeeId ? await one<{ membership_id: string | null }>(tx, 'select membership_id from employees where id = $1', [e.managerEmployeeId]) : undefined;
+    const manager = e.managerEmployeeId ? await tx.collection('employees').findOne({ id: e.managerEmployeeId }) : undefined;
     const placement = {
       email: e.workEmail,
       fullName: `${e.firstName} ${e.lastName}`.trim(),
@@ -683,20 +680,26 @@ export class EmployeesService {
       legalEntityId: e.legalEntityId ?? undefined,
       departmentId: e.departmentId,
       locationId: e.locationId,
-      managerMembershipId: manager?.membership_id ?? null,
+      managerMembershipId: (manager?.membership_id as string | null | undefined) ?? null,
     };
     if (mode === 'invite') {
       const inv = await this.members.createInvitation(tx, placement);
-      await tx.query('update employees set membership_id = $2 where id = $1', [employeeId, inv.membershipId]);
+      await this.setMembership(tx, employeeId, inv.membershipId);
       await this.event(tx, employeeId, 'linked_login', today(), { membershipId: inv.membershipId, via: 'invitation' });
       return { inviteToken: inv.token, temporaryPassword: undefined };
     }
     const generated = typedPassword ? undefined : temporaryPasswordValue();
     const m = await this.members.createLoginWithPassword(tx, placement, typedPassword ?? generated!);
-    await tx.query('update employees set membership_id = $2 where id = $1', [employeeId, m.membershipId]);
+    await this.setMembership(tx, employeeId, m.membershipId);
     await this.onboarding.assignEmployeeTasks(tx, employeeId, m.membershipId);
     await this.event(tx, employeeId, 'linked_login', today(), { membershipId: m.membershipId, via: 'temporary_password' });
     return { inviteToken: undefined, temporaryPassword: generated };
+  }
+
+  /** Links a login to the employee; the membership then follows the employee's placement. */
+  private async setMembership(tx: TenantTx, employeeId: string, membershipId: string) {
+    await tx.collection('employees').updateOne({ id: employeeId }, { $set: { membership_id: membershipId } });
+    await syncMembership(tx, employeeId);
   }
 
   /** Creates a SampCrew login for an employee who has none (from their profile). */
@@ -723,17 +726,14 @@ export class EmployeesService {
   // Login details and control for workspace admins
   // ---------------------------------------------------------------------------------------------------------
 
-  private async loginTarget(tx: Tx, id: string) {
+  private async loginTarget(tx: TenantTx, id: string) {
     const e = await this.load(tx, id);
     await this.authz.require('employees:read', employeeAttrs(e), tx);
     if (!e.membershipId) throw Errors.notFound('SampCrew login');
-    const m = (await one<{ user_id: string; status: string; owner: boolean }>(
-      tx,
-      `select m.user_id, m.status, exists (select 1 from role_assignments ra join roles r on r.id = ra.role_id where ra.membership_id = m.id and r.key = 'tenant_owner') as owner
-         from memberships m where m.id = $1`,
-      [e.membershipId],
-    ))!;
-    return { e, m };
+    const membership = (await tx.collection('memberships').findOne({ id: e.membershipId }))!;
+    const ownerRole = await tx.collection('roles').findOne({ key: 'tenant_owner' });
+    const owner = !!ownerRole && (await tx.collection('role_assignments').exists({ membership_id: e.membershipId, role_id: ownerRole.id }));
+    return { e, m: { user_id: membership.user_id as string, status: membership.status as string, owner } };
   }
 
   /** The login ID (work email) and sign-in state. Never a password: only its one-way hash is stored. */
@@ -741,17 +741,22 @@ export class EmployeesService {
     return this.db.tenant(async (tx) => {
       const { e, m } = await this.loginTarget(tx, id);
       await this.authz.require('users:manage', { legalEntityId: e.legalEntityId, departmentId: e.departmentId, locationId: e.locationId }, tx);
-      const u = await this.db.platform((ptx) => one<Record<string, unknown>>(
-        ptx,
-        `select u.email::text as "loginId", u.status as "accountStatus", u.mfa_enabled as "mfaEnabled", u.last_login_at as "lastLoginAt",
-                u.must_change_password as "mustChangePassword", (u.password_hash is not null) as "hasPassword",
-                case when u.locked_until > now() then u.locked_until end as "lockedUntil",
-                (select count(*)::int from memberships o where o.user_id = u.id and o.tenant_id <> $2 and o.status = 'active') as "otherWorkspaces",
-                (select count(*)::int from sessions s where s.user_id = u.id and s.tenant_id = $2 and s.revoked_at is null and s.expires_at > now()) as "openSessions"
-           from users u where u.id = $1`,
-        [m.user_id, requestContext.tenantActor().tenantId],
-      ));
-      return { membershipId: e.membershipId, membershipStatus: m.status, ...u };
+      const tenantId = requestContext.tenantActor().tenantId;
+      const now = new Date();
+      // The account and its sessions are global records: read in this transaction, for this one member only.
+      const u = await tx.unscoped('users').findOne({ id: m.user_id });
+      const details = u && {
+        loginId: u.email,
+        accountStatus: u.status,
+        mfaEnabled: u.mfa_enabled,
+        lastLoginAt: u.last_login_at ?? null,
+        mustChangePassword: u.must_change_password,
+        hasPassword: u.password_hash != null,
+        lockedUntil: u.locked_until && u.locked_until > now ? u.locked_until : null,
+        otherWorkspaces: await tx.unscoped('memberships').count({ user_id: m.user_id, tenant_id: { $ne: tenantId }, status: 'active' }),
+        openSessions: await tx.unscoped('sessions').count({ user_id: m.user_id, tenant_id: tenantId, revoked_at: null, expires_at: { $gt: now } }),
+      };
+      return { membershipId: e.membershipId, membershipStatus: m.status, ...details };
     });
   }
 
@@ -770,35 +775,35 @@ export class EmployeesService {
         if (!s.grants.some((g) => g.roleKey === 'tenant_owner')) throw Errors.forbidden('Only a workspace owner can change another owner\'s login');
       }
       if (m.status === 'invited' && input.action !== 'sign_out') throw Errors.badRequest('not_joined', 'This person has not accepted their invitation yet.');
-      const shared = (await this.db.platform((ptx) => one<{ n: number }>(ptx, `select count(*)::int as n from memberships where user_id = $1 and tenant_id <> $2 and status = 'active'`, [m.user_id, actor.tenantId])))!.n;
-      const endSessions = (reason: string, everywhere = false) => this.db.platform(async (ptx) => (await ptx.query(
-        `update sessions set revoked_at = now(), revoked_reason = $3 where user_id = $1 and ($2::uuid is null or tenant_id = $2) and revoked_at is null`, [m.user_id, everywhere ? null : actor.tenantId, reason],
-      )).rowCount ?? 0);
+      // The account, its password and its sessions are global records; they change in this same transaction.
+      const users = tx.unscoped('users');
+      const shared = await tx.unscoped('memberships').count({ user_id: m.user_id, tenant_id: { $ne: actor.tenantId }, status: 'active' });
+      const endSessions = (reason: string, everywhere = false) =>
+        tx.unscoped('sessions').update({ user_id: m.user_id, ...(everywhere ? {} : { tenant_id: actor.tenantId }), revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: reason } });
       let detail: Record<string, unknown> = {};
       switch (input.action) {
         case 'reset_password':
         case 'force_password_change':
           // The password belongs to the person's account, which another company's workspace may also use.
           if (shared) throw Errors.conflict('shared_account', 'This person also uses this SampCrew account in another company\'s workspace, so their password cannot be changed from here. They can change it themselves, or SAMPLEDGE support can reset it.');
-          await this.db.platform((ptx) => ptx.query(
-            input.action === 'reset_password'
-              ? 'update users set password_hash = $2, must_change_password = true, failed_login_count = 0, locked_until = null where id = $1'
-              : 'update users set must_change_password = true where id = $1',
-            input.action === 'reset_password' ? [m.user_id, hash] : [m.user_id],
-          ));
+          await users.updateOne(
+            { id: m.user_id },
+            { $set: input.action === 'reset_password' ? { password_hash: hash, must_change_password: true, failed_login_count: 0, locked_until: null } : { must_change_password: true } },
+          );
           detail = { sessionsEnded: await endSessions(input.action === 'reset_password' ? 'password_reset_by_admin' : 'password_change_forced_by_admin', true), typedByAdmin: !!input.initialPassword };
           break;
         case 'lock':
           if (m.status !== 'active') throw Errors.badRequest('not_active', 'This login is already locked.');
-          await tx.query(`update memberships set status = 'suspended' where id = $1`, [e.membershipId]);
+          await tx.collection('memberships').updateOne({ id: e.membershipId }, { $set: { status: 'suspended' } });
           detail = { sessionsEnded: await endSessions('locked_by_admin') };
           break;
         case 'unlock': {
-          const u = (await this.db.platform((ptx) => one<{ locked: boolean; status: string }>(ptx, 'select coalesce(locked_until > now(), false) as locked, status from users where id = $1', [m.user_id])))!;
-          if (m.status !== 'suspended' && !u.locked) throw Errors.badRequest('not_locked', 'This login is not locked.');
-          if (m.status === 'suspended') await tx.query(`update memberships set status = 'active' where id = $1`, [e.membershipId]);
+          const u = (await users.findOne({ id: m.user_id }))!;
+          const locked = !!u.locked_until && u.locked_until > new Date();
+          if (m.status !== 'suspended' && !locked) throw Errors.badRequest('not_locked', 'This login is not locked.');
+          if (m.status === 'suspended') await tx.collection('memberships').updateOne({ id: e.membershipId }, { $set: { status: 'active' } });
           // A lock after too many wrong passwords is cleared too. An account SAMPLEDGE locked stays locked.
-          if (u.locked) await this.db.platform((ptx) => ptx.query('update users set failed_login_count = 0, locked_until = null where id = $1', [m.user_id]));
+          if (locked) await users.updateOne({ id: m.user_id }, { $set: { failed_login_count: 0, locked_until: null } });
           detail = { accountLockedBySampledge: u.status === 'locked' };
           break;
         }
@@ -823,19 +828,13 @@ export class EmployeesService {
     });
   }
 
-  private async registrationOf(tx: Tx, id: string) {
-    const shift = await one<{ id: string; name: string; code: string; startTime: string; endTime: string }>(
-      tx,
-      `select s.id, s.name, s.code, to_char(s.start_time, 'HH24:MI') as "startTime", to_char(s.end_time, 'HH24:MI') as "endTime"
-         from employees e join shift_templates s on s.id = e.default_shift_id where e.id = $1`,
-      [id],
-    );
-    const enrolments = await many<{ id: string; deviceUserId: string; deviceId: string | null; deviceName: string | null }>(
-      tx,
-      `select m.id, m.device_user_id as "deviceUserId", m.device_id as "deviceId", d.name as "deviceName"
-         from device_user_mappings m left join attendance_devices d on d.id = m.device_id where m.employee_id = $1 order by m.created_at`,
-      [id],
-    );
+  private async registrationOf(tx: TenantTx, id: string) {
+    const e = await tx.collection('employees').findOne({ id });
+    const s = e?.default_shift_id ? await tx.collection('shift_templates').findOne({ id: e.default_shift_id }) : undefined;
+    const shift = s && { id: s.id, name: s.name, code: s.code, startTime: String(s.start_time).slice(0, 5), endTime: String(s.end_time).slice(0, 5) };
+    const mappings = await tx.collection('device_user_mappings').find({ employee_id: id }, { sort: { created_at: 1 } });
+    const devices = await fieldById(tx, 'attendance_devices', mappings.map((m) => m.device_id));
+    const enrolments = mappings.map((m) => ({ id: m.id as string, deviceUserId: m.device_user_id as string, deviceId: (m.device_id as string | null) ?? null, deviceName: devices.get(m.device_id) ?? null }));
     return { defaultShift: shift ?? null, enrolments, registered: !!shift || enrolments.length > 0 };
   }
 
@@ -858,40 +857,38 @@ export class EmployeesService {
     });
   }
 
-  private async registerAttendance(tx: Tx, employeeId: string, input: z.infer<typeof attendanceRegistrationInput>, atHire: boolean) {
+  private async registerAttendance(tx: TenantTx, employeeId: string, input: z.infer<typeof attendanceRegistrationInput>, atHire: boolean) {
     if (atHire && !input.defaultShiftId && !input.enrolments.length) return;
-    if (input.defaultShiftId && !(await one(tx, 'select 1 from shift_templates where id = $1 and archived_at is null', [input.defaultShiftId]))) {
+    if (input.defaultShiftId && !(await tx.collection('shift_templates').exists({ id: input.defaultShiftId, archived_at: null }))) {
       throw Errors.badRequest('invalid_shift', 'Shift not found');
     }
-    await tx.query('update employees set default_shift_id = $2 where id = $1', [employeeId, input.defaultShiftId]);
+    await tx.collection('employees').updateOne({ id: employeeId }, { $set: { default_shift_id: input.defaultShiftId ?? null } });
     const seen = new Set<string>();
     for (const x of input.enrolments) {
       const key = `${x.deviceId ?? '*'}:${x.deviceUserId.toLowerCase()}`;
       if (seen.has(key)) throw Errors.badRequest('duplicate_enrolment', `Enrolment number ${x.deviceUserId} is listed twice`);
       seen.add(key);
-      if (x.deviceId && !(await one(tx, 'select 1 from attendance_devices where id = $1 and archived_at is null', [x.deviceId]))) {
+      if (x.deviceId && !(await tx.collection('attendance_devices').exists({ id: x.deviceId, archived_at: null }))) {
         throw Errors.badRequest('invalid_device', 'Attendance machine not found');
       }
     }
-    const old = await many<{ device_user_id: string; device_id: string | null }>(tx, 'delete from device_user_mappings where employee_id = $1 returning device_user_id, device_id', [employeeId]);
+    const mappings = tx.collection('device_user_mappings');
+    const old = await mappings.find({ employee_id: employeeId }, { projection: { device_user_id: 1, device_id: 1 } });
+    await mappings.delete({ employee_id: employeeId });
     const actor = requestContext.tenantActor();
     for (const x of input.enrolments) {
-      const taken = await one<{ name: string }>(
-        tx,
-        `select trim(coalesce(e.preferred_name, e.first_name) || ' ' || e.last_name) as name from device_user_mappings m join employees e on e.id = m.employee_id
-          where m.device_user_id = $1 and (m.device_id is not distinct from $2 or m.device_id is null or $2::uuid is null) limit 1`,
-        [x.deviceUserId, x.deviceId],
-      );
-      if (taken) throw Errors.conflict('already_mapped', `Enrolment number ${x.deviceUserId} is already used by ${taken.name}`);
-      await tx.query(
-        `insert into device_user_mappings (tenant_id, device_id, device_user_id, employee_id, created_by) values (app_tenant_id(), $1, $2, $3, $4)`,
-        [x.deviceId, x.deviceUserId, employeeId, actor.userId],
-      );
+      // A number on one machine, or on every machine (no device), cannot belong to two people.
+      const taken = await mappings.findOne({ device_user_id: x.deviceUserId, ...(x.deviceId ? { $or: [{ device_id: x.deviceId }, { device_id: null }] } : {}) });
+      if (taken) {
+        const who = (await employeeNames(tx, [taken.employee_id])).get(taken.employee_id)?.name ?? 'someone else';
+        throw Errors.conflict('already_mapped', `Enrolment number ${x.deviceUserId} is already used by ${who}`);
+      }
+      await mappings.insert({ device_id: x.deviceId ?? null, device_user_id: x.deviceUserId, employee_id: employeeId, created_by: actor.userId });
     }
     // Days already worked are recomputed so the new shift and any punches from these numbers count.
     if (!atHire) {
-      const touched = [...old.map((o) => ({ deviceUserId: o.device_user_id, deviceId: o.device_id })), ...input.enrolments];
-      for (const t of touched) await this.devices.recomputeMapped(tx, employeeId, t.deviceUserId, t.deviceId);
+      const touched = [...old.map((o) => ({ deviceUserId: o.device_user_id as string, deviceId: (o.device_id as string | null) ?? null })), ...input.enrolments];
+      for (const t of touched) await this.devices.recomputeMapped(tx, employeeId, t.deviceUserId, t.deviceId ?? null);
     }
   }
 
@@ -910,11 +907,11 @@ export class EmployeesService {
     const old = await this.db.tenant(async (tx) => {
       const e = await this.load(tx, id);
       await this.requirePhotoEdit(tx, e);
-      return (await one<{ photo_key: string | null }>(tx, 'select photo_key from employees where id = $1 for update', [id]))!.photo_key;
+      return ((await tx.collection('employees').findOne({ id }))!.photo_key as string | null) ?? null;
     });
     await this.storage.put(key, file.buffer, { upload: true });
     const e = await this.db.tenant(async (tx) => {
-      await tx.query('update employees set photo_key = $2, photo_content_type = $3, photo_updated_at = now() where id = $1', [id, key, file.mimetype]);
+      await tx.collection('employees').updateOne({ id }, { $set: { photo_key: key, photo_content_type: file.mimetype, photo_updated_at: new Date() } });
       await this.audit.record(tx, { action: 'employee.photo_updated', resourceType: 'employee', resourceId: id, metadata: { contentType: file.mimetype, sizeBytes: file.size } });
       return this.load(tx, id);
     });
@@ -926,10 +923,10 @@ export class EmployeesService {
     const old = await this.db.tenant(async (tx) => {
       const e = await this.load(tx, id);
       await this.requirePhotoEdit(tx, e);
-      const r = (await one<{ photo_key: string | null }>(tx, 'select photo_key from employees where id = $1 for update', [id]))!;
-      await tx.query('update employees set photo_key = null, photo_content_type = null, photo_updated_at = null where id = $1', [id]);
+      const r = (await tx.collection('employees').findOne({ id }))!;
+      await tx.collection('employees').updateOne({ id }, { $set: { photo_key: null, photo_content_type: null, photo_updated_at: null } });
       if (r.photo_key) await this.audit.record(tx, { action: 'employee.photo_removed', resourceType: 'employee', resourceId: id });
-      return r.photo_key;
+      return (r.photo_key as string | null) ?? null;
     });
     if (old) await this.storage.remove(old).catch(() => undefined);
   }
@@ -939,40 +936,39 @@ export class EmployeesService {
     const row = await this.db.tenant(async (tx) => {
       const e = await this.load(tx, id);
       await this.authz.require('employees:read', employeeAttrs(e), tx);
-      return one<{ photo_key: string | null; photo_content_type: string | null }>(tx, 'select photo_key, photo_content_type from employees where id = $1', [id]);
+      return tx.collection('employees').findOne({ id }, { projection: { photo_key: 1, photo_content_type: 1 } });
     });
     if (!row?.photo_key || !row.photo_content_type) throw Errors.notFound('Photo');
     const f = await this.storage.open(row.photo_key).catch(() => { throw Errors.notFound('Photo'); });
-    return { ...f, contentType: row.photo_content_type };
+    return { ...f, contentType: row.photo_content_type as string };
   }
 
-  private async requirePhotoEdit(tx: Tx, e: EmployeeRow) {
+  private async requirePhotoEdit(tx: TenantTx, e: EmployeeRow) {
     const s = await this.authz.subject(tx);
     if (s.employeeId === e.id) return;
     await this.authz.require('employees:update', employeeAttrs(e), tx);
   }
 
   /** Allocates the next code from the tenant's series, skipping codes already used (e.g. by imported records). */
-  private async nextEmployeeCode(tx: Tx): Promise<string> {
-    await tx.query(`insert into employee_number_series (tenant_id) values (app_tenant_id()) on conflict do nothing`);
+  private async nextEmployeeCode(tx: TenantTx): Promise<string> {
+    const series = tx.collection('employee_number_series');
+    await series.upsert({}, {});
     for (let i = 0; i < 1000; i++) {
-      const s = (await one<{ prefix: string; padding: number; n: number }>(
-        tx, `update employee_number_series set next_value = next_value + 1 where tenant_id = app_tenant_id() returning prefix, padding, next_value - 1 as n`,
-      ))!;
-      const code = `${s.prefix}${String(s.n).padStart(s.padding, '0')}`;
-      if (!(await one(tx, 'select 1 from employees where employee_code = $1', [code]))) return code;
+      const s = (await series.updateAndGet({}, { $inc: { next_value: 1 } }))!;
+      const code = `${s.prefix}${String(s.next_value - 1).padStart(s.padding, '0')}`;
+      if (!(await tx.collection('employees').exists({ employee_code: code }))) return code;
     }
     throw Errors.conflict('employee_code_exhausted', 'Could not allocate an employee code. Check the numbering settings.');
   }
 
   /** Links an existing workspace member's login to this employee record. */
-  private async linkMembership(tx: Tx, employeeId: string, membershipId: string) {
-    const m = await one<{ employee_id: string | null; status: string }>(tx, 'select employee_id, status from memberships where id = $1', [membershipId]);
+  private async linkMembership(tx: TenantTx, employeeId: string, membershipId: string) {
+    const m = await tx.collection('memberships').findOne({ id: membershipId });
     if (!m) throw Errors.badRequest('invalid_member', 'Workspace member not found');
-    if (m.employee_id || (await one(tx, 'select 1 from employees where membership_id = $1', [membershipId]))) {
+    if (m.employee_id || (await tx.collection('employees').exists({ membership_id: membershipId }))) {
       throw Errors.conflict('member_already_linked', 'This member is already linked to an employee record');
     }
-    await tx.query('update employees set membership_id = $2 where id = $1', [employeeId, membershipId]);
+    await this.setMembership(tx, employeeId, membershipId);
     await this.onboarding.assignEmployeeTasks(tx, employeeId, membershipId);
     await this.event(tx, employeeId, 'linked_login', today(), { membershipId });
   }
@@ -991,29 +987,21 @@ export class EmployeesService {
 
   /** Validates references in a placement. Out-of-scope or archived targets read as not found. */
   private async checkPlacement(
-    tx: Tx,
+    tx: TenantTx,
     p: { legalEntityId?: string; departmentId?: string | null; locationId?: string | null; designationId?: string | null; managerEmployeeId?: string | null },
     employeeId: string | null,
   ) {
-    const exists = async (sql: string, id: string | null | undefined, code: string, msg: string) => {
-      if (id && !(await one(tx, sql, [id]))) throw Errors.badRequest(code, msg);
+    const exists = async (table: string, id: string | null | undefined, code: string, msg: string, filter: Record<string, unknown> = { archived_at: null }) => {
+      if (id && !(await tx.collection(table).exists({ id, ...filter }))) throw Errors.badRequest(code, msg);
     };
-    await exists('select 1 from legal_entities where id = $1 and archived_at is null', p.legalEntityId, 'invalid_legal_entity', 'Legal entity not found');
-    await exists('select 1 from departments where id = $1 and archived_at is null', p.departmentId, 'invalid_department', 'Department not found');
-    await exists('select 1 from locations where id = $1 and archived_at is null', p.locationId, 'invalid_location', 'Location not found');
-    await exists('select 1 from designations where id = $1 and archived_at is null', p.designationId, 'invalid_designation', 'Designation not found');
-    await exists(`select 1 from employees where id = $1 and status <> 'exited'`, p.managerEmployeeId, 'invalid_manager', 'Manager not found among current employees');
+    await exists('legal_entities', p.legalEntityId, 'invalid_legal_entity', 'Legal entity not found');
+    await exists('departments', p.departmentId, 'invalid_department', 'Department not found');
+    await exists('locations', p.locationId, 'invalid_location', 'Location not found');
+    await exists('designations', p.designationId, 'invalid_designation', 'Designation not found');
+    await exists('employees', p.managerEmployeeId, 'invalid_manager', 'Manager not found among current employees', { status: { $ne: 'exited' } });
     if (employeeId && p.managerEmployeeId) {
       if (p.managerEmployeeId === employeeId) throw Errors.badRequest('invalid_manager', 'An employee cannot report to themselves');
-      const cycle = await one(
-        tx,
-        `with recursive chain(id, depth) as (
-           select current_manager_employee_id, 1 from employees where id = $1
-           union all select e.current_manager_employee_id, c.depth + 1 from employees e join chain c on e.id = c.id where c.depth < 100
-         ) select 1 from chain where id = $2`,
-        [p.managerEmployeeId, employeeId],
-      );
-      if (cycle) throw Errors.badRequest('invalid_manager', 'This would create a reporting loop');
+      if (await managerCycle(tx, employeeId, p.managerEmployeeId)) throw Errors.badRequest('invalid_manager', 'This would create a reporting loop');
     }
   }
 
@@ -1033,10 +1021,10 @@ export class EmployeesService {
         if (blocked.length) throw Errors.forbidden(`HR maintains these fields: ${blocked.join(', ')}`);
       }
       if (!keys.length) return before;
-      await tx.query(
-        `update employees set ${keys.map((k, i) => `${PROFILE_COLUMNS[k]} = $${i + 2}`).join(', ')} where id = $1`,
-        [id, ...keys.map((k) => input[k as keyof typeof input])],
-      ).catch(uniqueAs('work_email_taken', 'Another current employee already uses this work email'));
+      await tx
+        .collection('employees')
+        .updateOne({ id }, { $set: Object.fromEntries(keys.map((k) => [PROFILE_COLUMNS[k]!, input[k as keyof typeof input]])) })
+        .catch(uniqueAs('work_email_taken', 'Another current employee already uses this work email'));
       const after = await this.load(tx, id);
       const changes = diff(before, Object.fromEntries(keys.map((k) => [k, after[k]])));
       if (Object.keys(changes).length) {
@@ -1052,7 +1040,7 @@ export class EmployeesService {
     return this.db.tenant(async (tx) => {
       const e = await this.load(tx, id);
       await this.authz.require('employees:sensitive:read', employeeAttrs(e), tx);
-      const row = await one<Record<string, string | null>>(tx, 'select * from employee_sensitive where employee_id = $1', [id]);
+      const row = await tx.collection('employee_sensitive').findOne({ employee_id: id });
       await this.audit.record(tx, { action: 'employee.sensitive_viewed', resourceType: 'employee', resourceId: id });
       const dec = (v: string | null | undefined) => (v ? decryptField(v, this.config.fieldKeys) : null);
       return {
@@ -1073,23 +1061,16 @@ export class EmployeesService {
       await this.authz.require('employees:update', employeeAttrs(e), tx);
       await this.authz.require('employees:sensitive:read', employeeAttrs(e), tx);
       const enc = (v: string | null | undefined) => (v ? encryptField(v.replace(/\s+/g, ' '), this.config.fieldKeys) : null);
-      await tx.query(`insert into employee_sensitive (employee_id, tenant_id) values ($1, app_tenant_id()) on conflict (employee_id) do nothing`, [id]);
-      const sets: string[] = [];
-      const vals: unknown[] = [id];
-      if (input.bankName !== undefined) {
-        vals.push(input.bankName);
-        sets.push(`bank_name = $${vals.length}`);
-      }
+      const set: Record<string, unknown> = {};
+      if (input.bankName !== undefined) set.bank_name = input.bankName;
       for (const [k, col] of Object.entries(SENSITIVE_COLUMNS)) {
         const v = input[k as keyof typeof SENSITIVE_COLUMNS];
-        if (v === undefined) continue;
-        vals.push(enc(v));
-        sets.push(`${col} = $${vals.length}`);
+        if (v !== undefined) set[col] = enc(v);
       }
       const changed = Object.keys(input).filter((k) => input[k as keyof typeof input] !== undefined);
-      if (sets.length) {
-        vals.push(actor.userId);
-        await tx.query(`update employee_sensitive set ${sets.join(', ')}, updated_by = $${vals.length}, updated_at = now() where employee_id = $1`, vals);
+      if (Object.keys(set).length) {
+        const stamp = { ...set, updated_by: actor.userId, updated_at: new Date() };
+        await tx.collection('employee_sensitive').upsert({ employee_id: id }, { employee_id: id, ...stamp }, { $set: stamp });
         // Only field names are audited, never the values.
         await this.audit.record(tx, { action: 'employee.sensitive_updated', resourceType: 'employee', resourceId: id, metadata: { fields: changed } });
         if (e.membershipId && e.membershipId !== actor.membershipId) {
@@ -1121,24 +1102,24 @@ export class EmployeesService {
       if (input.effectiveFrom < e.dateOfJoining) throw Errors.badRequest('before_joining', 'The change cannot take effect before the joining date');
       if (e.lastWorkingDay && input.effectiveFrom > e.lastWorkingDay) throw Errors.badRequest('after_exit', 'The change cannot take effect after the last working day');
 
-      const later = await one(tx, 'select 1 from employment_records where employee_id = $1 and effective_from > $2', [id, input.effectiveFrom]);
-      if (later) throw Errors.conflict('later_change_scheduled', 'A later change is already recorded. Correct that one first.');
-      const current = await one<Record<string, unknown> & { id: string; effective_from: string; effective_to: string | null }>(
-        tx, 'select * from employment_records where employee_id = $1 and effective_from <= $2 order by effective_from desc limit 1 for update', [id, input.effectiveFrom],
-      );
+      const records = tx.collection('employment_records');
+      if (await records.exists({ employee_id: id, effective_from: { $gt: input.effectiveFrom } })) {
+        throw Errors.conflict('later_change_scheduled', 'A later change is already recorded. Correct that one first.');
+      }
+      const current = await records.findOne({ employee_id: id, effective_from: { $lte: input.effectiveFrom } }, { sort: { effective_from: -1 } });
       if (!current) throw Errors.conflict('no_record', 'No job record covers that date');
 
       const pick = <T>(v: T | undefined, fallback: unknown) => (v === undefined ? fallback : v);
       const next = {
         legal_entity_id: pick(input.legalEntityId, current.legal_entity_id) as string,
-        department_id: pick(input.departmentId, current.department_id),
-        location_id: pick(input.locationId, current.location_id),
-        designation_id: pick(input.designationId, current.designation_id),
-        manager_employee_id: pick(input.managerEmployeeId, current.manager_employee_id),
-        grade: pick(input.grade, current.grade),
+        department_id: pick(input.departmentId, current.department_id ?? null),
+        location_id: pick(input.locationId, current.location_id ?? null),
+        designation_id: pick(input.designationId, current.designation_id ?? null),
+        manager_employee_id: pick(input.managerEmployeeId, current.manager_employee_id ?? null),
+        grade: pick(input.grade, current.grade ?? null),
         employment_type: pick(input.employmentType, current.employment_type),
       };
-      const changedCols = Object.keys(next).filter((k) => (next as Record<string, unknown>)[k] !== current[k]);
+      const changedCols = Object.keys(next).filter((k) => (next as Record<string, unknown>)[k] !== (current[k] ?? null));
       if (!changedCols.length) throw Errors.badRequest('no_change', 'Nothing changes with these values');
       await this.checkPlacement(tx, {
         legalEntityId: input.legalEntityId, departmentId: input.departmentId, locationId: input.locationId,
@@ -1150,23 +1131,24 @@ export class EmployeesService {
         departmentId: next.department_id as string | null, locationId: next.location_id as string | null,
       }, tx);
 
-      const values = [next.legal_entity_id, next.department_id, next.location_id, next.designation_id, next.manager_employee_id, next.grade, next.employment_type];
       if (current.effective_from === input.effectiveFrom) {
-        await tx.query(
-          `update employment_records set legal_entity_id = $2, department_id = $3, location_id = $4, designation_id = $5, manager_employee_id = $6, grade = $7,
-             employment_type = $8, change_reason = case when change_reason = 'hire' then 'hire' else $9 end, note = coalesce($10, note) where id = $1`,
-          [current.id, ...values, input.reason, input.note ?? null],
+        await records.updateOne(
+          { id: current.id },
+          { $set: { ...next, change_reason: current.change_reason === 'hire' ? 'hire' : input.reason, ...(input.note != null ? { note: input.note } : {}) } },
         );
       } else {
-        await tx.query(`update employment_records set effective_to = $2::date - 1 where id = $1`, [current.id, input.effectiveFrom]);
-        await tx.query(
-          `insert into employment_records (tenant_id, employee_id, effective_from, effective_to, legal_entity_id, department_id, location_id, designation_id,
-                                           manager_employee_id, grade, employment_type, change_reason, note, created_by)
-           values (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          [id, input.effectiveFrom, current.effective_to, ...values, input.reason, input.note ?? null, actor.userId],
-        );
+        await records.updateOne({ id: current.id }, { $set: { effective_to: addDays(input.effectiveFrom, -1) } });
+        await records.insert({
+          employee_id: id,
+          effective_from: input.effectiveFrom,
+          effective_to: current.effective_to ?? null,
+          ...next,
+          change_reason: input.reason,
+          note: input.note ?? null,
+          created_by: actor.userId,
+        });
       }
-      await tx.query('select employees_apply_current(current_date)');
+      await applyCurrentPlacement(tx, today(), [id]);
       const kind = input.reason === 'promotion' ? 'promoted' : changedCols.length === 1 && changedCols[0] === 'manager_employee_id' ? 'manager_changed' : LIFECYCLE_KIND[input.reason]!;
       await this.event(tx, id, kind, input.effectiveFrom, { reason: input.reason, changed: changedCols, note: input.note ?? null });
       const after = await this.load(tx, id);
@@ -1176,7 +1158,7 @@ export class EmployeesService {
         metadata: { effectiveFrom: input.effectiveFrom, reason: input.reason },
       });
       await this.outbox.publish(tx, actor.tenantId, 'employee.job_changed', { employeeId: id, effectiveFrom: input.effectiveFrom, changed: changedCols });
-      const newManager = next.manager_employee_id ? await one<{ membership_id: string | null }>(tx, 'select membership_id from employees where id = $1', [next.manager_employee_id]) : undefined;
+      const newManager = next.manager_employee_id ? await tx.collection('employees').findOne({ id: next.manager_employee_id }) : undefined;
       await this.notifications.notify(tx, {
         membershipIds: [e.membershipId, changedCols.includes('manager_employee_id') ? newManager?.membership_id : null],
         kind: 'employee.job_changed',
@@ -1192,7 +1174,7 @@ export class EmployeesService {
     return this.lifecycle(id, async (tx, e) => {
       if (e.status !== 'probation') throw Errors.conflict('invalid_state', 'Only employees on probation can be confirmed');
       if (input.effectiveOn < e.dateOfJoining) throw Errors.badRequest('before_joining', 'Confirmation cannot be before the joining date');
-      await tx.query(`update employees set status = 'active', confirmation_date = $2 where id = $1`, [id, input.effectiveOn]);
+      await tx.collection('employees').updateOne({ id }, { $set: { status: 'active', confirmation_date: input.effectiveOn } });
       await this.event(tx, id, 'confirmed', input.effectiveOn, { note: input.note ?? null });
       await this.notifications.notify(tx, { membershipIds: [e.membershipId], kind: 'employee.confirmed', title: 'Your employment has been confirmed', link: `/employees/${id}`, email: true });
       return { action: 'employee.confirmed', changes: { status: { from: 'probation', to: 'active' }, confirmationDate: input.effectiveOn } };
@@ -1203,7 +1185,7 @@ export class EmployeesService {
     return this.lifecycle(id, async (tx, e) => {
       if (e.status !== 'probation') throw Errors.conflict('invalid_state', 'Only employees on probation can have it extended');
       if (e.probationEndDate && input.newEndDate <= e.probationEndDate) throw Errors.badRequest('not_later', 'The new end date must be after the current one');
-      await tx.query('update employees set probation_end_date = $2 where id = $1', [id, input.newEndDate]);
+      await tx.collection('employees').updateOne({ id }, { $set: { probation_end_date: input.newEndDate } });
       await this.event(tx, id, 'probation_extended', today(), { from: e.probationEndDate, to: input.newEndDate, note: input.note ?? null });
       return { action: 'employee.probation_extended', changes: { probationEndDate: { from: e.probationEndDate, to: input.newEndDate } } };
     });
@@ -1214,17 +1196,20 @@ export class EmployeesService {
     return this.lifecycle(id, async (tx, e) => {
       if (e.status === 'exited' || e.status === 'notice') throw Errors.conflict('invalid_state', e.status === 'notice' ? 'An exit is already scheduled' : 'This person has already left');
       if (input.lastWorkingDay < e.dateOfJoining) throw Errors.badRequest('before_joining', 'The last working day cannot be before the joining date');
-      if (await one(tx, 'select 1 from employment_records where employee_id = $1 and effective_from > $2', [id, input.lastWorkingDay])) {
+      if (await tx.collection('employment_records').exists({ employee_id: id, effective_from: { $gt: input.lastWorkingDay } })) {
         throw Errors.conflict('later_change_scheduled', 'A job change is scheduled after the last working day. Correct it first.');
       }
-      await tx.query(
-        `update employees set status = 'notice', exit_type = $2, resignation_date = $3, last_working_day = $4, exit_reason = $5 where id = $1`,
-        [id, input.exitType, input.resignationDate ?? null, input.lastWorkingDay, input.reason ?? null],
+      await tx.collection('employees').updateOne(
+        { id },
+        { $set: { status: 'notice', exit_type: input.exitType, resignation_date: input.resignationDate ?? null, last_working_day: input.lastWorkingDay, exit_reason: input.reason ?? null } },
       );
-      await tx.query(`update employment_records set effective_to = $2 where employee_id = $1 and (effective_to is null or effective_to > $2) and effective_from <= $2`, [id, input.lastWorkingDay]);
+      await tx.collection('employment_records').update(
+        { employee_id: id, effective_from: { $lte: input.lastWorkingDay }, $or: [{ effective_to: null }, { effective_to: { $gt: input.lastWorkingDay } }] },
+        { $set: { effective_to: input.lastWorkingDay } },
+      );
       if (input.resignationDate) await this.event(tx, id, 'resigned', input.resignationDate, {});
       await this.event(tx, id, 'exit_scheduled', input.lastWorkingDay, { exitType: input.exitType });
-      const mgr = e.managerEmployeeId ? await one<{ membership_id: string | null }>(tx, 'select membership_id from employees where id = $1', [e.managerEmployeeId]) : undefined;
+      const mgr = e.managerEmployeeId ? await tx.collection('employees').findOne({ id: e.managerEmployeeId }) : undefined;
       await this.notifications.notify(tx, {
         membershipIds: [mgr?.membership_id], kind: 'employee.exit_scheduled', title: `${e.displayName}'s last working day is ${input.lastWorkingDay}`, link: `/employees/${id}`,
       });
@@ -1240,18 +1225,17 @@ export class EmployeesService {
     return this.lifecycle(id, async (tx, e) => {
       if (e.status !== 'notice') throw Errors.conflict('invalid_state', 'There is no scheduled exit to withdraw');
       const status = !e.confirmationDate && e.probationEndDate && e.probationEndDate >= today() ? 'probation' : e.confirmationDate || !e.probationEndDate ? 'active' : 'probation';
-      await tx.query(`update employees set status = $2, exit_type = null, resignation_date = null, last_working_day = null, exit_reason = null where id = $1`, [id, status]);
-      await tx.query(`update employment_records set effective_to = null where employee_id = $1 and effective_to = $2`, [id, e.lastWorkingDay]);
+      await tx.collection('employees').updateOne({ id }, { $set: { status, exit_type: null, resignation_date: null, last_working_day: null, exit_reason: null } });
+      await tx.collection('employment_records').update({ employee_id: id, effective_to: e.lastWorkingDay }, { $set: { effective_to: null } });
       await this.event(tx, id, 'exit_withdrawn', today(), { lastWorkingDay: e.lastWorkingDay });
       return { action: 'employee.exit_withdrawn', changes: { status: { from: 'notice', to: status } } };
     });
   }
 
-  private async lifecycle(id: string, fn: (tx: Tx, e: EmployeeRow) => Promise<{ action: string; changes: Record<string, unknown> }>) {
+  private async lifecycle(id: string, fn: (tx: TenantTx, e: EmployeeRow) => Promise<{ action: string; changes: Record<string, unknown> }>) {
     return this.db.tenant(async (tx) => {
       const e = await this.load(tx, id);
       await this.authz.require('employees:lifecycle', employeeAttrs(e), tx);
-      await tx.query('select 1 from employees where id = $1 for update', [id]);
       const r = await fn(tx, e);
       await this.audit.record(tx, { action: r.action, resourceType: 'employee', resourceId: id, changes: r.changes });
       await this.outbox.publish(tx, requestContext.tenantActor().tenantId, r.action, { employeeId: id });
@@ -1264,40 +1248,38 @@ export class EmployeesService {
   // ---------------------------------------------------------------------------------------------------------
 
   /** Starts employees whose joining date has arrived. */
-  async startJoiners(tx: Tx, asOf: string): Promise<number> {
-    const r = await tx.query(
-      `update employees set status = case when probation_end_date is not null then 'probation' else 'active' end
-        where status = 'pre_boarding' and date_of_joining <= $1`, [asOf],
-    );
-    return r.rowCount ?? 0;
+  async startJoiners(tx: TenantTx, asOf: string): Promise<number> {
+    const due = await tx.collection('employees').find({ status: 'pre_boarding', date_of_joining: { $lte: asOf } }, { projection: { probation_end_date: 1 } });
+    for (const e of due) await tx.collection('employees').updateOne({ id: e.id, status: 'pre_boarding' }, { $set: { status: e.probation_end_date ? 'probation' : 'active' } });
+    return due.length;
+  }
+
+  /** Copies each employee's job record in effect on `asOf` into their current placement. */
+  applyCurrent(tx: TenantTx, asOf: string): Promise<number> {
+    return applyCurrentPlacement(tx, asOf);
   }
 
   /** Completes exits whose last working day has passed: the login is suspended and sessions are revoked. */
-  async finaliseExits(tx: Tx, asOf: string): Promise<number> {
-    const due = await many<{ id: string; membership_id: string | null; last_working_day: string; tenant_id: string }>(
-      tx, `select id, membership_id, last_working_day, tenant_id from employees where status = 'notice' and last_working_day < $1 for update`, [asOf],
-    );
+  async finaliseExits(tx: TenantTx, asOf: string): Promise<number> {
+    const due = await tx.collection('employees').find({ status: 'notice', last_working_day: { $lt: asOf } });
     for (const e of due) {
-      await tx.query(`update employees set status = 'exited' where id = $1`, [e.id]);
+      await tx.collection('employees').updateOne({ id: e.id }, { $set: { status: 'exited' } });
       await this.event(tx, e.id, 'exited', e.last_working_day, {});
       // Open leave after the last day can no longer be taken.
-      const open = await many<{ id: string; approval_request_id: string | null }>(
-        tx, `select id, approval_request_id from leave_requests where employee_id = $1 and status = 'pending'`, [e.id],
-      );
+      const open = await tx.collection('leave_requests').find({ employee_id: e.id, status: 'pending' });
       for (const l of open) {
-        await tx.query(`update leave_requests set status = 'cancelled', cancelled_at = now(), cancel_reason = 'Employee left' where id = $1`, [l.id]);
+        await tx.collection('leave_requests').updateOne({ id: l.id }, { $set: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: 'Employee left' } });
         if (l.approval_request_id) {
-          await tx.query(`update approval_steps set status = 'cancelled' where request_id = $1 and status in ('pending', 'waiting')`, [l.approval_request_id]);
-          await tx.query(`update approval_requests set status = 'cancelled', decided_at = now() where id = $1`, [l.approval_request_id]);
+          await tx.collection('approval_steps').update({ request_id: l.approval_request_id, status: { $in: ['pending', 'waiting'] } }, { $set: { status: 'cancelled' } });
+          await tx.collection('approval_requests').updateOne({ id: l.approval_request_id }, { $set: { status: 'cancelled', decided_at: new Date() } });
         }
       }
       if (e.membership_id) {
-        const m = await one<{ user_id: string; status: string }>(tx, 'select user_id, status from memberships where id = $1', [e.membership_id]);
+        const m = await tx.collection('memberships').findOne({ id: e.membership_id });
         if (m && m.status !== 'suspended') {
-          await tx.query(`update memberships set status = 'suspended' where id = $1`, [e.membership_id]);
-          await this.db.platform((ptx) =>
-            ptx.query(`update sessions set revoked_at = now(), revoked_reason = 'employee_exited' where user_id = $1 and tenant_id = $2 and revoked_at is null`, [m.user_id, e.tenant_id]),
-          );
+          await tx.collection('memberships').updateOne({ id: e.membership_id }, { $set: { status: 'suspended' } });
+          // Sessions are global records; only this workspace's are ended, in the same transaction.
+          await tx.unscoped('sessions').update({ user_id: m.user_id, tenant_id: e.tenant_id, revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'employee_exited' } });
         }
       }
       await this.audit.record(tx, { action: 'employee.exited', resourceType: 'employee', resourceId: e.id, metadata: { lastWorkingDay: e.last_working_day }, tenantId: e.tenant_id });
@@ -1306,13 +1288,20 @@ export class EmployeesService {
     return due.length;
   }
 
-  private async event(tx: Tx, employeeId: string, kind: string, effectiveOn: string, details: Record<string, unknown>) {
+  private async event(tx: TenantTx, employeeId: string, kind: string, effectiveOn: string, details: Record<string, unknown>) {
     const actor = requestContext.get()?.actor;
-    await tx.query(
-      `insert into lifecycle_events (tenant_id, employee_id, kind, effective_on, details, created_by) values (app_tenant_id(), $1, $2, $3, $4, $5)`,
-      [employeeId, kind, effectiveOn, JSON.stringify(details), actor?.kind === 'user' ? actor.userId : null],
-    );
+    await tx.collection('lifecycle_events').insert({ employee_id: employeeId, kind, effective_on: effectiveOn, details, created_by: actor?.kind === 'user' ? actor.userId : null });
   }
+}
+
+function cmp(a: unknown, b: unknown): number {
+  const x = String(a ?? '');
+  const y = String(b ?? '');
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+function draftView(d: Record<string, unknown>) {
+  return { id: d.id, step: d.step, data: d.data, updatedAt: d.updated_at };
 }
 
 /** Turns a unique-constraint violation into a readable 409. */

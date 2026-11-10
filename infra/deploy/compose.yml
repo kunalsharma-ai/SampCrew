@@ -1,12 +1,13 @@
-# SampCrew production stack on one host: PostgreSQL, Redis, the API, the Web Portal, the Super Admin Console, a TLS
+# SampCrew production stack on one host: MongoDB (a one-node replica set), Redis, the API, the Web Portal, the Super Admin Console, a TLS
 # reverse proxy, daily backups, and a one-shot migration job that runs before the API starts.
 #
 #   cp env.production.example .env && ./gen-secrets.sh >> .env    # then fill in the addresses and email settings
 #   docker compose up -d --build                                    # or pull images you built and pushed
 #
 # See docs/ops/runbook.md for the full procedure (first start, upgrades, backups, restore, rollback).
-# To use a managed PostgreSQL instead of the bundled one, point DATABASE_ADMIN_URL and DATABASE_URL at it and start
-# without it:  docker compose up -d --scale postgres=0   (and remove postgres from depends_on below).
+# To use MongoDB Atlas or your own replica set instead of the bundled server, set MONGODB_URL (the API's user) and
+# MONGODB_ADMIN_URL (migrations and backups) in .env and start without it:  docker compose up -d --scale mongo=0
+# (and remove mongo from depends_on below).
 name: crew
 
 x-build: &build
@@ -15,21 +16,31 @@ x-build: &build
 
 x-app-env: &app-env
   CREW_ENV: ${CREW_ENV:-production}
-  DATABASE_URL: postgres://crew_api:${DATABASE_API_PASSWORD:?run gen-secrets.sh}@${DATABASE_HOST:-postgres}:5432/${POSTGRES_DB:-crew}
+  MONGODB_URL: ${MONGODB_URL:-mongodb://crew_api:${MONGODB_API_PASSWORD}@mongo:27017/crew?replicaSet=rs0&authSource=crew}
   REDIS_URL: redis://:${REDIS_PASSWORD:?run gen-secrets.sh}@redis:6379/0
 
 services:
-  postgres:
-    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+  mongo:
+    image: ${MONGO_IMAGE:-mongo:8.0}
     restart: unless-stopped
+    # A one-node replica set (transactions need one) with authentication: the root user is created on the first
+    # start, the replica set the first time the health check runs. See scripts/mongo-start.sh.
+    entrypoint: ["bash", "/crew/mongo-start.sh"]
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-crew}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run gen-secrets.sh}
-    volumes: [pgdata:/var/lib/postgresql/data]
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?run gen-secrets.sh}
+      MONGO_REPLICA_KEY: ${MONGO_REPLICA_KEY:?run gen-secrets.sh}
+      # mongo:8.0 refuses to start on Linux 6.19+ (SERVER-121912); this lets it run (docker-library/mongo#765).
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
+    volumes:
+      - mongodata:/data/db
+      - mongoconfig:/data/configdb
+      - ./scripts/mongo-start.sh:/crew/mongo-start.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-crew}"]
+      test: ["CMD", "bash", "/crew/mongo-start.sh", "--health"]
       interval: 5s
-      retries: 20
+      retries: 30
+      start_period: 30s
     networks: [data]
 
   redis:
@@ -52,9 +63,10 @@ services:
     env_file: .env
     environment:
       <<: *app-env
-      DATABASE_ADMIN_URL: postgres://postgres:${POSTGRES_PASSWORD}@${DATABASE_HOST:-postgres}:5432/${POSTGRES_DB:-crew}
+      # Migrations run as the admin user; they also set the API's own user (MONGODB_API_PASSWORD).
+      MONGODB_URL: ${MONGODB_ADMIN_URL:-mongodb://root:${MONGO_ROOT_PASSWORD}@mongo:27017/crew?replicaSet=rs0&authSource=admin}
     depends_on:
-      postgres: { condition: service_healthy }
+      mongo: { condition: service_healthy }
     networks: [data]
 
   api:
@@ -66,9 +78,11 @@ services:
       <<: *app-env
       API_PORT: "4000"
       STORAGE_DIR: /data/files
-      # The API connects as the restricted crew_api login only; keep the owner password and backup key out of it.
-      POSTGRES_PASSWORD: ""
-      DATABASE_ADMIN_URL: ""
+      # The API connects as its own crew_api user only; keep the admin password, replica key and backup key out of it.
+      MONGO_ROOT_PASSWORD: ""
+      MONGODB_ADMIN_URL: ""
+      MONGODB_API_PASSWORD: ""
+      MONGO_REPLICA_KEY: ""
       BACKUP_PASSPHRASE: ""
     volumes: [files:/data/files]
     depends_on:
@@ -137,7 +151,7 @@ services:
     restart: unless-stopped
     command: ["/app/infra/deploy/scripts/backup.sh", "--loop"]
     environment:
-      DATABASE_ADMIN_URL: postgres://postgres:${POSTGRES_PASSWORD}@${DATABASE_HOST:-postgres}:5432/${POSTGRES_DB:-crew}
+      MONGODB_URL: ${MONGODB_ADMIN_URL:-mongodb://root:${MONGO_ROOT_PASSWORD}@mongo:27017/crew?replicaSet=rs0&authSource=admin}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
@@ -154,7 +168,8 @@ networks:
   edge: {}
 
 volumes:
-  pgdata:
+  mongodata:
+  mongoconfig:
   backups:
   files:
   caddy-data:
