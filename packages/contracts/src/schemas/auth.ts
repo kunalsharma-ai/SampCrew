@@ -87,7 +87,7 @@ export interface MeResponse {
   /** Permissions SAMPLEDGE switched off for the whole workspace: no role can grant them. */
   disabledPermissions: string[];
   limits: Record<string, number>;
-  subscription: { plan: string; status: string; trialEndsOn: string | null } | null;
+  subscription: { plan: string; status: string; trialEndsOn: string | null; /** Read-only for an overdue invoice. */ locked: boolean } | null;
   session: { mfa: boolean };
   tenants: { id: string; name: string; slug: string }[];
   /** This person's own employee record in the workspace, if their login is linked to one, for their photo. */

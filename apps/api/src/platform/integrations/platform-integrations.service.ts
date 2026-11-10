@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  PAYMENT_GATEWAYS,
   PLATFORM_INTEGRATION_INPUTS,
   PLATFORM_INTEGRATION_SECRETS,
   PLATFORM_INTEGRATIONS,
   type IntegrationTestExtras,
+  type PaymentGateway,
   type PlatformIntegrationKey,
   type PlatformIntegrationView,
   type PlatformServiceStatus,
@@ -12,6 +14,7 @@ import {
 import { createTransport } from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { AnthropicProvider, ProviderError, type AnthropicSettings } from '../../modules/ai/ai-provider';
+import { DEFAULT_BASE, GatewayError, probe as probeGateway, type GatewayKeys } from '../../modules/billing/gateways';
 import { AuditService } from '../audit/audit.service';
 import { decryptField, encryptField } from '../auth/crypto';
 import { APP_CONFIG, type AppConfig } from '../config/config';
@@ -134,6 +137,20 @@ export class PlatformIntegrationsService {
     return r.enabled ? ((r.settings.redirects as string[]) ?? []) : [];
   }
 
+  /** A payment gateway's keys when it is switched on and complete, else null. */
+  async gateway(provider: PaymentGateway): Promise<GatewayKeys | null> {
+    const r = await this.resolve(provider);
+    if (!r.enabled) return null;
+    const keys = gatewayKeys(provider, r.settings, r.secrets);
+    return keys.secret && keys.webhookSecret ? keys : null;
+  }
+
+  /** The webhook secret of a gateway, even while it is switched off (a late webhook for a paid order still counts). */
+  async gatewayWebhookSecret(provider: PaymentGateway): Promise<string | null> {
+    const r = await this.resolve(provider);
+    return r.secrets.webhookSecret ?? null;
+  }
+
   /** For a workspace's Settings > Integrations: which installation-wide services are on. No settings, no secrets. */
   async workspaceStatus(): Promise<PlatformServiceStatus[]> {
     const on: Record<PlatformIntegrationKey, boolean> = {
@@ -142,6 +159,8 @@ export class PlatformIntegrationsService {
       push: (await this.push()).enabled,
       scanning: Boolean(await this.scanningUrl()),
       mobile_sso: (await this.mobileSsoRedirects()).length > 0,
+      razorpay: Boolean(await this.gateway('razorpay')),
+      stripe: Boolean(await this.gateway('stripe')),
     };
     return PLATFORM_INTEGRATIONS.map((d) => ({ key: d.key, name: d.name, description: d.description, on: on[d.key], whenOff: d.whenOff }));
   }
@@ -168,6 +187,7 @@ export class PlatformIntegrationsService {
       );
       return {
         key: d.key,
+        ...(d.webhookPath ? { webhookUrl: `${this.config.API_PUBLIC_URL.replace(/\/$/, '')}${d.webhookPath}` } : {}),
         source: r.source,
         enabled: r.enabled,
         settings: r.settings,
@@ -183,7 +203,10 @@ export class PlatformIntegrationsService {
   /** Saves an integration's settings in the Console. Secret fields left empty keep the secret in effect; null removes it. */
   async save(key: PlatformIntegrationKey, raw: unknown): Promise<PlatformIntegrationView> {
     const { enabled, settings, secrets } = await this.candidate(key, raw);
-    if (enabled) this.requireComplete(key, settings, secrets);
+    if (enabled) {
+      this.requireComplete(key, settings, secrets);
+      this.requireEnabled(key, secrets);
+    }
     const admin = requestContext.platformActor();
     const hash = hashOf(settings, secrets);
     const hints = Object.fromEntries(Object.entries(secrets).map(([k, v]) => [k, hint(v)]));
@@ -303,6 +326,14 @@ export class PlatformIntegrationsService {
       }
       case 'mobile_sso':
         return `${(settings.redirects as string[]).length} app address(es) are valid`;
+      case 'razorpay':
+      case 'stripe':
+        try {
+          const detail = await probeGateway(gatewayKeys(key, settings, secrets));
+          return secrets.webhookSecret ? detail : `${detail}. Add the webhook secret before switching it on`;
+        } catch (e) {
+          throw new Error(e instanceof GatewayError ? e.message : `Could not reach ${key === 'razorpay' ? 'Razorpay' : 'Stripe'}: ${(e as Error).message}`);
+        }
     }
   }
 
@@ -325,16 +356,19 @@ export class PlatformIntegrationsService {
         settings[k] = typeof v === 'string' ? v.trim() : v;
       }
     }
+    // A secret field left out altogether keeps the one in effect, like an empty one.
+    for (const k of PLATFORM_INTEGRATION_SECRETS[key]) if (!(k in input) && current.secrets[k]) secrets[k] = current.secrets[k]!;
     if (key === 'email' && !settings.username) delete settings.username;
-    if (key === 'ai' && !settings.baseUrl) delete settings.baseUrl;
+    if ((key === 'ai' || key === 'razorpay' || key === 'stripe') && !settings.baseUrl) delete settings.baseUrl;
+    if (key === 'stripe' && !settings.publishableKey) delete settings.publishableKey;
     // A saved secret is only reused for the server it was saved for: pointing the key or password at a different
     // address needs it typed again, so a changed address cannot be used to send the saved secret somewhere else.
-    const destination = (v: Values) => (key === 'ai' ? [v.baseUrl ?? ''] : key === 'email' ? [v.host, v.port, v.username ?? ''] : []);
+    const destination = (v: Values) => (key === 'ai' || key === 'stripe' ? [v.baseUrl ?? ''] : key === 'razorpay' ? [v.baseUrl ?? '', v.keyId ?? ''] : key === 'email' ? [v.host, v.port, v.username ?? ''] : []);
     if (JSON.stringify(destination(settings)) !== JSON.stringify(destination(current.settings))) {
       for (const k of PLATFORM_INTEGRATION_SECRETS[key]) {
         const typed = input[k];
         if (current.secrets[k] && !(typeof typed === 'string' && typed.trim()) && typed !== null) {
-          throw Errors.validation([{ path: k, message: `Enter the ${k === 'apiKey' ? 'API key' : 'password'} again: the server address changed, so the saved one is not sent there` }]);
+          throw Errors.validation([{ path: k, message: `Enter the ${SECRET_LABEL[k] ?? 'password'} again: the server address changed, so the saved one is not sent there` }]);
         }
       }
     }
@@ -346,12 +380,22 @@ export class PlatformIntegrationsService {
   private requireComplete(key: PlatformIntegrationKey, settings: Values, secrets: Secrets) {
     if (key === 'ai' && !secrets.apiKey) throw Errors.validation([{ path: 'apiKey', message: 'Paste the Claude API key' }]);
     if (key === 'email' && settings.username && !secrets.password) throw Errors.validation([{ path: 'password', message: 'Enter the password or API key for this user name' }]);
+    if (key === 'razorpay' && !secrets.keySecret) throw Errors.validation([{ path: 'keySecret', message: 'Paste the Razorpay key secret' }]);
+    if (key === 'stripe' && !secrets.secretKey) throw Errors.validation([{ path: 'secretKey', message: 'Paste the Stripe secret key' }]);
+    if (key === 'stripe' && secrets.secretKey && !/^(sk|rk)_(test|live)_/.test(secrets.secretKey)) throw Errors.validation([{ path: 'secretKey', message: 'Stripe secret keys start with sk_live_, sk_test_, rk_live_ or rk_test_' }]);
+  }
+
+  /** Switching a gateway on needs the webhook secret too: without it, payments could not be confirmed. */
+  private requireEnabled(key: PlatformIntegrationKey, secrets: Secrets) {
+    if ((PAYMENT_GATEWAYS as readonly string[]).includes(key) && !secrets.webhookSecret) {
+      throw Errors.validation([{ path: 'webhookSecret', message: 'Paste the webhook secret: SampCrew needs it to confirm payments' }]);
+    }
   }
 
   /** Staging and production refuse values that would send secrets or sign-ins over plain connections. */
   private checkProduction(key: PlatformIntegrationKey, settings: Values) {
     if (!this.config.isProductionLike) return;
-    if (key === 'ai' && settings.baseUrl && !String(settings.baseUrl).startsWith('https://')) throw Errors.validation([{ path: 'baseUrl', message: 'Use an https:// address' }]);
+    if ((key === 'ai' || key === 'razorpay' || key === 'stripe') && settings.baseUrl && !String(settings.baseUrl).startsWith('https://')) throw Errors.validation([{ path: 'baseUrl', message: 'Use an https:// address' }]);
     if (key === 'email' && settings.security === 'none') throw Errors.validation([{ path: 'security', message: 'Use STARTTLS or TLS: the password and email would otherwise cross the network unencrypted' }]);
     if (key === 'mobile_sso' && (settings.redirects as string[]).some((r) => /^http:/i.test(r))) throw Errors.validation([{ path: 'redirects', message: 'Plain http:// addresses are for local development only' }]);
   }
@@ -400,9 +444,25 @@ export class PlatformIntegrationsService {
         settings = { redirects };
         break;
       }
+      case 'razorpay':
+      case 'stripe':
+        // Payment gateways are set up only in the Console, never from the environment.
+        break;
     }
     return { key, source: present ? 'environment' : 'none', enabled, settings, secrets, hash: hashOf(settings, secrets) };
   }
+}
+
+const SECRET_LABEL: Record<string, string> = { apiKey: 'API key', keySecret: 'key secret', secretKey: 'secret key', webhookSecret: 'webhook secret' };
+
+function gatewayKeys(provider: PaymentGateway, settings: Values, secrets: Secrets): GatewayKeys {
+  return {
+    provider,
+    keyId: provider === 'razorpay' ? (settings.keyId as string) : undefined,
+    secret: (provider === 'razorpay' ? secrets.keySecret : secrets.secretKey) ?? '',
+    webhookSecret: secrets.webhookSecret ?? null,
+    baseUrl: (settings.baseUrl as string) || DEFAULT_BASE[provider],
+  };
 }
 
 /** nodemailer options for SMTP settings saved in the Console. */

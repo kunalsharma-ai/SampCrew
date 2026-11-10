@@ -146,7 +146,7 @@ describe('Platform integrations (Super Admin Console)', () => {
 
   it('lists every integration with where its setting comes from, starting from the environment', async () => {
     const list = ok(await as(superToken).get('/platform/integrations')) as unknown as Record<string, any>[];
-    expect(list.map((v) => v.key)).toEqual(['ai', 'email', 'push', 'scanning', 'mobile_sso']);
+    expect(list.map((v) => v.key)).toEqual(['ai', 'email', 'push', 'scanning', 'mobile_sso', 'razorpay', 'stripe']);
     // The test environment sets no AI key, no SMTP_URL and no scanner; MOBILE_SSO_REDIRECTS defaults to crew://sso.
     expect(list.find((v) => v.key === 'ai')).toMatchObject({ source: 'none', enabled: false, secrets: { apiKey: { set: false, hint: null } } });
     expect(list.find((v) => v.key === 'email')).toMatchObject({ source: 'none', enabled: false });

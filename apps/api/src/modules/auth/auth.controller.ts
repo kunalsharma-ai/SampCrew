@@ -18,7 +18,7 @@ import {
 } from '@crew/contracts';
 import type { Request } from 'express';
 import type { z } from 'zod';
-import { AllowWithoutMfa, Public } from '../../platform/authz/decorators';
+import { AllowWithoutMfa, Public, AllowWhenLocked } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { SsoService } from '../identity/sso.service';
@@ -30,6 +30,7 @@ const clientOf = (req: Request) => {
 };
 
 @Controller('auth')
+@AllowWhenLocked()
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
@@ -166,6 +167,7 @@ export class AuthController {
 }
 
 @Controller('me')
+@AllowWhenLocked()
 export class MeController {
   constructor(private readonly auth: AuthService) {}
 

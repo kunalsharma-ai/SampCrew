@@ -1,3 +1,4 @@
+import { AllowWhenLocked } from '../../platform/authz/decorators';
 import { Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { requestContext } from '../../platform/context/request-context';
@@ -10,6 +11,7 @@ const listQuery = z.object({ unread: z.enum(['true', 'false']).optional(), limit
 
 /** In-app notifications for the signed-in member. Everyone sees only their own. */
 @Controller('notifications')
+@AllowWhenLocked()
 export class NotificationsController {
   constructor(private readonly db: DatabaseService) {}
 

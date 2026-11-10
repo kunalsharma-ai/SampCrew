@@ -28,6 +28,7 @@ export const Errors = {
     ? 'The SampCrew mobile app is switched off for this workspace by SAMPLEDGE. Use the Web Portal, or ask your administrator.'
     : 'The SampCrew Web Portal is switched off for this workspace by SAMPLEDGE. Use the mobile app, or ask your administrator.', { client }),
   featureOffInApp: (feature: string, client: string) => new AppError(HttpStatus.FORBIDDEN, 'feature_off_in_app', `${feature} is switched off in the ${client === 'mobile' ? 'mobile app' : 'Web Portal'} for this workspace by SAMPLEDGE.`, { feature, client }),
+  workspaceLocked: () => new AppError(HttpStatus.PAYMENT_REQUIRED, 'workspace_read_only', 'Your workspace is read-only because an invoice is overdue. You can still view everything; a billing admin can pay on Plan & billing to open it again.'),
   tenantSuspended: () => new AppError(HttpStatus.FORBIDDEN, 'tenant_suspended', 'This workspace is suspended. Contact your administrator or SAMPLEDGE support.'),
   unavailable: (code: string, message: string) => new AppError(HttpStatus.SERVICE_UNAVAILABLE, code, message),
   tooMany: (message = 'Too many attempts. Try again later.') => new AppError(HttpStatus.TOO_MANY_REQUESTS, 'rate_limited', message),

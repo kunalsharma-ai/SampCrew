@@ -9,7 +9,7 @@ import {
   BarChart3, BookOpen, CalendarRange, ClipboardList, GraduationCap, Heart, MessagesSquare, Target,
   Headset, Megaphone,
   Activity, Bot, Plug, Sparkles, TrendingDown, Workflow,
-  LockKeyhole, UserX,
+  Lock, LockKeyhole, UserX,
   Palette, UserRound, PanelLeftClose, PanelLeftOpen, Plus, Star, UserPlus, Focus, History, ArrowRight, CornerDownLeft,
   Handshake, Building, FileStack, Tags, Orbit,
 } from 'lucide-react';
@@ -297,10 +297,11 @@ function Sidebar({ me, nav, counts, rail, pathname, allHrefs, onCollapse }: { me
         >
           {active && <span className="crew-nav-bar absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent" aria-hidden />}
           <Icon className="size-4 shrink-0" aria-hidden />
-          {rail ? <span className="sr-only">{item.label}</span> : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+          {rail ? <span className="sr-only">{item.label}{item.locked ? ' (not in your plan)' : ''}</span> : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+          {item.locked && !rail && <span className="flex items-center gap-1 text-[0.6875rem] text-fg-muted" data-testid="nav-locked" title="Not in your plan. Upgrade to use this."><Lock className="size-3" aria-hidden /><span className="sr-only">Not in your plan. Upgrade to use this.</span></span>}
           {count ? <span className={cn('rounded-full bg-accent px-1.5 text-[0.625rem] font-semibold leading-4 text-accent-fg tabular', rail && 'absolute right-1 top-0.5')} aria-label={`${count} waiting`}>{count > 99 ? '99+' : count}</span> : null}
         </Link>
-        {star && !rail && (
+        {star && !rail && !item.locked && (
           <button
             type="button"
             onClick={() => toggleFavourite(item.href)}

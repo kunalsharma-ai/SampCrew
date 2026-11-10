@@ -28,7 +28,7 @@ export interface ProposalData {
  * (Devanagari conjuncts are shaped by fontkit). Faces are embedded in a document only when it uses them.
  */
 const SUBSETS = ['latin', 'latin-ext', 'devanagari', 'cyrillic', 'cyrillic-ext', 'greek', 'greek-ext', 'vietnamese'] as const;
-type Weight = 400 | 700;
+export type Weight = 400 | 700;
 type Kit = { hasGlyphForCodePoint(cp: number): boolean };
 const fontFiles = new Map<string, { bytes: Buffer; kit: Kit }>();
 function face(subset: string, weight: Weight) {
@@ -60,7 +60,7 @@ export function fontRuns(text: string, weight: Weight): { subset: string; text: 
 }
 
 /** The fonts of one document, embedded on first use. */
-class Fonts {
+export class Fonts {
   private embedded = new Map<string, PDFFont>();
   constructor(private readonly pdf: PDFDocument) {}
   async prepare(texts: string[], weights: Weight[]) {

@@ -12,6 +12,10 @@ export interface Entitlements {
   trialEndsOn: string | null;
   /** Modules the plan includes but SAMPLEDGE switched off, for the workspace or for this member only. */
   blocked: Record<string, Exclude<FeatureBlockReason, 'not_in_plan'>>;
+  /** Limits the plan lets the workspace go beyond (billed as overage at the period end) instead of stopping. */
+  overage: Set<string>;
+  /** Unpaid past the grace period: the workspace is read-only until it pays. */
+  locked: boolean;
 }
 
 const KEY = Symbol('entitlements');
@@ -52,7 +56,7 @@ export class EntitlementsService {
   async requireWithinLimit(limit: string, currentCount: number, tx?: TenantTx, adding = 1) {
     const e = await this.current(tx);
     const max = e.limits[limit];
-    if (max === undefined || max === UNLIMITED) return;
+    if (max === undefined || max === UNLIMITED || e.overage.has(limit)) return;
     if (currentCount + adding > max) throw Errors.limitReached((FEATURES as readonly FeatureDefinition[]).find((f) => f.key === limit)?.unit ?? limit, max);
   }
 }
@@ -65,7 +69,7 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
   const sub = await tx.collection('subscriptions').findOne({});
   const plan = sub ? await tx.collection('plans').findOne({ id: sub.plan_id }) : undefined;
   if (!sub || !plan || sub.status === 'cancelled' || sub.status === 'suspended') {
-    return { planKey: plan?.key ?? null, status: sub?.status ?? null, features: new Set(), limits: {}, trialEndsOn: null, blocked: {} };
+    return { planKey: plan?.key ?? null, status: sub?.status ?? null, features: new Set(), limits: {}, trialEndsOn: null, blocked: {}, overage: new Set(), locked: Boolean(sub?.locked_at) };
   }
   const planFeatures = await tx.collection('plan_features').find({ plan_id: sub.plan_id });
   const kinds = new Map((await tx.collection('features').find({ key: { $in: planFeatures.map((r) => r.feature_key) } })).map((f) => [f.key as string, f.kind as string]));
@@ -76,6 +80,24 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
     if (r.kind === 'boolean') features.add(r.feature_key);
     else if (r.limit_value !== null) limits[r.feature_key] = r.limit_value;
   }
+  // A trial can be limited to some of the plan's modules.
+  const trialOnly = sub.status === 'trialing' && Array.isArray(plan.trial_features) && plan.trial_features.length ? new Set<string>(plan.trial_features as string[]) : null;
+  if (trialOnly) for (const k of [...features]) if (!CORE.has(k) && !trialOnly.has(k)) features.delete(k);
+  // Add-ons bought on top of the plan: a module, or more of a limit.
+  const addons = await tx.collection('subscription_addons').find({ status: 'active' });
+  if (addons.length) {
+    const defs = new Map((await tx.collection('addons').find({ id: { $in: addons.map((a) => a.addon_id) } })).map((a) => [a.id as string, a]));
+    for (const a of addons) {
+      const d = defs.get(a.addon_id);
+      if (!d) continue;
+      if (d.kind === 'module') features.add(d.feature_key);
+      else if (limits[d.feature_key] !== UNLIMITED) limits[d.feature_key] = (limits[d.feature_key] ?? 0) + d.unit_quantity * a.quantity;
+    }
+  }
+  // Modules agreed in a contract with this workspace, until the contract ends.
+  const deal = sub.deal as { features?: string[]; endsOn?: string | null } | null | undefined;
+  if (deal?.features?.length && (!deal.endsOn || deal.endsOn >= new Date().toISOString().slice(0, 10))) for (const k of deal.features) features.add(k);
+  const overage = new Set(Object.entries((plan.overage ?? {}) as Record<string, { policy?: string }>).filter(([, v]) => v?.policy === 'overage').map(([k]) => k));
   const blocked: Entitlements['blocked'] = {};
   // Platform-granted overrides: a negotiated add-on or pilot (true), or a module SAMPLEDGE switched off (false).
   for (const [key, value] of Object.entries(sub.feature_overrides ?? {})) {
@@ -98,5 +120,5 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
       if (!CORE.has(key) && features.delete(key)) blocked[key] = 'channel_off';
     }
   }
-  return { planKey: plan.key, status: sub.status, features, limits, trialEndsOn: sub.trial_ends_on ?? null, blocked };
+  return { planKey: plan.key, status: sub.status, features, limits, trialEndsOn: sub.trial_ends_on ?? null, blocked, overage, locked: Boolean(sub.locked_at) };
 }

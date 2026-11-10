@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { money, UNLIMITED, type ChangeSubscriptionRequest } from '@crew/contracts';
+import { money, UNLIMITED, type CheckoutRequest } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
+import { activeDeal, BillingEngine } from './billing-engine.service';
+import { renderInvoice } from './invoice-pdf';
 
 export interface PlanView {
   id: string;
@@ -18,12 +20,18 @@ export interface PlanView {
   limits: Record<string, number>;
   /** False for a hidden or archived plan, shown only because the workspace is on it. */
   offered: boolean;
+  trialDays: number;
+  /** Modules in the trial; empty means the whole plan. */
+  trialFeatures: string[];
+  /** Limits the plan bills beyond instead of blocking, with the price per extra unit. */
+  overage: Record<string, { policy: 'block' | 'overage'; prices: Record<string, string> }>;
 }
 
 /**
- * Subscription management. Payment collection is delegated to a payment provider adapter (Stripe / Razorpay)
- * that is not connected yet; subscriptions use provider 'manual', and invoices are produced as drafts for
- * SAMPLEDGE finance to issue. Nothing in the UI claims a card was charged.
+ * Plan & billing for a workspace. Money moves through BillingEngine: payments are taken by Razorpay or Stripe when
+ * SAMPLEDGE has set them up in Console > Integrations; otherwise changes apply at once and invoices are paid by
+ * bank transfer and marked paid by SAMPLEDGE finance. Nothing in the UI claims a card was charged unless a gateway
+ * confirmed it.
  */
 @Injectable()
 export class BillingService {
@@ -31,6 +39,7 @@ export class BillingService {
     private readonly db: DatabaseService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    private readonly engine: BillingEngine,
   ) {}
 
   async plans(tx?: TenantTx): Promise<PlanView[]> {
@@ -39,7 +48,7 @@ export class BillingService {
       const own = (await t.collection('subscriptions').findOne({}))?.plan_id ?? null;
       const plans = (
         await t.collection('plans').find({ $or: [{ is_public: true, archived_at: null }, { id: own }] }, { sort: { sort_order: 1, name: 1 } })
-      ).map((p) => ({ ...p, offered: p.is_public && !p.archived_at })) as { id: string; key: string; name: string; tagline: string; quote_only: boolean; minimum_seats: number; offered: boolean }[];
+      ).map((p) => ({ ...p, offered: p.is_public && !p.archived_at })) as { id: string; key: string; name: string; tagline: string; quote_only: boolean; minimum_seats: number; offered: boolean; trial_days: number | null; trial_features: string[] | null; overage: PlanView['overage'] | null }[];
       const prices = await t.collection('plan_prices').find({ plan_id: { $in: plans.map((p) => p.id) } }, { sort: { currency: 1 } });
       const features = await t.collection('plan_features').find({ plan_id: { $in: plans.map((p) => p.id) } });
       const kinds = new Map((await t.collection('features').find({})).map((f) => [f.key as string, f.kind as string]));
@@ -51,6 +60,9 @@ export class BillingService {
         tagline: p.tagline ?? '',
         quoteOnly: p.quote_only,
         offered: p.offered,
+        trialDays: p.trial_days ?? 0,
+        trialFeatures: p.trial_features ?? [],
+        overage: p.overage ?? {},
         minimumSeats: p.minimum_seats,
         prices: prices.filter((x) => x.plan_id === p.id).map((x) => ({ currency: x.currency, monthly: x.monthly_per_seat, annualPerMonth: x.annual_per_seat_month })),
         features: pf.filter((x) => x.plan_id === p.id && x.kind === 'boolean').map((x) => x.feature_key),
@@ -60,10 +72,11 @@ export class BillingService {
     return tx ? run(tx) : this.db.tenant(run);
   }
 
-  subscription() {
-    return this.db.tenant(async (tx) => {
+  async subscription() {
+    const base = await this.db.tenant(async (tx) => {
       const s = await tx.collection('subscriptions').findOne({});
       const p = s && (await tx.collection('plans').findOne({ id: s.plan_id }));
+      const deal = s ? activeDeal(s) : null;
       const sub = s && p && {
         id: s.id,
         planKey: p.key,
@@ -72,13 +85,22 @@ export class BillingService {
         billingCycle: s.billing_cycle,
         currency: s.currency,
         seats: s.seats,
-        unitPrice: s.unit_price,
+        unitPrice: deal?.unitPrice && deal.planId === s.plan_id ? deal.unitPrice : s.unit_price,
         trialEndsOn: s.trial_ends_on ?? null,
         currentPeriodStart: s.current_period_start ?? null,
         currentPeriodEnd: s.current_period_end ?? null,
         cancelAtPeriodEnd: s.cancel_at_period_end,
+        autoRenew: !s.cancel_at_period_end,
         provider: s.provider,
+        savedCard: Boolean(s.provider_method_ref),
         periodAmount: money.fromMinor(money.toMinor(s.unit_price) * BigInt(s.seats * (s.billing_cycle === 'annual' ? 12 : 1))),
+        scheduledChange: s.scheduled_change ?? null,
+        trialReturn: s.trial_return ? { planKey: s.trial_return.planKey as string } : null,
+        trialUsed: Boolean(s.trial_used_at),
+        pastDueSince: s.past_due_since ?? null,
+        locked: Boolean(s.locked_at),
+        lockedAt: s.locked_at ?? null,
+        deal: deal ? { unitPrice: deal.unitPrice ?? null, discountPercent: deal.discountPercent ?? null, features: deal.features ?? [], endsOn: deal.endsOn ?? null, partner: deal.partner ?? null } : null,
       };
       const monthStart = new Date();
       monthStart.setUTCDate(1);
@@ -92,74 +114,30 @@ export class BillingService {
         legalEntities: await tx.collection('legal_entities').count({ archived_at: null }),
         aiCreditsThisMonth: credits[0]?.total ?? 0,
       };
-      return { subscription: sub, usage, paymentProvider: { connected: false, note: 'Online card and UPI payments are not connected yet. Invoices are issued by SAMPLEDGE finance.' } };
+      return { sub, usage };
     });
+    const gateway = base.sub ? await this.engine.gatewayFor(base.sub.currency) : null;
+    const name = gateway?.provider === 'razorpay' ? 'Razorpay' : 'Stripe';
+    return {
+      subscription: base.sub,
+      usage: base.usage,
+      paymentProvider: gateway
+        ? { connected: true, provider: gateway.provider, note: `Pay online with ${name}${gateway.provider === 'razorpay' ? ' (cards, UPI, net banking, wallets)' : ' (cards and wallets)'}. Payments are confirmed by ${name} and applied at once.` }
+        : { connected: false, provider: null, note: 'Online payment is not set up for your billing currency yet. Changes apply at once and SAMPLEDGE finance sends the invoice for payment by bank transfer.' },
+    };
   }
 
-  /** Validates a plan change against current usage, then applies it (upgrade now; downgrade only if usage fits). */
-  async change(input: ChangeSubscriptionRequest) {
-    return this.db.tenant(async (tx) => {
-      const plans = await this.plans(tx);
-      const plan = plans.find((p) => p.key === input.planKey);
-      if (!plan) {
-        if (await tx.collection('plans').exists({ key: input.planKey })) throw Errors.badRequest('plan_not_offered', 'This plan is not offered. Choose another plan.');
-        throw Errors.notFound('Plan');
-      }
-      if (plan.quoteOnly) throw Errors.badRequest('quote_only', `${plan.name} is sold by quotation. Send SAMPLEDGE a request from Plan & billing.`);
-      if (input.seats < plan.minimumSeats) throw Errors.badRequest('seats_below_minimum', `${plan.name} needs at least ${plan.minimumSeats} seats`);
+  quote(input: CheckoutRequest) {
+    const actor = requestContext.tenantActor();
+    return this.db.platform((tx) => this.engine.quote(tx, actor.tenantId, input));
+  }
 
-      const subscription = (await tx.collection('subscriptions').findOne({}))!;
-      const currentPlan = (await tx.collection('plans').findOne({ id: subscription.plan_id }))!;
-      const current = { currency: subscription.currency as string, status: subscription.status as string, plan_key: currentPlan.key as string };
-      if (current.status === 'suspended' || current.status === 'cancelled') throw Errors.badRequest('subscription_inactive', 'Contact SAMPLEDGE support to reactivate this subscription');
-      // A plan that is no longer on sale can only be kept (seats or cycle), not moved to.
-      if (!plan.offered && plan.key !== current.plan_key) throw Errors.badRequest('plan_not_offered', `${plan.name} is not offered. Choose another plan.`);
-      const currency = input.currency ?? current.currency;
-      const price = plan.prices.find((p) => p.currency === currency);
-      if (!price) throw Errors.badRequest('currency_unavailable', `${plan.name} is not priced in ${currency}`);
-
-      const customRoleIds = (await tx.collection('roles').find({ is_system: false }, { projection: { _id: 1 } })).map((r) => r.id);
-      const usage = {
-        members: await tx.collection('memberships').count({ status: { $ne: 'suspended' } }),
-        entities: await tx.collection('legal_entities').count({ archived_at: null }),
-        custom_roles: (await tx.collection('role_assignments').distinct('role_id', { role_id: { $in: customRoleIds } })).length,
-      };
-      const blockers: string[] = [];
-      const maxEmployees = plan.limits.max_employees ?? UNLIMITED;
-      const maxEntities = plan.limits.max_legal_entities ?? UNLIMITED;
-      if (maxEmployees !== UNLIMITED && usage.members > maxEmployees) blockers.push(`You have ${usage.members} members; ${plan.name} allows ${maxEmployees}.`);
-      if (maxEntities !== UNLIMITED && usage.entities > maxEntities) blockers.push(`You have ${usage.entities} legal entities; ${plan.name} allows ${maxEntities}.`);
-      if (usage.custom_roles > 0 && !plan.features.includes('custom_roles')) blockers.push('Custom roles are in use and are not included in this plan.');
-      if (usage.entities > 1 && !plan.features.includes('multi_entity')) blockers.push(`You have ${usage.entities} legal entities and ${plan.name} does not include multiple legal entities.`);
-      if (input.seats < usage.members) blockers.push(`Seats (${input.seats}) cannot be fewer than active members (${usage.members}).`);
-      if (blockers.length) throw Errors.conflict('downgrade_blocked', blockers.join(' '));
-
-      const unit = input.billingCycle === 'annual' ? price.annualPerMonth : price.monthly;
-      const before = { plan: current.plan_key, cycle: subscription.billing_cycle, seats: subscription.seats, currency: subscription.currency };
-      const cycleChanged = subscription.billing_cycle !== input.billingCycle;
-      const periodEnd = new Date();
-      periodEnd.setUTCDate(periodEnd.getUTCDate() + (input.billingCycle === 'annual' ? 365 : 30));
-      await tx.collection('subscriptions').updateOne(
-        { id: subscription.id },
-        {
-          $set: {
-            plan_id: plan.id,
-            billing_cycle: input.billingCycle,
-            seats: input.seats,
-            currency,
-            unit_price: unit,
-            status: subscription.status === 'trialing' ? 'trialing' : 'active',
-            ...(cycleChanged ? { current_period_end: periodEnd.toISOString().slice(0, 10) } : {}),
-          },
-        },
-      );
-      await this.audit.record(tx, {
-        action: 'subscription.changed', resourceType: 'subscription', resourceId: requestContext.tenantActor().tenantId,
-        changes: { from: before, to: { plan: plan.key, cycle: input.billingCycle, seats: input.seats, currency } },
-      });
-      await this.outbox.publish(tx, requestContext.tenantActor().tenantId, 'subscription.changed', { plan: plan.key, seats: input.seats });
-      return { ok: true, plan: plan.key };
-    });
+  /** Plan change from Plan & billing: a downgrade waits for the period end; an upgrade is charged for the days left. */
+  async change(input: CheckoutRequest) {
+    const actor = requestContext.tenantActor();
+    const r = await this.engine.change(actor.tenantId, input, actor.membershipId);
+    if (r.mode !== 'checkout') await this.db.tenant((tx) => this.outbox.publish(tx, actor.tenantId, 'subscription.changed', { plan: r.plan, seats: input.seats, mode: r.mode }));
+    return { ok: true, ...r };
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -226,20 +204,41 @@ export class BillingService {
 
   invoices() {
     return this.db.tenant(async (tx) =>
-      (await tx.collection('invoices').find({}, { sort: { created_at: -1 }, limit: 100 })).map((i) => ({
+      (await tx.collection('invoices').find({ status: { $ne: 'draft' } }, { sort: { created_at: -1 }, limit: 100 })).map((i) => ({
         id: i.id,
         number: i.number,
+        kind: i.kind ?? 'manual',
         status: i.status,
         currency: i.currency,
         subtotal: i.subtotal,
         tax: i.tax,
         total: i.total,
+        taxLines: i.tax_lines ?? [],
         periodStart: i.period_start ?? null,
         periodEnd: i.period_end ?? null,
         issuedAt: i.issued_at ?? null,
         dueAt: i.due_at ?? null,
         paidAt: i.paid_at ?? null,
+        overdue: i.status === 'open' && i.due_at && new Date(i.due_at) < new Date(),
       })),
     );
+  }
+
+  async invoicePdf(id: string): Promise<{ filename: string; pdf: Buffer }> {
+    const { inv, lines } = await this.db.tenant(async (tx) => {
+      const inv = await tx.collection('invoices').findOne({ id });
+      if (!inv || inv.status === 'draft') throw Errors.notFound('Invoice');
+      return { inv, lines: await tx.collection('invoice_lines').find({ invoice_id: id }) };
+    });
+    return { filename: `${String(inv.number).replace(/[^A-Za-z0-9-]/g, '_')}.pdf`, pdf: await renderInvoice(inv, lines) };
+  }
+
+  /** A payment the workspace was sent to the gateway for (the return page shows whether it was confirmed). */
+  order(id: string) {
+    return this.db.tenant(async (tx) => {
+      const o = await tx.collection('payment_orders').findOne({ id });
+      if (!o) throw Errors.notFound('Payment');
+      return { id: o.id, status: o.status, provider: o.provider, purpose: o.purpose, amount: o.amount, currency: o.currency, description: o.description, paidAt: o.paid_at ?? null, failureReason: o.failure_reason ?? null };
+    });
   }
 }

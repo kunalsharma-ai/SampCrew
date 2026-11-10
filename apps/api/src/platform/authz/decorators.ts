@@ -7,6 +7,7 @@ export const FEATURE_KEY = 'crew:feature';
 export const REALM_KEY = 'crew:realm';
 export const ALLOW_WITHOUT_MFA_KEY = 'crew:allow-without-mfa';
 export const ROOT_PATH_KEY = 'crew:root-path';
+export const ALLOW_WHEN_LOCKED_KEY = 'crew:allow-when-locked';
 
 /** No authentication required (login, signup, health, public career pages). */
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
@@ -28,3 +29,9 @@ export const RootPath = () => SetMetadata(ROOT_PATH_KEY, true);
 
 /** SCIM provisioning routes: a workspace SCIM token, not a user session. */
 export const ScimRealm = () => SetMetadata(REALM_KEY, { realm: 'scim' });
+
+/**
+ * Usable while the workspace is read-only for an unpaid invoice: changes here are allowed (paying, signing out,
+ * the person's own password and two-step verification). Everywhere else only reading is.
+ */
+export const AllowWhenLocked = () => SetMetadata(ALLOW_WHEN_LOCKED_KEY, true);

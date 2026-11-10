@@ -44,9 +44,70 @@ export async function verifyAuditAction() {
   return act(() => api<{ checked: number; intact: boolean; firstBrokenSeq: number | null; verifiedAt: string }>('/audit-events/verify'));
 }
 
-export async function changePlanAction(body: { planKey: string; billingCycle: string; seats: number; currency?: string }) {
-  const r = await act(() => api('/billing/subscription', { method: 'PUT', body }), 'Plan updated');
+export type CheckoutBody = { planKey: string; billingCycle: string; seats: number; currency?: string; couponCode?: string };
+export type ChangeResult =
+  | { mode: 'checkout'; orderId: string; url: string; provider: string; total: string; currency: string }
+  | { mode: 'applied'; invoice: { id: string; number: string; total: string; status: string } | null; plan: string }
+  | { mode: 'scheduled'; effectiveOn: string; plan: string }
+  | { mode: 'none'; plan: string };
+
+export async function quotePlanAction(body: CheckoutBody) {
+  return act(() => api<import('./billing/billing-view').Quote>('/billing/quote', { method: 'POST', body }));
+}
+
+export async function changePlanAction(body: CheckoutBody) {
+  const r = await act(() => api<ChangeResult>('/billing/subscription', { method: 'PUT', body }), 'Plan updated');
   revalidatePath('/', 'layout');
+  return r;
+}
+
+export async function cancelScheduledChangeAction() {
+  const r = await act(() => api('/billing/scheduled-change', { method: 'DELETE' }), 'Scheduled change cancelled');
+  revalidatePath('/settings/billing');
+  return r;
+}
+
+export async function setAutoRenewAction(autoRenew: boolean) {
+  const r = await act(() => api<{ autoRenew: boolean; endsOn: string | null }>('/billing/renewal', { method: 'PUT', body: { autoRenew } }));
+  revalidatePath('/settings/billing');
+  return r;
+}
+
+export async function startTrialAction(planKey: string) {
+  const r = await act(() => api<{ plan: string; endsOn: string }>('/billing/trial', { method: 'POST', body: { planKey } }));
+  revalidatePath('/', 'layout');
+  return r;
+}
+
+export async function checkCouponAction(code: string, planKey?: string) {
+  return act(() => api<{ code: string; name: string; kind: string; value: string; currency: string | null; duration: string; cycles: number | null }>('/billing/coupons/check', { method: 'POST', body: { code, planKey } }));
+}
+
+export async function buyAddonAction(addonKey: string, quantity: number) {
+  const r = await act(() => api<ChangeResult>('/billing/addons', { method: 'POST', body: { addonKey, quantity } }));
+  revalidatePath('/', 'layout');
+  return r;
+}
+
+export async function removeAddonAction(key: string, keep = false) {
+  const r = await act(() => api<{ endsOn: string | null }>(keep ? `/billing/addons/${key}/keep` : `/billing/addons/${key}`, { method: keep ? 'POST' : 'DELETE' }));
+  revalidatePath('/settings/billing');
+  return r;
+}
+
+export async function saveBillingProfileAction(body: Record<string, string>) {
+  const r = await act(() => api('/billing/profile', { method: 'PUT', body }), 'Billing details saved');
+  revalidatePath('/settings/billing');
+  return r;
+}
+
+export async function payInvoiceAction(id: string) {
+  return act(() => api<{ mode: 'checkout'; orderId: string; url: string }>(`/billing/invoices/${id}/pay`, { method: 'POST' }));
+}
+
+export async function orderStatusAction(id: string) {
+  const r = await act(() => api<{ id: string; status: string; provider: string; purpose: string; amount: string; currency: string; description: string; paidAt: string | null; failureReason: string | null }>(`/billing/orders/${id}`));
+  if (r.ok && r.data?.status === 'paid') revalidatePath('/', 'layout');
   return r;
 }
 
