@@ -553,7 +553,7 @@ export const WEB_HELP: HelpContent = {
     '/settings/billing': {
       title: 'Plan & billing',
       what: 'Your subscription decides which SampCrew modules your workspace can use. Seats in use, invoices and every plan you can buy.',
-      how: 'Compare plans, switch plan or change seats and billing cycle. Quote-only plans such as Enterprise are requested from SAMPLEDGE.',
+      how: 'Switch plan, try one free, add modules, and pay invoices online when SAMPLEDGE has set up Razorpay or Stripe. Enterprise is requested from SAMPLEDGE.',
       where: 'For workspace owners and finance.',
     },
     '/settings/workspace': {
@@ -820,6 +820,10 @@ export const WEB_HELP: HelpContent = {
     'Motion and focus': { what: 'Reduce animation and use focus mode.' },
     Preview: { what: 'How your choices look before you leave the page.' },
     Invoices: { what: 'Your past invoices.' },
+    'Your subscription': { what: 'The period you have paid for, a change waiting for its end, your trial, contract terms and how renewals are paid.', how: 'Switch off renewal to stop at the end of this period, or cancel a scheduled change.' },
+    Usage: { what: 'How much of each plan limit you use. Billing admins are told at 80% and 100%.', how: 'At a limit, upgrade or buy an add-on. Some plans let you go on and bill the extra at renewal.' },
+    'Add-ons': { what: 'Modules and extra capacity (people, AI credits, storage) you can add to your plan.', how: 'Add one to pay for the rest of this period now; remove it to stop at the next renewal.' },
+    'Billing details': { what: 'Your legal name, address and GSTIN, printed on every invoice.', how: 'In India, the state and GSTIN decide whether invoices carry CGST and SGST or IGST.' },
     'Compare plans': { what: 'Every module and limit, and which plans include it. Your workspace can use only what your plan includes.', how: 'Switch plan above to get a module your plan does not include.' },
     'Machine integrations': { what: 'Which machine brands can send punches to SampCrew.' },
     Devices: { what: 'Attendance machines in your workspace.' },

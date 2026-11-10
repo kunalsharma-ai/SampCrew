@@ -193,7 +193,7 @@ export function BillingView(props: {
             const hasUpgrade = upgradeTo && p.features.includes(upgradeTo) && !isCurrent;
             return (
               <Card key={p.key} className={cn('flex flex-col', isCurrent && 'ring-2 ring-accent', hasUpgrade && 'ring-2 ring-success')} data-testid={`billing-plan-${p.key}`} data-current={isCurrent ? 'true' : undefined}>
-                <CardHeader title={p.name} description={p.tagline} action={isCurrent ? <Badge tone="accent">Current</Badge> : hasUpgrade ? <Badge tone="success">Has {featureName(upgradeTo)}</Badge> : undefined} />
+                <CardHeader title={p.name} description={p.tagline} action={isCurrent ? <Badge tone="accent">Current</Badge> : hasUpgrade ? <Badge tone="success">Includes it</Badge> : undefined} />
                 <CardBody className="flex flex-1 flex-col gap-4">
                   <div>
                     {p.quoteOnly || !price ? <div className="text-xl font-semibold">Custom quote</div> : (
@@ -547,7 +547,8 @@ function QuoteSummary({ quote }: { quote: Quote }) {
 
 function BillingProfileCard({ profile, canManage }: { profile: BillingProfile | null; canManage: boolean }) {
   const router = useRouter();
-  const [v, setV] = useState<BillingProfile>(profile ?? { legalName: '', gstin: '', addressLine1: '', addressLine2: '', city: '', stateCode: '', postalCode: '', countryCode: 'IN', email: '' });
+  // The API sends no body when nothing is saved yet: start from empty fields.
+  const [v, setV] = useState<BillingProfile>({ legalName: '', gstin: '', addressLine1: '', addressLine2: '', city: '', stateCode: '', postalCode: '', countryCode: 'IN', email: '', ...(profile?.legalName ? profile : {}) });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [pending, start] = useTransition();

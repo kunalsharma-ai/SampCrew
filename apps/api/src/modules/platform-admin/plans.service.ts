@@ -30,13 +30,14 @@ export class PlansService {
 
   list() {
     return this.db.platform(async (tx) => {
-      const rows = await tx.collection<PlanRow & { tagline: string | null; minimum_seats: number; sort_order: number; customised_at: Date | null; customised_by_admin_id: string | null }>('plans').find();
+      const rows = await tx.collection<PlanRow & { tagline: string | null; minimum_seats: number; sort_order: number; customised_at: Date | null; customised_by_admin_id: string | null; trial_days: number | null; trial_features: string[] | null; overage: Record<string, { policy: string; prices: Record<string, string> }> | null }>('plans').find();
       const admins = new Map((await tx.collection<{ id: string; full_name: string }>('platform_admins').find({ id: { $in: rows.map((r) => r.customised_by_admin_id).filter(Boolean) } })).map((a) => [a.id, a.full_name]));
       const plans = rows
         .sort((a, b) => Number(!!a.archived_at) - Number(!!b.archived_at) || a.sort_order - b.sort_order || cmp(a.name, b.name))
         .map((p) => ({
           id: p.id, key: p.key, name: p.name, tagline: p.tagline ?? '', quoteOnly: p.quote_only, minimumSeats: p.minimum_seats, isPublic: p.is_public,
           sortOrder: p.sort_order, customisedAt: p.customised_at ?? null, customisedBy: (p.customised_by_admin_id && admins.get(p.customised_by_admin_id)) ?? null, archivedAt: p.archived_at ?? null,
+          trialDays: p.trial_days ?? 0, trialFeatures: p.trial_features ?? [], overage: p.overage ?? {},
         }));
       const prices = (await tx.collection<{ plan_id: string; currency: string; monthly_per_seat: string; annual_per_seat_month: string }>('plan_prices').find({}, { sort: { currency: 1 } }))
         .map((x) => ({ plan_id: x.plan_id, currency: x.currency, monthly: x.monthly_per_seat, annualPerMonth: x.annual_per_seat_month }));
