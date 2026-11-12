@@ -179,6 +179,14 @@ export class MongoService implements OnModuleDestroy {
     return (await this.connect()).db(this.dbName!);
   }
 
+  /**
+   * Another database on the same server (admin, local), for read-only status readings outside a transaction: the
+   * replica set's oplog and the point-in-time backup status on the Console's System health page.
+   */
+  async serverDatabase(name: 'admin' | 'local'): Promise<Db> {
+    return (await this.connect()).db(name);
+  }
+
   async ping(): Promise<boolean> {
     try {
       await (await this.database()).command({ ping: 1 });

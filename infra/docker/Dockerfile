@@ -77,13 +77,18 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=20s CMD wget -qO- http://
 CMD ["node", "apps/console/server.js"]
 
 # --- Tools: migrations, seed, backups and the restore drill ----------------------------------------------------
+# rclone copies the backups off the server (BACKUP_REMOTE). Its official image holds one static binary; pin it here.
+FROM rclone/rclone:1.75.2 AS rclone
+
 FROM ${NODE_IMAGE} AS tools
 ARG MONGO_TOOLS_VERSION
+COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
 RUN --mount=type=secret,id=ca,required=false \
     if [ -f /run/secrets/ca ]; then cat /etc/ssl/certs/ca-certificates.crt /run/secrets/ca > /tmp/build-ca.pem; export SSL_CERT_FILE=/tmp/build-ca.pem; fi; \
     apk add --no-cache "mongodb-tools=${MONGO_TOOLS_VERSION}" \
  && rm -f /tmp/build-ca.pem \
- && mongodump --version | head -1
+ && mongodump --version | head -1 \
+ && rclone version | head -1
 # The database package with its scripts (and tsx to run them), nothing from the apps.
 COPY --from=build --chown=node:node /out/db /app/db
 COPY infra/deploy/scripts /app/infra/deploy/scripts

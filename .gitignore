@@ -17,3 +17,4 @@ dist-web/
 infra/deploy/backups/
 infra/deploy/.env.smoke
 infra/deploy/smoke-logs.txt
+infra/deploy/offsite.env

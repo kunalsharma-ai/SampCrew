@@ -17,8 +17,9 @@ them, **real keys** for the Claude API and Expo push. Everything below is alread
 | `console` | `console` | 3001 (internal) | SAMPLEDGE Super Admin Console |
 | `api` | `api` | 4000 (internal) | NestJS API, background loops (outbox, email, webhooks, workflows, daily HR jobs) |
 | `migrate` | `tools` | none | One-shot job before every API start: migrations, catalogue sync, first Super Admin |
-| `backup` | `tools` | none | Database and uploaded-file backups every `BACKUP_INTERVAL_HOURS` |
-| `mongo` | `mongo:8.0` | internal | Bundled database: a one-node replica set with authentication (or use MongoDB Atlas, see docs/ops/mongodb.md) |
+| `backup` | `tools` | none | Encrypted database and uploaded-file archives every `BACKUP_INTERVAL_HOURS`, copied off-site with the point-in-time backups (`BACKUP_REMOTE`) |
+| `mongo` | `mongo:8.0` | internal | Self-hosted database: a replica set with authentication (docs/ops/mongodb.md) |
+| `pbm` | `percona/percona-backup-mongodb:2.17.0` | none | Point-in-time backups of the database: restore to any second of the last 14 days |
 | `redis` | `redis:7-alpine` | internal | Rate-limit counters shared by API servers (nothing persistent) |
 
 The database and Redis sit on an internal network the proxy cannot reach. All images run as non-root users and read
@@ -45,10 +46,12 @@ Health checks:
    cp env.production.example .env
    ./gen-secrets.sh >> .env      # fresh database, Redis, token, encryption and backup secrets
    chmod 600 .env
+   cp offsite.env.example offsite.env && chmod 600 offsite.env   # off-site backup storage (fill in one block)
    ```
    Then edit `.env`: the three addresses and URLs, `ACME_EMAIL`, `CREW_BOOTSTRAP_ADMIN_EMAIL` and a strong
    `CREW_BOOTSTRAP_ADMIN_PASSWORD` (14+ characters), and `CONSOLE_ALLOWED_IPS` (your office
-   or VPN ranges). Email, Claude AI, mobile push, virus scanning and mobile sign-in addresses do not need `.env`:
+   or VPN ranges), `BACKUP_REMOTE` with its storage account in `offsite.env`, and `BACKUP_ALERT_WEBHOOK` if you have
+   a chat channel for alerts. Email, Claude AI, mobile push, virus scanning and mobile sign-in addresses do not need `.env`:
    set them up after the first sign-in in Console > Integrations (section 7). **Keep a copy of `FIELD_ENCRYPTION_KEY` and `BACKUP_PASSPHRASE` in your password manager**: without
    them, encrypted fields and backups cannot be read.
 4. **Start**:
@@ -88,6 +91,11 @@ docker compose run --rm backup /app/infra/deploy/scripts/backup.sh   # backup ri
 docker compose pull && docker compose up -d --wait                    # migrate runs first, then the API
 ```
 
+**Upgrading an install from before point-in-time backups** (November 2026): its `.env` has no
+`MONGODB_PBM_PASSWORD`. Add one before `docker compose up` (`echo "MONGODB_PBM_PASSWORD=$(openssl rand -hex 24)" >> .env`),
+plus `MONGO_CACHE_SIZE_GB=2` and the `BACKUP_REMOTE` settings from `env.production.example`. Until then the `pbm`
+service says what is missing in its log and stays unhealthy; everything else runs as before.
+
 - **Rollback**: set `CREW_VERSION` back and run `docker compose up -d --wait`. Check the release's migrations first:
   when they only add collections, fields or indexes, the previous images keep working against the upgraded
   database. A migration that tightens a validator or renames a field is called out in its release notes. When a release says a migration changes or removes something, restore the
@@ -97,24 +105,48 @@ docker compose pull && docker compose up -d --wait                    # migrate 
 
 ## 4. Backups
 
-The `backup` service writes `crew-db-<time>.archive.gz` (a gzip `mongodump` archive) and `crew-files-<time>.tar.gz` (uploaded
-documents, CVs, receipts) to the `backups` volume every `BACKUP_INTERVAL_HOURS` (24), keeps `BACKUP_KEEP_DAYS` (14),
-and encrypts both with `BACKUP_PASSPHRASE` (AES-256-GCM; a changed or truncated file refuses to decrypt).
+Two kinds run side by side, both on by default:
 
-- **Copy them off the host** every day (object storage with versioning and a retention lock is best):
-  `docker run --rm -v crew_backups:/b alpine ls /b` shows them; sync that volume with your tool of choice.
+- **Point-in-time backups** (`pbm` service, Percona Backup for MongoDB): a base backup every day and every change in
+  between, so the database can be put back to **any second** of the last `PBM_KEEP_DAYS` (14) days. They are in the
+  `pbm` volume.
+- **Daily archives** (`backup` service): `crew-db-<time>.archive.gz` (a gzip `mongodump` archive) and
+  `crew-files-<time>.tar.gz` (uploaded documents, CVs, receipts) in the `backups` volume every
+  `BACKUP_INTERVAL_HOURS` (24), kept `BACKUP_KEEP_DAYS` (14), encrypted with `BACKUP_PASSPHRASE` (AES-256-GCM; a
+  changed or truncated file refuses to decrypt). They restore into a new database or another MongoDB, and are the only
+  copy of the uploaded files.
+
+- **Off-site**: with `BACKUP_REMOTE` set (and the storage account in `offsite.env`, see `offsite.env.example`), the
+  backup service copies both off the server: the archives after each run, the point-in-time backups every
+  `BACKUP_SYNC_MINUTES` (15), encrypted on the way. Without it, everything is on the database's own disk, and System
+  health lists "Off-site copy of backups" as not configured.
+- **Alerts**: `backup` and `pbm` turn unhealthy in `docker compose ps` when a backup or off-site copy fails or is
+  overdue, Console > System health shows the error, and `BACKUP_ALERT_WEBHOOK` gets a message.
 - **Backup now**: `docker compose run --rm backup /app/infra/deploy/scripts/backup.sh`
-- **On MongoDB Atlas**, turn on continuous cloud backup (point-in-time recovery) too; the archives are the portable
-  second copy. Each collection in an archive is consistent, but writes made during the dump can be in some
-  collections and not others, so the archives are a daily safety copy, not point-in-time recovery.
 - **Restore drill**: `docker compose run --rm migrate sh -c 'cd /app/db && ./node_modules/.bin/tsx scripts/dr-drill.ts'`
   restores the live database into a scratch copy and checks collections, documents, validators, indexes and every
   audit chain.
-  Run it monthly and after upgrades; the CI smoke test does a full backup and restore on every change.
+  Run it monthly and after upgrades; the CI smoke test does a full backup, an archive restore and a point-in-time
+  restore on every change.
+- **On MongoDB Atlas** (optional, docs/ops/mongodb.md), turn on continuous cloud backup instead of the `pbm` service.
 
 ## 5. Restore
 
-Restore into a **new, empty** database (the script refuses to overwrite one), check it, then point the API at it:
+**To a point in time** (a bad import, a mistaken bulk delete): put the database back to the second before it, in place.
+
+```sh
+docker compose exec pbm /crew/pitr-restore.sh list                       # restorable window (UTC)
+docker compose stop api backup
+docker compose exec pbm /crew/pitr-restore.sh 2026-11-12T09:41:00 --yes
+docker compose up -d --wait
+docker compose run --rm migrate sh -c 'cd /app/db && ./node_modules/.bin/tsx scripts/restore-check.ts'
+```
+
+The state just before the restore is kept as a backup, so it can be undone. Losing the whole server: see
+docs/ops/mongodb.md, "Losing the server".
+
+**From a daily archive**, into a **new, empty** database (the script refuses to overwrite one), check it, then point
+the API at it:
 
 ```sh
 docker compose run --rm \
@@ -128,10 +160,12 @@ user in it, and checks that every collection has its validator and every audit c
 platform's) verifies. Then point the API at it: set `MONGODB_URL` and `MONGODB_ADMIN_URL` in `.env` to the
 `crew_restored` database (`authSource=crew_restored` for `crew_api`) and `docker compose up -d --wait`. Restore the files with
 `tar -xzf crew-files-<time>.tar.gz -C <files volume>` (decrypt first with
-`node /app/infra/deploy/scripts/crypt.mjs decrypt <in> <out>`).
+`node /app/infra/deploy/scripts/crypt.mjs decrypt <in> <out>`). An archive copied off-site comes back with
+`docker compose run --rm backup rclone copy "$BACKUP_REMOTE/archives/<file>" /backups/`.
 
-Recovery point: the last backup (24 hours by default; point-in-time recovery on a managed database brings it to
-minutes). Recovery time measured by the drill: seconds for the demo data size, growing with the database.
+Recovery point: the last `PBM_OPLOG_SPAN_MIN` minutes (10) with point-in-time backups, the last daily archive
+without them; if the server's disk is lost, what reached off-site storage (every `BACKUP_SYNC_MINUTES`). Recovery
+time: about a minute for the demo data with a point-in-time restore, growing with the database.
 
 ## 6. Secrets
 
@@ -139,11 +173,13 @@ minutes). Recovery time measured by the drill: seconds for the demo data size, g
 |---|---|
 | `JWT_ACCESS_SECRET`, `JWT_PLATFORM_SECRET` | Change and restart the API. Tokens signed with the old secret stop working within the access-token lifetime (15 minutes); to sign everyone out at once, also run `db.sessions.updateMany({ revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'rotation' } })` in mongosh. |
 | `MONGODB_API_PASSWORD` | Change in `.env`, run `docker compose up -d --wait` (the migrate job sets the `crew_api` user's password before the API starts). |
+| `MONGODB_PBM_PASSWORD` | Change in `.env`, run `docker compose up -d --wait` (the migrate job sets the `crew_pbm` password, then `pbm` restarts with it). |
 | `MONGO_ROOT_PASSWORD` | `db.getSiblingDB('admin').changeUserPassword('root', '...')` in mongosh, then update `.env`. (`MONGO_INITDB_ROOT_PASSWORD` only applies on the first start.) |
 | `MONGO_REPLICA_KEY` | Only matters when you add members to the replica set; change it on every member at once and restart them. |
 | `REDIS_PASSWORD` | Change and `docker compose up -d --wait`; counters reset, which is harmless. |
 | `FIELD_ENCRYPTION_KEY` | In three steps, below. Never just replace it: values written with the old key (MFA secrets, bank and tax identifiers, webhook, Slack and single sign-on secrets, and the keys and passwords saved in Console > Integrations) need it to be read. |
-| `BACKUP_PASSPHRASE` | Change for new backups; keep the old one for as long as older backups are kept. |
+| `BACKUP_PASSPHRASE` | Change for new backups; keep the old one for as long as older backups are kept. It also encrypts the off-site copy of the point-in-time backups: after a change, empty `<BACKUP_REMOTE>/pbm` so they are copied again with the new key. |
+| `offsite.env` keys | Create a new key in the storage provider, put it in `offsite.env`, `docker compose up -d backup`, delete the old key. |
 | Claude API key, SMTP password, Expo access token | Paste the new value in Console > Integrations, press Test connection, then Save. No restart; every API server uses it within 5 seconds. (If they still come from `ANTHROPIC_API_KEY`, `SMTP_URL`, `EXPO_ACCESS_TOKEN` in `.env`, change them there and restart, or move them to the Console.) |
 
 **Rotating `FIELD_ENCRYPTION_KEY`** (on a schedule, or at once if the key may have leaked):
@@ -191,11 +227,12 @@ environment variables from it instead of using `.env`.
 
 - **Logs**: the API logs JSON in production (`docker compose logs -f api`); every error has a request id that is also
   shown to the person. Caddy logs requests as JSON. Ship both to your log platform.
-- **Monitoring**: alert on `/api/v1/health/ready` from outside, on container restarts, on disk use of the database and
-  backups volumes, and on the Console's System health page (database, migrations, outbox backlog, audit chain).
+- **Monitoring**: alert on `/api/v1/health/ready` from outside, on container restarts and unhealthy containers
+  (`backup` and `pbm` turn unhealthy when backups stop), on disk use of the database, `pbm` and backups volumes, and on
+  the Console's System health page (database, replica set, backups, migrations, outbox backlog, audit chain).
 - **Scaling**: raise `MONGODB_POOL_MAX` with care (connections per API server × servers must stay under the
-  database's limit; on Atlas it depends on the cluster tier). For high availability run a three-member replica set
-  or Atlas; one node has no failover. Measured capacity on one 4-core machine is in `docs/ops/load-latest.md` and
+  database's limit). For high availability run a three-member replica set (docs/ops/mongodb.md, "More members");
+  one node has no failover. Measured capacity on one 4-core machine is in `docs/ops/load-latest.md` and
   `docs/ops/load-workflows-latest.md`; measure again on the production hardware.
 - **Attendance devices** that use the ZKTeco push protocol call `https://<API address>/iclock/...`. Devices that can
   only speak plain http need a separate http listener for `/iclock` only; it is not enabled by default.

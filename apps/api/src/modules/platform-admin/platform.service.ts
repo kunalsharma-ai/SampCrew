@@ -250,6 +250,7 @@ export class PlatformService {
   async health() {
     const scanner = await this.integrations.scanningUrl();
     const services = await this.integrations.workspaceStatus();
+    const [replication, pitr] = await Promise.all([this.replication(), this.pointInTimeBackups()]);
     const started = Date.now();
     return this.db.platform(async (tx) => {
       const db = tx.database;
@@ -264,9 +265,21 @@ export class PlatformService {
       };
       const applied = new Set((await db.collection<{ _id: string }>(mongo.MIGRATIONS_COLLECTION).find({}, { session: tx.session }).toArray()).map((m) => String(m._id)));
       const chain = await mongo.verifyAuditChain(db, null);
+      const runs = tx.collection<BackupRun>('backup_runs');
+      const lastRun = await runs.findOne({}, { sort: { finished_at: -1 } });
+      const lastOk = lastRun?.status === 'ok' ? lastRun : await runs.findOne({ status: 'ok' }, { sort: { finished_at: -1 } });
       return {
         api: { status: 'ok', uptimeSeconds: Math.round(process.uptime()), node: process.version, memoryMb: Math.round(process.memoryUsage().rss / 1048576) },
         database: { status: 'ok', latencyMs, ...(await databaseStats(tx)) },
+        replication,
+        backups: {
+          archives: {
+            last: lastRun ? backupRunView(lastRun) : null,
+            lastSuccessAt: lastOk?.finished_at.toISOString() ?? null,
+            lastSuccessHoursAgo: lastOk ? Math.round((Date.now() - lastOk.finished_at.getTime()) / 360_000) / 10 : null,
+          },
+          pointInTime: pitr,
+        },
         migrations: { applied: applied.size, pending: mongo.MONGO_MIGRATIONS.map((m) => m.name).filter((n) => !applied.has(n)) },
         outbox,
         platformAuditChain: { checked: chain.checked, intact: chain.firstBrokenSeq === null },
@@ -276,12 +289,84 @@ export class PlatformService {
         notConfigured: [
           ...(this.config.REDIS_URL ? [] : ['Redis (rate limits shared by several API servers)']),
           ...services.filter((s) => !s.on).map((s) => `${s.name} (Console > Integrations)`),
+          ...(lastRun && lastRun.offsite === 'off' ? ['Off-site copy of backups (BACKUP_REMOTE)'] : []),
+          ...(pitr ? [] : ['Point-in-time backups (the pbm service, or your cluster\'s own continuous backup)']),
           'Object storage (files are on the API server\'s disk)',
           'Error tracking (Sentry)',
           'Payment provider',
         ],
       };
     });
+  }
+
+  /**
+   * The replica set as this API sees it: each member's state and replication lag, and how many hours of changes the
+   * oplog holds (a member that is down longer than that needs a full resync). Null on a server that refuses the
+   * readings (some managed hosts).
+   */
+  private async replication(): Promise<ReplicationView | null> {
+    try {
+      const admin = await this.db.serverDatabase('admin');
+      const rs = (await admin.command({ replSetGetStatus: 1 })) as {
+        set: string;
+        members: Array<{ name: string; stateStr: string; health: number; optimeDate?: Date }>;
+      };
+      const primary = rs.members.find((m) => m.stateStr === 'PRIMARY');
+      let oplogHours: number | null = null;
+      try {
+        const oplog = (await this.db.serverDatabase('local')).collection<{ ts: { getHighBits(): number } }>('oplog.rs');
+        const [first] = await oplog.find({}, { projection: { ts: 1 } }).sort({ $natural: 1 }).limit(1).toArray();
+        const [last] = await oplog.find({}, { projection: { ts: 1 } }).sort({ $natural: -1 }).limit(1).toArray();
+        if (first && last) oplogHours = Math.round((last.ts.getHighBits() - first.ts.getHighBits()) / 360) / 10;
+      } catch {
+        /* not allowed for this user */
+      }
+      return {
+        set: rs.set,
+        members: rs.members.map((m) => ({
+          name: m.name,
+          state: m.stateStr,
+          healthy: m.health === 1,
+          lagSeconds: primary?.optimeDate && m.optimeDate ? Math.max(0, Math.round((primary.optimeDate.getTime() - m.optimeDate.getTime()) / 1000)) : null,
+        })),
+        oplogHours,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Point-in-time backups from Percona Backup for MongoDB (the bundled database's "pbm" service), read from PBM's own
+   * status collections, which the migration job lets the API read (crewBackupStatus role). Null when PBM is not in use.
+   */
+  private async pointInTimeBackups(): Promise<PointInTimeView | null> {
+    try {
+      const admin = await this.db.serverDatabase('admin');
+      const [base] = await admin
+        .collection<{ name: string; status: string; last_write_ts?: { getHighBits(): number }; size?: number }>('pbmBackups')
+        .find({ status: 'done' }, { projection: { name: 1, status: 1, last_write_ts: 1, size: 1 } })
+        .sort({ start_ts: -1 })
+        .limit(1)
+        .toArray();
+      const [chunk] = await admin.collection<{ end_ts: { getHighBits(): number } }>('pbmPITRChunks').find({}, { projection: { end_ts: 1 } }).sort({ end_ts: -1 }).limit(1).toArray();
+      const agents = await admin.collection<{ n: string; e?: string; hb: { getHighBits(): number }; stors?: { ok: boolean; e?: string } }>('pbmAgents').find({}).toArray();
+      if (!base && !agents.length) return null;
+      const now = Date.now() / 1000;
+      const agentOk = agents.some((a) => now - a.hb.getHighBits() < 120 && !a.e && a.stors?.ok !== false);
+      const baseAt = base?.last_write_ts?.getHighBits() ?? null;
+      const coveredUntil = Math.max(chunk?.end_ts.getHighBits() ?? 0, baseAt ?? 0) || null;
+      return {
+        agentOk,
+        agentError: agents.map((a) => a.e || a.stors?.e).find(Boolean) ?? null,
+        lastBaseBackupAt: baseAt ? new Date(baseAt * 1000).toISOString() : null,
+        lastBaseBackupBytes: base?.size ?? null,
+        restorableUntil: coveredUntil ? new Date(coveredUntil * 1000).toISOString() : null,
+        minutesBehind: coveredUntil ? Math.round((now - coveredUntil) / 60) : null,
+      };
+    } catch {
+      return null;
+    }
   }
 
   /** Which key encrypts new values, and how many stored values still need the re-encryption job. */
@@ -466,6 +551,38 @@ export class PlatformService {
   private adminView(a: AdminRecord) {
     return { id: a.id, email: a.email, fullName: a.full_name, role: a.role, status: a.status, mfaEnabled: a.mfa_enabled };
   }
+}
+
+interface BackupRun {
+  started_at: Date; finished_at: Date; status: 'ok' | 'failed'; encrypted: boolean; db_file: string | null; db_bytes: number | null;
+  files_file: string | null; files_bytes: number | null; offsite: 'off' | 'copied' | 'failed'; error: string | null; offsite_error: string | null;
+}
+
+interface ReplicationView {
+  set: string;
+  members: Array<{ name: string; state: string; healthy: boolean; lagSeconds: number | null }>;
+  oplogHours: number | null;
+}
+
+interface PointInTimeView {
+  agentOk: boolean;
+  agentError: string | null;
+  lastBaseBackupAt: string | null;
+  lastBaseBackupBytes: number | null;
+  restorableUntil: string | null;
+  minutesBehind: number | null;
+}
+
+function backupRunView(r: BackupRun) {
+  return {
+    at: r.finished_at.toISOString(),
+    status: r.status,
+    encrypted: r.encrypted,
+    database: r.db_file ? { file: r.db_file, size: prettyBytes(r.db_bytes ?? 0) } : null,
+    files: r.files_file ? { file: r.files_file, size: prettyBytes(r.files_bytes ?? 0) } : null,
+    offsite: r.offsite,
+    error: r.error ?? r.offsite_error ?? null,
+  };
 }
 
 interface AdminRecord { id: string; email: string; full_name: string; role: string; status: 'active' | 'disabled'; mfa_enabled: boolean }

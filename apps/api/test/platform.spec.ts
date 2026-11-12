@@ -98,6 +98,45 @@ describe('SAMPLEDGE Super Admin Console API', () => {
     expect(h.body.platformAuditChain.intact).toBe(true);
   });
 
+  it('shows the replica set, the last backup and its off-site copy, and point-in-time backups on System health', async () => {
+    const health = async () => (await api(app, token).get('/platform/health')).body;
+    let h = await health();
+    // The test server is a one-node replica set.
+    expect(h.replication.members).toEqual([expect.objectContaining({ state: 'PRIMARY', healthy: true })]);
+    expect(h.replication.oplogHours).toEqual(expect.any(Number));
+
+    await pool.delete('backup_runs', {});
+    const started = new Date(Date.now() - 60_000);
+    await pool.insert('backup_runs', { started_at: started, status: 'ok', encrypted: true, db_file: 'crew-db-1.archive.gz.enc', db_bytes: 2_500_000, files_file: 'crew-files-1.tar.gz.enc', files_bytes: 4096, offsite: 'copied' });
+    h = await health();
+    expect(h.backups.archives.last).toMatchObject({ status: 'ok', encrypted: true, offsite: 'copied', database: { file: 'crew-db-1.archive.gz.enc', size: '2441 kB' } });
+    expect(h.backups.archives.lastSuccessHoursAgo).toBe(0);
+    expect(h.notConfigured).not.toContain('Off-site copy of backups (BACKUP_REMOTE)');
+
+    // A failed run after a good one: the failure shows, and when the last good one was.
+    await pool.insert('backup_runs', { started_at: new Date(), status: 'failed', encrypted: true, offsite: 'off', error: 'database dump failed: connection refused' });
+    h = await health();
+    expect(h.backups.archives.last).toMatchObject({ status: 'failed', error: 'database dump failed: connection refused', database: null });
+    expect(h.backups.archives.lastSuccessAt).not.toBeNull();
+    expect(h.notConfigured).toContain('Off-site copy of backups (BACKUP_REMOTE)');
+
+    // Point-in-time backups: off until PBM has written its status, then read from PBM's own collections.
+    expect(h.backups.pointInTime).toBeNull();
+    const admin = (await pool.database()).client.db('admin');
+    const now = Math.floor(Date.now() / 1000);
+    const { Timestamp } = await import('mongodb');
+    try {
+      await admin.collection('pbmBackups').insertOne({ name: 'base', status: 'done', start_ts: now - 3600, last_write_ts: new Timestamp({ t: now - 3590, i: 1 }), size: 1000 });
+      await admin.collection('pbmPITRChunks').insertOne({ rs: 'rs0', start_ts: new Timestamp({ t: now - 3590, i: 1 }), end_ts: new Timestamp({ t: now - 120, i: 1 }) });
+      await admin.collection('pbmAgents').insertOne({ n: 'mongo:27017', rs: 'rs0', e: '', hb: new Timestamp({ t: now, i: 1 }), stors: { ok: true, e: '' } });
+      h = await health();
+      expect(h.backups.pointInTime).toMatchObject({ agentOk: true, agentError: null, minutesBehind: 2, restorableUntil: new Date((now - 120) * 1000).toISOString() });
+      expect(h.notConfigured.some((n: string) => n.startsWith('Point-in-time'))).toBe(false);
+    } finally {
+      for (const c of ['pbmBackups', 'pbmPITRChunks', 'pbmAgents']) await admin.collection(c).drop().catch(() => undefined);
+    }
+  });
+
   it('publishes an OpenAPI document covering every route', async () => {
     const spec = await api(app).get('/openapi.json');
     expect(spec.body.openapi).toBe('3.1.0');

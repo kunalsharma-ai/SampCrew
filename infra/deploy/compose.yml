@@ -1,14 +1,20 @@
-# SampCrew production stack on one host: MongoDB (a one-node replica set), Redis, the API, the Web Portal, the Super Admin Console, a TLS
-# reverse proxy, daily backups, and a one-shot migration job that runs before the API starts.
+# SampCrew production stack on one host: self-hosted MongoDB (a replica set with authentication) with point-in-time
+# backups (pbm), Redis, the API, the Web Portal, the Super Admin Console, a TLS reverse proxy, daily encrypted
+# archives copied off-site (backup), and a one-shot migration job that runs before the API starts.
 #
 #   cp env.production.example .env && ./gen-secrets.sh >> .env    # then fill in the addresses and email settings
 #   docker compose up -d --build                                    # or pull images you built and pushed
 #
-# See docs/ops/runbook.md for the full procedure (first start, upgrades, backups, restore, rollback).
-# To use MongoDB Atlas or your own replica set instead of the bundled server, set MONGODB_URL (the API's user) and
-# MONGODB_ADMIN_URL (migrations and backups) in .env and start without it:  docker compose up -d --scale mongo=0
-# (and remove mongo from depends_on below).
+# See docs/ops/runbook.md for the full procedure (first start, upgrades, backups, restore, rollback) and
+# docs/ops/mongodb.md for the database (replica set, point-in-time restore, adding members).
+# Optional, MongoDB Atlas instead of the bundled server: set MONGODB_URL (the API's user) and MONGODB_ADMIN_URL
+# (migrations and backups) in .env and start without it:  docker compose up -d --scale mongo=0 --scale pbm=0
 name: crew
+
+# Rotated container logs, so a busy service cannot fill the disk the database lives on.
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
 
 x-build: &build
   context: ../..
@@ -21,17 +27,26 @@ x-app-env: &app-env
 
 services:
   mongo:
+    # Pin the exact release in production (MONGO_IMAGE=mongo:8.0.x) and move it on deliberately: docs/ops/mongodb.md.
     image: ${MONGO_IMAGE:-mongo:8.0}
     restart: unless-stopped
-    # A one-node replica set (transactions need one) with authentication: the root user is created on the first
-    # start, the replica set the first time the health check runs. See scripts/mongo-start.sh.
+    logging: *logging
+    # A replica set (transactions need one) with authentication: the root user is created on the first start, the
+    # replica set the first time the health check runs. See scripts/mongo-start.sh.
     entrypoint: ["bash", "/crew/mongo-start.sh"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?run gen-secrets.sh}
       MONGO_REPLICA_KEY: ${MONGO_REPLICA_KEY:?run gen-secrets.sh}
+      MONGO_REPLICA_HOST: ${MONGO_REPLICA_HOST:-mongo:27017}
+      MONGO_CACHE_SIZE_GB: ${MONGO_CACHE_SIZE_GB:-}
       # mongo:8.0 refuses to start on Linux 6.19+ (SERVER-121912); this lets it run (docker-library/mongo#765).
       GLIBC_TUNABLES: glibc.pthread.rseq=1
+    # MongoDB's recommended open-file limit; the default 1024 runs out with many connections and collections.
+    ulimits:
+      nofile: { soft: 64000, hard: 64000 }
+    # mongod flushes and closes cleanly on SIGTERM; Docker's default 10 s can cut that short on a big cache.
+    stop_grace_period: 60s
     volumes:
       - mongodata:/data/db
       - mongoconfig:/data/configdb
@@ -43,9 +58,40 @@ services:
       start_period: 30s
     networks: [data]
 
+  # Point-in-time backups of the bundled database with Percona Backup for MongoDB: a base backup every
+  # PBM_BASE_BACKUP_HOURS and every change in between (oplog slices every PBM_OPLOG_SPAN_MIN minutes), so the database
+  # can be put back to any second of the last PBM_KEEP_DAYS days with scripts/pitr-restore.sh. Its files are in the
+  # "pbm" volume, which the backup service copies off-site. See scripts/pbm-start.sh.
+  pbm:
+    image: ${PBM_IMAGE:-percona/percona-backup-mongodb:2.17.0}
+    restart: unless-stopped
+    logging: *logging
+    # Starts as root only to hand the volume to PBM's user (see the script), then runs as that user.
+    user: "0"
+    entrypoint: ["bash", "/crew/pbm-start.sh"]
+    environment:
+      PBM_MONGODB_URI: mongodb://crew_pbm:${MONGODB_PBM_PASSWORD:-}@mongo:27017/?authSource=admin&replicaSet=rs0
+      PBM_BASE_BACKUP_HOURS: ${PBM_BASE_BACKUP_HOURS:-24}
+      PBM_OPLOG_SPAN_MIN: ${PBM_OPLOG_SPAN_MIN:-10}
+      PBM_KEEP_DAYS: ${PBM_KEEP_DAYS:-14}
+    volumes:
+      - pbm:/pbm
+      - ./scripts/pbm-start.sh:/crew/pbm-start.sh:ro
+      - ./scripts/pitr-restore.sh:/crew/pitr-restore.sh:ro
+    healthcheck:
+      test: ["CMD", "bash", "/crew/pbm-start.sh", "--health"]
+      interval: 30s
+      retries: 10
+      start_period: 2m
+    depends_on:
+      # Its database user is created by the migration job.
+      migrate: { condition: service_completed_successfully }
+    networks: [data]
+
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
     restart: unless-stopped
+    logging: *logging
     # Only rate-limit counters live here; nothing to keep across restarts.
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?run gen-secrets.sh}", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     healthcheck:
@@ -60,19 +106,22 @@ services:
     image: ${CREW_IMAGE_PREFIX:-crew}-tools:${CREW_VERSION:-local}
     build: { <<: *build, target: tools }
     restart: "no"
+    logging: *logging
     env_file: .env
     environment:
       <<: *app-env
       # Migrations run as the admin user; they also set the API's own user (MONGODB_API_PASSWORD).
       MONGODB_URL: ${MONGODB_ADMIN_URL:-mongodb://root:${MONGO_ROOT_PASSWORD}@mongo:27017/crew?replicaSet=rs0&authSource=admin}
     depends_on:
-      mongo: { condition: service_healthy }
+      # Not required, so the stack also starts with --scale mongo=0 on MongoDB Atlas.
+      mongo: { condition: service_healthy, required: false }
     networks: [data]
 
   api:
     image: ${CREW_IMAGE_PREFIX:-crew}-api:${CREW_VERSION:-local}
     build: { <<: *build, target: api }
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
       <<: *app-env
@@ -82,6 +131,7 @@ services:
       MONGO_ROOT_PASSWORD: ""
       MONGODB_ADMIN_URL: ""
       MONGODB_API_PASSWORD: ""
+      MONGODB_PBM_PASSWORD: ""
       MONGO_REPLICA_KEY: ""
       BACKUP_PASSPHRASE: ""
     volumes: [files:/data/files]
@@ -95,6 +145,7 @@ services:
     image: ${CREW_IMAGE_PREFIX:-crew}-web:${CREW_VERSION:-local}
     build: { <<: *build, target: web }
     restart: unless-stopped
+    logging: *logging
     environment:
       CREW_API_URL: http://api:4000
       WEB_PUBLIC_URL: ${WEB_PUBLIC_URL}
@@ -107,6 +158,7 @@ services:
     image: ${CREW_IMAGE_PREFIX:-crew}-console:${CREW_VERSION:-local}
     build: { <<: *build, target: console }
     restart: unless-stopped
+    logging: *logging
     environment:
       CREW_API_URL: http://api:4000
       SESSION_COOKIE_SECURE: "true"
@@ -117,6 +169,7 @@ services:
   proxy:
     image: ${CADDY_IMAGE:-caddy:2-alpine}
     restart: unless-stopped
+    logging: *logging
     ports: ["80:80", "443:443", "443:443/udp"]
     environment:
       CREW_WEB_ADDRESS: ${CREW_WEB_ADDRESS:?set CREW_WEB_ADDRESS}
@@ -149,15 +202,32 @@ services:
   backup:
     image: ${CREW_IMAGE_PREFIX:-crew}-tools:${CREW_VERSION:-local}
     restart: unless-stopped
+    logging: *logging
     command: ["/app/infra/deploy/scripts/backup.sh", "--loop"]
+    # The off-site storage account (RCLONE_CONFIG_OFFSITE_* settings, see offsite.env.example). Kept in its own file
+    # so only this service sees those keys.
+    env_file:
+      - path: offsite.env
+        required: false
     environment:
       MONGODB_URL: ${MONGODB_ADMIN_URL:-mongodb://root:${MONGO_ROOT_PASSWORD}@mongo:27017/crew?replicaSet=rs0&authSource=admin}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
+      BACKUP_REMOTE_KEEP_DAYS: ${BACKUP_REMOTE_KEEP_DAYS:-30}
+      BACKUP_SYNC_MINUTES: ${BACKUP_SYNC_MINUTES:-15}
+      BACKUP_ALERT_WEBHOOK: ${BACKUP_ALERT_WEBHOOK:-}
     volumes:
       - backups:/backups
       - files:/data/files:ro
+      - pbm:/pbm:ro
+    # Unhealthy when the last backup or its off-site copy failed, or when none finished within the interval.
+    healthcheck:
+      test: ["CMD", "/app/infra/deploy/scripts/backup.sh", "--check"]
+      interval: 1m
+      retries: 3
+      start_period: 15m
     depends_on:
       migrate: { condition: service_completed_successfully }
     networks: [data]
@@ -170,6 +240,7 @@ networks:
 volumes:
   mongodata:
   mongoconfig:
+  pbm:
   backups:
   files:
   caddy-data:
