@@ -1,6 +1,6 @@
 'use client';
 import { Avatar, Badge, CrewLogo, HelpProvider, cn } from '@crew/ui';
-import { Activity, Building2, Fingerprint, Gauge, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon } from 'lucide-react';
+import { Activity, Building2, Fingerprint, Gauge, KeyRound, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
@@ -56,15 +56,20 @@ export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; childr
           );
         })}
       </ul>
-      <div className="flex items-center gap-2.5 rounded-lg border border-border p-2.5">
-        <Avatar name={me.fullName} size={32} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium">{me.fullName}</div>
-          <div className="truncate text-[11px] text-fg-subtle">{ROLE_LABEL[me.role]}</div>
+      <div className="flex flex-col gap-2 rounded-lg border border-border p-2.5">
+        <div className="flex items-center gap-2.5">
+          <Avatar name={me.fullName} size={32} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-medium">{me.fullName}</div>
+            <div className="truncate text-[11px] text-fg-subtle">{ROLE_LABEL[me.role]}</div>
+          </div>
         </div>
+        <div className="flex items-center justify-end gap-1 border-t border-border pt-2">
+        <Link href="/change-password" aria-label="Change your password" title="Change password" className="rounded p-1 text-fg-muted hover:bg-bg-subtle"><KeyRound className="size-4" /></Link>
         <button onClick={toggleStyle} aria-label={neon ? 'Switch to the classic look' : 'Switch to the neon look'} title={neon ? 'Classic look' : 'Neon look'} className="rounded p-1 text-fg-muted hover:bg-bg-subtle"><Palette className="size-4" /></button>
         <button onClick={toggleTheme} aria-label="Toggle dark mode" className="rounded p-1 text-fg-muted hover:bg-bg-subtle">{dark ? <Sun className="size-4" /> : <Moon className="size-4" />}</button>
         <button onClick={() => start(() => logoutAction())} disabled={pending} aria-label="Sign out" className="rounded p-1 text-fg-muted hover:bg-bg-subtle"><LogOut className="size-4" /></button>
+        </div>
       </div>
     </nav>
   );

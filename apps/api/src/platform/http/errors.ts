@@ -16,6 +16,7 @@ export const Errors = {
   unauthorized: (message = 'Sign in to continue') => new AppError(HttpStatus.UNAUTHORIZED, 'unauthorized', message),
   forbidden: (message = 'You do not have permission to do that') => new AppError(HttpStatus.FORBIDDEN, 'forbidden', message),
   mfaRequired: () => new AppError(HttpStatus.FORBIDDEN, 'mfa_required', 'This action needs multi-factor authentication. Verify with your authenticator app and try again.'),
+  passwordChangeRequired: () => new AppError(HttpStatus.FORBIDDEN, 'password_change_required', 'Choose a new password before you continue. Yours was set by another admin.'),
   featureSwitchedOff: (feature: string) => new AppError(HttpStatus.FORBIDDEN, 'feature_disabled', `${feature} is switched off for this workspace by SAMPLEDGE.`, { feature }),
   featureNotForMember: (feature: string) => new AppError(HttpStatus.FORBIDDEN, 'feature_not_for_member', `You do not have access to ${feature} in this workspace.`, { feature }),
   featureNotInPlan: (feature: string) => new AppError(HttpStatus.PAYMENT_REQUIRED, 'feature_not_in_plan', `Your plan does not include ${feature}. Upgrade to use it.`, { feature }),

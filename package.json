@@ -16,6 +16,7 @@
     "db:migrate": "pnpm --filter @crew/db migrate",
     "db:seed": "pnpm --filter @crew/db seed",
     "db:reset": "pnpm --filter @crew/db reset",
+    "db:admin": "pnpm --silent --filter @crew/db admin",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",

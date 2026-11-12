@@ -29,6 +29,12 @@ export async function mfaEnableAction(code: string) {
   redirect('/');
 }
 
+export async function changePasswordAction(input: { currentPassword: string; newPassword: string }) {
+  const r = await act(() => api('/platform/auth/password', { method: 'POST', body: input }));
+  if (!r.ok) return r;
+  redirect('/');
+}
+
 export async function logoutAction() {
   await api('/platform/auth/logout', { method: 'POST' }).catch(() => undefined);
   await clearSession();
