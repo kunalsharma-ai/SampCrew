@@ -10,8 +10,8 @@
 #   docker build --secret id=ca,src=/path/to/ca.pem ...
 # No secrets are baked in: every image reads its configuration from the environment at run time.
 
-# Pin by digest in your registry for repeatable builds, e.g. --build-arg NODE_IMAGE=node:26.12.1-alpine@sha256:...
-ARG NODE_IMAGE=node:26.12.1-alpine
+# Pin by digest in your registry for repeatable builds, e.g. --build-arg NODE_IMAGE=node:26.13.1-alpine@sha256:...
+ARG NODE_IMAGE=node:26.13.1-alpine
 # MongoDB Database Tools for backups and restores (mongodump, mongorestore), from Alpine's community repository.
 # 100.x supports MongoDB 4.2 to 8.0. Pin a newer release here when upgrading the server.
 ARG MONGO_TOOLS_VERSION=100.14.1-r5
