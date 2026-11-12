@@ -135,7 +135,7 @@ export function Alert({ tone = 'info', title, children, className }: { tone?: 'i
   return (
     <div role={tone === 'danger' ? 'alert' : 'status'} className={cn('rounded-md border px-4 py-3 text-[0.8125rem]', tones[tone], 'border-current/15', className)}>
       {title && <div className="font-semibold">{title}</div>}
-      {children && <div className={cn(title && 'mt-0.5', 'opacity-90')}>{children}</div>}
+      {children && <div className={cn(title && 'mt-0.5')}>{children}</div>}
     </div>
   );
 }
