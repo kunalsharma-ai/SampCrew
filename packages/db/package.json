@@ -11,8 +11,7 @@
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
     "dr-drill": "tsx scripts/dr-drill.ts",
-    "reset": "tsx scripts/reset.ts && tsx scripts/migrate.ts && tsx scripts/seed.ts",
-    "admin": "tsx scripts/platform-admin.ts"
+    "reset": "tsx scripts/reset.ts && tsx scripts/migrate.ts && tsx scripts/seed.ts"
   },
   "dependencies": {
     "@crew/contracts": "workspace:*",

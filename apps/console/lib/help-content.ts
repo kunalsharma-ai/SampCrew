@@ -106,7 +106,7 @@ export const CONSOLE_HELP: HelpContent = {
     '/admins': {
       title: 'Console admins',
       what: 'Sampledge staff who can use this console, and their roles.',
-      how: 'Add a colleague with a temporary password; they set up two-step verification and their own password at first sign-in. Manage changes a role, resets a password or lost phone, unlocks, or disables a leaver.',
+      how: 'Add a colleague with a role and a temporary password. Everyone must set up two-step verification.',
       where: 'For Super admins.',
     },
   },

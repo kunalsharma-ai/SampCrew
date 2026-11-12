@@ -9,9 +9,7 @@
  * enrolment, opens every console page, creates a tenant, adjusts a subscription, suspends and reactivates a
  * workspace, and changes a price. It then runs the support-access flow across both apps: the console requests
  * access, the support view stays locked, the demo owner approves it in the Web Portal, and the console can then
- * open the read-only support view, which is written to the customer's audit trail. Last, console admins: a new admin
- * enrols two-step verification and must replace their temporary password, the Super admin changes their role,
- * disables and re-enables them and resets their two-step verification, and changes their own password.
+ * open the read-only support view, which is written to the customer's audit trail.
  */
 const { chromium } = require('playwright');
 const { authenticator } = require('otplib');
@@ -151,81 +149,6 @@ const watch = (p) => {
   await admin.goto(tenantUrl);
   if (await admin.locator('text=Support view (read-only)').count()) throw new Error('support view still visible after revoke');
   ok('revoked access removes the support view');
-
-  // Console admins: add one with a temporary password; at first sign-in they enrol MFA, then must choose their own.
-  const helperEmail = `helper.${Date.now().toString(36)}@sampledge.example`;
-  const tempPassword = 'Temporary-Helper-24!';
-  await admin.goto(`${CONSOLE}/admins`);
-  await admin.click('text=Add admin');
-  await admin.fill('dialog input[name=fullName]', 'Helper Person');
-  await admin.fill('dialog input[name=email]', helperEmail);
-  await admin.selectOption('dialog select[name=role]', 'support');
-  await admin.fill('dialog input[name=password]', tempPassword);
-  await admin.click('dialog >> text=Create admin');
-  await admin.waitForSelector('text=choose their own password');
-  ok('console admin added');
-
-  const helper = await (await browser.newContext()).newPage();
-  watch(helper);
-  await helper.goto(`${CONSOLE}/login`);
-  await helper.fill('input[name=email]', helperEmail);
-  await helper.fill('input[name=password]', tempPassword);
-  await helper.click('button[type=submit]');
-  await helper.waitForURL(/\/enrol$/);
-  await helper.click('text=Show QR code');
-  const helperSecret = (await helper.locator('code').first().textContent()).trim();
-  await helper.fill('input[name=code]', authenticator.generate(helperSecret));
-  await helper.click('text=Turn on and continue');
-  await helper.waitForURL(/\/change-password$/);
-  await helper.goto(`${CONSOLE}/tenants`);
-  if (!helper.url().endsWith('/change-password')) throw new Error('reached console with a temporary password');
-  await helper.fill('input[name=currentPassword]', tempPassword);
-  await helper.fill('input[name=newPassword]', 'Helper-Own-Choice-58');
-  await helper.fill('input[name=confirm]', 'Helper-Own-Choice-59');
-  await helper.click('text=Save new password');
-  await helper.waitForSelector('text=The two passwords are not the same');
-  await helper.fill('input[name=confirm]', 'Helper-Own-Choice-58');
-  await helper.click('text=Save new password');
-  await helper.waitForURL(`${CONSOLE}/`);
-  ok('new admin enrolled MFA and replaced the temporary password before reaching the console');
-
-  // The Super admin changes the role, disables (signing them out), re-enables and resets two-step verification.
-  await admin.goto(`${CONSOLE}/admins`);
-  await admin.click('[aria-label="Manage Helper Person"]');
-  await admin.selectOption('dialog select[name=role]', 'viewer');
-  await admin.click('dialog >> button:has-text("Save")');
-  await admin.waitForSelector('text=new role applies at once');
-  await admin.click('[aria-label="Manage Helper Person"]');
-  await admin.click('dialog >> text=Disable access');
-  await admin.click('dialog >> text=Yes, disable and sign out');
-  await admin.waitForSelector('text=Admin disabled and signed out everywhere.');
-  await shot(admin, 'console-admins');
-  await helper.goto(`${CONSOLE}/tenants`);
-  await helper.waitForURL(/\/login/);
-  ok('role changed; disabled admin is signed out at once');
-  await admin.click('[aria-label="Manage Helper Person"]');
-  await admin.click('dialog >> text=Re-enable access');
-  await admin.waitForSelector('text=Admin can sign in again.');
-  await admin.click('[aria-label="Manage Helper Person"]');
-  await admin.click('dialog >> text=Reset two-step verification');
-  await admin.click('dialog >> text=Yes, remove two-step verification');
-  await admin.waitForSelector('text=Two-step verification removed.');
-  await helper.goto(`${CONSOLE}/login`);
-  await helper.fill('input[name=email]', helperEmail);
-  await helper.fill('input[name=password]', 'Helper-Own-Choice-58');
-  await helper.click('button[type=submit]');
-  await helper.waitForURL(/\/enrol$/);
-  ok('re-enabled; after a two-step reset the admin signs in with a password and enrols again');
-
-  // Your own password, from the key button by your name.
-  await admin.click('[aria-label="Change your password"] >> visible=true');
-  await admin.waitForURL(/\/change-password$/);
-  await admin.fill('input[name=currentPassword]', ADMIN_PASSWORD);
-  await admin.fill('input[name=newPassword]', `${ADMIN_PASSWORD}-New1`);
-  await admin.fill('input[name=confirm]', `${ADMIN_PASSWORD}-New1`);
-  await admin.click('text=Save new password');
-  await admin.waitForURL(`${CONSOLE}/`);
-  ok('Super admin changed their own password');
 
   await browser.close();
   if (errors.length) throw new Error(`browser errors:\n${errors.join('\n')}`);

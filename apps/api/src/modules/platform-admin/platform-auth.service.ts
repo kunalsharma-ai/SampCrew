@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuditService } from '../../platform/audit/audit.service';
-import { decryptField, encryptField, hashPassword, randomToken, sha256, verifyPassword } from '../../platform/auth/crypto';
+import { decryptField, encryptField, randomToken, sha256, verifyPassword } from '../../platform/auth/crypto';
 import { generateMfaSecret, mfaUri, verifyTotp } from '../../platform/auth/mfa';
 import { TokenService } from '../../platform/auth/token.service';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
@@ -18,7 +18,6 @@ interface AdminRow {
   mfa_secret_enc: string | null;
   status: string;
   locked_until: Date | null;
-  must_change_password: boolean | null;
 }
 
 /** Authentication for SAMPLEDGE staff. Separate table, signing key and sessions from tenant users. */
@@ -52,7 +51,7 @@ export class PlatformAuthService {
       await tx.collection('platform_admins').updateOne({ id: admin.id }, { $set: { failed_login_count: 0, locked_until: null, last_login_at: new Date() } });
       const pair = await this.issue(tx, admin, mfa);
       await this.audit.record(tx, { tenantId: null, action: 'platform.login', resourceType: 'platform_admin', resourceId: admin.id, metadata: { mfa } });
-      return { status: 'ok' as const, ...pair, mfaEnrolmentRequired: !admin.mfa_enabled, passwordChangeRequired: admin.must_change_password === true };
+      return { status: 'ok' as const, ...pair, mfaEnrolmentRequired: !admin.mfa_enabled };
     });
   }
 
@@ -97,7 +96,7 @@ export class PlatformAuthService {
   async me() {
     const a = requestContext.platformActor();
     const r = await this.db.platform((tx) => tx.collection<AdminRow>('platform_admins').findOne({ id: a.adminId }));
-    const row = r ? { id: r.id, email: r.email, fullName: r.full_name, role: r.role, mfaEnabled: r.mfa_enabled, mustChangePassword: r.must_change_password === true } : undefined;
+    const row = r ? { id: r.id, email: r.email, fullName: r.full_name, role: r.role, mfaEnabled: r.mfa_enabled } : undefined;
     return { ...row, session: { mfa: a.mfa } };
   }
 
@@ -122,26 +121,6 @@ export class PlatformAuthService {
       await tx.collection('platform_sessions').updateOne({ id: a.sessionId }, { $set: { revoked_at: new Date() } });
       await this.audit.record(tx, { tenantId: null, action: 'platform.mfa_enabled', resourceType: 'platform_admin', resourceId: a.adminId });
       return this.issue(tx, { id: a.adminId, role: admin.role }, true);
-    });
-  }
-
-  /**
-   * The signed-in admin changes their own password (also how a temporary one is replaced). Needs the current password
-   * and an MFA-verified session; every other console session of theirs is signed out.
-   */
-  async changePassword(currentPassword: string, newPassword: string) {
-    const a = requestContext.platformActor();
-    const admin = await this.db.platform((tx) => tx.collection<AdminRow>('platform_admins').findOne({ id: a.adminId }));
-    if (!admin || !(await verifyPassword(admin.password_hash, currentPassword))) {
-      if (admin) await this.failed(admin.id);
-      throw Errors.badRequest('wrong_password', 'Your current password is not right');
-    }
-    if (await verifyPassword(admin.password_hash, newPassword)) throw Errors.badRequest('same_password', 'Choose a password you have not just used');
-    const hash = await hashPassword(newPassword);
-    await this.db.platform(async (tx) => {
-      await tx.collection('platform_admins').updateOne({ id: a.adminId }, { $set: { password_hash: hash, must_change_password: false, failed_login_count: 0 } });
-      await tx.collection('platform_sessions').update({ admin_id: a.adminId, revoked_at: null, id: { $ne: a.sessionId } }, { $set: { revoked_at: new Date() } });
-      await this.audit.record(tx, { tenantId: null, action: 'platform.password_changed', resourceType: 'platform_admin', resourceId: a.adminId, metadata: { wasTemporary: admin.must_change_password === true } });
     });
   }
 }

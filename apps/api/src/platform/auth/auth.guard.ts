@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { API_KEY_PREFIX, PLATFORM_ROLE_CAPABILITIES, type PlatformRole } from '@crew/contracts';
 import type { Request } from 'express';
 import { AuthzService } from '../authz/authz.service';
-import { ALLOW_PENDING_PASSWORD_KEY, ALLOW_WHEN_LOCKED_KEY, ALLOW_WITHOUT_MFA_KEY, FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY } from '../authz/decorators';
+import { ALLOW_WHEN_LOCKED_KEY, ALLOW_WITHOUT_MFA_KEY, FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY } from '../authz/decorators';
 import { requestContext } from '../context/request-context';
 import { MongoService as DatabaseService } from '../database/mongo.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
@@ -47,7 +47,7 @@ export class AuthGuard implements CanActivate {
     const allowWithoutMfa = this.meta<boolean>(ALLOW_WITHOUT_MFA_KEY, ctx) ?? false;
 
     const realm = this.meta<{ realm: 'platform' | 'scim'; capability?: string }>(REALM_KEY, ctx);
-    if (realm?.realm === 'platform') return this.platform(token, realm.capability, allowWithoutMfa, this.meta<boolean>(ALLOW_PENDING_PASSWORD_KEY, ctx) ?? false);
+    if (realm?.realm === 'platform') return this.platform(token, realm.capability, allowWithoutMfa);
     if (realm?.realm === 'scim') return this.scim(token);
     if (token.startsWith(API_KEY_PREFIX)) return this.apiKey(token, req, ctx);
 
@@ -135,23 +135,19 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 
-  private async platform(token: string, capability: string | undefined, allowWithoutMfa: boolean, allowPendingPassword: boolean): Promise<boolean> {
+  private async platform(token: string, capability: string | undefined, allowWithoutMfa: boolean): Promise<boolean> {
     const claims = await this.tokens.verifyPlatform(token).catch(() => {
       throw Errors.unauthorized('Your console session has expired. Sign in again.');
     });
     const row = await this.db.platform(async (tx) => {
       const session = await tx.collection('platform_sessions').findOne({ id: claims.sid, admin_id: claims.sub });
       const admin = session && (await tx.collection('platform_admins').findOne({ id: claims.sub }));
-      return admin
-        ? { ok: !session!.revoked_at && session!.expires_at > new Date() && admin.status === 'active', email: admin.email as string, mustChangePassword: admin.must_change_password === true }
-        : undefined;
+      return admin ? { ok: !session!.revoked_at && session!.expires_at > new Date() && admin.status === 'active', email: admin.email as string } : undefined;
     });
     if (!row?.ok) throw Errors.unauthorized('Your console session is no longer valid.');
     requestContext.setActor({ kind: 'platform_admin', adminId: claims.sub, role: claims.role, sessionId: claims.sid, mfa: claims.mfa, label: `SAMPLEDGE ${row.email}` });
     // MFA is mandatory for every platform action except enrolling MFA itself.
     if (!claims.mfa && !allowWithoutMfa) throw Errors.mfaRequired();
-    // A temporary password (set by another admin or the recovery command) is replaced before anything else.
-    if (row.mustChangePassword && !allowWithoutMfa && !allowPendingPassword) throw Errors.passwordChangeRequired();
     if (capability && !PLATFORM_ROLE_CAPABILITIES[claims.role as PlatformRole]?.includes(capability)) throw Errors.forbidden();
     return true;
   }

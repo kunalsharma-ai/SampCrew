@@ -36,7 +36,7 @@ import {
   SUBSCRIPTION_STATUSES,
 } from '@crew/contracts';
 import { z } from 'zod';
-import { AllowPendingPassword, AllowWithoutMfa, PlatformRealm, Public } from '../../platform/authz/decorators';
+import { AllowWithoutMfa, PlatformRealm, Public } from '../../platform/authz/decorators';
 import { IdNumberPipe, UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { PlatformAuthService } from './platform-auth.service';
@@ -70,12 +70,6 @@ const subscriptionOverride = z
   })
   .strict();
 const createAdmin = z.object({ email, fullName: name, role: z.enum(PLATFORM_ROLES), password });
-const updateAdmin = z
-  .object({ fullName: name.optional(), role: z.enum(PLATFORM_ROLES).optional(), status: z.enum(['active', 'disabled']).optional() })
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, 'Nothing to change');
-const resetAdminPassword = z.object({ password }).strict();
-const changeOwnPassword = z.object({ currentPassword: z.string().min(1).max(200), newPassword: password }).strict();
 
 @Controller('platform/auth')
 export class PlatformAuthController {
@@ -130,16 +124,6 @@ export class PlatformAuthController {
   @Doc({ summary: 'Confirm MFA enrolment and get an MFA-verified console session', body: mfaEnableRequest })
   mfaEnable(@Body(new ZodPipe(mfaEnableRequest)) body: z.infer<typeof mfaEnableRequest>) {
     return this.auth.mfaEnable(body.code);
-  }
-
-  @PlatformRealm()
-  @AllowPendingPassword()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @Post('password')
-  @HttpCode(204)
-  @Doc({ summary: 'Change your own console password (signs out your other sessions)', body: changeOwnPassword })
-  async changePassword(@Body(new ZodPipe(changeOwnPassword)) body: z.infer<typeof changeOwnPassword>) {
-    await this.auth.changePassword(body.currentPassword, body.newPassword);
   }
 }
 
@@ -431,37 +415,6 @@ export class PlatformController {
   @Doc({ summary: 'Create a platform admin (they must enrol MFA at first sign-in)', body: createAdmin })
   createAdmin(@Body(new ZodPipe(createAdmin)) body: z.infer<typeof createAdmin>) {
     return this.platform.createAdmin(body);
-  }
-
-  @PlatformRealm('admins:manage')
-  @Patch('admins/:id')
-  @Doc({ summary: 'Rename an admin, change their role, or disable / re-enable them (not yourself, never the last Super admin)', body: updateAdmin })
-  updateAdmin(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(updateAdmin)) body: z.infer<typeof updateAdmin>) {
-    return this.platform.updateAdmin(id, body);
-  }
-
-  @PlatformRealm('admins:manage')
-  @Post('admins/:id/reset-password')
-  @HttpCode(200)
-  @Doc({ summary: 'Give an admin a temporary password; they choose a new one at next sign-in', body: resetAdminPassword })
-  resetAdminPassword(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(resetAdminPassword)) body: z.infer<typeof resetAdminPassword>) {
-    return this.platform.resetAdminPassword(id, body.password);
-  }
-
-  @PlatformRealm('admins:manage')
-  @Post('admins/:id/reset-mfa')
-  @HttpCode(200)
-  @Doc({ summary: 'Remove an admin\'s two-step verification (lost phone); they set it up again at next sign-in' })
-  resetAdminMfa(@Param('id', UuidPipe) id: string) {
-    return this.platform.resetAdminMfa(id);
-  }
-
-  @PlatformRealm('admins:manage')
-  @Post('admins/:id/unlock')
-  @HttpCode(200)
-  @Doc({ summary: 'Clear a sign-in lockout after too many wrong attempts' })
-  unlockAdmin(@Param('id', UuidPipe) id: string) {
-    return this.platform.unlockAdmin(id);
   }
 }
 

@@ -351,7 +351,6 @@ export class PlatformService {
     return this.db.platform(async (tx) =>
       (await tx.collection('platform_admins').find({}, { sort: { email: 1 } })).map((a) => ({
         id: a.id, email: a.email, fullName: a.full_name, role: a.role, mfaEnabled: a.mfa_enabled, status: a.status, lastLoginAt: a.last_login_at ?? null,
-        mustChangePassword: a.must_change_password === true, locked: !!a.locked_until && (a.locked_until as Date) > new Date(),
       })),
     );
   }
@@ -360,115 +359,12 @@ export class PlatformService {
     const hash = await hashPassword(input.password);
     return this.db.platform(async (tx) => {
       if (await tx.collection('platform_admins').exists({ email: input.email })) throw Errors.conflict('admin_exists', 'An admin with this email exists');
-      // The password was chosen by someone else, so the new admin picks their own at first sign-in.
-      const r = await tx.collection<{ id: string }>('platform_admins').insert({ email: input.email, full_name: input.fullName, role: input.role, password_hash: hash, must_change_password: true });
+      const r = await tx.collection<{ id: string }>('platform_admins').insert({ email: input.email, full_name: input.fullName, role: input.role, password_hash: hash });
       await this.audit.record(tx, { tenantId: null, action: 'platform.admin_created', resourceType: 'platform_admin', resourceId: r.id, changes: { email: input.email, role: input.role } });
       return { id: r.id };
     });
   }
-
-  /**
-   * Changes another admin's name, role or status. Nobody changes their own role or status (so a Super admin cannot
-   * lock themselves out by mistake), and the last active Super admin cannot be demoted or disabled. Disabling signs
-   * the admin out everywhere at once.
-   */
-  async updateAdmin(id: string, input: { fullName?: string; role?: string; status?: 'active' | 'disabled' }) {
-    const actor = requestContext.platformActor();
-    return this.db.platform(async (tx) => {
-      const admins = tx.collection<AdminRecord>('platform_admins');
-      const target = await admins.findOne({ id });
-      if (!target) throw Errors.notFound('Admin');
-      if (id === actor.adminId && ((input.role && input.role !== target.role) || (input.status && input.status !== target.status))) {
-        throw Errors.conflict('own_account', 'You cannot change your own role or status. Ask another Super admin.');
-      }
-      const role = input.role ?? target.role;
-      const status = input.status ?? target.status;
-      if (target.role === 'super_admin' && target.status === 'active' && (role !== 'super_admin' || status !== 'active')) await this.keepOneSuperAdmin(tx, id);
-      const changes: Record<string, unknown> = {};
-      if (input.fullName !== undefined && input.fullName !== target.full_name) changes.full_name = input.fullName;
-      if (role !== target.role) changes.role = role;
-      if (status !== target.status) changes.status = status;
-      if (!Object.keys(changes).length) return this.adminView(target);
-      await admins.updateOne({ id }, { $set: changes });
-      // A new role or a disabled account takes effect now, not when the current tokens run out.
-      if (changes.role || status === 'disabled') await this.revokeSessions(tx, id);
-      const action = changes.status ? (status === 'disabled' ? 'platform.admin_disabled' : 'platform.admin_enabled') : 'platform.admin_updated';
-      await this.audit.record(tx, { tenantId: null, action, resourceType: 'platform_admin', resourceId: id, changes: { ...changes, email: target.email } });
-      return this.adminView({ ...target, ...changes } as AdminRecord);
-    });
-  }
-
-  /**
-   * Gives another admin a temporary password (forgotten password): clears a lockout, signs them out everywhere and
-   * makes them choose a new password at their next sign-in. Two-step verification stays as it was.
-   */
-  async resetAdminPassword(id: string, password: string) {
-    const actor = requestContext.platformActor();
-    if (id === actor.adminId) throw Errors.conflict('own_account', 'Change your own password from your account menu instead.');
-    const hash = await hashPassword(password);
-    return this.db.platform(async (tx) => {
-      const admins = tx.collection<AdminRecord>('platform_admins');
-      const target = await admins.findOne({ id });
-      if (!target) throw Errors.notFound('Admin');
-      await admins.updateOne({ id }, { $set: { password_hash: hash, must_change_password: true, failed_login_count: 0, locked_until: null } });
-      await this.revokeSessions(tx, id);
-      await this.audit.record(tx, { tenantId: null, action: 'platform.admin_password_reset', resourceType: 'platform_admin', resourceId: id, changes: { email: target.email } });
-      return { ok: true };
-    });
-  }
-
-  /**
-   * Removes another admin's two-step verification (lost or replaced phone). They sign in with their password and set
-   * it up again before they can do anything in the console.
-   */
-  async resetAdminMfa(id: string) {
-    const actor = requestContext.platformActor();
-    if (id === actor.adminId) throw Errors.conflict('own_account', 'Ask another Super admin to reset your two-step verification.');
-    return this.db.platform(async (tx) => {
-      const admins = tx.collection<AdminRecord>('platform_admins');
-      const target = await admins.findOne({ id });
-      if (!target) throw Errors.notFound('Admin');
-      await admins.updateOne({ id }, { $set: { mfa_enabled: false, mfa_secret_enc: null, failed_login_count: 0, locked_until: null } });
-      await this.revokeSessions(tx, id);
-      await this.audit.record(tx, { tenantId: null, action: 'platform.admin_mfa_reset', resourceType: 'platform_admin', resourceId: id, changes: { email: target.email } });
-      return { ok: true };
-    });
-  }
-
-  /** Clears a sign-in lockout (five wrong passwords or codes) before its 15 minutes are up. */
-  async unlockAdmin(id: string) {
-    return this.db.platform(async (tx) => {
-      const admins = tx.collection<AdminRecord>('platform_admins');
-      const target = await admins.findOne({ id });
-      if (!target) throw Errors.notFound('Admin');
-      await admins.updateOne({ id }, { $set: { failed_login_count: 0, locked_until: null } });
-      await this.audit.record(tx, { tenantId: null, action: 'platform.admin_unlocked', resourceType: 'platform_admin', resourceId: id, changes: { email: target.email } });
-      return { ok: true };
-    });
-  }
-
-  /**
-   * Refuses a change that would leave no active Super admin. The remaining ones are locked first, so two Super admins
-   * demoting each other at the same moment conflict and the second sees the first's change.
-   */
-  private async keepOneSuperAdmin(tx: PlatformTx, leavingId: string) {
-    const admins = tx.collection<AdminRecord>('platform_admins');
-    const others = await admins.find({ role: 'super_admin', status: 'active', id: { $ne: leavingId } }, { projection: { id: 1 } });
-    for (const o of others) await admins.lock({ id: o.id, role: 'super_admin', status: 'active' });
-    const still = await admins.count({ role: 'super_admin', status: 'active', id: { $ne: leavingId } });
-    if (!still) throw Errors.conflict('last_super_admin', 'This is the last active Super admin. Make someone else a Super admin first.');
-  }
-
-  private async revokeSessions(tx: PlatformTx, adminId: string) {
-    await tx.collection('platform_sessions').update({ admin_id: adminId, revoked_at: null }, { $set: { revoked_at: new Date() } });
-  }
-
-  private adminView(a: AdminRecord) {
-    return { id: a.id, email: a.email, fullName: a.full_name, role: a.role, status: a.status, mfaEnabled: a.mfa_enabled };
-  }
 }
-
-interface AdminRecord { id: string; email: string; full_name: string; role: string; status: 'active' | 'disabled'; mfa_enabled: boolean }
 
 const DAY = 86_400_000;
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);

@@ -1,4 +1,4 @@
-export interface Admin { id: string; email: string; fullName: string; role: 'super_admin' | 'support' | 'billing_ops' | 'viewer'; mfaEnabled: boolean; mustChangePassword: boolean; session: { mfa: boolean } }
+export interface Admin { id: string; email: string; fullName: string; role: 'super_admin' | 'support' | 'billing_ops' | 'viewer'; mfaEnabled: boolean; session: { mfa: boolean } }
 
 export interface TenantRow {
   id: string; name: string; slug: string; status: string; region: string; countryCode: string; isDemo: boolean; createdAt: string;
