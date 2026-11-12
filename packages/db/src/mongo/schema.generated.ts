@@ -35,6 +35,34 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((key ~ '^[a-z][a-z0-9_]*$'::text))",
     ],
   },
+  backup_runs: {
+    // Each database and file archive the backup service made (infra/deploy/scripts/backup.sh), for the Console's
+    // System health page. Written by the backup job with the admin user; the API only reads it.
+    access: "platform", grants: [],
+    columns: {
+      db_bytes: {"type": "int"},
+      db_file: {"type": "string"},
+      encrypted: {"default": false, "required": true, "type": "bool"},
+      error: {"type": "string"},
+      files_bytes: {"type": "int"},
+      files_file: {"type": "string"},
+      finished_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Copy to BACKUP_REMOTE: copied, failed, or off when no remote is set.
+      offsite: {"default": "off", "enum": ["off", "copied", "failed"], "required": true, "type": "string"},
+      offsite_error: {"type": "string"},
+      started_at: {"required": true, "type": "timestamp"},
+      status: {"enum": ["ok", "failed"], "required": true, "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "backup_runs_pkey", "primary": true},
+    ],
+    fks: [],
+    indexes: [
+      {"cols": [{"col": "finished_at", "desc": true}], "name": "backup_runs_time"},
+    ],
+    checks: [],
+  },
   billing_events: {
     // What happened to each subscription, for the revenue report (MRR movements, churn, trial conversion).
     access: "tenant", grants: ["select"],

@@ -93,7 +93,7 @@ export const CONSOLE_HELP: HelpContent = {
     },
     '/health': {
       title: 'System health',
-      what: 'Live readings from this API instance and its database: uptime, memory, migrations and what is not configured.',
+      what: 'Live readings from this API instance and its database: uptime, memory, replica set, backups, migrations and what is not configured.',
       how: 'Refresh the page to update. Investigate anything red before customers notice.',
       where: 'For engineers and operations.',
     },
@@ -112,6 +112,8 @@ export const CONSOLE_HELP: HelpContent = {
   },
 
   sections: {
+    Backups: { what: 'The last daily archive (copied off-site or not) and how far back the database can be restored to any second.', how: 'Red means the last backup or its off-site copy failed: check the backup service logs today.' },
+    'Replica set': { what: 'Each database member, its state and how far behind the primary it is, and how many hours of changes the oplog keeps.' },
     'Last 30 days': { what: 'Changes in monthly recurring revenue: new customers, trials bought, upgrades, add-ons, downgrades and cancellations.' },
     'Money collected': { what: 'Paid invoices per month over the last year, online and by bank transfer.' },
     'Revenue by plan': { what: 'Workspaces on each plan and their monthly recurring revenue after contract prices, discounts and add-ons.' },
