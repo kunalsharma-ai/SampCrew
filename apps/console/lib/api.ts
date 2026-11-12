@@ -39,13 +39,14 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   return json as T;
 }
 
-/** For server components: an ended session goes to sign-in, a missing MFA step to enrolment, a missing capability to "no access". */
+/** For server components: an ended session goes to sign-in, a missing MFA step to enrolment, a temporary password to choosing a new one, a missing capability to "no access". */
 export async function load<T>(path: string): Promise<T> {
   try {
     return await api<T>(path);
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) redirect('/login?expired=1');
     if (e instanceof ApiError && e.code === 'mfa_required') redirect('/enrol');
+    if (e instanceof ApiError && e.code === 'password_change_required') redirect('/change-password');
     if (e instanceof ApiError && e.status === 403) redirect('/no-access');
     throw e;
   }

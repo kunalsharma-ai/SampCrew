@@ -60,7 +60,8 @@ Health checks:
    The API refuses to start in `production` with plain-http addresses, localhost origins, wildcard CORS, http mobile
    return addresses or template secrets, and lists every problem at once. The seed refuses demo data in production.
 5. **First sign-in**: open the Console from an allowed network, sign in as the bootstrap Super Admin and enrol
-   two-step verification (required). Create the first customer workspace from the Console; its owner gets an
+   two-step verification (required), change the bootstrap password, and add a second Super admin. Console admins,
+   their roles and the recovery command for a lost phone or lockout: [console-admins.md](console-admins.md). Create the first customer workspace from the Console; its owner gets an
    invitation email.
 6. **Check from outside** (any machine):
    ```sh

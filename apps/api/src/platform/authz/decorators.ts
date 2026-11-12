@@ -8,6 +8,7 @@ export const REALM_KEY = 'crew:realm';
 export const ALLOW_WITHOUT_MFA_KEY = 'crew:allow-without-mfa';
 export const ROOT_PATH_KEY = 'crew:root-path';
 export const ALLOW_WHEN_LOCKED_KEY = 'crew:allow-when-locked';
+export const ALLOW_PENDING_PASSWORD_KEY = 'crew:allow-pending-password';
 
 /** No authentication required (login, signup, health, public career pages). */
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
@@ -23,6 +24,12 @@ export const PlatformRealm = (capability?: string) => SetMetadata(REALM_KEY, { r
 
 /** Reachable even when the workspace or platform policy requires MFA and the session has not completed it (for enrolment). */
 export const AllowWithoutMfa = () => SetMetadata(ALLOW_WITHOUT_MFA_KEY, true);
+
+/**
+ * Console routes a platform admin may use while they still have to replace a temporary password (choosing the new
+ * password itself). Routes marked AllowWithoutMfa are allowed too, so enrolment and sign-out keep working.
+ */
+export const AllowPendingPassword = () => SetMetadata(ALLOW_PENDING_PASSWORD_KEY, true);
 
 /** Served at the server root instead of under /api/v1 (device protocols with fixed paths). */
 export const RootPath = () => SetMetadata(ROOT_PATH_KEY, true);

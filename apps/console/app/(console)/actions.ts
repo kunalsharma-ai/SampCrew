@@ -69,7 +69,32 @@ export async function decidePlanRequestAction(id: string, decision: 'approved' |
 }
 
 export async function createAdminAction(body: { email: string; fullName: string; role: string; password: string }) {
-  const r = await act(() => api(`/platform/admins`, { method: 'POST', body }), 'Admin created. They must set up two-step verification at first sign-in.');
+  const r = await act(() => api(`/platform/admins`, { method: 'POST', body }), 'Admin created. At first sign-in they set up two-step verification and choose their own password.');
+  revalidatePath('/admins');
+  return r;
+}
+
+export async function updateAdminAction(id: string, body: { fullName?: string; role?: string; status?: 'active' | 'disabled' }) {
+  const message = body.status === 'disabled' ? 'Admin disabled and signed out everywhere.' : body.status === 'active' ? 'Admin can sign in again.' : body.role ? 'Saved. They were signed out so the new role applies at once.' : 'Saved.';
+  const r = await act(() => api(`/platform/admins/${id}`, { method: 'PATCH', body }), message);
+  revalidatePath('/admins');
+  return r;
+}
+
+export async function resetAdminPasswordAction(id: string, password: string) {
+  const r = await act(() => api(`/platform/admins/${id}/reset-password`, { method: 'POST', body: { password } }), 'Temporary password set. They were signed out and choose a new password at next sign-in.');
+  revalidatePath('/admins');
+  return r;
+}
+
+export async function resetAdminMfaAction(id: string) {
+  const r = await act(() => api(`/platform/admins/${id}/reset-mfa`, { method: 'POST' }), 'Two-step verification removed. They set it up again at next sign-in.');
+  revalidatePath('/admins');
+  return r;
+}
+
+export async function unlockAdminAction(id: string) {
+  const r = await act(() => api(`/platform/admins/${id}/unlock`, { method: 'POST' }), 'Unlocked. They can sign in again.');
   revalidatePath('/admins');
   return r;
 }

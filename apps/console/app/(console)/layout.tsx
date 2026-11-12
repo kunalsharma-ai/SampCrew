@@ -21,6 +21,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const me = await load<Admin>('/platform/auth/me');
   // Every console page needs an MFA-verified session; the API enforces it too.
   if (!me.session.mfa) redirect('/enrol');
+  // A temporary password set by another admin is replaced before anything else (the API refuses other actions too).
+  if (me.mustChangePassword) redirect('/change-password');
   const nav = NAV.filter((n) => !n.cap || hasCap(me, n.cap)).map(({ cap: _c, ...n }) => n);
   return <Shell me={me} nav={nav}>{children}</Shell>;
 }

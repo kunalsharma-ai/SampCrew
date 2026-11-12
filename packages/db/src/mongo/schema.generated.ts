@@ -3677,6 +3677,8 @@ export const TABLES: Record<string, TableSpec> = {
       locked_until: {"type": "timestamp"},
       mfa_enabled: {"default": false, "required": true, "type": "bool"},
       mfa_secret_enc: {"type": "string"},
+      // Set when another admin (or the recovery command) gave a temporary password: the console asks for a new one.
+      must_change_password: {"default": false, "required": true, "type": "bool"},
       password_hash: {"required": true, "type": "string"},
       role: {"enum": ["super_admin", "support", "billing_ops", "viewer"], "required": true, "type": "string"},
       status: {"default": "active", "enum": ["active", "disabled"], "required": true, "type": "string"},
