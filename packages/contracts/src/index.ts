@@ -54,6 +54,7 @@ export * from './iq';
 export * from './lenses';
 export * from './safe-path';
 export * from './csp';
+export * from './web-session';
 export * from './platform-integrations';
 export * from './overview';
 export * from './setup';

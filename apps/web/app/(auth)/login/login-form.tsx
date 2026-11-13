@@ -8,7 +8,7 @@ import { initialPasswordAction, loginAction, selectTenantAction, ssoStartAction,
 
 type Step = { kind: 'password' } | { kind: 'sso'; email: string; notice?: string } | { kind: 'mfa'; mfaToken: string } | { kind: 'newPassword'; changeToken: string } | { kind: 'tenant'; selectToken: string; tenants: { id: string; name: string; slug: string }[] };
 
-export function LoginForm({ next, expired, workspace, ssoFailure }: { next: string; expired: boolean; workspace?: string; ssoFailure?: string | null }) {
+export function LoginForm({ next, expired, workspace, ssoFailure, notice, addressProblem }: { next: string; expired: boolean; workspace?: string; ssoFailure?: string | null; notice?: string | null; addressProblem?: string | null }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>(ssoFailure ? { kind: 'sso', email: '' } : { kind: 'password' });
   const [error, setError] = useState<string | null>(ssoFailure ?? null);
@@ -168,7 +168,9 @@ export function LoginForm({ next, expired, workspace, ssoFailure }: { next: stri
         <h2 className="text-2xl font-semibold tracking-tight">Sign in to SampCrew</h2>
         <p className="mt-1 text-sm text-fg-muted">Welcome back. Use your work email.</p>
       </div>
-      {expired && !error && <Alert tone="warning">Your session ended. Sign in again to continue.</Alert>}
+      {addressProblem && !error && <Alert tone="danger">{addressProblem}</Alert>}
+      {expired && !notice && !error && <Alert tone="warning">Your session ended. Sign in again to continue.</Alert>}
+      {notice && !error && <Alert tone="warning">{notice}</Alert>}
       {error && <Alert tone="danger">{error}</Alert>}
       <Field label="Work email" error={fieldErrors.email} required>
         {(p) => <Input {...p} name="email" type="email" autoComplete="username" required autoFocus />}

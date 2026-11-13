@@ -2,11 +2,14 @@
 import { redirect } from 'next/navigation';
 import QRCode from 'qrcode';
 import { act, api } from '@/lib/api';
-import { clearSession, setSession, type TokenPair } from '@/lib/session';
+import { clearSession, sessionCookieProblem, setSession, type TokenPair } from '@/lib/session';
 
 type LoginResult = ({ status: 'ok'; mfaEnrolmentRequired: boolean } & TokenPair) | { status: 'mfa_required' };
 
 export async function loginAction(input: { email: string; password: string; code?: string }) {
+  // On a plain http address the browser drops the Secure session cookies; say so instead of returning to sign-in.
+  const problem = await sessionCookieProblem();
+  if (problem) return { ok: false as const, code: 'insecure_address', message: problem };
   const r = await act(() => api<LoginResult>('/platform/auth/login', { method: 'POST', body: { ...input, code: input.code || undefined }, auth: false }));
   if (!r.ok) return r;
   const d = r.data!;

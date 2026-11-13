@@ -1,5 +1,6 @@
 import { safeNextPath } from '@crew/contracts';
 import type { Metadata } from 'next';
+import { sessionCookieProblem } from '@/lib/session';
 import { AuthFrame } from '../auth-frame';
 import { LoginForm } from './login-form';
 
@@ -10,7 +11,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const next = safeNextPath(sp.next);
   return (
     <AuthFrame>
-      <LoginForm next={next} expired={sp.expired === '1'} />
+      <LoginForm next={next} expired={sp.expired === '1'} addressProblem={await sessionCookieProblem()} />
     </AuthFrame>
   );
 }

@@ -99,6 +99,22 @@ export async function load<T>(path: string): Promise<T> {
   }
 }
 
+/**
+ * For the signed-in layout's own call to /me, which every page runs. When /me itself is refused (the workspace is
+ * suspended, the Web Portal is switched off for it, or the session was revoked), no page can open, including "no
+ * access", which sits in the same layout: redirecting there looped until the browser gave up. The session is ended
+ * instead, and sign-in says why.
+ */
+export async function loadSession<T>(path: string): Promise<T> {
+  try {
+    return await api<T>(path);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) redirect('/signed-out?reason=expired');
+    if (e instanceof ApiError && (e.status === 402 || e.status === 403)) redirect(`/signed-out?reason=${encodeURIComponent(e.code)}`);
+    throw e;
+  }
+}
+
 /** Like load(), but returns null instead of throwing when the user lacks permission or the plan lacks the feature. */
 export async function loadOptional<T>(path: string): Promise<T | null> {
   try {
