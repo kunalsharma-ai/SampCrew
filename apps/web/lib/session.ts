@@ -1,5 +1,6 @@
 import 'server-only';
-import { cookies } from 'next/headers';
+import { secureCookieProblem } from '@crew/contracts';
+import { cookies, headers } from 'next/headers';
 
 export const ACCESS_COOKIE = 'crew_at';
 export const REFRESH_COOKIE = 'crew_rt';
@@ -34,4 +35,13 @@ export async function accessToken() {
 /** The reason the last single sign-on attempt failed, if it was in the last minute. */
 export async function ssoError() {
   return (await cookies()).get(SSO_ERROR_COOKIE)?.value ?? null;
+}
+
+/**
+ * Why sign-in cannot work on the address this request came to, or null. Call before setSession(): on a plain http
+ * address the browser drops the Secure cookies, and the person would land back on sign-in with no explanation.
+ */
+export async function sessionCookieProblem(): Promise<string | null> {
+  const h = await headers();
+  return secureCookieProblem({ secure, origin: h.get('origin'), forwardedProto: h.get('x-forwarded-proto'), host: h.get('x-forwarded-host') ?? h.get('host') });
 }

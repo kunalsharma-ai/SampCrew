@@ -1,5 +1,6 @@
 import 'server-only';
-import { cookies } from 'next/headers';
+import { secureCookieProblem } from '@crew/contracts';
+import { cookies, headers } from 'next/headers';
 
 /** Console cookies are separate from the Web Portal's, and the console is served from its own origin. */
 export const ACCESS_COOKIE = 'crew_console_at';
@@ -28,4 +29,13 @@ export async function clearSession() {
 
 export async function accessToken() {
   return (await cookies()).get(ACCESS_COOKIE)?.value;
+}
+
+/**
+ * Why sign-in cannot work on the address this request came to, or null. Call before setSession(): on a plain http
+ * address the browser drops the Secure cookies, and the admin would land back on sign-in with no explanation.
+ */
+export async function sessionCookieProblem(): Promise<string | null> {
+  const h = await headers();
+  return secureCookieProblem({ secure, origin: h.get('origin'), forwardedProto: h.get('x-forwarded-proto'), host: h.get('x-forwarded-host') ?? h.get('host') });
 }

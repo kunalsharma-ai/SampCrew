@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { loginAction } from '../auth-actions';
 
-export function LoginForm({ next, expired }: { next: string; expired: boolean }) {
+export function LoginForm({ next, expired, addressProblem }: { next: string; expired: boolean; addressProblem?: string | null }) {
   const router = useRouter();
   const [creds, setCreds] = useState<{ email: string; password: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +56,7 @@ export function LoginForm({ next, expired }: { next: string; expired: boolean })
       }}
     >
       <h1 className="text-lg font-semibold">Sign in to the console</h1>
+      {addressProblem && !error && <Alert tone="danger">{addressProblem}</Alert>}
       {expired && !error && <Alert tone="warning">Your session ended. Sign in again.</Alert>}
       {error && <Alert tone="danger">{error}</Alert>}
       <Field label="Email" required>{(p) => <Input {...p} name="email" type="email" autoComplete="username" required autoFocus />}</Field>

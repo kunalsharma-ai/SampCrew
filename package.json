@@ -23,6 +23,7 @@
     "test:mongo": "pnpm --filter @crew/api test:mongo",
     "docs:permissions": "pnpm --filter @crew/contracts run docs:permissions",
     "e2e:web": "node e2e/web-smoke.cjs",
+    "e2e:session": "node e2e/session-flow.cjs",
     "e2e:console": "node e2e/console-smoke.cjs",
     "e2e:hr": "node e2e/hr-flow.cjs",
     "e2e:attendance": "node e2e/attendance-flow.cjs",

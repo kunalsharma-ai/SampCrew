@@ -1,7 +1,7 @@
 'use server';
 import { redirect } from 'next/navigation';
 import { act, api, type ActionResult } from '@/lib/api';
-import { setSession, type TokenPair } from '@/lib/session';
+import { sessionCookieProblem, setSession, type TokenPair } from '@/lib/session';
 
 type LoginStep = ({ status: 'ok' } & TokenPair) | { status: 'mfa_required'; mfaToken: string } | { status: 'select_tenant'; tenants: { id: string; name: string; slug: string }[]; selectToken: string } | { status: 'password_change_required'; changeToken: string };
 
@@ -13,7 +13,15 @@ async function finish(step: LoginStep): Promise<ActionResult<LoginStep>> {
   return { ok: true, data: step };
 }
 
+/** Stops before the API is called when the browser would drop the session cookies (a plain http address). */
+async function addressProblem(): Promise<ActionResult<never> | null> {
+  const problem = await sessionCookieProblem();
+  return problem ? { ok: false, code: 'insecure_address', message: problem } : null;
+}
+
 export async function loginAction(input: { email: string; password: string; tenantSlug?: string }) {
+  const blocked = await addressProblem();
+  if (blocked) return blocked;
   const r = await act(() => api<LoginStep>('/auth/login', { method: 'POST', body: { ...input, tenantSlug: input.tenantSlug || undefined }, auth: false }));
   return r.ok ? finish(r.data!) : r;
 }
@@ -40,6 +48,8 @@ export async function ssoStartAction(email: string) {
 }
 
 export async function signupAction(input: Record<string, unknown>) {
+  const blocked = await addressProblem();
+  if (blocked) return blocked;
   const r = await act(() => api<TokenPair>('/auth/signup', { method: 'POST', body: input, auth: false }));
   if (!r.ok) return r;
   await setSession(r.data!);
@@ -47,6 +57,8 @@ export async function signupAction(input: Record<string, unknown>) {
 }
 
 export async function acceptInviteAction(input: { token: string; fullName: string; password: string }) {
+  const blocked = await addressProblem();
+  if (blocked) return blocked;
   const r = await act(() => api<TokenPair>('/auth/invitations/accept', { method: 'POST', body: input, auth: false }));
   if (!r.ok) return r;
   await setSession(r.data!);

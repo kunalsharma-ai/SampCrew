@@ -249,3 +249,13 @@ environment variables from it instead of using `.env`.
    affected rows across, or switch to it entirely.
 5. Suspected breach: rotate the JWT secrets (signs everyone out), the database and Redis passwords; review the
    audit trail (Console and each workspace's Audit log, hash-chained); see `docs/security.md`.
+6. Sign-in returns to the sign-in page, or the browser reports "redirected you too many times":
+   - On a plain `http://` address (an IP address, or a domain Caddy has no certificate for yet) the browser drops the
+     Secure session cookies. The sign-in page now says so in red. Open the `https://` address set in
+     `CREW_WEB_ADDRESS` / `CREW_CONSOLE_ADDRESS`. Only on a throwaway test server without https, set
+     `SESSION_COOKIE_SECURE: "false"` for the web and console services.
+   - A suspended workspace, or one whose Web Portal SAMPLEDGE switched off, signs its people out with that reason on
+     the sign-in page (it used to loop between the home page and "no access").
+   - People signed out about every 15 minutes: the audit trail shows `auth.refresh_reuse_detected`. The web and
+     console apps share one token refresh between requests sent together; more than one web container behind the
+     proxy without sticky sessions can still race, so run one, or pin each browser to one.
