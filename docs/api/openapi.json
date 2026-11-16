@@ -36138,6 +36138,94 @@
         }
       }
     },
+    "/api/v1/platform/setup": {
+      "get": {
+        "tags": [
+          "PlatformSetup"
+        ],
+        "summary": "Whether this installation still needs its first Super admin (the Console then shows the setup page)",
+        "operationId": "PlatformSetup_status",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/setup/first-admin": {
+      "post": {
+        "tags": [
+          "PlatformSetup"
+        ],
+        "summary": "Create the first Super admin with the one-time setup code printed in the API log (only while no admin exists)",
+        "operationId": "PlatformSetup_createFirstAdmin",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "setupCode": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 40
+                  },
+                  "fullName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 120
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 12,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "setupCode",
+                  "fullName",
+                  "email",
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/tenants/{id}/access/apps": {
       "put": {
         "tags": [

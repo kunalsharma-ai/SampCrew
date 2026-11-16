@@ -36,7 +36,9 @@ This repository is being built phase by phase. See [docs/architecture](docs/arch
 - **Closing the known gaps (Phase 11)**: SAML 2.0 single sign-on next to OpenID Connect (signed assertions checked against the owner's certificate, audience, recipient, time limits and the request SampCrew sent); single sign-on in the mobile app through a one-time code bound to the app's own PKCE challenge; SCIM Groups that an owner maps to SampCrew roles (never the owner role, and roles given by hand are kept); erasure that also blanks free text in expenses, goals, reviews, feedback, recognition, requests and notes; a retention schedule that erases leavers after a set number of years and deletes old exports and sign-in logs daily; rate limits shared across API servers through Redis (`REDIS_URL`). Tested against local SAML and OIDC stubs, not real identity providers yet. See [docs/phases/phase-11.md](docs/phases/phase-11.md)
 - OpenAPI 3.1 spec at `/api/v1/openapi.json` and in [docs/api/openapi.json](docs/api/openapi.json)
 
-Not connected yet, and labelled as such in the product: payment collection (invoices are issued manually by SAMPLEDGE finance) and S3-compatible object storage (files use local disk). Email is sent only when `SMTP_URL` is set; otherwise it is recorded as skipped, and invitation links are shown on screen in local environments.
+**No API keys in settings files.** Every key and outside service (email/SMTP, Claude AI, mobile push, virus scanning, mobile sign-in addresses, Razorpay, Stripe, off-site backup storage) is entered in the Super Admin Console > Integrations, tested there and kept only in the database, encrypted; workspace integrations (Slack, webhooks, single sign-on, API keys) are set in each workspace's Settings. The API creates its own sign-in signing keys on first start, and the first Super admin is created in the Console with a one-time setup code from the API log. The encryption key that locks them is created in the database too. `.env` holds only the database and Redis connection, the backup passphrase and public addresses. See [docs/phases/phase-23.md](docs/phases/phase-23.md).
+
+Not connected yet, and labelled as such in the product: S3-compatible object storage for uploaded files (files use local disk). Until email is set up in Console > Integrations, emails are recorded as not delivered, and invitation links are shown on screen in local environments.
 
 ## Getting started
 
@@ -47,17 +49,17 @@ Node.js 25 and later no longer include Corepack, so install it once with `npm in
 ```bash
 pnpm install
 docker compose -f infra/docker/docker-compose.yml up -d mongo      # a one-node replica set, or use Atlas
-cp .env.example .env                                               # fill in the secrets (see comments)
+cp .env.example .env                                               # the database URL (see comments); no keys
 pnpm build:packages
-pnpm db:migrate && pnpm db:seed                                    # collections, catalogue, first admin, demo tenant
+pnpm db:migrate && pnpm db:seed                                    # collections, catalogue, demo tenant
 pnpm dev:api                                                       # API on http://localhost:4000
 pnpm dev:web                                                       # Web Portal on http://localhost:3000
 pnpm dev:console                                                   # Super Admin Console on http://localhost:3001
 ```
 
-The mobile app is in `apps/mobile` (Expo). Set `EXPO_PUBLIC_CREW_API_URL` to an API address the phone can reach (for example your computer's LAN address and port 4000), then run `pnpm --filter @crew/mobile start` and open it in Expo Go or a development build. Push needs an Expo project (`EAS_PROJECT_ID`) and `EXPO_PUSH_ENABLED=true` on the API. `pnpm --filter @crew/mobile export:web` builds a browser preview into `apps/mobile/dist-web`; its origin must be in the API's `CORS_ORIGINS`.
+The mobile app is in `apps/mobile` (Expo). Set `EXPO_PUBLIC_CREW_API_URL` to an API address the phone can reach (for example your computer's LAN address and port 4000), then run `pnpm --filter @crew/mobile start` and open it in Expo Go or a development build. Push needs an Expo project (`EAS_PROJECT_ID`) and Mobile push switched on in Console > Integrations. `pnpm --filter @crew/mobile export:web` builds a browser preview into `apps/mobile/dist-web`; its origin must be in the API's `CORS_ORIGINS`.
 
-Sign in to the Web Portal with a demo user (below). Sign in to the console with `CREW_BOOTSTRAP_ADMIN_EMAIL` / `CREW_BOOTSTRAP_ADMIN_PASSWORD` from your `.env`; you will be asked to set up an authenticator app before anything else.
+Sign in to the Web Portal with a demo user (below). The first time you open the console it shows **Set up SampCrew**: enter the setup code the API printed in its terminal ("SampCrew is not set up yet ..."), your name, email and a password, then set up an authenticator app. (Or set `CREW_BOOTSTRAP_ADMIN_EMAIL` / `CREW_BOOTSTRAP_ADMIN_PASSWORD` before `pnpm db:seed` to skip that, as CI does.) Then add email, AI and the other services in Console > Integrations.
 
 The demo tenant `demo-northwind` ("Northwind Manufacturing (Demo)") is fictional and flagged as demo data. All its users share `CREW_DEMO_PASSWORD`, for example `owner@demo.crew.local`, `hr.admin@demo.crew.local`, `hr.ops@demo.crew.local`, `supervisor@demo.crew.local`, `operator1@demo.crew.local`, `payroll@demo.crew.local`, `finance@demo.crew.local`.
 
@@ -81,7 +83,7 @@ pnpm e2e:iq         # SampCrew IQ: recruitment summary, scoped headcount, prefil
 pnpm e2e:experience # Theme Studio, favourites, palette, Home approvals and layout (before e2e:recruitment)
 pnpm e2e:mobile     # Mobile app (browser build) against the API: offline punches, leave approval, Ask HR, two-step sign-in, device sign-out (before e2e:recruitment; build with export:web first)
 pnpm e2e:integrations  # API keys, webhooks, Slack and workflow steps with local receivers (fresh db; start the API with INTEGRATIONS_ALLOW_PRIVATE_URLS=true SLACK_WEBHOOK_BASE_URL=http://localhost:4020)
-pnpm e2e:ai         # AI, Automation Studio and attrition flow against the local AI test stub (fresh db; start `node e2e/ai-stub.cjs` and the API with AI_PROVIDER=anthropic ANTHROPIC_API_KEY=<any test value> ANTHROPIC_BASE_URL=http://localhost:4010)
+pnpm e2e:ai         # AI, Automation Studio and attrition flow against the local AI test stub (fresh db; start `node e2e/ai-stub.cjs`, save the AI integration with `cd apps/api && node dist/cli/integrations.js set ai '{"enabled":true,"apiKey":"test-key","baseUrl":"http://localhost:4010","model":"claude-opus-5-5","effort":"low","refusalFallback":true,"timeoutSeconds":30}'`, then start the API)
 pnpm e2e:console    # browser test of the console, including support access across both apps (fresh db, API + web + console)
 pnpm e2e:a11y       # accessibility (axe-core, WCAG 2.1 A and AA) on 33 web, console and mobile screens, light and dark
 pnpm load-test:workflows  # hiring, salaries and payroll at scale, then punches, leave and helpdesk concurrently (fresh db; API with API_RATE_LIMIT_PER_MINUTE=1000000)

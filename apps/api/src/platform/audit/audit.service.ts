@@ -10,6 +10,8 @@ export interface AuditInput {
   metadata?: Record<string, unknown>;
   /** Override for platform events or events written on behalf of a tenant by the platform. */
   tenantId?: string | null;
+  /** Who did it when no one is signed in (e.g. "integrations command (ops@host)"). Ignored when there is an actor. */
+  actorLabel?: string;
 }
 
 const REDACT = /password|secret|token|hash|bank|account_number|pan|aadhaar|ssn|tax_?id|national_?id/i;
@@ -49,7 +51,7 @@ export class AuditService {
       tenant_id: tenantId,
       actor_type: actor?.kind ?? 'system',
       actor_id: actor?.kind === 'user' ? actor.userId : actor?.kind === 'platform_admin' ? actor.adminId : null,
-      actor_label: actor?.label ?? 'system',
+      actor_label: actor?.label ?? input.actorLabel ?? 'system',
       action: input.action,
       resource_type: input.resourceType,
       resource_id: input.resourceId ?? null,

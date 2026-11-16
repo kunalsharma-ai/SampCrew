@@ -6,7 +6,7 @@ import { resetConfigForTests } from '../src/platform/config/config';
 import { MailerService } from '../src/platform/notify/mailer.service';
 import { PDFDocument } from 'pdf-lib';
 import { createHash } from 'node:crypto';
-import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { clearIntegration, addMember, adminPool, api, createApp, createTenant, loginWithMfa, type TestDb, type TestTenant, setIntegration } from './helpers';
 
 /** Staffing bids: clients, templates, exact pricing, approval before sending, the proposal PDF and scheduled email. */
 describe('staffing bids', () => {
@@ -56,9 +56,9 @@ describe('staffing bids', () => {
       },
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    process.env.SMTP_URL = `smtp://127.0.0.1:${(server.server.address() as { port: number }).port}`;
     resetConfigForTests();
     app = await createApp();
+    await setIntegration(app, 'email', { enabled: true, host: '127.0.0.1', port: (server.server.address() as { port: number }).port, security: 'none', from: 'SampCrew <no-reply@crew.local>' });
     pool = adminPool();
     t = await createTenant(pool);
     other = await createTenant(pool);
@@ -73,10 +73,10 @@ describe('staffing bids', () => {
   });
 
   afterAll(async () => {
+    await clearIntegration(app, 'email');
     await app.close();
     await pool.end();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    delete process.env.SMTP_URL;
     resetConfigForTests();
   });
 

@@ -77,7 +77,7 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=20s CMD wget -qO- http://
 CMD ["node", "apps/console/server.js"]
 
 # --- Tools: migrations, seed, backups and the restore drill ----------------------------------------------------
-# rclone copies the backups off the server (BACKUP_REMOTE). Its official image holds one static binary; pin it here.
+# rclone copies the backups off the server (Console > Integrations > Off-site backups). Its official image holds one static binary; pin it here.
 FROM rclone/rclone:1.75.2 AS rclone
 
 FROM ${NODE_IMAGE} AS tools

@@ -10,10 +10,24 @@ import { configureApp } from '../src/bootstrap';
 import { hashPassword, sha256 } from '../src/platform/auth/crypto';
 import type { AppConfig } from '../src/platform/config/config';
 import { MongoService, type PlatformTx, type TenantTx } from '../src/platform/database/mongo.service';
+import { PlatformIntegrationsService } from '../src/platform/integrations/platform-integrations.service';
+import type { PlatformIntegrationKey } from '@crew/contracts';
 
 export const PASSWORD = 'Correct-Horse-42!';
 let cachedHash: string | undefined;
 const passwordHash = async () => (cachedHash ??= await hashPassword(PASSWORD));
+
+/**
+ * Saves an installation-wide integration the way the Console does (encrypted, audited). Integrations live only in the
+ * database, which every test file shares, so a file that sets one removes it again with clearIntegration.
+ */
+export async function setIntegration(app: INestApplication, key: PlatformIntegrationKey, values: Record<string, unknown>) {
+  return app.get(PlatformIntegrationsService).save(key, values, { label: 'test setup' });
+}
+
+export async function clearIntegration(app: INestApplication, key: PlatformIntegrationKey) {
+  await app.get(PlatformIntegrationsService).reset(key, { label: 'test setup' }).catch(() => undefined);
+}
 
 export async function createApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();

@@ -23,7 +23,7 @@ const CACHE = 'crew.session.cache';
 /** Where the browser preview keeps the PKCE verifier while the identity provider has the tab. */
 const SSO_VERIFIER = 'crew.sso.verifier';
 
-/** The app's address the Web Portal sends the browser back to (it must be on the API's MOBILE_SSO_REDIRECTS list). */
+/** The app's address the Web Portal sends the browser back to (it must be on the list in Console > Integrations > Mobile app single sign-on; crew://sso is there by default). */
 export function ssoReturnAddress() {
   return Platform.OS === 'web' ? `${window.location.origin}/sso` : 'crew://sso';
 }

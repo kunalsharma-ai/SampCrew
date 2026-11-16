@@ -189,9 +189,10 @@ services:
       console: { condition: service_healthy }
     networks: [edge]
 
-  # Virus scanning of uploads (optional): `docker compose --profile scan up -d` and CLAMAV_URL=tcp://clamav:3310 in
-  # .env. ClamAV downloads and updates its signatures itself (it needs outbound access to database.clamav.net) and
-  # wants about 1.5 GB of memory. While CLAMAV_URL is set and clamd is down, uploads are refused, not stored unscanned.
+  # Virus scanning of uploads (optional): `docker compose --profile scan up -d`, then in the Super Admin Console >
+  # Integrations > Virus scanning enter tcp://clamav:3310, test and switch on. ClamAV downloads and updates its
+  # signatures itself (it needs outbound access to database.clamav.net) and wants about 1.5 GB of memory. While
+  # scanning is on and clamd is down, uploads are refused, not stored unscanned.
   clamav:
     image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
     profiles: [scan]
@@ -204,8 +205,10 @@ services:
     restart: unless-stopped
     logging: *logging
     command: ["/app/infra/deploy/scripts/backup.sh", "--loop"]
-    # The off-site storage account (RCLONE_CONFIG_OFFSITE_* settings, see offsite.env.example). Kept in its own file
-    # so only this service sees those keys.
+    # The off-site storage and its keys are set up in Console > Integrations > Off-site backups and read from the
+    # database before every copy (decrypted with the encryption key the API keeps in the same database). offsite.env and BACKUP_REMOTE are only
+    # for disaster recovery, when the database itself is gone (docs/ops/mongodb.md, "Losing the server"), and for an
+    # older install, whose values are moved into the database on first use.
     env_file:
       - path: offsite.env
         required: false
@@ -215,7 +218,7 @@ services:
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
       BACKUP_REMOTE: ${BACKUP_REMOTE:-}
-      BACKUP_REMOTE_KEEP_DAYS: ${BACKUP_REMOTE_KEEP_DAYS:-30}
+      BACKUP_REMOTE_KEEP_DAYS: ${BACKUP_REMOTE_KEEP_DAYS:-}
       BACKUP_SYNC_MINUTES: ${BACKUP_SYNC_MINUTES:-15}
       BACKUP_ALERT_WEBHOOK: ${BACKUP_ALERT_WEBHOOK:-}
     volumes:

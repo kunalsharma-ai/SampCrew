@@ -18,6 +18,15 @@ export async function loginAction(input: { email: string; password: string; code
   return { ok: true as const, data: { step: d.mfaEnrolmentRequired ? ('enrol' as const) : ('done' as const) } };
 }
 
+/** First-run setup: creates the first Super admin with the setup code, then signs them in (two-step setup follows). */
+export async function firstAdminAction(input: { setupCode: string; fullName: string; email: string; password: string }) {
+  const problem = await sessionCookieProblem();
+  if (problem) return { ok: false as const, code: 'insecure_address', message: problem };
+  const r = await act(() => api<{ email: string }>('/platform/setup/first-admin', { method: 'POST', body: input, auth: false }));
+  if (!r.ok) return r;
+  return loginAction({ email: r.data!.email, password: input.password });
+}
+
 export async function mfaSetupAction() {
   return act(async () => {
     const r = await api<{ secret: string; otpauthUri: string }>('/platform/auth/mfa/setup', { method: 'POST' });

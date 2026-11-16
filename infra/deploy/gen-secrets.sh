@@ -1,6 +1,9 @@
 #!/bin/sh
 # Prints fresh random secrets for .env. Run once per environment and append:  ./gen-secrets.sh >> .env
 # Never reuse values between staging and production, and never commit the result.
+# These are only the database's own passwords and the passphrase that locks its backups. Every other key (email, AI,
+# payments, push, off-site storage) is entered in the Super Admin Console and kept in the database; the API creates
+# its encryption key and sign-in signing keys itself on the first start, also in the database.
 set -eu
 r() { openssl rand -base64 "$1" | tr -d '\n'; }
 hex() { openssl rand -hex "$1"; }
@@ -12,9 +15,5 @@ MONGODB_API_PASSWORD=$(hex 24)
 MONGODB_PBM_PASSWORD=$(hex 24)
 MONGO_REPLICA_KEY=$(hex 48)
 REDIS_PASSWORD=$(hex 24)
-JWT_ACCESS_SECRET=$(r 48)
-JWT_PLATFORM_SECRET=$(r 48)
-FIELD_ENCRYPTION_KEY=$(r 32)
-FILE_URL_SECRET=$(r 48)
 BACKUP_PASSPHRASE=$(r 32)
 OUT

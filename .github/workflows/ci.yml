@@ -50,9 +50,6 @@ jobs:
           diff -q /tmp/openapi.json ../../docs/api/openapi.json || (echo "Run: pnpm --filter @crew/api build && pnpm --filter @crew/api openapi" && exit 1)
         env:
           MONGODB_URL: mongodb://unused:27017/crew
-          JWT_ACCESS_SECRET: ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-access
-          JWT_PLATFORM_SECRET: ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-platform
-          FIELD_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
 
   e2e:
     # Drives the real Web Portal, the mobile app's browser build and the Super Admin Console in Chromium against a seeded database.
@@ -65,9 +62,6 @@ jobs:
       WEB_PUBLIC_URL: http://localhost:3000
       CREW_API_URL: http://localhost:4000
       SESSION_COOKIE_SECURE: "false"
-      JWT_ACCESS_SECRET: ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-access
-      JWT_PLATFORM_SECRET: ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-platform
-      FIELD_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       CREW_BOOTSTRAP_ADMIN_EMAIL: admin@sampledge.ci
       CREW_BOOTSTRAP_ADMIN_PASSWORD: Ci-Only-Console-Admin-1!
       CREW_SEED_DEMO: "true"
@@ -114,12 +108,14 @@ jobs:
           pnpm e2e:ats
           pnpm e2e:iq
       - name: AI features end-to-end flow (local AI test stub, no real model)
-        # e2e/ai-stub.cjs stands in for the Claude Messages API with fixed answers; the key is a dummy value.
+        # e2e/ai-stub.cjs stands in for the Claude Messages API with fixed answers; the key is a dummy value, saved in
+        # the database with the integrations command exactly as Console > Integrations would save it.
         run: |
           pkill -f "dist/main.js" || true
           pnpm db:reset
           node e2e/ai-stub.cjs > stub.log 2>&1 &
-          AI_PROVIDER=anthropic ANTHROPIC_API_KEY=ci-test-key-not-a-real-key ANTHROPIC_BASE_URL=http://localhost:4010 node apps/api/dist/main.js > api.log 2>&1 &
+          (cd apps/api && node dist/cli/integrations.js set ai '{"enabled":true,"apiKey":"ci-test-key-not-a-real-key","baseUrl":"http://localhost:4010","model":"claude-opus-5-5","effort":"low","refusalFallback":true,"timeoutSeconds":30}')
+          node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:4010/__requests
           pnpm e2e:ai
       - name: Integrations end-to-end flow (local Slack test stub and webhook receiver)
@@ -141,11 +137,13 @@ jobs:
           pnpm e2e:enterprise
       - name: Phase 11 end-to-end flow (local SAML test stub, no real identity provider)
         # e2e/saml-stub.cjs runs inside the flow on 4031 and stands in for a SAML identity provider; the mobile app's
-        # browser build is served on 8081 and its /sso address is allowed to receive single sign-on for this run.
+        # browser build is served on 8081 and its /sso address is allowed to receive single sign-on for this run (saved
+        # in the database with the integrations command, as in Console > Integrations > Mobile app single sign-on).
         run: |
           pkill -f "dist/main.js" || true
           pnpm db:reset
-          INTEGRATIONS_ALLOW_PRIVATE_URLS=true MOBILE_SSO_REDIRECTS=crew://sso,http://localhost:8081/sso node apps/api/dist/main.js > api.log 2>&1 &
+          (cd apps/api && node dist/cli/integrations.js set mobile_sso '{"enabled":true,"redirects":["crew://sso","http://localhost:8081/sso"]}')
+          INTEGRATIONS_ALLOW_PRIVATE_URLS=true node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:hardening
       - name: Backup and restore drill

@@ -87,8 +87,8 @@ export const CONSOLE_HELP: HelpContent = {
     },
     '/integrations': {
       title: 'Integrations',
-      what: 'Platform services SampCrew uses: Claude AI, email (SMTP), mobile push, virus scanning and mobile sign-in addresses.',
-      how: 'Open a service, follow its setup steps, save, and send a test. A setting here wins over the server’s settings file.',
+      what: 'Every outside service SampCrew uses and its keys: Claude AI, email (SMTP), mobile push, virus scanning, mobile sign-in addresses, Razorpay, Stripe and off-site backup storage.',
+      how: 'Open a service, follow its setup steps, paste the keys, test and save. Keys are kept only in the database, encrypted, never in a settings file.',
       where: 'For platform admins, at setup and when a key or server changes.',
     },
     '/health': {

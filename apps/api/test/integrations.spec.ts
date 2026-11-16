@@ -320,7 +320,7 @@ describe('Integrations: API keys, webhooks and Slack', () => {
       const gone = (await pool.one('integration_connections', { id: ids.slack }))!;
       expect(gone.credentials_enc).toBeTruthy();
       const app2Url = 'https://hooks.slack.com/services/T000/B000/gone';
-      const enc = (await import('../src/platform/auth/crypto')).encryptField(JSON.stringify({ webhookUrl: app2Url }), process.env.FIELD_ENCRYPTION_KEY!);
+      const enc = (await import('../src/platform/auth/crypto')).encryptField(JSON.stringify({ webhookUrl: app2Url }), (await import('../src/platform/config/config')).loadConfig().fieldKeys);
       await pool.update('integration_connections', { id: ids.slack }, { $set: { credentials_enc: enc } });
       await hire('Zed');
       await outbox.dispatchOnce();

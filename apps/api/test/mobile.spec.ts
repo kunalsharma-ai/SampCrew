@@ -6,7 +6,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { resetConfigForTests } from '../src/platform/config/config';
 import { PushService } from '../src/platform/notify/push.service';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { clearIntegration, addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant, setIntegration } from './helpers';
 
 const HOUR = 3_600_000;
 
@@ -49,10 +49,10 @@ describe('mobile', () => {
       });
     });
     await new Promise<void>((r) => pushServer.listen(0, '127.0.0.1', r));
-    process.env.EXPO_PUSH_ENABLED = 'true';
     process.env.EXPO_PUSH_URL = `http://127.0.0.1:${(pushServer.address() as AddressInfo).port}/--/api/v2/push/send`;
     resetConfigForTests();
     app = await createApp();
+    await setIntegration(app, 'push', { enabled: true });
     pool = adminPool();
     t = await createTenant(pool);
     const assembly = await department(pool, t, 'Assembly');
@@ -72,10 +72,10 @@ describe('mobile', () => {
   });
 
   afterAll(async () => {
+    await clearIntegration(app, 'push');
     await app.close();
     await pool.end();
     await new Promise((r) => pushServer.close(r));
-    delete process.env.EXPO_PUSH_ENABLED;
     delete process.env.EXPO_PUSH_URL;
     resetConfigForTests();
   });

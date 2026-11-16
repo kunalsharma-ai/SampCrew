@@ -250,6 +250,7 @@ export class PlatformService {
   async health() {
     const scanner = await this.integrations.scanningUrl();
     const services = await this.integrations.workspaceStatus();
+    const offsite = await this.integrations.resolve('backups');
     const [replication, pitr] = await Promise.all([this.replication(), this.pointInTimeBackups()]);
     const started = Date.now();
     return this.db.platform(async (tx) => {
@@ -289,11 +290,10 @@ export class PlatformService {
         notConfigured: [
           ...(this.config.REDIS_URL ? [] : ['Redis (rate limits shared by several API servers)']),
           ...services.filter((s) => !s.on).map((s) => `${s.name} (Console > Integrations)`),
-          ...(lastRun && lastRun.offsite === 'off' ? ['Off-site copy of backups (BACKUP_REMOTE)'] : []),
+          ...(!offsite.enabled || (lastRun && lastRun.offsite === 'off') ? ['Off-site backups (Console > Integrations)'] : []),
           ...(pitr ? [] : ['Point-in-time backups (the pbm service, or your cluster\'s own continuous backup)']),
           'Object storage (files are on the API server\'s disk)',
           'Error tracking (Sentry)',
-          'Payment provider',
         ],
       };
     });

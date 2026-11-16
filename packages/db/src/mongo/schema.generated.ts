@@ -2416,6 +2416,44 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((length(key) >= 8) AND (length(key) <= 128)))",
     ],
   },
+  field_keys: {
+    // The field encryption key ring (one document, key "ring"): the current key first, then older keys kept only
+    // until every value is re-encrypted. Kept here so the server needs nothing but the database connection; see
+    // packages/db/src/field-keys.ts. Not encrypted: it is the key that opens the *_enc columns, so a copy of the
+    // database (or of a backup, which BACKUP_PASSPHRASE locks) can open them.
+    access: "platform", grants: [],
+    columns: {
+      key: {"enum": ["ring"], "required": true, "type": "string"},
+      keys: {"required": true, "type": "json"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "key"}], "name": "field_keys_pkey", "primary": true},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [],
+  },
+  instance_secrets: {
+    // This installation's own signing keys (sign-in tokens for the Web Portal, mobile app and Console), created
+    // randomly by the API on its first start and kept here, encrypted with the field encryption key (field_keys), instead of in
+    // the server's environment. See apps/api/src/platform/config/instance-secrets.ts.
+    access: "platform", grants: [],
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // "generated" (by the API) or "environment" (moved from an older release's JWT_* variable).
+      origin: {"enum": ["generated", "environment"], "required": true, "type": "string"},
+      // setup_code: the one-time code for creating the first Super admin; deleted once that is done.
+      key: {"enum": ["jwt_access", "jwt_platform", "setup_code"], "required": true, "type": "string"},
+      value_enc: {"required": true, "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "key"}], "name": "instance_secrets_pkey", "primary": true},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [],
+  },
   integration_connections: {
     access: "tenant", grants: ["insert", "select", "update"],
     columns: {
@@ -3725,7 +3763,9 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       config_hash: {"required": true, "type": "string"},
       enabled: {"default": false, "required": true, "type": "bool"},
-      key: {"enum": ["ai", "email", "push", "scanning", "mobile_sso", "razorpay", "stripe"], "required": true, "type": "string"},
+      // Every value lives only here (never in the server's environment); secrets_enc is encrypted with the field key.
+      imported_from: {"type": "string[]"},
+      key: {"enum": ["ai", "email", "push", "scanning", "mobile_sso", "razorpay", "stripe", "backups"], "required": true, "type": "string"},
       last_test_at: {"type": "timestamp"},
       last_test_detail: {"type": "string"},
       last_test_hash: {"type": "string"},
@@ -3735,6 +3775,8 @@ export const TABLES: Record<string, TableSpec> = {
       settings: {"default": {"json": {}}, "required": true, "type": "json"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       updated_by_admin_id: {"type": "uuid"},
+      // Who saved it when no Console admin did: the integrations command or a move from old environment variables.
+      updated_by_label: {"type": "string"},
     },
     unique: [
       {"cols": [{"col": "key"}], "name": "platform_integrations_pkey", "primary": true},

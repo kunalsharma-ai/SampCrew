@@ -7,7 +7,8 @@
  * the mobile app's browser build on 8081 like e2e/mobile-flow.cjs.
  *
  *   pnpm db:reset
- *   INTEGRATIONS_ALLOW_PRIVATE_URLS=true MOBILE_SSO_REDIRECTS=crew://sso,http://localhost:8081/sso node apps/api/dist/main.js &
+ *   (cd apps/api && node dist/cli/integrations.js set mobile_sso '{"enabled":true,"redirects":["crew://sso","http://localhost:8081/sso"]}')
+ *   INTEGRATIONS_ALLOW_PRIVATE_URLS=true node apps/api/dist/main.js &
  *   pnpm --filter @crew/web start &
  *   pnpm --filter @crew/mobile export:web
  *   node e2e/hardening-flow.cjs

@@ -1,7 +1,7 @@
 'use client';
 import type { PlatformIntegrationDef, PlatformIntegrationKey, PlatformIntegrationView } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, Checkbox, Field, Input, Select, Switch, Textarea, cn } from '@crew/ui';
-import { BellRing, Bot, ChevronDown, Copy, CreditCard, ExternalLink, IndianRupee, Mail, ShieldCheck, Smartphone, type LucideIcon } from 'lucide-react';
+import { BellRing, Bot, ChevronDown, Copy, CreditCard, DatabaseBackup, ExternalLink, IndianRupee, Mail, ShieldCheck, Smartphone, type LucideIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { resetIntegrationAction, saveIntegrationAction, testIntegrationAction } from '../actions';
@@ -10,18 +10,18 @@ import { LocalTime } from '@/components/local-time';
 type Values = Record<string, unknown>;
 type Flash = { tone: 'success' | 'danger' | 'warning'; text: string } | null;
 
-const ICON: Record<PlatformIntegrationKey, LucideIcon> = { ai: Bot, email: Mail, push: BellRing, scanning: ShieldCheck, mobile_sso: Smartphone, razorpay: IndianRupee, stripe: CreditCard };
+const ICON: Record<PlatformIntegrationKey, LucideIcon> = { ai: Bot, email: Mail, push: BellRing, scanning: ShieldCheck, mobile_sso: Smartphone, razorpay: IndianRupee, stripe: CreditCard, backups: DatabaseBackup };
 const SOURCE: Record<PlatformIntegrationView['source'], { label: string; tone: 'accent' | 'neutral' | 'warning' }> = {
   console: { label: 'Set in Console', tone: 'accent' },
-  environment: { label: 'From server settings', tone: 'warning' },
+  default: { label: 'Built-in default', tone: 'neutral' },
   none: { label: 'Not set up', tone: 'neutral' },
 };
-const SECRET_LABEL: Record<string, string> = { apiKey: 'API key', password: 'Password', accessToken: 'Access token', keySecret: 'Key secret', secretKey: 'Secret key', webhookSecret: 'Webhook secret' };
+const SECRET_LABEL: Record<string, string> = { apiKey: 'API key', password: 'Password', accessToken: 'Access token', keySecret: 'Key secret', secretKey: 'Secret key', webhookSecret: 'Webhook secret', secretAccessKey: 'Secret access key', accountKey: 'Account key', privateKey: 'Private key', alertWebhook: 'Alert webhook' };
 const MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
 
 export function IntegrationsView({ defs, list, canManage }: { defs: readonly PlatformIntegrationDef[]; list: PlatformIntegrationView[]; canManage: boolean }) {
   const on = list.filter((v) => v.enabled).length;
-  const fromEnv = list.filter((v) => v.source === 'environment');
+  const imported = list.filter((v) => v.imported);
   return (
     <div className="grid gap-5">
       {!canManage && <Alert tone="info">You can see these settings but not change them. Only Super admins can connect, test or switch integrations.</Alert>}
@@ -29,9 +29,12 @@ export function IntegrationsView({ defs, list, canManage }: { defs: readonly Pla
         <span data-testid="integrations-on"><strong className="text-fg">{on}</strong> of {list.length} switched on</span>
         <span>Workspace integrations (Slack, webhooks, API keys, single sign-on) are set up by each customer in their own Settings &gt; Integrations.</span>
       </div>
-      {fromEnv.length > 0 && (
-        <Alert tone="info" title={`${fromEnv.length} still come${fromEnv.length === 1 ? 's' : ''} from the server's settings file`}>
-          {fromEnv.map((v) => defs.find((d) => d.key === v.key)!.name).join(', ')}. Open {fromEnv.length === 1 ? 'it' : 'each one'}, check the values and press Save to manage {fromEnv.length === 1 ? 'it' : 'them'} here from now on. Saved keys and passwords are kept, so you do not need to paste them again.
+      <p className="text-[13px] text-fg-muted">
+        Every key, password and address on this page is kept only in SampCrew&apos;s database, encrypted, and never in the server&apos;s settings file. Paste it here, test it and switch it on; there is nothing to restart.
+      </p>
+      {imported.length > 0 && (
+        <Alert tone="warning" title="Delete the old lines from the server's settings file" data-testid="integrations-imported">
+          SampCrew moved {imported.map((v) => defs.find((d) => d.key === v.key)!.name).join(', ')} from the server&apos;s settings file into the database, and no longer reads {imported.length === 1 ? 'it' : 'them'} there. Delete these lines from that file (.env or offsite.env): {[...new Set(imported.flatMap((v) => v.imported!.variables))].join(', ')}. This notice goes once each one is saved here.
         </Alert>
       )}
       {defs.map((d) => <IntegrationCard key={d.key} def={d} view={list.find((v) => v.key === d.key)!} canManage={canManage} />)}
@@ -49,8 +52,20 @@ function initialValues(v: PlatformIntegrationView): Values {
     case 'mobile_sso': return { enabled: v.enabled, redirects: ((s.redirects as string[]) ?? ['crew://sso']).join('\n') };
     case 'razorpay': return { enabled: v.enabled, keyId: s.keyId ?? '', keySecret: '', webhookSecret: '', baseUrl: s.baseUrl ?? '' };
     case 'stripe': return { enabled: v.enabled, publishableKey: s.publishableKey ?? '', secretKey: '', webhookSecret: '', baseUrl: s.baseUrl ?? '' };
+    case 'backups': return {
+      enabled: v.enabled, provider: s.provider ?? 's3', bucket: s.bucket ?? '', region: s.region ?? '', endpoint: s.endpoint ?? '', accessKeyId: s.accessKeyId ?? '', secretAccessKey: '',
+      account: s.account ?? '', accountKey: '', host: s.host ?? '', port: s.port ?? 22, user: s.user ?? '', privateKey: '', password: '', path: s.path ?? 'sampcrew', keepDays: s.keepDays ?? 30, alertWebhook: '',
+    };
   }
 }
+
+/** The fields each off-site storage provider uses; the others are left out of what is sent. */
+const BACKUP_FIELDS: Record<string, string[]> = {
+  s3: ['bucket', 'region', 'endpoint', 'accessKeyId', 'secretAccessKey'],
+  azure: ['account', 'bucket', 'accountKey'],
+  sftp: ['host', 'port', 'user', 'privateKey', 'password'],
+  folder: [],
+};
 
 /** What the API expects: numbers as numbers, the address list as an array, removed secrets as null. */
 function payload(key: PlatformIntegrationKey, v: Values, remove: Set<string>): Values {
@@ -58,6 +73,12 @@ function payload(key: PlatformIntegrationKey, v: Values, remove: Set<string>): V
   if (key === 'ai') out.timeoutSeconds = Number(v.timeoutSeconds);
   if (key === 'email') out.port = Number(v.port);
   if (key === 'mobile_sso') out.redirects = String(v.redirects).split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+  if (key === 'backups') {
+    const own = new Set(['enabled', 'provider', 'path', 'keepDays', 'alertWebhook', ...BACKUP_FIELDS[String(v.provider)]!]);
+    for (const k of Object.keys(out)) if (!own.has(k)) delete out[k];
+    out.keepDays = Number(v.keepDays);
+    if (v.provider === 'sftp') out.port = Number(v.port);
+  }
   for (const k of remove) out[k] = null;
   return out;
 }
@@ -102,7 +123,7 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
     } else if (!r.ok) setFlash({ tone: 'danger', text: r.message });
   });
   const reset = () => start(async () => {
-    if (!confirm(`Remove the Console setting for ${def.name}? ${view.environmentAvailable ? 'The server\'s own settings file will apply again.' : 'It will be switched off.'}`)) return;
+    if (!confirm(`Remove the saved setting for ${def.name}? ${def.key === 'mobile_sso' ? 'Only the built-in app address crew://sso will be accepted.' : 'It will be switched off and its keys deleted.'}`)) return;
     const r = await resetIntegrationAction(def.key);
     setFlash(r.ok ? { tone: 'success', text: r.message ?? 'Removed.' } : { tone: 'danger', text: r.message });
     if (r.ok) router.refresh();
@@ -165,9 +186,9 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
                 </li>
               ))}
             </ol>
-            {view.source === 'environment' && (
-              <p className="mt-4 rounded-md bg-bg-subtle p-3 text-xs text-fg-muted">
-                Currently read from the server&apos;s settings file ({def.envFallback.join(', ')}). Saving here takes over; those values are then ignored.
+            {view.imported && (
+              <p className="mt-4 rounded-md bg-warning-subtle p-3 text-xs text-fg-muted" data-testid={`${def.key}-imported`}>
+                Moved from the server&apos;s settings file on <LocalTime value={view.imported.at} />. SampCrew no longer reads it there: delete {view.imported.variables.join(', ')}. Press Save once you have checked the values.
               </p>
             )}
             {view.updatedAt && <p className="mt-4 text-xs text-fg-subtle">Last saved <LocalTime value={view.updatedAt} />{view.updatedBy ? ` by ${view.updatedBy}` : ''}.</p>}
@@ -268,6 +289,61 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
               </>
             )}
 
+            {def.key === 'backups' && (
+              <>
+                <Field label="Where the copies go" error={errors.provider}>
+                  {(p) => (
+                    <Select {...p} value={String(values.provider)} disabled={!canManage} onChange={(e) => set('provider', e.target.value)} data-testid="backups-provider">
+                      <option value="s3">Amazon S3 or S3-compatible (B2, R2, Wasabi, Spaces, MinIO, Google Cloud Storage)</option>
+                      <option value="azure">Azure Blob Storage</option>
+                      <option value="sftp">Another server over SFTP</option>
+                      <option value="folder">A folder on the backup server (e.g. a mounted network drive)</option>
+                    </Select>
+                  )}
+                </Field>
+                {values.provider === 's3' && (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {text('bucket', 'Bucket', { placeholder: 'sampcrew-backups', required: true })}
+                      {text('region', 'Region', { placeholder: 'ap-south-1', hint: 'Empty means us-east-1. Cloudflare R2 uses auto.' })}
+                    </div>
+                    {text('endpoint', 'Service address (S3-compatible only)', { placeholder: 'https://s3.us-west-004.backblazeb2.com', hint: 'Leave empty for Amazon S3.' })}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {text('accessKeyId', 'Access key id', { required: true })}
+                      {secret('secretAccessKey', 'Secret access key', 'Shown once when the key is created.')}
+                    </div>
+                  </>
+                )}
+                {values.provider === 'azure' && (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {text('account', 'Storage account', { placeholder: 'sampcrewbackups', required: true })}
+                      {text('bucket', 'Container', { placeholder: 'sampcrew', required: true })}
+                    </div>
+                    {secret('accountKey', 'Account key', 'Storage account > Access keys > key1.')}
+                  </>
+                )}
+                {values.provider === 'sftp' && (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                      {text('host', 'Server', { placeholder: 'backup.example.com', required: true })}
+                      {text('port', 'Port', { type: 'number' })}
+                    </div>
+                    {text('user', 'User name', { placeholder: 'sampcrew', required: true })}
+                    <Field label="Private key" error={errors.privateKey} hint={view.secrets.privateKey?.set ? 'A private key is saved; leave this empty to keep it.' : 'An OpenSSH private key whose public key is in the user\'s authorized_keys. Preferred over a password.'}>
+                      {(p) => <Textarea {...p} rows={4} value={String(values.privateKey ?? '')} disabled={!canManage || remove.has('privateKey')} placeholder={view.secrets.privateKey?.set ? `Saved ${view.secrets.privateKey.hint}` : '-----BEGIN OPENSSH PRIVATE KEY-----'} onChange={(e) => set('privateKey', e.target.value)} data-testid="backups-privateKey" />}
+                    </Field>
+                    {secret('password', 'Password (instead of a key)', 'Only if the server does not accept keys.')}
+                  </>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {text('path', values.provider === 'folder' ? 'Folder' : 'Folder inside it', { placeholder: values.provider === 'folder' ? '/mnt/nas/sampcrew' : values.provider === 'sftp' ? '/srv/backups/sampcrew' : 'sampcrew', required: values.provider === 'folder' || values.provider === 'sftp' })}
+                  {text('keepDays', 'Delete copies older than (days)', { type: 'number', hint: '0 keeps them, e.g. when the bucket has its own retention rule.' })}
+                </div>
+                {secret('alertWebhook', 'Alert webhook (optional)', 'A Slack, Teams or Google Chat incoming webhook, told when a backup or its copy fails.')}
+              </>
+            )}
+
             {test && (
               <Alert tone={test.ok ? 'success' : 'danger'} title={test.ok ? 'Connection works' : 'Connection failed'}>
                 <span data-testid={`${def.key}-test-result`}>{test.detail}</span>
@@ -277,7 +353,7 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
               <div className="flex flex-wrap items-center gap-2">
                 {def.key !== 'mobile_sso' && <Button type="button" variant="secondary" loading={pending} onClick={runTest}>Test connection</Button>}
                 <Button type="submit" loading={pending}>Save</Button>
-                {view.source === 'console' && <Button type="button" variant="ghost" disabled={pending} onClick={reset}>{view.environmentAvailable ? 'Use server settings instead' : 'Remove setting'}</Button>}
+                {view.source === 'console' && <Button type="button" variant="ghost" disabled={pending} onClick={reset}>Remove setting</Button>}
               </div>
             )}
           </form>

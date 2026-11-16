@@ -11,7 +11,7 @@
 #                           oplog slices are current
 #
 # Backups go to /pbm (the "pbm" volume); the backup service copies that folder off the host with the archives when
-# BACKUP_REMOTE is set. Restore with scripts/pitr-restore.sh (docs/ops/mongodb.md, "Point-in-time restore").
+# off-site backups are switched on (Console > Integrations). Restore with scripts/pitr-restore.sh (docs/ops/mongodb.md, "Point-in-time restore").
 # Needs PBM_MONGODB_URI: the crew_pbm user that the migration job creates from MONGODB_PBM_PASSWORD.
 set -euo pipefail
 # The service starts as root only to hand the backup volume to PBM's own user, then runs as that user.

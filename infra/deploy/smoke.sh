@@ -29,14 +29,11 @@ CREW_DEMO_PASSWORD=$demo_password
 CREW_BOOTSTRAP_ADMIN_EMAIL=admin@smoke.crew.test
 CREW_BOOTSTRAP_ADMIN_PASSWORD=Smoke-Admin-$(openssl rand -hex 8)
 PBM_OPLOG_SPAN_MIN=1
-BACKUP_REMOTE=offsite:/tmp/offsite
 OUT
   ./gen-secrets.sh
 } > .env.smoke
 cp .env.smoke .env  # env_file in compose.yml reads .env
-# An rclone "local" remote inside the backup container stands in for object storage.
-echo 'RCLONE_CONFIG_OFFSITE_TYPE=local' > offsite.env
-trap '[ "${SMOKE_KEEP:-}" = 1 ] || { dc logs --no-color > smoke-logs.txt 2>&1 || true; dc down -v > /dev/null 2>&1 || true; rm -f .env .env.smoke offsite.env; }' EXIT
+trap '[ "${SMOKE_KEEP:-}" = 1 ] || { dc logs --no-color > smoke-logs.txt 2>&1 || true; dc down -v > /dev/null 2>&1 || true; rm -f .env .env.smoke; }' EXIT
 
 if [ -z "${SMOKE_SKIP_BUILD:-}" ]; then dc build; fi
 dc up -d --wait --wait-timeout 300
@@ -48,7 +45,14 @@ echo "stack is up and healthy"
 WEB_URL=https://localhost:8443 CONSOLE_URL=https://localhost:8444 API_URL=https://localhost:8445 CREW_DEMO_PASSWORD="$demo_password" \
   node ../../e2e/deploy-smoke.cjs
 
-# Backup now, then restore it into a new, empty database and verify it.
+# The off-site storage is set up the way an operator does it, in the database (Console > Integrations > Off-site
+# backups; here with the integrations command, which saves the same record): a folder inside the backup container
+# stands in for object storage. Nothing about it is in .env or offsite.env.
+dc exec -T api node dist/cli/integrations.js set backups '{"enabled":true,"provider":"folder","path":"/tmp/offsite","keepDays":30}'
+if grep -q -e '^BACKUP_REMOTE' -e '^RCLONE_CONFIG' -e '^JWT_' -e '^FIELD_ENCRYPTION' -e '^SMTP_URL' .env.smoke; then echo "a key is still in .env" >&2; exit 1; fi
+
+# Backup now (the backup service reads the off-site settings from the database), then restore it into a new, empty
+# database and verify it.
 dc exec -T backup /app/infra/deploy/scripts/backup.sh
 file=$(dc exec -T backup sh -c 'ls -1t /backups/crew-db-* | head -1')
 echo "latest backup: $file"

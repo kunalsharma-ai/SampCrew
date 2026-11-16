@@ -45,9 +45,9 @@ export default async function HealthPage() {
           label="Field encryption key"
           value={<span className="font-mono text-[1rem]">{h.fieldEncryption.keyId}</span>}
           hint={h.fieldEncryption.olderValues
-            ? `${h.fieldEncryption.olderValues} value(s) still on an older key: run the re-encryption job`
+            ? `${h.fieldEncryption.olderValues} value(s) still on an older key: run rotate-field-key`
             : h.fieldEncryption.previousKeys
-              ? 'Every value is on the current key; the previous key can be removed'
+              ? 'Every value is on the current key; run rotate-field-key --retire to drop the old one'
               : 'Every value is on the current key'}
         />
         <Stat
