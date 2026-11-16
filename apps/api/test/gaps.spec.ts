@@ -1,7 +1,7 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:net';
 import type { INestApplication } from '@nestjs/common';
-import { mongo } from '@crew/db';
+import { loadFieldKeys, mongo } from '@crew/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decryptField, encryptField, fieldKeyId, keyIdOf } from '../src/platform/auth/crypto';
 import { ENCRYPTED_COLUMNS, fieldKeyStatus, rotateFieldKeys } from '../src/platform/auth/field-key-rotation';
@@ -9,7 +9,7 @@ import { currentTotp, generateMfaSecret } from '../src/platform/auth/mfa';
 import { loadConfig, resetConfigForTests } from '../src/platform/config/config';
 import { MongoService as DatabaseService } from '../src/platform/database/mongo.service';
 import { scanWithClamd } from '../src/platform/storage/malware-scan';
-import { adminPool, api, createApp, createTenant, login, PASSWORD, type TestDb, type TestTenant } from './helpers';
+import { clearIntegration, adminPool, api, createApp, createTenant, login, PASSWORD, type TestDb, type TestTenant, setIntegration } from './helpers';
 
 /**
  * A value as SampCrew wrote it before key ids existed (v1.<iv>.<tag>.<ciphertext>), to check old data stays readable.
@@ -55,6 +55,17 @@ function clamdStub(): Promise<{ server: Server; url: string }> {
   return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, url: `tcp://127.0.0.1:${(server.address() as { port: number }).port}` })));
 }
 
+async function withRing<T>(fn: (db: import('mongodb').Db) => Promise<T>): Promise<T> {
+  const url = process.env.MONGODB_URL!;
+  const client = mongo.createMongoClient({ url, appName: 'crew-test-ring' });
+  await client.connect();
+  try {
+    return await fn(client.db(mongo.databaseName(url)));
+  } finally {
+    await client.close();
+  }
+}
+
 describe('Phase 13: closing the remaining gaps', () => {
   const oldKey = randomBytes(32).toString('base64');
   let stub: { server: Server; url: string } | undefined;
@@ -68,11 +79,15 @@ describe('Phase 13: closing the remaining gaps', () => {
   beforeAll(async () => {
     stub = process.env.CLAMAV_TEST_URL ? undefined : await clamdStub();
     scanner = process.env.CLAMAV_TEST_URL ?? stub!.url;
-    // This API instance reads values written with an earlier key and scans uploads.
-    process.env.FIELD_ENCRYPTION_KEYS_PREVIOUS = oldKey;
-    process.env.CLAMAV_URL = scanner;
+    // This API instance reads values written with an earlier key (as during a rotation: the old key is still in the
+    // database's key ring after the current one) and scans uploads.
+    await withRing(async (c) => {
+      await loadFieldKeys(c, { hasEncryptedData: async () => false });
+      await c.collection('field_keys').updateOne({ key: 'ring' }, { $push: { keys: { id: keyIdOf(oldKey), key: oldKey, origin: 'generated', added_at: new Date().toISOString() } } } as never);
+    });
     resetConfigForTests();
     app = await createApp();
+    await setIntegration(app, 'scanning', { enabled: true, url: scanner });
     pool = adminPool();
     t = await createTenant(pool);
     owner = (await login(app, t.ownerEmail)).accessToken;
@@ -82,16 +97,16 @@ describe('Phase 13: closing the remaining gaps', () => {
   });
 
   afterAll(async () => {
+    if (app) await clearIntegration(app, 'scanning');
     await app?.close();
     await pool?.end();
     stub?.server.close();
-    delete process.env.FIELD_ENCRYPTION_KEYS_PREVIOUS;
-    delete process.env.CLAMAV_URL;
+    await withRing((c) => c.collection('field_keys').updateOne({ key: 'ring' }, { $pull: { keys: { key: oldKey } } } as never));
     resetConfigForTests();
   });
 
   describe('field encryption key rotation', () => {
-    const current = () => loadConfig().FIELD_ENCRYPTION_KEY;
+    const current = () => loadConfig().fieldKeys.split(',')[0]!;
 
     it('writes the key id into new values and reads values from every key in the ring, including pre-key-id ones', () => {
       const ring = `${current()},${oldKey}`;
@@ -100,7 +115,7 @@ describe('Phase 13: closing the remaining gaps', () => {
       expect(decryptField(v, ring)).toBe('JBSWY3DPEHPK3PXP');
       expect(decryptField(encryptField('x', oldKey), ring)).toBe('x');
       expect(decryptField(legacyV1('legacy', oldKey), ring)).toBe('legacy');
-      expect(() => decryptField(encryptField('x', oldKey), current())).toThrow(/FIELD_ENCRYPTION_KEYS_PREVIOUS/);
+      expect(() => decryptField(encryptField('x', oldKey), current())).toThrow(/not in the key ring/);
       expect(() => decryptField(legacyV1('x', oldKey), current())).toThrow();
     });
 
@@ -197,15 +212,13 @@ describe('Phase 13: closing the remaining gaps', () => {
           s.close(() => r(`tcp://127.0.0.1:${port}`));
         });
       });
-      const cfg = loadConfig() as { CLAMAV_URL?: string };
-      const before = cfg.CLAMAV_URL;
-      cfg.CLAMAV_URL = closed;
+      await setIntegration(app, 'scanning', { enabled: true, url: closed });
       try {
         const res = await upload(Buffer.from('Some notes'), 'While scanner down');
         expect(res.status).toBe(503);
         expect(res.body.error.code).toBe('scanner_unavailable');
       } finally {
-        cfg.CLAMAV_URL = before;
+        await setIntegration(app, 'scanning', { enabled: true, url: scanner });
       }
     });
   });

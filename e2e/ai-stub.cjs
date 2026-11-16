@@ -5,7 +5,8 @@
  * flow can check what SampCrew sent, for example that personal identifiers were removed.
  *
  *   AI_STUB_PORT=4010 node e2e/ai-stub.cjs
- *   # then start the API with AI_PROVIDER=anthropic ANTHROPIC_API_KEY=<any test value> ANTHROPIC_BASE_URL=http://localhost:4010
+ *   # then save the AI integration with baseUrl http://localhost:4010 and any test key (Console > Integrations, or
+ *   # apps/api/dist/cli/integrations.js set ai ...) and start the API
  */
 const http = require('node:http');
 const PORT = Number(process.env.AI_STUB_PORT ?? 4010);

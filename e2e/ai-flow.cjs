@@ -5,7 +5,9 @@
  *
  *   pnpm db:reset                          # fresh demo workspace (owner and hr.ops must not have MFA yet)
  *   node e2e/ai-stub.cjs &                 # test stub on 4010
- *   AI_PROVIDER=anthropic ANTHROPIC_API_KEY=test-key-not-real ANTHROPIC_BASE_URL=http://localhost:4010 node apps/api/dist/main.js &
+ *   # the AI key lives in the database, as Console > Integrations saves it; the integrations command does the same:
+ *   (cd apps/api && node dist/cli/integrations.js set ai '{"enabled":true,"apiKey":"test-key-not-real","baseUrl":"http://localhost:4010","model":"claude-opus-5-5","effort":"low","refusalFallback":true,"timeoutSeconds":30}')
+ *   node apps/api/dist/main.js &
  *   pnpm --filter @crew/web start &
  *   node e2e/ai-flow.cjs
  *

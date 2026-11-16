@@ -1,11 +1,11 @@
 #!/bin/sh
 # Database and uploaded-file backups, and their copy off the server.
 #
-#   backup.sh            one backup now (and the off-site copy, when BACKUP_REMOTE is set)
+#   backup.sh            one backup now (and the off-site copy, when it is switched on)
 #   backup.sh --loop     for the compose "backup" service: a backup every BACKUP_INTERVAL_HOURS (default 24), and
 #                        every BACKUP_SYNC_MINUTES (default 15) the point-in-time backups in /pbm copied off-site
 #   backup.sh --check    health check: fails when the last backup failed or is older than the interval allows
-#   backup.sh --fetch-pbm  copies the point-in-time backups back from BACKUP_REMOTE (disaster recovery)
+#   backup.sh --fetch-pbm  copies the point-in-time backups back from the off-site storage (disaster recovery)
 #
 # Writes to BACKUP_DIR (default /backups):
 #   crew-db-<UTC time>.archive.gz   mongodump archive (gzip) of the database named in MONGODB_URL (restore with restore.sh)
@@ -16,16 +16,18 @@
 # With BACKUP_PASSPHRASE set, both are encrypted (AES-256-GCM, key from scrypt) and end in .enc.
 # Backups older than BACKUP_KEEP_DAYS (default 14) are deleted here.
 #
-# Off-site copy (strongly recommended: a backup on the database's own disk does not survive losing that disk):
-#   BACKUP_REMOTE             an rclone remote and path, e.g. offsite:sampcrew-backups. The remote itself is set with
-#                             RCLONE_CONFIG_<NAME>_* variables in offsite.env (S3, Backblaze B2, Azure Blob, Google
-#                             Cloud Storage, SFTP and more: https://rclone.org/docs/#config-file). Archives go to
-#                             <remote>/archives, point-in-time backups (PBM_DIR, default /pbm) to <remote>/pbm,
-#                             encrypted with BACKUP_PASSPHRASE (names too) when it is set.
-#   BACKUP_REMOTE_KEEP_DAYS   delete off-site copies older than this (default 30; 0 keeps them, e.g. when the bucket
-#                             has its own lifecycle rule or retention lock)
+# Off-site copy (strongly recommended: a backup on the database's own disk does not survive losing that disk) is set
+# up in the Super Admin Console > Integrations > Off-site backups: S3 or S3-compatible storage, Azure Blob, SFTP or a
+# mounted folder, how long copies are kept, and an alert webhook. Those settings, keys included, are kept only in the
+# database (encrypted with the field encryption key the API keeps there) and read again before every copy (packages/db/scripts/backup-settings.ts),
+# so a change applies without a restart. Archives go to <storage>/archives, point-in-time backups (PBM_DIR, default
+# /pbm) to <storage>/pbm, encrypted with BACKUP_PASSPHRASE (names too) when it is set.
 # Each run is recorded in the database (backup_runs) for the Console's System health page. On a failure, a JSON
-# message {"text": "..."} is posted to BACKUP_ALERT_WEBHOOK when set (Slack, Teams and Google Chat accept it).
+# message {"text": "..."} is posted to the alert webhook when one is saved (Slack, Teams and Google Chat accept it).
+#
+# Only when the database cannot be read (disaster recovery: --fetch-pbm before the database is back) are the storage
+# settings taken from this service's environment instead: BACKUP_REMOTE plus RCLONE_CONFIG_OFFSITE_* in offsite.env
+# (docs/ops/mongodb.md, "Losing the server"). An older install's offsite.env is moved into the database on first use.
 set -eu
 DIR="${BACKUP_DIR:-/backups}"
 FILES="${FILES_DIR:-/data/files}"
@@ -101,12 +103,30 @@ offsite() { # copies the archives and the point-in-time backups to BACKUP_REMOTE
   return 0
 }
 
+settings() { # loads the off-site storage and alert webhook saved in the database into this shell
+  if out=$(cd /app/db && ./node_modules/.bin/tsx scripts/backup-settings.ts); then
+    eval "$out"
+    if [ -n "${OFFSITE_SFTP_PASSWORD:-}" ]; then
+      RCLONE_CONFIG_OFFSITE_PASS=$(printf '%s' "$OFFSITE_SFTP_PASSWORD" | rclone obscure -)
+      export RCLONE_CONFIG_OFFSITE_PASS
+      unset OFFSITE_SFTP_PASSWORD
+    fi
+  else
+    # The database could not be read, or an old offsite.env could not be moved into it: keep what the service has.
+    log "using the off-site settings this service was started with${BACKUP_REMOTE:+ ($BACKUP_REMOTE)}" >&2
+  fi
+  REMOTE="${BACKUP_REMOTE:-}"
+  REMOTE_KEEP="${BACKUP_REMOTE_KEEP_DAYS:-30}"
+  return 0
+}
+
 record() { # JSON for backup_runs; a failure to record is printed, never fatal
   (cd /app/db && ./node_modules/.bin/tsx scripts/backup-record.ts "$1") || true
 }
 
 once() {
   mkdir -p "$DIR"
+  settings
   started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
   db="$DIR/crew-db-$stamp.archive.gz"
@@ -161,7 +181,8 @@ if [ "${1:-}" = "--fetch-pbm" ]; then
   # Brings the point-in-time backups back from BACKUP_REMOTE into PBM_DIR (after losing the server or its disk). Run
   # it as PBM's user (uid 1001) with the pbm volume mounted read-write, then `pbm config --force-resync` in the pbm
   # service. See docs/ops/mongodb.md, "Losing the server".
-  [ -n "$REMOTE" ] || { echo "BACKUP_REMOTE is not set" >&2; exit 1; }
+  settings
+  [ -n "$REMOTE" ] || { echo "No off-site storage: switch it on in Console > Integrations > Off-site backups, or (database lost) set BACKUP_REMOTE and offsite.env" >&2; exit 1; }
   pbm_remote
   rclone copy "$PBM_TARGET" "$PBM" --log-level NOTICE
   echo "point-in-time backups copied into $PBM"
@@ -176,7 +197,7 @@ if [ "${1:-}" = "--loop" ]; then
     if [ "$now" -ge "$next_backup" ]; then
       # After a failure, try again in an hour rather than a whole interval later.
       if once; then next_backup=$(( now + HOURS * 3600 )); else next_backup=$(( now + 3600 )); fi
-    elif [ -n "$REMOTE" ] && [ -d "$PBM" ]; then
+    elif settings && [ -n "$REMOTE" ] && [ -d "$PBM" ]; then
       if ! offsite; then
         log "off-site copy of point-in-time backups failed: $(tail -c 300 "$DIR/.rclone.log")" >&2
         # One alert an hour at most while it keeps failing.

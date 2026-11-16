@@ -13,30 +13,34 @@ colleagues, and what to do when nobody can sign in.
 | `viewer` | Read-only: workspaces, billing, health |
 
 The full list is `PLATFORM_ROLE_CAPABILITIES` in `packages/contracts/src/roles.ts`. Console admins are a separate
-realm from workspace users: their own collection (`platform_admins`), signing key (`JWT_PLATFORM_SECRET`) and
+realm from workspace users: their own collection (`platform_admins`), signing key (created by the API and kept in the database, `instance_secrets`) and
 sessions. Every console action needs two-step verification (an authenticator app); nobody can turn it off.
 
 ## 1. The first Super admin
 
-Set these two values before the first start (in `infra/deploy/.env` for the Docker deployment, `.env` locally):
+Nothing goes in `.env` for it. A new installation has no console admin, so the API keeps a one-time **setup code** in
+the database and prints it in its log on every start:
 
 ```sh
-CREW_BOOTSTRAP_ADMIN_EMAIL=you@sampledge.com
-CREW_BOOTSTRAP_ADMIN_PASSWORD=<at least 14 characters, not a template value>
+docker compose logs api | grep "not set up"      # locally: the API's terminal output
+# SampCrew is not set up yet. Open the Super Admin Console and create the first Super admin with this one-time setup code: ABCDE-FGH23-JKLMN
 ```
 
-The `migrate` job (`pnpm db:seed` locally) creates that account only when there is no console admin at all, so the
-values do nothing on later deploys. In production the seed refuses a password shorter than 14 characters or one
-containing `changeme`, `example` or `password`.
-
-First sign-in:
-
-1. Open the Console (`https://console.<your domain>`, from a network allowed by `CONSOLE_ALLOWED_IPS`).
-2. Sign in with the bootstrap email and password.
+1. Open the Console (`https://console.<your domain>`, from a network allowed by `CONSOLE_ALLOWED_IPS`). Instead of
+   sign-in it shows **Set up SampCrew**.
+2. Enter the setup code, your name, email and a password (12+ characters, three of lowercase, uppercase, numbers,
+   symbols). Upper or lower case and the dashes in the code do not matter.
 3. Scan the QR code with an authenticator app (Microsoft Authenticator, Google Authenticator, 1Password...) and
    enter the 6-digit code. Keep the key shown under the QR code somewhere safe, such as your password manager.
-4. Change the bootstrap password: the key button next to your name opens **Change password**.
-5. Remove `CREW_BOOTSTRAP_ADMIN_PASSWORD` from `.env` (or your secret manager). It is never used again.
+
+The code is deleted the moment the first Super admin exists, and the setup page is gone for good (it is also refused
+by the API: `409 already_set_up`). The code is 15 random characters and the API allows five tries a minute. Creating
+the admin is written to the platform audit log as `platform.first_admin_created`.
+
+Unattended installs and tests can still create the first admin from settings: with `CREW_BOOTSTRAP_ADMIN_EMAIL` and
+`CREW_BOOTSTRAP_ADMIN_PASSWORD` set, the `migrate` job (`pnpm db:seed` locally) creates that account when there is no
+console admin at all (in production it refuses a password shorter than 14 characters or one containing `changeme`,
+`example` or `password`). Change that password at the first sign-in and delete both lines afterwards.
 
 ## 2. Adding colleagues
 

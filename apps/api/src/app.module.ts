@@ -1,4 +1,4 @@
-import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import { Logger, type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { SharedRateLimitStorage } from './platform/http/rate-limit-storage';
@@ -52,7 +52,8 @@ import {
   OrganizationController,
 } from './modules/organization/organization.controller';
 import { OrganizationService } from './modules/organization/organization.service';
-import { PlatformAuthController, PlatformController, PlatformIntegrationsController } from './modules/platform-admin/platform.controller';
+import { PlatformAuthController, PlatformController, PlatformIntegrationsController, PlatformSetupController } from './modules/platform-admin/platform.controller';
+import { FirstRunService } from './modules/platform-admin/first-run.service';
 import { PlatformAuthService } from './modules/platform-admin/platform-auth.service';
 import { PlatformService } from './modules/platform-admin/platform.service';
 import { AccessControlsService } from './modules/platform-admin/access-controls.service';
@@ -113,6 +114,7 @@ import { AuthGuard } from './platform/auth/auth.guard';
 import { TokenService } from './platform/auth/token.service';
 import { AuthzService } from './platform/authz/authz.service';
 import { APP_CONFIG, loadConfig } from './platform/config/config';
+import { loadInstanceSecrets } from './platform/config/instance-secrets';
 import { MongoService } from './platform/database/mongo.service';
 import { EntitlementsService } from './platform/entitlements/entitlements.service';
 import { OutboxService } from './platform/events/outbox.service';
@@ -190,6 +192,7 @@ export const CONTROLLERS = [
   RetentionController,
   InsightsController,
   PlatformAuthController,
+  PlatformSetupController,
   PlatformController,
   PlatformIntegrationsController,
   PlatformBillingController,
@@ -210,7 +213,8 @@ export const CONTROLLERS = [
   ],
   controllers: CONTROLLERS,
   providers: [
-    { provide: APP_CONFIG, useFactory: () => loadConfig() },
+    // The configuration from the environment (database, addresses, limits) plus the signing keys kept in the database.
+    { provide: APP_CONFIG, useFactory: () => loadInstanceSecrets(loadConfig(), (m) => new Logger('Config').warn(m)) },
     MongoService,
     TokenService,
     AuditService,
@@ -232,6 +236,7 @@ export const CONTROLLERS = [
     TenantControlService,
     NotificationService,
     PlatformIntegrationsService,
+    FirstRunService,
     MailerService,
     StorageService,
     ApprovalsService,

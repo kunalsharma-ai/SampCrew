@@ -3,7 +3,7 @@ import { SMTPServer } from 'smtp-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MailerService } from '../src/platform/notify/mailer.service';
 import { resetConfigForTests } from '../src/platform/config/config';
-import { adminPool, api, createApp, createTenant, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { clearIntegration, adminPool, api, createApp, createTenant, loginWithMfa, type TestDb, type TestTenant, setIntegration } from './helpers';
 
 /** Email goes out over real SMTP (a local test server here; Mailpit or a provider's SMTP relay in practice). */
 describe('email delivery', () => {
@@ -28,17 +28,17 @@ describe('email delivery', () => {
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const port = (server.server.address() as { port: number }).port;
-    process.env.SMTP_URL = `smtp://127.0.0.1:${port}`;
     resetConfigForTests();
     app = await createApp();
+    await setIntegration(app, 'email', { enabled: true, host: '127.0.0.1', port: port, security: 'none', from: 'SampCrew <no-reply@crew.local>' });
     pool = adminPool();
     t = await createTenant(pool);
   });
   afterAll(async () => {
+    await clearIntegration(app, 'email');
     await app.close();
     await pool.end();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    delete process.env.SMTP_URL;
     resetConfigForTests();
   });
 

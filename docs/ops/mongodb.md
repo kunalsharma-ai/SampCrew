@@ -108,8 +108,7 @@ Settings in `.env` (all have working defaults; `env.production.example` explains
 | `MONGO_CACHE_SIZE_GB` | `2` | WiredTiger cache. About a quarter to a third of the host's memory when the apps share it. |
 | `MONGO_REPLICA_HOST` | `mongo:27017` | The address this member announces. Set a DNS name before the first start if you will add members on other servers. |
 | `PBM_BASE_BACKUP_HOURS`, `PBM_OPLOG_SPAN_MIN`, `PBM_KEEP_DAYS` | 24, 10, 14 | Point-in-time backups. The newest changes that can be lost in a disaster are the last `PBM_OPLOG_SPAN_MIN` minutes (plus `BACKUP_SYNC_MINUTES` if the server's disk is lost). |
-| `BACKUP_REMOTE`, `BACKUP_REMOTE_KEEP_DAYS`, `BACKUP_SYNC_MINUTES` | empty, 30, 15 | Off-site copy (below). |
-| `BACKUP_ALERT_WEBHOOK` | empty | Gets `{"text": "..."}` when a backup or an off-site copy fails. |
+| `BACKUP_SYNC_MINUTES` | 15 | How often the point-in-time backups are copied off-site. Where to, with which keys, for how long, and the alert webhook: Console > Integrations > Off-site backups (below). |
 
 ### Watching it
 
@@ -123,18 +122,24 @@ Settings in `.env` (all have working defaults; `env.production.example` explains
 
 ### Off-site copy
 
-A backup on the database's own disk does not survive losing that disk. Set `BACKUP_REMOTE` (an
-[rclone](https://rclone.org) remote and path, e.g. `offsite:sampcrew-backups`) and put the storage account in
-`infra/deploy/offsite.env` (copy `offsite.env.example`: Amazon S3, S3-compatible storage such as Backblaze B2, Wasabi
-or Cloudflare R2, Azure Blob, or another server over SFTP). Only the backup service reads that file.
+A backup on the database's own disk does not survive losing that disk. Set up **Console > Integrations > Off-site
+backups**: Amazon S3 or S3-compatible storage (Backblaze B2, Cloudflare R2, Wasabi, DigitalOcean Spaces, MinIO, Google
+Cloud Storage with HMAC keys), Azure Blob, another server over SFTP, or a folder on the backup server (a mounted
+network drive). The settings and keys are kept only in the database, encrypted with the field encryption key (also in the database); nothing
+goes in `.env` or a file. Test connection writes, lists and deletes a small check file with the values on screen. The
+backup service ([rclone](https://rclone.org)) reads them again before every copy (`packages/db/scripts/backup-settings.ts`),
+so a change applies without a restart.
 
-- Archives go to `<remote>/archives` (already encrypted with `BACKUP_PASSPHRASE`); point-in-time backups go to
-  `<remote>/pbm` every `BACKUP_SYNC_MINUTES`, encrypted on the way (file contents and names, rclone `crypt` with a key
+- Archives go to `<storage>/archives` (already encrypted with `BACKUP_PASSPHRASE`); point-in-time backups go to
+  `<storage>/pbm` every `BACKUP_SYNC_MINUTES`, encrypted on the way (file contents and names, rclone `crypt` with a key
   from `BACKUP_PASSPHRASE`).
-- Copies older than `BACKUP_REMOTE_KEEP_DAYS` (30) are deleted; set 0 when the bucket has its own lifecycle rule.
-  Use a bucket with versioning and, where offered, object lock, and a key that can only write to that bucket.
-- Check it: `docker compose run --rm backup rclone lsd offsite:` lists the remote, then
-  `docker compose run --rm backup /app/infra/deploy/scripts/backup.sh` takes a backup and copies it.
+- Copies older than the days you set (30) are deleted; set 0 when the bucket has its own lifecycle rule.
+  Use a bucket with versioning and, where offered, object lock, and a key that can only reach that bucket.
+- An alert webhook (Slack, Teams or Google Chat) saved there gets `{"text": "..."}` when a backup or copy fails.
+- Check it: `docker compose run --rm backup /app/infra/deploy/scripts/backup.sh` takes a backup and copies it; System
+  health shows the result.
+- **Keep the storage keys in your password manager too.** After losing the whole server the database is gone, and
+  the keys with it, until the backups are fetched (below).
 
 ### Point-in-time restore
 
@@ -156,8 +161,11 @@ The CI smoke test runs exactly these steps on every change.
 
 ### Losing the server
 
-1. Build a new server with the same `.env` and `offsite.env` (keep both in your password manager), and
-   `docker compose up -d --wait`. MongoDB starts empty.
+1. Build a new server with the same `.env` (keep it in your password manager), and `docker compose up -d --wait`.
+   MongoDB starts empty, so the off-site settings are not there yet: copy `offsite.env.example` to `offsite.env`,
+   fill in the storage keys you kept, and add `BACKUP_REMOTE=offsite:<bucket>/<folder>` to `.env`. (These are the only
+   time off-site keys go in a file; delete both lines again once the database is back, where the restored Console
+   settings take over.)
 2. Bring the point-in-time backups back and let PBM read them:
    ```sh
    docker compose stop api backup

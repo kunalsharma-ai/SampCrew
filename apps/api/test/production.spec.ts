@@ -37,10 +37,6 @@ describe('Phase 12 production readiness', () => {
       WEB_PUBLIC_URL: 'https://crew.acme.test',
       API_PUBLIC_URL: 'https://api.crew.acme.test',
       CORS_ORIGINS: 'https://crew.acme.test,https://console.crew.acme.test',
-      MOBILE_SSO_REDIRECTS: 'crew://sso',
-      JWT_ACCESS_SECRET: 'q8Zr3VbN1xLk7Pw2Hs9Tf4Jd6Gm0Yc5Ru8Ea3Wn1Ok7Lp2',
-      JWT_PLATFORM_SECRET: 'Z2nX7cV4bM9qW1eR6tY3uI8oP5aS0dF2gH7jK4lL9zX1cV6',
-      FIELD_ENCRYPTION_KEY: Buffer.from('k'.repeat(16) + 'm'.repeat(16)).toString('base64'),
       REDIS_URL: 'redis://:5b2e8f1a9c4d7e3b6a0f@redis:6379/0',
     };
     const load = (overrides: Record<string, string>) => {
@@ -56,12 +52,11 @@ describe('Phase 12 production readiness', () => {
       expect(load({}).isProductionLike).toBe(true);
     });
 
-    it('refuses plain http, localhost origins, wildcard CORS and http mobile return addresses', () => {
+    it('refuses plain http, localhost origins and wildcard CORS', () => {
       expect(() => load({ WEB_PUBLIC_URL: 'http://crew.acme.test' })).toThrow(/WEB_PUBLIC_URL must be an https/);
       expect(() => load({ API_PUBLIC_URL: 'http://localhost:4000' })).toThrow(/API_PUBLIC_URL must be an https/);
       expect(() => load({ CORS_ORIGINS: '*' })).toThrow(/not \*/);
       expect(() => load({ CORS_ORIGINS: 'https://crew.acme.test,http://localhost:3000' })).toThrow(/CORS_ORIGINS entry must be an https/);
-      expect(() => load({ MOBILE_SSO_REDIRECTS: 'crew://sso,http://localhost:8081/sso' })).toThrow(/MOBILE_SSO_REDIRECTS/);
       // Staging gets the same checks.
       expect(() => load({ CREW_ENV: 'staging', WEB_PUBLIC_URL: 'http://staging.acme.test' })).toThrow(/staging/);
       // Local development is unaffected.
@@ -69,7 +64,7 @@ describe('Phase 12 production readiness', () => {
     });
 
     it('refuses secrets and passwords still holding template values', () => {
-      expect(() => load({ JWT_ACCESS_SECRET: 'change-me-change-me-change-me-change-me-12' })).toThrow(/JWT_ACCESS_SECRET still holds a template value/);
+      expect(() => load({ FIELD_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64') })).toThrow(/FIELD_ENCRYPTION_KEY still holds a template value/);
       expect(() => load({ MONGODB_URL: 'mongodb://crew_api:change-me-local-only@mongo:27017/crew?replicaSet=rs0' })).toThrow(/MONGODB_URL needs a database user with a real password/);
       expect(() => load({ MONGODB_URL: 'mongodb://mongo:27017/crew?replicaSet=rs0' })).toThrow(/MONGODB_URL needs a database user/);
       expect(load({ MONGODB_URL: 'mongodb+srv://crew-api:Qm7Xt2Vr9Lp4Nz8K@crew.abc12.mongodb.net/crew?retryWrites=true' }).isProductionLike).toBe(true);
@@ -199,7 +194,7 @@ describe('Phase 12 production readiness', () => {
       'GET /public/careers/:site', 'GET /public/careers/:site/jobs/:job', 'GET /public/proposals/:token', 'GET /public/proposals/:token/proposal.pdf',
       'POST /auth/initial-password', 'POST /auth/invitations/accept', 'POST /auth/login', 'POST /auth/mfa/verify', 'POST /auth/refresh', 'POST /auth/select-tenant', 'POST /auth/signup',
       'POST /auth/sso/callback', 'POST /auth/sso/exchange', 'POST /auth/sso/saml/callback', 'POST /auth/sso/start',
-      'POST /device-api/heartbeat', 'POST /device-api/punches', 'POST /iclock/cdata', 'POST /iclock/devicecmd', 'POST /platform/auth/login', 'POST /platform/auth/refresh',
+      'POST /device-api/heartbeat', 'POST /device-api/punches', 'POST /iclock/cdata', 'POST /iclock/devicecmd', 'POST /platform/auth/login', 'POST /platform/auth/refresh', 'GET /platform/setup', 'POST /platform/setup/first-admin',
       'POST /public/careers/:site/jobs/:job/apply', 'POST /public/proposals/:token/accept', 'POST /public/proposals/:token/decline',
       'GET /signature-agent/images/:kind', 'POST /signature-agent/report', 'POST /signature-agent/sync',
       // Razorpay and Stripe webhooks: refused unless signed with the webhook secret saved in Console > Integrations.

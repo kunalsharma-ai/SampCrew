@@ -8,13 +8,15 @@ import { AiGatewayService } from '../src/modules/ai/ai-gateway.service';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
 import { resetConfigForTests } from '../src/platform/config/config';
+import { offsiteEnvironment } from '@crew/db';
+import { signS3 } from '../src/platform/integrations/backup-storage-probe';
 import { PlatformIntegrationsService } from '../src/platform/integrations/platform-integrations.service';
 import { MailerService } from '../src/platform/notify/mailer.service';
 import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 /**
- * Installation-wide integrations set up in the Super Admin Console instead of the environment file: Claude AI, SMTP
- * email, Expo push, ClamAV scanning and mobile sign-in addresses. Each test talks to a real local server (a Claude API
+ * Installation-wide integrations, kept only in the database and set up in the Super Admin Console: Claude AI, SMTP
+ * email, Expo push, ClamAV scanning, mobile sign-in addresses and off-site backup storage (payments: billing-payments.spec.ts). Each test talks to a real local server (a Claude API
  * stand-in, an SMTP server, an Expo push stand-in, a clamd stand-in), so the connection tests and the services that
  * use the saved settings are exercised for real.
  */
@@ -25,6 +27,12 @@ describe('Platform integrations (Super Admin Console)', () => {
   let superToken: string;
   let supportToken: string;
   const stamp = Date.now();
+  const S3_KEY_ID = 'AKIASAMPCREWTEST0001';
+  const S3_SECRET = 'sampcrew/test/S3-secret-key-0000000000';
+  let s3: Server;
+  let s3Url = '';
+  const s3Requests: { method: string; path: string }[] = [];
+  const s3Objects = new Map<string, string>();
 
   // Claude API stand-in: answers "OK" for the key it knows, 401 for any other.
   const aiRequests: { key: string | undefined; body: Record<string, unknown> }[] = [];
@@ -120,6 +128,35 @@ describe('Platform integrations (Super Admin Console)', () => {
     await new Promise<void>((r) => clamd.listen(0, '127.0.0.1', r));
     clamdUrl = `tcp://127.0.0.1:${(clamd.address() as AddressInfo).port}`;
 
+    // S3 stand-in: checks each request's Signature Version 4 with the secret it knows, and keeps objects in memory.
+    s3 = createHttpServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        const body = Buffer.concat(chunks).toString();
+        const url = new URL(req.url!, s3Url);
+        s3Requests.push({ method: req.method!, path: url.pathname });
+        const xml = (status: number, code: string) => { res.writeHead(status, { 'content-type': 'application/xml' }); res.end(`<Error><Code>${code}</Code><Message>${code}</Message></Error>`); };
+        const auth = String(req.headers.authorization ?? '');
+        const date = String(req.headers['x-amz-date']);
+        const now = new Date(Date.UTC(+date.slice(0, 4), +date.slice(4, 6) - 1, +date.slice(6, 8), +date.slice(9, 11), +date.slice(11, 13), +date.slice(13, 15)));
+        const expected = signS3({ method: req.method!, origin: s3Url, pathname: decodeURIComponent(url.pathname), query: Object.fromEntries(url.searchParams), region: 'ap-south-1', accessKeyId: S3_KEY_ID, secretAccessKey: S3_SECRET, body, headers: req.headers['content-type'] ? { 'content-type': String(req.headers['content-type']) } : {}, now });
+        if (!auth.includes(`Credential=${S3_KEY_ID}/`)) return xml(403, 'InvalidAccessKeyId');
+        if (auth !== expected.headers.authorization) return xml(403, 'SignatureDoesNotMatch');
+        const [, bucket, ...key] = url.pathname.split('/');
+        if (bucket !== 'sampcrew-backups') return xml(404, 'NoSuchBucket');
+        const k = key.join('/');
+        if (req.method === 'PUT') { s3Objects.set(k, body); res.writeHead(200); return res.end(); }
+        if (req.method === 'DELETE') { s3Objects.delete(k); res.writeHead(204); return res.end(); }
+        const prefix = url.searchParams.get('prefix') ?? '';
+        const keys = [...s3Objects.keys()].filter((o) => o.startsWith(prefix));
+        res.writeHead(200, { 'content-type': 'application/xml' });
+        res.end(`<ListBucketResult><KeyCount>${keys.length}</KeyCount>${keys.map((o) => `<Contents><Key>${o}</Key></Contents>`).join('')}</ListBucketResult>`);
+      });
+    });
+    await new Promise<void>((r) => s3.listen(0, '127.0.0.1', r));
+    s3Url = `http://127.0.0.1:${(s3.address() as AddressInfo).port}`;
+
     process.env.EXPO_PUSH_URL = `http://127.0.0.1:${(push.address() as AddressInfo).port}/--/api/v2/push/send`;
     resetConfigForTests();
     app = await createApp();
@@ -139,18 +176,20 @@ describe('Platform integrations (Super Admin Console)', () => {
       new Promise((r) => push.close(r)),
       new Promise((r) => smtp.close(() => r(undefined))),
       new Promise((r) => clamd.close(r)),
+      new Promise((r) => s3.close(r)),
     ]);
     delete process.env.EXPO_PUSH_URL;
     resetConfigForTests();
   });
 
-  it('lists every integration with where its setting comes from, starting from the environment', async () => {
+  it('lists every integration with where its setting comes from: nothing saved yet', async () => {
     const list = ok(await as(superToken).get('/platform/integrations')) as unknown as Record<string, any>[];
-    expect(list.map((v) => v.key)).toEqual(['ai', 'email', 'push', 'scanning', 'mobile_sso', 'razorpay', 'stripe']);
-    // The test environment sets no AI key, no SMTP_URL and no scanner; MOBILE_SSO_REDIRECTS defaults to crew://sso.
+    expect(list.map((v) => v.key)).toEqual(['ai', 'email', 'push', 'scanning', 'mobile_sso', 'razorpay', 'stripe', 'backups']);
+    // Nothing comes from the environment any more; only the app's own sign-in address has a built-in default.
     expect(list.find((v) => v.key === 'ai')).toMatchObject({ source: 'none', enabled: false, secrets: { apiKey: { set: false, hint: null } } });
     expect(list.find((v) => v.key === 'email')).toMatchObject({ source: 'none', enabled: false });
-    expect(list.find((v) => v.key === 'mobile_sso')).toMatchObject({ source: 'environment', enabled: true, settings: { redirects: ['crew://sso'] } });
+    expect(list.find((v) => v.key === 'mobile_sso')).toMatchObject({ source: 'default', enabled: true, settings: { redirects: ['crew://sso'] }, imported: null });
+    expect(list.find((v) => v.key === 'backups')).toMatchObject({ source: 'none', enabled: false, secrets: { secretAccessKey: { set: false } } });
   });
 
   it('lets support staff look but only Super admins change or test, and keeps workspaces out', async () => {
@@ -235,7 +274,7 @@ describe('Platform integrations (Super Admin Console)', () => {
       expect((await as(superToken).put('/platform/integrations/ai').send(values({ apiKey: '', baseUrl: 'https://elsewhere.example.com' }))).status).toBe(422);
     });
 
-    it('switches AI off from the Console, and a reset goes back to the environment', async () => {
+    it('switches AI off from the Console, and removing the setting leaves AI off', async () => {
       const gateway = app.get(AiGatewayService);
       ok(await as(superToken).put('/platform/integrations/ai').send(values({ apiKey: '', enabled: false })));
       expect(await gateway.providerInfo()).toMatchObject({ configured: false });
@@ -338,6 +377,90 @@ describe('Platform integrations (Super Admin Console)', () => {
     });
   });
 
+  describe('Off-site backups', () => {
+    const values = (extra: Record<string, unknown> = {}) => ({ enabled: true, provider: 's3', bucket: 'sampcrew-backups', region: 'ap-south-1', endpoint: s3Url, accessKeyId: S3_KEY_ID, secretAccessKey: S3_SECRET, path: 'prod', keepDays: 30, ...extra });
+
+    it('writes, lists and deletes a check file with the keys on screen, and names a wrong secret', async () => {
+      const good = ok(await as(superToken).post('/platform/integrations/backups/test').send({ values: values() }));
+      expect(good, JSON.stringify(good)).toMatchObject({ ok: true });
+      expect(good.detail).toContain('Wrote, listed and deleted a check file in sampcrew-backups');
+      expect(s3Requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+        'PUT /sampcrew-backups/prod/.sampcrew-connection-check', 'GET /sampcrew-backups/', 'DELETE /sampcrew-backups/prod/.sampcrew-connection-check',
+      ]);
+      expect(s3Objects.size).toBe(0);
+      const bad = ok(await as(superToken).post('/platform/integrations/backups/test').send({ values: values({ secretAccessKey: 'not-the-right-secret-0000' }) }));
+      expect(bad.ok).toBe(false);
+      expect(bad.detail).toContain('the secret access key does not match the access key id');
+      const bucket = ok(await as(superToken).post('/platform/integrations/backups/test').send({ values: values({ bucket: 'no-such-bucket' }) }));
+      expect(bucket.detail).toContain('the bucket no-such-bucket does not exist');
+    });
+
+    it('saves the storage keys encrypted, keeps only the chosen provider\'s fields, and hides them from workspaces', async () => {
+      const incomplete = await as(superToken).put('/platform/integrations/backups').send(values({ secretAccessKey: undefined }));
+      expect(incomplete.status).toBe(422);
+      expect(incomplete.body.error.details).toEqual([{ path: 'secretAccessKey', message: 'Paste the secret access key' }]);
+      expect((await as(superToken).put('/platform/integrations/backups').send(values({ provider: 'sftp' }))).status).toBe(422);
+      const saved = ok(await as(superToken).put('/platform/integrations/backups').send(values({ account: 'ignoredaccount', alertWebhook: 'https://hooks.example.test/backup-alerts-123456' })));
+      expect(saved).toMatchObject({ source: 'console', enabled: true, settings: { provider: 's3', bucket: 'sampcrew-backups', accessKeyId: S3_KEY_ID }, secrets: { secretAccessKey: { set: true, hint: `••••${S3_SECRET.slice(-4)}` }, alertWebhook: { set: true } } });
+      expect(saved.settings.account).toBeUndefined();
+      expect(JSON.stringify(saved)).not.toContain(S3_SECRET);
+      const row = (await pool.find('platform_integrations', { key: 'backups' }))[0]!;
+      expect(row.secrets_enc).toMatch(/^v2\./);
+      // The same values the backup service turns into rclone settings.
+      const r = await app.get(PlatformIntegrationsService).resolve('backups');
+      expect(offsiteEnvironment(r.enabled, r.settings, r.secrets)).toMatchObject({
+        RCLONE_CONFIG_OFFSITE_TYPE: 's3', RCLONE_CONFIG_OFFSITE_PROVIDER: 'Other', RCLONE_CONFIG_OFFSITE_ENDPOINT: s3Url, RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: S3_SECRET,
+        BACKUP_REMOTE: 'offsite:sampcrew-backups/prod', BACKUP_REMOTE_KEEP_DAYS: '30', BACKUP_ALERT_WEBHOOK: 'https://hooks.example.test/backup-alerts-123456',
+      });
+      // A different storage service needs the secret typed again; the alert address is kept.
+      const moved = await as(superToken).put('/platform/integrations/backups').send(values({ secretAccessKey: '', endpoint: 'http://127.0.0.1:1' }));
+      expect(moved.status).toBe(422);
+      expect(moved.body.error.details[0].path).toBe('secretAccessKey');
+      // Switching provider drops the S3 key altogether.
+      const folder = ok(await as(superToken).put('/platform/integrations/backups').send({ enabled: true, provider: 'folder', path: '/mnt/nas/sampcrew', keepDays: 0 }));
+      expect(folder.secrets.secretAccessKey).toEqual({ set: false, hint: null });
+      expect(folder.secrets.alertWebhook.set).toBe(true);
+      const owner = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
+      const cat = ok(await as(owner).get('/integrations/catalogue'));
+      expect(cat.platformServices.map((s: { key: string }) => s.key)).not.toContain('backups');
+      ok(await as(superToken).delete('/platform/integrations/backups'));
+      const health = ok(await as(superToken).get('/platform/health'));
+      expect(health.notConfigured).toContain('Off-site backups (Console > Integrations)');
+    });
+  });
+
+  describe('moving an older release\'s environment variables into the database', () => {
+    it('moves each integration once, says which lines to delete, and never reads them again', async () => {
+      const svc = app.get(PlatformIntegrationsService);
+      ok(await as(superToken).put('/platform/integrations/scanning').send({ enabled: true, url: clamdUrl }));
+      const env = {
+        AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-legacy-env-key-5678', AI_MODEL: 'claude-sonnet-5-5', AI_TIMEOUT_MS: '20000',
+        SMTP_URL: 'smtp://legacy-user:legacy-smtp-pass@127.0.0.1:2525', MAIL_FROM: 'Legacy <no-reply@legacy.test>',
+        CLAMAV_URL: 'tcp://other-scanner:3310', MOBILE_SSO_REDIRECTS: 'crew://sso',
+      };
+      expect(await svc.importLegacyEnvironment(env)).toEqual(['ai', 'email']);
+      const list = ok(await as(superToken).get('/platform/integrations')) as unknown as Record<string, any>[];
+      const ai = list.find((v) => v.key === 'ai');
+      expect(ai).toMatchObject({ source: 'console', enabled: true, settings: { model: 'claude-sonnet-5-5', timeoutSeconds: 20 }, secrets: { apiKey: { set: true, hint: '••••5678' } }, updatedBy: 'moved from the server\'s environment variables' });
+      expect(ai.imported.variables).toEqual(['AI_PROVIDER', 'ANTHROPIC_API_KEY', 'AI_MODEL', 'AI_TIMEOUT_MS']);
+      expect(list.find((v) => v.key === 'email')).toMatchObject({ enabled: true, settings: { host: '127.0.0.1', port: 2525, security: 'none', username: 'legacy-user', from: 'Legacy <no-reply@legacy.test>' }, secrets: { password: { set: true } } });
+      // A setting already saved in the Console is never replaced, and a default needs no setting.
+      expect(await svc.scanningUrl()).toBe(clamdUrl);
+      expect(list.find((v) => v.key === 'push')).toMatchObject({ source: 'none' });
+      expect(list.find((v) => v.key === 'mobile_sso')).toMatchObject({ source: 'default' });
+      // Started again with the same variables: nothing moves twice.
+      expect(await svc.importLegacyEnvironment(env)).toEqual([]);
+      // Saving in the Console clears the notice.
+      const saved = ok(await as(superToken).put('/platform/integrations/ai').send({ enabled: false, model: 'claude-sonnet-5-5', effort: 'low', refusalFallback: true, timeoutSeconds: 20 }));
+      expect(saved.imported).toBeNull();
+      expect(saved.secrets.apiKey.set).toBe(true);
+      const imported = await pool.find('audit_events', { tenant_id: null, action: 'platform.integration_imported' });
+      expect(imported.map((a) => a.resource_id).sort()).toEqual(['ai', 'email']);
+      expect(imported.every((a) => a.actor_type === 'system' && a.actor_label === 'moved from the server\'s environment variables')).toBe(true);
+      for (const k of ['ai', 'email', 'scanning']) ok(await as(superToken).delete(`/platform/integrations/${k}`));
+    });
+  });
+
   it('shows workspaces which services are on, without any settings', async () => {
     ok(await as(superToken).put('/platform/integrations/scanning').send({ enabled: true, url: clamdUrl }));
     const owner = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
@@ -352,8 +475,11 @@ describe('Platform integrations (Super Admin Console)', () => {
     const audit = (await pool.find('audit_events', { tenant_id: null, resource_type: 'platform_integration' }, { sort: { chain_seq: 1 } }))
       .map((a) => ({ action: a.action, resource_id: a.resource_id, changes: JSON.stringify(a.changes), metadata: JSON.stringify(a.metadata) }));
     const actions = new Set(audit.map((a) => a.action));
-    expect(actions).toEqual(new Set(['platform.integration_saved', 'platform.integration_tested', 'platform.integration_reset']));
+    expect(actions).toEqual(new Set(['platform.integration_saved', 'platform.integration_tested', 'platform.integration_reset', 'platform.integration_imported']));
     const all = JSON.stringify(audit);
-    for (const secret of ['sk-ant-test-good-key-1234', 'smtp-secret-pass-9876', 'expo-good-access-token-0001']) expect(all).not.toContain(secret);
+    for (const secret of ['sk-ant-test-good-key-1234', 'smtp-secret-pass-9876', 'expo-good-access-token-0001', S3_SECRET, 'sk-ant-legacy-env-key-5678', 'legacy-smtp-pass']) expect(all).not.toContain(secret);
+    // Nothing secret is stored in the clear either.
+    const rows = JSON.stringify(await pool.find('platform_integrations', {}));
+    for (const secret of [S3_SECRET, 'sk-ant-legacy-env-key-5678', 'legacy-smtp-pass']) expect(rows).not.toContain(secret);
   });
 });

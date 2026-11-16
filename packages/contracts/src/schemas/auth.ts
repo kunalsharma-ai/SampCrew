@@ -93,3 +93,15 @@ export interface MeResponse {
   /** This person's own employee record in the workspace, if their login is linked to one, for their photo. */
   employee: { id: string; photoUpdatedAt: string | null } | null;
 }
+
+/**
+ * First-run setup of a new installation: the first SAMPLEDGE Super admin is created in the Console with the one-time
+ * setup code the API prints in its log, instead of a password kept in the server's settings file.
+ */
+export const firstAdminRequest = z.object({
+  setupCode: z.string().trim().min(8).max(40),
+  fullName: z.string().trim().min(2).max(120),
+  email,
+  password,
+}).strict();
+export type FirstAdminRequest = z.infer<typeof firstAdminRequest>;

@@ -2,7 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
-import { adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
+import { adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant, clearIntegration, setIntegration } from './helpers';
 
 describe('SAMPLEDGE Super Admin Console API', () => {
   let app: INestApplication;
@@ -109,16 +109,20 @@ describe('SAMPLEDGE Super Admin Console API', () => {
     const started = new Date(Date.now() - 60_000);
     await pool.insert('backup_runs', { started_at: started, status: 'ok', encrypted: true, db_file: 'crew-db-1.archive.gz.enc', db_bytes: 2_500_000, files_file: 'crew-files-1.tar.gz.enc', files_bytes: 4096, offsite: 'copied' });
     h = await health();
+    expect(h.notConfigured).toContain('Off-site backups (Console > Integrations)');
+    await setIntegration(app, 'backups', { enabled: true, provider: 'folder', path: '/mnt/nas/sampcrew', keepDays: 30 });
+    h = await health();
     expect(h.backups.archives.last).toMatchObject({ status: 'ok', encrypted: true, offsite: 'copied', database: { file: 'crew-db-1.archive.gz.enc', size: '2441 kB' } });
     expect(h.backups.archives.lastSuccessHoursAgo).toBe(0);
-    expect(h.notConfigured).not.toContain('Off-site copy of backups (BACKUP_REMOTE)');
+    expect(h.notConfigured).not.toContain('Off-site backups (Console > Integrations)');
 
     // A failed run after a good one: the failure shows, and when the last good one was.
     await pool.insert('backup_runs', { started_at: new Date(), status: 'failed', encrypted: true, offsite: 'off', error: 'database dump failed: connection refused' });
     h = await health();
     expect(h.backups.archives.last).toMatchObject({ status: 'failed', error: 'database dump failed: connection refused', database: null });
     expect(h.backups.archives.lastSuccessAt).not.toBeNull();
-    expect(h.notConfigured).toContain('Off-site copy of backups (BACKUP_REMOTE)');
+    expect(h.notConfigured).toContain('Off-site backups (Console > Integrations)');
+    await clearIntegration(app, 'backups');
 
     // Point-in-time backups: off until PBM has written its status, then read from PBM's own collections.
     expect(h.backups.pointInTime).toBeNull();

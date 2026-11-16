@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
+  firstAdminRequest,
   email,
   featureSwitchUpdate,
   integrationTestExtras,
@@ -39,6 +40,7 @@ import { z } from 'zod';
 import { AllowPendingPassword, AllowWithoutMfa, PlatformRealm, Public } from '../../platform/authz/decorators';
 import { IdNumberPipe, UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { FirstRunService } from './first-run.service';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformService } from './platform.service';
 import { AccessControlsService } from './access-controls.service';
@@ -76,6 +78,28 @@ const updateAdmin = z
   .refine((v) => Object.keys(v).length > 0, 'Nothing to change');
 const resetAdminPassword = z.object({ password }).strict();
 const changeOwnPassword = z.object({ currentPassword: z.string().min(1).max(200), newPassword: password }).strict();
+
+/** First-run setup of a new installation: creating the first Super admin with the setup code from the API's log. */
+@Controller('platform/setup')
+export class PlatformSetupController {
+  constructor(private readonly firstRun: FirstRunService) {}
+
+  @Public()
+  @Get()
+  @Doc({ summary: 'Whether this installation still needs its first Super admin (the Console then shows the setup page)' })
+  status() {
+    return this.firstRun.status();
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('first-admin')
+  @HttpCode(201)
+  @Doc({ summary: 'Create the first Super admin with the one-time setup code printed in the API log (only while no admin exists)', body: firstAdminRequest })
+  createFirstAdmin(@Body(new ZodPipe(firstAdminRequest)) body: z.infer<typeof firstAdminRequest>) {
+    return this.firstRun.createFirstAdmin(body);
+  }
+}
 
 @Controller('platform/auth')
 export class PlatformAuthController {

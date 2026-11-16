@@ -3,7 +3,7 @@ import { Alert, Button, Field, Input } from '@crew/ui';
 import { Building2, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { initialPasswordAction, loginAction, selectTenantAction, ssoStartAction, verifyMfaAction } from '../actions';
 
 type Step = { kind: 'password' } | { kind: 'sso'; email: string; notice?: string } | { kind: 'mfa'; mfaToken: string } | { kind: 'newPassword'; changeToken: string } | { kind: 'tenant'; selectToken: string; tenants: { id: string; name: string; slug: string }[] };
@@ -14,13 +14,15 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
   const [error, setError] = useState<string | null>(ssoFailure ?? null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
-  const [lastEmail, setLastEmail] = useState('');
+  // A ref, not state: the answer is handled by the closure from the render that sent it, which a state update made
+  // in the same submit would not reach, so the single sign-on step would open with an empty email.
+  const lastEmail = useRef('');
 
   const handle = (r: Awaited<ReturnType<typeof loginAction>>) => {
     if (!r.ok) {
       // The workspace signs its members in through its identity provider: offer that instead of the password.
       if (r.code === 'sso_required') {
-        setStep({ kind: 'sso', email: lastEmail, notice: r.message });
+        setStep({ kind: 'sso', email: lastEmail.current, notice: r.message });
         return;
       }
       setError(r.message);
@@ -159,7 +161,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
       onSubmit={(e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);
-        setLastEmail(String(f.get('email')));
+        lastEmail.current = String(f.get('email'));
         submit(() => loginAction({ email: String(f.get('email')), password: String(f.get('password')), tenantSlug: String(f.get('tenantSlug') ?? '') }));
       }}
       className="flex flex-col gap-5"

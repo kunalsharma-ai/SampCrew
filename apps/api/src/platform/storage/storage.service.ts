@@ -27,9 +27,10 @@ export class StorageService {
     private readonly integrations: PlatformIntegrationsService,
   ) {
     this.root = resolve(config.STORAGE_DIR);
-    this.secret = config.FILE_URL_SECRET
-      ? Buffer.from(config.FILE_URL_SECRET)
-      : createHmac('sha256', Buffer.from(config.FIELD_ENCRYPTION_KEY, 'base64')).update('crew-file-links').digest();
+    // Download links are signed with a key derived from this installation's signing key (kept in the database,
+    // instance-secrets.ts), so nothing needs configuring and a field key rotation does not break links.
+    if (!config.JWT_ACCESS_SECRET) throw new Error('The signing keys are not loaded yet (loadInstanceSecrets)');
+    this.secret = createHmac('sha256', config.JWT_ACCESS_SECRET).update('crew-file-links').digest();
   }
 
   readonly driver = 'local' as const;

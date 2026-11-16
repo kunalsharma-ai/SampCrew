@@ -17,7 +17,7 @@ them, **real keys** for the Claude API and Expo push. Everything below is alread
 | `console` | `console` | 3001 (internal) | SAMPLEDGE Super Admin Console |
 | `api` | `api` | 4000 (internal) | NestJS API, background loops (outbox, email, webhooks, workflows, daily HR jobs) |
 | `migrate` | `tools` | none | One-shot job before every API start: migrations, catalogue sync, first Super Admin |
-| `backup` | `tools` | none | Encrypted database and uploaded-file archives every `BACKUP_INTERVAL_HOURS`, copied off-site with the point-in-time backups (`BACKUP_REMOTE`) |
+| `backup` | `tools` | none | Encrypted database and uploaded-file archives every `BACKUP_INTERVAL_HOURS`, copied off-site with the point-in-time backups (Console > Integrations > Off-site backups) |
 | `mongo` | `mongo:8.0` | internal | Self-hosted database: a replica set with authentication (docs/ops/mongodb.md) |
 | `pbm` | `percona/percona-backup-mongodb:2.17.0` | none | Point-in-time backups of the database: restore to any second of the last 14 days |
 | `redis` | `redis:7-alpine` | internal | Rate-limit counters shared by API servers (nothing persistent) |
@@ -44,26 +44,31 @@ Health checks:
    ```sh
    cd infra/deploy
    cp env.production.example .env
-   ./gen-secrets.sh >> .env      # fresh database, Redis, token, encryption and backup secrets
+   ./gen-secrets.sh >> .env      # fresh database and Redis passwords and the backup passphrase
    chmod 600 .env
-   cp offsite.env.example offsite.env && chmod 600 offsite.env   # off-site backup storage (fill in one block)
    ```
-   Then edit `.env`: the three addresses and URLs, `ACME_EMAIL`, `CREW_BOOTSTRAP_ADMIN_EMAIL` and a strong
-   `CREW_BOOTSTRAP_ADMIN_PASSWORD` (14+ characters), and `CONSOLE_ALLOWED_IPS` (your office
-   or VPN ranges), `BACKUP_REMOTE` with its storage account in `offsite.env`, and `BACKUP_ALERT_WEBHOOK` if you have
-   a chat channel for alerts. Email, Claude AI, mobile push, virus scanning and mobile sign-in addresses do not need `.env`:
-   set them up after the first sign-in in Console > Integrations (section 7). **Keep a copy of `FIELD_ENCRYPTION_KEY` and `BACKUP_PASSPHRASE` in your password manager**: without
-   them, encrypted fields and backups cannot be read.
+   Then edit `.env`: the three addresses and URLs, `ACME_EMAIL` and `CONSOLE_ALLOWED_IPS` (your office or VPN
+   ranges). That is all: **no API key goes in `.env`**. Email, Claude AI, mobile push, virus scanning, mobile sign-in
+   addresses, Razorpay, Stripe and the off-site backup storage are entered after the first sign-in in Console >
+   Integrations (section 7) and kept in the database, encrypted; the API creates its encryption key and sign-in
+   signing keys in the database on the first start. **Keep a copy of `BACKUP_PASSPHRASE` in your password manager**:
+   without it, backups cannot be read. Because the encryption key is in the database, a copy of the database or an
+   unlocked backup opens every saved key: keep MongoDB off the internet (it is, in `compose.yml`), and keep the
+   backup passphrase away from the backups.
 4. **Start**:
    ```sh
    docker compose up -d --build --wait
    docker compose ps                 # every service healthy, migrate "exited (0)"
-   docker compose logs migrate       # "Applied N migration(s)", "Bootstrapped platform super admin ..."
+   docker compose logs migrate       # "Applied N migration(s)"
+   docker compose logs api | grep "not set up"   # the one-time setup code for the first Super admin
    ```
-   The API refuses to start in `production` with plain-http addresses, localhost origins, wildcard CORS, http mobile
-   return addresses or template secrets, and lists every problem at once. The seed refuses demo data in production.
-5. **First sign-in**: open the Console from an allowed network, sign in as the bootstrap Super Admin and enrol
-   two-step verification (required), change the bootstrap password, and add a second Super admin. Console admins,
+   The API refuses to start in `production` with plain-http addresses, localhost origins, wildcard CORS or template
+   secrets, and lists every problem at once. The seed refuses demo data in production.
+5. **First sign-in**: open the Console from an allowed network. A new installation shows **Set up SampCrew**: enter
+   the setup code from the API log, your name, email and a password, then enrol two-step verification (required).
+   The page is gone once the first Super admin exists. Then add a second Super admin and set up the integrations
+   (Console > Integrations: email first, then off-site backups, then the rest). (Unattended installs can set
+   `CREW_BOOTSTRAP_ADMIN_EMAIL` / `CREW_BOOTSTRAP_ADMIN_PASSWORD` instead; the migrate job then creates that admin.) Console admins,
    their roles and the recovery command for a lost phone or lockout: [console-admins.md](console-admins.md). Create the first customer workspace from the Console; its owner gets an
    invitation email.
 6. **Check from outside** (any machine):
@@ -91,9 +96,15 @@ docker compose run --rm backup /app/infra/deploy/scripts/backup.sh   # backup ri
 docker compose pull && docker compose up -d --wait                    # migrate runs first, then the API
 ```
 
+**Upgrading an install that kept API keys in `.env`** (before November 2026): nothing to do before the upgrade. The
+first start moves `SMTP_URL`, `ANTHROPIC_API_KEY` and the other integration variables, the `JWT_*_SECRET` signing keys
+(so nobody is signed out) and the off-site backup settings (`BACKUP_REMOTE`, `BACKUP_ALERT_WEBHOOK`, `offsite.env`)
+into the database, encrypted. Console > Integrations then lists the lines to delete from `.env`; `offsite.env` can be
+deleted too (keep its keys in your password manager for disaster recovery). `FILE_URL_SECRET` is no longer used.
+
 **Upgrading an install from before point-in-time backups** (November 2026): its `.env` has no
 `MONGODB_PBM_PASSWORD`. Add one before `docker compose up` (`echo "MONGODB_PBM_PASSWORD=$(openssl rand -hex 24)" >> .env`),
-plus `MONGO_CACHE_SIZE_GB=2` and the `BACKUP_REMOTE` settings from `env.production.example`. Until then the `pbm`
+plus `MONGO_CACHE_SIZE_GB=2`, and set up Console > Integrations > Off-site backups. Until then the `pbm`
 service says what is missing in its log and stays unhealthy; everything else runs as before.
 
 - **Rollback**: set `CREW_VERSION` back and run `docker compose up -d --wait`. Check the release's migrations first:
@@ -116,12 +127,13 @@ Two kinds run side by side, both on by default:
   changed or truncated file refuses to decrypt). They restore into a new database or another MongoDB, and are the only
   copy of the uploaded files.
 
-- **Off-site**: with `BACKUP_REMOTE` set (and the storage account in `offsite.env`, see `offsite.env.example`), the
-  backup service copies both off the server: the archives after each run, the point-in-time backups every
-  `BACKUP_SYNC_MINUTES` (15), encrypted on the way. Without it, everything is on the database's own disk, and System
-  health lists "Off-site copy of backups" as not configured.
+- **Off-site**: set up in Console > Integrations > Off-site backups (Amazon S3 or S3-compatible storage, Azure Blob,
+  SFTP, or a mounted folder; Test connection writes, lists and deletes a check file). The backup service reads it
+  from the database before every copy, so no restart is needed, and copies both off the server: the archives after
+  each run, the point-in-time backups every `BACKUP_SYNC_MINUTES` (15), encrypted on the way. Without it, everything
+  is on the database's own disk, and System health lists "Off-site backups" as not configured.
 - **Alerts**: `backup` and `pbm` turn unhealthy in `docker compose ps` when a backup or off-site copy fails or is
-  overdue, Console > System health shows the error, and `BACKUP_ALERT_WEBHOOK` gets a message.
+  overdue, Console > System health shows the error, and the alert webhook saved with the off-site settings gets a message.
 - **Backup now**: `docker compose run --rm backup /app/infra/deploy/scripts/backup.sh`
 - **Restore drill**: `docker compose run --rm migrate sh -c 'cd /app/db && ./node_modules/.bin/tsx scripts/dr-drill.ts'`
   restores the live database into a scratch copy and checks collections, documents, validators, indexes and every
@@ -161,7 +173,8 @@ platform's) verifies. Then point the API at it: set `MONGODB_URL` and `MONGODB_A
 `crew_restored` database (`authSource=crew_restored` for `crew_api`) and `docker compose up -d --wait`. Restore the files with
 `tar -xzf crew-files-<time>.tar.gz -C <files volume>` (decrypt first with
 `node /app/infra/deploy/scripts/crypt.mjs decrypt <in> <out>`). An archive copied off-site comes back with
-`docker compose run --rm backup rclone copy "$BACKUP_REMOTE/archives/<file>" /backups/`.
+`docker compose run --rm backup sh -c 'eval "$(cd /app/db && ./node_modules/.bin/tsx scripts/backup-settings.ts)" && rclone copy "$BACKUP_REMOTE/archives/<file>" /backups/'`
+(the off-site settings come from the database; with the database gone, see docs/ops/mongodb.md, "Losing the server").
 
 Recovery point: the last `PBM_OPLOG_SPAN_MIN` minutes (10) with point-in-time backups, the last daily archive
 without them; if the server's disk is lost, what reached off-site storage (every `BACKUP_SYNC_MINUTES`). Recovery
@@ -171,31 +184,37 @@ time: about a minute for the demo data with a point-in-time restore, growing wit
 
 | Secret | Rotate how |
 |---|---|
-| `JWT_ACCESS_SECRET`, `JWT_PLATFORM_SECRET` | Change and restart the API. Tokens signed with the old secret stop working within the access-token lifetime (15 minutes); to sign everyone out at once, also run `db.sessions.updateMany({ revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'rotation' } })` in mongosh. |
+| Sign-in signing keys | Created by the API in the database (`instance_secrets`, encrypted), not in `.env`. To replace them, delete both rows (`db.instance_secrets.deleteMany({ key: { $in: ['jwt_access', 'jwt_platform'] } })`) and restart every API server: new random ones are created, and tokens signed with the old ones stop working within the access-token lifetime (15 minutes). To sign everyone out at once, also run `db.sessions.updateMany({ revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'rotation' } })`. |
 | `MONGODB_API_PASSWORD` | Change in `.env`, run `docker compose up -d --wait` (the migrate job sets the `crew_api` user's password before the API starts). |
 | `MONGODB_PBM_PASSWORD` | Change in `.env`, run `docker compose up -d --wait` (the migrate job sets the `crew_pbm` password, then `pbm` restarts with it). |
 | `MONGO_ROOT_PASSWORD` | `db.getSiblingDB('admin').changeUserPassword('root', '...')` in mongosh, then update `.env`. (`MONGO_INITDB_ROOT_PASSWORD` only applies on the first start.) |
 | `MONGO_REPLICA_KEY` | Only matters when you add members to the replica set; change it on every member at once and restart them. |
 | `REDIS_PASSWORD` | Change and `docker compose up -d --wait`; counters reset, which is harmless. |
-| `FIELD_ENCRYPTION_KEY` | In three steps, below. Never just replace it: values written with the old key (MFA secrets, bank and tax identifiers, webhook, Slack and single sign-on secrets, and the keys and passwords saved in Console > Integrations) need it to be read. |
-| `BACKUP_PASSPHRASE` | Change for new backups; keep the old one for as long as older backups are kept. It also encrypts the off-site copy of the point-in-time backups: after a change, empty `<BACKUP_REMOTE>/pbm` so they are copied again with the new key. |
-| `offsite.env` keys | Create a new key in the storage provider, put it in `offsite.env`, `docker compose up -d backup`, delete the old key. |
-| Claude API key, SMTP password, Expo access token | Paste the new value in Console > Integrations, press Test connection, then Save. No restart; every API server uses it within 5 seconds. (If they still come from `ANTHROPIC_API_KEY`, `SMTP_URL`, `EXPO_ACCESS_TOKEN` in `.env`, change them there and restart, or move them to the Console.) |
+| Field encryption key | Kept in the database (`field_keys`), created on the first start. Rotate it with the command below, never by editing the database: values written with the old key (MFA secrets, bank and tax identifiers, webhook, Slack and single sign-on secrets, the signing keys, and the keys and passwords saved in Console > Integrations) need it to be read. |
+| `BACKUP_PASSPHRASE` | Change for new backups; keep the old one for as long as older backups are kept. It also encrypts the off-site copy of the point-in-time backups: after a change, empty the `pbm` folder in the off-site storage so they are copied again with the new key. |
+| Every API key: Claude, SMTP password, Expo token, Razorpay, Stripe, off-site storage keys, alert webhook | Create the new key with the provider, paste it in Console > Integrations, press Test connection, then Save, then delete the old key at the provider. No restart; every API server uses it within 5 seconds and the backup service before its next copy. |
 
-**Rotating `FIELD_ENCRYPTION_KEY`** (on a schedule, or at once if the key may have leaked):
+**Rotating the field encryption key** (on a schedule, or at once if the key may have leaked):
 
-1. Back up (section 4). Generate a key with `openssl rand -base64 32`. In `.env`, move the current value to
-   `FIELD_ENCRYPTION_KEYS_PREVIOUS` and put the new one in `FIELD_ENCRYPTION_KEY`, then `docker compose up -d --wait`.
-   The API now writes with the new key and still reads both, so nobody is signed out and nothing stops working.
+1. Back up (section 4). Add a new key: `docker compose exec api node dist/cli/rotate-field-key.js --new`. The old
+   key stays in the database's key ring, so everything stays readable. Then `docker compose restart api` so every
+   API server writes with the new key.
 2. Re-encrypt everything with the new key: `docker compose exec api node dist/cli/rotate-field-key.js`. It works in
    small batches while SampCrew is in use, can be run again safely, and writes `platform.field_key_rotated` to the
    platform audit log. `node dist/cli/rotate-field-key.js --check` only counts what is left (exit code 2 while any).
    The Console's System health page shows the current key id and how many values are still on an older key.
-3. When nothing is left, empty `FIELD_ENCRYPTION_KEYS_PREVIOUS` and `docker compose up -d --wait`. Keep the old key
-   with your backups for as long as backups made before the rotation are kept: they still need it.
+3. When nothing is left, drop the old key: `docker compose exec api node dist/cli/rotate-field-key.js --retire`
+   (refused while any value still needs it). Adding and retiring are in the platform audit log too
+   (`platform.field_key_added`, `platform.field_key_retired`). Backups made before the rotation hold the old key
+   ring themselves, so they stay readable after a restore.
 
-Download links are signed with `FILE_URL_SECRET` (or, if that is empty, a key derived from `FIELD_ENCRYPTION_KEY`),
-so links handed out in the last five minutes stop working after a rotation; people just open the file again.
+Download links are signed with a key derived from the sign-in signing key, so a field key rotation does not affect them.
+
+Upgrading from a release that kept `FIELD_ENCRYPTION_KEY` (and `FIELD_ENCRYPTION_KEYS_PREVIOUS`) in `.env`: leave the
+lines in place for the first start. The API moves them into the database, logs "Moved FIELD_ENCRYPTION_KEY into the
+database", and from then on ignores them (the log says so on every start until they are deleted). If those lines
+were removed before that first start, the API refuses to start rather than create a key that cannot open the saved
+values: put the line back once.
 
 After upgrading from a release before key ids (Phase 13), System health counts every existing value as "on an older
 key": run step 2 once with no previous key set, and every value is rewritten in the new format.
@@ -205,20 +224,26 @@ environment variables from it instead of using `.env`.
 
 ## 7. Operating
 
-- **Integrations (Console > Integrations)**: Claude AI, email (SMTP), mobile push (Expo), virus scanning (ClamAV) and
-  the mobile app's single sign-on addresses are set up by a Super admin in the Super Admin Console, with numbered
-  steps, a Test connection button that tries the values against the real service before saving, and an on/off switch.
-  Keys and passwords are encrypted with `FIELD_ENCRYPTION_KEY` and only their last four characters are ever shown.
-  A value saved in the Console wins over `.env`; while nothing is saved for an integration, its `.env` variables are
-  used (so an existing install keeps working), and the page says which ones still come from the server's settings
-  file. "Use server settings instead" removes the Console value. Every save, test and removal is in the Platform
-  audit. Workspace integrations (Slack, webhooks, API keys, single sign-on) stay in each workspace's own Settings.
-  What must stay in `.env`: database, Redis, token secrets, `FIELD_ENCRYPTION_KEY` (it protects the saved secrets,
-  so it cannot be stored next to them), public URLs and CORS origins, because the API needs them before it can read
-  the database.
+- **Integrations (Console > Integrations)**: every API key and outside service lives here, and only in the database:
+  Claude AI, email (SMTP), mobile push (Expo), virus scanning (ClamAV), the mobile app's single sign-on addresses,
+  Razorpay, Stripe and off-site backup storage. A Super admin sets each up with numbered steps, a Test connection
+  button that tries the values against the real service before saving, and an on/off switch. Keys and passwords are
+  encrypted with the field encryption key (also in the database) and only their last four characters are ever shown. Every save, test and
+  removal is in the Platform audit. Workspace integrations (Slack, webhooks, API keys, single sign-on) stay in each
+  workspace's own Settings, also in the database. For scripted setups, `docker compose exec -T api node
+  dist/cli/integrations.js list | set <key> - | test <key> | remove <key>` saves the same records with the same
+  checks (JSON on standard input, so keys stay out of shell history), audited as "integrations command".
+  What stays in `.env`, and why: the database and Redis connection (SampCrew cannot read anything before it has
+  them), `BACKUP_PASSPHRASE` (it locks the backups, which hold everything else, so it is needed after losing the
+  database), and public addresses and limits (no secrets). The field encryption key that locks the saved keys is in
+  the database too (`field_keys`): a copy of the database, or a backup together with its passphrase, opens them all,
+  so protect both as you would the keys themselves.
+  Upgrading from a release that read keys from `.env` (`SMTP_URL`, `ANTHROPIC_API_KEY`, `EXPO_*`, `CLAMAV_URL`,
+  `MOBILE_SSO_REDIRECTS`, `JWT_*_SECRET`, `FIELD_ENCRYPTION_KEY`, `BACKUP_REMOTE` with `offsite.env`): the first start moves each value into
+  the database (audited as `platform.integration_imported`), Console > Integrations lists the lines to delete, and
+  they are never read again.
 - **Virus scanning of uploads**: start ClamAV with `docker compose --profile scan up -d`, then in Console >
-  Integrations > Virus scanning enter `tcp://clamav:3310`, test it and switch it on (or set
-  `CLAMAV_URL=tcp://clamav:3310` in `.env` and `docker compose up -d --wait`). Every uploaded document, expense
+  Integrations > Virus scanning enter `tcp://clamav:3310`, test it and switch it on. Every uploaded document, expense
   receipt and CV, including CVs from the public careers page, is scanned before it is stored; a flagged file is
   refused with a message and never written, and the log line names the signature and workspace. While scanning is
   on and ClamAV is down, uploads are refused rather than stored unscanned, and System health shows the scanner as
@@ -237,7 +262,7 @@ environment variables from it instead of using `.env`.
 - **Attendance devices** that use the ZKTeco push protocol call `https://<API address>/iclock/...`. Devices that can
   only speak plain http need a separate http listener for `/iclock` only; it is not enabled by default.
 - **Mobile app**: build it with `EXPO_PUBLIC_CREW_API_URL=https://<API address>`; its single sign-on return address
-  `crew://sso` must stay in `MOBILE_SSO_REDIRECTS`.
+  `crew://sso` is accepted by default and must stay in Console > Integrations > Mobile app single sign-on.
 
 ## 8. Incidents
 
