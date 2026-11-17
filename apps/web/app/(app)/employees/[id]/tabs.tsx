@@ -386,7 +386,11 @@ export function RequestsTable({ requests, actions }: { requests: LeaveRequest[];
             <TD className="whitespace-nowrap">{range(r)}</TD>
             <TD className="tabular-nums">{r.days}</TD>
             <TD className="max-w-xs truncate text-fg-muted">{r.reason ?? '—'}{r.cancelReason && <span className="block text-xs">Cancelled: {r.cancelReason}</span>}</TD>
-            <TD><StatusPill status={r.status} /></TD>
+            <TD>
+              <StatusPill status={r.status} />
+              {r.sameDay && <span className="mt-1 block text-xs text-warning">Same-day leave</span>}
+              {r.penalty && <span className={`block text-xs ${r.penalty.status === 'active' ? 'text-danger' : 'text-fg-subtle'}`}>Penalty {r.penalty.days} day(s) of pay{r.penalty.status === 'active' ? '' : `, ${r.penalty.status}`}</span>}
+            </TD>
             {actions && <TD className="text-right">{actions(r)}</TD>}
           </TR>
         ))}

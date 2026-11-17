@@ -11370,6 +11370,149 @@
         }
       }
     },
+    "/api/v1/leave/same-day-policy": {
+      "put": {
+        "tags": [
+          "LeavePenalties"
+        ],
+        "summary": "Set the same-day leave penalty: automatic or by the manager, and the days of pay deducted",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
+        "operationId": "LeavePenalties_savePolicy",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "default": "manual",
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "manual"
+                    ]
+                  },
+                  "penaltyDays": {
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  },
+                  "includeBackdated": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "exemptLeaveTypeIds": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/requests/{id}/penalty": {
+      "post": {
+        "tags": [
+          "LeavePenalties"
+        ],
+        "summary": "Apply or change a penalty of some days of pay (0.5 steps) on a leave request",
+        "description": "Requires permission `leave:approve`.\n\nRequires plan feature `leave`.",
+        "operationId": "LeavePenalties_penalty",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "days": {
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "days"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/approvals/inbox": {
       "get": {
         "tags": [
@@ -18808,6 +18951,367 @@
                   }
                 },
                 "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attendance/late/policy": {
+      "get": {
+        "tags": [
+          "LateComing"
+        ],
+        "summary": "Late-coming reminder and same-day leave penalty rules",
+        "description": "Everyone can read them, so employees know when a deduction applies.\n\nRequires permission `attendance:read`.\n\nRequires plan feature `attendance_basic`.",
+        "operationId": "LateComing_policy",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "LateComing"
+        ],
+        "summary": "Set the late-coming rules: automatic reminders, email, and deduction tiers by reminders in a month",
+        "description": "Requires permission `attendance:configure`.\n\nRequires plan feature `attendance_basic`.",
+        "operationId": "LateComing_savePolicy",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "autoReminders": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "minLateMinutes": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 600
+                  },
+                  "email": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "notifyManager": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "tiers": {
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "reminders": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 31
+                        },
+                        "basis": {
+                          "type": "string",
+                          "enum": [
+                            "percent",
+                            "days"
+                          ]
+                        },
+                        "value": {
+                          "type": [
+                            "string",
+                            "number"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "reminders",
+                        "basis",
+                        "value"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attendance/late/month": {
+      "get": {
+        "tags": [
+          "LateComing"
+        ],
+        "summary": "Late arrivals, reminders and penalties in a month for everyone I can see (or one employee)",
+        "description": "Requires permission `attendance:read`.\n\nRequires plan feature `attendance_basic`.",
+        "operationId": "LateComing_month",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            }
+          },
+          {
+            "name": "employeeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attendance/late/reminders": {
+      "post": {
+        "tags": [
+          "LateComing"
+        ],
+        "summary": "Send a late-arrival reminder by hand (in-app, and email when the workspace wants it)",
+        "description": "Requires permission `attendance:approve`.\n\nRequires plan feature `attendance_basic`.",
+        "operationId": "LateComing_remind",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "employeeId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "workDate": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "employeeId",
+                  "workDate"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attendance/late/reminders/{id}/withdraw": {
+      "post": {
+        "tags": [
+          "LateComing"
+        ],
+        "summary": "Withdraw a late reminder; the month’s deduction is worked out again",
+        "description": "Requires permission `attendance:approve`.\n\nRequires plan feature `attendance_basic`.",
+        "operationId": "LateComing_withdraw",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attendance/penalties/{id}/waive": {
+      "post": {
+        "tags": [
+          "LateComing"
+        ],
+        "summary": "Waive a late-coming or same-day leave penalty (needs approval rights over the person)",
+        "description": "Requires permission `attendance:read`.\n\nRequires plan feature `attendance_basic`.",
+        "operationId": "LateComing_waive",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
               }
             }
           }

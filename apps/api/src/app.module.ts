@@ -19,6 +19,8 @@ import { DesignationsController, EmployeesController } from './modules/employees
 import { EmployeesService } from './modules/employees/employees.service';
 import { HealthController } from './modules/health/health.controller';
 import { HrJobsService } from './modules/hr-jobs/hr-jobs.service';
+import { LateComingController, LeavePenaltiesController } from './modules/discipline/discipline.controller';
+import { DisciplineService } from './modules/discipline/discipline.service';
 import { LeaveController } from './modules/leave/leave.controller';
 import { LeaveService } from './modules/leave/leave.service';
 import { MembersController } from './modules/members/members.controller';
@@ -151,6 +153,7 @@ export const CONTROLLERS = [
   SignatureAgentController,
   DocumentsController,
   LeaveController,
+  LeavePenaltiesController,
   ApprovalsController,
   NotificationsController,
   PreferencesController,
@@ -168,6 +171,7 @@ export const CONTROLLERS = [
   DevicesController,
   ZkPushController,
   DeviceApiController,
+  LateComingController,
   RecruitmentController,
   CareersPublicController,
   ResumeFilesController,
@@ -255,6 +259,7 @@ export const CONTROLLERS = [
     EmployeesService,
     DocumentsService,
     AttendanceDaysService,
+    DisciplineService,
     AttendanceService,
     ShiftsService,
     DevicesService,

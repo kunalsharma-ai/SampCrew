@@ -126,6 +126,11 @@ export interface PayrollInput {
   components: PayComponentInput[];
   adjustments: { kind: 'earning' | 'deduction'; label: string; amount: string; taxable: boolean }[];
   reimbursements: { label: string; amount: string }[];
+  /**
+   * Attendance penalties for the month (late coming, same-day leave): a percentage of the month's gross pay, or days of
+   * pay at the contracted monthly gross / days in the month. Each one is a deduction line.
+   */
+  penalties?: { label: string; basis: 'percent' | 'days'; value: string; note?: string }[];
   statutory: StatutorySettings;
   apply: { pf: boolean; esi: boolean; pt: boolean; tds: boolean; ptState: string | null };
   tax: { monthsRemaining: number; ytdTaxable: string; ytdTds: string };
@@ -297,6 +302,25 @@ export function computePay(i: PayrollInput): PayrollResult {
       lines.push({ code: 'TDS', name: 'Income tax (TDS)', kind: 'deduction', amount: fromMinor(tds), explanation: `(${fmt(t.tax)} - ${fmt(toMinor(i.tax.ytdTds))} already deducted) / ${months} month(s) left` });
     }
   }
+
+  // Attendance penalties: after statutory deductions, so they never change PF, ESI, PT or TDS.
+  for (const [n, p] of (i.penalties ?? []).entries()) {
+    let amount: Minor;
+    let how: string;
+    if (p.basis === 'percent') {
+      if (!/^\d{1,3}(\.\d{1,2})?$/.test(p.value) || Number(p.value) <= 0 || Number(p.value) > 100) throw new Error(`Invalid penalty percentage: ${p.value}`);
+      amount = applyRate(earned, p.value, { percent: true });
+      how = `${p.value}% of gross pay ${fmt(earned)}`;
+    } else {
+      const d = halves(p.value);
+      amount = prorate(contractedGross, d, period);
+      how = `${fmt(contractedGross)} a month / ${i.daysInPeriod} days x ${dayText(d)} day(s)`;
+    }
+    amount = toWhole(amount);
+    if (amount <= 0n) continue;
+    lines.push({ code: `PEN${n + 1}`, name: p.label, kind: 'deduction', amount: fromMinor(amount), explanation: p.note ? `${how}. ${p.note}` : how });
+  }
+  if (i.penalties?.length) explanation.push(`${i.penalties.length} attendance penalt${i.penalties.length === 1 ? 'y' : 'ies'} deducted this month.`);
 
   for (const [n, r] of i.reimbursements.entries()) {
     lines.push({ code: `REIMB${n + 1}`, name: r.label, kind: 'reimbursement', amount: fromMinor(toMinor(r.amount)), explanation: 'Approved expense claim, not taxable' });

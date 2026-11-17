@@ -19,6 +19,7 @@ import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService, type ApprovalRequestRow } from '../approvals/approvals.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { DisciplineService } from '../discipline/discipline.service';
 import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
 import { displayName, employeeNames, fieldById } from '../employees/employee-view';
 
@@ -98,6 +99,9 @@ async function requestViews(tx: TenantTx, requests: Doc[]) {
   const people = await employeeNames(tx, requests.map((r) => r.employee_id));
   const types = new Map((await tx.collection('leave_types').find({ id: { $in: [...new Set(requests.map((r) => r.leave_type_id))] } })).map((t) => [t.id as string, t]));
   const requesters = await membershipUserNames(tx, requests.map((r) => r.requested_by_membership_id));
+  const penalties = new Map(
+    (await tx.collection('attendance_penalties').find({ leave_request_id: { $in: requests.map((r) => r.id) }, kind: 'same_day_leave' })).map((p) => [p.leave_request_id as string, p]),
+  );
   return requests
     .filter((r) => people.has(r.employee_id) && types.has(r.leave_type_id))
     .map((r) => {
@@ -125,6 +129,11 @@ async function requestViews(tx: TenantTx, requests: Doc[]) {
         cancelledAt: r.cancelled_at ?? null,
         cancelReason: r.cancel_reason ?? null,
         requestedBy: requesters.get(r.requested_by_membership_id) ?? null,
+        sameDay: Boolean(r.same_day),
+        appliedOn: (r.applied_on as string | null) ?? null,
+        penalty: penalties.has(r.id)
+          ? (({ id, value, source, status, status_reason }) => ({ id: id as string, days: value as string, source: source as string, status: status as string, statusReason: (status_reason as string | null) ?? null }))(penalties.get(r.id)!)
+          : null,
       };
     });
 }
@@ -166,6 +175,7 @@ export class LeaveService implements OnModuleInit {
     private readonly notifications: NotificationService,
     private readonly approvals: ApprovalsService,
     private readonly attendance: AttendanceService,
+    private readonly discipline: DisciplineService,
   ) {}
 
   onModuleInit() {
@@ -181,8 +191,13 @@ export class LeaveService implements OnModuleInit {
         return this.attrsOf(await this.employee(tx, r!.employee_id));
       },
       onApproved: (tx, req) => this.onApproved(tx, req),
+      details: async (tx, id) => {
+        const d = await this.discipline.leaveDetails(tx, id);
+        return d ? { sameDayLeave: d } : null;
+      },
       onRejected: async (tx, req) => {
         await tx.collection('leave_requests').updateOne({ id: req.resource_id, status: 'pending' }, { $set: { status: 'rejected', decided_at: new Date() } });
+        await this.discipline.onLeaveClosed(tx, req.resource_id, 'rejected');
         await this.audit.record(tx, { action: 'leave_request.rejected', resourceType: 'leave_request', resourceId: req.resource_id });
       },
     });
@@ -529,9 +544,11 @@ export class LeaveService implements OnModuleInit {
         requested_by_membership_id: actor.membershipId,
       });
       const range = input.startDate === input.endDate ? input.startDate : `${input.startDate} to ${input.endDate}`;
+      // Same-day leave is marked (and penalised when the workspace rule says so) before the approver is asked.
+      const sameDay = await this.discipline.onLeaveRequested(tx, { id: row.id as string, employee_id: e.id, leave_type_id: input.leaveTypeId, start_date: input.startDate });
       const approvalId = await this.approvals.start(tx, {
         resourceType: 'leave_request', resourceId: row.id, subjectEmployeeId: e.id,
-        summary: `${e.name}: ${type.name}, ${range} (${preview.days} days)${input.reason ? `. "${input.reason}"` : ''}`,
+        summary: `${e.name}: ${type.name}, ${range} (${preview.days} days)${input.reason ? `. "${input.reason}"` : ''}${sameDay ? ` ${sameDay}` : ''}`,
       });
       await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
       await this.audit.record(tx, {
@@ -592,6 +609,7 @@ export class LeaveService implements OnModuleInit {
         throw Errors.conflict('invalid_state', 'This request changed meanwhile. Refresh and try again.');
       }
       if (r.status === 'pending' && r.approval_request_id) await this.approvals.cancel(tx, r.approval_request_id);
+      await this.discipline.onLeaveClosed(tx, id, 'cancelled');
       if (r.status === 'approved') {
         await tx.collection('leave_ledger').insert({
           employee_id: r.employee_id,

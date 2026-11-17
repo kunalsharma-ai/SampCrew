@@ -33,6 +33,8 @@ export interface ApprovalHandler {
   attributes: (tx: TenantTx, resourceId: string) => Promise<ResourceAttributes>;
   onApproved: (tx: TenantTx, req: ApprovalRequestRow) => Promise<void>;
   onRejected: (tx: TenantTx, req: ApprovalRequestRow) => Promise<void>;
+  /** Extra facts the approver needs to decide, shown with the item in the inbox (for example same-day leave). */
+  details?: (tx: TenantTx, resourceId: string) => Promise<Record<string, unknown> | null>;
 }
 
 interface StepRow {
@@ -268,7 +270,9 @@ export class ApprovalsService {
       }));
       const out = [];
       for (const c of candidates) {
-        if ((await this.currentApprovers(tx, c.id)).includes(actor.membershipId)) out.push({ ...c, link: this.handler(c.resourceType).link(c.resourceId), label: this.handler(c.resourceType).label });
+        if (!(await this.currentApprovers(tx, c.id)).includes(actor.membershipId)) continue;
+        const h = this.handler(c.resourceType);
+        out.push({ ...c, link: h.link(c.resourceId), label: h.label, details: h.details ? await h.details(tx, c.resourceId) : null });
       }
       return out;
     });

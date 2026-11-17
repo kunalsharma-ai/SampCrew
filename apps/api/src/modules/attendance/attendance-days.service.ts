@@ -128,8 +128,25 @@ export interface PlannedDay {
  * Loads what the attendance engine needs (shift, calendar, leave and punches) and writes attendance_days.
  * Days are derived data: they are recomputed whenever an input changes and never edited by hand.
  */
+/** What a module hooked into day computation sees for each day written (late-coming reminders use it). */
+export interface ComputedDay {
+  workDate: string;
+  shift: ShiftRow | null;
+  result: DayResult;
+  /** Instant the day was computed for. */
+  now: number;
+}
+export type DayHook = (tx: TenantTx, e: EmployeeCtx, day: ComputedDay) => Promise<void>;
+
 @Injectable()
 export class AttendanceDaysService {
+  private readonly hooks: DayHook[] = [];
+
+  /** Runs `hook` in the same transaction after each day is computed and stored (never for locked days). */
+  onComputed(hook: DayHook) {
+    this.hooks.push(hook);
+  }
+
   async employee(tx: TenantTx, id: string): Promise<EmployeeCtx | undefined> {
     const e = await tx.collection('employees').findOne({ id });
     if (!e) return undefined;
@@ -318,6 +335,7 @@ export class AttendanceDaysService {
         computed_at: new Date(),
       };
       await tx.collection('attendance_days').upsert({ employee_id: e.id, work_date: d }, { employee_id: e.id, work_date: d, ...values }, { $set: values });
+      for (const hook of this.hooks) await hook(tx, e, { workDate: d, shift: day.shift, result: r, now });
       results.set(d, r);
     }
     return results;

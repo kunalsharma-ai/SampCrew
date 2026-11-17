@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { ApiError, api, load } from '@/lib/api';
 import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
-import type { AttendanceMonth, AttendanceToday, Me } from '@/lib/types';
+import type { AttendanceMonth, AttendanceToday, LateMonth, Me } from '@/lib/types';
+import { LateSummary } from './late-summary';
 import { MonthView, TodayCard } from './attendance-view';
 
 export const metadata: Metadata = { title: 'Attendance' };
@@ -35,6 +36,8 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const { from, to } = monthBounds(month);
   const data = await load<AttendanceMonth>(`/attendance/days?from=${from}&to=${to}${sp.employeeId ? `&employeeId=${sp.employeeId}` : ''}`);
   const own = !sp.employeeId;
+  // The late-coming summary is extra: a failure (for example rules not set up) never hides the attendance page.
+  const late = await api<LateMonth>(`/attendance/late/month?month=${month}&employeeId=${data.employee.id}`).catch(() => null);
   return (
     <>
       <PageHeader
@@ -45,12 +48,14 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       {own && <ModuleOverview module="attendance" actions={allowed(me, [
         { label: 'Team attendance', href: '/attendance/team', icon: 'users-round', permission: 'attendance:approve' },
         { label: 'Missing punches', href: '/attendance/team?status=missing_punch', icon: 'clock', permission: 'attendance:approve' },
+        { label: 'Late coming & penalties', href: '/attendance/late', icon: 'alarm-clock', permission: 'attendance:approve' },
         { label: 'Shifts', href: '/shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
         { label: 'Attendance settings', href: '/settings/attendance', icon: 'timer', permission: 'attendance:configure' },
         { label: 'Devices', href: '/settings/devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
       ])} />}
       <div className="grid gap-6">
         {today && <TodayCard today={today} />}
+        {late && <LateSummary data={late} own={own} />}
         <MonthView data={data} month={month} own={own} canClaimFor={!own && can(me, 'attendance:correct')} />
       </div>
     </>
