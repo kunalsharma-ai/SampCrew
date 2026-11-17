@@ -97,3 +97,10 @@ How SampCrew limits the risk:
 - Uploaded files still go to local disk. S3 storage for uploads is not built, so it has no keys to manage.
 - Running API servers pick up a new encryption key only when restarted, which is step 2 of the rotation.
 - The Console has no screen for rotating the encryption key; it is a command, shown on System health.
+
+## Fixed on the way (CI on main had been red since 13 November)
+
+- Web Portal sign-in: when a workspace requires single sign-on, a refused password sign-in now carries the email over
+  to the single sign-on step (`e2e:enterprise`). The form read the email from a stale render.
+- Console alerts: the body text of warning alerts is at full strength so it meets WCAG AA contrast (`e2e:a11y`, Console
+  System health). The same change was on PR #39, which was never merged.
