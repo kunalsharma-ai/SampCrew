@@ -126,6 +126,26 @@ describe('payroll engine', () => {
     expect(neg.warnings.join()).toMatch(/Deductions are more than pay/);
   });
 
+  it('deducts attendance penalties after statutory lines: a percentage of earned gross, or days at monthly gross / days', () => {
+    const base = { components: [comp('BASIC', '20000'), comp('SPECIAL', '11000')], apply: { pf: true, esi: false, pt: false, tds: false, ptState: null } };
+    const plain = computePay(input(base));
+    const r = computePay(input({
+      ...base,
+      lopDays: '1',
+      penalties: [{ label: 'Late-coming deduction (3 reminders)', basis: 'percent', value: '5' }, { label: 'Same-day leave penalty', basis: 'days', value: '3.5', note: 'Applied by a manager' }],
+    }));
+    // One day of loss of pay: gross 30,000. 5% of that is 1,500; 3.5 days of 31,000 / 31 is 3,500.
+    expect(r.gross).toBe('30000.00');
+    expect(line(r, 'PEN1')).toBe('1500.00');
+    expect(line(r, 'PEN2')).toBe('3500.00');
+    expect(r.lines.find((l) => l.code === 'PEN2')!.explanation).toMatch(/x 3.5 day\(s\)\. Applied by a manager/);
+    // PF is on the earned basic, unchanged by penalties.
+    expect(line(r, 'PF_EE')).toBe(line(computePay(input({ ...base, lopDays: '1' })), 'PF_EE'));
+    expect(toMinor(r.net)).toBe(toMinor(computePay(input({ ...base, lopDays: '1' })).net) - toMinor('5000'));
+    expect(plain.lines.some((l) => l.code.startsWith('PEN'))).toBe(false);
+    expect(() => computePay(input({ ...base, penalties: [{ label: 'x', basis: 'percent', value: '150' }] }))).toThrow(/Invalid penalty percentage/);
+  });
+
   it('caps loss of pay at the days employed and keeps fixed deductions whole', () => {
     const r = computePay(input({ employedDays: 10, lopDays: '12', components: [comp('BASIC', '31000'), { code: 'CANTEEN', name: 'Canteen', kind: 'deduction', monthly: '500', prorate: false, taxable: false, pfWage: false }], apply: { pf: false, esi: false, pt: false, tds: false, ptState: null } }));
     expect(r.paidDays).toBe('0.00');

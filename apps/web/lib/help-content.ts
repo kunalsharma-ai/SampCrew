@@ -160,6 +160,12 @@ export const WEB_HELP: HelpContent = {
       how: 'Check the time and site, then confirm. The code changes often, so scan a fresh one if it has expired.',
       where: 'Used at sites with a QR kiosk instead of, or as well as, a biometric machine.',
     },
+    '/attendance/late': {
+      title: 'Late coming & penalties',
+      what: 'Late arrivals of the people you look after, the reminders they were sent, and the deductions payroll will make for late coming and same-day leave.',
+      how: 'Pick a month, send a reminder for a late day that has none, withdraw a reminder sent in error, or waive a penalty with a reason.',
+      where: 'For managers and HR, during the month and before payroll is run. The rules are in Attendance settings and Leave settings.',
+    },
     '/attendance/team': {
       title: 'Team attendance',
       what: 'Attendance for everyone you look after, one day at a time, with exceptions like missing punches highlighted.',
@@ -700,6 +706,21 @@ export const WEB_HELP: HelpContent = {
     'Shift swaps': { what: 'Requests to swap a shift with a colleague.', how: 'Ask a colleague; once they agree, your scheduler approves it.' },
     Rosters: { what: 'Shift schedules for the people you plan.', how: 'Open a roster to assign shifts, then publish it.' },
     Shifts: { what: 'Working hours patterns, with start, end, breaks and grace time.', how: 'Create shifts here, then set each person’s usual shift on their profile.' },
+    'Late-coming reminders': {
+      what: 'The rules for reminding people who arrive late, and the salary deduction after a number of reminders in a month.',
+      how: 'Switch reminders on, choose automatic or by hand, email or not, then add tiers such as 3 reminders = 5% of gross pay and 5 reminders = 1 day’s pay.',
+      where: 'For attendance admins. Only the highest tier reached in a month is deducted.',
+    },
+    'Same-day leave penalty': {
+      what: 'A penalty in days of pay for leave applied on the day it starts, or later.',
+      how: 'Choose automatic (applied when the leave is requested) or by the manager (suggested when approving), and the days, for example 2 or 3.5.',
+      where: 'For leave admins. The approver can always change or waive it.',
+    },
+    'People this month': { what: 'Each person’s late days, live reminders and deductions for the month.' },
+    'Late arrivals': { what: 'Every day someone arrived after their shift start and grace time.', how: 'Send a reminder for a day that has none. Open the date to see the punches.' },
+    'Reminders sent': { what: 'Late reminders sent this month, automatically or by a manager.', how: 'Withdraw one sent in error; the month’s deduction is worked out again.' },
+    'Penalties this month': { what: 'Late-coming deductions and same-day leave penalties for the month.', how: 'Active ones are deducted in the month’s payroll. Waive one with a reason.' },
+    'Late reminders and penalties': { what: 'Your late reminders this month and anything that will be deducted from your salary for it.', how: 'If a reminder is wrong, ask for an attendance correction or talk to your manager.' },
     'Correction requests this month': { what: 'Your requests to fix missing or wrong punches.', how: 'Each one goes to your approver.' },
     'How this day was counted': { what: 'The rules that set this day’s status: shift, grace time, minimum hours and leave.' },
     'Raw punches': { what: 'Every punch received for the day, from the app, a kiosk or a machine, before any rules.' },
@@ -849,6 +870,13 @@ export const WEB_HELP: HelpContent = {
   },
 
   fields: {
+    // Late coming and same-day leave
+    'Count arrivals late by at least (minutes)': { what: 'Arrivals later than this (after the shift’s grace time) get an automatic reminder.' },
+    'After reminders': { what: 'The tier applies once this many reminders were sent to the person in one month.' },
+    Deduct: { what: 'A percentage of the month’s gross pay, or days of pay (monthly gross divided by the days in the month).' },
+    'How the penalty is applied': { what: 'Automatically when the leave is requested, or left to the manager when approving.' },
+    'Penalty (days of pay)': { what: 'Days of pay deducted, in whole or half days such as 2 or 3.5.' },
+    'Note to the employee': { what: 'Shown in the reminder. Needed when attendance does not show the day as late.' },
     // People and jobs
     'Preferred name': { what: 'The name the person likes to be called; shown across SampCrew instead of the first name.' },
     'Work email': { what: 'Their company email. Used for sign-in and notifications.' },

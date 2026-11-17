@@ -107,6 +107,15 @@ jobs:
           pnpm e2e:recruitment
           pnpm e2e:ats
           pnpm e2e:iq
+      - name: Late coming and attendance penalties end-to-end flow
+        # On a fresh demo workspace: the flow switches on late-coming and same-day leave rules, which would change
+        # what the other flows see (reminders, payslip deductions).
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:late
       - name: AI features end-to-end flow (local AI test stub, no real model)
         # e2e/ai-stub.cjs stands in for the Claude Messages API with fixed answers; the key is a dummy value, saved in
         # the database with the integrations command exactly as Console > Integrations would save it.

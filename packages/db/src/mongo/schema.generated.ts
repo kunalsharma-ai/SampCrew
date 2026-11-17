@@ -826,6 +826,55 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((length(name) >= 1) AND (length(name) <= 120)))",
     ],
   },
+  attendance_penalties: {
+    // Salary deductions for attendance discipline, one per employee and month for late coming (the highest tier of
+    // late reminders reached) and one per same-day leave request. Payroll deducts the active ones for the month.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      // percent: of the month's gross pay; days: days of pay at monthly gross / days in the month.
+      basis: {"enum": ["percent", "days"], "required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      employee_id: {"required": true, "type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["late_coming", "same_day_leave"], "required": true, "type": "string"},
+      leave_request_id: {"type": "uuid"},
+      // The calendar month it is deducted in, YYYY-MM.
+      month: {"required": true, "type": "string"},
+      reason: {"type": "string"},
+      // Late coming: the reminders counted, and the tier they reached.
+      reminder_count: {"type": "int"},
+      // auto: by the workspace policy; manual: set by a manager or HR.
+      source: {"enum": ["auto", "manual"], "required": true, "type": "string"},
+      // active: deducted; waived: a manager or HR waived it; cancelled: no longer applies (reminders withdrawn, leave rejected or cancelled).
+      status: {"default": "active", "enum": ["active", "waived", "cancelled"], "required": true, "type": "string"},
+      status_reason: {"type": "string"},
+      status_by_membership_id: {"type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      tier_reminders: {"type": "int"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      value: {"required": true, "type": "string"},
+      work_date: {"type": "date"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "attendance_penalties_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "attendance_penalties_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "month"}], "name": "attendance_penalties_one_late_month", "where": [{"col": "kind", "op": "eq", "value": "late_coming"}]},
+      {"cols": [{"col": "tenant_id"}, {"col": "leave_request_id"}], "name": "attendance_penalties_one_per_leave", "where": [{"col": "kind", "op": "eq", "value": "same_day_leave"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "leave_request_id"], "onDelete": "cascade", "ref": "leave_requests", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "month"}, {"col": "employee_id"}], "name": "attendance_penalties_month"},
+    ],
+    checks: [
+      "CHECK ((length(reason) <= 500))",
+      "CHECK ((length(status_reason) <= 500))",
+    ],
+  },
   attendance_periods: {
     access: "tenant", grants: ["insert", "select", "update"],
     columns: {
@@ -1599,6 +1648,32 @@ export const TABLES: Record<string, TableSpec> = {
     checks: [
       "CHECK ((device_user_id ~ '^[A-Za-z0-9_-]{1,32}$'::text))",
     ],
+  },
+  discipline_policies: {
+    // The workspace's late-coming reminder and same-day leave penalty rules (one document, key "workspace").
+    // See packages/contracts/src/discipline.ts.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"default": "workspace", "enum": ["workspace"], "required": true, "type": "string"},
+      late: {"required": true, "type": "json"},
+      // The first date automatic reminders may be sent for, so switching them on never reminds people about old days.
+      late_since: {"type": "date"},
+      same_day_leave: {"required": true, "type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "discipline_policies_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "discipline_policies_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
   },
   email_messages: {
     access: "tenant", grants: ["insert"],
@@ -2966,9 +3041,53 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((max_consecutive_days > (0)::numeric))",
     ],
   },
+  late_reminders: {
+    // One reminder to an employee about arriving late on a work day: sent automatically from attendance, or by a
+    // manager or HR. The month's live reminders decide the late-coming penalty (attendance_penalties).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      emailed: {"default": false, "required": true, "type": "bool"},
+      employee_id: {"required": true, "type": "uuid"},
+      first_in: {"type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      late_minutes: {"default": 0, "required": true, "type": "int"},
+      month: {"required": true, "type": "string"},
+      note: {"type": "string"},
+      // Its number in the month when it was sent (1, 2, 3 ...).
+      sequence: {"required": true, "type": "int"},
+      sent_by_membership_id: {"type": "uuid"},
+      source: {"enum": ["auto", "manual"], "required": true, "type": "string"},
+      status: {"default": "sent", "enum": ["sent", "withdrawn"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      withdrawn_at: {"type": "timestamp"},
+      withdrawn_by_membership_id: {"type": "uuid"},
+      withdrawn_reason: {"type": "string"},
+      work_date: {"required": true, "type": "date"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "late_reminders_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "late_reminders_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "work_date"}], "name": "late_reminders_one_live", "where": [{"col": "status", "op": "eq", "value": "sent"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "month"}, {"col": "employee_id"}], "name": "late_reminders_month"},
+    ],
+    checks: [
+      "CHECK ((length(note) <= 500))",
+      "CHECK ((length(withdrawn_reason) <= 500))",
+    ],
+  },
   leave_requests: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
     columns: {
+      // The employee's local date when the request was made (for same-day leave).
+      applied_on: {"type": "date"},
       approval_request_id: {"type": "uuid"},
       cancel_reason: {"type": "string"},
       cancelled_at: {"type": "timestamp"},
@@ -2982,6 +3101,8 @@ export const TABLES: Record<string, TableSpec> = {
       leave_type_id: {"required": true, "type": "uuid"},
       reason: {"type": "string"},
       requested_by_membership_id: {"type": "uuid"},
+      // Applied on the day it starts, or after (see discipline_policies); true or absent.
+      same_day: {"type": "bool"},
       start_date: {"required": true, "type": "date"},
       start_half: {"default": "full", "enum": ["full", "second_half"], "required": true, "type": "string"},
       status: {"default": "pending", "enum": ["pending", "approved", "rejected", "cancelled"], "required": true, "type": "string"},

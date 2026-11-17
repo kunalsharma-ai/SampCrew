@@ -77,10 +77,11 @@ export interface LifecycleEvent { id: string; kind: string; effectiveOn: string;
 export interface LeaveType { id: string; code: string; name: string; description: string | null; paid: boolean; allowHalfDay: boolean; color: string }
 export interface LeavePolicy { id: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; legalEntityId: string | null; legalEntityName: string | null; accrualMethod: string; annualEntitlement: string; carryForwardMax: string; allowNegativeBalance: boolean; minNoticeDays: number; maxConsecutiveDays: string | null; availableDuringProbation: boolean; rounding: string }
 export interface LeaveBalance { leaveTypeId: string; code: string; name: string; color: string; paid: boolean; allowHalfDay: boolean; tracked: boolean; annualEntitlement: string; accrualMethod: string; accrued: string; carriedForward: string; adjusted: string; taken: string; lapsed: string; balance: string; pending: string; available: string | null }
-export interface LeaveRequest { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; color: string; startDate: string; endDate: string; startHalf: string; endHalf: string; days: string; reason: string | null; status: string; approvalId: string | null; createdAt: string; decidedAt: string | null; cancelReason: string | null; requestedBy: string | null; approvalTrail?: ApprovalStep[] }
+export interface LeaveRequest { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; color: string; startDate: string; endDate: string; startHalf: string; endHalf: string; days: string; reason: string | null; status: string; approvalId: string | null; createdAt: string; decidedAt: string | null; cancelReason: string | null; requestedBy: string | null; approvalTrail?: ApprovalStep[]; sameDay?: boolean; appliedOn?: string | null; penalty?: { id: string; days: string; source: string; status: string; statusReason: string | null } | null }
 export interface ApprovalStep { seq: number; kind: string; status: string; role: string | null; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null }
 export interface HolidayCalendar { id: string; name: string; legalEntityId: string | null; legalEntityName: string | null; locationId: string | null; locationName: string | null; isDefault: boolean; weeklyOffs: number[]; holidays: { id: string; date: string; name: string; isOptional: boolean }[] }
-export interface InboxItem { id: string; resourceType: string; resourceId: string; summary: string; createdAt: string; stepSeq: number; stepCount: number; requestedBy: string | null; subjectName: string | null; viaRole: string | null; link: string; label: string }
+export interface InboxItem { id: string; resourceType: string; resourceId: string; summary: string; createdAt: string; stepSeq: number; stepCount: number; requestedBy: string | null; subjectName: string | null; viaRole: string | null; link: string; label: string; details?: { sameDayLeave?: SameDayLeaveDetails } | null }
+export interface SameDayLeaveDetails { sameDay: boolean; appliedOn: string | null; policyEnabled: boolean; mode: 'auto' | 'manual'; exempt: boolean; suggestedDays: string | null; penalty: { id: string; days: string; source: string; status: string } | null }
 export interface OnboardingTask { id: string; employeeId: string; title: string; description: string | null; owner: string; assigneeMembershipId: string | null; assigneeName: string | null; dueOn: string | null; status: string; completedAt: string | null; completedBy: string | null; employeeName: string; employeeCode: string; overdue: boolean }
 export interface OnboardingTemplate { id: string; name: string; description: string | null; isDefault: boolean; tasks: { title: string; description?: string; owner: string; dueOffsetDays: number }[] }
 export interface EmployeeDocument { id: string; employeeId: string; category: string; title: string; fileName: string; contentType: string; sizeBytes: number; sha256: string; visibility: string; uploadedBy: string | null; createdAt: string }
@@ -245,3 +246,20 @@ export interface AttendanceRegistration {
   registered: boolean;
 }
 export interface LoginDetails { membershipId: string; membershipStatus: string; loginId: string; accountStatus: string; mfaEnabled: boolean; lastLoginAt: string | null; mustChangePassword: boolean; hasPassword: boolean; lockedUntil: string | null; otherWorkspaces: number; openSessions: number; temporaryPassword?: string }
+
+// Late coming and attendance penalties
+export interface LateTier { reminders: number; basis: 'percent' | 'days'; value: string }
+export interface LatePolicy { enabled: boolean; autoReminders: boolean; minLateMinutes: number; email: boolean; notifyManager: boolean; tiers: LateTier[] }
+export interface SameDayLeavePolicy { enabled: boolean; mode: 'auto' | 'manual'; penaltyDays: string; includeBackdated: boolean; exemptLeaveTypeIds: string[] }
+export interface DisciplinePolicy { late: LatePolicy; sameDayLeave: SameDayLeavePolicy; lateSince: string | null; updatedAt: string | null; exemptLeaveTypes: { id: string; name: string }[] }
+export interface LateDay { employeeId: string; employeeName: string | null; employeeCode: string | null; workDate: string; lateMinutes: number; firstIn: string | null; counts: boolean; reminder: { id: string; source: string; sequence: number; createdAt: string } | null; canRemind: boolean }
+export interface LateReminder { id: string; employeeId: string; employeeName: string | null; workDate: string; source: string; sequence: number; lateMinutes: number; note: string | null; status: string; emailed: boolean; sentBy: string | null; createdAt: string; withdrawnReason: string | null; withdrawnBy: string | null; canWithdraw: boolean }
+export interface AttendancePenalty { id: string; employeeId: string; employeeName: string | null; employeeCode: string | null; kind: 'late_coming' | 'same_day_leave'; month: string; source: string; status: string; basis: string; value: string; deduction: string; label: string; reminderCount: number | null; tierReminders: number | null; leaveRequestId: string | null; workDate: string | null; reason: string | null; statusReason: string | null; createdBy: string | null; statusBy: string | null; createdAt: string; canWaive: boolean }
+export interface LateMonth {
+  month: string;
+  policy: { late: LatePolicy; sameDayLeave: { enabled: boolean; mode: 'auto' | 'manual'; penaltyDays: string } };
+  people: { employeeId: string; employeeName: string | null; lateDays: number; reminders: number; deductions: string[] }[];
+  lateDays: LateDay[];
+  reminders: LateReminder[];
+  penalties: AttendancePenalty[];
+}

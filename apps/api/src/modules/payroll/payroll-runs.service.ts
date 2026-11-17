@@ -13,6 +13,7 @@ import { OutboxService } from '../../platform/events/outbox.service';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AttendanceDaysService } from '../attendance/attendance-days.service';
+import { DisciplineService } from '../discipline/discipline.service';
 import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
 import { displayName, employeeNames, fieldById } from '../employees/employee-view';
 import { csv, dayCount, ENTITY_FIELDS, employedDays, legalEntity, lossOfPay, monthPeriod, periodLabel, statutoryOn, type StatutoryRow } from './payroll-common';
@@ -57,6 +58,7 @@ export class PayrollRunsService implements OnModuleInit {
     private readonly outbox: OutboxService,
     private readonly approvals: ApprovalsService,
     private readonly days: AttendanceDaysService,
+    private readonly discipline: DisciplineService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -303,6 +305,9 @@ export class PayrollRunsService implements OnModuleInit {
             const d = c.description as string;
             return { id: c.id as string, amount: c.amount as string, label: `${categoryNames.get(c.category_id) ?? ''}: ${d.length > 60 ? d.slice(0, 59) + '…' : d}` };
           });
+      // Late-coming and same-day leave penalties of the month (Settings, Attendance and Leave).
+      const pen = await this.discipline.penaltiesForPayroll(tx, p.id, period.start.slice(0, 7));
+      if (pen.waiting.length) warnings.push(`Same-day leave penalties for ${pen.waiting.join(', ')} are not deducted yet: the leave is still waiting for approval.`);
       const ytdItems = await items.find({ employee_id: p.id, status: 'included', run_id: { $in: ytdRuns } }, { projection: { taxable: 1, tds: 1 } });
       const ytd = { taxable: total(ytdItems, 'taxable'), tds: total(ytdItems, 'tds') };
       const input: payrollEngine.PayrollInput = {
@@ -314,6 +319,7 @@ export class PayrollRunsService implements OnModuleInit {
         components: components.map((c) => ({ code: c.code, name: c.name, kind: c.kind, monthly: c.monthly, prorate: c.prorate, taxable: c.taxable, pfWage: c.pf_wage })),
         adjustments,
         reimbursements: claims.map((c) => ({ label: c.label, amount: c.amount })),
+        penalties: pen.penalties.map((x) => ({ label: x.label, basis: x.basis, value: x.value, note: x.note })),
         statutory: statutory.settings,
         apply: { pf: salary.pf_enabled, esi: salary.esi_enabled, pt: salary.pt_enabled, tds: salary.tds_enabled, ptState: p.region?.trim() || null },
         tax: { monthsRemaining: payrollEngine.fyMonthsRemaining(period.start), ytdTaxable: ytd!.taxable, ytdTds: ytd!.tds },
@@ -329,7 +335,7 @@ export class PayrollRunsService implements OnModuleInit {
         lop_override_reason: prior?.lop_override ? prior.lop_override_reason : null, paid_days: out.paidDays, gross: out.gross, deductions: out.deductions,
         reimbursements: out.reimbursements, net: out.net, employer_contributions: out.employerContributions, taxable: out.taxableThisMonth, tds,
         lines: out.lines, explanation, warnings: [...warnings, ...out.warnings],
-        inputs: { lop, ytd, salaryId: salary.id, statutorySettingsId: statutory.id, expenseClaimIds: claims.map((c) => c.id) },
+        inputs: { lop, ytd, salaryId: salary.id, statutorySettingsId: statutory.id, expenseClaimIds: claims.map((c) => c.id), penaltyIds: pen.penalties.map((x) => x.id) },
       });
       if (claims.length) await claimsTable.update({ id: { $in: claims.map((c) => c.id) } }, { $set: { payroll_run_id: r.id } });
     }
