@@ -1,16 +1,70 @@
 import * as Notifications from 'expo-notifications';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { type ErrorBoundaryProps, Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Image, Platform, Pressable, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { appRoute } from '../src/lib/format';
 import { configureForeground } from '../src/lib/push';
-import { AppearanceProvider } from '../src/lib/appearance';
-import { SessionProvider, useSession } from '../src/lib/session';
-import { Loading, screenHelp, useTheme } from '../src/ui';
+import { AppearanceProvider, useAppearanceTheme } from '../src/lib/appearance';
+import { API_URL, SessionProvider, useSession } from '../src/lib/session';
+import { hostOf } from '../src/lib/startup';
+import { screenHelp, useTheme } from '../src/ui';
 
-configureForeground();
+try {
+  configureForeground();
+} catch {
+  // Notifications are optional: the app must still open if they cannot be set up on this phone.
+}
+
+const LOGO = { light: require('../assets/logo-light.png'), dark: require('../assets/logo-dark.png') } as const;
+
+/**
+ * Takes the native splash screen down. Expo Router only does that once a navigator has mounted, and the app shows
+ * its own starting screen (not a navigator) while it checks the saved sign-in, so without this a slow or failed
+ * check left the phone on the splash screen for good.
+ */
+function hideSplash() {
+  SplashScreen.hideAsync().catch(() => {});
+}
+
+/** Shown while the app checks the saved sign-in. Says what it is waiting for if that takes more than a moment. */
+function Starting() {
+  const t = useTheme();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    hideSplash();
+    const timer = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <View testID="app-starting" style={{ flex: 1, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20 }}>
+      <Image source={LOGO[t.mode]} style={{ width: 220, height: 58 }} resizeMode="contain" accessibilityLabel="SampCrew" />
+      <ActivityIndicator color={t.accent} />
+      {slow && (
+        <Text style={{ color: t.muted, textAlign: 'center' }}>
+          Connecting to {hostOf(API_URL)}…
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/** If anything in the app fails to draw, say so with a way to try again, instead of a blank or frozen screen. */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  const t = useAppearanceTheme();
+  useEffect(hideSplash, []);
+  return (
+    <View testID="app-error" style={{ flex: 1, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16 }}>
+      <Text style={{ color: t.fg, fontSize: 18, fontWeight: '700', textAlign: 'center' }}>SampCrew could not open this screen</Text>
+      <Text style={{ color: t.muted, textAlign: 'center' }}>{error.message}</Text>
+      <Pressable accessibilityRole="button" onPress={() => void retry()} style={{ backgroundColor: t.accent, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 }}>
+        <Text style={{ color: t.accentFg, fontWeight: '600' }}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 /** Sends the person to sign-in, the lock screen or the app, depending on the session. */
 function Gate() {
@@ -40,7 +94,7 @@ function Gate() {
     return () => sub.remove();
   }, [status, router]);
 
-  if (status === 'loading') return <Loading />;
+  if (status === 'loading') return <Starting />;
   return (
     <Stack screenOptions={{ headerStyle: { backgroundColor: t.neon ? t.bg : t.card }, headerShadowVisible: !t.neon, headerTitleStyle: { fontWeight: t.neon ? '700' : '600' }, headerTintColor: t.fg, contentStyle: { backgroundColor: t.bg } }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
