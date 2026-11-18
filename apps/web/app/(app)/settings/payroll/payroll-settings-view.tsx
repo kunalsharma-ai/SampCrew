@@ -31,7 +31,7 @@ export function PayrollSettingsView({ statutory, components, structures, categor
       <Card>
         <CardHeader title="Pay components" description="Earnings and deductions that salary structures are built from." action={<Button size="sm" variant="secondary" onClick={() => setComponent('new')}><Plus className="size-3.5" /> Add component</Button>} />
         <Table>
-          <THead><tr><TH>Code</TH><TH>Name</TH><TH>Type</TH><TH>Taxable</TH><TH>By paid days</TH><TH>PF wages</TH><TH /></tr></THead>
+          <THead><tr><TH>Code</TH><TH>Name</TH><TH>Type</TH><TH>Taxable</TH><TH>By paid days</TH><TH>Contribution wages</TH><TH /></tr></THead>
           <TBody>
             {active.map((c) => (
               <TR key={c.id}>
@@ -104,7 +104,7 @@ export function PayrollSettingsView({ statutory, components, structures, categor
           { name: 'kind', label: 'Type', type: 'select', required: true, half: true, options: [{ value: 'earning', label: 'Earning' }, { value: 'deduction', label: 'Deduction' }] },
           { name: 'taxable', label: 'Taxable', type: 'select', required: true, half: true, options: YES_NO },
           { name: 'prorate', label: 'Paid by paid days', type: 'select', required: true, half: true, options: YES_NO, hint: 'Reduced for loss-of-pay days' },
-          { name: 'pfWage', label: 'Counts as PF wages', type: 'select', required: true, half: true, options: YES_NO },
+          { name: 'pfWage', label: 'Counts as PF / contribution wages', type: 'select', required: true, half: true, options: YES_NO },
           { name: 'description', label: 'Description', type: 'textarea' },
         ]}
         onSubmit={(v) => saveComponentAction(editingComponent?.id ?? null, v)}
@@ -144,7 +144,7 @@ function StructureDialog({ structure, components, onClose }: { structure: Struct
       size="lg"
       onClose={onClose}
       title={structure ? `Edit ${structure.name}` : 'New salary structure'}
-      description="Basic is required. Fixed values are annual amounts. One earning can take the balance of the CTC after the others and employer PF."
+      description="Basic is required. Fixed values are annual amounts. One earning can take the balance of the CTC (India: after employer PF; elsewhere the annual salary)."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>

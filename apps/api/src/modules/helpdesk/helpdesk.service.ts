@@ -94,6 +94,32 @@ export class HelpdeskService {
     return (await tx.collection('helpdesk_category_handlers').find({ category_id: categoryId }, { sort: { position: 1 } })).map((r) => r.membership_id as string);
   }
 
+  /**
+   * Who hears about a case that nobody has taken yet: the category's active handlers when it has any, otherwise
+   * everyone holding `helpdesk:manage` whose scope covers the employee. A confidential case only ever goes to its
+   * category's handlers. The person the case is about is never included.
+   */
+  private async caseWatchers(tx: TenantTx, c: { category_id: string; confidential: boolean; employee_id: string; requester_membership_id?: string | null }): Promise<string[]> {
+    const handlers = await this.handlersOf(tx, c.category_id);
+    const active = new Set(await tx.collection('memberships').distinct<string>('id', { id: { $in: handlers }, status: 'active' }));
+    const named = handlers.filter((h) => active.has(h) && h !== c.requester_membership_id);
+    if (named.length || c.confidential) return named;
+    const e = await talentEmployee(tx, c.employee_id);
+    const attrs = attrsOf(e);
+    const members = [...new Set((await this.helpdeskMembers(tx)).map((m) => m.membershipId))].filter((m) => m !== c.requester_membership_id && m !== e.membership_id);
+    const users = new Map((await tx.collection('memberships').find({ id: { $in: members } }, { projection: { user_id: 1 } })).map((m) => [m.id as string, m.user_id as string]));
+    const out: string[] = [];
+    for (const m of members) {
+      const userId = users.get(m);
+      if (!userId) continue;
+      const them = await loadSubject(tx, m, userId, true);
+      if (them.employeeId && them.employeeId === e.id) continue;
+      if (can(them, 'helpdesk:manage', attrs).allowed) out.push(m);
+      if (out.length >= 50) break;
+    }
+    return out;
+  }
+
   /** Whether a subject may handle a case about this employee, in this category. */
   private async mayHandle(tx: TenantTx, s: Subject, c: { employee_id: string; category_id: string; confidential: boolean; assignee_membership_id?: string | null }) {
     if (s.employeeId && s.employeeId === c.employee_id) return false;
@@ -353,10 +379,13 @@ export class HelpdeskService {
       if (assignee) await this.event(tx, c.id, null, 'assigned', null, assignee);
       // The subject is not audited: case content stays in the helpdesk, where only handlers can read it.
       await this.audit.record(tx, { action: 'helpdesk.case_created', resourceType: 'helpdesk_case', resourceId: c.id, metadata: { ref: caseRef(number), category: k.name, confidential: k.confidential, onBehalf: e.id !== s.employeeId } });
-      const notifyIds = assignee ? [assignee] : k.confidential ? await this.handlersOf(tx, k.id) : [];
+      const notifyIds = assignee ? [assignee] : await this.caseWatchers(tx, { category_id: k.id, confidential: k.confidential, employee_id: e.id, requester_membership_id: e.membership_id });
       await this.notifications.notify(tx, { membershipIds: notifyIds, kind: 'helpdesk.case_new', title: `New helpdesk case ${caseRef(number)} in ${k.name}`, link: `/helpdesk/${c.id}` });
       if (e.id !== s.employeeId) {
         await this.notifications.notify(tx, { membershipIds: [e.membership_id], kind: 'helpdesk.case_logged', title: `HR logged case ${caseRef(number)} for you`, link: `/helpdesk/${c.id}` });
+      } else {
+        // The person who asked hears that HR has it, so a question sent from the phone is never left unanswered silently.
+        await this.notifications.notify(tx, { membershipIds: [e.membership_id], kind: 'helpdesk.case_received', title: `HR has your question ${caseRef(number)}: ${input.subject}`, link: `/helpdesk/${c.id}` });
       }
       // Workflows can start from a new case, but never from a confidential one.
       if (!k.confidential) await this.outbox.publish(tx, requestContext.tenantActor().tenantId, 'helpdesk.case_created', { caseId: c.id, employeeId: e.id });
@@ -451,7 +480,7 @@ export class HelpdeskService {
           await tx.collection('helpdesk_cases').updateOne({ id }, { $set: { status: 'in_progress' } });
           await this.event(tx, id, s.membershipId, 'status', c.status, 'in_progress');
         } else await tx.collection('helpdesk_cases').updateOne({ id }, { $set: { updated_at: new Date() } });
-        const to = c.assignee_membership_id ? [c.assignee_membership_id] : c.confidential ? await this.handlersOf(tx, c.category_id) : [];
+        const to = c.assignee_membership_id ? [c.assignee_membership_id] : await this.caseWatchers(tx, c);
         await this.notifications.notify(tx, { membershipIds: to, kind: 'helpdesk.reply', title: `New reply on ${ref}`, link: `/helpdesk/${id}` });
       }
       return { ok: true };
@@ -484,7 +513,7 @@ export class HelpdeskService {
         const title = status === 'resolved' ? `${ref} is resolved: confirm or reopen it` : status === 'waiting_on_employee' ? `HR needs more information on ${ref}` : `${ref} is now ${status.replace(/_/g, ' ')}`;
         await this.notifications.notify(tx, { membershipIds: [c.requester_membership_id], kind: 'helpdesk.status', title, link: `/helpdesk/${id}`, email: status === 'resolved' || status === 'waiting_on_employee' });
       } else {
-        const to = c.assignee_membership_id ? [c.assignee_membership_id] : await this.handlersOf(tx, c.category_id);
+        const to = c.assignee_membership_id ? [c.assignee_membership_id] : await this.caseWatchers(tx, c);
         await this.notifications.notify(tx, { membershipIds: to, kind: 'helpdesk.status', title: status === 'open' ? `${ref} was reopened` : `${ref} was confirmed and closed`, link: `/helpdesk/${id}` });
       }
       return { status };

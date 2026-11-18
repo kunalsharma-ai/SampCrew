@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Api, ApiError, type Tokens, type TokenStore } from './api';
+import { Api, ApiError, base64, fromBase64, multipart, type Tokens, type TokenStore } from './api';
 
 const store = (initial: Tokens | null): TokenStore & { value: Tokens | null } => {
   const s = { value: initial, get: async () => s.value, set: async (t: Tokens) => void (s.value = t), clear: async () => void (s.value = null) };
@@ -18,20 +18,37 @@ describe('API client', () => {
     expect(seen[0]!.headers).toMatchObject({ authorization: 'Bearer a1', 'x-crew-client': 'mobile' });
   });
 
-  it('sends a photo upload as a form with its own content type, and downloads a protected image as a data address', async () => {
+  it('sends a photo upload as multipart bytes with its own content type, and downloads a protected image as a data address', async () => {
     const seen: { url: string; init: RequestInit }[] = [];
     const api = new Api('http://api', store({ accessToken: 'a1', refreshToken: 'r1' }), () => {}, async (url, init) => {
       seen.push({ url, init: init! });
       if (init!.method === 'GET') return new Response(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } });
       return json(200, { photoUpdatedAt: '2026-11-06T00:00:00Z' });
     });
-    const form = new FormData();
-    form.append('file', new Blob(['x'], { type: 'image/png' }), 'me.png');
-    expect(await api.upload('PUT', '/employees/e1/photo', form)).toEqual({ photoUpdatedAt: '2026-11-06T00:00:00Z' });
-    expect(seen[0]!.init.body).toBe(form);
-    expect(seen[0]!.init.headers).not.toHaveProperty('content-type');
-    expect(seen[0]!.init.headers).toMatchObject({ authorization: 'Bearer a1' });
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    expect(await api.uploadFile('PUT', '/employees/e1/photo', { field: 'file', fileName: 'me.png', type: 'image/png', bytes: png })).toEqual({ photoUpdatedAt: '2026-11-06T00:00:00Z' });
+    const init = seen[0]!.init;
+    // Not a FormData: phones' fetch (expo/fetch) cannot send React Native { uri } form entries.
+    expect(init.body).toBeInstanceOf(Uint8Array);
+    const type = (init.headers as Record<string, string>)['content-type']!;
+    expect(type).toMatch(/^multipart\/form-data; boundary=/);
+    expect(init.headers).toMatchObject({ authorization: 'Bearer a1' });
+    // A real multipart parser reads the file back unchanged.
+    const parsed = await new Response(init.body as unknown as BodyInit, { headers: { 'content-type': type } }).formData();
+    const file = (parsed as unknown as { get(name: string): unknown }).get('file') as File;
+    expect(file.name).toBe('me.png');
+    expect(file.type).toBe('image/png');
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(png);
     expect(await api.imageDataUrl('/employees/e1/photo')).toBe('data:image/png;base64,iVBORw==');
+  });
+
+  it('decodes base64 the way it encodes it, and keeps file names from breaking the form', () => {
+    for (const n of [0, 1, 2, 3, 4, 5, 255]) {
+      const bytes = new Uint8Array(n).map((_, i) => (i * 37) % 256);
+      expect(fromBase64(base64(bytes))).toEqual(bytes);
+    }
+    const body = new TextDecoder().decode(multipart({ field: 'file', fileName: 'a"b\r\n.png', type: 'image/png', bytes: new Uint8Array([1]) }, 'B').bytes);
+    expect(body).toContain('filename="a_b__.png"');
   });
 
   it('refreshes an expired token once for concurrent requests and retries', async () => {

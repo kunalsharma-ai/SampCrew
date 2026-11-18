@@ -50,6 +50,12 @@ async function signIn(b, email) {
 }
 
 const dialogOf = (p) => p.locator('dialog[open]');
+/** The operator's API token, to read the announcement feed exactly as the mobile app does. */
+async function operatorToken() {
+  const r = await (await fetch(`${process.env.CREW_API_URL ?? 'http://localhost:4000'}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'operator2@demo.crew.local', password: PASSWORD }) })).json();
+  if (r.status !== 'ok') throw new Error(`operator sign-in needs ${r.status}`);
+  return r.accessToken;
+}
 const alertText = (p, re) => p.getByText(re).first().waitFor();
 
 (async () => {
@@ -208,6 +214,20 @@ const alertText = (p, re) => p.getByText(re).first().waitFor();
     await person.waitFor();
     if (await person.getByText('Not yet').count()) throw new Error('read receipt missing for Neha');
     ok('HR sees that the operator read and acknowledged it');
+
+    // 5b. "Publish now" in the dialog: saved and published in one step, so it is on the feed the mobile app reads.
+    const now = `Fire drill on Friday ${stamp}`;
+    await hr.goto(BASE + '/announcements/manage');
+    await hr.getByRole('button', { name: 'New announcement' }).click();
+    d = dialogOf(hr);
+    await d.getByLabel('Title').fill(now);
+    await d.getByLabel('Message').fill('There is a fire drill at 11:00 on Friday. Leave by the nearest exit. (e2e)');
+    await d.getByRole('button', { name: 'Publish now' }).click();
+    await alertText(hr, /Published to \d+ (person|people)/);
+    await hr.getByRole('row').filter({ hasText: now }).getByText('Published', { exact: true }).waitFor();
+    const feed = await (await fetch(`${process.env.CREW_API_URL ?? 'http://localhost:4000'}/api/v1/announcements`, { headers: { authorization: `Bearer ${await operatorToken()}`, 'x-crew-client': 'mobile' } })).json();
+    if (!feed.some((a) => a.title === now)) throw new Error('the published announcement is not on the feed the mobile app reads');
+    ok('HR published an announcement in one step; it is on the operator\'s mobile feed');
 
     // 6. Phones on the Security page.
     current = neha;

@@ -112,7 +112,7 @@ A run covers one legal entity for one calendar month. It goes **Draft → Comput
   - Arjun has an approved Travel claim dated last month, which the first run reimburses.
   - Neha has a pending Meals claim waiting for her supervisor.
 - **No payroll run is seeded,** so the first run can be tried end to end.
-- **Northwind UK has no payroll:** statutory rules in this release cover India only.
+- **Northwind UK** has the United Kingdom country pack saved and a salary for its two people (added in phase 25, see phase-25.md).
 
 ## Tests
 - **Contracts:** 60 unit tests, including 14 golden payroll engine tests.
@@ -173,7 +173,7 @@ A run covers one legal entity for one calendar month. It goes **Draft → Comput
 - **Receipts** are checked by content, size and type, and served only through short-lived links signed for receipts.
 
 ## Known limits
-- **India only.** Statutory rules cover India. Other countries' entities cannot run payroll yet; global payroll is a later, provider-based phase.
+- **Other countries:** since phase 25 every legal entity uses its own country's scheme (packs for the UK, US, UAE, Saudi Arabia, Qatar, Singapore and Australia, a custom scheme anywhere else). See phase-25.md.
 - **Statutory coverage:**
   - No surcharge (flagged instead).
   - No old tax regime.

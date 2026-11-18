@@ -61,11 +61,12 @@ export default async function PayslipPage({ params }: { params: Promise<{ id: st
         {section('Employer contributions (paid by your employer on top of your pay)', 'employer', p.employerContributions)}
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
-            <CardHeader title="This financial year" description={`From ${p.yearToDate.financialYearFrom} to this payslip`} />
+            <CardHeader title="This tax year" description={`From ${p.yearToDate.financialYearFrom} to this payslip`} />
             <CardBody>
               <dl className="grid grid-cols-3 gap-3 text-[0.8125rem]">
                 <div><dt className="text-fg-muted">Gross</dt><dd className="font-medium tabular-nums">{money(p.yearToDate.gross)}</dd></div>
                 <div><dt className="text-fg-muted">Income tax</dt><dd className="font-medium tabular-nums">{money(p.yearToDate.tds)}</dd></div>
+                {Number(p.yearToDate.regionalTax ?? 0) > 0 && <div><dt className="text-fg-muted">Regional tax</dt><dd className="font-medium tabular-nums">{money(p.yearToDate.regionalTax!)}</dd></div>}
                 <div><dt className="text-fg-muted">Net</dt><dd className="font-medium tabular-nums">{money(p.yearToDate.net)}</dd></div>
               </dl>
             </CardBody>

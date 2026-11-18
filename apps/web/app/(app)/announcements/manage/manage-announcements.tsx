@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Department, LegalEntity, Location } from '@/lib/types';
 import { useRunner } from '../../recruitment/use-runner';
-import { archiveAnnouncementAction, deleteAnnouncementAction, publishAnnouncementAction, saveAnnouncementAction } from '../../helpdesk/actions';
+import { archiveAnnouncementAction, deleteAnnouncementAction, publishAnnouncementAction, saveAndPublishAnnouncementAction, saveAnnouncementAction } from '../../helpdesk/actions';
 import { audienceLabel, dateTime } from '../../helpdesk/labels';
 import type { Announcement } from '../../helpdesk/types';
 
@@ -13,7 +13,7 @@ const STATE_TONE = { draft: 'neutral', published: 'success', archived: 'neutral'
 const STATE = { draft: 'Draft', published: 'Published', archived: 'Archived' };
 
 export function ManageAnnouncements({ items, entities, departments, locations }: { items: Announcement[]; entities: LegalEntity[]; departments: Department[]; locations: Location[] }) {
-  const { pending, notice, run } = useRunner();
+  const { pending, notice, setNotice, run } = useRunner();
   const [editing, setEditing] = useState<Announcement | 'new' | null>(null);
   return (
     <div className="grid gap-6">
@@ -46,12 +46,12 @@ export function ManageAnnouncements({ items, entities, departments, locations }:
           </TBody>
         </Table>
       </Card>
-      {editing && <AnnouncementDialog key={editing === 'new' ? 'new' : editing.id} a={editing === 'new' ? null : editing} entities={entities} departments={departments} locations={locations} onClose={() => setEditing(null)} />}
+      {editing && <AnnouncementDialog key={editing === 'new' ? 'new' : editing.id} a={editing === 'new' ? null : editing} entities={entities} departments={departments} locations={locations} onClose={() => setEditing(null)} onSaved={(text, tone = 'success') => setNotice({ tone, text })} />}
     </div>
   );
 }
 
-function AnnouncementDialog({ a, entities, departments, locations, onClose }: { a: Announcement | null; entities: LegalEntity[]; departments: Department[]; locations: Location[]; onClose: () => void }) {
+function AnnouncementDialog({ a, entities, departments, locations, onClose, onSaved }: { a: Announcement | null; entities: LegalEntity[]; departments: Department[]; locations: Location[]; onClose: () => void; onSaved: (text: string, tone?: 'success' | 'danger') => void }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +61,12 @@ function AnnouncementDialog({ a, entities, departments, locations, onClose }: { 
   const frozen = a !== null && a.status !== 'draft';
   return (
     <Dialog open onClose={onClose} title={a ? (frozen ? 'Pinning and expiry' : 'Edit draft') : 'New announcement'} description={frozen ? 'The announcement is published, so only pinning and the expiry date can change.' : undefined} size="lg"
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form="announcement-form" loading={pending}>{a ? 'Save' : 'Save draft'}</Button></>}>
+      footer={<>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button type="submit" form="announcement-form" variant={frozen ? 'primary' : 'secondary'} loading={pending} name="intent" value="save">{a ? 'Save' : 'Save draft'}</Button>
+        {/* A draft reaches nobody: publishing is what puts it on everyone's feed (web and mobile) and notifies them. */}
+        {!frozen && <Button type="submit" form="announcement-form" loading={pending} name="intent" value="publish" data-testid="announcement-publish-now">Publish now</Button>}
+      </>}>
       <form id="announcement-form" className="grid grid-cols-2 gap-4" onSubmit={(e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);
@@ -71,9 +76,13 @@ function AnnouncementDialog({ a, entities, departments, locations, onClose }: { 
           : { title: f.get('title'), body: f.get('body'), legalEntityId: v('legalEntityId'), departmentId: v('departmentId'), locationId: v('locationId'), requiresAck, pinned, expiresOn: v('expiresOn') };
         setError(null);
         setFe({});
+        const publish = !frozen && ((e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value === 'publish';
         start(async () => {
-          const r = await saveAnnouncementAction(a?.id ?? null, body);
-          if (r.ok) { onClose(); router.refresh(); } else { setError(r.message); setFe(r.fieldErrors ?? {}); }
+          const r = publish ? await saveAndPublishAnnouncementAction(a?.id ?? null, body) : await saveAnnouncementAction(a?.id ?? null, body);
+          if (r.ok) { onSaved(r.message ?? 'Saved.'); onClose(); router.refresh(); }
+          // Saved as a draft, but publishing was refused: show why on the page, where the draft now is.
+          else if (r.code === 'saved_not_published') { onSaved(r.message, 'danger'); onClose(); router.refresh(); }
+          else { setError(r.message); setFe(r.fieldErrors ?? {}); }
         });
       }}>
         {error && <Alert tone="danger" className="col-span-2">{error}</Alert>}

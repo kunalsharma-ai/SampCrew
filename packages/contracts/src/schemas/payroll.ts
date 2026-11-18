@@ -68,13 +68,51 @@ export const statutorySettingsSchema = z.object({
   }),
 });
 
+const taxSlabs = z.array(z.object({ upTo: money.nullable(), ratePercent: percent })).min(1).max(15);
+const optionalMoney = money.nullable();
+export const contributionRuleSchema = z.object({
+  code: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9]{1,11}$/, 'Use 2 to 12 capital letters or digits')
+    .refine((c) => !['TAX', 'TDS', 'PT', 'REGION', 'ADJ', 'REIMB', 'PEN'].includes(c), 'This code is reserved'),
+  name: z.string().trim().min(2).max(60),
+  employeeRatePercent: percent,
+  employerRatePercent: percent,
+  base: z.enum(['gross', 'contribution_wages']),
+  threshold: optionalMoney,
+  ceiling: optionalMoney,
+  eligibleFrom: optionalMoney,
+  appliesTo: z.enum(['everyone', 'enrolled']),
+  reducesTaxablePay: z.boolean(),
+});
+/** The rules-based scheme for every country other than India (see payroll-countries.ts). */
+export const genericStatutorySchema = z.object({
+  kind: z.literal('generic'),
+  countryCode: z.string().regex(/^[A-Z]{2}$/),
+  taxYearStartMonth: z.number().int().min(1).max(12),
+  rounding: z.enum(['cent', 'whole']),
+  enrolmentLabel: z.string().trim().min(2).max(80),
+  contributions: z.array(contributionRuleSchema).max(20),
+  incomeTax: z.object({
+    name: z.string().trim().min(2).max(60),
+    allowance: money,
+    slabs: taxSlabs,
+    levyPercent: percent,
+    surchargePercent: percent,
+    reviewAbove: optionalMoney,
+    reviewNote: z.string().trim().max(300),
+  }).nullable(),
+  regionalTaxes: z.record(z.string().trim().min(2).max(60), z.object({ name: z.string().trim().min(2).max(60), allowance: money, slabs: taxSlabs })).refine((r) => Object.keys(r).length <= 80, 'At most 80 regions'),
+  notes: z.string().trim().max(2000),
+});
+export const anyStatutorySchema = z.union([genericStatutorySchema, statutorySettingsSchema]);
+
 export const LOP_SOURCES = ['attendance_and_leave', 'leave_only'] as const;
 export const statutoryInput = z.object({
   legalEntityId: z.uuid(),
   effectiveFrom: isoDate,
   /** Where loss-of-pay days come from: absences and half days in attendance plus unpaid leave, or unpaid leave only. */
   lopSource: z.enum(LOP_SOURCES).default('attendance_and_leave'),
-  settings: statutorySettingsSchema,
+  /** India's scheme for an Indian legal entity, the generic scheme for any other country. */
+  settings: anyStatutorySchema,
 });
 export type StatutoryInput = z.infer<typeof statutoryInput>;
 

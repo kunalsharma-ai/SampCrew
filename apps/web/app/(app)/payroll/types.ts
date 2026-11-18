@@ -28,14 +28,22 @@ export interface SalaryRevision {
 export interface Component { id: string; code: string; name: string; kind: 'earning' | 'deduction'; taxable: boolean; prorate: boolean; pfWage: boolean; isBasic: boolean; isSystem: boolean; description: string; archivedAt: string | null; inUse: boolean }
 export interface Structure { id: string; name: string; description: string; archivedAt: string | null; employeeCount: number; lines: { componentId: string; code: string; name: string; kind: string; isBasic: boolean; calc: string; value: string }[] }
 export interface Slab { upTo: string | null; amount: string; februaryAmount?: string }
-export interface StatutorySettings {
-  pf: { employeeRatePercent: string; employerRatePercent: string; epsRatePercent: string; wageCeiling: string; restrictToCeiling: boolean };
-  esi: { employeeRatePercent: string; employerRatePercent: string; grossCeiling: string };
-  pt: { states: Record<string, Slab[]> };
-  tds: { regime: 'new'; standardDeduction: string; slabs: { upTo: string | null; ratePercent: string }[]; rebateLimit: string; cessPercent: string; surchargeThreshold: string };
+/** India's scheme (PF, ESI, professional tax, TDS). */
+export type IndiaStatutory = import('@crew/contracts').StatutorySettings;
+/** The rules-based scheme every other country uses. */
+export type GenericStatutory = import('@crew/contracts').GenericStatutory;
+export type StatutorySettings = IndiaStatutory | GenericStatutory;
+export interface StatutoryRow { id: string; legalEntityId: string; legalEntityName: string; countryCode: string; effectiveFrom: string; lopSource: string; settings: StatutorySettings; savedAt: string; savedBy: string | null; usedByRun: boolean }
+export interface StatutoryPackInfo { countryCode: string; country: string; currency: string; basis: string; summary: string }
+export interface StatutoryEntityStart { legalEntityId: string; name: string; currency: string; countryCode: string; pack: StatutoryPackInfo | null; settings: StatutorySettings; notice: string }
+export interface StatutoryResponse {
+  settings: StatutoryRow[];
+  packs: StatutoryPackInfo[];
+  entities: StatutoryEntityStart[];
+  startingValues: { countryCode: string; settings: IndiaStatutory; notice: string };
 }
-export interface StatutoryRow { id: string; legalEntityId: string; legalEntityName: string; effectiveFrom: string; lopSource: string; settings: StatutorySettings; savedAt: string; savedBy: string | null; usedByRun: boolean }
-export interface StatutoryResponse { settings: StatutoryRow[]; startingValues: { countryCode: string; settings: StatutorySettings; notice: string } }
+/** What the salary switches mean for the employee's legal entity (null = the switch does nothing there). */
+export interface SalaryStatutoryProfile { countryCode: string; currency: string; saved: boolean; pf: string | null; esi: string | null; pt: string | null; tds: string | null; employerInCtc: boolean }
 export interface ExpenseCategory { id: string; name: string; receiptRequired: boolean; maxPerClaim: string | null; archivedAt: string | null }
 export interface ExpenseClaim {
   id: string; employeeId: string; employeeName: string; employeeCode: string; categoryId: string; categoryName: string; spentOn: string; amount: string; currency: string;
@@ -47,6 +55,6 @@ export interface Payslip {
   id: string; employeeId: string; month: string; periodStart: string; periodEnd: string; payDate: string; currency: string; legalEntityName: string; workspaceName: string; isDemo: boolean;
   code: string; name: string; dateOfJoining: string; designation: string | null; department: string | null; location: string | null;
   daysInPeriod: number; employedDays: number; lopDays: string; paidDays: string; gross: string; deductions: string; reimbursements: string; net: string;
-  employerContributions: string; taxable: string; tds: string; lines: PayLine[]; explanation: string[];
-  yearToDate: { financialYearFrom: string; gross: string; tds: string; net: string };
+  employerContributions: string; taxable: string; tds: string; regionalTax?: string; incomeTaxName?: string; countryCode?: string | null; lines: PayLine[]; explanation: string[];
+  yearToDate: { financialYearFrom: string; gross: string; tds: string; regionalTax?: string; net: string };
 }

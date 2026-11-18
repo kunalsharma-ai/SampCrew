@@ -105,8 +105,9 @@ describe('mobile', () => {
       const cats = (await as(opSession.accessToken).get('/helpdesk/categories')).body as { id: string; name: string }[];
       const c = ok(await as(opSession.accessToken).post('/helpdesk/cases').send({ categoryId: cats[0]!.id, subject: 'Payslip PDF', description: 'How do I save my payslip as a file?' }), 201);
       ok(await as(hrToken).post(`/helpdesk/cases/${c.id}/messages`).send({ body: 'Open the payslip and use Save as PDF.' }));
+      // Two pushes: "HR has your question" when it was raised, then HR's reply.
       const r = await app.get(PushService).sendBatch();
-      expect(r).toEqual({ sent: 1, failed: 0, skipped: 0 });
+      expect(r).toEqual({ sent: 2, failed: 0, skipped: 0 });
       const msg = pushed.at(-1)![0]!;
       expect(msg).toMatchObject({ to: 'ExponentPushToken[aaaaaaaaaaaaaaaa]', title: 'SampCrew', body: 'You have something new in SampCrew.' });
       expect(msg.data.link).toBe(`/helpdesk/${c.id}`);

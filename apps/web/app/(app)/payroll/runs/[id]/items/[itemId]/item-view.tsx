@@ -26,7 +26,7 @@ export function ItemView({ runId, currency, item, editable }: { runId: string; c
         {item.status === 'on_hold' && <Alert tone="warning" title="Pay on hold">{item.holdReason} This person is left out of the totals, the bank file and payslips for this run.</Alert>}
         {item.warnings.length > 0 && <Alert tone="warning" title="To check"><ul className="list-disc pl-5">{item.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></Alert>}
         <Card>
-          <CardHeader title="Calculation" description="Every amount with how it was worked out. Amounts are exact to the paisa; statutory amounts are rounded to the rupee." />
+          <CardHeader title="Calculation" description="Every amount with how it was worked out. Amounts are exact to the smallest unit of the currency; statutory amounts follow the rounding in the statutory settings." />
           <Table>
             <THead><tr><TH>Line</TH><TH>How</TH><TH className="text-right">Amount</TH></tr></THead>
             <TBody>
@@ -62,7 +62,7 @@ export function ItemView({ runId, currency, item, editable }: { runId: string; c
               <div><dt className="text-fg-muted">Loss of pay</dt><dd className="font-medium tabular-nums">{days(item.lopOverride ?? item.lopDays)}{item.lopOverride !== null && <Badge tone="info" className="ml-1">set by hand</Badge>}</dd></div>
               <div><dt className="text-fg-muted">Paid days</dt><dd className="font-medium tabular-nums">{days(item.paidDays)}</dd></div>
               <div><dt className="text-fg-muted">Taxable this month</dt><dd className="font-medium tabular-nums">{money(item.taxable)}</dd></div>
-              <div><dt className="text-fg-muted">Income tax (TDS)</dt><dd className="font-medium tabular-nums">{money(item.tds)}</dd></div>
+              <div><dt className="text-fg-muted">Income tax withheld</dt><dd className="font-medium tabular-nums">{money(item.tds)}</dd></div>
             </dl>
           </CardBody>
         </Card>

@@ -54,7 +54,7 @@ export function RunView({ run, people }: { run: PayrollRunDetail; people: { id: 
             <Stat label="Deductions" value={money(run.deductions)} />
             <Stat label="Reimbursements" value={money(run.reimbursements)} />
             <Stat label="Net pay" value={money(run.net)} />
-            <Stat label="Employer contributions" value={money(run.employerContributions)} hint="PF and ESI on top of pay" />
+            <Stat label="Employer contributions" value={money(run.employerContributions)} hint="Social security and pension on top of pay" />
           </CardBody>
         )}
       </Card>
