@@ -244,3 +244,21 @@ export async function setCouponActiveAction(id: string, active: boolean) {
   revalidatePath('/billing');
   return r;
 }
+
+export async function saveStatutoryPackAction(countryCode: string, body: Record<string, unknown>) {
+  const r = await act(() => api(`/platform/statutory-packs/${countryCode}`, { method: 'PUT', body }));
+  revalidatePath('/statutory-packs');
+  return r;
+}
+
+export async function resetStatutoryPackAction(countryCode: string) {
+  const r = await act(() => api(`/platform/statutory-packs/${countryCode}/reset`, { method: 'POST' }));
+  revalidatePath('/statutory-packs');
+  return r;
+}
+
+export async function removeStatutoryPackAction(countryCode: string) {
+  const r = await act(() => api(`/platform/statutory-packs/${countryCode}`, { method: 'DELETE' }));
+  revalidatePath('/statutory-packs');
+  return r;
+}

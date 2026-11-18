@@ -7,7 +7,7 @@ import { MongoService as DatabaseService, ilike, type TenantTx, usersTable } fro
 import { Errors } from '../../platform/http/errors';
 import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
 import { displayName, fieldById } from '../employees/employee-view';
-import { legalEntity, startingFor, statutoryOn } from './payroll-common';
+import { legalEntity, startingFor, statutoryOn, statutoryPacks } from './payroll-common';
 
 interface EmpRow {
   id: string;
@@ -116,7 +116,7 @@ export class SalariesService {
     if (!e.legal_entity_id) return null;
     const le = await legalEntity(tx, e.legal_entity_id);
     const saved = await statutoryOn(tx, e.legal_entity_id, '9999-12-31');
-    const settings = saved?.settings ?? startingFor(le).settings;
+    const settings = saved?.settings ?? startingFor(le, await statutoryPacks(tx)).settings;
     return { countryCode: le.country_code, currency: le.currency, saved: Boolean(saved), ...statutorySwitches(settings) };
   }
 
@@ -136,11 +136,12 @@ export class SalariesService {
     const warnings: string[] = [];
     if (!statutory) warnings.push('No statutory settings are saved for this legal entity yet, so employer PF uses the India starting values. Payroll cannot run until they are saved under Settings > Payroll settings > Statutory settings.');
     if (!statutory) warnings.push(`No statutory settings are saved for this legal entity yet, so employer contributions use the starting values for ${le.country_code}. Payroll cannot run until they are saved under Settings > Payroll settings > Statutory settings.`);
+    const settings = statutory?.settings ?? startingFor(le, await statutoryPacks(tx)).settings;
     try {
       const out = payrollEngine.buildSalary(
         input.annualCtc,
         lines.map((l) => ({ code: l.code, name: l.name, kind: l.kind, calc: l.calc, value: l.value, isBasic: l.is_basic })),
-        { pf: input.pfEnabled, settings: statutory?.settings ?? startingFor(le).settings },
+        { pf: input.pfEnabled, settings },
       );
       return { ...out, warnings: [...warnings, ...out.warnings], currency: le.currency, componentIds: lines.map((l) => l.component_id) };
     } catch (err) {

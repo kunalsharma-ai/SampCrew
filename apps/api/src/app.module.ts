@@ -60,6 +60,7 @@ import { PlatformAuthService } from './modules/platform-admin/platform-auth.serv
 import { PlatformService } from './modules/platform-admin/platform.service';
 import { AccessControlsService } from './modules/platform-admin/access-controls.service';
 import { PlansService } from './modules/platform-admin/plans.service';
+import { StatutoryPacksService } from './modules/platform-admin/statutory-packs.service';
 import { TenantControlService } from './modules/platform-admin/tenant-control.service';
 import { RolesController } from './modules/roles/roles.controller';
 import { RolesService } from './modules/roles/roles.service';
@@ -237,6 +238,7 @@ export const CONTROLLERS = [
     PlatformService,
     AccessControlsService,
     PlansService,
+    StatutoryPacksService,
     TenantControlService,
     NotificationService,
     PlatformIntegrationsService,

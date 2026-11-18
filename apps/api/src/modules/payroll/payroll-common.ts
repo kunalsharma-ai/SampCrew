@@ -1,4 +1,4 @@
-import { leaveMath, payrollEngine, startingNotice, startingStatutory, type WorkCalendar } from '@crew/contracts';
+import { leaveMath, payrollEngine, startingNotice, startingStatutory, type StatutoryPack, type WorkCalendar } from '@crew/contracts';
 import type { TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 
@@ -41,9 +41,18 @@ export async function legalEntity(tx: TenantTx, id: string) {
 /** The country a statutory scheme belongs to: IN for India's scheme, else the generic scheme's own country. */
 export const schemeCountry = (s: StatutorySettings) => (payrollEngine.isGenericStatutory(s) ? s.countryCode : 'IN');
 
-/** Starting values for a legal entity's country (a ready-made pack, or a blank custom scheme). */
-export function startingFor(le: { country_code: string; currency: string; fiscal_year_start_month: number }) {
-  const s = startingStatutory(le.country_code, { taxYearStartMonth: le.fiscal_year_start_month, currency: le.currency });
+/** The active country packs SAMPLEDGE keeps in the database (Console > Statutory packs). */
+export async function statutoryPacks(tx: TenantTx): Promise<StatutoryPack[]> {
+  const rows = await tx.collection<{ country_code: string; country: string; currency: string; basis: string; summary: string; settings: payrollEngine.AnyStatutory }>('statutory_packs')
+    .find({ active: true }, { sort: { country: 1 } });
+  return rows
+    .map((r) => ({ countryCode: r.country_code, country: r.country, currency: r.currency, basis: r.basis, summary: r.summary ?? '', settings: r.settings }))
+    .sort((a, b) => Number(b.countryCode === 'IN') - Number(a.countryCode === 'IN'));
+}
+
+/** Starting values for a legal entity's country: its pack from the database, or a blank custom scheme. */
+export function startingFor(le: { country_code: string; currency: string; fiscal_year_start_month: number }, packs: readonly StatutoryPack[]) {
+  const s = startingStatutory(le.country_code, { taxYearStartMonth: le.fiscal_year_start_month, currency: le.currency, packs });
   return { countryCode: le.country_code, pack: s.pack, settings: s.settings, notice: startingNotice(le.country_code, s.pack, le.currency) };
 }
 

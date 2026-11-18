@@ -1,3 +1,4 @@
+import type { AnyStatutory } from '@crew/contracts';
 export interface Admin { id: string; email: string; fullName: string; role: 'super_admin' | 'support' | 'billing_ops' | 'viewer'; mfaEnabled: boolean; mustChangePassword: boolean; session: { mfa: boolean } }
 
 export interface TenantRow {
@@ -17,3 +18,18 @@ export interface Page<T> { items: T[]; nextCursor: string | null }
 
 export interface PlanSummary { key: string; name: string; features: { key: string; limitValue: number | null }[] }
 export interface HistoryRow { id: string; action: string; actorLabel: string | null; changes: Record<string, unknown>; createdAt: string }
+
+/** A payroll country pack as GET /platform/statutory-packs returns it. */
+export interface StatutoryPackView {
+  countryCode: string;
+  country: string;
+  currency: string;
+  basis: string;
+  summary: string;
+  settings: AnyStatutory;
+  active: boolean;
+  builtIn: boolean;
+  customisedAt: string | null;
+  customisedBy: string | null;
+  updatedAt: string;
+}

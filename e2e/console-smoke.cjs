@@ -53,11 +53,33 @@ const watch = (p) => {
   await shot(admin, 'console-overview');
   ok('MFA enrolled, overview loads');
 
-  for (const path of ['/tenants', '/plans', '/integrations', '/health', '/audit', '/admins']) {
+  for (const path of ['/tenants', '/plans', '/statutory-packs', '/integrations', '/health', '/audit', '/admins']) {
     const r = await admin.goto(CONSOLE + path);
     if (r.status() !== 200 || (await admin.locator('h1').count()) === 0) throw new Error(`${path} failed`);
   }
   ok('all console pages render');
+
+  // Payroll country packs live in the database: add a country, find it in the list, switch it off, then remove it.
+  await admin.goto(`${CONSOLE}/statutory-packs`);
+  await admin.locator('[data-testid=pack-GB]').waitFor();
+  await admin.getByLabel('Country code').fill('nz');
+  await admin.getByLabel('Currency', { exact: true }).first().fill('nzd');
+  await admin.click('button:has-text("Add a country")');
+  const editor = admin.locator('[data-testid=pack-editor]');
+  await editor.getByLabel('Basis').fill('PAYE tax year from 1 April');
+  await editor.locator('button:has-text("Save pack")').click();
+  const saved = await admin.locator('[data-testid=packs-flash]').textContent();
+  if (!saved.includes('New Zealand saved')) throw new Error(`saving the pack failed: ${saved}`);
+  await admin.locator('[data-testid=pack-NZ]', { hasText: 'Added in Console' }).waitFor();
+  await editor.locator('[data-testid=pack-active]').click();
+  await editor.locator('button:has-text("Save pack")').click();
+  await admin.locator('[data-testid=pack-NZ]', { hasText: 'Off' }).waitFor();
+  await shot(admin, 'console-statutory-packs');
+  admin.once('dialog', (d) => d.accept());
+  await editor.locator('button:has-text("Remove pack")').click();
+  await admin.locator('[data-testid=packs-flash]', { hasText: 'New Zealand removed' }).waitFor();
+  if ((await admin.locator('[data-testid=pack-NZ]').count()) !== 0) throw new Error('removed pack still listed');
+  ok('payroll country pack added, switched off and removed in the database');
 
   // Create a tenant (sales-assisted onboarding).
   const slug = `smoke-${Date.now().toString(36)}`;

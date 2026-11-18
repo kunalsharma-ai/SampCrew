@@ -85,6 +85,12 @@ export const CONSOLE_HELP: HelpContent = {
       how: 'Open Modules & limits to choose what a plan includes, create a plan from a copy, archive one, and approve plan requests.',
       where: 'For Sampledge billing staff and Super admins. Changes apply at once to every workspace on the plan.',
     },
+    '/statutory-packs': {
+      title: 'Payroll country packs',
+      what: 'The starting statutory settings for each country: social security, pension, income tax and regional taxes. They are kept in the database.',
+      how: 'Edit a pack when the law changes, add a country with its code and currency, or switch a pack off. Reset puts a built-in pack back to SampCrew’s values.',
+      where: 'For Super admins. Workspaces keep settings they already saved; a pack only fills the form for entities that have not saved theirs.',
+    },
     '/integrations': {
       title: 'Integrations',
       what: 'Every outside service SampCrew uses and its keys: Claude AI, email (SMTP), mobile push, virus scanning, mobile sign-in addresses, Razorpay, Stripe and off-site backup storage.',
@@ -112,6 +118,8 @@ export const CONSOLE_HELP: HelpContent = {
   },
 
   sections: {
+    'Country packs': { what: 'Every country with ready-made starting values, whether it is offered, and whether it was changed in Console.', how: 'Open one to edit it, or add a country below the list.' },
+    'Pack settings': { what: 'The contributions, income tax bands and regional taxes of one country pack.', how: 'Change the values and save. Workspaces see them the next time they open statutory settings for an entity there.' },
     Backups: { what: 'The last daily archive (copied off-site or not) and how far back the database can be restored to any second.', how: 'Red means the last backup or its off-site copy failed: check the backup service logs today.' },
     'Replica set': { what: 'Each database member, its state and how far behind the primary it is, and how many hours of changes the oplog keeps.' },
     'Last 30 days': { what: 'Changes in monthly recurring revenue: new customers, trials bought, upgrades, add-ons, downgrades and cancellations.' },

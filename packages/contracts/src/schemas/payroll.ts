@@ -105,6 +105,17 @@ export const genericStatutorySchema = z.object({
 });
 export const anyStatutorySchema = z.union([genericStatutorySchema, statutorySettingsSchema]);
 
+/** A country pack as SAMPLEDGE saves it in the Console (Statutory packs). */
+export const statutoryPackInput = z.object({
+  country: z.string().trim().min(2).max(80),
+  currency: z.string().regex(/^[A-Z]{3}$/, 'Use a 3-letter ISO currency code'),
+  basis: z.string().trim().min(2).max(120),
+  summary: z.string().trim().max(300).default(''),
+  active: z.boolean().default(true),
+  settings: anyStatutorySchema,
+});
+export type StatutoryPackInput = z.infer<typeof statutoryPackInput>;
+
 export const LOP_SOURCES = ['attendance_and_leave', 'leave_only'] as const;
 export const statutoryInput = z.object({
   legalEntityId: z.uuid(),

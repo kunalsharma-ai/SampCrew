@@ -35,6 +35,14 @@ countries ("keep across all").
   - Australia (2026-27): PAYG withholding from resident rates with the Medicare levy, superannuation guarantee 12%.
   - **Any other country** starts from a blank custom scheme (tax year from the entity's fiscal year, rounding by
     currency) that the workspace fills in.
+- **Country packs live in MongoDB** (collection `statutory_packs`), not in code or the server's settings file. The
+  packs above are copied in on every deploy (`syncCatalogueMongo`) only while SAMPLEDGE has not changed them. The
+  **Console > Payroll country packs** page (`/statutory-packs`, `statutory:manage` to change, anyone with
+  `tenants:read` to look) edits a pack with the same fields as the workspace editor, adds a pack for any other
+  country, switches a pack off, resets a built-in pack to SampCrew's values and removes a pack SAMPLEDGE added. Every
+  change is in the platform audit. Workspaces read starting values from the database; settings a workspace already
+  saved never change when a pack does. API: `GET/PUT/DELETE /platform/statutory-packs/:countryCode` and
+  `POST .../reset`; the scheme is checked against the country before it is saved (`statutorySchemeProblem`).
 - **Settings > Payroll settings > Statutory settings** shows the entity's country, currency and pack, the notice that a
   local payroll advisor must check every value, and the right editor: India's sections for India, or contributions /
   income tax / regional taxes / notes for every other country. "Reset to the starting values" and "Start from a blank
@@ -57,7 +65,11 @@ countries ("keep across all").
   the salary split outside India, tax-year helpers, pack validity and switch labels.
 - `apps/api/test/payroll-countries.spec.ts`: starting values per entity, validation of the scheme against the country,
   a UK salary and payroll run approved and finalised, May carrying April's tax, the payslip's tax year, a German
-  custom scheme paid end to end, and the change-of-country stop.
+  custom scheme paid end to end, and the change-of-country stop. Country packs in the database: listing, a Console
+  edit reaching a workspace's starting values (support admins get 403), validation, adding and switching off a
+  country, and reset (built-in packs cannot be removed).
+- `e2e/console-smoke.cjs` (`pnpm e2e:console`): the Super admin adds a New Zealand pack in the Console, switches it
+  off and removes it.
 - `e2e/payroll-countries-flow.cjs` (`pnpm e2e:payroll-countries`, own CI step on a fresh demo workspace): the payroll
   lead opens Northwind UK's settings (UK pack, advisor notice, no PF/ESI), adds a contribution and saves a version,
   previews a UK salary, computes last month's UK run (NI, pension and PAYE in GBP), and finds India unchanged.

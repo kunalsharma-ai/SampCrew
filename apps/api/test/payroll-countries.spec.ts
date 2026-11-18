@@ -1,5 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hashPassword } from '../src/platform/auth/crypto';
+import { currentTotp } from '../src/platform/auth/mfa';
 import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 /**
@@ -25,7 +27,7 @@ describe('payroll in other countries', () => {
     const inbox = ok(await as(who).get('/approvals/inbox')) as unknown as { id: string; resourceType: string }[];
     for (const i of inbox.filter((x) => x.resourceType === 'payroll_run')) ok(await as(who).post(`/approvals/${i.id}/approve`).send({}));
   };
-  const entityStart = async (id: string) => (ok(await as('payroll').get('/payroll/statutory')).entities as { legalEntityId: string; countryCode: string; pack: { country: string } | null; settings: any; notice: string }[]).find((e) => e.legalEntityId === id)!;
+  const entityStart = async (id: string) => (ok(await as('payroll').get('/payroll/statutory')).entities as { legalEntityId: string; countryCode: string; pack: { country: string; basis: string } | null; settings: any; notice: string }[]).find((e) => e.legalEntityId === id)!;
 
   beforeAll(async () => {
     app = await createApp();
@@ -55,6 +57,14 @@ describe('payroll in other countries', () => {
     tokens.olivia = (await login(app, people.olivia.email)).accessToken;
     structureId = (ok(await as('payroll').get('/payroll/structures')) as unknown as { id: string; name: string }[]).find((s) => s.name === 'Standard')!.id;
   });
+
+  async function platformToken(role: string) {
+    const email = `statutory.${role}.${Date.now()}@sampledge.test`;
+    await pool.insert('platform_admins', { email, full_name: `Statutory ${role}`, password_hash: await hashPassword('Platform-Test-Password-1!'), role });
+    const res = await api(app).post('/platform/auth/login').send({ email, password: 'Platform-Test-Password-1!' });
+    const setup = await api(app, res.body.accessToken).post('/platform/auth/mfa/setup');
+    return (await api(app, res.body.accessToken).post('/platform/auth/mfa/enable').send({ code: currentTotp(setup.body.secret) })).body.accessToken as string;
+  }
 
   afterAll(async () => {
     await app.close();
@@ -194,6 +204,76 @@ describe('payroll in other countries', () => {
       } finally {
         await pool.update('legal_entities', { id: deId }, { $set: { country_code: 'DE' } });
       }
+    });
+  });
+
+  describe('country packs in the database (Console)', () => {
+    let superToken: string;
+    let supportToken: string;
+    beforeAll(async () => {
+      superToken = await platformToken('super_admin');
+      supportToken = await platformToken('support');
+    });
+    afterAll(async () => {
+      await api(app, superToken).post('/platform/statutory-packs/GB/reset');
+      await api(app, superToken).delete('/platform/statutory-packs/DE');
+    });
+
+    it('are stored in MongoDB, built-in packs synced from SampCrew', async () => {
+      const packs = ok(await api(app, superToken).get('/platform/statutory-packs')) as unknown as { countryCode: string; builtIn: boolean; customisedAt: string | null }[];
+      expect(packs[0]!.countryCode).toBe('IN');
+      expect(packs.map((p) => p.countryCode)).toEqual(expect.arrayContaining(['GB', 'US', 'AE', 'SA', 'QA', 'SG', 'AU']));
+      expect(packs.every((p) => p.builtIn && p.customisedAt === null)).toBe(true);
+      expect(await pool.count('statutory_packs', {})).toBe(packs.length);
+    });
+
+    it('SAMPLEDGE edits a pack and workspaces get the new starting values; saved settings are untouched', async () => {
+      const gb = (ok(await api(app, superToken).get('/platform/statutory-packs')) as unknown as any[]).find((p) => p.countryCode === 'GB');
+      const edited = structuredClone(gb.settings);
+      edited.contributions.push({ code: 'LIFE', name: 'Group life cover', employeeRatePercent: '0', employerRatePercent: '1', base: 'gross', threshold: null, ceiling: null, eligibleFrom: null, appliesTo: 'everyone', reducesTaxablePay: false });
+      const body = { country: 'United Kingdom', currency: 'GBP', basis: 'Tax year 2027-28 (checked by our advisor)', summary: gb.summary, active: true, settings: edited };
+      expect((await api(app, supportToken).put('/platform/statutory-packs/GB').send(body)).status).toBe(403);
+      ok(await api(app, superToken).put('/platform/statutory-packs/GB').send(body));
+      const uk = await entityStart(ukId);
+      expect(uk.pack).toMatchObject({ basis: 'Tax year 2027-28 (checked by our advisor)' });
+      expect(uk.settings.contributions.map((c: { code: string }) => c.code)).toContain('LIFE');
+      const saved = ok(await as('payroll').get(`/payroll/statutory?legalEntityId=${ukId}`)).settings;
+      expect(saved[0].settings.contributions.map((c: { code: string }) => c.code)).not.toContain('LIFE');
+      const audit = await pool.find('audit_events', { action: 'platform.statutory_pack_updated', resource_id: 'GB' });
+      expect(audit.length).toBeGreaterThan(0);
+    });
+
+    it('checks a pack like workspace settings', async () => {
+      const india = (await entityStart(t.legalEntityId)).settings;
+      const bad = await api(app, superToken).put('/platform/statutory-packs/GB').send({ country: 'United Kingdom', currency: 'GBP', basis: 'x2', active: true, settings: india });
+      expect(bad.status).toBe(400);
+      expect(bad.body.error.code).toBe('scheme_country');
+      expect((await api(app, superToken).put('/platform/statutory-packs/gb').send({})).status).toBe(422);
+    });
+
+    it('adds a pack for a new country, which a German entity then starts from', async () => {
+      const de = (await entityStart(deId)).settings;
+      expect(de.countryCode).toBe('DE');
+      de.contributions = [{ code: 'KV', name: 'Health insurance', employeeRatePercent: '7.3', employerRatePercent: '7.3', base: 'gross', threshold: null, ceiling: '5512.50', eligibleFrom: null, appliesTo: 'everyone', reducesTaxablePay: false }];
+      const created = ok(await api(app, superToken).put('/platform/statutory-packs/DE').send({ country: 'Germany', currency: 'EUR', basis: 'Rates for 2026', summary: 'Health insurance', active: true, settings: de }));
+      expect(created.created).toBe(true);
+      const start = await entityStart(deId);
+      expect(start.pack).toMatchObject({ country: 'Germany', basis: 'Rates for 2026' });
+      expect(start.settings.contributions[0].code).toBe('KV');
+      expect(ok(await as('payroll').get('/payroll/statutory')).packs.map((p: { countryCode: string }) => p.countryCode)).toContain('DE');
+      // Switched off, the country goes back to a blank custom scheme.
+      ok(await api(app, superToken).put('/platform/statutory-packs/DE').send({ country: 'Germany', currency: 'EUR', basis: 'Rates for 2026', active: false, settings: de }));
+      expect((await entityStart(deId)).pack).toBeNull();
+      expect((await api(app, superToken).post('/platform/statutory-packs/DE/reset')).body.error.code).toBe('not_built_in');
+      expect((await api(app, superToken).delete('/platform/statutory-packs/DE')).status).toBe(204);
+    });
+
+    it('puts a built-in pack back to SampCrew values; built-in packs cannot be removed', async () => {
+      expect((await api(app, superToken).delete('/platform/statutory-packs/GB')).body.error.code).toBe('built_in');
+      ok(await api(app, superToken).post('/platform/statutory-packs/GB/reset'));
+      const uk = await entityStart(ukId);
+      expect(uk.pack!).toMatchObject({ basis: 'Tax year 2026-27' });
+      expect(uk.settings.contributions.map((c: { code: string }) => c.code)).not.toContain('LIFE');
     });
   });
 });

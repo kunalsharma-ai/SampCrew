@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type ComponentInput, DEFAULT_IN_STATUTORY, type expenseCategoryInput, isGenericStatutory, STATUTORY_PACKS, type StatutoryInput, type StructureInput } from '@crew/contracts';
+import { type ComponentInput, DEFAULT_IN_STATUTORY, type expenseCategoryInput, type StatutoryInput, statutorySchemeProblem, type StructureInput } from '@crew/contracts';
 import type { z } from 'zod';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -7,7 +7,7 @@ import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 import { fieldById } from '../employees/employee-view';
 import { Errors } from '../../platform/http/errors';
-import { ENTITY_FIELDS, legalEntity, schemeCountry, startingFor } from './payroll-common';
+import { ENTITY_FIELDS, legalEntity, schemeCountry, startingFor, statutoryPacks } from './payroll-common';
 
 const uniqueViolation = (code: string, message: string) => (err: { code?: string }) => {
   if (err.code === '23505') throw Errors.conflict(code, message);
@@ -178,12 +178,13 @@ export class PayrollConfigService {
         .sort((a, b) => String(a.legalEntityName).localeCompare(String(b.legalEntityName)));
       const entityRows = await tx.collection<{ id: string; name: string; legal_name: string; currency: string; country_code: string; fiscal_year_start_month?: number }>('legal_entities')
         .find(legalEntityId ? { id: legalEntityId } : {}, { sort: { name: 1 } });
+      const packs = await statutoryPacks(tx);
       return {
         settings: rows,
-        packs: STATUTORY_PACKS,
+        packs: packs.map(({ settings: _s, ...p }) => p),
         entities: entityRows.map((le) => ({
           legalEntityId: le.id, name: le.name, currency: le.currency,
-          ...startingFor({ country_code: le.country_code, currency: le.currency, fiscal_year_start_month: Number(le.fiscal_year_start_month ?? 4) }),
+          ...startingFor({ country_code: le.country_code, currency: le.currency, fiscal_year_start_month: Number(le.fiscal_year_start_month ?? 4) }, packs),
         })),
         /** India's starting values, kept for older clients. */
         startingValues: {
@@ -261,37 +262,8 @@ export class PayrollConfigService {
   }
 }
 
-/** Slabs must rise and end with an open slab, or the engine cannot place every amount. */
-function checkSlabs(slabs: { upTo: string | null }[], what: string) {
-  if (slabs[slabs.length - 1]!.upTo !== null) throw Errors.badRequest('open_slab', `${what}: the last slab must have no upper limit`);
-  let prev = -1;
-  for (const sl of slabs.slice(0, -1)) {
-    if (sl.upTo === null) throw Errors.badRequest('open_slab', `${what}: only the last slab can have no upper limit`);
-    if (Number(sl.upTo) <= prev) throw Errors.badRequest('slab_order', `${what}: slab limits must rise`);
-    prev = Number(sl.upTo);
-  }
-}
-
-/**
- * The scheme must match the legal entity's country (India's scheme for India, the generic scheme for its own
- * country anywhere else), and its slabs and contributions must be usable by the engine.
- */
+/** The scheme must match the legal entity's country, with rules the engine can use (see statutorySchemeProblem). */
 function checkScheme(s: StatutoryInput['settings'], countryCode: string) {
-  if (!isGenericStatutory(s)) {
-    if (countryCode !== 'IN') throw Errors.badRequest('scheme_country', `India's PF, ESI and TDS scheme only applies to an Indian legal entity. This entity is in ${countryCode}; use its country's settings.`);
-    for (const [state, slabs] of Object.entries(s.pt.states)) checkSlabs(slabs, `Professional tax for ${state}`);
-    checkSlabs(s.tds.slabs, 'Income tax slabs');
-    return;
-  }
-  if (countryCode === 'IN') throw Errors.badRequest('scheme_country', 'An Indian legal entity uses the India scheme (PF, ESI, professional tax and TDS).');
-  if (s.countryCode !== countryCode) throw Errors.badRequest('scheme_country', `These settings are for ${s.countryCode}, but the legal entity is in ${countryCode}.`);
-  const codes = new Set<string>();
-  for (const r of s.contributions) {
-    if (codes.has(r.code)) throw Errors.badRequest('contribution_code', `Two contributions use the code ${r.code}`);
-    codes.add(r.code);
-    if (Number(r.employeeRatePercent) === 0 && Number(r.employerRatePercent) === 0) throw Errors.badRequest('contribution_rate', `${r.name}: give an employee or employer rate`);
-    if (r.threshold !== null && r.ceiling !== null && Number(r.ceiling) <= Number(r.threshold)) throw Errors.badRequest('contribution_range', `${r.name}: the ceiling must be above the threshold`);
-  }
-  if (s.incomeTax) checkSlabs(s.incomeTax.slabs, `${s.incomeTax.name} slabs`);
-  for (const [region, t] of Object.entries(s.regionalTaxes)) checkSlabs(t.slabs, `${t.name} (${region}) slabs`);
+  const problem = statutorySchemeProblem(s, countryCode);
+  if (problem) throw Errors.badRequest(problem.code, problem.message);
 }
