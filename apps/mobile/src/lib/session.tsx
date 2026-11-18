@@ -11,6 +11,7 @@ import { biometricEnabled, unlockWithBiometric } from './biometric';
 import { clock, randomId } from './clock';
 import { type FlushOutcome, Outbox, type PunchDraft, type QueuedPunch, type RefusedPunch } from './outbox';
 import { makePkce, readHandoff } from './sso';
+import { hostOf, resumeSession } from './startup';
 import { kv, secret, tokenStore } from './storage';
 
 export const API_URL: string = ((Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ?? 'http://localhost:4000').replace(/\/$/, '');
@@ -172,22 +173,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [start],
   );
 
-  // On start: resume the stored session, behind the biometric if it is turned on.
+  // On start: resume the stored session, behind the biometric if it is turned on. resumeSession always settles
+  // (it has its own time limit), so the app never stays on the splash screen.
   useEffect(() => {
-    (async () => {
-      const t = await tokenStore.get();
-      if (!t) return setStatus('signedOut');
-      if (await biometricEnabled()) return setStatus('locked');
-      try {
-        await start();
-        setStatus('ready');
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 401) return; // already signed out
-        // Offline (or the server is down): keep the session and work from what is stored; screens retry.
-        if (await restore()) setStatus('ready');
-        else setStatus('signedOut');
-      }
-    })();
+    let live = true;
+    void resumeSession({
+      readTokens: () => tokenStore.get(),
+      clearTokens: () => tokenStore.clear(),
+      biometricEnabled,
+      start,
+      restore,
+      apiHost: hostOf(API_URL),
+    }).then((r) => {
+      if (!live) return;
+      if (r.notice) setNotice(r.notice);
+      setStatus(r.status);
+    });
+    return () => {
+      live = false;
+    };
   }, [start, restore]);
 
   const sync = useCallback(async () => {
