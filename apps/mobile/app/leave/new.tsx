@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../src/lib/api';
 import { randomId } from '../../src/lib/clock';
 import { useSession } from '../../src/lib/session';
@@ -26,8 +26,8 @@ export default function NewLeave() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const key = useRef(randomId());
 
   const type = balances?.find((b) => b.leaveTypeId === typeId);
   useEffect(() => {
@@ -47,13 +47,23 @@ export default function NewLeave() {
   }, [typeId, start, end, half, reason]);
 
   const valid = typeId && isDate(start) && isDate(end) && end >= start;
+  // One idempotency key per version of the request: a retry of the same request (say after a dropped connection)
+  // is recorded once, while a changed request is a new one. A single key for the whole screen made the server
+  // refuse a corrected request ("already used for a different request") after a first attempt timed out.
+  const key = useMemo(() => randomId(), [body]);
 
   // Shows the working days and the balance after this request before it is sent (nothing is saved).
   useEffect(() => {
     setPreview(null);
+    setRefusal(null);
     if (!valid) return;
     const t = setTimeout(() => {
-      api.post<Preview>('/leave/requests/preview', body).then(setPreview, () => setPreview(null));
+      api.post<Preview>('/leave/requests/preview', body).then(setPreview, (e) => {
+        setPreview(null);
+        // The workspace's leave rules refuse these dates (notice period, balance, probation...): say why now,
+        // next to the button, instead of only after sending.
+        if (e instanceof ApiError && !e.offline && e.status >= 400 && e.status < 500) setRefusal(e.message);
+      });
     }, 300);
     return () => clearTimeout(t);
   }, [api, body, valid]);
@@ -68,7 +78,7 @@ export default function NewLeave() {
     setBusy(true);
     setError(null);
     try {
-      await api.post('/leave/requests', body, key.current);
+      await api.post('/leave/requests', body, key);
       router.back();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not send the request.');
@@ -81,7 +91,6 @@ export default function NewLeave() {
   return (
     <Screen>
       {loadError && <Notice tone="danger">{loadError}</Notice>}
-      {error && <Notice tone="danger" testID="leave-error">{error}</Notice>}
       <Card>
         {balances && (
           <Choice
@@ -109,6 +118,10 @@ export default function NewLeave() {
             {`${preview.days} working day${preview.days === '1.00' ? '' : 's'}.${preview.balanceAfter !== null ? ` Balance after: ${preview.balanceAfter}.` : ''}${preview.holidaysInRange.length ? ` Holidays not counted: ${preview.holidaysInRange.join(', ')}.` : ''}${preview.warnings.length ? ` ${preview.warnings.join(' ')}` : ''}`}
           </Notice>
         )}
+        {refusal && !error && <Notice tone="warn" testID="leave-refusal">{refusal}</Notice>}
+        {/* Shown next to the button, where the person is looking (the top of the form can be scrolled away). */}
+        {error && <Notice tone="danger" testID="leave-error">{error}</Notice>}
+        {balances && balances.length === 0 && <Notice tone="warn">No leave types are set up for you yet. Ask HR to add a leave policy for your legal entity.</Notice>}
         <Text muted size={13}>Your approver is notified when you send this.</Text>
         <Button title="Send request" onPress={submit} busy={busy} disabled={!valid} testID="send-leave" />
       </Card>

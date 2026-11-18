@@ -223,6 +223,32 @@ describe('helpdesk and announcements', () => {
       expect(sum.mine.open).toBeGreaterThanOrEqual(1);
       expect(sum.assignedToMe).toBeNull();
     });
+
+    it('tells HR about a question nobody has taken yet when its category has no handlers, both ways', async () => {
+      // "Something else" starts with no handlers: before, a question there (from the phone or the web) notified nobody.
+      const cats = ok(await as('asha').get('/helpdesk/categories')) as unknown as { id: string; name: string }[];
+      const other = cats.find((c) => c.name === 'Something else')!.id;
+      const c = ok(await as('asha').post('/helpdesk/cases').set('x-crew-client', 'mobile').send({ categoryId: other, subject: 'Canteen timings', description: 'When does the canteen open on Saturdays?' }), 201);
+      const title = `New helpdesk case ${c.ref} in Something else`;
+      // Everyone whose helpdesk scope covers Asha hears about it; HR for another legal entity and her manager do not.
+      expect(await unread('hr', 'helpdesk.case_new')).toContain(title);
+      expect(await unread('hr2', 'helpdesk.case_new')).toContain(title);
+      expect(await unread('ukhr', 'helpdesk.case_new')).not.toContain(title);
+      expect(await unread('manager', 'helpdesk.case_new')).toEqual([]);
+      // The person who asked hears that HR has it.
+      expect(await unread('asha', 'helpdesk.case_received')).toContain(`HR has your question ${c.ref}: Canteen timings`);
+      // Her follow-up before anyone replies reaches HR too.
+      ok(await as('asha').post(`/helpdesk/cases/${c.id}/messages`).send({ body: 'And on Sundays?' }));
+      expect(await unread('hr', 'helpdesk.reply')).toContain(`New reply on ${c.ref}`);
+      // HR's reply reaches her, and makes the person replying the case's owner.
+      ok(await as('hr2').post(`/helpdesk/cases/${c.id}/messages`).send({ body: 'From 8:00 to 15:00 on both days.' }));
+      expect(await unread('asha', 'helpdesk.reply')).toContain(`HR replied on ${c.ref}`);
+      expect(ok(await as('hr2').get(`/helpdesk/cases/${c.id}`)).assigneeName).toBe('Hugo Test');
+      // Olly in the UK is covered by UK HR (and HR with workspace-wide scope), not only by the head office.
+      const u = ok(await as('olly').post('/helpdesk/cases').send({ categoryId: other, subject: 'Payslip in pounds', description: 'Will my payslip show amounts in GBP?' }), 201);
+      expect(await unread('ukhr', 'helpdesk.case_new')).toContain(`New helpdesk case ${u.ref} in Something else`);
+      expect(await unread('hr', 'helpdesk.case_new')).toContain(`New helpdesk case ${u.ref} in Something else`);
+    });
   });
 
   describe('announcements', () => {

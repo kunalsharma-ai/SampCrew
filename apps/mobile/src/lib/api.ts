@@ -35,6 +35,15 @@ export class ApiError extends Error {
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 const TIMEOUT_MS = 15_000;
+/** A photo over a slow mobile connection takes longer than an ordinary request. */
+const UPLOAD_TIMEOUT_MS = 90_000;
+
+/** A request body sent as raw bytes with its own content type (a multipart photo upload). */
+export interface RawBody {
+  bytes: Uint8Array;
+  contentType: string;
+}
+const isRaw = (b: unknown): b is RawBody => typeof b === 'object' && b !== null && (b as RawBody).bytes instanceof Uint8Array && typeof (b as RawBody).contentType === 'string';
 
 export class Api {
   private refreshing: Promise<boolean> | null = null;
@@ -48,19 +57,19 @@ export class Api {
 
   private async raw(method: string, path: string, body: unknown, access: string | null, idempotencyKey?: string): Promise<Response> {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    const raw = isRaw(body);
+    const timer = setTimeout(() => ctrl.abort(), raw ? UPLOAD_TIMEOUT_MS : TIMEOUT_MS);
     try {
       return await this.fetchImpl(`${this.baseUrl}/api/v1${path}`, {
         method,
         headers: {
           accept: 'application/json',
           'x-crew-client': 'mobile',
-          // A form (file upload) sets its own multipart content type.
-          ...(body !== undefined && !(body instanceof FormData) ? { 'content-type': 'application/json' } : {}),
+          ...(raw ? { 'content-type': body.contentType } : body !== undefined ? { 'content-type': 'application/json' } : {}),
           ...(access ? { authorization: `Bearer ${access}` } : {}),
           ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}),
         },
-        body: body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
+        body: raw ? (body.bytes as unknown as BodyInit) : body !== undefined ? JSON.stringify(body) : undefined,
         signal: ctrl.signal,
       });
     } catch {
@@ -116,9 +125,13 @@ export class Api {
   delete<T>(path: string) {
     return this.request<T>('DELETE', path);
   }
-  /** Uploads a form with a file, for example a photo. */
-  upload<T>(method: 'POST' | 'PUT', path: string, form: FormData) {
-    return this.request<T>(method, path, form);
+  /**
+   * Uploads one file as multipart/form-data. The body is built here as bytes rather than with FormData: on phones
+   * the app's fetch (expo/fetch) cannot send React Native's { uri } file entries, so those uploads never left the
+   * phone. Bytes work the same with every fetch the app can run on.
+   */
+  uploadFile<T>(method: 'POST' | 'PUT', path: string, file: { field: string; fileName: string; type: string; bytes: Uint8Array }) {
+    return this.request<T>(method, path, multipart(file));
   }
 
   /** Downloads a protected image as a data: address the Image component can show on phones and on the web. */
@@ -166,4 +179,33 @@ export function base64(bytes: Uint8Array): string {
     out += B64[a >> 2]! + B64[((a & 3) << 4) | ((b ?? 0) >> 4)]! + (b === undefined ? '=' : B64[((b & 15) << 2) | ((c ?? 0) >> 6)]!) + (c === undefined ? '=' : B64[c & 63]!);
   }
   return out;
+}
+
+const B64_INDEX = new Map([...B64].map((c, i) => [c, i]));
+/** Decodes base64 (padding and line breaks allowed) without atob, which not every JavaScript engine has. */
+export function fromBase64(text: string): Uint8Array {
+  const clean = text.replace(/[^A-Za-z0-9+/]/g, '');
+  const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
+  let o = 0;
+  for (let i = 0; i < clean.length; i += 4) {
+    const a = B64_INDEX.get(clean[i]!)!, b = B64_INDEX.get(clean[i + 1]!) ?? 0, c = B64_INDEX.get(clean[i + 2]!), d = B64_INDEX.get(clean[i + 3]!);
+    out[o++] = (a << 2) | (b >> 4);
+    if (c !== undefined) out[o++] = ((b & 15) << 4) | (c >> 2);
+    if (c !== undefined && d !== undefined) out[o++] = ((c & 3) << 6) | d;
+  }
+  return out.subarray(0, o);
+}
+
+const utf8 = (s: string) => new TextEncoder().encode(s);
+
+/** A multipart/form-data body with one file field. */
+export function multipart(file: { field: string; fileName: string; type: string; bytes: Uint8Array }, boundary = `----SampCrew${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`): RawBody {
+  const safeName = file.fileName.replace(/["\r\n\\]/g, '_');
+  const head = utf8(`--${boundary}\r\nContent-Disposition: form-data; name="${file.field}"; filename="${safeName}"\r\nContent-Type: ${file.type}\r\n\r\n`);
+  const tail = utf8(`\r\n--${boundary}--\r\n`);
+  const bytes = new Uint8Array(head.length + file.bytes.length + tail.length);
+  bytes.set(head, 0);
+  bytes.set(file.bytes, head.length);
+  bytes.set(tail, head.length + file.bytes.length);
+  return { bytes, contentType: `multipart/form-data; boundary=${boundary}` };
 }
