@@ -199,6 +199,9 @@ function futureWeekday(taken) {
     // 3. Leave request with preview; approved by the manager on their phone.
     await tab(p, 'Leave');
     await p.getByTestId('apply-leave').click();
+    // A request the leave rules refuse says why next to the button before it is sent (earned leave needs notice).
+    await p.getByRole('radio', { name: /^Earned leave/ }).click();
+    await p.getByTestId('leave-refusal').getByText(/days' notice/).waitFor();
     await p.getByRole('radio', { name: /^Casual leave/ }).click();
     const mine = await api(qa, 'GET', '/leave/requests');
     const day = futureWeekday(new Set(mine.filter((r) => r.status !== 'cancelled' && r.status !== 'rejected').map((r) => r.startDate)));
@@ -265,6 +268,26 @@ function futureWeekday(taken) {
     assert(JSON.stringify(trail).includes('helpdesk.'), 'case actions are audited');
     assert(!JSON.stringify(trail).includes('shift allowance') && !JSON.stringify(trail).includes('14th to the 18th'), 'case text is not in the audit trail');
     ok('HR resolved it; the employee rated and confirmed it from the app');
+
+    // 4b. A question in a category with no named handlers (every new workspace starts that way) still reaches HR
+    // in the Web Portal's notifications, and HR's reply reaches the phone's notifications.
+    await p.goto(APP + '/helpdesk');
+    await p.getByTestId('new-case').click();
+    await p.getByRole('radio', { name: 'Something else' }).click();
+    const subject2 = `Mobile e2e ${Date.now()}: parking pass`;
+    await p.getByLabel('Subject').fill(subject2);
+    await p.getByLabel('Your question').fill('Where do I collect a parking pass for the new building?');
+    await p.getByTestId('send-case').click();
+    await p.getByTestId('case-header').getByText(subject2).waitFor();
+    const caseId2 = p.url().split('/').pop();
+    const ref2 = (await api(hr, 'GET', `/helpdesk/cases/${caseId2}`)).ref;
+    const hrNotes = await api(hr, 'GET', '/notifications?limit=50');
+    assert(hrNotes.items.some((n) => n.title === `New helpdesk case ${ref2} in Something else` && n.link === `/helpdesk/${caseId2}`), 'HR is notified of a question raised from the phone');
+    await api(hr, 'POST', `/helpdesk/cases/${caseId2}/messages`, { body: 'At reception, with your employee card.', internal: false });
+    await p.goto(APP + '/notifications');
+    await p.getByText(`HR replied on ${ref2}`).first().waitFor();
+    await p.getByText(`HR has your question ${ref2}: ${subject2}`).first().waitFor();
+    ok(`raised ${ref2} with no named handler: HR was notified on the web, and HR's reply showed on the phone`);
 
     // 5. Announcement with acknowledgement.
     const annTitle = `Mobile e2e ${Date.now()}: new canteen timings`;
