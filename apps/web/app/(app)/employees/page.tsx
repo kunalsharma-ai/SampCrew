@@ -8,6 +8,7 @@ import { can } from '@/lib/nav';
 import type { Department, Designation, Employee, LegalEntity, Location, Me, OnboardingTemplate, Page } from '@/lib/types';
 import type { Structure } from '../payroll/types';
 import { type EmployeeDraft, EmployeesView } from './employees-view';
+import type { LeavePolicyOption } from './hire-wizard';
 import type { DeviceOption, ShiftOption } from './[id]/profile-extras';
 import { DEFAULT_COLUMNS, viewUrl } from './view-url';
 
@@ -49,7 +50,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const canPay = can(me, 'payroll:run');
   const canDocs = can(me, 'documents:manage');
   const canAttendance = me.features.includes('attendance_basic');
-  const [page, departments, entities, locations, designations, managers, templates, drafts, structures, shifts, devices] = await Promise.all([
+  const canOpenBalances = canHire && me.features.includes('leave') && can(me, 'leave:approve');
+  const [page, departments, entities, locations, designations, managers, templates, drafts, structures, shifts, devices, policies] = await Promise.all([
     load<Page<Employee> & { total?: number }>(`/employees?${qs}`),
     loadOptional<Department[]>('/org/departments'),
     loadOptional<LegalEntity[]>('/org/legal-entities'),
@@ -61,6 +63,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     canHire && canPay ? loadOptional<Structure[]>('/payroll/structures') : null,
     canHire && canAttendance ? loadOptional<ShiftOption[]>('/shifts/templates') : null,
     canHire && canAttendance && can(me, 'devices:manage') ? loadOptional<DeviceOption[]>('/attendance/devices') : null,
+    canOpenBalances ? loadOptional<LeavePolicyOption[]>('/leave/policies') : null,
   ]);
   // A new workspace finishes company setup before its first hire; admins are sent there from Add employee.
   const setupPending = !me.tenant.setupCompletedAt;
@@ -101,6 +104,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         canManageOrg={canManageOrg}
         canAttendance={canAttendance}
         canConfigureShifts={canAttendance && can(me, 'attendance:configure')}
+        leavePolicies={canOpenBalances ? (policies ?? []).filter((x) => !x.typeArchived && x.accrualMethod !== 'none') : null}
         setupPending={setupPending}
       />
     </>

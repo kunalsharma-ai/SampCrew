@@ -1,5 +1,6 @@
 'use client';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
+import { dateOfBirthError, dateOfBirthRange, phoneError } from '@crew/contracts';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, DatePicker, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
 import { CheckCircle2, Circle, Download, Eye, FileText, Lock, Pencil, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -23,8 +24,10 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Small dialog form that posts through a server action, shows API errors and refreshes on success. */
-function ActionDialog({ open, onClose, title, description, submit, danger, children, run }: {
+function ActionDialog({ open, onClose, title, description, submit, danger, children, run, validate }: {
   open: boolean; onClose: () => void; title: string; description?: string; submit: string; danger?: boolean; children: ReactNode; run: (f: FormData) => Promise<ActionResult>;
+  /** Checks before sending: field name to message. */
+  validate?: (f: FormData) => Record<string, string>;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -45,6 +48,8 @@ function ActionDialog({ open, onClose, title, description, submit, danger, child
           e.preventDefault();
           const f = new FormData(e.currentTarget);
           setError(null);
+          const bad = validate?.(f) ?? {};
+          if (Object.keys(bad).length) { setError('Some fields need attention'); setFe(bad); return; }
           start(async () => {
             const r = await run(f);
             if (r.ok) { onClose(); router.refresh(); } else { setError(r.message); setFe(r.fieldErrors ?? {}); }
@@ -56,6 +61,14 @@ function ActionDialog({ open, onClose, title, description, submit, danger, child
       </form>
     </Dialog>
   );
+}
+
+/** The date of birth calendar on the profile, limited by the joining date as on the hire form. */
+function BirthDate({ joining, initial, ...p }: { joining: string; initial: string; id: string }) {
+  const [value, setValue] = useState(initial);
+  const range = dateOfBirthRange(joining);
+  const openTo = `${Number(joining.slice(0, 4)) - 25}${joining.slice(4)}`;
+  return <DatePicker {...p} name="dateOfBirth" value={value} onChange={setValue} min={range.min} max={range.max} openTo={openTo} calendarLabel="Choose date of birth" />;
 }
 
 const pick = (f: FormData, keys: string[], nullable = false) => {
@@ -114,17 +127,28 @@ export function OverviewTab({ e }: { e: EmployeeProfile }) {
         description={e.can.update ? undefined : 'You can change your preferred name and contact details. HR maintains the rest.'}
         submit="Save"
         run={(f) => updateEmployeeAction(e.id, pick(f, fields, true))}
+        validate={(f) => {
+          const out: Record<string, string> = {};
+          const get = (k: string) => String(f.get(k) ?? '').trim();
+          const ph = phoneError(get('phone'));
+          if (ph) out.phone = ph;
+          const born = f.has('dateOfBirth') ? dateOfBirthError(get('dateOfBirth'), e.dateOfJoining) : null;
+          if (born) out.dateOfBirth = born;
+          const work = f.has('workEmail') ? get('workEmail') : (e.workEmail ?? '');
+          if (work && work.toLowerCase() === get('personalEmail').toLowerCase()) out.personalEmail = 'The work email and the personal email must be different';
+          return out;
+        }}
       >
         {e.can.update && <>
           <Field label="First name" required>{(p) => <Input {...p} name="firstName" defaultValue={e.firstName} required />}</Field>
           <Field label="Last name">{(p) => <Input {...p} name="lastName" defaultValue={e.lastName} />}</Field>
         </>}
         <Field label="Preferred name">{(p) => <Input {...p} name="preferredName" defaultValue={e.preferredName ?? ''} />}</Field>
-        {e.can.update && <Field label="Work email">{(p) => <Input {...p} name="workEmail" type="email" defaultValue={e.workEmail ?? ''} />}</Field>}
-        <Field label="Personal email">{(p) => <Input {...p} name="personalEmail" type="email" defaultValue={e.personalEmail ?? ''} />}</Field>
-        <Field label="Phone">{(p) => <Input {...p} name="phone" type="tel" defaultValue={e.phone ?? ''} />}</Field>
+        {e.can.update && <Field label="Work email" hint="Their company address, not a personal one">{(p) => <Input {...p} name="workEmail" type="email" autoComplete="off" defaultValue={e.workEmail ?? ''} />}</Field>}
+        <Field label="Personal email">{(p) => <Input {...p} name="personalEmail" type="email" autoComplete="off" defaultValue={e.personalEmail ?? ''} />}</Field>
+        <Field label="Phone" hint="With the country code, such as +91 98201 23456">{(p) => <Input {...p} name="phone" type="tel" inputMode="tel" autoComplete="off" maxLength={40} defaultValue={e.phone ?? ''} />}</Field>
         {e.can.update && <>
-          <Field label="Date of birth">{(p) => <Input {...p} name="dateOfBirth" type="date" defaultValue={e.dateOfBirth ?? ''} />}</Field>
+          <Field label="Date of birth" hint={`At least 14 on the joining date, ${e.dateOfJoining}`}>{(p) => <BirthDate {...p} joining={e.dateOfJoining} initial={e.dateOfBirth ?? ''} />}</Field>
           <Field label="Gender">
             {(p) => (
               <Select {...p} name="gender" defaultValue={e.gender ?? ''}>

@@ -8,7 +8,12 @@
  * 3. They export the directory as CSV: the file has the columns on screen, in order.
  * 4. They start a hire, get a duplicate warning for an existing person, correct the name, save the hire as a draft
  *    and close it. The draft survives a reload, resumes at the right step and is completed with a document.
- * 5. The new profile has the document; the draft is gone.
+ *    On the way the form refuses a phone number that is too short and a work email that is the personal one, the date
+ *    of birth is picked from the calendar (years and months listed, limited by the joining date), and a designation
+ *    that is not on the list is typed in and added with the hire.
+ * 5. The new profile has the document and the new designation; the draft is gone.
+ * 5b. HR adds someone already working here: a joining date years back, their own employee code, confirmed status
+ *    worked out from probation, no joining checklist, and an opening leave balance that the leave tab then shows.
  * 6. Employee 360: the at-a-glance strip on a profile shows only the areas HR may see (no pay for an HR admin), and
  *    the Activity tab lists the person's transfer.
  */
@@ -114,10 +119,35 @@ let current;
     await dialog.getByRole('link', { name: 'Sunita Patil' }).waitFor();
     const stamp = String(Date.now() % 100000);
     await dialog.locator('input[name=firstName]').fill('Sunaina');
+    // The personal email is never taken as the work email.
+    await dialog.locator('input[name=personalEmail]').fill(`sunaina.${stamp}@gmail.example`);
+    await dialog.locator('input[name=workEmail]').fill(`sunaina.${stamp}@gmail.example`);
+    expect((await dialog.locator('input[name=workEmail]').getAttribute('autocomplete')) === 'off', 'work email may be filled in by the browser');
+    // A phone number that is too short is refused before going on.
+    await dialog.locator('input[name=phone]').fill('+91 98201 2345');
+    await dialog.getByRole('button', { name: 'Next: Employment' }).click();
+    await dialog.getByText('Use their work email here, not their personal email').waitFor();
+    await dialog.getByText('9 digits after +91; numbers there have 10').waitFor();
     await dialog.locator('input[name=workEmail]').fill(`sunaina.${stamp}@demo.crew.local`);
+    await dialog.locator('input[name=phone]').fill('+91 98201 23456');
+    // Date of birth from the calendar: year and month lists, then the day. Dates making them under 14 on joining are off.
+    await dialog.getByRole('button', { name: 'Choose date of birth' }).click();
+    const cal = dialog.getByRole('group', { name: 'Choose date of birth' });
+    const newestYear = Number(await cal.getByLabel('Year', { exact: true }).locator('option').first().getAttribute('value'));
+    expect(newestYear === new Date().getUTCFullYear() - 14, `the calendar offers birth years up to ${newestYear}`);
+    await cal.getByLabel('Year', { exact: true }).selectOption('1996');
+    await cal.getByLabel('Month', { exact: true }).selectOption({ label: 'March' });
+    await cal.getByRole('button', { name: '15 March 1996' }).click();
+    await cal.waitFor({ state: 'detached' });
+    expect((await dialog.locator('input[name=dateOfBirth]').inputValue()) === '1996-03-15', 'date of birth not taken from the calendar');
     await dialog.getByRole('button', { name: 'Next: Employment' }).click();
     await dialog.locator('h3', { hasText: 'Employment' }).waitFor();
-    await dialog.locator('select[name=designationId]').selectOption({ index: 1 });
+    // Joining before their 14th birthday is not possible: the joining calendar starts there.
+    expect((await dialog.locator('input[name=dateOfJoining]').getAttribute('min')) === '2010-03-15', 'joining date not limited by the date of birth');
+    // A designation that is not on the list is typed in; the suggestions hold far more than the workspace's own.
+    expect((await dialog.locator('#hire-designations option').count()) > 150, 'designation suggestions are short');
+    await dialog.locator('input[name=designation]').fill('Line Quality Coach');
+    await dialog.getByText('"Line Quality Coach" is new: it is added to your designations with this hire').waitFor();
     await dialog.getByRole('button', { name: 'Next: Department & reporting' }).click();
     await dialog.locator('h3', { hasText: 'Department & reporting' }).waitFor();
     await dialog.locator('select[name=departmentId]').selectOption({ label: 'Assembly Line' });
@@ -143,15 +173,55 @@ let current;
     await dialog.getByRole('button', { name: 'Next: Review' }).click();
     await dialog.getByText('No existing record matches this person.').waitFor();
     await dialog.getByText('Assembly Line ·').waitFor();
+    await dialog.getByText('Line Quality Coach (new)').waitFor();
+    await dialog.getByText(/^1996-03-15 · \d+ on joining$/).waitFor();
     await dialog.locator('button[type=submit]').click();
     await hr.waitForURL(/\/employees\/[0-9a-f-]{36}$/, { timeout: 15000 });
     await hr.getByRole('heading', { name: 'Sunaina Patil' }).waitFor();
+    await hr.getByText('Line Quality Coach').first().waitFor();
+    await hr.getByText('+91 98201 23456').waitFor();
     await hr.goto(hr.url() + '?tab=documents');
     await hr.getByText('offer-letter').first().waitFor();
     await hr.goto(BASE + '/employees?view=all');
     await hr.getByRole('table', { name: 'Employees' }).waitFor();
     expect((await drafts.count()) === 0, 'the draft should be removed once the hire is complete');
-    ok('resumed the draft, attached an offer letter and completed the hire; the document is on the profile');
+    ok('resumed the draft, attached an offer letter and completed the hire; the document and the typed designation are on the profile');
+
+    // 5b. Someone already working here.
+    await hr.getByRole('button', { name: 'Add employee', exact: true }).click();
+    await dialog.getByText('Someone already working here').click();
+    await dialog.locator('input[name=firstName]').fill('Kavita');
+    await dialog.locator('input[name=lastName]').fill(`Rane ${stamp}`);
+    await dialog.getByRole('button', { name: 'Next: Employment' }).click();
+    await dialog.locator('h3', { hasText: 'Employment' }).waitFor();
+    expect((await dialog.locator('input[name=dateOfJoining]').getAttribute('max')) === new Date().toISOString().slice(0, 10), 'an existing employee could join in the future');
+    await dialog.locator('input[name=dateOfJoining]').fill('2019-04-01');
+    await dialog.locator('input[name=probationMonths]').fill('6');
+    await dialog.locator('input[name=employeeCode]').fill(`KR-${stamp}`);
+    await dialog.getByText('Added as a confirmed employee (confirmed 2019-10-01).').waitFor();
+    await dialog.locator('input[name=designation]').fill('machine operator');
+    const casual = dialog.getByLabel('Opening balance, Casual leave');
+    await casual.fill('7.5');
+    for (const label of ['Department & reporting', 'Compensation', 'Documents', 'Attendance & access']) {
+      await dialog.getByRole('button', { name: `Next: ${label}` }).click();
+      await dialog.locator('h3', { hasText: label }).waitFor();
+    }
+    expect((await dialog.locator('select[name=onboardingTemplateId]').inputValue()) === 'none', 'an existing employee got the joining checklist');
+    await dialog.getByRole('button', { name: 'Next: Review' }).click();
+    await dialog.getByText(`Already working here since 2019-04-01 · code KR-${stamp} · confirmed 2019-10-01`).waitFor();
+    await dialog.getByText('Casual leave 7.5').waitFor();
+    await dialog.locator('button[type=submit]').click();
+    await hr.waitForURL(/\/employees\/[0-9a-f-]{36}$/, { timeout: 15000 });
+    await hr.getByRole('heading', { name: `Kavita Rane ${stamp}` }).waitFor();
+    await hr.getByText(`KR-${stamp}`).first().waitFor();
+    await hr.getByText('Machine Operator').first().waitFor();
+    const existingUrl = hr.url();
+    await hr.goto(existingUrl + '?tab=leave');
+    const casualCard = hr.locator('div', { hasText: /^Casual leave/ }).filter({ hasText: 'days available' }).last();
+    await casualCard.getByText('7.50', { exact: true }).waitFor();
+    await hr.goto(existingUrl + '?tab=onboarding');
+    await hr.getByText(/No onboarding checklist|no checklist/i).first().waitFor();
+    ok('added someone already working here: own code, joined 2019, confirmed from probation, no joining checklist, opening leave balance 7.5');
 
     // 6. Employee 360: HR opens Rekha Jadhav. The figures come from her records; pay is not shown to HR admins, who
     //    have no payroll access; the Activity tab has her transfer.

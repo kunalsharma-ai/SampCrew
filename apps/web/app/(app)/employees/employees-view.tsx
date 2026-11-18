@@ -13,7 +13,7 @@ import type { Structure } from '../payroll/types';
 import type { DeviceOption, ShiftOption } from './[id]/profile-extras';
 import { TemporaryPassword } from './[id]/profile-extras';
 import { discardHireDraftAction } from './actions';
-import { type EmployeeDraft, HIRE_STEPS, HireWizard } from './hire-wizard';
+import { type EmployeeDraft, HIRE_STEPS, HireWizard, type LeavePolicyOption } from './hire-wizard';
 import { EmployeeStatus } from './status';
 import { DEFAULT_COLUMNS, viewUrl } from './view-url';
 
@@ -64,6 +64,7 @@ interface Props {
   canDocs: boolean;
   shifts: ShiftOption[] | null;
   devices: DeviceOption[] | null;
+  leavePolicies: LeavePolicyOption[] | null;
   canManageOrg: boolean;
   canAttendance: boolean;
   canConfigureShifts: boolean;

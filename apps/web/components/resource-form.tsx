@@ -1,4 +1,5 @@
 'use client';
+import { phoneError } from '@crew/contracts';
 import { Alert, Button, Dialog, Field, Input, Select, Textarea } from '@crew/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -7,7 +8,8 @@ import type { ActionResult } from '@/lib/api';
 export interface FieldDef {
   name: string;
   label: string;
-  type?: 'text' | 'number' | 'select' | 'textarea' | 'time' | 'date';
+  /** 'tel' is checked as a phone number (the same rules as the API) before the form is sent. */
+  type?: 'text' | 'number' | 'select' | 'textarea' | 'time' | 'date' | 'tel';
   options?: { value: string; label: string }[];
   required?: boolean;
   /** Empty value is sent as null (clears the field) instead of being omitted. */
@@ -68,6 +70,8 @@ export function ResourceDialog({ open, onClose, title, description, fields, init
           }
           setError(null);
           setFe({});
+          const bad = Object.fromEntries(fields.filter((d) => d.type === 'tel').map((d) => [d.name, phoneError(String(values[d.name] ?? ''))]).filter((x): x is [string, string] => !!x[1]));
+          if (Object.keys(bad).length) { setFe(bad); return; }
           start(async () => {
             const r = await onSubmit(values);
             if (r.ok) {
@@ -94,6 +98,8 @@ export function ResourceDialog({ open, onClose, title, description, fields, init
                   </Select>
                 ) : def.type === 'textarea' ? (
                   <Textarea {...p} name={def.name} defaultValue={dv} placeholder={def.placeholder} />
+                ) : def.type === 'tel' ? (
+                  <Input {...p} name={def.name} type="tel" inputMode="tel" autoComplete="off" maxLength={40} defaultValue={dv} required={def.required} placeholder={def.placeholder ?? '+91 98201 23456'} />
                 ) : (
                   <Input {...p} name={def.name} type={def.type === 'number' || def.type === 'time' || def.type === 'date' ? def.type : 'text'} step={def.step} defaultValue={dv} required={def.required} placeholder={def.placeholder} />
                 )

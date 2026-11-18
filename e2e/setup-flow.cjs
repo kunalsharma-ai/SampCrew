@@ -90,19 +90,14 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await dialog.locator('input[type=file][accept*="image"]').setInputFiles(shot);
     await dialog.getByRole('button', { name: 'Next: Employment' }).click();
     await dialog.locator('h3', { hasText: 'Employment' }).waitFor();
-    const designations = await dialog.locator('select[name=designationId] option').allTextContents();
-    expect(designations.includes('Machine Operator'), `designations missing: ${designations.join(', ')}`);
-    await dialog.getByRole('button', { name: 'New designation' }).click();
-    await dialog.getByLabel('New designation name').fill('Line Auditor');
-    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
-    await admin.waitForFunction(() => document.querySelector('dialog[open] select[name=designationId] option:checked')?.textContent === 'Line Auditor');
-    // Typing a name that is already on the list picks it instead of adding it twice.
-    await dialog.getByRole('button', { name: 'New designation' }).click();
-    await dialog.getByLabel('New designation name').fill('machine operator');
-    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
-    await admin.waitForFunction(() => document.querySelector('dialog[open] select[name=designationId] option:checked')?.textContent === 'Machine Operator');
-    expect((await dialog.locator('select[name=designationId] option', { hasText: /^Machine Operator$/ }).count()) === 1, 'Machine Operator listed twice');
-    await dialog.locator('select[name=designationId]').selectOption({ label: 'Line Auditor' });
+    // The designation field suggests the workspace's own titles first, then the ready-made library; any title can be typed.
+    const designations = await dialog.locator('#hire-designations option').evaluateAll((os) => os.map((o) => `${o.value}|${o.label}`));
+    expect(designations.includes('Machine Operator|In use'), `designations missing: ${designations.slice(0, 20).join(', ')}`);
+    // Typing a name that is already on the list (in any case) uses it instead of adding it twice.
+    await dialog.locator('input[name=designation]').fill('machine operator');
+    expect((await dialog.getByText('is new: it is added to your designations').count()) === 0, 'an existing designation was treated as new');
+    await dialog.locator('input[name=designation]').fill('Line Auditor');
+    await dialog.getByText('"Line Auditor" is new: it is added to your designations with this hire').waitFor();
     await dialog.getByRole('button', { name: 'Next: Department & reporting' }).click();
     await dialog.locator('select[name=departmentId]').selectOption({ label: 'Production' });
     await dialog.locator('select[name=locationId]').selectOption({ label: 'Pune plant' });

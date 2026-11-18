@@ -3,6 +3,7 @@ export * from './roles';
 export * from './features';
 export * from './access';
 export * from './schemas/common';
+export * from './phone';
 export * from './schemas/auth';
 export * from './schemas/organization';
 export * from './schemas/access';

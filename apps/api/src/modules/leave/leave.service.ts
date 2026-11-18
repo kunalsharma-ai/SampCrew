@@ -721,6 +721,37 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
+  /**
+   * Opening balances for someone already working here when their record is added: one adjustment per leave type
+   * that brings this year's balance (after the accruals SampCrew has just posted) to what they have available
+   * today. Keyed per year, so it is posted once. Runs inside the hire's transaction; the caller checks access.
+   */
+  async setOpeningBalances(tx: TenantTx, employeeId: string, balances: { leaveTypeId: string; days: string }[]): Promise<{ leaveTypeId: string; days: string; adjustment: string }[]> {
+    const actor = requestContext.tenantActor();
+    const on = today();
+    const year = yearOf(on);
+    const out = [];
+    for (const b of balances) {
+      if (!(await tx.collection('leave_types').exists({ id: b.leaveTypeId, archived_at: null }))) throw Errors.badRequest('invalid_leave_type', 'Leave type not found');
+      const lines = await tx.collection('leave_ledger').find({ employee_id: employeeId, leave_type_id: b.leaveTypeId, leave_year: year }, { projection: { quantity: 1 } });
+      const delta = toH(b.days) - sumBy(lines, (l) => l.quantity);
+      out.push({ leaveTypeId: b.leaveTypeId, days: b.days, adjustment: fromH(delta) });
+      if (delta === 0) continue;
+      await tx.collection('leave_ledger').insert({
+        employee_id: employeeId,
+        leave_type_id: b.leaveTypeId,
+        leave_year: year,
+        kind: 'adjustment',
+        quantity: fromH(delta),
+        effective_on: on,
+        accrual_key: `OPEN${year}`,
+        note: `Opening balance of ${b.days} days, carried over when the record was added`,
+        created_by: actor.userId,
+      });
+    }
+    return out;
+  }
+
   /** Posts every accrual due up to asOf. Idempotent: each period is credited at most once per employee and type. */
   async runAccruals(tx: TenantTx, asOf: string, employeeId?: string): Promise<number> {
     const yearStart = `${asOf.slice(0, 4)}-01-01`;

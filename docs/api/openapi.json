@@ -5222,7 +5222,7 @@
                   },
                   "phone": {
                     "type": "string",
-                    "pattern": "^\\+?[0-9 ()-]{6,20}$"
+                    "maxLength": 40
                   },
                   "dateOfBirth": {
                     "type": "string",
@@ -5321,6 +5321,57 @@
                       },
                       "required": [
                         "deviceUserId"
+                      ]
+                    }
+                  },
+                  "designationName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "minorConfirmed": {
+                    "type": "boolean"
+                  },
+                  "joinedAs": {
+                    "default": "new_joiner",
+                    "type": "string",
+                    "enum": [
+                      "new_joiner",
+                      "existing"
+                    ]
+                  },
+                  "employeeCode": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]*$"
+                  },
+                  "confirmationDate": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "openingLeaveBalances": {
+                    "maxItems": 30,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "leaveTypeId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "days": {
+                          "type": [
+                            "number",
+                            "string"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "leaveTypeId",
+                        "days"
                       ]
                     }
                   }
@@ -6037,7 +6088,7 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "pattern": "^\\+?[0-9 ()-]{6,20}$"
+                        "maxLength": 40
                       },
                       {
                         "type": "null"
@@ -7757,7 +7808,7 @@
                   },
                   "contactPhone": {
                     "type": "string",
-                    "pattern": "^\\+?[0-9 ()-]{6,20}$"
+                    "maxLength": 40
                   },
                   "countryCode": {
                     "type": "string",
@@ -7867,7 +7918,7 @@
                   },
                   "designations": {
                     "default": [],
-                    "maxItems": 80,
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -8178,28 +8229,12 @@
                         ]
                       },
                       "phone": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          {
-                            "type": "string",
-                            "const": ""
-                          }
-                        ]
+                        "type": "string",
+                        "maxLength": 40
                       },
                       "mobile": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          {
-                            "type": "string",
-                            "const": ""
-                          }
-                        ]
+                        "type": "string",
+                        "maxLength": 40
                       },
                       "pronouns": {
                         "anyOf": [
@@ -8706,16 +8741,8 @@
                     ]
                   },
                   "phone": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 40
-                      },
-                      {
-                        "type": "string",
-                        "const": ""
-                      }
-                    ]
+                    "type": "string",
+                    "maxLength": 40
                   },
                   "address": {
                     "anyOf": [
@@ -20668,7 +20695,7 @@
                   },
                   "phone": {
                     "type": "string",
-                    "pattern": "^\\+?[0-9 ()-]{6,20}$"
+                    "maxLength": 40
                   },
                   "locationText": {
                     "type": "string",
@@ -21091,7 +21118,7 @@
                   },
                   "phone": {
                     "type": "string",
-                    "pattern": "^\\+?[0-9 ()-]{6,20}$"
+                    "maxLength": 40
                   },
                   "locationText": {
                     "type": "string",
@@ -22975,7 +23002,7 @@
                   },
                   "phone": {
                     "type": "string",
-                    "pattern": "^\\+?[0-9 ()-]{6,20}$"
+                    "maxLength": 40
                   },
                   "locationText": {
                     "type": "string",

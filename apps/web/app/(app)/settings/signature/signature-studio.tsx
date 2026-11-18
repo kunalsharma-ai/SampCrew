@@ -175,8 +175,8 @@ export function SignatureStudio({ initial }: { initial: MySignature }) {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Job title" hint={initial.base.designation ? `Empty uses "${initial.base.designation}".` : undefined} error={errors.jobTitle}>{(p) => <Input {...p} value={draft.jobTitle} placeholder={initial.base.designation ?? ''} onChange={set('jobTitle')} />}</Field>
               <Field label="Pronouns" hint="Optional, e.g. she/her" error={errors.pronouns}>{(p) => <Input {...p} value={draft.pronouns} onChange={set('pronouns')} />}</Field>
-              <Field label="Office phone" hint={initial.base.phone ? `Empty uses ${initial.base.phone}.` : undefined} error={errors.phone}>{(p) => <Input {...p} value={draft.phone} placeholder={initial.base.phone ?? ''} onChange={set('phone')} />}</Field>
-              <Field label="Mobile" hint={initial.base.mobile ? `Empty uses ${initial.base.mobile}.` : undefined} error={errors.mobile}>{(p) => <Input {...p} value={draft.mobile} placeholder={initial.base.mobile ?? ''} onChange={set('mobile')} />}</Field>
+              <Field label="Office phone" hint={initial.base.phone ? `Empty uses ${initial.base.phone}.` : undefined} error={errors.phone}>{(p) => <Input {...p} type="tel" inputMode="tel" value={draft.phone} placeholder={initial.base.phone ?? ''} onChange={set('phone')} />}</Field>
+              <Field label="Mobile" hint={initial.base.mobile ? `Empty uses ${initial.base.mobile}.` : undefined} error={errors.mobile}>{(p) => <Input {...p} type="tel" inputMode="tel" value={draft.mobile} placeholder={initial.base.mobile ?? ''} onChange={set('mobile')} />}</Field>
               <Field label="Tagline" hint="A short line under your details." error={errors.tagline} className="sm:col-span-2">{(p) => <Input {...p} value={draft.tagline} onChange={set('tagline')} />}</Field>
               {template === 'warm' && <Field label="Sign-off" hint='Empty uses "Warm regards,".' error={errors.signOff}>{(p) => <Input {...p} value={draft.signOff} onChange={set('signOff')} />}</Field>}
               {template === 'call-to-action' && (

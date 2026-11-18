@@ -209,7 +209,7 @@ export function CandidateView({ detail, stages, people, openJobs, designations }
           { name: 'firstName', label: 'First name', required: true, half: true },
           { name: 'lastName', label: 'Last name', half: true },
           { name: 'email', label: 'Email', required: true, half: true },
-          { name: 'phone', label: 'Phone', half: true },
+          { name: 'phone', label: 'Phone', type: 'tel', half: true },
           { name: 'currentTitle', label: 'Current title', half: true },
           { name: 'currentCompany', label: 'Current company', half: true },
           { name: 'locationText', label: 'Location', half: true },

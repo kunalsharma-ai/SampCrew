@@ -78,6 +78,7 @@ export async function employeeViews(tx: TenantTx, docs: Doc[]): Promise<Employee
     dateOfJoining: e.date_of_joining,
     probationEndDate: e.probation_end_date ?? null,
     confirmationDate: e.confirmation_date ?? null,
+    joinedAs: e.joined_as ?? 'new_joiner',
     employmentType: e.employment_type,
     status: e.status,
     resignationDate: e.resignation_date ?? null,
