@@ -12,8 +12,11 @@ interface Draft { countryCode: string; country: string; currency: string; basis:
 const toDraft = (p: StatutoryPackView): Draft => ({ countryCode: p.countryCode, country: p.country, currency: p.currency, basis: p.basis, summary: p.summary, active: p.active, settings: structuredClone(p.settings) });
 
 /** Every payroll country pack, with an editor for one at a time. Packs live in the database; nothing here comes from the server's settings file. */
-export function StatutoryPacksView({ packs, canManage }: { packs: StatutoryPackView[]; canManage: boolean }) {
+export function StatutoryPacksView({ packs: listed, canManage }: { packs: StatutoryPackView[]; canManage: boolean }) {
   const router = useRouter();
+  // Packs removed here leave the list at once, not only when the page refresh that follows has finished.
+  const [removed, setRemoved] = useState<string[]>([]);
+  const packs = listed.filter((p) => !removed.includes(p.countryCode));
   const [pending, start] = useTransition();
   const [flash, setFlash] = useState<Flash>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -41,13 +44,13 @@ export function StatutoryPacksView({ packs, canManage }: { packs: StatutoryPackV
   };
   const save = () => draft && start(async () => {
     const { countryCode, ...body } = draft;
-    done(await saveStatutoryPackAction(countryCode, body), `${draft.country} saved. Legal entities in ${draft.country} that have not saved their settings now start from these values.`, () => setIsNew(false));
+    done(await saveStatutoryPackAction(countryCode, body), `${draft.country} saved. Legal entities in ${draft.country} that have not saved their settings now start from these values.`, () => { setIsNew(false); setRemoved((g) => g.filter((c) => c !== countryCode)); });
   });
   const reset = () => draft && confirm(`Put ${draft.country} back to the values that come with SampCrew?`) && start(async () => {
     done(await resetStatutoryPackAction(draft.countryCode), `${draft.country} is back to SampCrew's values.`, () => setDraft(null));
   });
   const remove = () => draft && confirm(`Remove the ${draft.country} pack? Workspaces keep the settings they already saved.`) && start(async () => {
-    done(await removeStatutoryPackAction(draft.countryCode), `${draft.country} removed. New legal entities there start from a blank custom scheme.`, () => setDraft(null));
+    done(await removeStatutoryPackAction(draft.countryCode), `${draft.country} removed. New legal entities there start from a blank custom scheme.`, () => { setRemoved((g) => [...g, draft.countryCode]); setDraft(null); });
   });
   const set = (patch: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...patch } : d));
   const setSettings = (fn: (s: AnyStatutory) => void) => setDraft((d) => { if (!d) return d; const s = structuredClone(d.settings); fn(s); return { ...d, settings: s }; });
