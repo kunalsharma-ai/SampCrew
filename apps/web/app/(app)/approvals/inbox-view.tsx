@@ -2,28 +2,46 @@
 import { Alert, Avatar, Badge, Button, Card, EmptyState, Input, Textarea } from '@crew/ui';
 import { Check, Inbox, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import type { InboxItem, SameDayLeaveDetails } from '@/lib/types';
 import { leavePenaltyAction } from '../attendance/late/actions';
 import { decideAction } from '../leave/actions';
 
+type Result = { tone: 'success' | 'danger'; text: string };
+
 export function InboxView({ items }: { items: InboxItem[] }) {
-  if (!items.length) return <Card><EmptyState icon={<Inbox className="size-5" />} title="You're all caught up" description="Leave requests and other approvals for you will appear here." /></Card>;
-  return <div className="grid gap-3">{items.map((i) => <Item key={i.id} item={i} />)}</div>;
+  // A decision refreshes the inbox from the server, which drops the decided request, sometimes before the result has
+  // rendered. Keep the card, with its result, where it was for a moment so the confirmation is always seen.
+  const [decided, setDecided] = useState<Record<string, { item: InboxItem; result: Result }>>({});
+  const order = useRef<string[]>([]);
+  const live = new Map(items.map((i) => [i.id, i]));
+  const ids = [...order.current.filter((id) => live.has(id) || decided[id]), ...items.map((i) => i.id).filter((id) => !order.current.includes(id))];
+  order.current = ids;
+  const shown = ids.map((id) => live.get(id) ?? decided[id]!.item);
+  if (!shown.length) return <Card><EmptyState icon={<Inbox className="size-5" />} title="You're all caught up" description="Leave requests and other approvals for you will appear here." /></Card>;
+  return (
+    <div className="grid gap-3">
+      {shown.map((i) => <Item key={i.id} item={i} result={decided[i.id]?.result ?? null} onDecided={(result) => {
+        setDecided((d) => ({ ...d, [i.id]: { item: i, result } }));
+        setTimeout(() => setDecided((d) => { const { [i.id]: _, ...rest } = d; return rest; }), 1500);
+      }} />)}
+    </div>
+  );
 }
 
-function Item({ item }: { item: InboxItem }) {
+function Item({ item, result: decidedResult, onDecided }: { item: InboxItem; result: Result | null; onDecided: (r: Result) => void }) {
   const router = useRouter();
   const [comment, setComment] = useState('');
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
+  const [failure, setFailure] = useState<Result | null>(null);
+  const result = decidedResult ?? failure;
   const decide = (d: 'approve' | 'reject') => start(async () => {
     const r = await decideAction(item.id, d, comment.trim() || undefined);
     if (r.ok) {
-      setResult({ tone: 'success', text: r.data?.status === 'pending' ? 'Approved. It moves to the next approver.' : d === 'approve' ? 'Approved' : 'Rejected' });
-      setTimeout(() => router.refresh(), 800);
-    } else setResult({ tone: 'danger', text: r.message });
+      onDecided({ tone: 'success', text: r.data?.status === 'pending' ? 'Approved. It moves to the next approver.' : d === 'approve' ? 'Approved' : 'Rejected' });
+      router.refresh();
+    } else setFailure({ tone: 'danger', text: r.message });
   });
   return (
     <Card className="p-4">
