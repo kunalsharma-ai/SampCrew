@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DEFAULT_IN_STATUTORY, payrollEngine, type SalaryInput } from '@crew/contracts';
+import { payrollEngine, type SalaryInput, statutorySwitches } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { requestContext } from '../../platform/context/request-context';
@@ -7,7 +7,7 @@ import { MongoService as DatabaseService, ilike, type TenantTx, usersTable } fro
 import { Errors } from '../../platform/http/errors';
 import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
 import { displayName, fieldById } from '../employees/employee-view';
-import { legalEntity, statutoryOn } from './payroll-common';
+import { legalEntity, startingFor, statutoryOn } from './payroll-common';
 
 interface EmpRow {
   id: string;
@@ -107,11 +107,20 @@ export class SalariesService {
           return { code: c?.code, name: c?.name, kind: c?.kind, monthly: l.monthly };
         }),
       }));
-      return { employee: { id: e.id, name: e.name, code: e.code }, revisions };
+      return { employee: { id: e.id, name: e.name, code: e.code }, revisions, statutory: await this.profile(tx, e) };
     });
   }
 
-  /** Splits a CTC with a structure, using the statutory settings that will apply (or India starting values when none are saved yet). */
+  /** What the salary's statutory switches mean for the employee's legal entity: from its latest settings, else its country's starting values. */
+  private async profile(tx: TenantTx, e: EmpRow) {
+    if (!e.legal_entity_id) return null;
+    const le = await legalEntity(tx, e.legal_entity_id);
+    const saved = await statutoryOn(tx, e.legal_entity_id, '9999-12-31');
+    const settings = saved?.settings ?? startingFor(le).settings;
+    return { countryCode: le.country_code, currency: le.currency, saved: Boolean(saved), ...statutorySwitches(settings) };
+  }
+
+  /** Splits a CTC with a structure, using the statutory settings that will apply (or the country's starting values when none are saved yet). */
   private async build(tx: TenantTx, e: EmpRow, input: Pick<SalaryInput, 'annualCtc' | 'structureId' | 'pfEnabled' | 'effectiveFrom'>) {
     if (!e.legal_entity_id) throw Errors.badRequest('no_legal_entity', 'Place the employee in a legal entity first');
     const le = await legalEntity(tx, e.legal_entity_id);
@@ -125,12 +134,12 @@ export class SalariesService {
     });
     const statutory = await statutoryOn(tx, e.legal_entity_id, input.effectiveFrom);
     const warnings: string[] = [];
-    if (!statutory) warnings.push('No statutory settings are saved for this legal entity yet, so employer PF uses the India starting values. Payroll cannot run until settings are saved.');
+    if (!statutory) warnings.push(`No statutory settings are saved for this legal entity yet, so employer contributions use the starting values for ${le.country_code}. Payroll cannot run until they are saved under Settings > Payroll settings > Statutory settings.`);
     try {
       const out = payrollEngine.buildSalary(
         input.annualCtc,
         lines.map((l) => ({ code: l.code, name: l.name, kind: l.kind, calc: l.calc, value: l.value, isBasic: l.is_basic })),
-        { pf: input.pfEnabled, settings: statutory?.settings ?? DEFAULT_IN_STATUTORY },
+        { pf: input.pfEnabled, settings: statutory?.settings ?? startingFor(le).settings },
       );
       return { ...out, warnings: [...warnings, ...out.warnings], currency: le.currency, componentIds: lines.map((l) => l.component_id) };
     } catch (err) {
@@ -143,7 +152,7 @@ export class SalariesService {
       const e = await payrollEmployee(tx, employeeId);
       await this.authz.require('payroll:run', attrsOf(e), tx);
       const b = await this.build(tx, e, input);
-      return { currency: b.currency, components: b.components, employerPfMonthly: b.employerPfMonthly, warnings: b.warnings };
+      return { currency: b.currency, components: b.components, employerPfMonthly: b.employerPfMonthly, employerInCtc: b.employerInCtc, warnings: b.warnings };
     });
   }
 

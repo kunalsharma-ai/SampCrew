@@ -1,8 +1,8 @@
-import { leaveMath, type payrollEngine, type WorkCalendar } from '@crew/contracts';
+import { leaveMath, payrollEngine, startingNotice, startingStatutory, type WorkCalendar } from '@crew/contracts';
 import type { TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 
-export type StatutorySettings = payrollEngine.StatutorySettings;
+export type StatutorySettings = payrollEngine.AnyStatutory;
 
 /** The calendar month 'YYYY-MM' as a pay period. */
 export function monthPeriod(month: string) {
@@ -20,18 +20,31 @@ export interface StatutoryRow {
   effective_from: string;
   lop_source: 'attendance_and_leave' | 'leave_only';
   settings: StatutorySettings;
+  /** Month the tax year starts under these settings (India: April). */
+  tax_year_start_month: number;
 }
 
 /** The statutory settings a legal entity saved that are in effect on a date, if any. */
 export async function statutoryOn(tx: TenantTx, legalEntityId: string, date: string): Promise<StatutoryRow | undefined> {
   const row = await tx.collection('statutory_settings').findOne({ legal_entity_id: legalEntityId, effective_from: { $lte: date } }, { sort: { effective_from: -1 } });
-  return row ? { id: row.id, legal_entity_id: row.legal_entity_id, effective_from: row.effective_from, lop_source: row.lop_source, settings: row.settings } : undefined;
+  return row
+    ? { id: row.id, legal_entity_id: row.legal_entity_id, effective_from: row.effective_from, lop_source: row.lop_source, settings: row.settings, tax_year_start_month: payrollEngine.taxYearStartMonthOf(row.settings) }
+    : undefined;
 }
 
 export async function legalEntity(tx: TenantTx, id: string) {
-  const le = await tx.collection<{ id: string; name: string; legal_name: string; currency: string; country_code: string }>('legal_entities').findOne({ id });
+  const le = await tx.collection<{ id: string; name: string; legal_name: string; currency: string; country_code: string; fiscal_year_start_month?: number }>('legal_entities').findOne({ id });
   if (!le) throw Errors.notFound('Legal entity');
-  return { id: le.id, name: le.name, legal_name: le.legal_name, currency: le.currency, country_code: le.country_code };
+  return { id: le.id, name: le.name, legal_name: le.legal_name, currency: le.currency, country_code: le.country_code, fiscal_year_start_month: Number(le.fiscal_year_start_month ?? 4) };
+}
+
+/** The country a statutory scheme belongs to: IN for India's scheme, else the generic scheme's own country. */
+export const schemeCountry = (s: StatutorySettings) => (payrollEngine.isGenericStatutory(s) ? s.countryCode : 'IN');
+
+/** Starting values for a legal entity's country (a ready-made pack, or a blank custom scheme). */
+export function startingFor(le: { country_code: string; currency: string; fiscal_year_start_month: number }) {
+  const s = startingStatutory(le.country_code, { taxYearStartMonth: le.fiscal_year_start_month, currency: le.currency });
+  return { countryCode: le.country_code, pack: s.pack, settings: s.settings, notice: startingNotice(le.country_code, s.pack, le.currency) };
 }
 
 /** The holiday calendar for an employee: their location's, else their legal entity's, else the workspace default. */

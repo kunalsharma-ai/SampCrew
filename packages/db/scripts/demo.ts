@@ -1,4 +1,4 @@
-import { DEFAULT_IN_STATUTORY, leaveMath, payrollEngine } from '@crew/contracts';
+import { DEFAULT_IN_STATUTORY, leaveMath, payrollEngine, startingStatutory } from '@crew/contracts';
 import type { ClientSession, Db, MongoClient } from 'mongodb';
 import { appendAuditEvent, linkAuditChain, provisionTenantMongo, Table, type Row } from '../src/mongo';
 
@@ -145,7 +145,7 @@ async function seed(db: Db, session: ClientSession, passwordHash: string): Promi
   });
   await seedAttendance(ws, { tid, puneId: pune });
   await seedRecruitment(ws, { indiaId: t.legalEntityId, puneId: pune, manufacturingId: manufacturing, membershipByEmail });
-  await seedPayroll(ws, { indiaId: t.legalEntityId, membershipByEmail });
+  await seedPayroll(ws, { indiaId: t.legalEntityId, ukId: uk, membershipByEmail });
   await seedTalent(ws, { assemblyId: assembly, manufacturingId: manufacturing, membershipByEmail });
   await seedHelpdesk(ws, { tid, manufacturingId: manufacturing, membershipByEmail });
   await seedAiAutomation(ws, { membershipByEmail });
@@ -527,10 +527,10 @@ async function seedRecruitment(ws: Workspace, c: { indiaId: string; puneId: stri
 /**
  * Phase 5 demo data: statutory settings for the India entity (the SampCrew starting values, saved as demo data), a
  * salary for everyone employed by it, and two expense claims (one approved and waiting for payroll, one waiting
- * for the supervisor). No payroll run is created, so the first run can be tried end to end. The UK entity has no
- * payroll: SampCrew's statutory rules in this release cover India only.
+ * for the supervisor). No payroll run is created, so the first run can be tried end to end. The UK entity gets the
+ * United Kingdom country pack (PAYE, National Insurance, workplace pension) and a gross salary for its people.
  */
-async function seedPayroll(ws: Workspace, c: { indiaId: string; membershipByEmail: Map<string, string> }) {
+async function seedPayroll(ws: Workspace, c: { indiaId: string; ukId: string; membershipByEmail: Map<string, string> }) {
   const today = isoDay(new Date());
   const fy = payrollEngine.fyStart(today);
   await ws.insert('statutory_settings', { legal_entity_id: c.indiaId, effective_from: fy, lop_source: 'attendance_and_leave', settings: DEFAULT_IN_STATUTORY });
@@ -553,6 +553,24 @@ async function seedPayroll(ws: Workspace, c: { indiaId: string; membershipByEmai
     const built = payrollEngine.buildSalary(annual, lines, { pf: true, settings: DEFAULT_IN_STATUTORY });
     const sal = await ws.insert('employee_salaries', {
       employee_id: e.id, effective_from: e.date_of_joining, annual_ctc: annual, currency: 'INR', structure_id: structure, employer_pf_monthly: built.employerPfMonthly, note: 'Demo data',
+    });
+    await ws.insertMany('employee_salary_lines', lines.map((l, i) => ({ salary_id: sal, component_id: l.componentId, position: i + 1, monthly: built.components[i]!.monthly })));
+  }
+
+  // United Kingdom: the country pack's starting values from the start of the UK tax year (April), and a gross annual salary.
+  const gb = startingStatutory('GB').settings;
+  // From the start of the tax year that holds last month, so last month's run can be tried straight away.
+  const lastMonth = new Date(`${today.slice(0, 7)}-01T00:00:00Z`);
+  lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1);
+  const ukFrom = payrollEngine.taxYearStart(isoDay(lastMonth), 4);
+  await ws.insert('statutory_settings', { legal_entity_id: c.ukId, country_code: 'GB', effective_from: ukFrom, lop_source: 'attendance_and_leave', settings: gb });
+  const ukSalary: Record<string, string> = { 'uk.hr@demo.crew.local': '52000', 'uk.sales@demo.crew.local': '38000' };
+  for (const e of await ws.find('employees', { current_legal_entity_id: c.ukId })) {
+    const annual = ukSalary[e.work_email ?? ''] ?? '42000';
+    const built = payrollEngine.buildSalary(annual, lines, { pf: true, settings: gb });
+    const sal = await ws.insert('employee_salaries', {
+      employee_id: e.id, effective_from: e.date_of_joining, annual_ctc: annual, currency: 'GBP', structure_id: structure, employer_pf_monthly: built.employerPfMonthly,
+      esi_enabled: false, note: 'Demo data',
     });
     await ws.insertMany('employee_salary_lines', lines.map((l, i) => ({ salary_id: sal, component_id: l.componentId, position: i + 1, monthly: built.components[i]!.monthly })));
   }

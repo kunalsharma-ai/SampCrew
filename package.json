@@ -30,6 +30,7 @@
     "e2e:late": "node e2e/late-flow.cjs",
     "e2e:recruitment": "node e2e/recruitment-flow.cjs",
     "e2e:payroll": "node e2e/payroll-flow.cjs",
+    "e2e:payroll-countries": "node e2e/payroll-countries-flow.cjs",
     "e2e:talent": "node e2e/talent-flow.cjs",
     "e2e:mobile": "node e2e/mobile-flow.cjs",
     "e2e:helpdesk": "node e2e/helpdesk-flow.cjs",
