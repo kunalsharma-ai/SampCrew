@@ -2,6 +2,7 @@
 import { FEATURES, GST_STATES, isCoreFeature, isPlannedFeature } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Dialog, EmptyState, Field, Input, Select, Stat, Switch, Table, TBody, TD, Textarea, TH, THead, TR, cn } from '@crew/ui';
 import { Check, CreditCard, Download, FileText, Lock, Minus, Package } from 'lucide-react';
+import { useMfaRetry } from '@/components/mfa-step-up';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import {
@@ -70,6 +71,7 @@ export function BillingView(props: {
   plans: Plan[]; info: SubscriptionInfo; invoices: Invoice[]; requests: PlanRequest[]; usage: UsageMetric[]; addons: Addon[]; profile: BillingProfile | null;
   features: string[]; canManage: boolean; orderId: string | null; checkoutCancelled: boolean; upgrade: string | null;
 }) {
+  const withMfa = useMfaRetry();
   const { plans, info, invoices, requests, usage, addons, profile, features, canManage } = props;
   const sub = info.subscription;
   const current = plans.find((p) => p.key === sub?.planKey);
@@ -117,7 +119,7 @@ export function BillingView(props: {
       {open && (
         <Alert tone="info" title={`Request for ${open.planName} sent to SAMPLEDGE`}>
           {open.seats} seats, billed {open.billingCycle}, sent by {open.requestedBy} on {new Date(open.createdAt).toLocaleDateString()}. You will get a notification when SAMPLEDGE answers.
-          {canManage && <> <button type="button" className="ml-1 text-accent hover:underline" disabled={pending} onClick={() => run(async () => { const r = await withdrawPlanRequestAction(open.id); if (r.ok) { setNote('Request withdrawn.'); router.refresh(); } })}>Withdraw request</button></>}
+          {canManage && <> <button type="button" className="ml-1 text-accent hover:underline" disabled={pending} onClick={() => run(async () => { const r = await withMfa(() => withdrawPlanRequestAction(open.id)); if (r.ok) { setNote('Request withdrawn.'); router.refresh(); } })}>Withdraw request</button></>}
         </Alert>
       )}
       {!open && lastAnswered?.status === 'declined' && <Alert tone="warning" title={`SAMPLEDGE declined the request for ${lastAnswered.planName}`}>{lastAnswered.decisionNote ?? 'Contact SAMPLEDGE sales to discuss it.'}</Alert>}
@@ -148,7 +150,7 @@ export function BillingView(props: {
               {sub.scheduledChange && (
                 <div className="flex flex-wrap items-center gap-2" data-testid="billing-scheduled">
                   <span><span className="text-fg-muted">Scheduled: </span>{sub.scheduledChange.planName ?? sub.scheduledChange.planKey}, {sub.scheduledChange.seats} seats, billed {sub.scheduledChange.billingCycle}, from {date(sub.scheduledChange.effectiveOn ?? sub.currentPeriodEnd)}.</span>
-                  {canManage && <Button size="sm" variant="ghost" loading={pending} onClick={() => run(async () => { const r = await cancelScheduledChangeAction(); if (r.ok) { setNote('The scheduled change was cancelled. Your plan stays as it is.'); router.refresh(); } else setError(r.message); })}>Cancel the change</Button>}
+                  {canManage && <Button size="sm" variant="ghost" loading={pending} onClick={() => run(async () => { const r = await withMfa(() => cancelScheduledChangeAction()); if (r.ok) { setNote('The scheduled change was cancelled. Your plan stays as it is.'); router.refresh(); } else setError(r.message); })}>Cancel the change</Button>}
                 </div>
               )}
               {sub.deal && (
@@ -170,7 +172,7 @@ export function BillingView(props: {
                 label={sub.autoRenew ? `Renews on ${date(sub.currentPeriodEnd)}` : `Ends on ${date(sub.currentPeriodEnd)}`}
                 testId="billing-auto-renew"
                 onChange={(next) => run(async () => {
-                  const r = await setAutoRenewAction(next);
+                  const r = await withMfa(() => setAutoRenewAction(next));
                   if (!r.ok) setError(r.message);
                   else { setNote(next ? 'Your subscription renews automatically again.' : `Your subscription ends on ${date(r.data!.endsOn)}. You keep everything until then.`); router.refresh(); }
                 })}
@@ -223,7 +225,7 @@ export function BillingView(props: {
                     {isCurrent && sub?.status === 'trialing' && sub.trialReturn && canManage && <Button className="w-full" onClick={() => setTarget(p)} data-testid="plan-buy-trial">Buy {p.name} now</Button>}
                     {canTry && (
                       <Button className="w-full" variant="ghost" loading={pending} data-testid={`plan-trial-${p.key}`} onClick={() => run(async () => {
-                        const r = await startTrialAction(p.key);
+                        const r = await withMfa(() => startTrialAction(p.key));
                         if (!r.ok) setError(r.message);
                         else { setNote(`Your ${p.name} trial has started and ends on ${date(r.data!.endsOn)}. Then you go back to ${current?.name ?? 'your plan'} unless you buy it.`); router.refresh(); }
                       })}>Try free for {p.trialDays} days</Button>
@@ -296,7 +298,7 @@ export function BillingView(props: {
                       <div className="flex justify-end gap-1">
                         {i.status === 'open' && canManage && info.paymentProvider.connected && (
                           <Button size="sm" loading={pending} data-testid="invoice-pay" onClick={() => run(async () => {
-                            const r = await payInvoiceAction(i.id);
+                            const r = await withMfa(() => payInvoiceAction(i.id));
                             if (r.ok) window.location.assign(r.data!.url);
                             else setError(r.message);
                           })}><CreditCard className="size-3.5" aria-hidden /> Pay now</Button>
@@ -322,13 +324,14 @@ export function BillingView(props: {
 
 /** After Razorpay or Stripe sends the admin back: waits for the signed confirmation to arrive from the gateway. */
 function OrderReturn({ id }: { id: string }) {
+  const withMfa = useMfaRetry();
   const router = useRouter();
   const [state, setState] = useState<{ status: string; description?: string; failureReason?: string | null; amount?: string; currency?: string }>({ status: 'checking' });
   const tries = useRef(0);
   useEffect(() => {
     let stop = false;
     const tick = async () => {
-      const r = await orderStatusAction(id);
+      const r = await withMfa(() => orderStatusAction(id));
       if (stop) return;
       if (!r.ok) { setState({ status: 'unknown' }); return; }
       const o = r.data!;
@@ -378,6 +381,7 @@ function AddonsCard({ addons, canManage, trialing, highlight, onDone, onNote, on
   addons: Addon[]; canManage: boolean; trialing: boolean; highlight: string | null;
   onDone: (r: ChangeResult, what: string) => void; onNote: (n: string) => void; onError: (e: string) => void;
 }) {
+  const withMfa = useMfaRetry();
   const router = useRouter();
   const [buying, setBuying] = useState<Addon | null>(null);
   const [pending, start] = useTransition();
@@ -399,11 +403,11 @@ function AddonsCard({ addons, canManage, trialing, highlight, onDone, onNote, on
             {canManage && (
               <div className="mt-auto flex flex-wrap gap-2">
                 {a.active?.endsAtPeriodEnd ? (
-                  <Button size="sm" variant="secondary" loading={pending} onClick={() => start(async () => { const r = await removeAddonAction(a.key, true); if (r.ok) { onNote(`${a.name} stays on your plan.`); router.refresh(); } else onError(r.message); })}>Keep it</Button>
+                  <Button size="sm" variant="secondary" loading={pending} onClick={() => start(async () => { const r = await withMfa(() => removeAddonAction(a.key, true)); if (r.ok) { onNote(`${a.name} stays on your plan.`); router.refresh(); } else onError(r.message); })}>Keep it</Button>
                 ) : (
                   <>
                     {!a.includedInPlan && a.price && (a.kind === 'limit' || !a.active) && <Button size="sm" disabled={trialing} title={trialing ? 'Add-ons can be bought after the trial' : undefined} onClick={() => setBuying(a)} data-testid={`addon-buy-${a.key}`}>{a.active ? 'Buy more' : 'Add'}</Button>}
-                    {a.active && <Button size="sm" variant="ghost" loading={pending} data-testid={`addon-remove-${a.key}`} onClick={() => start(async () => { const r = await removeAddonAction(a.key); if (r.ok) { onNote(`${a.name} ends on ${date(r.data!.endsOn)}. It works until then.`); router.refresh(); } else onError(r.message); })}>Remove at renewal</Button>}
+                    {a.active && <Button size="sm" variant="ghost" loading={pending} data-testid={`addon-remove-${a.key}`} onClick={() => start(async () => { const r = await withMfa(() => removeAddonAction(a.key)); if (r.ok) { onNote(`${a.name} ends on ${date(r.data!.endsOn)}. It works until then.`); router.refresh(); } else onError(r.message); })}>Remove at renewal</Button>}
                   </>
                 )}
               </div>
@@ -417,6 +421,7 @@ function AddonsCard({ addons, canManage, trialing, highlight, onDone, onNote, on
 }
 
 function BuyAddonDialog({ addon, onClose, onDone }: { addon: Addon; onClose: () => void; onDone: (r: ChangeResult) => void }) {
+  const withMfa = useMfaRetry();
   const [qty, setQty] = useState('1');
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -432,7 +437,7 @@ function BuyAddonDialog({ addon, onClose, onDone }: { addon: Addon; onClose: () 
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button loading={pending} disabled={bad} data-testid="addon-confirm" onClick={() => start(async () => {
-            const r = await buyAddonAction(addon.key, addon.kind === 'module' ? 1 : n);
+            const r = await withMfa(() => buyAddonAction(addon.key, addon.kind === 'module' ? 1 : n));
             if (!r.ok) setError(r.message);
             else onDone(r.data!);
           })}>Buy</Button>
@@ -455,6 +460,7 @@ function BuyAddonDialog({ addon, onClose, onDone }: { addon: Addon; onClose: () 
 }
 
 function ChangePlanDialog({ plan, sub, members, onClose, onDone }: { plan: Plan; sub: NonNullable<SubscriptionInfo['subscription']>; members: number; onClose: () => void; onDone: (r: ChangeResult) => void }) {
+  const withMfa = useMfaRetry();
   const [cycle, setCycle] = useState(sub.billingCycle);
   const [currency, setCurrency] = useState(plan.prices.some((p) => p.currency === sub.currency) ? sub.currency : plan.prices[0]?.currency ?? 'USD');
   const [seats, setSeats] = useState(String(Math.max(sub.seats, plan.minimumSeats, members)));
@@ -472,7 +478,7 @@ function ChangePlanDialog({ plan, sub, members, onClose, onDone }: { plan: Plan;
   useEffect(() => {
     if (seatsError) { setQuote(null); return; }
     const t = setTimeout(() => startQuote(async () => {
-      const r = await quotePlanAction(body);
+      const r = await withMfa(() => quotePlanAction(body));
       if (r.ok) { setQuote(r.data!); setQuoteError(null); } else { setQuote(null); setQuoteError(r.message); if (appliedCoupon) setAppliedCoupon(undefined); }
     }), 250);
     return () => clearTimeout(t);
@@ -492,7 +498,7 @@ function ChangePlanDialog({ plan, sub, members, onClose, onDone }: { plan: Plan;
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button loading={pending} disabled={Boolean(seatsError) || !quote || quote.mode === 'none' || quoting} data-testid="plan-confirm" onClick={() => start(async () => {
-            const r = await changePlanAction(body);
+            const r = await withMfa(() => changePlanAction(body));
             if (!r.ok) setError(r.message);
             else onDone(r.data!);
           })}>{label}</Button>
@@ -546,6 +552,7 @@ function QuoteSummary({ quote }: { quote: Quote }) {
 }
 
 function BillingProfileCard({ profile, canManage }: { profile: BillingProfile | null; canManage: boolean }) {
+  const withMfa = useMfaRetry();
   const router = useRouter();
   // The API sends no body when nothing is saved yet: start from empty fields.
   const [v, setV] = useState<BillingProfile>({ legalName: '', gstin: '', addressLine1: '', addressLine2: '', city: '', stateCode: '', postalCode: '', countryCode: 'IN', email: '', ...(profile?.legalName ? profile : {}) });
@@ -563,7 +570,7 @@ function BillingProfileCard({ profile, canManage }: { profile: BillingProfile | 
           onSubmit={(e) => {
             e.preventDefault();
             start(async () => {
-              const r = await saveBillingProfileAction({ ...v, countryCode: v.countryCode.toUpperCase(), gstin: v.gstin.toUpperCase() });
+              const r = await withMfa(() => saveBillingProfileAction({ ...v, countryCode: v.countryCode.toUpperCase(), gstin: v.gstin.toUpperCase() }));
               if (r.ok) { setErrors({}); setMsg({ tone: 'success', text: 'Billing details saved. The next invoices use them.' }); router.refresh(); }
               else { setErrors(r.fieldErrors ?? {}); setMsg({ tone: 'danger', text: r.message }); }
             });
@@ -598,6 +605,7 @@ function BillingProfileCard({ profile, canManage }: { profile: BillingProfile | 
 
 /** Quote-only plans (such as Enterprise) are bought through SAMPLEDGE: the request appears in the Console, where it is approved. */
 function RequestPlanDialog({ plan, sub, members, onClose, onSent }: { plan: Plan; sub: NonNullable<SubscriptionInfo['subscription']>; members: number; onClose: () => void; onSent: (note: string) => void }) {
+  const withMfa = useMfaRetry();
   const [cycle, setCycle] = useState<'monthly' | 'annual'>(sub.billingCycle === 'monthly' ? 'monthly' : 'annual');
   const [seats, setSeats] = useState(String(Math.max(sub.seats, plan.minimumSeats, members)));
   const [message, setMessage] = useState('');
@@ -615,7 +623,7 @@ function RequestPlanDialog({ plan, sub, members, onClose, onSent }: { plan: Plan
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button loading={pending} disabled={Boolean(seatsError)} data-testid="plan-request-send" onClick={() => start(async () => {
-            const r = await requestPlanAction({ planKey: plan.key, seats: n, billingCycle: cycle, message: message.trim() || undefined });
+            const r = await withMfa(() => requestPlanAction({ planKey: plan.key, seats: n, billingCycle: cycle, message: message.trim() || undefined }));
             if (!r.ok) setError(r.message);
             else onSent(r.data!.note);
           })}>Send request</Button>

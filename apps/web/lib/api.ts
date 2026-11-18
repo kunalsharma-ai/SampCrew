@@ -92,11 +92,30 @@ export async function load<T>(path: string): Promise<T> {
     return await api<T>(path);
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) redirect('/login?expired=1');
-    if (e instanceof ApiError && (e.status === 402 || e.status === 403)) redirect(`/no-access?reason=${encodeURIComponent(e.code)}`);
+    if (e instanceof ApiError && (e.status === 402 || e.status === 403)) redirect(await noAccessUrl(e.code));
     // A record that does not exist, or that this person may not see (the API answers both the same way), is a 404 page.
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
+}
+
+/** The "no access" page for a reason; for a missing MFA step it also carries the page to return to after verifying. */
+async function noAccessUrl(reason: string): Promise<string> {
+  let from: string | null = null;
+  if (reason === 'mfa_required') {
+    try {
+      from = safeReturnPath((await requestHeaders()).get('x-crew-path'));
+    } catch {
+      from = null;
+    }
+  }
+  return `/no-access?reason=${encodeURIComponent(reason)}${from ? `&from=${encodeURIComponent(from)}` : ''}`;
+}
+
+/** A same-site path to go back to, or null: never another site (//evil.example) and never the no-access page itself. */
+export function safeReturnPath(p: string | null | undefined): string | null {
+  if (!p || !p.startsWith('/') || p.startsWith('//') || p.startsWith('/\\') || p.startsWith('/no-access')) return null;
+  return p.slice(0, 1000);
 }
 
 /**

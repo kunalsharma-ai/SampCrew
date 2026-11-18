@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, EmptyState, Field, Input, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Wallet } from 'lucide-react';
 import { useState, useTransition } from 'react';
@@ -85,7 +86,7 @@ export function SalaryView({ employeeId, revisions, structures, canEdit }: { emp
                   {preview.components.map((c) => <li key={c.code} className="flex justify-between"><span>{c.name}</span><span className="tabular-nums">{amount(c.monthly, preview.currency)}</span></li>)}
                   <li className="flex justify-between text-fg-muted"><span>Employer PF</span><span className="tabular-nums">{amount(preview.employerPfMonthly, preview.currency)}</span></li>
                 </ul>
-                {preview.warnings.map((w, i) => <p key={i} className="mt-2 text-xs text-warning">{w}</p>)}
+                {preview.warnings.map((w, i) => <p key={i} className="mt-2 text-xs text-warning">{w}{/statutory settings/i.test(w) && <> <Link className="font-medium underline" href="/settings/payroll">Open statutory settings</Link></>}</p>)}
               </div>
             )}
             <div className="flex gap-2">

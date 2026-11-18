@@ -2,15 +2,17 @@ import { EmptyState, buttonClass } from '@crew/ui';
 import { KeyRound, Lock, Sparkles } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { loadOptional, safeReturnPath } from '@/lib/api';
+import type { Me } from '@/lib/types';
+import { NoAccessMfa } from './verify-mfa';
 
 export const metadata: Metadata = { title: 'No access' };
 
 const REASONS: Record<string, { title: string; description: string; icon: React.ReactNode; action?: { href: string; label: string } }> = {
   mfa_required: {
     title: 'Verify with two-step verification first',
-    description: 'This page holds sensitive information. Turn on two-step verification, or sign in again with your authenticator code, to open it.',
+    description: 'This page holds sensitive information, so your session must be verified with an authenticator app. Do it below; you stay signed in.',
     icon: <KeyRound className="size-6" />,
-    action: { href: '/settings/security', label: 'Go to security settings' },
   },
   feature_not_in_plan: {
     title: 'Not included in your plan',
@@ -39,8 +41,9 @@ const REASONS: Record<string, { title: string; description: string; icon: React.
   },
 };
 
-export default async function NoAccessPage({ searchParams }: { searchParams: Promise<{ reason?: string }> }) {
-  const { reason } = await searchParams;
+export default async function NoAccessPage({ searchParams }: { searchParams: Promise<{ reason?: string; from?: string }> }) {
+  const { reason, from } = await searchParams;
+  const me = reason === 'mfa_required' ? await loadOptional<Me>('/me') : null;
   const r = REASONS[reason ?? ''] ?? {
     title: 'You do not have access to this page',
     description: 'Your roles in this workspace do not include it. If you need it for your work, ask a workspace administrator to update your role.',
@@ -59,6 +62,7 @@ export default async function NoAccessPage({ searchParams }: { searchParams: Pro
           </div>
         }
       />
+      {me && !me.session.mfa && <NoAccessMfa mfaEnabled={me.user.mfaEnabled} from={safeReturnPath(from)} />}
     </div>
   );
 }

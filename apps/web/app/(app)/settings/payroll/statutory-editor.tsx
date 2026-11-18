@@ -42,7 +42,9 @@ export function StatutoryEditor({ statutory, entities }: { statutory: StatutoryR
       />
       <CardBody className="grid gap-5">
         {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
-        {saved.length === 0 ? (
+        {entities.length === 0 ? (
+          <Alert tone="warning" title="Add a legal entity first">Statutory settings belong to a legal entity (the company that employs people). Add one under <a className="font-medium underline" href="/organization">Organization</a>, then come back here.</Alert>
+        ) : saved.length === 0 ? (
           <Alert tone="warning" title="Not saved yet">{statutory.startingValues.notice}</Alert>
         ) : (
           <Table>

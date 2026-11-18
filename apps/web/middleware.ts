@@ -65,6 +65,8 @@ export async function middleware(req: NextRequest) {
   const csp = contentSecurityPolicy({ nonce, dev: process.env.NODE_ENV !== 'production', frameAncestors: "'self'" });
   req.headers.set('x-nonce', nonce);
   req.headers.set('content-security-policy', csp);
+  // The page that was asked for, so "no access" can send the person back to it after they verify with MFA.
+  req.headers.set('x-crew-path', `${req.nextUrl.pathname}${req.nextUrl.search}`.slice(0, 1000));
   const res = await gate(req);
   res.headers.set('content-security-policy', csp);
   return res;
