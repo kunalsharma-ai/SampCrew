@@ -56,7 +56,7 @@ async function caseViews(tx: TenantTx, cases: Doc[]): Promise<Array<Record<strin
 }
 
 /** Matches the status filter of the case lists: 'active' is anything not closed. */
-const statusFilter = (status: string) => (status === 'active' ? { status: { $ne: 'closed' } } : { status });
+const statusFilter = (status: string) => (status === 'all' ? {} : status === 'active' ? { status: { $ne: 'closed' } } : { status });
 
 const ms = (d: Date | string | null | undefined) => (d ? new Date(d).getTime() : null);
 
@@ -309,7 +309,20 @@ export class HelpdeskService {
 
   // Cases ------------------------------------------------------------------------------------------------------
 
-  async list(q: { view: 'mine' | 'queue'; status?: 'active' | CaseStatus; assigned?: 'me' | 'unassigned' | 'all'; q?: string }) {
+  /** The cases a handler's queue holds: everyone in their helpdesk scope, confidential ones only for named handlers. */
+  private async queueFilter(tx: TenantTx, s: Subject) {
+    const scope = await this.authz.filter('helpdesk:manage', EMPLOYEE_FIELDS, tx);
+    const inScope = await tx.collection('employees').distinct<string>('id', scope);
+    const handled = await tx.collection('helpdesk_category_handlers').distinct<string>('category_id', { membership_id: s.membershipId });
+    return {
+      $and: [
+        { employee_id: { $ne: s.employeeId ?? null } },
+        { $or: [{ confidential: true, category_id: { $in: handled } }, { confidential: false, $or: [{ employee_id: { $in: inScope } }, { assignee_membership_id: s.membershipId }] }] },
+      ],
+    };
+  }
+
+  async list(q: { view: 'mine' | 'queue'; status?: 'active' | 'all' | CaseStatus; assigned?: 'me' | 'unassigned' | 'all'; q?: string }) {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
       const status = q.status ?? 'active';
@@ -319,18 +332,8 @@ export class HelpdeskService {
         return rows.map(decorate);
       }
       if (!hasPermission(s, 'helpdesk:manage').allowed) throw Errors.forbidden();
-      const scope = await this.authz.filter('helpdesk:manage', EMPLOYEE_FIELDS, tx);
-      const inScope = await tx.collection('employees').distinct<string>('id', scope);
-      const handled = await tx.collection('helpdesk_category_handlers').distinct<string>('category_id', { membership_id: s.membershipId });
       const assigned = q.assigned === 'me' ? { assignee_membership_id: s.membershipId } : q.assigned === 'unassigned' ? { assignee_membership_id: null } : {};
-      const docs = await tx.collection('helpdesk_cases').find({
-        $and: [
-          { employee_id: { $ne: s.employeeId ?? null } },
-          { $or: [{ confidential: true, category_id: { $in: handled } }, { confidential: false, $or: [{ employee_id: { $in: inScope } }, { assignee_membership_id: s.membershipId }] }] },
-          statusFilter(status),
-          assigned,
-        ],
-      });
+      const docs = await tx.collection('helpdesk_cases').find({ $and: [await this.queueFilter(tx, s), statusFilter(status), assigned] });
       let rows = await caseViews(tx, docs);
       if (q.q) {
         const needle = q.q.toLowerCase();
@@ -625,8 +628,19 @@ export class HelpdeskService {
             resolved: await cases.count({ employee_id: s.employeeId, status: 'resolved' }),
           }
         : { open: 0, waiting: 0, resolved: 0 };
-      const assigned = hasPermission(s, 'helpdesk:manage').allowed ? await cases.count({ assignee_membership_id: s.membershipId, status: { $in: ['open', 'in_progress'] } }) : null;
-      return { mine, assignedToMe: assigned };
+      const handler = hasPermission(s, 'helpdesk:manage').allowed;
+      const assigned = handler ? await cases.count({ assignee_membership_id: s.membershipId, status: { $in: ['open', 'in_progress'] } }) : null;
+      // Questions in the handler's queue that HR still has to answer, and the ones nobody has taken yet.
+      const queue = handler
+        ? await (async () => {
+            const f = await this.queueFilter(tx, s);
+            return {
+              awaitingHr: await cases.count({ $and: [f, { status: { $in: ['open', 'in_progress'] } }] }),
+              unassigned: await cases.count({ $and: [f, { status: { $in: ['open', 'in_progress'] } }, { assignee_membership_id: null }] }),
+            };
+          })()
+        : null;
+      return { mine, assignedToMe: assigned, queue };
     });
   }
 }

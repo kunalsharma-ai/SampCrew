@@ -12,14 +12,18 @@ export const dynamic = 'force-dynamic';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await loadSession<Me>('/me');
-  const [notifications, prefs, inbox, cookieAppearance] = await Promise.all([
+  const handlesHelpdesk = Boolean(me.permissions['helpdesk:manage']) && me.features.includes('helpdesk');
+  const [notifications, prefs, inbox, cookieAppearance, helpdesk] = await Promise.all([
     loadOptional<Notifications>('/notifications?limit=15'),
     loadOptional<MemberPreferences>('/me/preferences'),
     loadOptional<unknown[]>('/approvals/inbox'),
     appearanceFromCookie(),
+    handlesHelpdesk ? loadOptional<{ queue: { awaitingHr: number } | null }>('/helpdesk/summary') : Promise.resolve(null),
   ]);
   const counts: Record<string, number> = {};
   if (inbox?.length) counts['/approvals'] = inbox.length;
+  // Questions from employees that HR still has to answer, on the HR helpdesk menu item.
+  if (helpdesk?.queue?.awaitingHr) counts['/helpdesk/queue'] = helpdesk.queue.awaitingHr;
   return (
     <>
       {me.tenant.isDemo && <DemoBanner />}

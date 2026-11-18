@@ -1,4 +1,4 @@
-import { builtInStatutoryPacks, FEATURES, PLAN_TEMPLATES, SYSTEM_ROLES } from '@crew/contracts';
+import { builtInStatutoryPacks, DEFAULT_LEAVE_TYPES, FEATURES, PLAN_TEMPLATES, SYSTEM_ROLES } from '@crew/contracts';
 import type { Row, Table } from './table';
 
 /** Anything that hands out unrestricted tables in one transaction (the API's PlatformTx, or a script's own). */
@@ -48,7 +48,7 @@ export async function provisionTenantMongo(tx: Tables, input: ProvisionTenantInp
     userId = u.id as string;
     existingUser = true;
   } else {
-    userId = (await t('users').insert({ email: input.owner.email, full_name: input.owner.fullName, password_hash: input.owner.passwordHash, status: 'active' })).id as string;
+    userId = (await t('users').insert({ email: input.owner.email, full_name: input.owner.fullName, password_hash: input.owner.passwordHash, must_change_password: !!(input.owner.passwordHash && input.owner.mustChangePassword), status: 'active' })).id as string;
   }
 
   const membershipStatus = input.owner.passwordHash || existingUser ? 'active' : 'invited';
@@ -83,6 +83,13 @@ export async function provisionTenantMongo(tx: Tables, input: ProvisionTenantInp
   // and a default onboarding checklist.
   await t('holiday_calendars').insert(own({ name: 'Default calendar', is_default: true, weekly_offs: [0, 6] }));
   await t('onboarding_templates').insert(own({ name: 'Standard onboarding', description: 'Default checklist for new joiners', tasks: DEFAULT_ONBOARDING_TASKS, is_default: true }));
+  // Standard leave types with workspace-wide policies, so employees can apply for leave from day one.
+  if (!input.isDemo && input.leaveTypes !== 'none') {
+    for (const lt of DEFAULT_LEAVE_TYPES) {
+      const type = await t('leave_types').insert(own({ code: lt.code, name: lt.name, paid: lt.paid, allow_half_day: lt.allowHalfDay, color: lt.color, description: 'Standard leave type. Change it on Leave settings.' }));
+      await t('leave_policies').insert(own({ leave_type_id: type.id, legal_entity_id: null, accrual_method: lt.accrualMethod, annual_entitlement: lt.annualEntitlement, carry_forward_max: lt.carryForwardMax }));
+    }
+  }
   // A general shift and a workspace attendance policy that uses it, so attendance works from day one.
   const shift = await t('shift_templates').insert(own({ code: 'GEN', name: 'General shift', start_time: '09:00', end_time: '18:00', break_minutes: 60 }));
   await t('attendance_policies').insert(own({ default_shift_id: shift.id }));
@@ -218,8 +225,11 @@ export interface ProvisionTenantInput {
   locale?: string;
   region?: string;
   isDemo?: boolean;
-  owner: { email: string; fullName: string; passwordHash: string | null };
+  /** `mustChangePassword` marks a temporary password that the owner replaces at their first sign-in. */
+  owner: { email: string; fullName: string; passwordHash: string | null; mustChangePassword?: boolean };
   plan: { key: string; seats: number; billingCycle: 'monthly' | 'annual'; trialDays: number };
+  /** 'standard' (the default) starts the workspace with the standard leave types; 'none' leaves them to HR. */
+  leaveTypes?: 'standard' | 'none';
 }
 
 export interface ProvisionedTenant {

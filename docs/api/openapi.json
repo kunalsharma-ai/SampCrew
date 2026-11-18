@@ -10033,6 +10033,36 @@
         }
       }
     },
+    "/api/v1/leave/types/defaults": {
+      "post": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Add the standard leave types (casual, sick, earned, without pay) with workspace-wide policies; only when the workspace has no leave types yet",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_addDefaultTypes",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/leave/types/{id}": {
       "patch": {
         "tags": [
@@ -11183,6 +11213,58 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/calendar": {
+      "get": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "My leave calendar for a date range: working week, public holidays, and my pending and approved leave",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_calendar",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
@@ -30499,6 +30581,7 @@
               "type": "string",
               "enum": [
                 "active",
+                "all",
                 "open",
                 "in_progress",
                 "waiting_on_employee",
@@ -38410,6 +38493,19 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 90
+                  },
+                  "ownerAccess": {
+                    "default": "invite",
+                    "type": "string",
+                    "enum": [
+                      "invite",
+                      "password"
+                    ]
+                  },
+                  "ownerPassword": {
+                    "type": "string",
+                    "minLength": 12,
+                    "maxLength": 200
                   }
                 },
                 "required": [

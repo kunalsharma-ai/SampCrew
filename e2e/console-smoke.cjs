@@ -91,7 +91,42 @@ const watch = (p) => {
   await admin.fill('input[name=ownerEmail]', `owner@${slug}.example`);
   await admin.click('text=Create workspace');
   await admin.waitForSelector('text=Smoke Test Industries created');
+  await admin.getByTestId('owner-invite-url').waitFor();
   ok('workspace created with an owner invitation link');
+
+  // A second workspace whose owner gets a temporary password from SAMPLEDGE instead of an invitation.
+  const slug2 = `smokepw-${Date.now().toString(36)}`;
+  const ownerEmail2 = `owner@${slug2}.example`;
+  await admin.click('text=New workspace');
+  await admin.fill('input[name=companyName]', 'Smoke Password Works');
+  await admin.fill('input[name=slug]', slug2);
+  await admin.fill('input[name=ownerName]', 'Pat Owner');
+  await admin.fill('input[name=ownerEmail]', ownerEmail2);
+  await admin.getByTestId('owner-access-password').check();
+  await admin.fill('input[name=ownerPassword]', 'Temp-Owner-Pass-2026');
+  await admin.fill('input[name=ownerPasswordConfirm]', 'Temp-Owner-Pass-2027');
+  await admin.click('text=Create workspace');
+  await admin.waitForSelector('text=The two passwords do not match');
+  await admin.fill('input[name=ownerPasswordConfirm]', 'Temp-Owner-Pass-2026');
+  await admin.click('text=Create workspace');
+  await admin.waitForSelector('text=Smoke Password Works created');
+  await admin.waitForSelector('text=/temporary password you set/');
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+    const owner = await ctx.newPage();
+    watch(owner);
+    await owner.goto(`${WEB}/login`);
+    await owner.fill('input[name=email]', ownerEmail2);
+    await owner.fill('input[name=password]', 'Temp-Owner-Pass-2026');
+    await owner.click('button[type=submit]');
+    await owner.getByText('Choose your password').first().waitFor({ timeout: 15000 });
+    await owner.fill('input[name=newPassword]', 'Pat-Own-Password-2026');
+    await owner.fill('input[name=confirmPassword]', 'Pat-Own-Password-2026');
+    await owner.click('button[type=submit]');
+    await owner.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 20000 });
+    await ctx.close();
+  }
+  ok('workspace created with a temporary owner password; the owner signed in and chose their own');
 
   // Subscription override, suspend and reactivate on the new tenant.
   await admin.click('a:has-text("Smoke Test Industries")'); // the table link, not the success banner

@@ -390,6 +390,7 @@ export function RequestsTable({ requests, actions }: { requests: LeaveRequest[];
             <TD className="max-w-xs truncate text-fg-muted">{r.reason ?? '—'}{r.cancelReason && <span className="block text-xs">Cancelled: {r.cancelReason}</span>}</TD>
             <TD>
               <StatusPill status={r.status} />
+              {r.status === 'pending' && r.waitingOn && <span className="mt-1 block text-xs text-fg-muted" data-testid="leave-waiting-on">Waiting for {r.waitingOn}</span>}
               {r.sameDay && <span className="mt-1 block text-xs text-warning">Same-day leave</span>}
               {r.penalty && <span className={`block text-xs ${r.penalty.status === 'active' ? 'text-danger' : 'text-fg-subtle'}`}>Penalty {r.penalty.days} day(s) of pay{r.penalty.status === 'active' ? '' : `, ${r.penalty.status}`}</span>}
             </TD>

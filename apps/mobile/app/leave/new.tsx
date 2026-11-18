@@ -1,10 +1,11 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../src/lib/api';
 import { randomId } from '../../src/lib/clock';
 import { useSession } from '../../src/lib/session';
 import type { Balance } from '../../src/lib/types';
 import { Button, Card, Choice, Field, Notice, Screen, Text, useLoad } from '../../src/ui';
+import { DateField } from '../../src/ui/calendar';
 
 interface Preview { days: string; tracked: boolean; available: string | null; balanceAfter: string | null; holidaysInRange: string[]; warnings: string[] }
 
@@ -17,10 +18,14 @@ const localToday = () => {
 export default function NewLeave() {
   const { api } = useSession();
   const router = useRouter();
+  // A day chosen on the leave calendar starts the request on that day.
+  const params = useLocalSearchParams<{ date?: string }>();
+  const startFrom = typeof params.date === 'string' && isDate(params.date) ? params.date : localToday();
+  const [sent, setSent] = useState<string | null>(null);
   const { data: balances, error: loadError } = useLoad(() => api.get<{ balances: Balance[] }>('/leave/balances').then((b) => b.balances), [api]);
   const [typeId, setTypeId] = useState('');
-  const [start, setStart] = useState(localToday());
-  const [end, setEnd] = useState(localToday());
+  const [start, setStart] = useState(startFrom);
+  const [end, setEnd] = useState(startFrom);
   const [half, setHalf] = useState<'full' | 'first_half' | 'second_half'>('full');
   const [reason, setReason] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -78,8 +83,9 @@ export default function NewLeave() {
     setBusy(true);
     setError(null);
     try {
-      await api.post('/leave/requests', body, key);
-      router.back();
+      const r = await api.post<{ waitingOn: string | null; status: string }>('/leave/requests', body, key);
+      // Say who it went to, so the request is not sent into silence.
+      setSent(r.status === 'pending' ? `Sent. Your request is waiting for approval${r.waitingOn ? ` from ${r.waitingOn}` : ''}. You will get a notification when it is decided.` : `Sent. Your request is ${r.status}.`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not send the request.');
       if (e instanceof ApiError) setErrors(e.fieldErrors);
@@ -87,6 +93,17 @@ export default function NewLeave() {
       setBusy(false);
     }
   };
+
+  if (sent) {
+    return (
+      <Screen>
+        <Card>
+          <Notice tone="ok" testID="leave-sent">{sent}</Notice>
+          <Button title="Back to leave" onPress={() => router.back()} testID="leave-sent-done" />
+        </Card>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -101,8 +118,8 @@ export default function NewLeave() {
             onChange={setTypeId}
           />
         )}
-        <Field label="From (YYYY-MM-DD)" value={start} onChangeText={(v) => { setStart(v); if (end < v) setEnd(v); }} autoCapitalize="none" error={errors.startDate} />
-        <Field label="To (YYYY-MM-DD)" value={end} onChangeText={setEnd} autoCapitalize="none" error={errors.endDate} />
+        <DateField label="From" value={start} onChange={(v) => { setStart(v); if (end < v) setEnd(v); }} error={errors.startDate} testID="leave-start" />
+        <DateField label="To" value={end} min={start} onChange={setEnd} error={errors.endDate} testID="leave-end" />
         {start === end && type?.allowHalfDay && (
           <Choice
             label="Part of the day"

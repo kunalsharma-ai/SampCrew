@@ -123,8 +123,43 @@ export class ApprovalsService {
     await tx.collection('approval_steps').insertMany(
       resolved.map((st, i) => ({ request_id: req.id, seq: i + 1, kind: st.kind, approver_membership_id: st.membershipId, approver_role_key: st.role, status: i === 0 ? 'pending' : 'waiting' })),
     );
-    await this.notifyApprovers(tx, req.id);
+    const approvers = await this.notifyApprovers(tx, req.id);
+    // The person asking hears straight away that it went for approval, and to whom, so a request is never sent
+    // into silence. When they cannot see it themselves (an offer, say), nobody is told here.
+    const tellRequester = subject.membership_id ?? (input.subjectEmployeeId ? null : requester);
+    if (tellRequester && !approvers.includes(tellRequester)) {
+      const who = (await this.waitingOn(tx, [req.id])).get(req.id);
+      await this.notifications.notify(tx, {
+        membershipIds: [tellRequester],
+        kind: 'approval.submitted',
+        title: `${h.label} sent for approval`,
+        body: who ? `Waiting for ${who}. You will be told when it is decided.` : 'You will be told when it is decided.',
+        link: h.link(input.resourceId),
+      });
+    }
     return req.id;
+  }
+
+  /**
+   * Who each pending request is waiting for, as people's names (up to three, then "and N more"), for the person
+   * who asked. Requests that are not pending are left out.
+   */
+  async waitingOn(tx: TenantTx, requestIds: (string | null | undefined)[]): Promise<Map<string, string>> {
+    const ids = [...new Set(requestIds.filter((x): x is string => !!x))];
+    const out = new Map<string, string>();
+    if (!ids.length) return out;
+    const pending = await tx.collection<ApprovalRequestRow>('approval_requests').find({ id: { $in: ids }, status: 'pending' }, { projection: { _id: 1 } });
+    for (const r of pending) {
+      const people = await this.currentApprovers(tx, r.id);
+      const names = [...(await membershipUserNames(tx, people.slice(0, 3))).values()].filter(Boolean) as string[];
+      if (!names.length) {
+        out.set(r.id, 'an approver (nobody can approve it yet: ask HR to check the approval settings)');
+        continue;
+      }
+      const more = people.length - names.length;
+      out.set(r.id, more > 0 ? `${names.join(', ')} and ${more} more` : names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0]!);
+    }
+    return out;
   }
 
   /** People who can act on the request's current step. Role steps are narrowed to holders whose scope covers the record. */
@@ -157,17 +192,19 @@ export class ApprovalsService {
     return out.length || step.approver_role_key === 'tenant_owner' ? out : eligible('tenant_owner');
   }
 
-  private async notifyApprovers(tx: TenantTx, requestId: string) {
+  private async notifyApprovers(tx: TenantTx, requestId: string): Promise<string[]> {
     const req = (await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId }))!;
     const h = this.handler(req.resource_type);
+    const approvers = await this.currentApprovers(tx, requestId);
     await this.notifications.notify(tx, {
-      membershipIds: await this.currentApprovers(tx, requestId),
+      membershipIds: approvers,
       kind: 'approval.requested',
       title: `${h.label} waiting for your approval`,
       body: req.summary,
       link: '/approvals',
       email: true,
     });
+    return approvers;
   }
 
   /** Approve or reject the current step. */

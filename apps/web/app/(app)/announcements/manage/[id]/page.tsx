@@ -8,7 +8,7 @@ import type { Announcement } from '../../../helpdesk/types';
 export const metadata: Metadata = { title: 'Read receipts' };
 
 interface Detail extends Announcement {
-  people: { employeeId: string; name: string; departmentName: string | null; readAt: string | null; acknowledgedAt: string | null }[];
+  people: { employeeId: string | null; membershipId: string; name: string; departmentName: string | null; readAt: string | null; acknowledgedAt: string | null }[];
 }
 
 export default async function ReceiptsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -36,7 +36,7 @@ export default async function ReceiptsPage({ params }: { params: Promise<{ id: s
             <THead><tr><TH>Name</TH><TH>Department</TH><TH>Read</TH>{a.requiresAck && <TH>Acknowledged</TH>}</tr></THead>
             <TBody>
               {a.people.map((p) => (
-                <TR key={p.employeeId}>
+                <TR key={p.membershipId}>
                   <TD>{p.name}</TD>
                   <TD className="text-fg-muted">{p.departmentName ?? '–'}</TD>
                   <TD>{p.readAt ? dateTime(p.readAt) : <Badge>Not yet</Badge>}</TD>

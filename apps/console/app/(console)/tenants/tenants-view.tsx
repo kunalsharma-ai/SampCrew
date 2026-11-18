@@ -12,7 +12,7 @@ import { LocalTime } from '@/components/local-time';
 export function TenantsView({ page, query, canCreate, plans }: { page: Page<TenantRow>; query: { q: string; status: string }; canCreate: boolean; plans: { key: string; name: string }[] }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState<{ name: string; url?: string; existing: boolean } | null>(null);
+  const [created, setCreated] = useState<Created | null>(null);
   const href = (extra: Record<string, string>) => {
     const p = new URLSearchParams(Object.entries({ ...query, ...extra }).filter(([, v]) => v));
     return `/tenants${p.size ? `?${p}` : ''}`;
@@ -22,12 +22,15 @@ export function TenantsView({ page, query, canCreate, plans }: { page: Page<Tena
     <div className="grid gap-4">
       {created && (
         <Alert tone="success" title={`${created.name} created`}>
-          {created.existing ? 'The owner already had a SampCrew account and can sign in now.' : created.url ? (
-            <span className="flex flex-wrap items-center gap-2">Local environment: email is not connected yet, so send the owner this invitation link yourself.
-              <code className="max-w-full truncate rounded bg-surface px-2 py-0.5 font-mono text-[11px]">{created.url}</code>
-              <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(created.url!)}><Copy className="size-3.5" /> Copy</Button>
-            </span>
-          ) : 'The owner invitation will be emailed once email delivery is connected.'}
+          {created.access === 'existing_account' ? 'The owner already had a SampCrew account, so they sign in with their own password and choose this workspace.'
+            : created.access === 'temporary_password' ? `The owner can sign in now at the Web Portal with ${created.email} and the temporary password you set. They choose their own password at their first sign-in. Give them the password yourself: it is never emailed.`
+            : created.url ? (
+              <span className="flex flex-wrap items-center gap-2">
+                {created.emailQueued ? 'The invitation was emailed. You can also send the owner this link to set their password:' : 'Email delivery is not connected yet, so send the owner this link to set their password:'}
+                <code className="max-w-full truncate rounded bg-surface px-2 py-0.5 font-mono text-[11px]" data-testid="owner-invite-url">{created.url}</code>
+                <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(created.url!)}><Copy className="size-3.5" /> Copy</Button>
+              </span>
+            ) : 'The owner was emailed an invitation to set their password. It expires in 7 days.'}
         </Alert>
       )}
       <div className="flex flex-wrap items-center gap-2">
@@ -69,7 +72,10 @@ export function TenantsView({ page, query, canCreate, plans }: { page: Page<Tena
   );
 }
 
-function CreateTenantDialog({ plans, onClose, onCreated }: { plans: { key: string; name: string }[]; onClose: () => void; onCreated: (c: { name: string; url?: string; existing: boolean }) => void }) {
+interface Created { name: string; email: string; url?: string; access: 'invitation' | 'temporary_password' | 'existing_account'; emailQueued: boolean }
+
+function CreateTenantDialog({ plans, onClose, onCreated }: { plans: { key: string; name: string }[]; onClose: () => void; onCreated: (c: Created) => void }) {
+  const [access, setAccess] = useState<'invite' | 'password'>('invite');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -77,7 +83,9 @@ function CreateTenantDialog({ plans, onClose, onCreated }: { plans: { key: strin
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
-    const body = { ...f, seats: Number(f.seats), trialDays: Number(f.trialDays), countryCode: f.countryCode?.toUpperCase(), currency: f.currency?.toUpperCase() };
+    const { ownerPassword, ownerPasswordConfirm, ...rest } = f;
+    if (access === 'password' && ownerPassword !== ownerPasswordConfirm) { setErrors({ ownerPasswordConfirm: 'The two passwords do not match' }); return; }
+    const body = { ...rest, ownerAccess: access, ...(access === 'password' ? { ownerPassword } : {}), seats: Number(f.seats), trialDays: Number(f.trialDays), countryCode: f.countryCode?.toUpperCase(), currency: f.currency?.toUpperCase() };
     const parsed = platformCreateTenantRequest.safeParse(body);
     if (!parsed.success) {
       setErrors(Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message])));
@@ -88,12 +96,12 @@ function CreateTenantDialog({ plans, onClose, onCreated }: { plans: { key: strin
     start(async () => {
       const r = await createTenantAction(parsed.data);
       if (!r.ok) { setError(r.message); setErrors(r.fieldErrors ?? {}); return; }
-      onCreated({ name: parsed.data.companyName, url: r.data!.ownerInviteUrl, existing: r.data!.ownerAlreadyHadAccount });
+      onCreated({ name: parsed.data.companyName, email: parsed.data.ownerEmail, url: r.data!.ownerInviteUrl, access: r.data!.ownerAccess, emailQueued: r.data!.emailDelivery === 'queued' });
     });
   };
 
   return (
-    <Dialog open onClose={onClose} title="New workspace" description="For sales-assisted onboarding. The owner gets an invitation to set a password." size="lg"
+    <Dialog open onClose={onClose} title="New workspace" description="For sales-assisted onboarding. Choose how the owner gets in: an invitation to set their own password, or a temporary password you set now." size="lg"
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" form="create-tenant" loading={pending}>Create workspace</Button></>}>
       <form id="create-tenant" onSubmit={submit} className="grid grid-cols-2 gap-4">
         {error && <Alert tone="danger" className="col-span-2">{error}</Alert>}
@@ -109,6 +117,23 @@ function CreateTenantDialog({ plans, onClose, onCreated }: { plans: { key: strin
         <Field label="Currency" error={errors.currency} required className="col-span-2 sm:col-span-1">{(p) => <Select {...p} name="currency" defaultValue="INR"><option>INR</option><option>USD</option></Select>}</Field>
         <Field label="Time zone" error={errors.timezone} required className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="timezone" defaultValue="Asia/Kolkata" required />}</Field>
         <Field label="Trial days" hint="0 to 90" error={errors.trialDays} className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="trialDays" type="number" min={0} max={90} defaultValue={14} />}</Field>
+        <fieldset className="col-span-2 grid gap-2 rounded-lg border border-border p-3">
+          <legend className="px-1 text-sm font-medium">Owner&apos;s password</legend>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="radio" name="ownerAccessChoice" value="invite" checked={access === 'invite'} onChange={() => setAccess('invite')} className="mt-1" />
+            <span>Send an invitation<span className="block text-xs text-fg-muted">The owner sets their own password from a link (emailed, and shown here if email is not connected).</span></span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="radio" name="ownerAccessChoice" value="password" checked={access === 'password'} onChange={() => setAccess('password')} className="mt-1" data-testid="owner-access-password" />
+            <span>Set a temporary password now<span className="block text-xs text-fg-muted">The owner signs in straight away and must choose their own password at the first sign-in. Ignored if the email already has a SampCrew account.</span></span>
+          </label>
+          {access === 'password' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Temporary password" hint="At least 12 characters, three of: lowercase, uppercase, numbers, symbols" error={errors.ownerPassword} required>{(p) => <Input {...p} name="ownerPassword" type="password" autoComplete="new-password" required minLength={12} />}</Field>
+              <Field label="Repeat password" error={errors.ownerPasswordConfirm} required>{(p) => <Input {...p} name="ownerPasswordConfirm" type="password" autoComplete="new-password" required minLength={12} />}</Field>
+            </div>
+          )}
+        </fieldset>
       </form>
     </Dialog>
   );

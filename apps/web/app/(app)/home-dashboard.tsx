@@ -567,6 +567,22 @@ function NotesWidget({ initial }: { initial: string }) {
 }
 
 function HelpdeskWidget({ s }: { s: Summary }) {
+  // The HR team sees the questions waiting for them; everyone else sees their own questions.
+  if (s.queue) {
+    return (
+      <Card className="h-full">
+        <CardHeader title="HR helpdesk" action={<LifeBuoy className="size-5 text-accent" />} />
+        <CardBody className="grid gap-2 text-[0.8125rem]">
+          <div className="flex justify-between"><span className="text-fg-muted">Questions waiting for HR</span><span className="font-medium tabular-nums" data-testid="helpdesk-awaiting">{s.queue.awaitingHr}</span></div>
+          {s.queue.unassigned > 0 && <div className="flex justify-between"><span className="text-warning">Not taken by anyone yet</span><span className="font-medium tabular-nums">{s.queue.unassigned}</span></div>}
+          <div className="flex justify-between"><span className="text-fg-muted">Assigned to you</span><span className="font-medium tabular-nums">{s.assignedToMe ?? 0}</span></div>
+          <div className="mt-2 flex gap-2">
+            <Link href="/helpdesk/queue" className={buttonClass('secondary', 'sm')}>Open HR helpdesk</Link>
+          </div>
+        </CardBody>
+      </Card>
+    );
+  }
   return (
     <Card className="h-full">
       <CardHeader title="Ask HR" action={<LifeBuoy className="size-5 text-accent" />} />
@@ -574,10 +590,8 @@ function HelpdeskWidget({ s }: { s: Summary }) {
         <div className="flex justify-between"><span className="text-fg-muted">Your open questions</span><span className="font-medium tabular-nums">{s.mine.open + s.mine.waiting}</span></div>
         {s.mine.waiting > 0 && <div className="flex justify-between"><span className="text-warning">Waiting for your reply</span><span className="font-medium tabular-nums">{s.mine.waiting}</span></div>}
         {s.mine.resolved > 0 && <div className="flex justify-between"><span className="text-fg-muted">Resolved, please confirm</span><span className="font-medium tabular-nums">{s.mine.resolved}</span></div>}
-        {s.assignedToMe !== null && <div className="flex justify-between"><span className="text-fg-muted">Cases assigned to you</span><span className="font-medium tabular-nums">{s.assignedToMe}</span></div>}
         <div className="mt-2 flex gap-2">
           <Link href="/helpdesk" className={buttonClass('secondary', 'sm')}>Ask a question</Link>
-          {s.assignedToMe !== null && <Link href="/helpdesk/queue" className={buttonClass('secondary', 'sm')}>Open queue</Link>}
         </div>
       </CardBody>
     </Card>

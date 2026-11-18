@@ -37,11 +37,28 @@ async function audienceTest(tx: TenantTx) {
     (!a.department_id || (!!e.current_department_id && subtree(a.department_id).has(e.current_department_id)));
 }
 
-/** Current employees with an active login: the people an announcement can reach. */
+/** A member without an employee record (often the workspace owner or an admin), placed by their login's own placement. */
+const memberPlacement = (m: Doc): Doc => ({
+  membership_id: m.id, current_legal_entity_id: m.legal_entity_id ?? null, current_department_id: m.department_id ?? null, current_location_id: m.location_id ?? null,
+});
+
+/**
+ * The people an announcement can reach: current employees with an active login, and active members who have no
+ * employee record (placed by their login), so the owner and admins who are not on the employee list see it too.
+ */
 async function reachable(tx: TenantTx): Promise<Doc[]> {
   const emps = await tx.collection('employees').find({ status: { $in: AUDIENCE_STATUSES }, membership_id: { $ne: null } });
-  const active = new Set(await tx.collection('memberships').distinct<string>('id', { id: { $in: emps.map((e) => e.membership_id) }, status: 'active' }));
-  return emps.filter((e) => active.has(e.membership_id));
+  const linked = new Set(await tx.collection('employees').distinct<string>('membership_id', { membership_id: { $ne: null } }));
+  const members = await tx.collection('memberships').find({ status: 'active' });
+  const active = new Set(members.map((m) => m.id as string));
+  return [...emps.filter((e) => active.has(e.membership_id)), ...members.filter((m) => !linked.has(m.id)).map(memberPlacement)];
+}
+
+/** Where the caller sits for announcements: their employee record, or their login's placement when they have none. */
+async function placementOf(tx: TenantTx, s: { employeeId?: string | null; membershipId: string }): Promise<Doc | null> {
+  if (s.employeeId) return (await tx.collection('employees').findOne({ id: s.employeeId })) ?? null;
+  const m = await tx.collection('memberships').findOne({ id: s.membershipId });
+  return m ? memberPlacement(m) : null;
 }
 
 /** Announcements as the API shows them, with the audience and the publisher by name. */
@@ -84,10 +101,9 @@ export class AnnouncementsService {
     return (await reachable(tx)).filter((e) => reaches(a, e)).map((e) => ({ membership_id: e.membership_id as string }));
   }
 
-  /** Whether the employee is in the announcement's audience. */
-  private async addressedTo(tx: TenantTx, a: Doc, employeeId: string | null | undefined): Promise<boolean> {
-    if (!employeeId) return false;
-    const e = await tx.collection('employees').findOne({ id: employeeId });
+  /** Whether the caller is in the announcement's audience. */
+  private async addressedTo(tx: TenantTx, a: Doc, s: { employeeId?: string | null; membershipId: string }): Promise<boolean> {
+    const e = await placementOf(tx, s);
     return !!e && (await audienceTest(tx))(a, e);
   }
 
@@ -101,8 +117,7 @@ export class AnnouncementsService {
   async feed(limit = 50) {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
-      if (!s.employeeId) return [];
-      const e = await tx.collection('employees').findOne({ id: s.employeeId });
+      const e = await placementOf(tx, s);
       if (!e) return [];
       const reaches = await audienceTest(tx);
       const live = (await tx.collection('announcements').find({ status: 'published', $or: [{ expires_on: null }, { expires_on: { $gte: today() } }] }, { sort: { pinned: -1, published_at: -1 } }))
@@ -119,7 +134,7 @@ export class AnnouncementsService {
       const s = await this.authz.subject(tx);
       const manage = hasPermission(s, 'announcements:manage').allowed;
       const doc = await tx.collection('announcements').findOne({ id });
-      const inAudience = !!doc && doc.status === 'published' && (await this.addressedTo(tx, doc, s.employeeId));
+      const inAudience = !!doc && doc.status === 'published' && (await this.addressedTo(tx, doc, s));
       if (!doc || (!inAudience && !manage)) throw Errors.notFound('Announcement');
       const a = (await views(tx, [doc]))[0]!;
       let receipt: { readAt: Date; acknowledgedAt: Date | null } | null = null;
@@ -141,7 +156,7 @@ export class AnnouncementsService {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
       const a = await tx.collection('announcements').findOne({ id, status: 'published' });
-      if (!a || !(await this.addressedTo(tx, a, s.employeeId))) throw Errors.notFound('Announcement');
+      if (!a || !(await this.addressedTo(tx, a, s))) throw Errors.notFound('Announcement');
       if (!a.requires_ack) throw Errors.badRequest('no_ack_needed', 'This announcement does not ask for an acknowledgement');
       const receipts = tx.collection('announcement_receipts');
       const now = new Date();
@@ -182,12 +197,14 @@ export class AnnouncementsService {
       const reaches = await audienceTest(tx);
       const emps = (await reachable(tx)).filter((e) => reaches(doc, e));
       const departments = await fieldById(tx, 'departments', emps.map((e) => e.current_department_id));
+      // Members without an employee record are listed by their login's name.
+      const loginNames = await memberNames(tx, emps.filter((e) => !e.id).map((e) => e.membership_id));
       const receipts = new Map((await tx.collection('announcement_receipts').find({ announcement_id: id })).map((r) => [r.membership_id as string, r]));
       const t = (v: unknown) => (v ? new Date(v as Date).getTime() : -Infinity);
       const people = emps
         .map((e) => {
           const r = receipts.get(e.membership_id);
-          return { employeeId: e.id, name: displayName(e as never), departmentName: departments.get(e.current_department_id) ?? null, readAt: r?.read_at ?? null, acknowledgedAt: r?.acknowledged_at ?? null };
+          return { employeeId: (e.id as string | undefined) ?? null, membershipId: e.membership_id as string, name: e.id ? displayName(e as never) : (loginNames.get(e.membership_id) ?? 'Workspace member'), departmentName: departments.get(e.current_department_id) ?? null, readAt: r?.read_at ?? null, acknowledgedAt: r?.acknowledged_at ?? null };
         })
         .sort((x, y) => t(x.acknowledgedAt) - t(y.acknowledgedAt) || t(x.readAt) - t(y.readAt) || x.name.localeCompare(y.name))
         .slice(0, 5000);

@@ -1,6 +1,6 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { z } from 'zod';
-import { leaveMath, type WorkCalendar } from '@crew/contracts';
+import { DEFAULT_LEAVE_TYPES, leaveMath, type WorkCalendar } from '@crew/contracts';
 import type {
   holidayCalendarInput,
   holidayInput,
@@ -247,6 +247,24 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
+  /**
+   * Gives a workspace that has no leave types the standard set, so its employees can apply for leave. New workspaces
+   * get them when they are created; this is for workspaces created before that. Balances are credited straight away.
+   */
+  addDefaultTypes() {
+    return this.db.tenant(async (tx) => {
+      if (await tx.collection('leave_types').exists({ archived_at: null })) throw Errors.conflict('leave_types_exist', 'This workspace already has leave types. Add more one by one.');
+      for (const lt of DEFAULT_LEAVE_TYPES) {
+        const type = await tx.collection('leave_types').insert({ code: lt.code, name: lt.name, paid: lt.paid, allow_half_day: lt.allowHalfDay, color: lt.color, description: 'Standard leave type. Change it on Leave settings.' })
+          .catch(conflictOn('23505', 'leave_type_exists', `A leave type with the code ${lt.code} already exists (archived). Add the types one by one instead.`));
+        await tx.collection('leave_policies').insert({ leave_type_id: type.id, legal_entity_id: null, accrual_method: lt.accrualMethod, annual_entitlement: lt.annualEntitlement, carry_forward_max: lt.carryForwardMax });
+      }
+      const credited = await this.runAccruals(tx, today());
+      await this.audit.record(tx, { action: 'leave_type.defaults_added', resourceType: 'leave_type', metadata: { types: DEFAULT_LEAVE_TYPES.map((t) => t.code), accrualsPosted: credited } });
+      return { added: DEFAULT_LEAVE_TYPES.length, accrualsPosted: credited };
+    });
+  }
+
   listPolicies() {
     return this.db.tenant(async (tx) => {
       const rows = (await policyViews(tx, await tx.collection('leave_policies').find({ active: true }))).filter((p) => !p.typeArchived);
@@ -397,6 +415,28 @@ export class LeaveService implements OnModuleInit {
     const s = await this.authz.subject(tx);
     if (!s.employeeId) throw Errors.badRequest('no_employee_record', 'Your login is not linked to an employee record yet. Ask HR to link it.');
     return s.employeeId;
+  }
+
+  /**
+   * The caller's own leave calendar for a date range (at most about three months): their working week, the public
+   * holidays of the calendar that applies to them (optional ones marked), and their own pending and approved leave.
+   */
+  async myCalendar(from: string, to: string) {
+    return this.db.tenant(async (tx) => {
+      const e = await this.employee(tx, await this.myEmployeeId(tx));
+      await this.authz.require('leave:read', this.attrsOf(e), tx);
+      const cal = await this.calendarFor(tx, e);
+      const holidays = cal.id
+        ? (await tx.collection('holidays').find({ calendar_id: cal.id, holiday_date: { $gte: from, $lte: to } }, { sort: { holiday_date: 1 } })).map((h) => ({
+            date: h.holiday_date as string, name: h.name as string, optional: !!h.is_optional,
+          }))
+        : [];
+      const rows = await tx.collection('leave_requests').find(
+        { employee_id: e.id, status: { $in: ['pending', 'approved'] }, end_date: { $gte: from }, start_date: { $lte: to } },
+        { sort: { start_date: 1 }, limit: 200 },
+      );
+      return { from, to, weeklyOffs: cal.weeklyOffs, holidays, requests: await this.withWaitingOn(tx, await requestViews(tx, rows)) };
+    });
   }
 
   async balances(employeeId: string | undefined, year = yearOf(today())) {
@@ -655,7 +695,7 @@ export class LeaveService implements OnModuleInit {
       if (q.from) and.push({ end_date: { $gte: q.from } });
       if (q.to) and.push({ start_date: { $lte: q.to } });
       const rows = await tx.collection('leave_requests').find({ $and: and }, { sort: { start_date: -1, created_at: -1 }, limit: q.limit });
-      return requestViews(tx, rows);
+      return this.withWaitingOn(tx, await requestViews(tx, rows));
     });
   }
 
@@ -675,8 +715,14 @@ export class LeaveService implements OnModuleInit {
   }
 
   private async loadRequest(tx: TenantTx, id: string) {
-    const row = (await requestViews(tx, [(await tx.collection('leave_requests').findOne({ id }))!]))[0]!;
+    const row = (await this.withWaitingOn(tx, await requestViews(tx, [(await tx.collection('leave_requests').findOne({ id }))!])))[0]!;
     return { ...row, approvalTrail: row.approvalId ? await this.approvals.trail(tx, row.approvalId) : [] };
+  }
+
+  /** Adds who a pending request is waiting for ("Mona Manager"), so the person who asked knows where it is. */
+  private async withWaitingOn<T extends { status: unknown; approvalId: string | null }>(tx: TenantTx, rows: T[]): Promise<Array<T & { waitingOn: string | null }>> {
+    const who = await this.approvals.waitingOn(tx, rows.filter((r) => r.status === 'pending').map((r) => r.approvalId));
+    return rows.map((r) => ({ ...r, waitingOn: (r.approvalId && who.get(r.approvalId)) || null }));
   }
 
   /** Who is away in a date range, for team calendars. Limited to records the caller can read. */

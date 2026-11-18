@@ -682,6 +682,7 @@ export const WEB_HELP: HelpContent = {
     'Workforce at a glance': { what: 'Key numbers about the people your access covers.', how: 'Click a number to open the list behind it.' },
     'My tasks': { what: 'Tasks assigned to you, soonest first.', how: 'Open a task to finish it.' },
     'Ask HR': { what: 'Your open questions to HR.', how: 'Open one to read the reply or ask a new question.' },
+    'HR helpdesk': { what: 'Questions from employees that HR still has to answer, and those assigned to you.', how: 'Open the HR helpdesk to take, answer and resolve them.', where: 'Shown to the HR team instead of Ask HR.' },
     'Set up your workspace': { what: 'The steps left to get your workspace ready.', how: 'Do them in order; each one ticks off when done.', where: 'Shown to workspace owners until setup is complete.' },
     'Your access': { what: 'The roles you hold and what they let you see.', where: 'Ask a workspace admin if you need more access.' },
 
@@ -700,7 +701,8 @@ export const WEB_HELP: HelpContent = {
 
     // Leave, attendance
     'Who is away in the next 30 days': { what: 'Approved leave in your team for the next month.', how: 'Check it before you request leave or plan work.' },
-    'My requests': { what: 'Your leave requests and their status.', how: 'Cancel a request while it is still pending.' },
+    'My requests': { what: 'Your leave requests and their status, and who a pending one is waiting for.', how: 'Cancel a request while it is still pending.' },
+    'My leave calendar': { what: 'Your month at a glance: approved and pending leave, weekly offs and public holidays.', how: 'Use the arrows to change month. Choose a working day to apply for leave from that day.', where: 'Holidays come from the calendar HR set for your location or legal entity.' },
     'New claim': { what: 'Claim back money you spent for work.', how: 'Pick the category, add the date, amount and a receipt, then submit.' },
     'My shifts': { what: 'Your shifts for the next two weeks.' },
     'Shift swaps': { what: 'Requests to swap a shift with a colleague.', how: 'Ask a colleague; once they agree, your scheduler approves it.' },

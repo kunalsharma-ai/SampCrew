@@ -52,7 +52,7 @@ export interface CaseDetail extends CaseRow {
   can: { reply: boolean; internalNote: boolean; assign: boolean; rate: boolean };
 }
 
-export interface Summary { mine: { open: number; waiting: number; resolved: number }; assignedToMe: number | null }
+export interface Summary { mine: { open: number; waiting: number; resolved: number }; assignedToMe: number | null; queue: { awaitingHr: number; unassigned: number } | null }
 
 export interface Announcement {
   id: string;

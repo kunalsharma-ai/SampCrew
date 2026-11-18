@@ -9,7 +9,7 @@ export async function previewLeaveAction(values: Record<string, unknown>) {
 }
 
 export async function requestLeaveAction(values: Record<string, unknown>) {
-  const r = await act(() => api('/leave/requests', { method: 'POST', body: values, idempotencyKey: crypto.randomUUID() }), 'Leave requested. Your approver has been notified.');
+  const r = await act(() => api<{ id: string; waitingOn: string | null }>('/leave/requests', { method: 'POST', body: values, idempotencyKey: crypto.randomUUID() }), 'Leave requested. Your approver has been notified.');
   revalidatePath('/leave');
   return r;
 }
@@ -24,5 +24,13 @@ export async function cancelLeaveAction(id: string, reason?: string) {
 export async function decideAction(id: string, decision: 'approve' | 'reject', comment?: string) {
   const r = await act(() => api<{ status: string }>(`/approvals/${id}/${decision}`, { method: 'POST', body: comment ? { comment } : {} }));
   revalidatePath('/approvals');
+  return r;
+}
+
+/** For a workspace with no leave types yet: adds the standard ones with workspace-wide policies. */
+export async function addDefaultLeaveTypesAction() {
+  const r = await act(() => api<{ added: number }>('/leave/types/defaults', { method: 'POST', body: {} }), 'Standard leave types added.');
+  revalidatePath('/leave');
+  revalidatePath('/settings/leave');
   return r;
 }

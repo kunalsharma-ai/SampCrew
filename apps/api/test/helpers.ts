@@ -99,7 +99,8 @@ export interface TestTenant {
   ownerMembershipId: string;
 }
 
-export async function createTenant(db: TestDb, opts: { plan?: string; trialDays?: number } = {}): Promise<TestTenant> {
+/** A test workspace. Leave types are left out unless asked for, so each test sets up exactly the ones it checks. */
+export async function createTenant(db: TestDb, opts: { plan?: string; trialDays?: number; standardLeaveTypes?: boolean } = {}): Promise<TestTenant> {
   const slug = `t-${randomUUID().slice(0, 8)}`;
   const ownerEmail = `owner@${slug}.test`;
   const owner = { email: ownerEmail, fullName: 'Owner Person', passwordHash: await passwordHash() };
@@ -112,6 +113,7 @@ export async function createTenant(db: TestDb, opts: { plan?: string; trialDays?
       timezone: 'Asia/Kolkata',
       owner,
       plan: { key: opts.plan ?? 'business', seats: 50, billingCycle: 'monthly', trialDays: opts.trialDays ?? 0 },
+      leaveTypes: opts.standardLeaveTypes ? 'standard' : 'none',
     }),
   );
   return { id: t.tenantId, slug, legalEntityId: t.legalEntityId, ownerEmail, ownerMembershipId: t.ownerMembershipId };

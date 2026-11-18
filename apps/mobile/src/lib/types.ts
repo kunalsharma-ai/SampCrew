@@ -39,7 +39,11 @@ export interface LeaveRequest {
   days: string;
   reason: string | null;
   status: string;
+  leaveTypeCode?: string;
+  /** Who a pending request is waiting for. */
+  waitingOn?: string | null;
 }
+export interface LeaveCalendar { from: string; to: string; weeklyOffs: number[]; holidays: { date: string; name: string; optional: boolean }[]; requests: LeaveRequest[] }
 export interface InboxItem {
   id: string;
   resourceType: string;

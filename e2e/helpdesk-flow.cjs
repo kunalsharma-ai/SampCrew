@@ -8,7 +8,7 @@
  * 1. HR adds a category with a handler and response targets; a confidential category without a handler is refused.
  *    HR writes a help article.
  * 2. An operator starts a question, is shown the article as a suggestion, reads it, and raises the case anyway.
- * 3. HR finds it in the queue, adds an internal note, replies and asks for more; the operator answers (and cannot
+ * 3. HR's menu shows the HR helpdesk with a waiting count instead of Ask HR. HR finds it in the queue, adds an internal note, replies and asks for more; the operator answers (and cannot
  *    see the internal note). HR raises the priority and resolves it; the operator rates it and confirms.
  * 4. The operator raises a confidential grievance; their supervisor cannot open it.
  * 5. HR drafts an announcement for the Assembly Line, asks for acknowledgement and publishes it. The operator sees
@@ -114,9 +114,17 @@ const alertText = (p, re) => p.getByText(re).first().waitFor();
     const ref = (await neha.locator('text=/^HR-\\d{4}$/').first().textContent()).trim();
     ok(`operator saw the suggested article, then raised ${ref}`);
 
-    // 3. HR works the case.
+    // 3. HR works the case. HR's menu has the HR helpdesk (with the count of questions waiting) instead of Ask HR,
+    //    and Ask HR's address takes them to the queue.
     current = hr;
-    await hr.goto(BASE + '/helpdesk/queue');
+    await hr.goto(BASE + '/');
+    const hrNav = hr.getByRole('navigation', { name: 'Main' });
+    await hrNav.getByRole('link', { name: /^HR helpdesk/ }).waitFor();
+    if (await hrNav.getByRole('link', { name: 'Ask HR', exact: true }).count()) throw new Error('HR still sees Ask HR in the menu');
+    await hrNav.getByRole('link', { name: /^HR helpdesk/ }).locator('[aria-label$="waiting"]').waitFor();
+    await hr.getByTestId('helpdesk-awaiting').waitFor();
+    await hr.goto(BASE + '/helpdesk');
+    await hr.waitForURL(/\/helpdesk\/queue/);
     await hr.getByPlaceholder('HR-0042, subject or name').fill(ref);
     await hr.getByPlaceholder('HR-0042, subject or name').press('Enter');
     await hr.getByRole('link', { name: ref }).click();

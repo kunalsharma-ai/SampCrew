@@ -9,7 +9,8 @@ export default function TabsLayout() {
   const { hasFeature, can, queue } = useSession();
   const attendance = hasFeature('attendance_basic') && can('attendance:punch');
   const leave = hasFeature('leave');
-  const helpdesk = hasFeature('helpdesk') && can('helpdesk:use');
+  const handler = can('helpdesk:manage');
+  const helpdesk = hasFeature('helpdesk') && (can('helpdesk:use') || handler);
   // Neon: a night tab bar in every mode (like the Web Portal's sidebar), the current tab's icon in a gradient pill.
   const glyph = (g: string) =>
     function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
@@ -36,7 +37,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: 'Home', ...screenHelp('home'), tabBarIcon: glyph('⌂') }} />
       <Tabs.Screen name="attendance" options={{ title: 'Attendance', ...screenHelp('attendance'), href: attendance ? undefined : null, tabBarIcon: glyph('◷'), tabBarBadge: queue.pending.length || undefined }} />
       <Tabs.Screen name="leave" options={{ title: 'Leave', ...screenHelp('leave'), href: leave ? undefined : null, tabBarIcon: glyph('☼') }} />
-      <Tabs.Screen name="helpdesk" options={{ title: 'Ask HR', ...screenHelp('helpdesk'), href: helpdesk ? undefined : null, tabBarIcon: glyph('?') }} />
+      <Tabs.Screen name="helpdesk" options={{ title: handler ? 'HR helpdesk' : 'Ask HR', ...screenHelp('helpdesk'), href: helpdesk ? undefined : null, tabBarIcon: glyph('?') }} />
       <Tabs.Screen name="me" options={{ title: 'Me', ...screenHelp('me'), tabBarIcon: glyph('☺') }} />
     </Tabs>
   );

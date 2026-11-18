@@ -75,3 +75,14 @@ export const approvalPolicyInput = z.object({
     .min(1)
     .max(5),
 });
+
+/**
+ * The leave types and workspace-wide policies a new workspace starts with, so employees can apply for leave from
+ * day one. HR changes the entitlements on Leave settings; they are a starting point, not any country's statutory minimum.
+ */
+export const DEFAULT_LEAVE_TYPES = [
+  { code: 'CL', name: 'Casual leave', paid: true, allowHalfDay: true, color: '#2563eb', accrualMethod: 'annual_upfront', annualEntitlement: '8', carryForwardMax: '0' },
+  { code: 'SL', name: 'Sick leave', paid: true, allowHalfDay: true, color: '#dc2626', accrualMethod: 'annual_upfront', annualEntitlement: '8', carryForwardMax: '0' },
+  { code: 'EL', name: 'Earned leave', paid: true, allowHalfDay: false, color: '#059669', accrualMethod: 'monthly', annualEntitlement: '15', carryForwardMax: '30' },
+  { code: 'LWP', name: 'Leave without pay', paid: false, allowHalfDay: true, color: '#6b7280', accrualMethod: 'none', annualEntitlement: '0', carryForwardMax: '0' },
+] as const;
