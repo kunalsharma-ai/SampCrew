@@ -1,4 +1,4 @@
-import { FEATURES, PLAN_TEMPLATES, SYSTEM_ROLES } from '@crew/contracts';
+import { builtInStatutoryPacks, FEATURES, PLAN_TEMPLATES, SYSTEM_ROLES } from '@crew/contracts';
 import type { Row, Table } from './table';
 
 /** Anything that hands out unrestricted tables in one transaction (the API's PlatformTx, or a script's own). */
@@ -152,8 +152,24 @@ export async function provisionTenantMongo(tx: Tables, input: ProvisionTenantInp
   return { tenantId, ownerUserId: userId, ownerMembershipId, legalEntityId, existingUser };
 }
 
-/** MongoDB version of syncCatalogue (../catalogue.ts): the feature catalogue and default plans, safe on every deploy. */
+/**
+ * SampCrew's built-in statutory country packs into the database. A pack SAMPLEDGE customised in the Console is left
+ * alone; the others follow the code, so a release with new rates updates them. Safe on every deploy.
+ */
+export async function syncStatutoryPacksMongo(tx: Tables): Promise<void> {
+  const packs = tx.collection('statutory_packs');
+  for (const p of builtInStatutoryPacks()) {
+    const existing = await packs.findOne({ country_code: p.countryCode });
+    const fields = { country: p.country, currency: p.currency, basis: p.basis, summary: p.summary, settings: p.settings, built_in: true };
+    if (!existing) await packs.insert({ country_code: p.countryCode, ...fields });
+    else if (!existing.customised_at) await packs.updateOne({ id: existing.id }, { $set: fields });
+    else if (!existing.built_in) await packs.updateOne({ id: existing.id }, { $set: { built_in: true } });
+  }
+}
+
+/** MongoDB version of syncCatalogue (../catalogue.ts): the feature catalogue, default plans and statutory packs, safe on every deploy. */
 export async function syncCatalogueMongo(tx: Tables): Promise<void> {
+  await syncStatutoryPacksMongo(tx);
   const features = tx.collection('features');
   const plans = tx.collection('plans');
   const planFeatures = tx.collection('plan_features');

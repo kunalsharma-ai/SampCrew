@@ -35,6 +35,8 @@ import {
   refreshRequest,
   supportAccessRequest,
   SUBSCRIPTION_STATUSES,
+  statutoryPackInput,
+  type StatutoryPackInput,
 } from '@crew/contracts';
 import { z } from 'zod';
 import { AllowPendingPassword, AllowWithoutMfa, PlatformRealm, Public } from '../../platform/authz/decorators';
@@ -45,10 +47,12 @@ import { PlatformAuthService } from './platform-auth.service';
 import { PlatformService } from './platform.service';
 import { AccessControlsService } from './access-controls.service';
 import { PlansService } from './plans.service';
+import { StatutoryPacksService } from './statutory-packs.service';
 import { TenantControlService } from './tenant-control.service';
 import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
 
 const integrationKey = z.enum(PLATFORM_INTEGRATION_KEYS);
+const countryCodeParam = z.string().regex(/^[A-Z]{2}$/, 'Use a 2-letter ISO country code');
 /** The values are checked per integration by PlatformIntegrationsService (each has its own schema). */
 const integrationValues = z.record(z.string(), z.unknown());
 const integrationTest = integrationTestExtras.extend({ values: integrationValues });
@@ -174,6 +178,7 @@ export class PlatformController {
     private readonly access: AccessControlsService,
     private readonly control: TenantControlService,
     private readonly plansService: PlansService,
+    private readonly statutoryPacksService: StatutoryPacksService,
   ) {}
 
   @PlatformRealm('access:manage')
@@ -353,6 +358,36 @@ export class PlatformController {
   @Doc({ summary: 'Read-only workspace snapshot during an approved support grant (audited in the customer\'s trail)' })
   supportView(@Param('id', UuidPipe) id: string) {
     return this.platform.supportView(id);
+  }
+
+  @PlatformRealm('tenants:read')
+  @Get('statutory-packs')
+  @Doc({ summary: 'Statutory country packs: the starting values workspaces get for a legal entity in each country' })
+  statutoryPacks() {
+    return this.statutoryPacksService.list();
+  }
+
+  @PlatformRealm('statutory:manage')
+  @Put('statutory-packs/:countryCode')
+  @Doc({ summary: 'Create or replace a country pack (India scheme for IN, the generic scheme for any other country)', body: statutoryPackInput })
+  saveStatutoryPack(@Param('countryCode', new ZodPipe(countryCodeParam)) countryCode: string, @Body(new ZodPipe(statutoryPackInput)) body: StatutoryPackInput) {
+    return this.statutoryPacksService.save(countryCode, body);
+  }
+
+  @PlatformRealm('statutory:manage')
+  @Post('statutory-packs/:countryCode/reset')
+  @HttpCode(200)
+  @Doc({ summary: 'Put a built-in country pack back to SampCrew\'s values' })
+  resetStatutoryPack(@Param('countryCode', new ZodPipe(countryCodeParam)) countryCode: string) {
+    return this.statutoryPacksService.reset(countryCode);
+  }
+
+  @PlatformRealm('statutory:manage')
+  @Delete('statutory-packs/:countryCode')
+  @HttpCode(204)
+  @Doc({ summary: 'Remove a country pack SAMPLEDGE added (built-in packs are switched off instead)' })
+  async removeStatutoryPack(@Param('countryCode', new ZodPipe(countryCodeParam)) countryCode: string) {
+    await this.statutoryPacksService.remove(countryCode);
   }
 
   @PlatformRealm('billing:read')

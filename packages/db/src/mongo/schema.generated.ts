@@ -5063,6 +5063,33 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((jsonb_typeof(fees) = 'array'::text))",
     ],
   },
+  statutory_packs: {
+    // Country packs: the starting values a legal entity in that country gets for its statutory settings. Copied from
+    // SampCrew's built-in packs on every deploy (only while not customised); SAMPLEDGE edits or adds them in the Console.
+    access: "shared", grants: ["select"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      basis: {"required": true, "type": "string"},
+      built_in: {"default": false, "required": true, "type": "bool"},
+      country: {"required": true, "type": "string"},
+      country_code: {"required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      currency: {"required": true, "type": "string"},
+      customised_at: {"type": "timestamp"},
+      customised_by_admin_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      settings: {"required": true, "type": "json"},
+      summary: {"default": "", "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "statutory_packs_pkey", "primary": true},
+      {"cols": [{"col": "country_code"}], "name": "statutory_packs_country_code_key"},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [],
+  },
   statutory_settings: {
     access: "tenant", grants: ["delete", "insert", "select"],
     columns: {

@@ -11,6 +11,7 @@ const NAV: (NavItem & { cap?: string })[] = [
   { href: '/devices', label: 'Attendance machines', icon: 'fingerprint', cap: 'tenants:read' },
   { href: '/plans', label: 'Plans & pricing', icon: 'tag', cap: 'billing:read' },
   { href: '/billing', label: 'Billing & revenue', icon: 'receipt', cap: 'billing:read' },
+  { href: '/statutory-packs', label: 'Payroll country packs', icon: 'globe', cap: 'tenants:read' },
   { href: '/integrations', label: 'Integrations', icon: 'plug', cap: 'health:read' },
   { href: '/health', label: 'System health', icon: 'activity', cap: 'health:read' },
   { href: '/audit', label: 'Platform audit', icon: 'scroll', cap: 'audit:read' },

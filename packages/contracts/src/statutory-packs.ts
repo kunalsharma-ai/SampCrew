@@ -6,6 +6,10 @@
  * - Every other country starts from a blank custom pack: the workspace adds its own contributions, income tax
  *   slabs and regional taxes. Any country can be paid this way.
  *
+ * These are SampCrew's built-in packs. They are copied into the database (collection statutory_packs) on every
+ * deploy, where SAMPLEDGE edits them or adds countries in the Console (Statutory packs); workspaces read the packs
+ * from the database. A pack edited in the Console is never overwritten by a deploy.
+ *
  * Every figure here is a starting value from commonly published rates for the tax year named in `basis`. Rates,
  * thresholds and bands change every year and some depend on the person (age, residency, tax code, filing status).
  * A local payroll advisor must check them before the first run. SampCrew does not certify them as current law.
@@ -142,7 +146,53 @@ const PACKS: StatutoryPack[] = [
   { countryCode: 'AU', country: 'Australia', currency: 'AUD', basis: 'Tax year 2026-27', summary: 'PAYG withholding with the Medicare levy, superannuation guarantee.', settings: AU },
 ];
 
-/** Countries with a ready-made pack, India first. */
+/** SampCrew's built-in packs, with their settings, for the database sync. */
+export const builtInStatutoryPacks = (): StatutoryPack[] => structuredClone(PACKS);
+
+/**
+ * Why a scheme cannot be saved for a country, or null when it can: India's scheme only for India, a generic scheme
+ * only for its own country, unique contribution codes, rates, ranges and slabs the engine can use.
+ */
+export function statutorySchemeProblem(s: AnyStatutory, countryCode: string): { code: string; message: string } | null {
+  const slabs = (list: { upTo: string | null }[], what: string) => {
+    if (list[list.length - 1]!.upTo !== null) return { code: 'open_slab', message: `${what}: the last slab must have no upper limit` };
+    let prev = -1;
+    for (const sl of list.slice(0, -1)) {
+      if (sl.upTo === null) return { code: 'open_slab', message: `${what}: only the last slab can have no upper limit` };
+      if (Number(sl.upTo) <= prev) return { code: 'slab_order', message: `${what}: slab limits must rise` };
+      prev = Number(sl.upTo);
+    }
+    return null;
+  };
+  if (!isGenericStatutory(s)) {
+    if (countryCode !== 'IN') return { code: 'scheme_country', message: `India's PF, ESI and TDS scheme only applies to India. This is ${countryCode}; use its country's settings.` };
+    for (const [state, list] of Object.entries(s.pt.states)) {
+      const p = slabs(list, `Professional tax for ${state}`);
+      if (p) return p;
+    }
+    return slabs(s.tds.slabs, 'Income tax slabs');
+  }
+  if (countryCode === 'IN') return { code: 'scheme_country', message: 'India uses the India scheme (PF, ESI, professional tax and TDS).' };
+  if (s.countryCode !== countryCode) return { code: 'scheme_country', message: `These settings are for ${s.countryCode}, but the country is ${countryCode}.` };
+  const codes = new Set<string>();
+  for (const r of s.contributions) {
+    if (codes.has(r.code)) return { code: 'contribution_code', message: `Two contributions use the code ${r.code}` };
+    codes.add(r.code);
+    if (Number(r.employeeRatePercent) === 0 && Number(r.employerRatePercent) === 0) return { code: 'contribution_rate', message: `${r.name}: give an employee or employer rate` };
+    if (r.threshold !== null && r.ceiling !== null && Number(r.ceiling) <= Number(r.threshold)) return { code: 'contribution_range', message: `${r.name}: the ceiling must be above the threshold` };
+  }
+  if (s.incomeTax) {
+    const p = slabs(s.incomeTax.slabs, `${s.incomeTax.name} slabs`);
+    if (p) return p;
+  }
+  for (const [region, t] of Object.entries(s.regionalTaxes)) {
+    const p = slabs(t.slabs, `${t.name} (${region}) slabs`);
+    if (p) return p;
+  }
+  return null;
+}
+
+/** Countries with a built-in pack, India first. */
 export const STATUTORY_PACKS: readonly Omit<StatutoryPack, 'settings'>[] = PACKS.map(({ settings: _s, ...rest }) => rest);
 
 /** Currencies whose amounts have no minor unit; generic schemes round to whole units for them. */
@@ -166,9 +216,15 @@ export function customStatutory(countryCode: string, opts: { taxYearStartMonth?:
 
 export const packFor = (countryCode: string) => PACKS.find((p) => p.countryCode === countryCode);
 
-/** Starting values for a legal entity: its country's pack, else a blank custom scheme for that country. */
-export function startingStatutory(countryCode: string, opts: { taxYearStartMonth?: number; currency?: string } = {}): { pack: Omit<StatutoryPack, 'settings'> | null; settings: AnyStatutory } {
-  const p = packFor(countryCode);
+/**
+ * Starting values for a legal entity: its country's pack, else a blank custom scheme for that country. Pass the
+ * packs read from the database; without them the built-in packs are used (tests, demo data).
+ */
+export function startingStatutory(
+  countryCode: string,
+  opts: { taxYearStartMonth?: number; currency?: string; packs?: readonly StatutoryPack[] } = {},
+): { pack: Omit<StatutoryPack, 'settings'> | null; settings: AnyStatutory } {
+  const p = (opts.packs ?? PACKS).find((x) => x.countryCode === countryCode);
   if (p) {
     const { settings, ...pack } = p;
     return { pack, settings: structuredClone(settings) };
