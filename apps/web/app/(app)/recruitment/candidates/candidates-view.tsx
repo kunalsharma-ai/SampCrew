@@ -143,7 +143,7 @@ export function CandidatesView({ candidates, state, views, activeViewId, jobs, c
           { name: 'firstName', label: 'First name', required: true, half: true },
           { name: 'lastName', label: 'Last name', half: true },
           { name: 'email', label: 'Email', required: true, half: true },
-          { name: 'phone', label: 'Phone', half: true },
+          { name: 'phone', label: 'Phone', type: 'tel', half: true },
           { name: 'currentTitle', label: 'Current title', half: true },
           { name: 'currentCompany', label: 'Current company', half: true },
           { name: 'source', label: 'Source', type: 'select', required: true, half: true, options: opts(SOURCES) },

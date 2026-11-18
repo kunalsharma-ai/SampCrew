@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { phoneNumber } from '../phone';
 import { currencyCode, email, slug } from './common';
 import { EMPLOYMENT_TYPES, isoDate } from './people';
 
@@ -8,7 +9,7 @@ const money = z
   .string()
   .trim()
   .regex(/^\d{1,12}(\.\d{1,2})?$/, 'Use an amount such as 1200000 or 1200000.50');
-const phone = z.string().trim().regex(/^\+?[0-9 ()-]{6,20}$/, 'Enter a phone number with digits, spaces or +');
+const phone = phoneNumber;
 const url = z
   .string()
   .trim()

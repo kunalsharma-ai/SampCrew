@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { money, type hireInput, type OfferInput, type offerResponseInput } from '@crew/contracts';
+import { checkPhone, money, type hireInput, type OfferInput, type offerResponseInput } from '@crew/contracts';
 import type { z } from 'zod';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -258,14 +258,14 @@ export class OffersService implements OnModuleInit {
       return { a, offer, c, managerEmployeeId: await employeeOfMember(tx, a.req.hiring_manager_membership_id) };
     });
     const { a, offer, c } = plan;
-    const phone = c.phone && /^\+?[0-9 ()-]{6,20}$/.test(c.phone) ? c.phone : undefined;
+    const phone = c.phone && checkPhone(c.phone).ok ? c.phone : undefined;
     return this.employees.create(
       {
         firstName: c.first_name, lastName: c.last_name, personalEmail: c.email ?? undefined, workEmail: input.workEmail, phone,
         dateOfJoining: input.dateOfJoining ?? offer.joining_date, probationMonths: input.probationMonths, inviteToCrew: input.inviteToCrew,
         legalEntityId: a.req.legal_entity_id, departmentId: a.req.department_id, locationId: a.req.location_id,
         designationId: offer.designation_id ?? a.req.designation_id, managerEmployeeId: plan.managerEmployeeId,
-        employmentType: a.req.employment_type as 'full_time',
+        employmentType: a.req.employment_type as 'full_time', joinedAs: 'new_joiner',
       },
       async (tx, employeeId) => {
         // Re-check under lock inside the hiring transaction: two people hiring for the last seat at once.

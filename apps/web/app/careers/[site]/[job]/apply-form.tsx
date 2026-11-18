@@ -1,4 +1,5 @@
 'use client';
+import { phoneError } from '@crew/contracts';
 import { Alert, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, Textarea } from '@crew/ui';
 import { useState, useTransition } from 'react';
 import { applyAction } from '../../actions';
@@ -30,6 +31,8 @@ export function ApplyForm({ site, job, privacyNotice, organisation }: { site: st
             if (!(cv instanceof File) || !cv.size) return setFe({ cv: 'Attach your CV' });
             if (cv.size > MAX) return setFe({ cv: 'Your CV must be 5 MB or smaller' });
             if (!/\.(pdf|docx)$/i.test(cv.name)) return setFe({ cv: 'Attach a PDF or Word (.docx) file' });
+            const ph = phoneError(String(form.get('phone') ?? ''));
+            if (ph) return setFe({ phone: ph });
             setError(null);
             setFe({});
             start(async () => {
@@ -43,7 +46,7 @@ export function ApplyForm({ site, job, privacyNotice, organisation }: { site: st
           <Field label="First name" required error={fe.firstName} className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="firstName" required autoComplete="given-name" />}</Field>
           <Field label="Last name" error={fe.lastName} className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="lastName" autoComplete="family-name" />}</Field>
           <Field label="Email" required error={fe.email} className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="email" type="email" required autoComplete="email" />}</Field>
-          <Field label="Phone" error={fe.phone} className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="phone" type="tel" autoComplete="tel" />}</Field>
+          <Field label="Phone" error={fe.phone} hint="With the country code, such as +91 98201 23456" className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={40} />}</Field>
           <Field label="Where you are based" error={fe.locationText} className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="locationText" />}</Field>
           <Field label="Profile or portfolio link" error={fe.profileUrl} className="col-span-2 sm:col-span-1">{(p) => <Input {...p} name="profileUrl" type="url" placeholder="https://" />}</Field>
           <Field label="CV" required hint="PDF or Word (.docx), up to 5 MB" error={fe.cv} className="col-span-2">

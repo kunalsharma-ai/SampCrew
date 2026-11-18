@@ -1,24 +1,26 @@
 'use client';
-import { DOCUMENT_CATEGORIES } from '@crew/contracts';
-import { Alert, Button, Checkbox, Dialog, Field, Input, Select, cn } from '@crew/ui';
+import { ADULT_AGE, addYears, ageOn, DOCUMENT_CATEGORIES, dateOfBirthError, dateOfBirthRange, designationLibrary, earliestJoining, isMinorOn, MIN_WORKING_AGE, phoneError } from '@crew/contracts';
+import { Alert, Button, Checkbox, DatePicker, Dialog, Field, Input, Select, cn } from '@crew/ui';
 import { AlertTriangle, Camera, Check, FileUp, Plus, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Department, Designation, Employee, LegalEntity, Location, OnboardingTemplate } from '@/lib/types';
 import type { Structure } from '../payroll/types';
 import { type DeviceOption, EnrolmentRows, LoginModeChoice, OwnPassword, type ShiftOption } from './[id]/profile-extras';
-import { completeHireAction, createDepartmentAction, createDesignationAction, createLocationAction, createShiftAction, type DraftData, duplicateCheckAction, saveHireDraftAction } from './actions';
+import { completeHireAction, createDepartmentAction, createLocationAction, createShiftAction, type DraftData, duplicateCheckAction, saveHireDraftAction } from './actions';
 import type { HireDone } from './employees-view';
 
 export interface EmployeeDraft { id: string; step: number; data: DraftData; updatedAt: string }
+/** A leave policy that keeps a balance, for an existing employee's opening balances. */
+export interface LeavePolicyOption { leaveTypeId: string; leaveTypeName: string; legalEntityId: string | null; accrualMethod: string; typeArchived: boolean }
 
 export const HIRE_STEPS = ['Personal details', 'Employment', 'Department & reporting', 'Compensation', 'Documents', 'Attendance & access', 'Review'] as const;
 
 /** Which step holds each field, so a server error can take HR straight to it. */
 const FIELD_STEP: Record<string, number> = {
-  firstName: 0, lastName: 0, preferredName: 0, workEmail: 0, personalEmail: 0, phone: 0, dateOfBirth: 0, gender: 0,
-  dateOfJoining: 1, legalEntityId: 1, employmentType: 1, designationId: 1, grade: 1, probationMonths: 1,
+  joinedAs: 0, firstName: 0, lastName: 0, preferredName: 0, workEmail: 0, personalEmail: 0, phone: 0, dateOfBirth: 0, gender: 0, minorConfirmed: 0,
+  dateOfJoining: 1, legalEntityId: 1, employmentType: 1, designationId: 1, designationName: 1, grade: 1, probationMonths: 1, employeeCode: 1, confirmationDate: 1, openingLeaveBalances: 1,
   departmentId: 2, locationId: 2, managerEmployeeId: 2,
   structureId: 3, annualCtc: 3, salaryFrom: 3,
   inviteToCrew: 5, loginMode: 5, initialPassword: 5, defaultShiftId: 5, attendanceEnrolments: 5, onboardingTemplateId: 5, membershipId: 5,
@@ -29,6 +31,20 @@ const TYPE_LABEL: Record<string, string> = { full_time: 'Full time', part_time: 
 const MAX_UPLOAD = 10 * 1024 * 1024;
 const MONEY = /^\d{1,12}(\.\d{1,2})?$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const CODE = /^[A-Za-z0-9][A-Za-z0-9_./-]{0,39}$/;
+const DAYS = /^-?\d{1,3}(\.\d{1,2})?$/;
+/** Mail providers people use privately: never suggested as the company's domain. */
+const PUBLIC_MAIL = new Set(['gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.in', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'me.com', 'aol.com', 'proton.me', 'protonmail.com', 'rediffmail.com', 'zoho.com', 'gmx.com', 'mail.com']);
+const LIBRARY = designationLibrary();
+const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+/** date + n months, clamped to the end of a shorter month (as the API works out probation). */
+function addMonths(date: string, n: number): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const target = new Date(Date.UTC(y, m - 1 + n, 1));
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, last));
+  return target.toISOString().slice(0, 10);
+}
 const PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_PHOTO = 5 * 1024 * 1024;
 const strongEnough = (pw: string) => pw.length >= 12 && [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length >= 3;
@@ -38,7 +54,7 @@ type Enrolment = { deviceUserId: string; deviceId: string };
 type Match = { id: string; displayName: string; employeeCode: string; status: string; departmentName: string | null; reasons: string[] };
 type Doc = { file: File; category: string; title: string; hrOnly: boolean };
 
-type Kind = 'designation' | 'department' | 'location' | 'shift';
+type Kind = 'department' | 'location' | 'shift';
 
 interface Props {
   open: boolean;
@@ -59,6 +75,8 @@ interface Props {
   canManageOrg: boolean;
   canAttendance: boolean;
   canConfigureShifts: boolean;
+  /** Leave policies that keep balances, when this person may set balances; null hides opening balances. */
+  leavePolicies?: LeavePolicyOption[] | null;
 }
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
@@ -73,7 +91,7 @@ export function HireWizard(p: Props) {
   const today = new Date().toISOString().slice(0, 10);
   const blank = (): DraftData => ({
     dateOfJoining: today, legalEntityId: p.entities[0]?.id ?? '', employmentType: 'full_time', probationMonths: 6,
-    onboardingTemplateId: p.templates.find((t) => t.isDefault)?.id ?? '', loginMode: 'none',
+    onboardingTemplateId: p.templates.find((t) => t.isDefault)?.id ?? '', loginMode: 'none', joinedAs: 'new_joiner',
   });
   const [v, setV] = useState<DraftData>(blank);
   const [step, setStep] = useState(0);
@@ -108,6 +126,8 @@ export function HireWizard(p: Props) {
     // Drafts saved before login choices existed carry inviteToCrew instead of loginMode.
     const restored = d ? { ...blank(), ...d.data } : blank();
     if (d && d.data.loginMode === undefined) restored.loginMode = d.data.inviteToCrew ? 'invite' : 'none';
+    // Drafts saved before the designation could be typed carry only the chosen id.
+    if (d && d.data.designation === undefined && d.data.designationId) restored.designation = p.designations.find((x) => x.id === d.data.designationId)?.name ?? '';
     setV(restored);
     setStep(d ? Math.min(d.step, HIRE_STEPS.length - 1) : 0);
     setReached(d ? Math.min(d.step, HIRE_STEPS.length - 1) : 0);
@@ -132,6 +152,12 @@ export function HireWizard(p: Props) {
   const set = (k: string, val: string | number | boolean | null) => {
     setV((cur) => {
       const next = { ...cur, [k]: val };
+      // Someone already working here usually needs no joining checklist; a new joiner gets the default again.
+      if (k === 'joinedAs' && val !== cur.joinedAs) {
+        const def = p.templates.find((t) => t.isDefault)?.id ?? '';
+        if (val === 'existing' && str(cur.onboardingTemplateId) === def) next.onboardingTemplateId = 'none';
+        if (val !== 'existing' && str(cur.onboardingTemplateId) === 'none') next.onboardingTemplateId = def;
+      }
       // Department and location belong to a legal entity; clear them when the entity changes.
       if (k === 'legalEntityId') {
         if (next.departmentId && !departments.some((d) => d.id === next.departmentId && (!d.legalEntityId || d.legalEntityId === val))) next.departmentId = '';
@@ -142,6 +168,46 @@ export function HireWizard(p: Props) {
     setErrors((e) => (e[k] ? { ...e, [k]: '' } : e));
   };
   const entity = str(v.legalEntityId);
+  const country = p.entities.find((x) => x.id === entity)?.countryCode ?? null;
+  const existing = v.joinedAs === 'existing';
+  const joining = str(v.dateOfJoining);
+  const dob = str(v.dateOfBirth);
+  const minor = isMinorOn(dob, joining) && !dateOfBirthError(dob, joining);
+  const dobRange = joining ? dateOfBirthRange(joining) : null;
+  // The designation is typed or picked from the suggestions: one already in the workspace is used, any other is added.
+  const designationText = str(v.designation).trim().replace(/\s+/g, ' ');
+  const designationMatch = designations.find((d) => d.name.toLowerCase() === designationText.toLowerCase());
+  const designationIsNew = !!designationText && !designationMatch;
+  const designationSuggestions = useMemo(() => {
+    const have = new Set(designations.map((d) => d.name.toLowerCase()));
+    return [...designations.map((d) => ({ name: d.name, note: 'In use' })), ...LIBRARY.filter((x) => !have.has(x.name.toLowerCase())).map((x) => ({ name: x.name, note: 'Suggested' }))];
+  }, [designations]);
+  // The company's email domain, from the work emails already in SampCrew, to suggest one for this person.
+  const companyDomain = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const m of p.managers) {
+      const dom = m.workEmail?.split('@')[1]?.toLowerCase();
+      if (dom && !PUBLIC_MAIL.has(dom)) counts.set(dom, (counts.get(dom) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  }, [p.managers]);
+  const slugName = (x: unknown) => str(x).normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const suggestedWorkEmail = companyDomain && slugName(v.firstName) ? `${[slugName(v.firstName), slugName(v.lastName)].filter(Boolean).join('.')}@${companyDomain}` : null;
+  // Leave types with a balance in this person's legal entity: an entity's own policy wins over the workspace-wide one.
+  const balanceTypes = useMemo(() => {
+    const byType = new Map<string, LeavePolicyOption>();
+    for (const x of p.leavePolicies ?? []) {
+      if (x.legalEntityId && x.legalEntityId !== entity) continue;
+      if (!byType.has(x.leaveTypeId) || x.legalEntityId) byType.set(x.leaveTypeId, x);
+    }
+    return [...byType.values()].sort((a, b) => a.leaveTypeName.localeCompare(b.leaveTypeName));
+  }, [p.leavePolicies, entity]);
+  const opening: Record<string, string> = (() => { try { return JSON.parse(str(v.openingBalances) || '{}') as Record<string, string>; } catch { return {}; } })();
+  const setOpening = (typeId: string, days: string) => set('openingBalances', JSON.stringify({ ...opening, [typeId]: days }));
+  const openingRows = balanceTypes.filter((t) => str(opening[t.leaveTypeId]).trim() !== '');
+  // What an existing employee's status will be: confirmed on the date given, or when their probation ended.
+  const probationEnd = joining && Number(v.probationMonths) > 0 ? addDays(addMonths(joining, Number(v.probationMonths)), -1) : null;
+  const confirmedOn = existing ? (str(v.confirmationDate) || (probationEnd === null ? joining : probationEnd < today ? addDays(probationEnd, 1) : '')) : '';
   const loginMode = (str(v.loginMode) || 'none') as LoginMode;
   const enrolments: Enrolment[] = (() => { try { return JSON.parse(str(v.enrolments) || '[]') as Enrolment[]; } catch { return []; } })();
   const setEnrolments = (rows: Enrolment[]) => set('enrolments', JSON.stringify(rows));
@@ -170,12 +236,27 @@ export function HireWizard(p: Props) {
     if (s === 0) {
       if (!str(v.firstName).trim()) e.firstName = 'Enter a first name';
       for (const k of ['workEmail', 'personalEmail']) if (str(v[k]) && !EMAIL.test(str(v[k]))) e[k] = 'Enter a valid email address';
+      if (!e.workEmail && str(v.workEmail) && str(v.workEmail).trim().toLowerCase() === str(v.personalEmail).trim().toLowerCase()) e.workEmail = 'Use their work email here, not their personal email';
+      const ph = phoneError(str(v.phone), country);
+      if (ph) e.phone = ph;
+      const born = dateOfBirthError(dob, joining);
+      if (born) e.dateOfBirth = born;
+      else if (minor && v.minorConfirmed !== true) e.minorConfirmed = `They are ${ageOn(dob, joining)} on the joining date: confirm they may be employed`;
     }
     if (s === 1) {
-      if (!str(v.dateOfJoining)) e.dateOfJoining = 'Choose the joining date';
+      if (!joining) e.dateOfJoining = 'Choose the joining date';
+      else if (existing && joining > today) e.dateOfJoining = 'Someone already working here joined on or before today';
+      else if (dob && joining < earliestJoining(dob)) e.dateOfJoining = `They turn ${MIN_WORKING_AGE} on ${earliestJoining(dob)}; the joining date cannot be earlier`;
       if (!entity) e.legalEntityId = 'Choose the legal entity';
       const pm = Number(v.probationMonths);
       if (!Number.isInteger(pm) || pm < 0 || pm > 24) e.probationMonths = 'Use 0 to 24 months';
+      if (designationText.length > 120) e.designationName = 'Use up to 120 characters';
+      if (existing && str(v.employeeCode).trim() && !CODE.test(str(v.employeeCode).trim())) e.employeeCode = 'Use up to 40 letters, digits, -, _, / or .';
+      if (existing && str(v.confirmationDate)) {
+        if (str(v.confirmationDate) < joining) e.confirmationDate = 'The confirmation date cannot be before the joining date';
+        else if (str(v.confirmationDate) > today) e.confirmationDate = 'Use a date up to today. A future confirmation is done from the profile on that day';
+      }
+      if (existing && openingRows.some((t) => !DAYS.test(str(opening[t.leaveTypeId]).trim()))) e.openingLeaveBalances = 'Enter days as a number, such as 12 or 7.5';
     }
     if (s === 3 && str(v.structureId)) {
       if (!MONEY.test(str(v.annualCtc).replace(/,/g, ''))) e.annualCtc = 'Enter the annual CTC, such as 600000';
@@ -237,6 +318,16 @@ export function HireWizard(p: Props) {
     const enrol = enrolments.filter((x) => x.deviceUserId.trim()).map((x) => ({ deviceUserId: x.deviceUserId.trim(), deviceId: x.deviceId || null }));
     if (enrol.length) employee.attendanceEnrolments = enrol;
     for (const k of EMPLOYEE_FIELDS) { const x = str(v[k]).trim(); if (x) employee[k] = x; }
+    delete employee.designationId;
+    if (designationMatch) employee.designationId = designationMatch.id;
+    else if (designationText) employee.designationName = designationText;
+    if (minor) employee.minorConfirmed = true;
+    employee.joinedAs = existing ? 'existing' : 'new_joiner';
+    if (existing) {
+      if (str(v.employeeCode).trim()) employee.employeeCode = str(v.employeeCode).trim();
+      if (str(v.confirmationDate)) employee.confirmationDate = str(v.confirmationDate);
+      if (openingRows.length) employee.openingLeaveBalances = openingRows.map((t) => ({ leaveTypeId: t.leaveTypeId, days: str(opening[t.leaveTypeId]).trim() }));
+    }
     const tpl = str(v.onboardingTemplateId);
     employee.onboardingTemplateId = tpl === 'none' ? null : tpl || undefined;
     const salary = p.canPay && str(v.structureId)
@@ -273,24 +364,22 @@ export function HireWizard(p: Props) {
   const manager = p.managers.find((m) => m.id === v.managerEmployeeId);
   const structure = p.structures.find((s) => s.id === v.structureId);
   const shift = shifts?.find((x) => x.id === v.defaultShiftId);
-  const FIELD_OF: Record<Kind, string> = { designation: 'designationId', department: 'departmentId', location: 'locationId', shift: 'defaultShiftId' };
+  const FIELD_OF: Record<Kind, string> = { department: 'departmentId', location: 'locationId', shift: 'defaultShiftId' };
   const addOption = (kind: Kind) => {
     const n = newName.trim();
     if (!n) return;
     // A name already on the list is simply chosen, not added twice.
-    const list: { id: string; name: string }[] = kind === 'designation' ? designations : kind === 'department' ? deptOptions : kind === 'location' ? locOptions : (shifts ?? []);
+    const list: { id: string; name: string }[] = kind === 'department' ? deptOptions : kind === 'location' ? locOptions : (shifts ?? []);
     const same = list.find((x) => x.name.trim().toLowerCase() === n.toLowerCase());
     if (same) { set(FIELD_OF[kind], same.id); setErrors((e) => ({ ...e, [FIELD_OF[kind]]: '' })); setAdding(null); setNewName(''); return; }
     start(async () => {
       const ent = p.entities.find((x) => x.id === entity);
-      const r = kind === 'designation' ? await createDesignationAction(n)
-        : kind === 'department' ? await createDepartmentAction(n, null)
+      const r = kind === 'department' ? await createDepartmentAction(n, null)
           : kind === 'location' ? await createLocationAction(n, entity, ent?.countryCode ?? 'IN', ent?.timezone ?? 'Asia/Kolkata')
             : await createShiftAction(n, shiftTimes.start, shiftTimes.end);
       if (!r.ok || !r.data) { setErrors((e) => ({ ...e, [FIELD_OF[kind]]: r.ok ? 'Could not add it' : (Object.values(r.fieldErrors ?? {})[0] ?? r.message) })); return; }
       const row = r.data as { id: string; name: string; code?: string; startTime?: string; endTime?: string };
-      if (kind === 'designation') setDesignations((d) => [...d, { id: row.id, name: row.name, code: null, level: null, employeeCount: 0 }]);
-      else if (kind === 'department') setDepartments((d) => [...d, { id: row.id, name: row.name, code: null, parentId: null, legalEntityId: null, businessUnitId: null, headMembershipId: null, memberCount: 0 }]);
+      if (kind === 'department') setDepartments((d) => [...d, { id: row.id, name: row.name, code: null, parentId: null, legalEntityId: null, businessUnitId: null, headMembershipId: null, memberCount: 0 }]);
       else if (kind === 'location') setLocations((l) => [...l, { id: row.id, name: row.name, code: null, kind: 'office', legalEntityId: entity, timezone: ent?.timezone ?? '', city: null, region: null, countryCode: ent?.countryCode ?? '', latitude: null, longitude: null, geofenceRadiusM: null, addressLine: null, postalCode: null }]);
       else setShifts((x) => [...(x ?? []), { id: row.id, name: row.name, code: row.code ?? '', startTime: row.startTime ?? shiftTimes.start, endTime: row.endTime ?? shiftTimes.end }]);
       set(FIELD_OF[kind], row.id);
@@ -299,7 +388,7 @@ export function HireWizard(p: Props) {
       setNewName('');
     });
   };
-  const PLACEHOLDER: Record<Kind, string> = { designation: 'Senior Accountant', department: 'Customer Success', location: 'Pune plant', shift: 'Morning shift' };
+  const PLACEHOLDER: Record<Kind, string> = { department: 'Customer Success', location: 'Pune plant', shift: 'Morning shift' };
   const mayAdd = (kind: Kind) => (kind === 'shift' ? p.canConfigureShifts : p.canManageOrg);
   const addInline = (kind: Kind) => mayAdd(kind) && (adding === kind ? (
     <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
@@ -384,13 +473,75 @@ export function HireWizard(p: Props) {
                 <p className="mt-2">Check before going on. If this is someone new, continue.</p>
               </Alert>
             )}
+            <fieldset className="sm:col-span-2">
+              <legend className="mb-1.5 text-[0.8125rem] font-medium">Who are you adding?</legend>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {([['new_joiner', 'A new joiner', 'Joining now or on a date ahead. Gets the joining checklist.'], ['existing', 'Someone already working here', 'Add their record with their real joining date, employee code and leave balances.']] as const).map(([val, label, help]) => (
+                  <label key={val} className={cn('flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-[0.8125rem]', (existing ? 'existing' : 'new_joiner') === val ? 'border-accent bg-accent/5' : 'border-border hover:bg-bg-subtle')}>
+                    <input type="radio" name="joinedAs" value={val} checked={(existing ? 'existing' : 'new_joiner') === val} onChange={() => set('joinedAs', val)} className="mt-0.5 accent-[var(--accent)]" />
+                    <span><span className="block font-medium text-fg">{label}</span><span className="block text-xs text-fg-subtle">{help}</span></span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <Field label="First name" required error={errors.firstName}>{(f) => <Input {...f} name="firstName" value={str(v.firstName)} onChange={(e) => set('firstName', e.target.value)} maxLength={80} autoFocus />}</Field>
             <Field label="Last name" error={errors.lastName}>{(f) => <Input {...f} name="lastName" value={str(v.lastName)} onChange={(e) => set('lastName', e.target.value)} maxLength={80} />}</Field>
             <Field label="Preferred name" hint="Shown across SampCrew instead of the first name">{(f) => <Input {...f} name="preferredName" value={str(v.preferredName)} onChange={(e) => set('preferredName', e.target.value)} maxLength={80} />}</Field>
-            <Field label="Date of birth" error={errors.dateOfBirth}>{(f) => <Input {...f} name="dateOfBirth" type="date" value={str(v.dateOfBirth)} onChange={(e) => set('dateOfBirth', e.target.value)} max={today} />}</Field>
-            <Field label="Work email" error={errors.workEmail} hint="Needed to invite them to SampCrew">{(f) => <Input {...f} name="workEmail" type="email" value={str(v.workEmail)} onChange={(e) => set('workEmail', e.target.value)} />}</Field>
-            <Field label="Personal email" error={errors.personalEmail}>{(f) => <Input {...f} name="personalEmail" type="email" value={str(v.personalEmail)} onChange={(e) => set('personalEmail', e.target.value)} />}</Field>
-            <Field label="Phone" error={errors.phone}>{(f) => <Input {...f} name="phone" type="tel" value={str(v.phone)} onChange={(e) => set('phone', e.target.value)} />}</Field>
+            <Field
+              label="Date of birth"
+              error={errors.dateOfBirth}
+              hint={dobRange ? `With joining on ${joining}: born ${dobRange.min.slice(0, 4)} to ${dobRange.max} (at least ${MIN_WORKING_AGE} on joining)` : undefined}
+            >
+              {(f) => (
+                <DatePicker
+                  {...f}
+                  name="dateOfBirth"
+                  value={dob}
+                  onChange={(x) => { set('dateOfBirth', x); setErrors((er) => ({ ...er, minorConfirmed: '' })); }}
+                  min={dobRange?.min}
+                  max={dobRange?.max ?? today}
+                  openTo={joining ? addYears(joining, -25) : undefined}
+                  calendarLabel="Choose date of birth"
+                  autoComplete="off"
+                />
+              )}
+            </Field>
+            <Field label="Phone" error={errors.phone} hint={errors.phone ? undefined : country === 'IN' || !country ? 'With the country code, such as +91 98201 23456' : `With the country code, or a local ${country} number`}>
+              {(f) => <Input {...f} name="phone" type="tel" inputMode="tel" autoComplete="off" maxLength={40} value={str(v.phone)} onChange={(e) => set('phone', e.target.value)} onBlur={() => { const m = phoneError(str(v.phone), country); if (m) setErrors((er) => ({ ...er, phone: m })); }} />}
+            </Field>
+            {minor && (
+              <div className="sm:col-span-2">
+                <Alert tone="warning" title={`Under ${ADULT_AGE} on the joining date (age ${ageOn(dob, joining)})`}>
+                  <p className="mb-2">Employing a minor is restricted by law: hours, kinds of work and paperwork. Check what applies before you go on.</p>
+                  <Checkbox
+                    name="minorConfirmed"
+                    checked={v.minorConfirmed === true}
+                    onChange={(e) => set('minorConfirmed', e.target.checked)}
+                    label="I confirm they may be employed here, and their guardian's consent or work permit is on file"
+                  />
+                </Alert>
+                {errors.minorConfirmed && <p className="mt-1 text-xs text-danger">{errors.minorConfirmed}</p>}
+              </div>
+            )}
+            <Field
+              label="Work email"
+              error={errors.workEmail}
+              hint={errors.workEmail ? undefined : 'Their company address, used to sign in to SampCrew. Not their personal email.'}
+            >
+              {(f) => (
+                <Input {...f} name="workEmail" type="email" inputMode="email" autoComplete="off" data-1p-ignore data-lpignore="true" spellCheck={false}
+                  placeholder={companyDomain ? `name@${companyDomain}` : 'name@yourcompany.com'} value={str(v.workEmail)} onChange={(e) => set('workEmail', e.target.value)} />
+              )}
+            </Field>
+            <Field label="Personal email" error={errors.personalEmail} hint="Their own address, for contact outside work">
+              {(f) => <Input {...f} name="personalEmail" type="email" inputMode="email" autoComplete="off" data-1p-ignore data-lpignore="true" spellCheck={false} value={str(v.personalEmail)} onChange={(e) => set('personalEmail', e.target.value)} />}
+            </Field>
+            {!str(v.workEmail) && suggestedWorkEmail && (
+              <p className="-mt-2 text-xs text-fg-muted sm:col-span-2">
+                Work email like your colleagues&apos;?{' '}
+                <button type="button" className="font-medium text-accent hover:underline" onClick={() => set('workEmail', suggestedWorkEmail)}>Use {suggestedWorkEmail}</button>
+              </p>
+            )}
             <Field label="Gender" error={errors.gender}>
               {(f) => (
                 <Select {...f} name="gender" value={str(v.gender)} onChange={(e) => set('gender', e.target.value)}>
@@ -429,20 +580,83 @@ export function HireWizard(p: Props) {
 
         {step === 1 && (
           <>
-            <Field label="Joining date" required error={errors.dateOfJoining}>{(f) => <Input {...f} name="dateOfJoining" type="date" value={str(v.dateOfJoining)} onChange={(e) => set('dateOfJoining', e.target.value)} />}</Field>
+            <Field
+              label="Joining date"
+              required
+              error={errors.dateOfJoining}
+              hint={existing ? 'The day they first joined the company, on or before today' : dob ? `On or after ${earliestJoining(dob)}, when they turn ${MIN_WORKING_AGE}` : undefined}
+            >
+              {(f) => (
+                <DatePicker
+                  {...f}
+                  name="dateOfJoining"
+                  value={joining}
+                  onChange={(x) => { set('dateOfJoining', x); setErrors((er) => ({ ...er, dateOfBirth: '' })); }}
+                  min={dob ? earliestJoining(dob) : undefined}
+                  max={existing ? today : undefined}
+                  calendarLabel="Choose joining date"
+                />
+              )}
+            </Field>
             <Field label="Legal entity" required error={errors.legalEntityId}>
               {(f) => <Select {...f} name="legalEntityId" value={entity} onChange={(e) => set('legalEntityId', e.target.value)}>{p.entities.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select>}
             </Field>
-            <Field label="Designation" error={errors.designationId}>
-              {(f) => <Select {...f} name="designationId" value={str(v.designationId)} onChange={(e) => set('designationId', e.target.value)}><option value="">None</option>{designations.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}
+            <Field
+              label="Designation"
+              error={errors.designationName || errors.designationId}
+              hint={designationIsNew ? `"${designationText}" is new: it is added to your designations with this hire` : designationMatch ? undefined : 'Pick from the list or type any title'}
+            >
+              {(f) => (
+                <>
+                  <Input {...f} name="designation" list="hire-designations" autoComplete="off" maxLength={120} placeholder="e.g. Senior Accountant" value={str(v.designation)}
+                    onChange={(e) => { set('designation', e.target.value); setErrors((er) => ({ ...er, designationName: '', designationId: '' })); }} />
+                  <datalist id="hire-designations">
+                    {designationSuggestions.map((x) => <option key={x.name} value={x.name} label={x.note} />)}
+                  </datalist>
+                </>
+              )}
             </Field>
-            {!designations.length && <p className="text-xs text-fg-muted sm:col-span-2">No designations yet.{p.canManageOrg ? ' Add one here, or pick a ready-made list in Organization structure, Designations.' : ' Ask an administrator to add them in Organization structure.'}</p>}
-            {addInline('designation')}
             <Field label="Employment type">
               {(f) => <Select {...f} name="employmentType" value={str(v.employmentType)} onChange={(e) => set('employmentType', e.target.value)}>{Object.entries(TYPE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>}
             </Field>
             <Field label="Grade" error={errors.grade}>{(f) => <Input {...f} name="grade" value={str(v.grade)} onChange={(e) => set('grade', e.target.value)} maxLength={20} />}</Field>
             <Field label="Probation (months)" error={errors.probationMonths} hint="0 confirms them straight away">{(f) => <Input {...f} name="probationMonths" type="number" min={0} max={24} value={str(v.probationMonths)} onChange={(e) => set('probationMonths', e.target.value === '' ? '' : Number(e.target.value))} />}</Field>
+            {existing && (
+              <>
+                <h4 className="mt-1 text-xs font-semibold uppercase tracking-wide text-fg-subtle sm:col-span-2">Already working here</h4>
+                <Field label="Employee code" error={errors.employeeCode} hint="The code they already have. Leave empty for the next code in your series.">
+                  {(f) => <Input {...f} name="employeeCode" autoComplete="off" maxLength={40} placeholder="e.g. EMP-0042" value={str(v.employeeCode)} onChange={(e) => set('employeeCode', e.target.value)} />}
+                </Field>
+                {Number(v.probationMonths) > 0 && (
+                  <Field
+                    label="Confirmed on"
+                    error={errors.confirmationDate}
+                    hint={str(v.confirmationDate) ? undefined : confirmedOn ? `Empty uses ${confirmedOn}, when their probation ended` : `Empty keeps them on probation until ${probationEnd}`}
+                  >
+                    {(f) => <DatePicker {...f} name="confirmationDate" value={str(v.confirmationDate)} onChange={(x) => set('confirmationDate', x)} min={joining || undefined} max={today} openTo={probationEnd ?? undefined} calendarLabel="Choose confirmation date" />}
+                  </Field>
+                )}
+                <p className="text-[0.8125rem] text-fg-muted sm:col-span-2" data-testid="existing-status">
+                  {joining ? (confirmedOn && confirmedOn <= today ? `Added as a confirmed employee (confirmed ${confirmedOn}).` : `Added as on probation until ${probationEnd ?? joining}.`) : 'Choose the joining date.'}
+                  {' '}No joining checklist is started unless you pick one in Attendance &amp; access.
+                </p>
+                {p.leavePolicies && balanceTypes.length > 0 && (
+                  <fieldset className="sm:col-span-2">
+                    <legend className="text-[0.8125rem] font-medium">Leave balance available today</legend>
+                    <p className="mb-2 text-xs text-fg-subtle">From their previous records. SampCrew credits this year&apos;s leave as usual, then sets each balance you enter to this number. Leave a type empty to use what SampCrew works out.</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {balanceTypes.map((t) => (
+                        <label key={t.leaveTypeId} className="flex flex-col gap-1 text-xs text-fg-muted">
+                          {t.leaveTypeName}
+                          <Input aria-label={`Opening balance, ${t.leaveTypeName}`} inputMode="decimal" placeholder="days" value={str(opening[t.leaveTypeId])} onChange={(e) => setOpening(t.leaveTypeId, e.target.value)} />
+                        </label>
+                      ))}
+                    </div>
+                    {errors.openingLeaveBalances && <p className="mt-1 text-xs text-danger">{errors.openingLeaveBalances}</p>}
+                  </fieldset>
+                )}
+              </>
+            )}
           </>
         )}
 
@@ -565,8 +779,16 @@ export function HireWizard(p: Props) {
           <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-[0.8125rem] sm:col-span-2 sm:grid-cols-2">
             <Summary label="Name" value={name || '—'} onEdit={() => setStep(0)} />
             <Summary label="Work email" value={str(v.workEmail) || '—'} onEdit={() => setStep(0)} />
-            <Summary label="Joining" value={`${str(v.dateOfJoining)} · ${TYPE_LABEL[str(v.employmentType)] ?? ''} · ${Number(v.probationMonths) ? `${v.probationMonths} months probation` : 'confirmed on joining'}`} onEdit={() => setStep(1)} />
-            <Summary label="Entity and designation" value={`${lookup(p.entities, v.legalEntityId)} · ${lookup(designations, v.designationId)}`} onEdit={() => setStep(1)} />
+            <Summary
+              label="Joining"
+              value={existing
+                ? `Already working here since ${joining}${str(v.employeeCode).trim() ? ` · code ${str(v.employeeCode).trim()}` : ''} · ${confirmedOn && confirmedOn <= today ? `confirmed ${confirmedOn}` : `on probation until ${probationEnd ?? joining}`}`
+                : `${joining} · ${TYPE_LABEL[str(v.employmentType)] ?? ''} · ${Number(v.probationMonths) ? `${v.probationMonths} months probation` : 'confirmed on joining'}`}
+              onEdit={() => setStep(1)}
+            />
+            <Summary label="Entity and designation" value={`${lookup(p.entities, v.legalEntityId)} · ${designationMatch?.name ?? (designationText ? `${designationText} (new)` : '—')}`} onEdit={() => setStep(1)} />
+            {dob && <Summary label="Date of birth" value={`${dob} · ${ageOn(dob, joining)} on joining${minor ? ', a minor: employment confirmed' : ''}`} onEdit={() => setStep(0)} />}
+            {existing && openingRows.length > 0 && <Summary label="Opening leave balances" value={openingRows.map((t) => `${t.leaveTypeName} ${str(opening[t.leaveTypeId]).trim()}`).join(', ')} onEdit={() => setStep(1)} />}
             <Summary label="Department and location" value={`${lookup(departments, v.departmentId)} · ${lookup(locations, v.locationId)}`} onEdit={() => setStep(2)} />
             <Summary label="Reports to" value={manager?.displayName ?? 'No manager'} onEdit={() => setStep(2)} />
             <Summary label="Pay" value={structure ? `${structure.name}, ${Number(str(v.annualCtc).replace(/,/g, '')).toLocaleString()} a year` : 'Set later'} onEdit={() => setStep(3)} />

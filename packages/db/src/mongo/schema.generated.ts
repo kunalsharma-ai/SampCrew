@@ -1937,6 +1937,9 @@ export const TABLES: Record<string, TableSpec> = {
       first_name: {"required": true, "type": "string"},
       gender: {"enum": ["female", "male", "non_binary", "undisclosed"], "type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // How the record was added: a new joiner, or someone already working here (past joining date, own code,
+      // opening leave balances). Records from before this column have none and are new joiners.
+      joined_as: {"enum": ["new_joiner", "existing"], "type": "string"},
       last_name: {"default": "", "required": true, "type": "string"},
       last_working_day: {"type": "date"},
       membership_id: {"type": "uuid"},

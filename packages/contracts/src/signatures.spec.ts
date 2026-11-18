@@ -49,8 +49,8 @@ describe('email signatures', () => {
       website: 'https://n.example', address: 'Pune', disclaimer: 'Confidential', social: { linkedin: 'https://linkedin.com/company/n' }, brandColor: '#111111', accentColor: '#222222', logoWidth: 300, logoHeight: 100 };
     const plain = composeSignatureData(base, saveSignatureInput.parse({ template: 'classic', options: {} }).options);
     expect(plain).toMatchObject({ jobTitle: 'Operator', department: null, phone: '+91 20 1', mobile: '+91 98 2', address: null, disclaimer: 'Confidential', brandColor: '#111111' });
-    const own = composeSignatureData(base, saveSignatureInput.parse({ template: 'classic', options: { jobTitle: 'Lead', mobile: '+1 555', brandColor: '#0E7C66', social: { x: 'https://x.com/a' }, show: { department: true, disclaimer: false, email: false } } }).options);
-    expect(own).toMatchObject({ jobTitle: 'Lead', department: 'Assembly', mobile: '+1 555', email: null, disclaimer: null, brandColor: '#0E7C66', social: { linkedin: 'https://linkedin.com/company/n', x: 'https://x.com/a' } });
+    const own = composeSignatureData(base, saveSignatureInput.parse({ template: 'classic', options: { jobTitle: 'Lead', mobile: '+1 415 555 2671', brandColor: '#0E7C66', social: { x: 'https://x.com/a' }, show: { department: true, disclaimer: false, email: false } } }).options);
+    expect(own).toMatchObject({ jobTitle: 'Lead', department: 'Assembly', mobile: '+1 415 555 2671', email: null, disclaimer: null, brandColor: '#0E7C66', social: { linkedin: 'https://linkedin.com/company/n', x: 'https://x.com/a' } });
     expect(composeSignatureData(base, saveSignatureInput.parse({ template: 'classic', options: { show: { social: false } } }).options).social).toEqual({});
   });
 

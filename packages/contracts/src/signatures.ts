@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { optionalPhone } from './phone';
 import { type SignatureBannerView, signatureWishesInput } from './signature-occasions';
 
 /**
@@ -72,8 +73,8 @@ export const signatureOptionsInput = z.object({
   }).prefault({}),
   /** Overrides: empty means "use what HR has on record". */
   jobTitle: optional(short(120)),
-  phone: optional(short(40)),
-  mobile: optional(short(40)),
+  phone: optionalPhone,
+  mobile: optionalPhone,
   pronouns: optional(short(30)),
   signOff: optional(short(60)),
   tagline: optional(short(160)),
@@ -97,7 +98,7 @@ export type SaveSignatureInput = z.infer<typeof saveSignatureInput>;
 export const signatureSettingsInput = z.object({
   companyName: optional(short(160)),
   website: optional(url),
-  phone: optional(short(40)),
+  phone: optionalPhone,
   address: optional(short(300)),
   brandColor: hex.default('#1F3A93'),
   accentColor: hex.default('#E8833A'),

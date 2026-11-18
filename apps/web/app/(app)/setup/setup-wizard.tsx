@@ -1,5 +1,5 @@
 'use client';
-import { COMPANY_SIZES, INDUSTRIES, INDUSTRY_LABELS, SETUP_STEPS } from '@crew/contracts';
+import { COMPANY_SIZES, INDUSTRIES, INDUSTRY_LABELS, phoneError, SETUP_STEPS } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, Checkbox, Field, Input, Select, Textarea, cn } from '@crew/ui';
 import { Building2, Check, MapPin, Network, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -148,6 +148,8 @@ function CompanyStep({ setup, pending, onSave }: { setup: SetupState; pending: b
             if (!v.industry) errs.industry = 'Choose your industry';
             if (!v.companySize) errs.companySize = 'Choose the company size';
             if (v.website && !/^https?:\/\/\S+$/.test(String(v.website))) errs.website = 'Start the website with https://';
+            const ph = phoneError(String(v.contactPhone ?? ''), String(v.countryCode ?? '') || null);
+            if (ph) errs.contactPhone = ph;
             setErrors(errs);
             if (Object.keys(errs).length) return;
             v.fiscalYearStartMonth = Number(v.fiscalYearStartMonth);
@@ -165,7 +167,7 @@ function CompanyStep({ setup, pending, onSave }: { setup: SetupState; pending: b
           </Field>
           <Field label="Website" error={errors.website}>{(p) => <Input {...p} name="website" type="url" placeholder="https://" defaultValue={c.website ?? ''} />}</Field>
           <Field label="HR contact email" hint="Shown to employees for HR questions">{(p) => <Input {...p} name="contactEmail" type="email" defaultValue={c.contactEmail ?? ''} />}</Field>
-          <Field label="Company phone">{(p) => <Input {...p} name="contactPhone" type="tel" defaultValue={c.contactPhone ?? ''} />}</Field>
+          <Field label="Company phone" error={errors.contactPhone} hint="With the country code, such as +91 20 5555 0100">{(p) => <Input {...p} name="contactPhone" type="tel" inputMode="tel" maxLength={40} defaultValue={c.contactPhone ?? ''} />}</Field>
           <Field label="Country" required>{(p) => <Select {...p} name="countryCode" defaultValue={c.countryCode}>{COUNTRIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>}</Field>
           <Field label="Currency" required>{(p) => <Select {...p} name="currency" defaultValue={c.currency}>{CURRENCIES.map((x) => <option key={x} value={x}>{x}</option>)}</Select>}</Field>
           <Field label="Time zone" required>{(p) => <Select {...p} name="timezone" defaultValue={c.timezone}>{[...new Set([c.timezone, ...TIMEZONES])].map((x) => <option key={x} value={x}>{x}</option>)}</Select>}</Field>

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
-import { PHOTO_MAX_BYTES, PHOTO_TYPES } from '@crew/contracts';
+import { ADULT_AGE, ageOn, catalogueDesignation, dateOfBirthError, isMinorOn, PHOTO_MAX_BYTES, PHOTO_TYPES, phoneError } from '@crew/contracts';
 import type {
   attendanceRegistrationInput,
   confirmInput,
@@ -566,8 +566,15 @@ export class EmployeesService {
     // The code is reserved in a short transaction of its own, like a database sequence: the series is one document
     // every hire in the workspace updates, and holding it for the whole hire made concurrent hires abort and start
     // again behind each other. A hire that then fails leaves a gap in the numbers.
+    const existing = input.joinedAs === 'existing';
+    this.checkHireRules(input);
+    // An existing employee may keep the code they already have; otherwise the next one in the series is reserved.
     const code = await this.db.tenant(async (tx) => {
       await this.authz.require('employees:create', { legalEntityId: input.legalEntityId }, tx);
+      if (input.employeeCode) {
+        if (await tx.collection('employees').exists({ employee_code: input.employeeCode })) throw Errors.conflict('employee_code_taken', `Employee code ${input.employeeCode} is already used by someone else`);
+        return input.employeeCode;
+      }
       return this.nextEmployeeCode(tx);
     });
     const created = await this.db.tenant(async (tx) => {
@@ -577,9 +584,19 @@ export class EmployeesService {
       const count = await tx.collection('employees').count({ status: { $ne: 'exited' } });
       await this.entitlements.requireWithinLimit('max_employees', count, tx);
       await this.checkPlacement(tx, input, null);
+      await this.checkPhoneForEntity(tx, input.phone, input.legalEntityId);
+      const designationId = input.designationName ? await this.designationByName(tx, input.designationName) : (input.designationId ?? null);
 
-      const startsLater = input.dateOfJoining > today();
-      const status = startsLater ? 'pre_boarding' : input.probationMonths > 0 ? 'probation' : 'active';
+      const day = today();
+      const startsLater = input.dateOfJoining > day;
+      const probationEnd = input.probationMonths > 0 ? addDays(addMonths(input.dateOfJoining, input.probationMonths), -1) : null;
+      // Someone already working here may be past probation: confirmed on the date HR gives, or the day after it ended.
+      const confirmedOn = existing
+        ? (input.confirmationDate ?? (probationEnd === null ? input.dateOfJoining : probationEnd < day ? addDays(probationEnd, 1) : null))
+        : (input.probationMonths === 0 ? input.dateOfJoining : null);
+      const confirmed = confirmedOn !== null && confirmedOn <= day;
+      const status = startsLater ? 'pre_boarding' : existing ? (confirmed ? 'active' : 'probation') : input.probationMonths > 0 ? 'probation' : 'active';
+      const probationEndDate = existing && input.confirmationDate ? (input.confirmationDate > input.dateOfJoining ? addDays(input.confirmationDate, -1) : null) : probationEnd;
       const row = await tx
         .collection('employees')
         .insert({
@@ -593,32 +610,35 @@ export class EmployeesService {
           date_of_birth: input.dateOfBirth ?? null,
           gender: input.gender ?? null,
           date_of_joining: input.dateOfJoining,
-          probation_end_date: input.probationMonths > 0 ? addDays(addMonths(input.dateOfJoining, input.probationMonths), -1) : null,
-          confirmation_date: input.probationMonths === 0 ? input.dateOfJoining : null,
+          probation_end_date: probationEndDate,
+          confirmation_date: confirmedOn,
           employment_type: input.employmentType,
           status,
+          joined_as: input.joinedAs ?? 'new_joiner',
           current_legal_entity_id: input.legalEntityId,
           current_department_id: input.departmentId ?? null,
           current_location_id: input.locationId ?? null,
-          current_designation_id: input.designationId ?? null,
+          current_designation_id: designationId,
           current_manager_employee_id: input.managerEmployeeId ?? null,
           current_grade: input.grade ?? null,
         })
-        .catch(uniqueAs('work_email_taken', 'Another current employee already uses this work email'));
+        .catch(uniqueAs('work_email_taken', 'Another current employee already uses this work email'))
+        .catch(uniqueAs('employee_code_taken', 'This employee code is already used by someone else'));
       await tx.collection('employment_records').insert({
         employee_id: row.id,
         effective_from: input.dateOfJoining,
         legal_entity_id: input.legalEntityId,
         department_id: input.departmentId ?? null,
         location_id: input.locationId ?? null,
-        designation_id: input.designationId ?? null,
+        designation_id: designationId,
         manager_employee_id: input.managerEmployeeId ?? null,
         grade: input.grade ?? null,
         employment_type: input.employmentType,
         change_reason: 'hire',
         created_by: actor.userId,
       });
-      await this.event(tx, row.id, 'hired', input.dateOfJoining, { employeeCode: code });
+      await this.event(tx, row.id, 'hired', input.dateOfJoining, { employeeCode: code, ...(existing ? { joinedAs: 'existing' } : {}) });
+      if (existing && confirmed && input.probationMonths > 0) await this.event(tx, row.id, 'confirmed', confirmedOn!, { note: 'Confirmed before the record was added to SampCrew' });
 
       const loginMode = input.loginMode ?? (input.inviteToCrew ? 'invite' : 'none');
       if (input.membershipId) {
@@ -635,17 +655,30 @@ export class EmployeesService {
       const templateId = !onboardingOn
         ? undefined
         : input.onboardingTemplateId === undefined
-          ? ((await tx.collection('onboarding_templates').findOne({ is_default: true, archived_at: null }))?.id as string | undefined)
+          // Someone already working here gets no joining checklist unless HR picks one.
+          ? (existing ? undefined : ((await tx.collection('onboarding_templates').findOne({ is_default: true, archived_at: null }))?.id as string | undefined))
           : input.onboardingTemplateId;
       if (templateId) await this.onboarding.instantiate(tx, row.id, templateId);
       // Credit leave already due (e.g. an up-front annual entitlement) so balances are right from day one.
       await this.leave.runAccruals(tx, today(), row.id);
+      // Then bring an existing employee's balances to what they have today (from their previous records).
+      let opening: Awaited<ReturnType<LeaveService['setOpeningBalances']>> = [];
+      if (existing && input.openingLeaveBalances?.length) {
+        // Setting balances is a leave decision: the same access as adjusting a balance.
+        await this.authz.require('leave:approve', employeeAttrs(await this.load(tx, row.id)), tx);
+        opening = await this.leave.setOpeningBalances(tx, row.id, input.openingLeaveBalances);
+      }
 
       if (within) await within(tx, row.id);
       const e = await this.load(tx, row.id);
       await this.audit.record(tx, {
         action: 'employee.created', resourceType: 'employee', resourceId: row.id,
-        changes: { employeeCode: code, name: e.displayName, legalEntityId: e.legalEntityId, departmentId: e.departmentId, dateOfJoining: e.dateOfJoining },
+        changes: {
+          employeeCode: code, name: e.displayName, legalEntityId: e.legalEntityId, departmentId: e.departmentId, dateOfJoining: e.dateOfJoining,
+          ...(existing ? { joinedAs: 'existing', confirmationDate: confirmedOn, openingLeaveBalances: opening } : {}),
+          ...(isMinorOn(input.dateOfBirth, input.dateOfJoining) ? { minorConfirmed: true, ageOnJoining: ageOn(input.dateOfBirth!, input.dateOfJoining) } : {}),
+          ...(input.designationName ? { designationName: input.designationName } : {}),
+        },
       });
       await this.outbox.publish(tx, actor.tenantId, 'employee.created', { employeeId: row.id });
       if (input.managerEmployeeId) {
@@ -653,7 +686,7 @@ export class EmployeesService {
         await this.notifications.notify(tx, {
           membershipIds: [mgr?.membership_id],
           kind: 'employee.joining',
-          title: `${e.displayName} joins your team on ${e.dateOfJoining}`,
+          title: existing ? `${e.displayName} was added to your team in SampCrew` : `${e.displayName} joins your team on ${e.dateOfJoining}`,
           link: `/employees/${row.id}`,
           email: true,
         });
@@ -986,6 +1019,47 @@ export class EmployeesService {
   }
 
   /** Validates references in a placement. Out-of-scope or archived targets read as not found. */
+  /**
+   * Rules the hire form checks too, enforced here for every way an employee is created (the form, recruitment,
+   * imports): the date of birth fits the joining date, a minor's hire is confirmed, the work email is not the
+   * personal one, and an existing employee has already joined.
+   */
+  private checkHireRules(input: CreateEmployeeInput) {
+    const dob = dateOfBirthError(input.dateOfBirth, input.dateOfJoining);
+    if (dob) throw Errors.validation([{ path: 'dateOfBirth', message: dob }]);
+    if (isMinorOn(input.dateOfBirth, input.dateOfJoining) && input.minorConfirmed !== true) {
+      throw Errors.validation([{ path: 'minorConfirmed', message: `They are under ${ADULT_AGE} on the joining date: confirm they may be employed` }]);
+    }
+    if (input.workEmail && input.personalEmail && input.workEmail.toLowerCase() === input.personalEmail.toLowerCase()) {
+      throw Errors.validation([{ path: 'workEmail', message: 'Use their work email here, not their personal email' }]);
+    }
+    if (input.joinedAs === 'existing' && input.dateOfJoining > today()) throw Errors.validation([{ path: 'dateOfJoining', message: 'Someone already working here joined on or before today' }]);
+    if (input.confirmationDate && input.confirmationDate > today()) throw Errors.validation([{ path: 'confirmationDate', message: 'A confirmation date in the future is set by confirming them on that day' }]);
+  }
+
+  /** A local phone number (no country code) is checked against the country of the employee's legal entity. */
+  private async checkPhoneForEntity(tx: TenantTx, phone: string | null | undefined, legalEntityId: string | null | undefined) {
+    if (!phone || !legalEntityId) return;
+    const entity = await tx.collection('legal_entities').findOne({ id: legalEntityId }, { projection: { country_code: 1 } });
+    const bad = phoneError(phone, (entity?.country_code as string | undefined) ?? null);
+    if (bad) throw Errors.validation([{ path: 'phone', message: bad }]);
+  }
+
+  /** The designation with this name (any case), added to the list when there is none yet. */
+  private async designationByName(tx: TenantTx, title: string): Promise<string> {
+    const name = title.trim().replace(/\s+/g, ' ');
+    const rows = await tx.collection('designations').find({ archived_at: null }, { projection: { name: 1 } });
+    const same = rows.find((r) => String(r.name).toLowerCase() === name.toLowerCase());
+    if (same) return same.id as string;
+    const known = catalogueDesignation(name);
+    const row = await tx
+      .collection('designations')
+      .insert({ name: known?.name ?? name, code: known?.code ?? null, level: known?.level ?? null })
+      .catch(uniqueAs('designation_exists', 'A designation with this name already exists'));
+    await this.audit.record(tx, { action: 'designation.created', resourceType: 'designation', resourceId: row.id, changes: { name: row.name, via: 'hire' } });
+    return row.id as string;
+  }
+
   private async checkPlacement(
     tx: TenantTx,
     p: { legalEntityId?: string; departmentId?: string | null; locationId?: string | null; designationId?: string | null; managerEmployeeId?: string | null },
@@ -1021,6 +1095,17 @@ export class EmployeesService {
         if (blocked.length) throw Errors.forbidden(`HR maintains these fields: ${blocked.join(', ')}`);
       }
       if (!keys.length) return before;
+      // The same rules as the hire form, against what is already on the record.
+      if (input.dateOfBirth) {
+        const bad = dateOfBirthError(input.dateOfBirth, before.dateOfJoining);
+        if (bad) throw Errors.validation([{ path: 'dateOfBirth', message: bad }]);
+      }
+      if (input.phone) await this.checkPhoneForEntity(tx, input.phone, before.legalEntityId);
+      const work = input.workEmail !== undefined ? input.workEmail : before.workEmail;
+      const personal = input.personalEmail !== undefined ? input.personalEmail : (before.personalEmail as string | null);
+      if ((input.workEmail || input.personalEmail) && work && personal && work.toLowerCase() === personal.toLowerCase()) {
+        throw Errors.validation([{ path: input.workEmail ? 'workEmail' : 'personalEmail', message: 'The work email and the personal email must be different' }]);
+      }
       await tx
         .collection('employees')
         .updateOne({ id }, { $set: Object.fromEntries(keys.map((k) => [PROFILE_COLUMNS[k]!, input[k as keyof typeof input]])) })
