@@ -2,6 +2,7 @@ import type { MemberPreferences } from '@crew/contracts';
 import { DemoBanner } from '@crew/ui';
 import Link from 'next/link';
 import { loadOptional, loadSession } from '@/lib/api';
+import { MfaStepUpProvider } from '@/components/mfa-step-up';
 import { appearanceFromCookie } from '@/lib/appearance-cookie';
 import { quickActions, visibleNav, workflowActions } from '@/lib/nav';
 import type { Me } from '@/lib/types';
@@ -28,9 +29,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {me.permissions['billing:manage'] ? <Link href="/settings/billing" className="underline">Pay the invoice to open it again</Link> : 'Ask a billing admin to pay it on Plan & billing.'}
         </div>
       )}
-      <Shell me={me} nav={visibleNav(me)} notifications={notifications} prefs={prefs} cookieAppearance={cookieAppearance} counts={counts} quick={quickActions(me)} workflows={workflowActions(me)}>
-        {children}
-      </Shell>
+      <MfaStepUpProvider mfaEnabled={me.user.mfaEnabled}>
+        <Shell me={me} nav={visibleNav(me)} notifications={notifications} prefs={prefs} cookieAppearance={cookieAppearance} counts={counts} quick={quickActions(me)} workflows={workflowActions(me)}>
+          {children}
+        </Shell>
+      </MfaStepUpProvider>
     </>
   );
 }

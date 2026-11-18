@@ -371,7 +371,30 @@ export class AuthService {
       await tx.collection('users').updateOne({ id: actor.userId }, { $set: { mfa_enabled: true } });
       await tx.collection('sessions').updateOne({ id: actor.sessionId }, { $set: { revoked_at: new Date(), revoked_reason: 'mfa_upgraded' } });
       await this.audit.record(tx, { tenantId: actor.tenantId, action: 'auth.mfa_enabled', resourceType: 'user', resourceId: actor.userId });
-      return this.issueSession(tx, { userId: actor.userId, tenantId: actor.tenantId, membershipId: actor.membershipId, mfa: true, client: 'web' });
+      return this.issueSession(tx, { userId: actor.userId, tenantId: actor.tenantId, membershipId: actor.membershipId, mfa: true, client: actor.client ?? 'web' });
+    });
+  }
+
+  /**
+   * Step-up for a signed-in person who already uses an authenticator app but whose session is not MFA-verified
+   * (signed in with single sign-on, from an invitation, or before turning MFA on elsewhere). A valid code replaces
+   * the session with an MFA-verified one, so actions that need MFA (billing, payroll, roles) go through without
+   * signing out. Wrong codes count towards the same lock as sign-in.
+   */
+  async mfaStepUp(code: string): Promise<TokenPair> {
+    const actor = requestContext.tenantActor();
+    const user = await this.db.platform((tx) => tx.collection<UserRow>('users').findOne({ id: actor.userId }));
+    if (!user?.mfa_enabled || !user.mfa_secret_enc) throw Errors.badRequest('mfa_not_enabled', 'Turn on two-step verification first');
+    if (user.locked_until && user.locked_until > new Date()) throw Errors.tooMany();
+    if (!verifyTotp(decryptField(user.mfa_secret_enc, this.config.fieldKeys), code)) {
+      await this.recordFailedLogin(user.id);
+      throw Errors.badRequest('invalid_code', 'That code is not valid. Check your authenticator app and try again.');
+    }
+    return this.db.platform(async (tx) => {
+      await tx.collection('users').updateOne({ id: actor.userId }, { $set: { failed_login_count: 0 } });
+      await tx.collection('sessions').updateOne({ id: actor.sessionId }, { $set: { revoked_at: new Date(), revoked_reason: 'mfa_step_up' } });
+      await this.audit.record(tx, { tenantId: actor.tenantId, action: 'auth.mfa_step_up', resourceType: 'user', resourceId: actor.userId });
+      return this.issueSession(tx, { userId: actor.userId, tenantId: actor.tenantId, membershipId: actor.membershipId, mfa: true, client: actor.client ?? 'web' });
     });
   }
 

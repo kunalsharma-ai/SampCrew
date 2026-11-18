@@ -73,6 +73,8 @@ export function StatutoryEditor({ statutory, entities }: { statutory: StatutoryR
         {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
         {entities.length === 0 ? (
           <Alert tone="warning" title="Add a legal entity first">Statutory settings belong to a legal entity (the company that employs people). Add one under <a className="font-medium underline" href="/organization">Organization</a>, then come back here.</Alert>
+        ) : saved.length === 0 ? (
+          <Alert tone="warning" title="Not saved yet">{statutory.startingValues.notice}</Alert>
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2 text-[0.8125rem]" data-testid="statutory-country">

@@ -18,6 +18,14 @@ export async function mfaEnableAction(code: string) {
   return r.ok ? { ok: true as const } : r;
 }
 
+/** Verifies the current session with an authenticator code, so actions that need MFA go through without signing out. */
+export async function mfaStepUpAction(code: string) {
+  const r = await act(() => api<TokenPair>('/me/mfa/verify', { method: 'POST', body: { code } }));
+  if (r.ok) await setSession(r.data!);
+  revalidatePath('/', 'layout');
+  return r.ok ? { ok: true as const } : r;
+}
+
 export async function changePasswordAction(currentPassword: string, newPassword: string) {
   return act(() => api('/me/password', { method: 'POST', body: { currentPassword, newPassword } }), 'Password changed. Other sessions were signed out.');
 }
