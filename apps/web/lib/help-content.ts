@@ -744,12 +744,12 @@ export const WEB_HELP: HelpContent = {
     'Why these numbers': { what: 'The inputs behind the figures: days paid, salary and rules applied.' },
     Days: { what: 'Days paid, worked and lost in the month.' },
     Change: { what: 'Change loss-of-pay days or add an adjustment for this payslip.' },
-    'This financial year': { what: 'Year-to-date totals of pay and deductions.' },
+    'This tax year': { what: 'Year-to-date pay and deductions since the tax year began in your employer’s country.' },
     'How this was worked out': { what: 'The reason behind each amount on the payslip.' },
     'Pay components': { what: 'Earnings and deductions that salaries are split into, like basic, HRA or PF.', how: 'Add components before building salary structures.' },
     'Salary structures': { what: 'Templates that split an annual CTC into pay components.', how: 'Pick a structure when you assign someone a salary.' },
     'Expense categories': { what: 'Kinds of expense people can claim, with limits and whether a receipt is needed.' },
-    'Statutory settings': { what: 'Government contributions and taxes for a legal entity, effective from a date.', how: 'Add a new version when the rules change; past runs keep the old one.' },
+    'Statutory settings': { what: 'Contributions and taxes for a legal entity in its country’s rules, from a date. Packs for India, UK, US, UAE, Saudi, Qatar, Singapore and Australia; any other country is custom.', how: 'Have a local payroll advisor check every value. Add a new version when rules change.' },
 
     // Talent
     Progress: { what: 'How far the goal is, from check-ins.' },

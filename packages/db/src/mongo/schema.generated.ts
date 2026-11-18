@@ -3682,6 +3682,8 @@ export const TABLES: Record<string, TableSpec> = {
       status: {"default": "included", "enum": ["included", "on_hold"], "required": true, "type": "string"},
       taxable: {"default": 0, "required": true, "scale": 2, "type": "decimal"},
       tds: {"default": 0, "required": true, "scale": 2, "type": "decimal"},
+      // State, province or other regional income tax withheld (generic statutory schemes only).
+      regional_tax: {"default": 0, "scale": 2, "type": "decimal"},
       tenant_id: {"required": true, "type": "uuid"},
       warnings: {"default": {"json": []}, "required": true, "type": "json"},
     },
@@ -5064,6 +5066,8 @@ export const TABLES: Record<string, TableSpec> = {
   statutory_settings: {
     access: "tenant", grants: ["delete", "insert", "select"],
     columns: {
+      // The legal entity's country when the settings were saved: India's scheme for IN, the generic scheme elsewhere. Older rows (India only) have none.
+      country_code: {"type": "string"},
       effective_from: {"required": true, "type": "date"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       legal_entity_id: {"required": true, "type": "uuid"},

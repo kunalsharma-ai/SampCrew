@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type ComponentInput, DEFAULT_IN_STATUTORY, type expenseCategoryInput, type StatutoryInput, type StructureInput } from '@crew/contracts';
+import { type ComponentInput, DEFAULT_IN_STATUTORY, type expenseCategoryInput, isGenericStatutory, STATUTORY_PACKS, type StatutoryInput, type StructureInput } from '@crew/contracts';
 import type { z } from 'zod';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -7,7 +7,7 @@ import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 import { fieldById } from '../employees/employee-view';
 import { Errors } from '../../platform/http/errors';
-import { ENTITY_FIELDS, legalEntity } from './payroll-common';
+import { ENTITY_FIELDS, legalEntity, schemeCountry, startingFor } from './payroll-common';
 
 const uniqueViolation = (code: string, message: string) => (err: { code?: string }) => {
   if (err.code === '23505') throw Errors.conflict(code, message);
@@ -159,7 +159,10 @@ export class PayrollConfigService {
 
   // Statutory settings --------------------------------------------------------------------------------------
 
-  /** Saved settings per legal entity (newest first) and the India starting values for a first review. */
+  /**
+   * Saved settings per legal entity (newest first), and for each legal entity the starting values of its country:
+   * India's scheme, a ready-made country pack, or a blank custom scheme for any other country.
+   */
   async statutory(legalEntityId?: string) {
     return this.db.tenant(async (tx) => {
       const scope = await this.authz.filter('payroll:read', ENTITY_FIELDS('legal_entity_id'), tx);
@@ -170,11 +173,19 @@ export class PayrollConfigService {
       const rows = saved
         .map((x) => ({
           id: x.id, legalEntityId: x.legal_entity_id, legalEntityName: entities.get(x.legal_entity_id) ?? null, effectiveFrom: x.effective_from,
-          lopSource: x.lop_source, settings: x.settings, savedAt: x.saved_at, savedBy: (x.saved_by && users.get(x.saved_by)) ?? null, usedByRun: used.has(x.id),
+          countryCode: x.country_code ?? schemeCountry(x.settings), lopSource: x.lop_source, settings: x.settings, savedAt: x.saved_at, savedBy: (x.saved_by && users.get(x.saved_by)) ?? null, usedByRun: used.has(x.id),
         }))
         .sort((a, b) => String(a.legalEntityName).localeCompare(String(b.legalEntityName)));
+      const entityRows = await tx.collection<{ id: string; name: string; legal_name: string; currency: string; country_code: string; fiscal_year_start_month?: number }>('legal_entities')
+        .find(legalEntityId ? { id: legalEntityId } : {}, { sort: { name: 1 } });
       return {
         settings: rows,
+        packs: STATUTORY_PACKS,
+        entities: entityRows.map((le) => ({
+          legalEntityId: le.id, name: le.name, currency: le.currency,
+          ...startingFor({ country_code: le.country_code, currency: le.currency, fiscal_year_start_month: Number(le.fiscal_year_start_month ?? 4) }),
+        })),
+        /** India's starting values, kept for older clients. */
         startingValues: {
           countryCode: 'IN',
           settings: DEFAULT_IN_STATUTORY,
@@ -189,12 +200,12 @@ export class PayrollConfigService {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
       await this.authz.require('payroll:configure', { legalEntityId: input.legalEntityId }, tx);
-      await legalEntity(tx, input.legalEntityId);
-      checkSlabs(input.settings);
+      const le = await legalEntity(tx, input.legalEntityId);
+      checkScheme(input.settings, le.country_code);
       const locked = await tx.collection('payroll_runs').exists({ legal_entity_id: input.legalEntityId, status: { $in: ['pending_approval', 'finalised'] }, period_end: { $gte: input.effectiveFrom } });
       if (locked) throw Errors.conflict('period_paid', 'Payroll for this date onwards is already finalised or waiting for approval. Choose a later effective date.');
       const inserted = await tx.collection('statutory_settings')
-        .insert({ legal_entity_id: input.legalEntityId, effective_from: input.effectiveFrom, lop_source: input.lopSource, settings: input.settings, saved_by: actor.userId })
+        .insert({ legal_entity_id: input.legalEntityId, country_code: le.country_code, effective_from: input.effectiveFrom, lop_source: input.lopSource, settings: input.settings, saved_by: actor.userId })
         .catch(uniqueViolation('settings_exist', 'Settings are already saved from that date. Remove them first if they were a mistake, or choose another date.'));
       const row = { id: inserted.id as string };
       await this.audit.record(tx, { action: 'statutory_settings.saved', resourceType: 'statutory_settings', resourceId: row.id, changes: input });
@@ -251,16 +262,36 @@ export class PayrollConfigService {
 }
 
 /** Slabs must rise and end with an open slab, or the engine cannot place every amount. */
-function checkSlabs(s: StatutoryInput['settings']) {
-  const check = (slabs: { upTo: string | null }[], what: string) => {
-    if (slabs[slabs.length - 1]!.upTo !== null) throw Errors.badRequest('open_slab', `${what}: the last slab must have no upper limit`);
-    let prev = -1;
-    for (const sl of slabs.slice(0, -1)) {
-      if (sl.upTo === null) throw Errors.badRequest('open_slab', `${what}: only the last slab can have no upper limit`);
-      if (Number(sl.upTo) <= prev) throw Errors.badRequest('slab_order', `${what}: slab limits must rise`);
-      prev = Number(sl.upTo);
-    }
-  };
-  for (const [state, slabs] of Object.entries(s.pt.states)) check(slabs, `Professional tax for ${state}`);
-  check(s.tds.slabs, 'Income tax slabs');
+function checkSlabs(slabs: { upTo: string | null }[], what: string) {
+  if (slabs[slabs.length - 1]!.upTo !== null) throw Errors.badRequest('open_slab', `${what}: the last slab must have no upper limit`);
+  let prev = -1;
+  for (const sl of slabs.slice(0, -1)) {
+    if (sl.upTo === null) throw Errors.badRequest('open_slab', `${what}: only the last slab can have no upper limit`);
+    if (Number(sl.upTo) <= prev) throw Errors.badRequest('slab_order', `${what}: slab limits must rise`);
+    prev = Number(sl.upTo);
+  }
+}
+
+/**
+ * The scheme must match the legal entity's country (India's scheme for India, the generic scheme for its own
+ * country anywhere else), and its slabs and contributions must be usable by the engine.
+ */
+function checkScheme(s: StatutoryInput['settings'], countryCode: string) {
+  if (!isGenericStatutory(s)) {
+    if (countryCode !== 'IN') throw Errors.badRequest('scheme_country', `India's PF, ESI and TDS scheme only applies to an Indian legal entity. This entity is in ${countryCode}; use its country's settings.`);
+    for (const [state, slabs] of Object.entries(s.pt.states)) checkSlabs(slabs, `Professional tax for ${state}`);
+    checkSlabs(s.tds.slabs, 'Income tax slabs');
+    return;
+  }
+  if (countryCode === 'IN') throw Errors.badRequest('scheme_country', 'An Indian legal entity uses the India scheme (PF, ESI, professional tax and TDS).');
+  if (s.countryCode !== countryCode) throw Errors.badRequest('scheme_country', `These settings are for ${s.countryCode}, but the legal entity is in ${countryCode}.`);
+  const codes = new Set<string>();
+  for (const r of s.contributions) {
+    if (codes.has(r.code)) throw Errors.badRequest('contribution_code', `Two contributions use the code ${r.code}`);
+    codes.add(r.code);
+    if (Number(r.employeeRatePercent) === 0 && Number(r.employerRatePercent) === 0) throw Errors.badRequest('contribution_rate', `${r.name}: give an employee or employer rate`);
+    if (r.threshold !== null && r.ceiling !== null && Number(r.ceiling) <= Number(r.threshold)) throw Errors.badRequest('contribution_range', `${r.name}: the ceiling must be above the threshold`);
+  }
+  if (s.incomeTax) checkSlabs(s.incomeTax.slabs, `${s.incomeTax.name} slabs`);
+  for (const [region, t] of Object.entries(s.regionalTaxes)) checkSlabs(t.slabs, `${t.name} (${region}) slabs`);
 }

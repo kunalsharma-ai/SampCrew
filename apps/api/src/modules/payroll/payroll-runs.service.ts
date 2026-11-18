@@ -16,7 +16,7 @@ import { AttendanceDaysService } from '../attendance/attendance-days.service';
 import { DisciplineService } from '../discipline/discipline.service';
 import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
 import { displayName, employeeNames, fieldById } from '../employees/employee-view';
-import { csv, dayCount, ENTITY_FIELDS, employedDays, legalEntity, lossOfPay, monthPeriod, periodLabel, statutoryOn, type StatutoryRow } from './payroll-common';
+import { csv, dayCount, ENTITY_FIELDS, employedDays, legalEntity, lossOfPay, monthPeriod, periodLabel, schemeCountry, statutoryOn, type StatutoryRow } from './payroll-common';
 
 interface RunRow {
   id: string;
@@ -245,6 +245,13 @@ export class PayrollRunsService implements OnModuleInit {
   private async computeIn(tx: TenantTx, r: RunRow) {
     const statutory = await statutoryOn(tx, r.legal_entity_id, r.period_start);
     if (!statutory) throw Errors.conflict('statutory_missing', 'Review and save statutory settings for this legal entity first (Settings, Payroll).');
+    const le = await legalEntity(tx, r.legal_entity_id);
+    if (schemeCountry(statutory.settings) !== le.country_code) {
+      throw Errors.conflict('statutory_country', `The statutory settings in effect were saved for ${schemeCountry(statutory.settings)}, but this legal entity is now in ${le.country_code}. Save settings for ${le.country_code} first (Settings, Payroll).`);
+    }
+    const generic = payrollEngine.isGenericStatutory(statutory.settings);
+    const taxYearFrom = payrollEngine.taxYearStart(r.period_start, statutory.tax_year_start_month);
+    const monthsRemaining = payrollEngine.taxYearMonthsRemaining(r.period_start, statutory.tax_year_start_month);
     const period = monthPeriod(r.period_start.slice(0, 7));
     const items = tx.collection('payroll_items');
     const claimsTable = tx.collection('expense_claims');
@@ -264,7 +271,10 @@ export class PayrollRunsService implements OnModuleInit {
       legal_entity_id: e.current_legal_entity_id as string, location_id: (e.current_location_id ?? null) as string | null, region: (e.current_location_id ? regions.get(e.current_location_id) : null) ?? null,
     }));
     const categoryNames = new Map((await tx.collection('expense_categories').find({})).map((c) => [c.id as string, c.name as string]));
-    const ytdRuns = await tx.collection('payroll_runs').distinct<string>('id', { status: 'finalised', period_start: { $gte: payrollEngine.fyStart(period.start), $lt: period.start } });
+    // Pay and tax so far this tax year. Outside India the year-to-date is per employer (legal entity), as tax is withheld per employer.
+    const ytdRuns = await tx.collection('payroll_runs').distinct<string>('id', {
+      status: 'finalised', period_start: { $gte: taxYearFrom, $lt: period.start }, ...(generic ? { legal_entity_id: r.legal_entity_id } : {}),
+    });
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
     let count = 0;
     for (const p of people) {
@@ -308,8 +318,8 @@ export class PayrollRunsService implements OnModuleInit {
       // Late-coming and same-day leave penalties of the month (Settings, Attendance and Leave).
       const pen = await this.discipline.penaltiesForPayroll(tx, p.id, period.start.slice(0, 7));
       if (pen.waiting.length) warnings.push(`Same-day leave penalties for ${pen.waiting.join(', ')} are not deducted yet: the leave is still waiting for approval.`);
-      const ytdItems = await items.find({ employee_id: p.id, status: 'included', run_id: { $in: ytdRuns } }, { projection: { taxable: 1, tds: 1 } });
-      const ytd = { taxable: total(ytdItems, 'taxable'), tds: total(ytdItems, 'tds') };
+      const ytdItems = await items.find({ employee_id: p.id, status: 'included', run_id: { $in: ytdRuns } }, { projection: { taxable: 1, tds: 1, regional_tax: 1 } });
+      const ytd = { taxable: total(ytdItems, 'taxable'), tds: total(ytdItems, 'tds'), regionalTax: total(ytdItems, 'regional_tax') };
       const input: payrollEngine.PayrollInput = {
         currency: r.currency,
         month: period.month,
@@ -322,18 +332,18 @@ export class PayrollRunsService implements OnModuleInit {
         penalties: pen.penalties.map((x) => ({ label: x.label, basis: x.basis, value: x.value, note: x.note })),
         statutory: statutory.settings,
         apply: { pf: salary.pf_enabled, esi: salary.esi_enabled, pt: salary.pt_enabled, tds: salary.tds_enabled, ptState: p.region?.trim() || null },
-        tax: { monthsRemaining: payrollEngine.fyMonthsRemaining(period.start), ytdTaxable: ytd!.taxable, ytdTds: ytd!.tds },
+        tax: { monthsRemaining, ytdTaxable: ytd.taxable, ytdTds: ytd.tds, ytdRegionalTax: ytd.regionalTax },
       };
       const out = payrollEngine.computePay(input);
       const explanation = [...out.explanation];
       if (prior?.lop_override !== null && prior?.lop_override !== undefined) explanation.splice(1, 0, `Loss-of-pay days set by hand to ${dayCount(Number(toMinor(prior.lop_override)))} (calculated ${dayCount(lop.total)}): ${prior.lop_override_reason}.`);
       else explanation.splice(1, 0, ...lop.notes);
-      const tds = out.lines.find((l) => l.code === 'TDS')?.amount ?? '0.00';
+      const tds = out.incomeTax;
       await items.insert({
         run_id: r.id, employee_id: p.id, salary_id: salary.id, status: held ? 'on_hold' : 'included', hold_reason: held ? (prior?.hold_reason ?? null) : null,
         days_in_period: period.days, employed_days: employed, lop_days: dayCount(lop.total), lop_override: prior?.lop_override ?? null,
         lop_override_reason: prior?.lop_override ? prior.lop_override_reason : null, paid_days: out.paidDays, gross: out.gross, deductions: out.deductions,
-        reimbursements: out.reimbursements, net: out.net, employer_contributions: out.employerContributions, taxable: out.taxableThisMonth, tds,
+        reimbursements: out.reimbursements, net: out.net, employer_contributions: out.employerContributions, taxable: out.taxableThisMonth, tds, regional_tax: out.regionalTax,
         lines: out.lines, explanation, warnings: [...warnings, ...out.warnings],
         inputs: { lop, ytd, salaryId: salary.id, statutorySettingsId: statutory.id, expenseClaimIds: claims.map((c) => c.id), penaltyIds: pen.penalties.map((x) => x.id) },
       });

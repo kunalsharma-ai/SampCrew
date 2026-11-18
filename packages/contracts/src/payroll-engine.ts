@@ -23,9 +23,12 @@
  * - Reimbursements (approved expenses) are paid on top and are not taxable.
  */
 import { applyRate, divRound, formatMoney, fromMinor, max, min, type Minor, prorate, sum, toMinor, toWhole } from './money';
+import { type GenericStatutory, genericEmployerEstimate, genericStatutory, isGenericStatutory, type LineKind, type PayLine, slabTax, type TaxSlab, taxYearMonthsRemaining, taxYearStart } from './payroll-countries';
+
+export { slabTax, isGenericStatutory, taxYearStart, taxYearMonthsRemaining };
+export type { TaxSlab, LineKind, PayLine, GenericStatutory };
 
 export interface Slab { upTo: string | null; amount: string; februaryAmount?: string }
-export interface TaxSlab { upTo: string | null; ratePercent: string }
 
 export interface StatutorySettings {
   pf: { employeeRatePercent: string; employerRatePercent: string; epsRatePercent: string; wageCeiling: string; restrictToCeiling: boolean };
@@ -34,6 +37,12 @@ export interface StatutorySettings {
   pt: { states: Record<string, Slab[]> };
   tds: { regime: 'new'; standardDeduction: string; slabs: TaxSlab[]; rebateLimit: string; cessPercent: string; surchargeThreshold: string };
 }
+
+/** The settings a legal entity saves: India's scheme, or the rules-based scheme every other country uses. */
+export type AnyStatutory = StatutorySettings | GenericStatutory;
+
+/** Month the tax year starts for a scheme (India: April). */
+export const taxYearStartMonthOf = (s: AnyStatutory) => (isGenericStatutory(s) ? s.taxYearStartMonth : 4);
 
 /**
  * Starting values for India. They follow the commonly published figures (EPF 12% with a ₹15,000 wage ceiling,
@@ -75,7 +84,7 @@ export interface SalaryComponent { code: string; name: string; kind: 'earning' |
  * the employer's PF contribution, so the components plus employer PF add up to the CTC. Monthly amounts are
  * whole rupees; the balance line absorbs the rounding.
  */
-export function buildSalary(annualCtc: string, lines: StructureLine[], opts: { pf: boolean; settings: StatutorySettings }): { components: SalaryComponent[]; employerPfMonthly: string; warnings: string[] } {
+export function buildSalary(annualCtc: string, lines: StructureLine[], opts: { pf: boolean; settings: AnyStatutory }): { components: SalaryComponent[]; employerPfMonthly: string; employerInCtc: boolean; warnings: string[] } {
   const ctcMonthly = divRound(toMinor(annualCtc), 12n);
   const warnings: string[] = [];
   const basicLine = lines.find((l) => l.isBasic);
@@ -93,20 +102,34 @@ export function buildSalary(annualCtc: string, lines: StructureLine[], opts: { p
   const out = new Map<string, Minor>();
   for (const l of lines) if (l.calc !== 'balance') out.set(l.code, l.isBasic ? basic : monthlyOf(l, basic));
 
-  const pfWage = opts.settings.pf.restrictToCeiling ? min(basic, toMinor(opts.settings.pf.wageCeiling)) : basic;
-  const employerPf = opts.pf ? toWhole(applyRate(pfWage, opts.settings.pf.employerRatePercent, { percent: true })) : 0n;
+  // India: the CTC includes employer PF. Elsewhere the annual amount is the gross salary, and employer contributions
+  // are paid on top of it (shown as an estimate).
+  const generic = isGenericStatutory(opts.settings);
+  let employerPf = 0n;
+  if (!isGenericStatutory(opts.settings)) {
+    const pf = opts.settings.pf;
+    const pfWage = pf.restrictToCeiling ? min(basic, toMinor(pf.wageCeiling)) : basic;
+    employerPf = opts.pf ? toWhole(applyRate(pfWage, pf.employerRatePercent, { percent: true })) : 0n;
+  }
   const earnings = sum(lines.filter((l) => l.kind === 'earning' && l.calc !== 'balance').map((l) => out.get(l.code)!));
   const balanceLine = lines.find((l) => l.calc === 'balance');
   const rest = ctcMonthly - earnings - employerPf;
+  const what = generic ? 'the annual salary' : 'the CTC';
   if (balanceLine) {
-    if (rest < 0n) throw new Error(`The components add up to more than the CTC by ${formatMoney(-rest * 12n, 'INR').replace('INR ', '')} a year`);
+    if (rest < 0n) throw new Error(`The components add up to more than ${what} by ${formatMoney(-rest * 12n, 'INR').replace('INR ', '')} a year`);
     out.set(balanceLine.code, rest);
   } else if (rest !== 0n) {
-    warnings.push(`Components and employer PF differ from the CTC by ${fromMinor(rest)} a month; add a balance component to absorb it.`);
+    warnings.push(`Components${generic ? '' : ' and employer PF'} differ from ${what} by ${fromMinor(rest)} a month; add a balance component to absorb it.`);
+  }
+  let employerMonthly = employerPf;
+  if (isGenericStatutory(opts.settings)) {
+    const gross = sum(lines.filter((l) => l.kind === 'earning').map((l) => out.get(l.code)!));
+    employerMonthly = genericEmployerEstimate(opts.settings, gross, basic, opts.pf);
   }
   return {
     components: lines.map((l) => ({ code: l.code, name: l.name, kind: l.kind, monthly: fromMinor(out.get(l.code)!), annual: fromMinor(out.get(l.code)! * 12n) })),
-    employerPfMonthly: fromMinor(employerPf),
+    employerPfMonthly: fromMinor(employerMonthly),
+    employerInCtc: !generic,
     warnings,
   };
 }
@@ -131,12 +154,15 @@ export interface PayrollInput {
    * pay at the contracted monthly gross / days in the month. Each one is a deduction line.
    */
   penalties?: { label: string; basis: 'percent' | 'days'; value: string; note?: string }[];
-  statutory: StatutorySettings;
+  /**
+   * India's scheme or a generic one. For a generic scheme the switches mean: pf = enrolled in the contributions
+   * marked "enrolled", tds = income tax, pt = regional tax (ptState = the work location's region), esi = unused.
+   */
+  statutory: AnyStatutory;
   apply: { pf: boolean; esi: boolean; pt: boolean; tds: boolean; ptState: string | null };
-  tax: { monthsRemaining: number; ytdTaxable: string; ytdTds: string };
+  /** ytdTds is income tax already withheld this tax year; ytdRegionalTax only matters for a generic scheme. */
+  tax: { monthsRemaining: number; ytdTaxable: string; ytdTds: string; ytdRegionalTax?: string };
 }
-export type LineKind = 'earning' | 'deduction' | 'employer' | 'reimbursement';
-export interface PayLine { code: string; name: string; kind: LineKind; amount: string; taxable?: boolean; explanation: string }
 export interface PayrollResult {
   paidDays: string;
   lines: PayLine[];
@@ -149,6 +175,9 @@ export interface PayrollResult {
   taxableThisMonth: string;
   projectedAnnualTaxable: string | null;
   annualTax: string | null;
+  /** Income tax withheld this month (TDS in India) and regional tax (generic schemes only). */
+  incomeTax: string;
+  regionalTax: string;
   explanation: string[];
   warnings: string[];
 }
@@ -158,21 +187,6 @@ const halves = (d: string) => {
   if (!/^\d{1,3}(\.\d{1,2})?$/.test(d)) throw new Error(`Invalid day count: ${d}`);
   return toMinor(d); // hundredths of a day, same scale as paise
 };
-
-/** Tax on an annual taxable income, by slabs. */
-export function slabTax(income: Minor, slabs: TaxSlab[]): Minor {
-  let tax = 0n;
-  let lower = 0n;
-  for (const s of slabs) {
-    const upper = s.upTo === null ? null : toMinor(s.upTo);
-    if (income <= lower) break;
-    const top = upper === null ? income : min(income, upper);
-    tax += applyRate(top - lower, s.ratePercent, { percent: true });
-    if (upper === null) break;
-    lower = upper;
-  }
-  return tax;
-}
 
 /** Annual income tax under the new regime, with rebate, marginal relief and cess; rounded to the rupee. */
 export function annualTaxNewRegime(grossTaxable: Minor, t: StatutorySettings['tds']): { taxable: Minor; tax: Minor; notes: string[] } {
@@ -216,6 +230,7 @@ export function computePay(i: PayrollInput): PayrollResult {
 
   const lines: PayLine[] = [];
   let pfWage = 0n;
+  let contractedPfWage = 0n;
   let taxableNow = 0n;
   let taxableRecurring = 0n;
   let contractedGross = 0n;
@@ -224,7 +239,10 @@ export function computePay(i: PayrollInput): PayrollResult {
     if (c.kind === 'earning') {
       contractedGross += monthly;
       const amount = c.prorate ? prorate(monthly, paid, period) : monthly;
-      if (c.pfWage) pfWage += amount;
+      if (c.pfWage) {
+        pfWage += amount;
+        contractedPfWage += monthly;
+      }
       if (c.taxable) {
         taxableNow += amount;
         taxableRecurring += monthly;
@@ -244,62 +262,83 @@ export function computePay(i: PayrollInput): PayrollResult {
   }
   const earned = sum(lines.filter((l) => l.kind === 'earning').map((l) => toMinor(l.amount)));
 
-  // Provident Fund
-  if (i.apply.pf && pfWage > 0n) {
-    const s = i.statutory.pf;
-    const ceiling = toMinor(s.wageCeiling);
-    const base = s.restrictToCeiling ? min(pfWage, ceiling) : pfWage;
-    const employee = toWhole(applyRate(base, s.employeeRatePercent, { percent: true }));
-    const employer = toWhole(applyRate(base, s.employerRatePercent, { percent: true }));
-    const eps = min(employer, toWhole(applyRate(min(base, ceiling), s.epsRatePercent, { percent: true })));
-    const capped = s.restrictToCeiling && pfWage > ceiling ? ` (PF wages ${fmt(pfWage)}, capped at ${fmt(ceiling)})` : '';
-    lines.push({ code: 'PF_EE', name: 'Provident Fund', kind: 'deduction', amount: fromMinor(employee), explanation: `${s.employeeRatePercent}% of ${fmt(base)}${capped}` });
-    lines.push({ code: 'PF_ER_EPS', name: 'Employer pension (EPS)', kind: 'employer', amount: fromMinor(eps), explanation: `${s.epsRatePercent}% of ${fmt(min(base, ceiling))}` });
-    lines.push({ code: 'PF_ER_EPF', name: 'Employer PF (EPF)', kind: 'employer', amount: fromMinor(employer - eps), explanation: `${s.employerRatePercent}% of ${fmt(base)} less the pension share` });
-  }
-
-  // ESI
-  if (i.apply.esi) {
-    const s = i.statutory.esi;
-    const ceiling = toMinor(s.grossCeiling);
-    if (contractedGross <= ceiling) {
-      const employee = toWhole(applyRate(earned, s.employeeRatePercent, { percent: true, rounding: 'up' }), 'up');
-      const employer = toWhole(applyRate(earned, s.employerRatePercent, { percent: true, rounding: 'up' }), 'up');
-      lines.push({ code: 'ESI_EE', name: 'ESI', kind: 'deduction', amount: fromMinor(employee), explanation: `${s.employeeRatePercent}% of ${fmt(earned)}, rounded up` });
-      lines.push({ code: 'ESI_ER', name: 'Employer ESI', kind: 'employer', amount: fromMinor(employer), explanation: `${s.employerRatePercent}% of ${fmt(earned)}, rounded up` });
-    } else {
-      explanation.push(`No ESI: monthly gross ${fmt(contractedGross)} is above ${fmt(ceiling)}.`);
-    }
-  }
-
-  // Professional tax
-  if (i.apply.pt) {
-    const slabs = i.apply.ptState ? i.statutory.pt.states[i.apply.ptState] : undefined;
-    if (!slabs) {
-      warnings.push(i.apply.ptState ? `No professional tax slabs set for ${i.apply.ptState}; none deducted.` : 'The work location has no state set; no professional tax deducted.');
-    } else {
-      const slab = slabs.find((s) => s.upTo === null || earned <= toMinor(s.upTo))!;
-      const amount = i.month === 2 && slab.februaryAmount ? slab.februaryAmount : slab.amount;
-      if (toMinor(amount) > 0n) {
-        lines.push({ code: 'PT', name: 'Professional tax', kind: 'deduction', amount: fromMinor(toMinor(amount)), explanation: `${i.apply.ptState} slab for gross ${fmt(earned)}${i.month === 2 && slab.februaryAmount ? ' (February amount)' : ''}` });
-      }
-    }
-  }
-
-  // Income tax
   let projected: Minor | null = null;
   let annualTax: Minor | null = null;
-  if (i.apply.tds) {
-    const months = BigInt(Math.max(1, i.tax.monthsRemaining));
-    projected = toMinor(i.tax.ytdTaxable) + taxableNow + taxableRecurring * (months - 1n);
-    const t = annualTaxNewRegime(projected, i.statutory.tds);
-    annualTax = t.tax;
-    const remaining = max(0n, t.tax - toMinor(i.tax.ytdTds));
-    const tds = toWhole(divRound(remaining, months));
-    explanation.push(`Projected taxable pay this financial year ${fmt(projected)}; after the standard deduction ${fmt(t.taxable)}; tax with cess ${fmt(t.tax)} (new regime).`, ...t.notes);
-    if (projected > toMinor(i.statutory.tds.surchargeThreshold)) warnings.push('Projected income is above the surcharge threshold; surcharge is not calculated. Review TDS by hand.');
-    if (tds > 0n) {
-      lines.push({ code: 'TDS', name: 'Income tax (TDS)', kind: 'deduction', amount: fromMinor(tds), explanation: `(${fmt(t.tax)} - ${fmt(toMinor(i.tax.ytdTds))} already deducted) / ${months} month(s) left` });
+  let incomeTax = 0n;
+  let regionalTax = 0n;
+  if (isGenericStatutory(i.statutory)) {
+    const g = genericStatutory({
+      settings: i.statutory, currency: cur, earned, contributionWages: pfWage, contractedGross, contractedContributionWages: contractedPfWage,
+      taxableNow, taxableRecurring,
+      apply: { enrolled: i.apply.pf, incomeTax: i.apply.tds, regional: i.apply.pt, region: i.apply.ptState },
+      tax: { monthsRemaining: i.tax.monthsRemaining, ytdTaxable: toMinor(i.tax.ytdTaxable), ytdTax: toMinor(i.tax.ytdTds), ytdRegionalTax: toMinor(i.tax.ytdRegionalTax ?? '0') },
+    });
+    lines.push(...g.lines);
+    explanation.push(...g.explanation);
+    warnings.push(...g.warnings);
+    taxableNow = g.taxableNow;
+    projected = g.projected;
+    annualTax = g.annualTax;
+    incomeTax = g.incomeTax;
+    regionalTax = g.regionalTax;
+  } else {
+    const india = i.statutory;
+    // Provident Fund
+    if (i.apply.pf && pfWage > 0n) {
+      const s = india.pf;
+      const ceiling = toMinor(s.wageCeiling);
+      const base = s.restrictToCeiling ? min(pfWage, ceiling) : pfWage;
+      const employee = toWhole(applyRate(base, s.employeeRatePercent, { percent: true }));
+      const employer = toWhole(applyRate(base, s.employerRatePercent, { percent: true }));
+      const eps = min(employer, toWhole(applyRate(min(base, ceiling), s.epsRatePercent, { percent: true })));
+      const capped = s.restrictToCeiling && pfWage > ceiling ? ` (PF wages ${fmt(pfWage)}, capped at ${fmt(ceiling)})` : '';
+      lines.push({ code: 'PF_EE', name: 'Provident Fund', kind: 'deduction', amount: fromMinor(employee), explanation: `${s.employeeRatePercent}% of ${fmt(base)}${capped}` });
+      lines.push({ code: 'PF_ER_EPS', name: 'Employer pension (EPS)', kind: 'employer', amount: fromMinor(eps), explanation: `${s.epsRatePercent}% of ${fmt(min(base, ceiling))}` });
+      lines.push({ code: 'PF_ER_EPF', name: 'Employer PF (EPF)', kind: 'employer', amount: fromMinor(employer - eps), explanation: `${s.employerRatePercent}% of ${fmt(base)} less the pension share` });
+    }
+
+    // ESI
+    if (i.apply.esi) {
+      const s = india.esi;
+      const ceiling = toMinor(s.grossCeiling);
+      if (contractedGross <= ceiling) {
+        const employee = toWhole(applyRate(earned, s.employeeRatePercent, { percent: true, rounding: 'up' }), 'up');
+        const employer = toWhole(applyRate(earned, s.employerRatePercent, { percent: true, rounding: 'up' }), 'up');
+        lines.push({ code: 'ESI_EE', name: 'ESI', kind: 'deduction', amount: fromMinor(employee), explanation: `${s.employeeRatePercent}% of ${fmt(earned)}, rounded up` });
+        lines.push({ code: 'ESI_ER', name: 'Employer ESI', kind: 'employer', amount: fromMinor(employer), explanation: `${s.employerRatePercent}% of ${fmt(earned)}, rounded up` });
+      } else {
+        explanation.push(`No ESI: monthly gross ${fmt(contractedGross)} is above ${fmt(ceiling)}.`);
+      }
+    }
+
+    // Professional tax
+    if (i.apply.pt) {
+      const slabs = i.apply.ptState ? india.pt.states[i.apply.ptState] : undefined;
+      if (!slabs) {
+        warnings.push(i.apply.ptState ? `No professional tax slabs set for ${i.apply.ptState}; none deducted.` : 'The work location has no state set; no professional tax deducted.');
+      } else {
+        const slab = slabs.find((s) => s.upTo === null || earned <= toMinor(s.upTo))!;
+        const amount = i.month === 2 && slab.februaryAmount ? slab.februaryAmount : slab.amount;
+        if (toMinor(amount) > 0n) {
+          lines.push({ code: 'PT', name: 'Professional tax', kind: 'deduction', amount: fromMinor(toMinor(amount)), explanation: `${i.apply.ptState} slab for gross ${fmt(earned)}${i.month === 2 && slab.februaryAmount ? ' (February amount)' : ''}` });
+        }
+      }
+    }
+
+    // Income tax
+    if (i.apply.tds) {
+      const months = BigInt(Math.max(1, i.tax.monthsRemaining));
+      projected = toMinor(i.tax.ytdTaxable) + taxableNow + taxableRecurring * (months - 1n);
+      const t = annualTaxNewRegime(projected, india.tds);
+      annualTax = t.tax;
+      const remaining = max(0n, t.tax - toMinor(i.tax.ytdTds));
+      const tds = toWhole(divRound(remaining, months));
+      explanation.push(`Projected taxable pay this financial year ${fmt(projected)}; after the standard deduction ${fmt(t.taxable)}; tax with cess ${fmt(t.tax)} (new regime).`, ...t.notes);
+      if (projected > toMinor(india.tds.surchargeThreshold)) warnings.push('Projected income is above the surcharge threshold; surcharge is not calculated. Review TDS by hand.');
+      incomeTax = tds;
+      if (tds > 0n) {
+        lines.push({ code: 'TDS', name: 'Income tax (TDS)', kind: 'deduction', amount: fromMinor(tds), explanation: `(${fmt(t.tax)} - ${fmt(toMinor(i.tax.ytdTds))} already deducted) / ${months} month(s) left` });
+      }
     }
   }
 
@@ -343,19 +382,14 @@ export function computePay(i: PayrollInput): PayrollResult {
     taxableThisMonth: fromMinor(taxableNow),
     projectedAnnualTaxable: projected === null ? null : fromMinor(projected),
     annualTax: annualTax === null ? null : fromMinor(annualTax),
+    incomeTax: fromMinor(incomeTax),
+    regionalTax: fromMinor(regionalTax),
     explanation,
     warnings,
   };
 }
 
-/** Financial year (April to March) helpers for India. */
-export const fyStart = (date: string) => {
-  const y = Number(date.slice(0, 4));
-  const m = Number(date.slice(5, 7));
-  return `${m >= 4 ? y : y - 1}-04-01`;
-};
+/** Financial year (April to March) helpers for India. Other countries use taxYearStart / taxYearMonthsRemaining. */
+export const fyStart = (date: string) => taxYearStart(date, 4);
 /** Months left in the financial year including the month of `date` (April = 12, March = 1). */
-export const fyMonthsRemaining = (date: string) => {
-  const m = Number(date.slice(5, 7));
-  return m >= 4 ? 16 - m : 4 - m;
-};
+export const fyMonthsRemaining = (date: string) => taxYearMonthsRemaining(date, 4);

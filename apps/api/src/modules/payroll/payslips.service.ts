@@ -62,20 +62,27 @@ export class PayslipsService {
           designation: des?.name ?? null, department: dep?.name ?? null, location: loc?.name ?? null,
           daysInPeriod: item.days_in_period, employedDays: item.employed_days, lopDays: item.lop_override ?? item.lop_days, paidDays: item.paid_days,
           gross: item.gross, deductions: item.deductions, reimbursements: item.reimbursements, net: item.net, employerContributions: item.employer_contributions,
-          taxable: item.taxable, tds: item.tds, lines: item.lines, explanation: item.explanation,
+          taxable: item.taxable, tds: item.tds, regionalTax: item.regional_tax ?? '0.00', lines: item.lines, explanation: item.explanation,
+          legal_entity_id: run.legal_entity_id, statutory_settings_id: run.statutory_settings_id ?? null, countryCode: le?.country_code ?? null,
         };
       }
       if (!p) throw Errors.notFound('Payslip');
       const e = await payrollEmployee(tx, p.employee_id);
       await this.authz.require('payslips:read', attrsOf(e), tx);
-      const ytdRuns = await tx.collection('payroll_runs').distinct<string>('id', { status: 'finalised', period_start: { $gte: payrollEngine.fyStart(p.period_start), $lte: p.period_start } });
-      const ytdItems = await tx.collection('payroll_items').find({ employee_id: p.employee_id, status: 'included', run_id: { $in: ytdRuns } }, { projection: { gross: 1, tds: 1, net: 1 } });
-      const total = (f: string) => money.fromMinor(ytdItems.reduce((acc, i) => acc + money.toMinor(i[f] as string), 0n));
-      const ytd = { gross: total('gross'), tds: total('tds'), net: total('net') };
+      // The tax year of the settings the run used (India: April; elsewhere the country's tax year), per employer outside India.
+      const st = p.statutory_settings_id ? await tx.collection('statutory_settings').findOne({ id: p.statutory_settings_id }) : undefined;
+      const generic = Boolean(st && payrollEngine.isGenericStatutory(st.settings));
+      const yearFrom = payrollEngine.taxYearStart(p.period_start, st ? payrollEngine.taxYearStartMonthOf(st.settings) : 4);
+      const ytdRuns = await tx.collection('payroll_runs').distinct<string>('id', {
+        status: 'finalised', period_start: { $gte: yearFrom, $lte: p.period_start }, ...(generic ? { legal_entity_id: p.legal_entity_id } : {}),
+      });
+      const ytdItems = await tx.collection('payroll_items').find({ employee_id: p.employee_id, status: 'included', run_id: { $in: ytdRuns } }, { projection: { gross: 1, tds: 1, net: 1, regional_tax: 1 } });
+      const total = (f: string) => money.fromMinor(ytdItems.reduce((acc, i) => acc + money.toMinor(String(i[f] ?? '0')), 0n));
+      const ytd = { gross: total('gross'), tds: total('tds'), regionalTax: total('regional_tax'), net: total('net') };
       const s = await this.authz.subject(tx);
       if (s.employeeId !== p.employee_id) await this.audit.record(tx, { action: 'payslip.viewed', resourceType: 'employee', resourceId: p.employee_id, metadata: { payslipId: id } });
-      const { employee_id, period_start, ...rest } = p;
-      return { ...rest, employeeId: employee_id, periodStart: period_start, yearToDate: { financialYearFrom: payrollEngine.fyStart(period_start), ...ytd } };
+      const { employee_id, period_start, legal_entity_id: _le, statutory_settings_id: _st, ...rest } = p;
+      return { ...rest, employeeId: employee_id, periodStart: period_start, incomeTaxName: generic ? 'Income tax' : 'Income tax (TDS)', yearToDate: { financialYearFrom: yearFrom, ...ytd } };
     });
   }
 }
