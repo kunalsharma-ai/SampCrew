@@ -21,12 +21,14 @@ export default function Leave() {
   useReloadOnFocus(reload);
   useReloadOnFocus(reloadCal);
   const marks = new Map<string, DayMark[]>();
-  for (const r of cal?.requests ?? []) {
+  // Only the month on screen: while the next month loads, the previous month's leave is not drawn on it.
+  const shown = cal && cal.from.slice(0, 7) === month ? cal : null;
+  for (const r of shown?.requests ?? []) {
     for (let d = r.startDate; d <= r.endDate; d = new Date(Date.parse(`${d}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)) {
       marks.set(d, [...(marks.get(d) ?? []), { color: /^#[0-9a-fA-F]{6}$/.test(r.color) ? r.color : '#4f46e5', pending: r.status === 'pending', label: `${r.leaveTypeName} ${r.status}` }]);
     }
   }
-  const holidays = new Map((cal?.holidays ?? []).map((h) => [h.date, { name: h.name, optional: h.optional }]));
+  const holidays = new Map((shown?.holidays ?? []).map((h) => [h.date, { name: h.name, optional: h.optional }]));
   const today = new Date().toISOString().slice(0, 10);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
 

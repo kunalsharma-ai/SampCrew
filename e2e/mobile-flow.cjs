@@ -225,8 +225,7 @@ function futureWeekday(taken) {
     // The leave calendar on the Leave tab marks the day as waiting for approval.
     const cal = p.getByTestId('leave-calendar');
     for (let i = 0; i < 24 && !(await cal.getByTestId(`day-${day}`).count()); i++) await cal.getByRole('button', { name: 'Next month' }).click();
-    const label = await cal.getByTestId(`day-${day}`).getAttribute('aria-label');
-    assert(/pending/.test(label ?? ''), `the leave calendar does not mark ${day} as pending: ${label}`);
+    await cal.locator(`[data-testid="day-${day}"][aria-label*="pending"]`).waitFor({ timeout: 15000 });
     ok(`applied for casual leave on ${day} picked on a calendar, with a preview, told who approves it, and marked on the leave calendar`);
 
     const mgr = await phone(b, 'plant.head');

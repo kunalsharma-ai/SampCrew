@@ -75,7 +75,8 @@ export function MonthCalendar({
             const inSel = !!selected && date >= selected.start && date <= selected.end;
             const edge = !!selected && (date === selected.start || date === selected.end);
             const disabled = !onSelect || (!!min && date < min);
-            const label = [date, off ? 'weekly off' : null, hol ? hol.name : null, ...dayMarks.map((x) => x.label), inSel ? 'selected' : null].filter(Boolean).join(', ');
+            // The spoken name starts with the day number the cell shows.
+            const label = [new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }), off ? 'weekly off' : null, hol ? hol.name : null, ...dayMarks.map((x) => x.label), inSel ? 'selected' : null].filter(Boolean).join(', ');
             return (
               <Pressable
                 key={date}

@@ -5,7 +5,8 @@ import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
 import type { LeaveBalance, LeaveCalendarData, LeaveRequest, Me } from '@/lib/types';
 import { BalanceCards } from '../employees/[id]/tabs';
-import { LeaveCalendar, monthRange } from './leave-calendar';
+import { LeaveCalendar } from './leave-calendar';
+import { monthRange } from './month';
 import { AddDefaultLeaveTypes, ApplyLeave, MyRequests, TeamAway } from './leave-view';
 
 export const metadata: Metadata = { title: 'Leave' };

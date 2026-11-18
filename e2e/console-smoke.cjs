@@ -115,11 +115,20 @@ const watch = (p) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
     const owner = await ctx.newPage();
     watch(owner);
-    await owner.goto(`${WEB}/login`);
-    await owner.fill('input[name=email]', ownerEmail2);
-    await owner.fill('input[name=password]', 'Temp-Owner-Pass-2026');
-    await owner.click('button[type=submit]');
-    await owner.getByText('Choose your password').first().waitFor({ timeout: 15000 });
+    // Sign-in is rate limited per address and this run has signed in many times already: wait and retry.
+    for (let attempt = 0; ; attempt++) {
+      await owner.goto(`${WEB}/login`);
+      await owner.fill('input[name=email]', ownerEmail2);
+      await owner.fill('input[name=password]', 'Temp-Owner-Pass-2026');
+      await owner.click('button[type=submit]');
+      const r = await Promise.race([
+        owner.getByText('Choose your password').first().waitFor({ timeout: 15000 }).then(() => 'in'),
+        owner.getByText('Too many requests').first().waitFor({ timeout: 15000 }).then(() => 'limited'),
+      ]);
+      if (r === 'in') break;
+      if (attempt >= 4) throw new Error('owner sign-in stayed rate limited');
+      await owner.waitForTimeout(20000);
+    }
     await owner.fill('input[name=newPassword]', 'Pat-Own-Password-2026');
     await owner.fill('input[name=confirmPassword]', 'Pat-Own-Password-2026');
     await owner.click('button[type=submit]');

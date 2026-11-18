@@ -125,8 +125,7 @@ function leaveDay() {
   // The page says who it went to, the request row too, and the calendar marks the day as waiting.
   await joiner.getByTestId('leave-sent').getByText(/waiting for approval from \S/).waitFor();
   await joiner.getByTestId('leave-waiting-on').first().waitFor();
-  const cell = await joiner.getByTestId('leave-calendar').locator(`[data-date="${day}"]`).getAttribute('aria-label');
-  if (!/Casual leave pending/.test(cell ?? '')) throw new Error(`the leave calendar does not show the pending leave: ${cell}`);
+  await joiner.getByTestId('leave-calendar').locator(`[data-date="${day}"] [data-day-text]`, { hasText: 'Casual leave pending' }).waitFor({ state: 'attached' });
   ok(`leave requested for ${day} from the leave calendar with preview; told who approves it`);
 
   // 4. The supervisor approves it.
