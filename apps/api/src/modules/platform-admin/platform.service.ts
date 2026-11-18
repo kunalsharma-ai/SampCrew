@@ -12,6 +12,8 @@ import { countBy, ilike, MongoService as DatabaseService, type PlatformTx } from
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
 import { PlatformIntegrationsService } from '../../platform/integrations/platform-integrations.service';
+import { MailerService } from '../../platform/notify/mailer.service';
+import { NotificationService } from '../../platform/notify/notification.service';
 import { decodeCursor, page } from '../../platform/http/pagination';
 
 /**
@@ -27,6 +29,8 @@ export class PlatformService {
     private readonly outbox: OutboxService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly integrations: PlatformIntegrationsService,
+    private readonly notifications: NotificationService,
+    private readonly mailer: MailerService,
   ) {}
 
   async metrics() {
@@ -144,8 +148,17 @@ export class PlatformService {
     });
   }
 
+  /**
+   * Sales-assisted onboarding. The owner gets in one of two ways: an invitation email with a link to choose their
+   * own password, or a temporary password set here that they replace at their first sign-in. When email delivery
+   * is not connected the invitation link is returned to the console so SAMPLEDGE can hand it over; without it the
+   * owner would have no way to set a password at all.
+   */
   async createTenant(input: z.infer<typeof platformCreateTenantRequest>) {
     const token = randomToken(32);
+    const temporary = input.ownerAccess === 'password' && input.ownerPassword ? await hashPassword(input.ownerPassword) : null;
+    const mailReady = await this.mailer.isConfigured();
+    const web = this.config.WEB_PUBLIC_URL;
     return this.db.platform(async (tx) => {
       try {
         const t = await mongo.provisionTenantMongo(tx, {
@@ -154,22 +167,41 @@ export class PlatformService {
           countryCode: input.countryCode,
           currency: input.currency,
           timezone: input.timezone,
-          owner: { email: input.ownerEmail, fullName: input.ownerName, passwordHash: null },
+          owner: { email: input.ownerEmail, fullName: input.ownerName, passwordHash: temporary, mustChangePassword: true },
           plan: { key: input.planKey, seats: input.seats, billingCycle: 'annual', trialDays: input.trialDays },
         });
-        if (!t.existingUser) {
+        const footer = 'SampCrew by SAMPLEDGE. You received this because SAMPLEDGE set up a SampCrew workspace for your company.';
+        let ownerInviteUrl: string | undefined;
+        if (t.existingUser) {
+          // An existing account keeps its own password; nobody else can set it.
+          await this.notifications.queueEmail(tx, t.tenantId, input.ownerEmail, `${input.companyName} is ready on SampCrew`,
+            `SAMPLEDGE set up the ${input.companyName} workspace on SampCrew with you as its owner.\n\nSign in at ${web}/login with your existing SampCrew password and choose ${input.companyName}.`, 'workspace_ready', footer);
+        } else if (temporary) {
+          // The password itself is never emailed: SAMPLEDGE hands it over.
+          await this.notifications.queueEmail(tx, t.tenantId, input.ownerEmail, `${input.companyName} is ready on SampCrew`,
+            `SAMPLEDGE set up the ${input.companyName} workspace on SampCrew with you as its owner.\n\nSign in at ${web}/login with this email and the temporary password SAMPLEDGE gave you. You will choose your own password the first time you sign in.`, 'workspace_ready', footer);
+        } else {
           await tx.collection('invitations').insert({
             tenant_id: t.tenantId, membership_id: t.ownerMembershipId, email: input.ownerEmail, token_hash: sha256(token), expires_at: new Date(Date.now() + 7 * DAY),
           });
+          const url = `${web}/accept-invite?token=${token}`;
+          await this.notifications.queueEmail(tx, t.tenantId, input.ownerEmail, `Set your password for ${input.companyName} on SampCrew`,
+            `SAMPLEDGE set up the ${input.companyName} workspace on SampCrew with you as its owner.\n\nSet your password and sign in: ${url}\n\nThe link expires in 7 days.`, 'invitation', footer);
+          // Shown to the console when the email cannot go out (no SMTP yet) or outside production.
+          if (!mailReady || !this.config.isProductionLike) ownerInviteUrl = url;
         }
         await this.audit.record(tx, { tenantId: t.tenantId, action: 'tenant.created', resourceType: 'tenant', resourceId: t.tenantId, metadata: { via: 'platform_console', plan: input.planKey } });
-        await this.audit.record(tx, { tenantId: null, action: 'platform.tenant_created', resourceType: 'tenant', resourceId: t.tenantId, metadata: { slug: input.slug, plan: input.planKey } });
+        await this.audit.record(tx, {
+          tenantId: null, action: 'platform.tenant_created', resourceType: 'tenant', resourceId: t.tenantId,
+          metadata: { slug: input.slug, plan: input.planKey, ownerAccess: t.existingUser ? 'existing_account' : temporary ? 'temporary_password' : 'invitation' },
+        });
         await this.outbox.publish(tx, t.tenantId, 'tenant.created', { tenantId: t.tenantId });
-        const isLocal = process.env.CREW_ENV !== 'production' && process.env.CREW_ENV !== 'staging';
         return {
           tenantId: t.tenantId,
-          ownerInviteUrl: !t.existingUser && isLocal ? `${process.env.WEB_PUBLIC_URL ?? 'http://localhost:3000'}/accept-invite?token=${token}` : undefined,
+          ownerInviteUrl,
           ownerAlreadyHadAccount: t.existingUser,
+          ownerAccess: t.existingUser ? ('existing_account' as const) : temporary ? ('temporary_password' as const) : ('invitation' as const),
+          emailDelivery: mailReady ? ('queued' as const) : ('not_configured' as const),
         };
       } catch (e) {
         if (e instanceof mongo.SlugTakenError) throw Errors.conflict('slug_taken', e.message);

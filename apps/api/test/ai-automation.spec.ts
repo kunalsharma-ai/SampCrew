@@ -318,7 +318,8 @@ describe('AI copilots, Automation Studio and insights', () => {
       people.nia = newbie;
       await hire('nia', 'Nia', { departmentId: ops, managerEmployeeId: people.manager.employeeId });
       await hire('none', 'Quinn', { departmentId: null });
-      await outbox.dispatchOnce();
+      // The outbox is shared with the other test files running at the same time: drain it, not just one batch of 50.
+      while (await outbox.dispatchOnce());
       const runs = await pool.find('workflow_runs', { workflow_id: ids.wf, mode: 'live' }, { sort: { created_at: 1 } });
       expect(runs).toHaveLength(2);
       ids.run = runs.find((r) => r.context['employee.name'] === 'Nia Test')!.id;

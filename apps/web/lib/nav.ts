@@ -10,6 +10,8 @@ export interface NavItem {
   beyondOwn?: boolean;
   /** Visible when the plan includes this feature. */
   feature?: string;
+  /** Hidden when the user holds this permission (for example Ask HR is hidden from the HR team, who answer it). */
+  hiddenWith?: string;
   /** Shown to billing admins when the plan lacks the feature: the link opens Plan & billing to upgrade. */
   locked?: boolean;
 }
@@ -31,7 +33,8 @@ export const NAV: NavGroup[] = [
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks', feature: 'onboarding' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
-      { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'helpdesk' },
+      { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'helpdesk', hiddenWith: 'helpdesk:manage' },
+      { href: '/helpdesk/queue', label: 'HR helpdesk', icon: 'headset', permission: 'helpdesk:manage', feature: 'helpdesk' },
     ],
   },
   {
@@ -106,7 +109,6 @@ export const NAV: NavGroup[] = [
       { href: '/surveys', label: 'Surveys', icon: 'clipboard-list', permission: 'surveys:respond', feature: 'engagement' },
       { href: '/surveys/manage', label: 'Survey results', icon: 'chart', permission: 'engagement:manage', feature: 'engagement' },
       { href: '/announcements/manage', label: 'Manage announcements', icon: 'megaphone', permission: 'announcements:manage', feature: 'announcements' },
-      { href: '/helpdesk/queue', label: 'HR helpdesk queue', icon: 'headset', permission: 'helpdesk:manage', feature: 'helpdesk' },
       { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'helpdesk' },
     ],
   },
@@ -164,7 +166,7 @@ export function quickActions(me: Me): QuickAction[] {
   if (has('leave:request', 'leave')) out.push({ key: 'leave', label: 'Request time off', href: '/leave?create=leave', icon: 'calendar', keywords: 'leave holiday vacation apply' });
   if (has('performance:read', 'performance')) out.push({ key: 'goal', label: 'Set a goal', href: '/goals?create=goal', icon: 'target', keywords: 'okr objective' });
   if (has('expenses:submit', 'expenses')) out.push({ key: 'expense', label: 'Claim an expense', href: '/expenses', icon: 'receipt', keywords: 'reimbursement receipt' });
-  if (has('helpdesk:use', 'helpdesk')) out.push({ key: 'ask', label: 'Ask HR a question', href: '/helpdesk', icon: 'life-buoy', keywords: 'helpdesk case ticket' });
+  if (has('helpdesk:use', 'helpdesk') && !me.permissions['helpdesk:manage']) out.push({ key: 'ask', label: 'Ask HR a question', href: '/helpdesk', icon: 'life-buoy', keywords: 'helpdesk case ticket' });
   return out;
 }
 
@@ -193,7 +195,8 @@ export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: st
 }
 
 export function visibleNav(me: Me): NavGroup[] {
-  const allowed = (i: NavItem) => !i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'));
+  const allowed = (i: NavItem) =>
+    (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && !(i.hiddenWith && me.permissions[i.hiddenWith]);
   // A billing admin also sees each module the plan lacks once, with a lock, so they know it exists and can upgrade.
   const upsell = me.permissions['billing:manage'] ? new Set<string>() : null;
   return NAV.map((g) => ({

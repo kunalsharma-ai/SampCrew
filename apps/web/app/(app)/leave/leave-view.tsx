@@ -6,13 +6,17 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import type { LeaveBalance, LeaveRequest } from '@/lib/types';
 import { RequestsTable } from '../employees/[id]/tabs';
-import { cancelLeaveAction, type Preview, previewLeaveAction, requestLeaveAction } from './actions';
+import { addDefaultLeaveTypesAction, cancelLeaveAction, type Preview, previewLeaveAction, requestLeaveAction } from './actions';
 
 export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
   const router = useRouter();
-  const [open, setOpen] = useCreateParam('leave');
+  const [open, setOpen, prefill] = useCreateParam('leave', ['date']);
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({ leaveTypeId: balances[0]?.leaveTypeId ?? '', startDate: today, endDate: today, startHalf: 'full', endHalf: 'full', reason: '' });
+  // A day chosen on the leave calendar starts the request on that day.
+  useEffect(() => {
+    if (prefill.date && /^\d{4}-\d{2}-\d{2}$/.test(prefill.date)) setForm((f) => ({ ...f, startDate: prefill.date!, endDate: prefill.date! }));
+  }, [prefill.date]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +65,12 @@ export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
             setError(null);
             start(async () => {
               const r = await requestLeaveAction(body());
-              if (r.ok) { setOpen(false); router.refresh(); } else setError(r.message);
+              if (r.ok) {
+                setOpen(false);
+                // The page then says who the request went to.
+                router.push(`/leave?sent=${(r.data as { id: string }).id}&month=${form.startDate.slice(0, 7)}`, { scroll: false });
+                router.refresh();
+              } else setError(r.message);
             });
           }}
         >
@@ -148,5 +157,19 @@ export function TeamAway({ rows }: { rows: LeaveRequest[] }) {
         </Table>
       ) : <EmptyState title="Nobody is away" />}
     </Card>
+  );
+}
+
+export function AddDefaultLeaveTypes() {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      {error && <span className="mb-2 block text-danger">{error}</span>}
+      <Button size="sm" loading={pending} onClick={() => start(async () => { const r = await addDefaultLeaveTypesAction(); if (r.ok) router.refresh(); else setError(r.message); })}>
+        Add standard leave types
+      </Button>
+    </>
   );
 }

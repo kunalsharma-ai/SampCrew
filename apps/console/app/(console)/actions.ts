@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { act, api } from '@/lib/api';
 
 export async function createTenantAction(body: Record<string, unknown>) {
-  const r = await act(() => api<{ tenantId: string; ownerInviteUrl?: string; ownerAlreadyHadAccount: boolean }>('/platform/tenants', { method: 'POST', body }));
+  const r = await act(() => api<{ tenantId: string; ownerInviteUrl?: string; ownerAlreadyHadAccount: boolean; ownerAccess: 'invitation' | 'temporary_password' | 'existing_account'; emailDelivery: 'queued' | 'not_configured' }>('/platform/tenants', { method: 'POST', body }));
   revalidatePath('/tenants');
   return r;
 }

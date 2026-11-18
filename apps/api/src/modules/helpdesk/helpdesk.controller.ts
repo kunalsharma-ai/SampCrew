@@ -25,7 +25,8 @@ import { HelpdeskService } from './helpdesk.service';
 
 const caseQuery = z.object({
   view: z.enum(['mine', 'queue']).default('mine'),
-  status: z.enum(['active', ...CASE_STATUSES]).optional(),
+  /** active (the default) leaves out closed cases; all includes them. */
+  status: z.enum(['active', 'all', ...CASE_STATUSES]).optional(),
   assigned: z.enum(['me', 'unassigned', 'all']).optional(),
   q: z.string().trim().max(80).optional(),
 });

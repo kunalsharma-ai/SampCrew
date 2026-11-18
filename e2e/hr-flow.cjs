@@ -110,17 +110,23 @@ function leaveDay() {
 
   // 3. Apply for leave with a live preview.
   const day = leaveDay();
-  await joiner.goto(BASE + '/leave');
-  await joiner.click('text=Apply for leave');
+  // Started from the day on the leave calendar.
+  await joiner.goto(BASE + `/leave?month=${day.slice(0, 7)}`);
+  await joiner.getByTestId('leave-calendar').locator(`button[data-date="${day}"]`).click();
+  await joiner.waitForSelector('dialog[open]');
+  if ((await joiner.inputValue('dialog input[name=startDate]')) !== day) throw new Error('the calendar day did not start the request on that day');
   const cl = await joiner.$eval('dialog select[name=leaveTypeId]', (s) => [...s.options].find((o) => o.text.startsWith('Casual leave'))?.value);
   await joiner.selectOption('dialog select[name=leaveTypeId]', cl);
-  await joiner.fill('dialog input[name=startDate]', day);
   await joiner.fill('dialog input[name=endDate]', day);
   await joiner.fill('dialog textarea[name=reason]', 'Browser test');
   await joiner.waitForSelector('dialog >> text=/1\\.00 working day/', { timeout: 10000 });
   await joiner.click('dialog >> text=Submit request');
   await joiner.waitForSelector('td >> text=Pending', { timeout: 10000 });
-  ok(`leave requested for ${day} with preview`);
+  // The page says who it went to, the request row too, and the calendar marks the day as waiting.
+  await joiner.getByTestId('leave-sent').getByText(/waiting for approval from \S/).waitFor();
+  await joiner.getByTestId('leave-waiting-on').first().waitFor();
+  await joiner.getByTestId('leave-calendar').locator(`[data-date="${day}"] [data-day-text]`, { hasText: 'Casual leave pending' }).waitFor({ state: 'attached' });
+  ok(`leave requested for ${day} from the leave calendar with preview; told who approves it`);
 
   // 4. The supervisor approves it.
   const sup = await signIn(b, 'supervisor@demo.crew.local');

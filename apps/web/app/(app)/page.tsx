@@ -23,7 +23,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     loadOptional<Dashboard>('/dashboard'),
     loadOptional<MemberPreferences>('/me/preferences'),
     hasAnnouncements && can(me, 'announcements:read') ? loadOptional<Announcement[]>('/announcements') : null,
-    hasHelpdesk && can(me, 'helpdesk:use') ? loadOptional<Summary>('/helpdesk/summary') : null,
+    hasHelpdesk && (can(me, 'helpdesk:use') || can(me, 'helpdesk:manage')) ? loadOptional<Summary>('/helpdesk/summary') : null,
   ]);
   const isAdmin = can(me, 'org:manage') || can(me, 'users:invite');
 

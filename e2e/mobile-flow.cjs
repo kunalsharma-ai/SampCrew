@@ -205,15 +205,28 @@ function futureWeekday(taken) {
     await p.getByRole('radio', { name: /^Casual leave/ }).click();
     const mine = await api(qa, 'GET', '/leave/requests');
     const day = futureWeekday(new Set(mine.filter((r) => r.status !== 'cancelled' && r.status !== 'rejected').map((r) => r.startDate)));
-    await p.getByLabel('From (YYYY-MM-DD)').fill(day);
-    await p.getByLabel('To (YYYY-MM-DD)').fill(day);
+    // Dates are picked on a calendar, not typed.
+    const pickDay = async (field, date) => {
+      await p.getByTestId(field).click();
+      const cal = p.getByTestId(`${field}-calendar`);
+      for (let i = 0; i < 24 && !(await cal.getByTestId(`day-${date}`).count()); i++) await cal.getByRole('button', { name: 'Next month' }).click();
+      await cal.getByTestId(`day-${date}`).click();
+    };
+    await pickDay('leave-start', day);
+    await pickDay('leave-end', day);
     const reason = `Mobile e2e ${Date.now()}: family visit`;
     await p.getByLabel('Reason (optional)').fill(reason);
     await p.getByTestId('leave-preview').waitFor();
     await p.getByTestId('send-leave').click();
+    await p.getByTestId('leave-sent').getByText(/waiting for approval from \S/).waitFor();
+    await p.getByTestId('leave-sent-done').click();
     await p.getByTestId('leave-requests').getByText(reason, { exact: false }).waitFor();
     await p.getByTestId('leave-requests').getByText('Waiting for approval').first().waitFor();
-    ok(`applied for casual leave on ${day} with a preview of working days`);
+    // The leave calendar on the Leave tab marks the day as waiting for approval.
+    const cal = p.getByTestId('leave-calendar');
+    for (let i = 0; i < 24 && !(await cal.getByTestId(`day-${day}`).count()); i++) await cal.getByRole('button', { name: 'Next month' }).click();
+    await cal.locator(`[data-testid="day-${day}"][aria-label*="pending"]`).waitFor({ timeout: 15000 });
+    ok(`applied for casual leave on ${day} picked on a calendar, with a preview, told who approves it, and marked on the leave calendar`);
 
     const mgr = await phone(b, 'plant.head');
     await signIn(mgr.p, 'plant.head@demo.crew.local');

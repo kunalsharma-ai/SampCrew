@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { LIMIT_KEYS } from '../features';
 import { planKey } from './billing';
+import { password } from './auth';
 import { email, name, slug } from './common';
 
 export const platformLoginRequest = z.object({
@@ -25,7 +26,14 @@ export const platformCreateTenantRequest = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/),
   timezone: z.string().min(1),
   trialDays: z.number().int().min(0).max(90).default(14),
-});
+  /**
+   * How the owner gets in: an emailed invitation where they choose their own password (the default), or a temporary
+   * password set here that SAMPLEDGE hands over and the owner replaces at their first sign-in.
+   */
+  ownerAccess: z.enum(['invite', 'password']).default('invite'),
+  ownerPassword: password.optional(),
+}).refine((v) => v.ownerAccess !== 'password' || !!v.ownerPassword, { message: 'Set a temporary password for the owner', path: ['ownerPassword'] })
+  .refine((v) => !v.ownerPassword || v.ownerAccess === 'password', { message: 'A password is only used when you set it now', path: ['ownerPassword'] });
 
 export const supportAccessRequest = z.object({
   reason: z.string().trim().min(10).max(500),

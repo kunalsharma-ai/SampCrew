@@ -40,7 +40,7 @@ export function QueueView({ cases, categories, filters }: { cases: CaseRow[]; ca
           </Field>
           <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); go({ q }); }}>
             <Field label="Search">{(p) => <Input {...p} value={q} onChange={(e) => setQ(e.target.value)} placeholder="HR-0042, subject or name" />}</Field>
-            <Button type="submit" variant="secondary"><Search className="size-3.5" /></Button>
+            <Button type="submit" variant="secondary" aria-label="Search cases"><Search className="size-3.5" aria-hidden /></Button>
           </form>
           <Button className="ml-auto" variant="secondary" onClick={() => setLogging(true)}>Log a case for someone</Button>
         </CardBody>

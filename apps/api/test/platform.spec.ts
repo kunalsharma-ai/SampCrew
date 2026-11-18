@@ -62,6 +62,47 @@ describe('SAMPLEDGE Super Admin Console API', () => {
     expect(tenant!.region).toBe('me');
   });
 
+  it('emails the owner invitation, and returns the link while email is not connected', async () => {
+    const slug = `invite-${Date.now()}`;
+    const res = await api(app, token).post('/platform/tenants').send({
+      companyName: 'Invite Co', slug, ownerEmail: `boss@${slug}.test`, ownerName: 'Boss', planKey: 'business', seats: 20, countryCode: 'IN', currency: 'INR', timezone: 'Asia/Kolkata', trialDays: 0,
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.ownerAccess).toBe('invitation');
+    expect(res.body.ownerInviteUrl).toContain('/accept-invite?token=');
+    const mail = await pool.one('email_messages', { to_email: `boss@${slug}.test`, template: 'invitation' });
+    expect(mail?.text_body).toContain(res.body.ownerInviteUrl);
+    // The new workspace starts with the standard leave types, so its employees can apply for leave straight away.
+    expect((await pool.find('leave_types', { tenant_id: res.body.tenantId })).map((x) => x.code).sort()).toEqual(['CL', 'EL', 'LWP', 'SL']);
+  });
+
+  it('creates a tenant whose owner gets a temporary password to replace at first sign-in', async () => {
+    const slug = `pw-${Date.now()}`;
+    const email = `owner@${slug}.test`;
+    const base = { companyName: 'Password Co', slug, ownerEmail: email, ownerName: 'Pat Owner', planKey: 'business', seats: 20, countryCode: 'IN', currency: 'INR', timezone: 'Asia/Kolkata', trialDays: 14 };
+    const missing = await api(app, token).post('/platform/tenants').send({ ...base, ownerAccess: 'password' });
+    expect(missing.status).toBe(422);
+    const weak = await api(app, token).post('/platform/tenants').send({ ...base, ownerAccess: 'password', ownerPassword: 'short' });
+    expect(weak.status).toBe(422);
+    const res = await api(app, token).post('/platform/tenants').send({ ...base, ownerAccess: 'password', ownerPassword: 'Temp-Owner-Pass-2026' });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.ownerAccess).toBe('temporary_password');
+    expect(res.body.ownerInviteUrl).toBeUndefined();
+    expect(await pool.one('invitations', { email })).toBeFalsy();
+    const m = await pool.one('memberships', { tenant_id: res.body.tenantId });
+    expect(m?.status).toBe('active');
+    const mail = await pool.one('email_messages', { to_email: email, template: 'workspace_ready' });
+    expect(mail?.text_body).toContain('temporary password');
+    expect(mail?.text_body).not.toContain('Temp-Owner-Pass-2026');
+    // First sign-in: the owner must choose their own password before any session is issued.
+    const first = await api(app).post('/auth/login').send({ email, password: 'Temp-Owner-Pass-2026' });
+    expect(first.body.status).toBe('password_change_required');
+    const chosen = await api(app).post('/auth/initial-password').send({ changeToken: first.body.changeToken, newPassword: 'Pat-Own-Password-2026' });
+    expect(chosen.body.status, JSON.stringify(chosen.body)).toBe('ok');
+    const me = await api(app, chosen.body.accessToken).get('/me');
+    expect(me.body.tenant.slug).toBe(slug);
+  });
+
   it('suspending a tenant signs its users out and blocks access', async () => {
     const victim = await createTenant(pool);
     const s = await login(app, victim.ownerEmail);

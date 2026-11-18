@@ -51,6 +51,14 @@ export class LeaveController {
     return this.leave.createType(body);
   }
 
+  @Post('types/defaults')
+  @RequireFeature('leave')
+  @RequirePermission('leave:configure')
+  @Doc({ summary: 'Add the standard leave types (casual, sick, earned, without pay) with workspace-wide policies; only when the workspace has no leave types yet' })
+  addDefaultTypes() {
+    return this.leave.addDefaultTypes();
+  }
+
   @Patch('types/:id')
   @RequireFeature('leave')
   @RequirePermission('leave:configure')
@@ -188,6 +196,14 @@ export class LeaveController {
   @Doc({ summary: 'Cancel a pending or approved request (approved days are returned to the balance)', body: leaveCancelInput })
   cancel(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(leaveCancelInput)) body: z.infer<typeof leaveCancelInput>) {
     return this.leave.cancel(id, body.reason);
+  }
+
+  @Get('calendar')
+  @RequireFeature('leave')
+  @RequirePermission('leave:read')
+  @Doc({ summary: 'My leave calendar for a date range: working week, public holidays, and my pending and approved leave', query: rangeQuery })
+  calendar(@Query(new ZodPipe(rangeQuery)) q: z.infer<typeof rangeQuery>) {
+    return this.leave.myCalendar(q.from, q.to);
   }
 
   @Get('away')
