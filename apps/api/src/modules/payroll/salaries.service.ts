@@ -134,6 +134,7 @@ export class SalariesService {
     });
     const statutory = await statutoryOn(tx, e.legal_entity_id, input.effectiveFrom);
     const warnings: string[] = [];
+    if (!statutory) warnings.push('No statutory settings are saved for this legal entity yet, so employer PF uses the India starting values. Payroll cannot run until they are saved under Settings > Payroll settings > Statutory settings.');
     if (!statutory) warnings.push(`No statutory settings are saved for this legal entity yet, so employer contributions use the starting values for ${le.country_code}. Payroll cannot run until they are saved under Settings > Payroll settings > Statutory settings.`);
     const settings = statutory?.settings ?? startingFor(le, await statutoryPacks(tx)).settings;
     try {

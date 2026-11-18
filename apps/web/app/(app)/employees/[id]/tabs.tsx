@@ -3,6 +3,7 @@ import { Alert, Badge, Button, Card, CardBody, CardHeader, Dialog, EmptyState, F
 import { CheckCircle2, Circle, Download, Eye, FileText, Lock, Pencil, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMfaRetry } from '@/components/mfa-step-up';
 import { useState, useTransition, type ReactNode } from 'react';
 import type { ActionResult } from '@/lib/api';
 import type { Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, OnboardingTask } from '@/lib/types';
@@ -142,8 +143,9 @@ function SensitiveCard({ e }: { e: EmployeeProfile }) {
   const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [edit, setEdit] = useState(false);
   const [pending, start] = useTransition();
+  const withMfa = useMfaRetry();
   const reveal = () => start(async () => {
-    const r = await sensitiveAction(e.id);
+    const r = await withMfa(() => sensitiveAction(e.id));
     if (r.ok) { setData(r.data ?? {}); setError(null); } else setError({ message: r.message, code: r.code });
   });
   const canEdit = e.can.update || e.can.updateOwn;
@@ -161,7 +163,7 @@ function SensitiveCard({ e }: { e: EmployeeProfile }) {
         {error && (
           <Alert tone="warning">
             {error.message}
-            {error.code === 'mfa_required' && <> <Link className="font-medium underline" href="/settings/security">Set up or verify two-step verification</Link>, then sign in again.</>}
+            {error.code === 'mfa_required' && <> <button type="button" className="font-medium underline" onClick={reveal}>Verify with your authenticator app</button> to see them.</>}
           </Alert>
         )}
         {data ? (

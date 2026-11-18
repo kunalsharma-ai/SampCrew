@@ -102,9 +102,23 @@ export async function deleteArticleAction(id: string) {
 // Announcements -----------------------------------------------------------------------------------------------
 
 export async function saveAnnouncementAction(id: string | null, body: Body) {
-  const r = await act(() => api<{ id: string }>(id ? `/announcements/${id}` : '/announcements', { method: id ? 'PUT' : 'POST', body }), id ? 'Announcement saved.' : 'Draft saved.');
+  const r = await act(() => api<{ id: string }>(id ? `/announcements/${id}` : '/announcements', { method: id ? 'PUT' : 'POST', body }), id ? 'Announcement saved.' : 'Draft saved. Nobody sees it until you publish it.');
   refresh('/announcements/manage', ...(id ? [`/announcements/manage/${id}`] : []));
   return r;
+}
+
+/**
+ * Saves the announcement and publishes it in one go, so it appears on everyone's feed (Web Portal and mobile app)
+ * and they are notified. If publishing is refused (for example nobody is in the audience) the draft stays saved.
+ */
+export async function saveAndPublishAnnouncementAction(id: string | null, body: Body) {
+  const saved = await act(() => api<{ id: string }>(id ? `/announcements/${id}` : '/announcements', { method: id ? 'PUT' : 'POST', body }), 'Draft saved.');
+  if (!saved.ok || !saved.data) return saved;
+  const draftId = saved.data.id;
+  const r = await act(() => api<{ id: string; audience: number }>(`/announcements/${draftId}/publish`, { method: 'POST' }), 'Published. Everyone it is addressed to has been notified.');
+  refresh('/announcements/manage', `/announcements/manage/${draftId}`, '/announcements', '/');
+  if (r.ok && r.data) return { ...r, message: `Published to ${r.data.audience} ${r.data.audience === 1 ? 'person' : 'people'}. They see it in the Web Portal and the mobile app and have been notified.` };
+  return r.ok ? r : { ...r, code: 'saved_not_published', message: `The draft is saved but not published: ${r.message}` };
 }
 
 export async function publishAnnouncementAction(id: string) {

@@ -1,4 +1,5 @@
 'use client';
+import { useMfaRetry } from '@/components/mfa-step-up';
 import { useCreateParam } from '@/lib/use-create-param';
 import { Alert, Avatar, Badge, Button, Card, Checkbox, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Copy, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
@@ -113,6 +114,7 @@ export function PeopleView(props: Props) {
 
 function InviteDialog({ open, onClose, onInvited, roles, departments, entities, locations, canAssignRoles }: Props & { open: boolean; onClose: () => void; onInvited: (link: string | null) => void }) {
   const router = useRouter();
+  const withMfa = useMfaRetry();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [fe, setFe] = useState<Record<string, string>>({});
@@ -137,13 +139,13 @@ function InviteDialog({ open, onClose, onInvited, roles, departments, entities, 
           setError(null);
           setFe({});
           start(async () => {
-            const r = await inviteAction(body);
+            const r = await withMfa(() => inviteAction(body));
             if (r.ok) {
               onInvited(r.data?.inviteUrl ?? null);
               onClose();
               router.refresh();
             } else {
-              setError(r.code === 'mfa_required' ? 'Assigning roles needs two-step verification. Turn it on under Security, then try again.' : r.message);
+              setError(r.code === 'mfa_required' ? 'Assigning roles needs two-step verification. Verify with your authenticator app, then try again.' : r.message);
               setFe(r.fieldErrors ?? {});
             }
           });
@@ -172,6 +174,7 @@ function InviteDialog({ open, onClose, onInvited, roles, departments, entities, 
 
 function MemberDialog({ member, onClose, onLink, roles, departments, entities, locations, canManage, canAssignRoles, me, page }: Props & { member: Member; onClose: () => void; onLink: (l: string | null) => void }) {
   const router = useRouter();
+  const withMfa = useMfaRetry();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [roleKeys, setRoleKeys] = useState<string[]>(member.roles.map((r) => r.key));
@@ -179,8 +182,8 @@ function MemberDialog({ member, onClose, onLink, roles, departments, entities, l
   const [limitEntity, setLimitEntity] = useState<string>(firstConstraint);
   const run = (fn: () => Promise<{ ok: boolean; message?: string; code?: string }>, success: string) =>
     start(async () => {
-      const r = await fn();
-      setMsg(r.ok ? { tone: 'success', text: success } : { tone: 'danger', text: r.code === 'mfa_required' ? 'This change needs two-step verification. Turn it on under Security.' : (r.message ?? 'Failed') });
+      const r = await withMfa(fn);
+      setMsg(r.ok ? { tone: 'success', text: success } : { tone: 'danger', text: r.code === 'mfa_required' ? 'This change needs two-step verification. Verify with your authenticator app, then try again.' : (r.message ?? 'Failed') });
       if (r.ok) router.refresh();
     });
   const isSelf = member.id === me.membership.id;

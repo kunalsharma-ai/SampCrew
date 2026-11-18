@@ -107,7 +107,7 @@ export function EmployeesView(props: Props) {
       )}
       {done && done.warnings.length > 0 && (
         <Alert tone="warning" title={`${done.name} was added, with something left to finish`} className="mb-4">
-          <ul className="list-disc pl-5">{done.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+          <ul className="list-disc pl-5">{done.warnings.map((w) => <li key={w}>{w}{/statutory settings/i.test(w) && <> <Link className="font-medium underline" href="/settings/payroll">Open statutory settings</Link></>}</li>)}</ul>
           Finish these from their profile.
         </Alert>
       )}

@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, EmptyState, Field, Input, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Wallet } from 'lucide-react';
 import Link from 'next/link';

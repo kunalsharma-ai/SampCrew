@@ -3,6 +3,7 @@ import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input } from '
 import { Laptop, ShieldCheck, Smartphone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { MfaVerifyForm } from '@/components/mfa-step-up';
 import { changePasswordAction, mfaEnableAction, mfaSetupAction, revokeSessionAction } from '../actions';
 
 export function SecurityView({ mfaEnabled, sessionMfa, sessions }: { mfaEnabled: boolean; sessionMfa: boolean; sessions: { id: string; client: string; ip: string | null; userAgent: string | null; createdAt: string; current: boolean }[] }) {
@@ -23,7 +24,14 @@ export function SecurityView({ mfaEnabled, sessionMfa, sessions }: { mfaEnabled:
               <ShieldCheck className="size-5 shrink-0" />
               <div>Your account asks for a code at every sign-in.{sessionMfa ? ' This session is verified, so admin actions that need MFA are unlocked.' : ''}</div>
             </div>
-          ) : setup ? (
+          ) : null}
+          {mfaEnabled && !sessionMfa ? (
+            <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-subtle p-3" data-testid="security-verify-session">
+              <p className="text-[0.8125rem]">This session was opened without a code (for example with single sign-on or an invitation link), so billing, payroll and role changes are locked. Enter a code to unlock them.</p>
+              <MfaVerifyForm mfaEnabled compact onVerified={() => { setMsg({ tone: 'success', text: 'This session is verified.' }); router.refresh(); }} />
+            </div>
+          ) : null}
+          {mfaEnabled ? null : setup ? (
             <form
               className="flex flex-col gap-4"
               onSubmit={(e) => {

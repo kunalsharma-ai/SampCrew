@@ -5,6 +5,7 @@ import { Lock, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import type { Role } from '@/lib/types';
+import { useMfaRetry } from '@/components/mfa-step-up';
 import { deleteRoleAction, saveRoleAction } from '../actions';
 
 const SCOPE_LABEL: Record<string, string> = { own: 'Own', team: 'Team', department: 'Department', entity: 'Entity', tenant: 'All' };
@@ -94,6 +95,7 @@ export function RolesView({ roles, canManage, customRolesInPlan, disabledPermiss
 
 function RoleEditor({ role, off, onClose }: { role: Role | null; off: Set<string>; onClose: () => void }) {
   const router = useRouter();
+  const withMfa = useMfaRetry();
   const [grants, setGrants] = useState<Record<string, Scope>>((role?.grants as Record<string, Scope>) ?? {});
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -115,17 +117,17 @@ function RoleEditor({ role, off, onClose }: { role: Role | null; off: Set<string
           e.preventDefault();
           const f = new FormData(e.currentTarget);
           start(async () => {
-            const r = await saveRoleAction(role?.id ?? null, {
+            const r = await withMfa(() => saveRoleAction(role?.id ?? null, {
               key: role ? undefined : String(f.get('key')),
               name: String(f.get('name')),
               description: String(f.get('description') || '') || undefined,
               grants: Object.entries(grants).map(([permission, scope]) => ({ permission, scope })),
-            });
+            }));
             if (r.ok) {
               onClose();
               router.refresh();
             } else {
-              setError(r.code === 'mfa_required' ? 'Managing roles needs two-step verification. Turn it on under Security.' : r.message);
+              setError(r.code === 'mfa_required' ? 'Managing roles needs two-step verification. Verify with your authenticator app, then save again.' : r.message);
               setFe(r.fieldErrors ?? {});
             }
           });

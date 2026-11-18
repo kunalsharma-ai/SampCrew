@@ -208,6 +208,15 @@ export class MeController {
     return this.auth.mfaEnable(body.code);
   }
 
+  @Post('mfa/verify')
+  @AllowWithoutMfa()
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Doc({ summary: 'Verify this session with a 6-digit authenticator code (step-up); returns an MFA-verified session', body: mfaEnableRequest })
+  mfaStepUp(@Body(new ZodPipe(mfaEnableRequest)) body: z.infer<typeof mfaEnableRequest>) {
+    return this.auth.mfaStepUp(body.code);
+  }
+
   @Post('password')
   @HttpCode(204)
   @Doc({ summary: 'Change password; signs out other sessions', body: changePasswordRequest })
