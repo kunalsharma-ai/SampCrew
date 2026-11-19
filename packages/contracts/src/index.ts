@@ -66,3 +66,5 @@ export * from './setup';
 export * from './signatures';
 export * from './signature-occasions';
 export * from './discipline';
+export * from './notifications';
+export * from './approval-categories';

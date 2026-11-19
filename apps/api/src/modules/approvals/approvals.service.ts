@@ -1,4 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import {
+  BUILT_IN_APPROVAL_CATEGORIES, approvalStatusMessage, categorizeApproval, type ApprovalCategoryDef, type ApprovalCategoryInput, type ApprovalMeta, type ApprovalView,
+} from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService, loadSubject } from '../../platform/authz/authz.service';
 import { can, type ResourceAttributes } from '../../platform/authz/policy';
@@ -17,7 +20,12 @@ export interface ApprovalRequestRow {
   requested_by_membership_id: string | null;
   summary: string;
   status: string;
+  /** The deciding comment, when the request was just approved or rejected. */
+  comment?: string | null;
 }
+
+/** A supporting document shown with a request (a receipt, a medical note), opened through the Web Portal. */
+export interface ApprovalDocument { name: string; href: string }
 
 /** What a module tells the engine about its approvable resource. */
 export interface ApprovalHandler {
@@ -35,6 +43,13 @@ export interface ApprovalHandler {
   onRejected: (tx: TenantTx, req: ApprovalRequestRow) => Promise<void>;
   /** Extra facts the approver needs to decide, shown with the item in the inbox (for example same-day leave). */
   details?: (tx: TenantTx, resourceId: string) => Promise<Record<string, unknown> | null>;
+  /** Supporting documents (receipts, attachments) to show with the request. */
+  documents?: (tx: TenantTx, resourceId: string) => Promise<ApprovalDocument[]>;
+  /**
+   * Approve automatically when the requester is the workspace's only Owner and nobody else can decide a step (a
+   * one-person workspace would otherwise wait forever). Recorded in the audit trail as approval.auto_approved.
+   */
+  autoApproveSoleOwner?: boolean;
 }
 
 interface StepRow {
@@ -79,7 +94,7 @@ export class ApprovalsService {
   }
 
   /** Starts an approval in the caller's transaction and notifies the first approver(s). */
-  async start(tx: TenantTx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[] }): Promise<string> {
+  async start(tx: TenantTx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[]; meta?: ApprovalMeta }): Promise<string> {
     const h = this.handler(input.resourceType);
     const actor = requestContext.tenantActor();
     // A caller can set the chain for one request (a workflow's approval step names its own approver).
@@ -119,10 +134,14 @@ export class ApprovalsService {
       subject_employee_id: input.subjectEmployeeId,
       requested_by_membership_id: requester,
       summary: input.summary,
+      meta: input.meta ?? null,
+      category: categorizeApproval(input.resourceType, input.meta, await this.customCategories(tx)),
     });
     await tx.collection('approval_steps').insertMany(
       resolved.map((st, i) => ({ request_id: req.id, seq: i + 1, kind: st.kind, approver_membership_id: st.membershipId, approver_role_key: st.role, status: i === 0 ? 'pending' : 'waiting' })),
     );
+    if (h.autoApproveSoleOwner && (await this.autoApprove(tx, req.id, requester))) return req.id;
+    await this.notifications.signal(tx, [requester], 'approvals.changed');
     const approvers = await this.notifyApprovers(tx, req.id);
     // The person asking hears straight away that it went for approval, and to whom, so a request is never sent
     // into silence. When they cannot see it themselves (an offer, say), nobody is told here.
@@ -132,12 +151,66 @@ export class ApprovalsService {
       await this.notifications.notify(tx, {
         membershipIds: [tellRequester],
         kind: 'approval.submitted',
-        title: `${h.label} sent for approval`,
-        body: who ? `Waiting for ${who}. You will be told when it is decided.` : 'You will be told when it is decided.',
+        title: `${h.label} submitted`,
+        body: `Your request has been submitted successfully. ${await this.stageMessage(tx, req.id, who)} You will be told when it is decided.`,
         link: h.link(input.resourceId),
+        resource: { type: input.resourceType, id: input.resourceId },
       });
     }
     return req.id;
+  }
+
+  /** "Your request is awaiting manager approval (Asha)." for the request's current step. */
+  private async stageMessage(tx: TenantTx, requestId: string, who?: string | null): Promise<string> {
+    const step = await tx.collection<StepRow>('approval_steps').findOne({ request_id: requestId, status: 'pending' });
+    if (!step) return approvalStatusMessage('approved', null);
+    const stage = step.kind === 'manager' || step.kind === 'skip_level_manager' ? 'manager' : /^hr_/.test(step.approver_role_key ?? '') ? 'hr' : 'other';
+    return approvalStatusMessage('pending', { stage, who: who ?? null });
+  }
+
+  /** HR's own approval categories, active ones only, in their order. */
+  async customCategories(tx: TenantTx): Promise<ApprovalCategoryDef[]> {
+    const rows = await tx.collection('approval_categories').find({ active: true }, { sort: { position: 1, created_at: 1 } });
+    return rows.map((r) => ({ key: r.key, label: r.label, description: r.description, icon: r.icon, color: r.color, rule: r.rule, builtIn: false }));
+  }
+
+  /** Active owners of the workspace. */
+  private async owners(tx: TenantTx): Promise<string[]> {
+    const role = await tx.collection('roles').findOne({ key: 'tenant_owner' });
+    if (!role) return [];
+    const ids = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: role.id });
+    return (await tx.collection('memberships').find({ id: { $in: ids }, status: 'active' }, { projection: { _id: 1 } })).map((m) => m.id as string);
+  }
+
+  /**
+   * Approves the request's steps one by one while nobody but the requester could decide them and the requester is
+   * the only Owner. Returns true when the whole request was approved this way.
+   */
+  private async autoApprove(tx: TenantTx, requestId: string, requester: string): Promise<boolean> {
+    const owners = await this.owners(tx);
+    if (owners.length !== 1 || owners[0] !== requester) return false;
+    const req = (await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId }))!;
+    const h = this.handler(req.resource_type);
+    const note = 'Approved automatically: you are the only Owner of this workspace and nobody else can approve it.';
+    for (;;) {
+      const step = await tx.collection<StepRow>('approval_steps').findOne({ request_id: requestId, status: 'pending' });
+      if (!step) break;
+      if ((await this.currentApprovers(tx, requestId)).length) return false;
+      await tx.collection('approval_steps').updateOne({ id: step.id }, { $set: { status: 'approved', decided_by_membership_id: requester, decided_at: new Date(), comment: note } });
+      const next = await tx.collection('approval_steps').findOne({ request_id: requestId, status: 'waiting' }, { sort: { seq: 1 } });
+      if (next) await tx.collection('approval_steps').updateOne({ id: next.id }, { $set: { status: 'pending' } });
+    }
+    await tx.collection('approval_requests').updateOne({ id: requestId }, { $set: { status: 'approved', decided_at: new Date(), auto_approved: true } });
+    await this.audit.record(tx, {
+      action: 'approval.auto_approved', resourceType: req.resource_type, resourceId: req.resource_id,
+      metadata: { approvalId: requestId, reason: 'sole_owner', summary: req.summary },
+    });
+    await h.onApproved(tx, { ...req, status: 'approved', comment: note });
+    await this.notifications.notify(tx, {
+      membershipIds: [requester], kind: 'approval.auto_approved', title: `${h.label} approved automatically`,
+      body: `${req.summary}\n${note}`, link: h.link(req.resource_id), resource: { type: req.resource_type, id: req.resource_id },
+    });
+    return true;
   }
 
   /**
@@ -199,11 +272,15 @@ export class ApprovalsService {
     await this.notifications.notify(tx, {
       membershipIds: approvers,
       kind: 'approval.requested',
-      title: `${h.label} waiting for your approval`,
+      title: `You have a new request awaiting your approval: ${h.label.toLowerCase()}`,
       body: req.summary,
-      link: '/approvals',
+      link: `/approvals/${requestId}`,
       email: true,
+      priority: 'high',
+      actorMembershipId: req.requested_by_membership_id,
+      resource: { type: 'approval_request', id: requestId },
     });
+    await this.notifications.signal(tx, approvers, 'approvals.changed');
     return approvers;
   }
 
@@ -249,7 +326,7 @@ export class ApprovalsService {
       });
       if (final) {
         await tx.collection('approval_requests').updateOne({ id: requestId }, { $set: { status: final, decided_at: new Date() } });
-        const updated = { ...req, status: final };
+        const updated = { ...req, status: final, comment: comment ?? null };
         if (final === 'approved') await h.onApproved(tx, updated);
         else await h.onRejected(tx, updated);
         const subjectEmployee = req.subject_employee_id ? await tx.collection('employees').findOne({ id: req.subject_employee_id }) : undefined;
@@ -258,12 +335,28 @@ export class ApprovalsService {
           membershipIds: requesterIds,
           kind: `approval.${final}`,
           title: `${h.label} ${final}`,
-          body: `${req.summary}${comment ? `\nComment: ${comment}` : ''}`,
+          body: `${approvalStatusMessage(final, null)}\n${req.summary}${comment ? `\nRemarks: ${comment}` : ''}`,
           link: h.link(req.resource_id),
           email: true,
+          priority: final === 'rejected' ? 'high' : 'normal',
+          actorMembershipId: actor.membershipId,
+          resource: { type: req.resource_type, id: req.resource_id },
         });
+        await this.notifications.signal(tx, [...requesterIds, actor.membershipId], 'approvals.changed');
       } else {
-        await this.notifyApprovers(tx, requestId);
+        const next = await this.notifyApprovers(tx, requestId);
+        // The person asking sees where it is now: "Your request is pending HR approval."
+        const subjectEmployee = req.subject_employee_id ? await tx.collection('employees').findOne({ id: req.subject_employee_id }) : undefined;
+        const asker = (subjectEmployee?.membership_id as string | undefined) ?? (req.subject_employee_id ? null : req.requested_by_membership_id);
+        if (asker && !next.includes(asker)) {
+          const who = (await this.waitingOn(tx, [requestId])).get(requestId);
+          await this.notifications.notify(tx, {
+            membershipIds: [asker], kind: 'approval.progressed', title: `${h.label}: step ${step.seq} approved`,
+            body: `${await this.stageMessage(tx, requestId, who)}\n${req.summary}`, link: h.link(req.resource_id), actorMembershipId: actor.membershipId,
+            resource: { type: req.resource_type, id: req.resource_id },
+          });
+        }
+        await this.notifications.signal(tx, [asker, actor.membershipId], 'approvals.changed');
       }
       return { id: requestId, status: final ?? 'pending' };
     });
@@ -350,4 +443,201 @@ export class ApprovalsService {
       return { resourceType, steps };
     });
   }
+
+  // Approvals page: category cards, lists and one request ------------------------------------------------------
+
+  /** Every category the page shows: HR's own (active or not) and the built-in ones. */
+  async categories() {
+    return this.db.tenant(async (tx) => {
+      const custom = await tx.collection('approval_categories').find({}, { sort: { position: 1, created_at: 1 } });
+      return [
+        ...custom.map((r) => ({ key: r.key as string, label: r.label as string, description: r.description as string, icon: r.icon as string, color: r.color as string, rule: r.rule, builtIn: false, active: r.active as boolean })),
+        ...BUILT_IN_APPROVAL_CATEGORIES.map((c) => ({ ...c, active: true })),
+      ];
+    });
+  }
+
+  async saveCategory(input: ApprovalCategoryInput, existingKey?: string) {
+    await this.authz.require('org:manage');
+    if (BUILT_IN_APPROVAL_CATEGORIES.some((c) => c.key === input.key)) throw Errors.conflict('category_key_taken', 'A built-in category already uses this key. Choose another one.');
+    return this.db.tenant(async (tx) => {
+      const rule = {
+        resourceTypes: input.resourceTypes, leaveTypeCodes: input.leaveTypeCodes, expenseCategoryIds: input.expenseCategoryIds,
+        ...(input.paid === null ? {} : { paid: input.paid }), ...(input.halfDay === null ? {} : { halfDay: input.halfDay }),
+      };
+      const fields = { key: input.key, label: input.label, description: input.description, icon: input.icon, color: input.color, rule, active: input.active };
+      const table = tx.collection('approval_categories');
+      if (existingKey) {
+        if (!(await table.exists({ key: existingKey }))) throw Errors.notFound('Approval category');
+        if (existingKey !== input.key && (await table.exists({ key: input.key }))) throw Errors.conflict('category_key_taken', 'Another category already uses this key');
+        await table.updateOne({ key: existingKey }, { $set: fields });
+        if (existingKey !== input.key) await tx.collection('approval_requests').update({ category: existingKey }, { $set: { category: input.key } });
+      } else {
+        if (await table.exists({ key: input.key })) throw Errors.conflict('category_key_taken', 'Another category already uses this key');
+        await table.insert({ ...fields, position: await table.count({}) });
+      }
+      // Pending requests are placed again, so a new card picks up what is already waiting.
+      const custom = await this.customCategories(tx);
+      for (const r of await tx.collection('approval_requests').find({ status: 'pending' }, { projection: { resource_type: 1, meta: 1, category: 1 } })) {
+        const key = categorizeApproval(r.resource_type, r.meta, custom);
+        if (key !== r.category) await tx.collection('approval_requests').updateOne({ id: r.id }, { $set: { category: key } });
+      }
+      await this.audit.record(tx, { action: existingKey ? 'approval_category.updated' : 'approval_category.created', resourceType: 'approval_category', resourceId: input.key, changes: input });
+      return { key: input.key };
+    });
+  }
+
+  async deleteCategory(key: string) {
+    await this.authz.require('org:manage');
+    return this.db.tenant(async (tx) => {
+      if (!(await tx.collection('approval_categories').deleteOne({ key }))) throw Errors.notFound('Approval category');
+      const custom = await this.customCategories(tx);
+      for (const r of await tx.collection('approval_requests').find({ category: key }, { projection: { resource_type: 1, meta: 1 } })) {
+        await tx.collection('approval_requests').updateOne({ id: r.id }, { $set: { category: categorizeApproval(r.resource_type, r.meta, custom) } });
+      }
+      await this.audit.record(tx, { action: 'approval_category.deleted', resourceType: 'approval_category', resourceId: key });
+    });
+  }
+
+  /** The requests one view covers, newest first: waiting for me, decided by me, or my own (and those about me). */
+  private async viewRequests(tx: TenantTx, view: ApprovalView, limit = 2000) {
+    const actor = requestContext.tenantActor();
+    if (view === 'waiting') {
+      const steps = await tx.collection('approval_steps').find({ status: 'pending', $or: [{ approver_membership_id: actor.membershipId }, { approver_role_key: { $ne: null } }] }, { projection: { request_id: 1 } });
+      const reqs = await tx.collection('approval_requests').find({ id: { $in: steps.map((st) => st.request_id) }, status: 'pending' }, { sort: { created_at: -1 }, limit: 500 });
+      const out = [];
+      for (const r of reqs) if ((await this.currentApprovers(tx, r.id)).includes(actor.membershipId)) out.push(r);
+      return out;
+    }
+    if (view === 'decided') {
+      const ids = await tx.collection('approval_steps').distinct<string>('request_id', { decided_by_membership_id: actor.membershipId });
+      return tx.collection('approval_requests').find({ id: { $in: ids } }, { sort: { created_at: -1 }, limit });
+    }
+    const subject = await this.authz.subject(tx);
+    return tx.collection('approval_requests').find(
+      { $or: [{ requested_by_membership_id: actor.membershipId }, ...(subject.employeeId ? [{ subject_employee_id: subject.employeeId }] : [])] },
+      { sort: { created_at: -1 }, limit },
+    );
+  }
+
+  /** Category cards for one view: total, pending, approved and rejected requests, and the latest few in each. */
+  async overview(view: ApprovalView) {
+    return this.db.tenant(async (tx) => {
+      const rows = await this.viewRequests(tx, view);
+      const custom = await this.customCategories(tx);
+      const keyOf = (r: Record<string, unknown>) => (r.category as string | undefined) ?? categorizeApproval(r.resource_type as string, r.meta as ApprovalMeta, custom);
+      const cards = new Map<string, { total: number; pending: number; approved: number; rejected: number; cancelled: number; recent: { id: string; summary: string; status: string; createdAt: string }[] }>();
+      for (const r of rows) {
+        const k = keyOf(r);
+        const c = cards.get(k) ?? { total: 0, pending: 0, approved: 0, rejected: 0, cancelled: 0, recent: [] };
+        c.total++;
+        c[r.status as 'pending' | 'approved' | 'rejected' | 'cancelled']++;
+        if (c.recent.length < 3) c.recent.push({ id: r.id, summary: r.summary, status: r.status, createdAt: r.created_at });
+        cards.set(k, c);
+      }
+      const defs = [...custom, ...BUILT_IN_APPROVAL_CATEGORIES];
+      return {
+        view,
+        total: rows.length,
+        pending: rows.filter((r) => r.status === 'pending').length,
+        categories: defs.map((d) => ({ key: d.key, label: d.label, description: d.description, icon: d.icon, color: d.color, builtIn: d.builtIn, ...(cards.get(d.key) ?? { total: 0, pending: 0, approved: 0, rejected: 0, cancelled: 0, recent: [] }) })),
+      };
+    });
+  }
+
+  /** Requests in one view and (optionally) one category, with what each is waiting on. */
+  async list(q: { view: ApprovalView; category?: string; status?: string; q?: string; limit: number }) {
+    return this.db.tenant(async (tx) => {
+      const custom = await this.customCategories(tx);
+      let rows = await this.viewRequests(tx, q.view);
+      if (q.category) rows = rows.filter((r) => ((r.category as string | undefined) ?? categorizeApproval(r.resource_type, r.meta, custom)) === q.category);
+      if (q.status) rows = rows.filter((r) => r.status === q.status);
+      if (q.q) {
+        const needle = q.q.toLowerCase();
+        rows = rows.filter((r) => (r.summary as string).toLowerCase().includes(needle) || approvalRef(r.id).toLowerCase().includes(needle));
+      }
+      rows = rows.slice(0, q.limit);
+      return this.describe(tx, rows, custom);
+    });
+  }
+
+  private async describe(tx: TenantTx, rows: Record<string, any>[], custom: ApprovalCategoryDef[]) { // eslint-disable-line @typescript-eslint/no-explicit-any
+    const waiting = await this.waitingOn(tx, rows.map((r) => r.id));
+    const names = await membershipUserNames(tx, rows.map((r) => r.requested_by_membership_id));
+    const subjects = new Map(
+      (await tx.collection('employees').find({ id: { $in: rows.map((r) => r.subject_employee_id).filter(Boolean) } }, { projection: { first_name: 1, last_name: 1 } }))
+        .map((e) => [e.id as string, `${e.first_name} ${e.last_name ?? ''}`.trim()]),
+    );
+    const stepRows = await tx.collection<StepRow & { request_id: string }>('approval_steps').find({ request_id: { $in: rows.map((r) => r.id) } }, { sort: { seq: 1 } });
+    const stepsOf = new Map<string, StepRow[]>();
+    for (const st of stepRows) stepsOf.set(st.request_id, [...(stepsOf.get(st.request_id) ?? []), st]);
+    const defs = new Map([...custom, ...BUILT_IN_APPROVAL_CATEGORIES].map((d) => [d.key, d]));
+    return rows.map((r) => {
+      const h = this.handlers.get(r.resource_type);
+      const steps = stepsOf.get(r.id) ?? [];
+      const current = steps.find((st) => st.status === 'pending');
+      const category = (r.category as string | undefined) ?? categorizeApproval(r.resource_type, r.meta, custom);
+      const stage = current ? (current.kind === 'role' ? (/^hr_/.test(current.approver_role_key ?? '') ? 'hr' : 'other') : 'manager') : null;
+      return {
+        id: r.id as string,
+        ref: approvalRef(r.id),
+        resourceType: r.resource_type as string,
+        resourceId: r.resource_id as string,
+        label: h?.label ?? r.resource_type,
+        category,
+        categoryLabel: defs.get(category)?.label ?? category,
+        summary: r.summary as string,
+        status: r.status as string,
+        autoApproved: Boolean(r.auto_approved),
+        statusMessage: approvalStatusMessage(r.status, stage ? { stage: stage as 'manager' | 'hr' | 'other', who: waiting.get(r.id) ?? null } : null),
+        waitingOn: waiting.get(r.id) ?? null,
+        stepSeq: current?.seq ?? null,
+        stepCount: steps.length,
+        requestedBy: names.get(r.requested_by_membership_id) ?? null,
+        subjectName: subjects.get(r.subject_employee_id) ?? null,
+        createdAt: r.created_at,
+        decidedAt: r.decided_at ?? null,
+        link: h ? h.link(r.resource_id) : null,
+      };
+    });
+  }
+
+  /**
+   * One request with everything needed to decide or follow it: details, documents, the chain and its remarks.
+   * Visible to the requester, the person it is about, anyone who can decide it or decided a step, and people whose
+   * access covers the record.
+   */
+  async detail(id: string) {
+    const actor = requestContext.tenantActor();
+    return this.db.tenant(async (tx) => {
+      const r = await tx.collection('approval_requests').findOne({ id });
+      if (!r) throw Errors.notFound('Approval');
+      const h = this.handler(r.resource_type);
+      const subject = await this.authz.subject(tx);
+      const approvers = r.status === 'pending' ? await this.currentApprovers(tx, id) : [];
+      const own = r.requested_by_membership_id === actor.membershipId || (subject.employeeId && subject.employeeId === r.subject_employee_id);
+      const decidedByMe = await tx.collection('approval_steps').exists({ request_id: id, decided_by_membership_id: actor.membershipId });
+      const covers = can(subject, h.permission, await h.attributes(tx, r.resource_id)).allowed;
+      if (!own && !decidedByMe && !approvers.includes(actor.membershipId) && !covers) throw Errors.notFound('Approval');
+      const [row] = await this.describe(tx, [r], await this.customCategories(tx));
+      // Opening the request clears the notices that point at it.
+      await this.notifications.markReadByLink(tx, actor.membershipId, `/approvals/${id}`);
+      const trail = await this.trail(tx, id);
+      const decisive = [...trail].reverse().find((st) => st.status === 'approved' || st.status === 'rejected');
+      return {
+        ...row!,
+        details: h.details ? await h.details(tx, r.resource_id) : null,
+        documents: h.documents ? await h.documents(tx, r.resource_id) : [],
+        trail,
+        finalDecision: r.status === 'pending' ? null : { status: r.status, at: r.decided_at ?? null, by: r.status === 'cancelled' ? null : decisive?.decidedBy ?? null, remarks: decisive?.comment ?? null },
+        canDecide: approvers.includes(actor.membershipId) && !own,
+        mine: Boolean(own),
+      };
+    });
+  }
+}
+
+/** A short, human reference for a request (APR-3F9A21), stable because it comes from the id. */
+export function approvalRef(id: string): string {
+  return `APR-${id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
 }

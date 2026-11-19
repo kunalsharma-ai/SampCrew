@@ -536,6 +536,36 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((status <> 'hired'::text) OR (employee_id IS NOT NULL)))",
     ],
   },
+  approval_categories: {
+    // HR's own approval categories (Approval settings), checked before the built-in ones in contracts/approval-categories.ts.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      color: {"default": "#4f46e5", "required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      description: {"default": "", "required": true, "type": "string"},
+      icon: {"default": "inbox", "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      label: {"required": true, "type": "string"},
+      position: {"default": 0, "required": true, "type": "int"},
+      // { resourceTypes, leaveTypeCodes, paid, halfDay, expenseCategoryIds }
+      rule: {"required": true, "type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "approval_categories_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "approval_categories_tenant_id_key_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK (((length(label) >= 2) AND (length(label) <= 60)))",
+    ],
+  },
   approval_policies: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
     columns: {
@@ -570,6 +600,12 @@ export const TABLES: Record<string, TableSpec> = {
       status: {"default": "pending", "enum": ["pending", "approved", "rejected", "cancelled"], "required": true, "type": "string"},
       subject_employee_id: {"type": "uuid"},
       summary: {"required": true, "type": "string"},
+      // Facts the approvals page groups by (leave type code, half day, expense category), set by the owning module.
+      meta: {"type": "json"},
+      // Approval category key (contracts approvals.ts), worked out when the request starts.
+      category: {"type": "string"},
+      // Set when the engine approved it without a person (the sole Owner raised it and nobody else can decide).
+      auto_approved: {"type": "bool"},
       tenant_id: {"required": true, "type": "uuid"},
     },
     unique: [
@@ -583,6 +619,8 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "resource_type"}, {"col": "resource_id"}], "name": "approval_requests_resource"},
+      {"cols": [{"col": "tenant_id"}, {"col": "requested_by_membership_id"}, {"col": "created_at", "desc": true}], "name": "approval_requests_requester"},
+      {"cols": [{"col": "tenant_id"}, {"col": "subject_employee_id"}, {"col": "created_at", "desc": true}], "name": "approval_requests_subject"},
     ],
     checks: [],
   },
@@ -3295,6 +3333,8 @@ export const TABLES: Record<string, TableSpec> = {
       favourites: {"default": {"json": []}, "required": true, "type": "string[]"},
       membership_id: {"required": true, "type": "uuid"},
       notes: {"default": "", "required": true, "type": "string"},
+      // Notification channels per category and sound settings (contracts notificationPreferencesInput).
+      notifications: {"type": "json"},
       recents: {"default": {"json": []}, "required": true, "type": "json"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -3399,6 +3439,30 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((length(push_token) <= 250))",
     ],
   },
+  live_events: {
+    // Short-lived events pushed to open browsers over /notifications/stream (new notices, chat messages, read
+    // receipts). Written in the transaction that caused them, so only committed changes are pushed; every API server
+    // watches this collection and forwards events to its own connected members. Rows older than an hour are deleted.
+    access: "tenant", grants: ["insert", "select", "delete"],
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      data: {"default": {"json": {}}, "required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      membership_ids: {"required": true, "type": "uuid[]"},
+      tenant_id: {"required": true, "type": "uuid"},
+      type: {"required": true, "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "live_events_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "created_at"}], "name": "live_events_created"},
+    ],
+    checks: [],
+  },
   notifications: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
@@ -3411,9 +3475,20 @@ export const TABLES: Record<string, TableSpec> = {
       read_at: {"type": "timestamp"},
       tenant_id: {"required": true, "type": "uuid"},
       title: {"required": true, "type": "string"},
+      // Shared notification model (contracts/notifications.ts). Absent on notices raised before it (read as derived values).
+      category: {"type": "string"},
+      priority: {"enum": ["low", "normal", "high", "urgent"], "type": "string"},
+      // How many events this notice stands for: repeated events with the same dedupe_key fold into one unread notice.
+      count: {"type": "int"},
+      dedupe_key: {"type": "string"},
+      resource_type: {"type": "string"},
+      resource_id: {"type": "string"},
+      actor_membership_id: {"type": "uuid"},
+      updated_at: {"type": "timestamp"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "notifications_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "dedupe_key"}], "name": "notifications_one_unread_per_key", "where": [{"col": "dedupe_key", "op": "notnull"}, {"col": "read_at", "op": "null"}]},
     ],
     fks: [
       {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
@@ -3421,6 +3496,7 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "created_at", "desc": true}], "name": "notifications_inbox"},
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "category"}, {"col": "created_at", "desc": true}], "name": "notifications_by_category"},
     ],
     checks: [
       "CHECK (((link IS NULL) OR (link ~ '^/'::text)))",
