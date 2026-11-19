@@ -127,10 +127,10 @@ export const PERMISSIONS = [
   { key: 'bids:manage', module: 'Staffing bids', description: 'Create and price staffing bids, manage clients and templates, send approved proposals', phase: 11, scopes: ['own', 'entity', 'tenant'] },
   { key: 'bids:approve', module: 'Staffing bids', description: 'Approve staffing bids and their margins before they go to the client', phase: 11, scopes: ['entity', 'tenant'] },
 
-  // Phase 25: employee workspace
-  { key: 'tasks:assign', module: 'People', description: 'Assign Manager Tasks to people in scope and review their progress', phase: 25, scopes: ['team', 'department', 'entity', 'tenant'] },
-  { key: 'tasks:hr', module: 'People', description: 'Assign HR Tasks (documents, forms, acknowledgements) and verify the documents people upload', phase: 25, scopes: ['department', 'entity', 'tenant'] },
-  { key: 'profiles:review', module: 'People', description: 'Review the profile changes employees submit: compare, approve, reject or ask for more', phase: 25, scopes: ['department', 'entity', 'tenant'] },
+  // Phase 27: employee workspace
+  { key: 'tasks:assign', module: 'People', description: 'Assign Manager Tasks to people in scope and review their progress', phase: 27, scopes: ['team', 'department', 'entity', 'tenant'] },
+  { key: 'tasks:hr', module: 'People', description: 'Assign HR Tasks (documents, forms, acknowledgements) and verify the documents people upload', phase: 27, scopes: ['department', 'entity', 'tenant'] },
+  { key: 'profiles:review', module: 'People', description: 'Review the profile changes employees submit: compare, approve, reject or ask for more', phase: 27, scopes: ['department', 'entity', 'tenant'] },
 ] as const satisfies readonly PermissionDefinition[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

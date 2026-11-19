@@ -117,6 +117,10 @@ SampCrew combines **RBAC** (roles bundle permissions) with **ABAC** (each grant 
 | `bids:read` View staffing bids, their pricing and margins, and clients | 11 |  | A | · | A | · | A | · | · | A | · | · | · | · |
 | `bids:manage` Create and price staffing bids, manage clients and templates, send approved proposals | 11 |  | A | · | · | · | A | · | · | · | · | · | · | · |
 | `bids:approve` Approve staffing bids and their margins before they go to the client | 11 |  | A | · | A | · | · | · | · | A | · | · | · | · |
+| **People** | | |  |  |  |  |  |  |  |  |  |  |  |  |
+| `tasks:assign` Assign Manager Tasks to people in scope and review their progress | 27 |  | A | · | A | E | · | · | · | · | · | T | · | · |
+| `tasks:hr` Assign HR Tasks (documents, forms, acknowledgements) and verify the documents people upload | 27 |  | A | · | A | E | · | · | · | · | · | · | · | · |
+| `profiles:review` Review the profile changes employees submit: compare, approve, reject or ask for more | 27 |  | A | · | A | E | · | · | · | · | · | · | · | · |
 
 Legend: O own, T team, D department, E legal entity, A all (tenant), · not granted.
 
@@ -148,6 +152,7 @@ Platform staff authenticate in a separate realm (`platform_admins` table, separa
 | `billing:read` | ✓ | · | ✓ | ✓ |
 | `billing:manage` | ✓ | · | ✓ | · |
 | `plans:manage` | ✓ | · | ✓ | · |
+| `statutory:manage` | ✓ | · | · | · |
 | `support:request` | ✓ | ✓ | · | · |
 | `admins:manage` | ✓ | · | · | · |
 | `audit:read` | ✓ | ✓ | · | · |

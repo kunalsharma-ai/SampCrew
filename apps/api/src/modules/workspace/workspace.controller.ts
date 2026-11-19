@@ -56,6 +56,7 @@ export class WorkspaceController {
   }
 
   @Get('calendar')
+  @RequireFeature('core_hr')
   @Doc({ summary: 'My month: working days, weekly offs, holidays, my leave, task and appraisal deadlines', query: rewardMonthQuery })
   calendar(@Query(new ZodPipe(rewardMonthQuery)) q: z.infer<typeof rewardMonthQuery>) {
     return this.workspace.calendar(q.month);
