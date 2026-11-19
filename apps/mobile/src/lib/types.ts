@@ -148,6 +148,8 @@ export interface AppraisalBrief {
   id: string; cycleName: string; periodStart: string; periodEnd: string; selfDue: string | null; stage: string; formTitle: string;
   selfCompletion: number; finalPercent: number | null; band: string | null; overdue: boolean; publishedAt: string | null;
 }
+/** An appraisal I review, as a manager or HR. */
+export interface AppraisalReviewRow extends AppraisalBrief { employeeName: string | null; departmentName: string | null; managerName: string | null; managerDue: string | null; selfPercent: number | null; managerPercent: number | null }
 export interface AppraisalQuestion { id: string; text: string; kind: string; weight: number; required: boolean; active: boolean }
 export interface AppraisalSectionDef { id: string; title: string; description: string; kind: 'rated' | 'self' | 'manager' | 'hr'; audience: string; active: boolean; questions: AppraisalQuestion[] }
 export type AppraisalAnswers = Record<string, { score?: number | null; comment?: string | null; text?: string | null }>;
@@ -155,9 +157,10 @@ export interface AppraisalDetail {
   id: string; stage: string; role: 'employee' | 'manager' | 'hr'; canEdit: boolean;
   cycle: { name: string; periodStart: string; periodEnd: string; selfDue: string | null };
   employee: { name: string; designation: string | null; department: string | null; managerName: string | null };
-  definition: { title: string; intro: string; declaration?: string; scale: { min: number; max: number; levels: { from: number; to: number; label: string; description: string }[] }; sections: AppraisalSectionDef[] };
-  answers: { employee?: AppraisalAnswers; manager?: AppraisalAnswers; hr?: AppraisalAnswers };
-  result: { selfPercent: number | null; managerPercent: number | null; finalPercent: number | null; band: string | null; finals: Record<string, number> } | null;
+  definition: { title: string; intro: string; declaration?: string; scale: { min: number; max: number; levels: { from: number; to: number; label: string; description: string }[] }; sections: AppraisalSectionDef[]; scoring?: { hrScores: boolean }; bands?: { label: string; min: number }[] };
+  answers: { employee?: AppraisalAnswers; manager?: AppraisalAnswers; hr?: AppraisalAnswers; finalScores?: Record<string, number | null> };
+  result: { selfPercent: number | null; managerPercent: number | null; hrPercent?: number | null; calculatedPercent?: number | null; finalPercent: number | null; band: string | null; finals: Record<string, number | null> } | null;
+  overrideReason?: string | null; finalPercentOverride?: number | null;
   completion: { employee: number; manager: number; hr: number }; publishedAt: string | null;
 }
 

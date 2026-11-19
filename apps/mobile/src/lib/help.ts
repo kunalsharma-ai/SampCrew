@@ -84,9 +84,19 @@ export const MOBILE_HELP = {
     what: 'The appraisal waiting for your self-assessment, and how much you have answered.',
     where: 'Submit it before the due date. Your manager evaluates it next.',
   },
+  'appraisal.team': {
+    title: 'My team',
+    what: 'Appraisals of the people who report to you. Each one is yours to evaluate once they submit their self-appraisal.',
+    how: 'Open one, score each question next to their own score, write your section, save and submit. HR reviews it next.',
+  },
+  'appraisal.hr': {
+    title: 'HR review',
+    what: 'Appraisals whose manager evaluation is in, and finalised ones not yet shared with the employee.',
+    how: 'Open one to set final scores or an approved percentage with a reason, finalise it, then share the result.',
+  },
   'appraisal.form': {
     title: 'Appraisal form',
-    what: 'Score each question on the scale and answer the written questions.',
+    what: 'Score each question on the scale and answer the written questions: your self-appraisal, or, as a manager or HR, your part of someone else’s.',
     how: 'Save a draft any time. Submit once every required question is answered; it then locks.',
   },
   'appraisal.result': {

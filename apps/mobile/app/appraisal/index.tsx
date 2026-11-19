@@ -1,19 +1,38 @@
 import { useRouter } from 'expo-router';
-import { appraisalStage } from '../../src/lib/labels';
+import { appraisalStage, reviewStage } from '../../src/lib/labels';
 import { useSession } from '../../src/lib/session';
-import type { AppraisalBrief } from '../../src/lib/types';
+import type { AppraisalBrief, AppraisalReviewRow } from '../../src/lib/types';
 import { Badge, Card, CardTitle, Empty, fmt, ListItem, Loading, Meter, Notice, Screen, Text, useLoad, useReloadOnFocus } from '../../src/ui';
 
-/** My appraisals: the current one first, with what I need to do. */
+/** My appraisals (the current one first, with what I need to do), then the ones I review as a manager or HR. */
 export default function AppraisalsScreen() {
   const { api } = useSession();
   const router = useRouter();
   const { data, error, loading, reload } = useLoad(() => api.get<AppraisalBrief[]>('/appraisals/mine'), [api]);
-  useReloadOnFocus(reload);
+  const reviews = useLoad(() => api.get<{ team: AppraisalReviewRow[]; hr: AppraisalReviewRow[]; isHr: boolean }>('/appraisals/reviews'), [api]);
+  useReloadOnFocus(() => { reload(); reviews.reload(); });
+  const team = reviews.data?.team ?? [];
+  const hr = reviews.data?.hr ?? [];
+  const reviewList = (rows: AppraisalReviewRow[], waiting: string, testID: string, title: string, help: 'appraisal.team' | 'appraisal.hr', empty: string) => (
+    <Card testID={testID}>
+      <CardTitle right={rows.some((r) => r.stage === waiting) ? <Badge tone="warn">{`${rows.filter((r) => r.stage === waiting).length} to do`}</Badge> : undefined} help={help}>{title}</CardTitle>
+      {!rows.length && <Empty>{empty}</Empty>}
+      {rows.map((r) => (
+        <ListItem
+          key={r.id}
+          testID={`review-${r.id}`}
+          title={r.employeeName ?? 'Employee'}
+          subtitle={`${r.cycleName} · ${r.stage === 'published' && r.finalPercent !== null ? `${r.finalPercent}%` : reviewStage[r.stage] ?? r.stage}`}
+          right={<Badge tone={r.stage === waiting ? 'warn' : r.stage === 'published' ? 'ok' : 'info'}>{r.stage === waiting ? 'Your turn' : reviewStage[r.stage] ?? r.stage}</Badge>}
+          onPress={() => router.push(`/appraisal/${r.id}`)}
+        />
+      ))}
+    </Card>
+  );
   const current = data?.find((a) => a.stage === 'self');
 
   return (
-    <Screen onRefresh={reload} refreshing={loading && !!data}>
+    <Screen onRefresh={() => { reload(); reviews.reload(); }} refreshing={loading && !!data}>
       {error && <Notice tone="danger">{error}</Notice>}
       {!data && !error && <Loading />}
       {current && (
@@ -39,6 +58,8 @@ export default function AppraisalsScreen() {
           />
         ))}
       </Card>
+      {team.length > 0 && reviewList(team, 'manager', 'appraisal-team', 'My team', 'appraisal.team', '')}
+      {reviews.data?.isHr && reviewList(hr, 'hr', 'appraisal-hr', 'HR review', 'appraisal.hr', 'Appraisals reach HR after the manager submits.')}
     </Screen>
   );
 }
