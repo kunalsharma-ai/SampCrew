@@ -110,10 +110,10 @@ function ClockCard({ today, renderedAt }: { today: AttendanceToday; renderedAt: 
           <div className="h-full rounded-full bg-accent transition-[width] duration-700 motion-reduce:transition-none" style={{ width: `${pct}%` }} />
         </div>
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <div className="flex items-center gap-2"><LogIn className="size-4 text-fg-subtle" aria-hidden /><div><dt className="text-xs text-fg-subtle">First in</dt><dd className="font-semibold tabular">{clockIn(t.firstIn)}</dd></div></div>
-          <div className="flex items-center gap-2"><Timer className="size-4 text-fg-subtle" aria-hidden /><div><dt className="text-xs text-fg-subtle">Worked</dt><dd className="font-semibold tabular" data-testid="worked-today">{hm(t.worked) === '—' ? '0m' : hm(t.worked)}</dd></div></div>
-          <div className="flex items-center gap-2"><Coffee className="size-4 text-fg-subtle" aria-hidden /><div><dt className="text-xs text-fg-subtle">Breaks</dt><dd className="font-semibold tabular">{hm(t.breaks) === '—' ? '0m' : hm(t.breaks)}</dd></div></div>
-          <div className="flex items-center gap-2"><Clock3 className="size-4 text-fg-subtle" aria-hidden /><div><dt className="text-xs text-fg-subtle">Remaining</dt><dd className="font-semibold tabular">{off ? '—' : hm(remaining) === '—' ? 'Done' : hm(remaining)}</dd></div></div>
+          <div><dt className="flex items-center gap-1.5 text-xs text-fg-subtle"><LogIn className="size-3.5" aria-hidden />First in</dt><dd className="font-semibold tabular">{clockIn(t.firstIn)}</dd></div>
+          <div><dt className="flex items-center gap-1.5 text-xs text-fg-subtle"><Timer className="size-3.5" aria-hidden />Worked</dt><dd className="font-semibold tabular" data-testid="worked-today">{hm(t.worked) === '—' ? '0m' : hm(t.worked)}</dd></div>
+          <div><dt className="flex items-center gap-1.5 text-xs text-fg-subtle"><Coffee className="size-3.5" aria-hidden />Breaks</dt><dd className="font-semibold tabular">{hm(t.breaks) === '—' ? '0m' : hm(t.breaks)}</dd></div>
+          <div><dt className="flex items-center gap-1.5 text-xs text-fg-subtle"><Clock3 className="size-3.5" aria-hidden />Remaining</dt><dd className="font-semibold tabular">{off ? '—' : hm(remaining) === '—' ? 'Done' : hm(remaining)}</dd></div>
         </dl>
         {notice && <Alert tone={notice.tone as 'success'}>{notice.text}</Alert>}
       </div>
@@ -224,7 +224,7 @@ function MonthCalendar({ calendar }: { calendar: MyCalendar }) {
       />
       <div className="grid gap-3 px-5 pb-5">
         <div className="grid grid-cols-7 gap-1 text-center text-[0.6875rem] font-medium text-fg-subtle" aria-hidden>{DOW.map((d) => <div key={d}>{d}</div>)}</div>
-        <div className="grid grid-cols-7 gap-1" role="grid" aria-label={title}>
+        <div className="grid grid-cols-7 gap-1" role="group" aria-label={title}>
           {Array.from({ length: lead }, (_, i) => <div key={`l${i}`} />)}
           {calendar.days.map((d) => {
             const n = Number(d.date.slice(8));
@@ -234,9 +234,8 @@ function MonthCalendar({ calendar }: { calendar: MyCalendar }) {
               <button
                 key={d.date}
                 type="button"
-                role="gridcell"
-                aria-selected={selected === d.date}
-                aria-label={`${d.date}${d.holidayName ? `, ${d.holidayName}` : d.dayType === 'weekly_off' ? ', weekly off' : ''}${d.events.length ? `, ${d.events.length} events` : ''}`}
+                aria-pressed={selected === d.date}
+                aria-label={`${n} ${title}${d.holidayName ? `, ${d.holidayName}` : d.dayType === 'weekly_off' ? ', weekly off' : ''}${d.events.length ? `, ${d.events.length} events` : ''}`}
                 onClick={() => setSelected(d.date)}
                 className={cn(
                   'flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg text-sm tabular transition-colors motion-reduce:transition-none',
