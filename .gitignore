@@ -14,7 +14,9 @@ next-env.d.ts
 dist-web/
 .expo/
 *-failure.png
-infra/deploy/backups/
-infra/deploy/.env.smoke
-infra/deploy/smoke-logs.txt
-infra/deploy/offsite.env
+# Deployment folder: each server keeps its own deployment files (compose overrides, proxy config, logs, keys).
+# Nothing new in it is committed; the install kit already in git (compose.yml, scripts/, smoke.sh) stays tracked,
+# because the Docker images, CI and the install package use it. Add a shared file with `git add -f`.
+/deploy/
+infra/deploy/*
+!infra/deploy/scripts/
