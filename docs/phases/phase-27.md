@@ -21,8 +21,8 @@ Both ran green on 19 November 2026, with no browser errors.
 - **Home, "My day"** (web): a live clock in the employee's time zone with Clock in / Clock out (the same punch,
   geofence and selfie rules as Attendance), first in, worked time, breaks and time left; leave balances with
   pending days; this month's attendance counts; attendance rewards; a month calendar of holidays, weekly offs,
-  leave (approved and pending), task due dates and self-appraisal deadlines, with month navigation; and task counts.
-  Interview items, the interview task list and "Interviews this week" show only to people who can see recruitment.
+  leave (approved and pending), task due dates and self-appraisal deadlines, with month navigation; task counts, and recent notifications (live, from the notifications work merged into this
+  branch). Interview items, the interview task list and "Interviews this week" show only to people who can see recruitment.
 - **Attendance rewards**: HR sets the rules under Settings, Attendance (perfect attendance, punctuality; late days
   allowed, leave types that do not count against it, half days, minimum working days). "Add the standard rules"
   excuses sick leave types. Each employee sees, per month, earned, on track, missed (with the reason, such as the
@@ -52,8 +52,6 @@ Both ran green on 19 November 2026, with no browser errors.
   ten grants the role templates give, changed nothing else, and does nothing when run again.
 
 ### Not yet working, or not yet verified
-- **No notifications widget on Home yet.** It comes from the separate notifications work and will be added when
-  that component lands.
 - **PDF upload on the phone.** The mobile app uploads photos (camera or library). A task that only accepts PDF or
   Word says to upload it from the web; adding a document picker needs a new native module and app store builds.
 - **Mobile profile edits** cover personal details and emergency contacts. Address, education, jobs, skills, bank
