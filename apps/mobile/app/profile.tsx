@@ -80,7 +80,7 @@ export default function ProfileScreen() {
 
   return (
     <Screen onRefresh={reload} refreshing={loading}>
-      {msg && <Notice tone={msg.tone} testID="profile-message">{msg.text}</Notice>}
+      {msg && !editing && <Notice tone={msg.tone} testID="profile-message">{msg.text}</Notice>}
       <Card testID="profile-header">
         <Text size={18} weight="700">{p.employee.name}</Text>
         <Text muted size={13}>{[p.employee.code, p.professional.designation, p.professional.department].filter(Boolean).join(' · ')}</Text>
@@ -107,6 +107,7 @@ export default function ProfileScreen() {
             <Field label="Mobile number" value={f('phone')} onChangeText={setF('phone')} keyboardType="phone-pad" maxLength={40} hint="With the country code, such as +91 98765 43210." />
             <Field label="Personal email" value={f('personalEmail')} onChangeText={setF('personalEmail')} keyboardType="email-address" autoCapitalize="none" maxLength={200} />
             <Choice label="Marital status" value={f('maritalStatus')} onChange={setF('maritalStatus')} options={MARITAL_STATUSES.map((m) => ({ value: m, label: m === 'undisclosed' ? 'Prefer not to say' : m[0]!.toUpperCase() + m.slice(1) }))} />
+            {msg?.tone === 'danger' && <Notice tone="danger">{msg.text}</Notice>}
             <Button title="Send to HR" busy={busy === 'send'} onPress={send} testID="send-personal" />
             <Button kind="secondary" title="Cancel" onPress={() => setEditing(null)} />
           </>
@@ -133,6 +134,7 @@ export default function ProfileScreen() {
             <Field label="Relationship" value={f('relationship')} onChangeText={setF('relationship')} maxLength={60} />
             <Field label="Phone" value={f('phone')} onChangeText={setF('phone')} keyboardType="phone-pad" maxLength={40} />
             <Field label="Email (optional)" value={f('email')} onChangeText={setF('email')} keyboardType="email-address" autoCapitalize="none" maxLength={200} />
+            {msg?.tone === 'danger' && <Notice tone="danger">{msg.text}</Notice>}
             <Button title="Send to HR" disabled={!f('name').trim() || !f('phone').trim()} busy={busy === 'send'} onPress={send} testID="send-emergency" />
             <Button kind="secondary" title="Cancel" onPress={() => setEditing(null)} />
           </>

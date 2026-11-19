@@ -144,7 +144,8 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
 
     // 4. Appraisal.
     await p.goto(APP + '/appraisal');
-    await p.getByTestId('appraisal-open-current').click();
+    await p.getByTestId('appraisal-current').waitFor();
+    await p.getByTestId('appraisal-list').getByText(`Mobile appraisal ${run}`).click();
     await p.getByTestId('appraisal-actions').waitFor();
     const radios = p.getByRole('radio', { name: '4', exact: true });
     const n = await radios.count();
@@ -164,14 +165,15 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     // 5. Profile update.
     await p.goto(APP + '/profile');
     await p.getByTestId('edit-personal').click();
-    await p.getByLabel('Mobile number').fill('+91 98220 12345');
+    const mobile = `98220${String(Date.now()).slice(-5)}`;
+    await p.getByLabel('Mobile number').fill(`+91 ${mobile}`);
     await p.getByTestId('send-personal').click();
     await p.getByText('Sent to HR. Your profile changes once HR approves it.').waitFor();
     await p.getByText('Waiting for HR').first().waitFor();
     const pending = (await api(hr, 'GET', '/profile/updates')).find((u) => u.employee.name.startsWith('Neha') && u.section === 'personal');
     await api(hr, 'POST', `/profile/updates/${pending.id}/decide`, { decision: 'approve' });
     await p.reload();
-    await p.getByTestId('profile-personal').getByText(/98220/).waitFor();
+    await p.getByTestId('profile-personal').getByText(new RegExp(mobile.slice(-5))).waitFor();
     ok('asks to change the mobile number; HR approves and the profile shows it');
 
     assert(errs.length === 0, `no browser errors:\n${errs.join('\n')}`);
