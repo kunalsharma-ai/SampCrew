@@ -136,6 +136,30 @@ export const WEB_HELP: HelpContent = {
       how: 'Launch a draft cycle to create the appraisals, share finalised results when HR is done, and close the cycle at the end.',
       where: 'Opened from Appraisal forms & cycles.',
     },
+    '/profile': {
+      title: 'My profile',
+      what: 'Everything HR keeps about you: personal and contact details, address, emergency contacts, education, previous employment, skills, bank and identity details, and your job details.',
+      how: 'Open a section and press Update. Your changes go to HR for approval and your current details stay until HR approves. Bank and identity numbers are shown masked.',
+      where: 'From your avatar menu. You are notified when HR approves, rejects or asks about an update.',
+    },
+    '/profile/[employeeId]': {
+      title: 'Employee profile',
+      what: 'One employee\u2019s complete profile, as far as your role lets you see it.',
+      how: 'HR can change a section directly with Edit; the employee is told and the change is audited. Bank and identity details need finance or HR access.',
+      where: 'Opened from an employee record.',
+    },
+    '/profile/updates': {
+      title: 'Profile updates',
+      what: 'Changes employees submitted to their profiles, waiting for HR review, and every earlier update.',
+      how: 'Open one to compare old and new values, then approve, reject or ask for more information.',
+      where: 'For HR. The same updates also show in Approvals.',
+    },
+    '/profile/updates/[id]': {
+      title: 'Profile update',
+      what: 'One profile update: what is on record now, what the employee submitted, any proof they attached, and its history.',
+      how: 'Approve to update the official record at once, or reject or ask for information with remarks the employee will see.',
+      where: 'Opened from Profile updates, Approvals or a notification.',
+    },
     '/announcements': {
       title: 'Announcements',
       what: 'Company news published to you by HR or internal communications.',
@@ -1065,6 +1089,21 @@ export const WEB_HELP: HelpContent = {
       sections: {
         'Cycle status': { what: 'Whether the cycle is a draft, running or closed, and its deadlines.', how: 'Launch, share finalised results or close it from here.' },
         'Appraisals in this cycle': { what: 'Each person in the cycle, their stage and scores.', how: 'Open one to see or review it.' },
+      },
+    },
+    '/profile': {
+      sections: { 'Professional details': { what: 'Your job details as HR keeps them: employee ID, designation, department, manager, joining date, location, shift and working days.', how: 'These are HR managed. Ask HR if something is wrong.' } },
+    },
+    '/profile/[employeeId]': {
+      sections: { 'Professional details': { what: 'The employee\u2019s job details as HR keeps them.', how: 'Change them from the employee record (transfer, promotion and so on).' } },
+    },
+    '/profile/updates/[id]': {
+      sections: {
+        'Old and new values': { what: 'Each changed field, what is on record now and what the employee submitted.' },
+        'Supporting documents': { what: 'Certificates and proofs the employee attached to this update.', how: 'Open them to check the new values.' },
+        'Your decision': { what: 'Approve, reject or ask for more information.', how: 'Remarks are needed to reject or ask, and the employee sees them.' },
+        'HR remarks': { what: 'What HR said when deciding this update.' },
+        History: { what: 'Every step of this update, with who and when.' },
       },
     },
     '/settings/signature': {

@@ -307,3 +307,41 @@ export interface AppraisalCycle {
   id: string; name: string; status: 'draft' | 'active' | 'closed'; formId: string | null; formName: string | null; periodStart: string; periodEnd: string; selfDue: string; managerDue: string; hrDue: string | null;
   departmentIds: string[]; departmentNames: string[]; hrReviewerMembershipIds: string[]; launchedAt: string | null; closedAt: string | null; byStage: Record<AppraisalStageKey, number>; participants: number;
 }
+
+// Employee workspace: complete profile and profile updates
+export type ProfileSectionKey = import('@crew/contracts').ProfileSection;
+export interface ProfileChange { field: string; label: string; old: string | null; new: string | null }
+export interface ProfileUpdateBrief { id: string; status: string; createdAt: string; decidedAt: string | null; remarks: string | null; changes: ProfileChange[] }
+export interface PostalAddressView { line1: string; line2: string; city: string; state: string; postalCode: string; country: string }
+export interface FullProfile {
+  employee: { id: string; name: string; code: string; photo: boolean; photoUpdatedAt: string | null };
+  self: boolean; completeness: number; filled: Record<ProfileSectionKey, boolean>;
+  professional: {
+    employeeCode: string; designation: string | null; department: string | null; manager: string | null; employmentType: string; status: string; dateOfJoining: string;
+    confirmationDate: string | null; probationEndDate: string | null; workEmail: string | null; grade: string | null;
+    location: { name: string; address: string | null } | null; company: { name: string; address: string | null } | null;
+    shift: { name: string; start: string; end: string } | null; workingDays: string[];
+  };
+  sections: {
+    personal: { firstName: string; lastName: string; preferredName: string | null; dateOfBirth: string | null; gender: string | null; personalEmail: string | null; phone: string | null; nationality: string | null; maritalStatus: string | null; bloodGroup: string | null };
+    address: { current: PostalAddressView | null; permanentSameAsCurrent: boolean; permanent: PostalAddressView | null } | null;
+    emergency: { contacts: { name: string; relationship: string; phone: string; email: string | null }[] } | null;
+    education: { highestQualification: string | null; records: { level: string; degree: string | null; institution: string; yearCompleted: number | null; percentage: number | null; documentId: string | null }[] } | null;
+    employment: { totalExperienceMonths: number | null; records: { company: string; designation: string | null; from: string; to: string | null; lastSalary: number | null; reasonForLeaving: string | null; documentId: string | null }[] } | null;
+    skills: { skills: string[]; languages: string[]; certifications: string[] } | null;
+    bank: ({ accountHolderName: string | null; bankName: string | null; branchName: string | null; accountType: string | null; accountNumber: string | null; ifsc: string | null } & { hidden?: undefined }) | { hidden: true } | null;
+    identity: ({ aadhaar: string | null; pan: string | null; otherIdType: string | null; otherIdNumber: string | null; identityDocumentId: string | null; addressProofDocumentId: string | null } & { hidden?: undefined }) | { hidden: true } | null;
+  };
+  updates: Partial<Record<ProfileSectionKey, ProfileUpdateBrief>>;
+  can: { submit: boolean; editDirect: boolean; editSensitive: boolean; seeSensitive: boolean; review: boolean };
+}
+export interface ProfileUpdate {
+  id: string; section: ProfileSectionKey; sectionLabel: string; status: string;
+  employee: { id: string; name: string; code: string; department: string | null };
+  changes: ProfileChange[]; note: string | null; remarks: string | null; createdAt: string; decidedAt: string | null; decidedBy: string | null;
+  history: { at: string; by: string | null; action: string; remarks: string | null }[]; mine: boolean; canDecide: boolean;
+}
+export interface ProfileUpdateDetail extends ProfileUpdate {
+  documents: { id: string; title: string; fileName: string; category: string }[];
+  approvalTrail: { seq: number; status: string; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null; role: string | null }[];
+}

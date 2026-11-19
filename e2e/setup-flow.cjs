@@ -159,7 +159,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     for (const trigger of ['account-menu-header', 'account-menu-sidebar']) {
       await emp.getByTestId(trigger).click();
       await emp.getByRole('menu', { name: 'Your account' }).getByRole('menuitem', { name: 'My profile' }).click();
-      await emp.waitForURL(/\/employees\/[0-9a-f-]{36}/);
+      await emp.waitForURL((u) => u.pathname === '/profile');
       await emp.getByRole('heading', { name: 'Ravi Kale' }).waitFor();
     }
     await emp.getByTestId('account-menu-header').click();

@@ -53,6 +53,7 @@ export const NAV: NavGroup[] = [
       { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
+      { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
       { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
     ],
   },
@@ -191,7 +192,7 @@ export function workflowActions(me: Me): QuickAction[] {
  */
 export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: string; href: string }[] {
   return [
-    ...(me.employee ? [{ key: 'profile', label: 'My profile', href: `/employees/${me.employee.id}` }] : []),
+    ...(me.employee ? [{ key: 'profile', label: 'My profile', href: '/profile' }] : []),
     { key: 'security', label: 'Password & sign-in', href: '/settings/security' },
     { key: 'appearance', label: 'Appearance', href: '/settings/appearance' },
   ];

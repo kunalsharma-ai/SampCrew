@@ -103,7 +103,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
             </span>
           </span>
         }
-        actions={<span className="flex items-center gap-2"><span className="font-mono text-xs text-fg-subtle">{e.employeeCode}</span><EmployeeStatus status={e.status} /></span>}
+        actions={<span className="flex items-center gap-3"><Link className="text-sm font-medium text-accent hover:underline" href={`/profile/${e.id}`}>Full profile</Link><span className="font-mono text-xs text-fg-subtle">{e.employeeCode}</span><EmployeeStatus status={e.status} /></span>}
       />
       <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-border" aria-label="Employee sections">
         {tabs.map((t) => (
