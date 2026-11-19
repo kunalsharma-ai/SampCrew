@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import { hm } from '@/lib/time';
 import type { AttendanceMonth, AttendanceToday, LeaveBalance, MyCalendar, MyRewards, TaskCounts } from '@/lib/types';
 import { punchAction } from './attendance/actions';
+import { RecentNotifications } from '@/components/notifications-widget';
 
 /** Browser location for geofenced punching; resolves without coordinates if declined or slow. */
 function locate(): Promise<{ latitude?: number; longitude?: number; accuracyM?: number; denied?: boolean }> {
@@ -297,6 +298,7 @@ export function MyDay({ firstName, today, month, balances, rewards, calendar, ta
               {!open && <p className="-mt-2 px-5 pb-5 text-xs text-fg-muted"><CalendarDays className="mr-1 inline size-3.5" aria-hidden />Nothing open right now.</p>}
             </Card>
           )}
+          <RecentNotifications limit={5} />
         </div>
       </div>
     </section>

@@ -37,6 +37,7 @@
     "e2e:mobile-workspace": "node e2e/mobile-workspace-flow.cjs",
     "e2e:workspace": "node e2e/workspace-flow.cjs",
     "e2e:helpdesk": "node e2e/helpdesk-flow.cjs",
+    "e2e:notifications": "node e2e/notifications-flow.cjs",
     "e2e:ai": "node e2e/ai-flow.cjs",
     "e2e:integrations": "node e2e/integrations-flow.cjs",
     "e2e:enterprise": "node e2e/enterprise-flow.cjs",

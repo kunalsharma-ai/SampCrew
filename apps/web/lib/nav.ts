@@ -145,11 +145,14 @@ export const NAV: NavGroup[] = [
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
       { href: '/settings/signature/company', label: 'Email signatures', icon: 'mail', permission: 'org:manage', feature: 'email_signatures' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
+      { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
     ],
   },
   {
     label: 'You',
     items: [
+      { href: '/notifications', label: 'Notifications', icon: 'bell' },
+      { href: '/settings/notifications', label: 'Notification settings', icon: 'bell' },
       { href: '/settings/appearance', label: 'Appearance', icon: 'palette' },
       { href: '/settings/signature', label: 'Email signature', icon: 'mail', feature: 'email_signatures' },
       { href: '/settings/security', label: 'Security', icon: 'key' },

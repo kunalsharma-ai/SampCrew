@@ -357,11 +357,12 @@ async function seedCoreHr(
     const ar = await ws.insert('approval_requests', {
       resource_type: 'leave_request', resource_id: lr, subject_employee_id: arjun, requested_by_membership_id: arjunM,
       summary: `Arjun Kulkarni: Casual leave, ${nextMonday} (1.00 days). "Family function"`,
+      meta: { leaveTypeCode: 'CL', leaveTypeName: 'Casual leave', paid: true, halfDay: false }, category: 'casual_leave',
     });
     await ws.insert('approval_steps', { request_id: ar, seq: 1, kind: 'manager', approver_membership_id: supM, status: 'pending' });
     await ws.set('leave_requests', { id: lr }, { approval_request_id: ar });
     await ws.insert('notifications', {
-      membership_id: supM, kind: 'approval.requested', title: 'Leave request waiting for your approval', body: `Arjun Kulkarni: Casual leave, ${nextMonday}`, link: '/approvals',
+      membership_id: supM, kind: 'approval.requested', title: 'Leave request waiting for your approval', body: `Arjun Kulkarni: Casual leave, ${nextMonday}`, link: '/approvals', category: 'approvals', priority: 'high', count: 1, updated_at: new Date(),
     });
   }
   const neha = employeeByEmail.get('operator2@demo.crew.local')!;
@@ -596,6 +597,7 @@ async function seedPayroll(ws: Workspace, c: { indiaId: string; ukId: string; me
   const ar = await ws.insert('approval_requests', {
     resource_type: 'expense_claim', resource_id: claim, subject_employee_id: neha, requested_by_membership_id: nehaM,
     summary: `Neha Deshmukh: Meals expense of INR 640.00 on ${yesterday}. Lunch during the night-shift handover training (demo data)`,
+    meta: { expenseCategoryId: await category('Meals'), expenseCategoryName: 'Meals' }, category: 'expense',
   });
   await ws.insert('approval_steps', { request_id: ar, seq: 1, kind: 'manager', approver_membership_id: supM, status: 'pending' });
   await ws.set('expense_claims', { id: claim }, { approval_request_id: ar });

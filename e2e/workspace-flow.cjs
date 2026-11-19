@@ -2,8 +2,8 @@
  * Employee workspace end-to-end flow in the Web Portal, on the demo workspace (pnpm db:reset first; API on 4000,
  * web on 3000):
  *
- * 1. Home shows Neha her day: the clock card, leave, this month, attendance rewards from HR's rules and her calendar,
- *    with no interview items (she does not recruit).
+ * 1. Home shows Neha her day: the clock card, leave, this month, attendance rewards from HR's rules, her calendar and
+ *    her recent notifications, with no interview items (she does not recruit).
  * 2. HR gives her a document task. She uploads a PDF with a note; HR verifies it in the portal and the task is done.
  * 3. She sends new bank details. Until HR approves, nothing changes; HR approves from Profile updates and her
  *    profile shows the account number masked, never in full.
@@ -83,6 +83,8 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
     await e.getByRole('button', { name: /Clock (in|out)/ }).first().waitFor();
     for (const t of ['This month', 'Attendance rewards', 'My calendar']) await e.getByText(t, { exact: true }).first().waitFor();
     await e.getByText('Perfect attendance').first().waitFor();
+    // Recent notifications, live: HR's new task for Neha is among them.
+    await e.getByTestId('recent-notifications').getByText(`Upload your degree certificate ${run}`).first().waitFor();
     assert((await e.getByText('Interviews this week').count()) === 0, 'no interview highlight for a non-recruiter');
     ok('Home shows the clock, this month, rewards and the calendar, and no interviews');
 

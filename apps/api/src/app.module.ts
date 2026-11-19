@@ -135,6 +135,7 @@ import { IdempotencyInterceptor } from './platform/http/idempotency.interceptor'
 import { PlatformIntegrationsService } from './platform/integrations/platform-integrations.service';
 import { MailerService } from './platform/notify/mailer.service';
 import { NotificationService } from './platform/notify/notification.service';
+import { LiveService } from './platform/notify/live.service';
 import { PushService } from './platform/notify/push.service';
 import { StorageService } from './platform/storage/storage.service';
 
@@ -253,6 +254,7 @@ export const CONTROLLERS = [
     StatutoryPacksService,
     TenantControlService,
     NotificationService,
+    LiveService,
     PlatformIntegrationsService,
     FirstRunService,
     MailerService,

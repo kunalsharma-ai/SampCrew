@@ -66,8 +66,8 @@ describe('requests feedback, HR helpdesk, announcements and the leave calendar',
     // The asker is told it went for approval and to whom; the approver is asked.
     const told = await pool.find('notifications', { membership_id: people.emp.membershipId, kind: 'approval.submitted' });
     expect(told).toHaveLength(1);
-    expect(told[0]!.title).toBe('Leave request sent for approval');
-    expect(told[0]!.body).toContain('Waiting for Mona Manager');
+    expect(told[0]!.title).toBe('Leave request submitted');
+    expect(told[0]!.body).toContain('Your request has been submitted successfully. Your request is awaiting manager approval (Mona Manager).');
     expect(await pool.count('notifications', { membership_id: people.mgr.membershipId, kind: 'approval.requested' })).toBe(1);
 
     const calendars = ok(await as('hr').get('/leave/calendars'));

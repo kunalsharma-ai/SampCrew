@@ -589,6 +589,7 @@ export class LeaveService implements OnModuleInit {
       const approvalId = await this.approvals.start(tx, {
         resourceType: 'leave_request', resourceId: row.id, subjectEmployeeId: e.id,
         summary: `${e.name}: ${type.name}, ${range} (${preview.days} days)${input.reason ? `. "${input.reason}"` : ''}${sameDay ? ` ${sameDay}` : ''}`,
+        meta: { leaveTypeCode: type.code, leaveTypeName: type.name, paid: Boolean(type.paid), halfDay: input.startHalf !== 'full' || input.endHalf !== 'full' || type.code === 'HD' },
       });
       await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
       await this.audit.record(tx, {

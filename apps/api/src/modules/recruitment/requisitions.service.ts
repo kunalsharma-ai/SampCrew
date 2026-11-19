@@ -108,6 +108,8 @@ export class RequisitionsService implements OnModuleInit {
       fallbackRole: 'tenant_owner',
       label: 'Job requisition',
       link: (id) => `/recruitment/jobs/${id}`,
+      // A one-person workspace: the Owner raising a requisition cannot approve their own, and nobody else can.
+      autoApproveSoleOwner: true,
       attributes: async (tx, id) => reqAttrs(await loadRequisition(tx, id)),
       onApproved: async (tx, req) => {
         const r = await tx.collection('job_requisitions').updateAndGet({ id: req.resource_id, status: 'pending_approval' }, { $set: { status: 'approved', approved_at: new Date(), status_reason: null } });
@@ -121,8 +123,20 @@ export class RequisitionsService implements OnModuleInit {
         });
       },
       onRejected: async (tx, req) => {
-        await tx.collection('job_requisitions').updateOne({ id: req.resource_id, status: 'pending_approval' }, { $set: { status: 'rejected' } });
-        await this.audit.record(tx, { action: 'requisition.rejected', resourceType: 'job_requisition', resourceId: req.resource_id });
+        const r = await tx.collection('job_requisitions').updateAndGet({ id: req.resource_id, status: 'pending_approval' }, { $set: { status: 'rejected', status_reason: req.comment ?? null } });
+        await this.audit.record(tx, { action: 'requisition.rejected', resourceType: 'job_requisition', resourceId: req.resource_id, metadata: { comment: req.comment ?? null } });
+        if (!r) return;
+        // The approvals engine tells the person who submitted it; the hiring manager (and whoever raised it) hear too.
+        await this.notifications.notify(tx, {
+          membershipIds: [r.created_by_membership_id, r.hiring_manager_membership_id].filter((m) => m !== req.requested_by_membership_id),
+          kind: 'requisition.rejected',
+          title: `${r.code} ${r.title} was rejected`,
+          body: req.comment ? `Remarks: ${req.comment}` : 'No remarks were given. Open the requisition to change it and submit it again.',
+          link: `/recruitment/jobs/${req.resource_id}`,
+          email: true,
+          priority: 'high',
+          resource: { type: 'job_requisition', id: req.resource_id },
+        });
       },
     });
   }
@@ -149,10 +163,15 @@ export class RequisitionsService implements OnModuleInit {
       const row = await requisitionView(tx, id);
       const posting = postingView(await tx.collection('job_postings').findOne({ requisition_id: id }));
       const s = await this.authz.subject(tx);
+      const approval = row?.approvalRequestId ? await tx.collection('approval_requests').findOne({ id: row.approvalRequestId }) : undefined;
       return {
         ...row,
         posting,
         careerSite: await careerSite(tx),
+        // The latest approval: its chain with each approver's remarks, so a rejection says why on the job page.
+        approval: approval
+          ? { id: approval.id as string, status: approval.status as string, autoApproved: Boolean(approval.auto_approved), decidedAt: approval.decided_at ?? null, trail: await this.approvals.trail(tx, approval.id) }
+          : null,
         can: {
           edit: can(s, 'requisitions:create', attrs).allowed,
           manageCandidates: can(s, 'candidates:manage', attrs).allowed,
@@ -236,12 +255,15 @@ export class RequisitionsService implements OnModuleInit {
       const dept = (await tx.collection('departments').findOne({ id: r.department_id }, { projection: { name: 1 } }))!.name as string;
       const range = r.salary_min || r.salary_max ? `, budget ${[moneyText(r.salary_min, r.currency), moneyText(r.salary_max, r.currency)].filter(Boolean).join(' to ')}` : '';
       const summary = `${r.code} ${r.title}: ${r.headcount} ${r.headcount === 1 ? 'hire' : 'hires'} in ${dept} (${r.employment_type.replace('_', ' ')})${range}`;
+      // Pending first: when the sole Owner submits, the engine approves it straight away and moves it on.
+      await tx.collection('job_requisitions').updateOne({ id }, { $set: { status: 'pending_approval', status_reason: null } });
+      await this.audit.record(tx, { action: 'requisition.submitted', resourceType: 'job_requisition', resourceId: id });
       const approvalId = await this.approvals.start(tx, {
         resourceType: 'job_requisition', resourceId: id, subjectEmployeeId: await employeeOfMember(tx, actor.membershipId), summary,
       });
-      await tx.collection('job_requisitions').updateOne({ id }, { $set: { status: 'pending_approval', approval_request_id: approvalId, status_reason: null } });
-      await this.audit.record(tx, { action: 'requisition.submitted', resourceType: 'job_requisition', resourceId: id });
-      return { status: 'pending_approval', approvalRequestId: approvalId };
+      await tx.collection('job_requisitions').updateOne({ id }, { $set: { approval_request_id: approvalId } });
+      const after = (await tx.collection('job_requisitions').findOne({ id }, { projection: { status: 1 } }))!;
+      return { status: after.status as string, approvalRequestId: approvalId, autoApproved: after.status === 'approved' };
     });
   }
 

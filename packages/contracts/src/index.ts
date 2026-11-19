@@ -70,3 +70,5 @@ export * from './tasks';
 export * from './appraisals';
 export * from './profile';
 export * from './rewards';
+export * from './notifications';
+export * from './approval-categories';
