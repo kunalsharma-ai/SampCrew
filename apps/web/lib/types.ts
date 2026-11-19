@@ -352,6 +352,7 @@ export interface ProfileUpdateDetail extends ProfileUpdate {
 
 // Employee workspace: attendance rewards and calendar
 export interface RewardRule { id: string; name: string; kind: 'perfect_attendance' | 'punctuality'; description: string | null; icon: 'trophy' | 'medal' | 'star' | 'clock'; active: boolean; maxLateDays: number; excusedLeaveTypeIds: string[]; allowHalfDays: boolean; minWorkingDays: number }
+export interface RewardWinners { month: string; evaluated: number; rules: (RewardRule & { winners: { employeeId: string; name: string; code: string | null; departmentName: string | null; daysCounted: number }[] })[] }
 export interface RewardResult extends RewardRule { status: 'earned' | 'on_track' | 'missed' | 'not_eligible'; done: number; total: number; reason: string | null }
 export interface MyRewards { month: string; complete: boolean; rewards: RewardResult[]; history: { month: string; earned: { id: string; name: string; icon: string }[] }[] }
 export interface MyCalendar { month: string; today: string; days: { date: string; dayType: string; holidayName: string | null; events: { kind: string; title: string; href: string; status?: string; color?: string | null }[] }[] }

@@ -8,6 +8,7 @@
  * 3. She sends new bank details. Until HR approves, nothing changes; HR approves from Profile updates and her
  *    profile shows the account number masked, never in full.
  * 4. She opens Appraisal and sees the self-appraisal HR launched for her.
+ * 5. HR sees last month's attendance reward winners, downloads them to Excel and moves between months.
  * Fails on any browser error.
  */
 const { chromium } = require('playwright');
@@ -128,6 +129,23 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
     await e.goto(`${BASE}/appraisal`);
     await e.getByText(`Web appraisal ${run}`).first().waitFor();
     ok('the self-appraisal HR launched is listed');
+
+    // 5. HR sees last month's reward winners and downloads them.
+    await hr.goto(`${BASE}/settings/attendance`);
+    current = hr;
+    await hr.getByRole('heading', { name: 'Reward winners' }).waitFor();
+    await hr.getByTestId('reward-winners').waitFor();
+    const winners = await api(hrT, 'GET', '/workspace/reward-winners');
+    assert(winners.rules.length >= 2, 'the winners list covers the active rules');
+    for (const r of winners.rules) await hr.getByRole('region', { name: `${r.name} winners` }).getByText(`${r.winners.length} earned`).waitFor();
+    if (winners.rules.some((r) => r.winners.length)) {
+      const [dl] = await Promise.all([hr.waitForEvent('download'), hr.getByRole('link', { name: 'Excel' }).click()]);
+      assert(dl.suggestedFilename() === `attendance-rewards-${winners.month}.xlsx`, `downloads ${dl.suggestedFilename()}`);
+    }
+    await hr.getByRole('link', { name: 'Earlier month' }).click();
+    await hr.waitForURL(/winners=\d{4}-\d{2}/);
+    await hr.getByTestId('winners-month').waitFor();
+    ok(`HR sees last month's reward winners (${winners.rules.map((r) => `${r.name}: ${r.winners.length}`).join(', ')}) and moves between months`);
 
     assert(errs.length === 0, `no browser errors:\n${errs.join('\n')}`);
     ok('no browser errors');

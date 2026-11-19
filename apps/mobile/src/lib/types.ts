@@ -172,7 +172,7 @@ export interface MyProfile {
     education: { records: { level: string; degree: string | null; institution: string; yearCompleted: number | null }[] } | null;
     employment: { records: { company: string; designation: string | null; from: string; to: string | null }[] } | null;
     skills: { skills: string[]; languages: string[]; certifications: string[] } | null;
-    bank: { hidden?: boolean; bankName?: string | null; accountNumber?: string | null; ifsc?: string | null; accountHolderName?: string | null } | null;
+    bank: { hidden?: boolean; bankName?: string | null; accountNumber?: string | null; ifsc?: string | null; accountHolderName?: string | null; branchName?: string | null; accountType?: string | null } | null;
     identity: { hidden?: boolean; aadhaar?: string | null; pan?: string | null; otherIdType?: string | null; otherIdNumber?: string | null } | null;
   };
   updates: Partial<Record<string, ProfileUpdateBrief>>;

@@ -96,7 +96,7 @@ export const MOBILE_HELP = {
   profile: {
     title: 'My profile',
     what: 'Your personal, contact, emergency, address, bank and identity details, and your work details.',
-    how: 'Tap Request a change. HR approves it before your record changes, and you are notified.',
+    how: 'Tap Request a change on personal details, emergency contact, address, bank account or skills. HR approves it before your record changes, and you are notified. Education, previous jobs and identity numbers need documents, so change them on the web.',
   },
   'profile.work': {
     title: 'Work details',

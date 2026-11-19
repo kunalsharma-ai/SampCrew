@@ -16,7 +16,8 @@ uses the existing performance permissions.
 ### Working end to end
 Each item runs against the real API and MongoDB and is covered by API tests and by two browser flows:
 `e2e/workspace-flow.cjs` (Web Portal) and `e2e/mobile-workspace-flow.cjs` (the mobile app's web build at phone size).
-Both ran green on 19 November 2026, with no browser errors.
+Both ran green on 19 November 2026, with no browser errors, as did every other browser flow in CI after the
+merges of #52 and #53.
 
 - **Home, "My day"** (web): a live clock in the employee's time zone with Clock in / Clock out (the same punch,
   geofence and selfie rules as Attendance), first in, worked time, breaks and time left; leave balances with
@@ -26,7 +27,8 @@ Both ran green on 19 November 2026, with no browser errors.
 - **Attendance rewards**: HR sets the rules under Settings, Attendance (perfect attendance, punctuality; late days
   allowed, leave types that do not count against it, half days, minimum working days). "Add the standard rules"
   excuses sick leave types. Each employee sees, per month, earned, on track, missed (with the reason, such as the
-  first absent day) or not eligible. Only working days count; holidays and weekly offs never do.
+  first absent day) or not eligible. Only working days count; holidays and weekly offs never do. HR sees each
+  finished month's winners per reward (with any missing attendance days computed first) and downloads them to Excel.
 - **HR Tasks and Manager Tasks**: HR assigns HR Tasks (general, document upload, acknowledgement), managers assign
   Manager Tasks to people they manage, each person gets their own copy. Statuses new, not started, in progress,
   pending review, completed, reopened, cancelled, with overdue shown for open tasks past their due date. Document
@@ -41,10 +43,11 @@ Both ran green on 19 November 2026, with no browser errors.
   old and new, approves, rejects or asks for more information, and only approval changes the record. Bank account,
   IFSC, PAN, Aadhaar and other ID numbers are stored encrypted (field keys, included in key rotation) and shown as
   the last four characters; the browser flow checks the full number never appears in the page.
-- **Mobile app**: My tasks (HR and manager, open or all), a task screen to start, finish, acknowledge or upload a
-  photo of the document with remarks; Appraisal (self-appraisal form with save and submit, and the shared result);
-  My profile (masked numbers, requests to change personal details and emergency contacts, withdraw a pending
-  change). Home gains a "My workspace" card and a My tasks quick action; Me links to all three.
+- **Mobile app**: My tasks (HR and manager, open or all), a task screen to start, finish, acknowledge or upload the
+  document with remarks: a photo (camera or library) or a PDF, Word or text file from the phone's files, limited to
+  the formats and size the task allows; Appraisal (self-appraisal form with save and submit, and the shared result);
+  My profile (masked numbers; requests to change personal details, emergency contact, address, bank account, typed
+  twice, and skills; withdraw a pending change). Home gains a "My workspace" card and a My tasks quick action; Me links to all three.
 - **Layout**: at 390 px wide, Home, tasks, appraisal, profile, profile updates and the attendance and appraisal
   settings have no sideways scrolling (the header, card headers and table screen-reader text used to push pages
   wider). Animations stay light and respect the reduced-motion setting.
@@ -52,12 +55,11 @@ Both ran green on 19 November 2026, with no browser errors.
   ten grants the role templates give, changed nothing else, and does nothing when run again.
 
 ### Not yet working, or not yet verified
-- **PDF upload on the phone.** The mobile app uploads photos (camera or library). A task that only accepts PDF or
-  Word says to upload it from the web; adding a document picker needs a new native module and app store builds.
-- **Mobile profile edits** cover personal details and emergency contacts. Address, education, jobs, skills, bank
-  and identity changes, with their documents, are made on the web.
 - **Appraisal on mobile is for employees.** Managers and HR review on the web.
-- **Rewards are shown, not paid.** There is no list of winners for HR, no certificate and no link to payroll.
+- **Rewards are shown, not paid.** HR sees each finished month's winners and downloads them to Excel; there is no
+  certificate and no automatic payroll bonus.
+- **Mobile profile edits** cover personal details, emergency contact, address, bank account and skills. Education,
+  previous jobs and identity numbers need their documents and are changed on the web.
 - **Native builds not run.** The mobile flows run on the app's web build; the iOS and Android builds share the
   screens but were not built or tried on a device in this phase.
 - **Interviews on the web** are hidden from people without recruitment access; the data and the recruiter pages

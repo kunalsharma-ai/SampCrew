@@ -6,6 +6,7 @@ import { MongoService as DatabaseService, type TenantTx } from '../../platform/d
 import { Errors } from '../../platform/http/errors';
 import { AttendanceDaysService } from '../attendance/attendance-days.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { displayName, fieldById } from '../employees/employee-view';
 
 const { addDays, localToday } = zonedTime;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -143,6 +144,71 @@ export class WorkspaceService {
       }
     }
     return { month: target, complete: target < current, rewards: results ?? [], history };
+  }
+
+  // Winners (HR) --------------------------------------------------------------------------------------------------
+
+  /**
+   * Who earned each active reward rule in a finished month (last month by default), for HR. Every employee working
+   * in the month is evaluated on the same attendance days the employee sees; days the engine has not computed yet are
+   * computed first. Only finished months have winners.
+   */
+  async winners(month?: string) {
+    return this.db.tenant(async (tx) => {
+      await this.authz.require('attendance:configure', {}, tx);
+      const tenant = await tx.collection('tenants').findOne({});
+      const today = localToday((tenant?.timezone as string | undefined) ?? 'UTC');
+      const current = today.slice(0, 7);
+      const m = month && month < current ? month : prevMonth(current);
+      const from = monthStart(m);
+      const to = monthEnd(m);
+      const rules = (await tx.collection('attendance_reward_rules').find({ active: true }, { sort: { created_at: 1 } })).map(ruleView);
+      const employees = await tx.collection('employees').find(
+        { date_of_joining: { $lte: to }, $or: [{ last_working_day: null }, { last_working_day: { $gte: from } }] },
+        { sort: { employee_code: 1 }, limit: 5000 },
+      );
+      const ids = employees.map((e) => e.id as string);
+      // Fill in any day the attendance engine has not computed yet, so a winner is never decided on missing days.
+      const have = new Map<string, Set<string>>();
+      for (const d of await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: { $gte: from, $lte: to } }, { projection: { employee_id: 1, work_date: 1 } })) {
+        (have.get(d.employee_id) ?? have.set(d.employee_id, new Set()).get(d.employee_id)!).add(d.work_date);
+      }
+      for (const e of employees) {
+        const start = e.date_of_joining > from ? (e.date_of_joining as string) : from;
+        const end = e.last_working_day && e.last_working_day < to ? (e.last_working_day as string) : to;
+        const got = have.get(e.id)?.size ?? 0;
+        if (start <= end && got < Math.round((Date.parse(end) - Date.parse(start)) / 86400000) + 1) await this.days.recompute(tx, e.id, start, end);
+      }
+      const [days, leaves, depts] = await Promise.all([
+        tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: { $gte: from, $lte: to } }, { sort: { work_date: 1 } }),
+        tx.collection('leave_requests').find({ employee_id: { $in: ids }, status: 'approved', start_date: { $lte: to }, end_date: { $gte: from } }),
+        fieldById(tx, 'departments', employees.map((e) => e.current_department_id)),
+      ]);
+      const byEmployee = new Map<string, Doc[]>();
+      for (const d of days) (byEmployee.get(d.employee_id) ?? byEmployee.set(d.employee_id, []).get(d.employee_id)!).push(d);
+      const out = rules.map((r) => ({ ...r, winners: [] as { employeeId: string; name: string; code: string | null; departmentName: string | null; daysCounted: number }[] }));
+      for (const e of employees) {
+        const mine = leaves.filter((l) => l.employee_id === e.id);
+        const rows: RewardDay[] = (byEmployee.get(e.id) ?? []).map((d) => ({
+          date: d.work_date, dayType: d.day_type, status: d.status, lateMinutes: d.late_minutes ?? 0,
+          leaveTypeId: mine.find((l) => l.start_date <= d.work_date && l.end_date >= d.work_date)?.leave_type_id ?? null,
+        }));
+        if (!rows.length) continue;
+        for (const r of out) {
+          const v = evaluateReward(r, rows, true);
+          if (v.status === 'earned') r.winners.push({ employeeId: e.id, name: displayName(e as never), code: (e.employee_code ?? null) as string | null, departmentName: depts.get(e.current_department_id) ?? null, daysCounted: v.done });
+        }
+      }
+      return { month: m, evaluated: employees.length, rules: out };
+    });
+  }
+
+  /** The winners as rows for an Excel download. */
+  async winnerRows(month?: string) {
+    const w = await this.winners(month);
+    const rows: (string | number)[][] = [['Month', 'Reward', 'Employee ID', 'Name', 'Department', 'Days counted']];
+    for (const r of w.rules) for (const x of r.winners) rows.push([w.month, r.name, x.code ?? '', x.name, x.departmentName ?? '', x.daysCounted]);
+    return { month: w.month, rows };
   }
 
   // Calendar ------------------------------------------------------------------------------------------------------

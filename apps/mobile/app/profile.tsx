@@ -1,4 +1,4 @@
-import { MARITAL_STATUSES, PROFILE_SECTION_LABELS, type ProfileSection } from '@crew/contracts';
+import { ACCOUNT_TYPES, MARITAL_STATUSES, PROFILE_SECTION_LABELS, type ProfileSection } from '@crew/contracts';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { ApiError } from '../src/lib/api';
@@ -15,15 +15,20 @@ const line = (label: string, value: string | null | undefined) => (
 );
 const addr = (a: Record<string, string> | null | undefined) => (a ? [a.line1, a.line2, a.city, a.state, a.postalCode, a.country].filter(Boolean).join(', ') : null);
 
+type Editable = 'personal' | 'emergency' | 'address' | 'bank' | 'skills';
+const ACCOUNT_LABEL: Record<string, string> = { savings: 'Savings', current: 'Current', salary: 'Salary', nre: 'NRE', nro: 'NRO', other: 'Other' };
+const splitList = (v: string) => [...new Set(v.split(',').map((x) => x.trim()).filter(Boolean))];
+
 /**
- * My profile. Official details are read-only; personal details, contacts and emergency contacts are changed by
- * sending an update that HR approves. Bank and identity numbers are shown masked.
+ * My profile. Official details are read-only; personal details, emergency contacts, address, bank details and skills
+ * are changed by sending an update that HR approves. Bank and identity numbers are shown masked, and a new bank
+ * account is typed twice.
  */
 export default function ProfileScreen() {
   const { api } = useSession();
   const { data: p, error, loading, reload } = useLoad(() => api.get<MyProfile>('/profile/me'), [api]);
   useReloadOnFocus(reload);
-  const [editing, setEditing] = useState<'personal' | 'emergency' | null>(null);
+  const [editing, setEditing] = useState<Editable | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
@@ -32,12 +37,19 @@ export default function ProfileScreen() {
   const s = p.sections;
   const f = (k: string) => form[k] ?? '';
   const setF = (k: string) => (v: string) => setForm((x) => ({ ...x, [k]: v }));
-  const open = (section: 'personal' | 'emergency') => {
+  const open = (section: Editable) => {
     setMsg(null);
     const c = s.emergency?.contacts[0];
-    setForm(section === 'personal'
-      ? { preferredName: s.personal.preferredName ?? '', phone: s.personal.phone ?? '', personalEmail: s.personal.personalEmail ?? '', maritalStatus: s.personal.maritalStatus ?? '' }
-      : { name: c?.name ?? '', relationship: c?.relationship ?? '', phone: c?.phone ?? '', email: c?.email ?? '' });
+    const a = s.address?.current;
+    const b = s.bank && !s.bank.hidden ? s.bank : null;
+    setForm(
+      section === 'personal' ? { preferredName: s.personal.preferredName ?? '', phone: s.personal.phone ?? '', personalEmail: s.personal.personalEmail ?? '', maritalStatus: s.personal.maritalStatus ?? '' }
+      : section === 'emergency' ? { name: c?.name ?? '', relationship: c?.relationship ?? '', phone: c?.phone ?? '', email: c?.email ?? '' }
+      : section === 'address' ? { line1: a?.line1 ?? '', line2: a?.line2 ?? '', city: a?.city ?? '', state: a?.state ?? '', postalCode: a?.postalCode ?? '', country: a?.country ?? '', same: s.address?.permanentSameAsCurrent === false ? 'no' : 'yes' }
+      // The stored account number is masked, so a change always asks for the full number again.
+      : section === 'bank' ? { accountHolderName: b?.accountHolderName ?? s.personal.firstName + (s.personal.lastName ? ` ${s.personal.lastName}` : ''), bankName: b?.bankName ?? '', accountNumber: '', accountNumber2: '', ifsc: b?.ifsc ?? '', branchName: b?.branchName ?? '', accountType: b?.accountType ?? 'savings' }
+      : { skills: s.skills?.skills.join(', ') ?? '', languages: s.skills?.languages.join(', ') ?? '', certifications: s.skills?.certifications.join(', ') ?? '' },
+    );
     setEditing(section);
   };
   const run = async (name: string, fn: () => Promise<unknown>, done: string) => {
@@ -56,9 +68,16 @@ export default function ProfileScreen() {
   };
   const send = () => {
     const none = (v: string) => (v.trim() ? v.trim() : null);
-    const data = editing === 'personal'
-      ? { ...s.personal, preferredName: none(f('preferredName')), phone: none(f('phone')), personalEmail: none(f('personalEmail')), maritalStatus: none(f('maritalStatus')) }
-      : { contacts: [{ name: f('name').trim(), relationship: f('relationship').trim(), phone: f('phone').trim(), email: none(f('email')) }, ...(s.emergency?.contacts.slice(1) ?? [])] };
+    if (editing === 'bank' && f('accountNumber').replace(/\s/g, '') !== f('accountNumber2').replace(/\s/g, '')) {
+      setMsg({ tone: 'danger', text: 'The two account numbers do not match. Type them again.' });
+      return;
+    }
+    const current = { line1: f('line1').trim(), line2: f('line2').trim(), city: f('city').trim(), state: f('state').trim(), postalCode: f('postalCode').trim(), country: f('country').trim() };
+    const data = editing === 'personal' ? { ...s.personal, preferredName: none(f('preferredName')), phone: none(f('phone')), personalEmail: none(f('personalEmail')), maritalStatus: none(f('maritalStatus')) }
+      : editing === 'emergency' ? { contacts: [{ name: f('name').trim(), relationship: f('relationship').trim(), phone: f('phone').trim(), email: none(f('email')) }, ...(s.emergency?.contacts.slice(1) ?? [])] }
+      : editing === 'address' ? { current, permanentSameAsCurrent: f('same') !== 'no', permanent: f('same') === 'no' ? (s.address?.permanent ?? null) : null }
+      : editing === 'bank' ? { accountHolderName: f('accountHolderName').trim(), bankName: f('bankName').trim(), accountNumber: f('accountNumber').replace(/\s/g, ''), ifsc: f('ifsc').trim().toUpperCase(), branchName: none(f('branchName')), accountType: f('accountType') || 'savings' }
+      : { skills: splitList(f('skills')), languages: splitList(f('languages')), certifications: splitList(f('certifications')) };
     return run('send', () => api.post(`/profile/${p.employee.id}/updates`, { section: editing, data }), 'Sent to HR. Your profile changes once HR approves it.');
   };
   const status = (section: ProfileSection) => {
@@ -76,7 +95,7 @@ export default function ProfileScreen() {
       </View>
     );
   };
-  const editable = (section: 'personal' | 'emergency') => p.can.submit && editing !== section && p.updates[section]?.status !== 'pending';
+  const editable = (section: Editable) => p.can.submit && editing !== section && p.updates[section]?.status !== 'pending';
 
   return (
     <Screen onRefresh={reload} refreshing={loading}>
@@ -150,30 +169,84 @@ export default function ProfileScreen() {
       <Card testID="profile-address">
         <CardTitle>{PROFILE_SECTION_LABELS.address}</CardTitle>
         {status('address')}
-        {line('Current', addr(s.address?.current))}
-        {line('Permanent', s.address?.permanentSameAsCurrent ? 'Same as current' : addr(s.address?.permanent))}
+        {editing === 'address' ? (
+          <>
+            <Field label="Address line 1" value={f('line1')} onChangeText={setF('line1')} maxLength={200} />
+            <Field label="Address line 2 (optional)" value={f('line2')} onChangeText={setF('line2')} maxLength={200} />
+            <Field label="City" value={f('city')} onChangeText={setF('city')} maxLength={80} />
+            <Field label="State" value={f('state')} onChangeText={setF('state')} maxLength={80} />
+            <Field label="Postal code" value={f('postalCode')} onChangeText={setF('postalCode')} maxLength={12} />
+            <Field label="Country" value={f('country')} onChangeText={setF('country')} maxLength={60} />
+            <Choice label="Permanent address" value={f('same')} onChange={setF('same')} options={[{ value: 'yes', label: 'Same as current' }, { value: 'no', label: 'Keep it as it is' }]} />
+            {msg?.tone === 'danger' && <Notice tone="danger">{msg.text}</Notice>}
+            <Button title="Send to HR" disabled={!f('line1').trim() || !f('city').trim()} busy={busy === 'send'} onPress={send} testID="send-address" />
+            <Button kind="secondary" title="Cancel" onPress={() => setEditing(null)} />
+          </>
+        ) : (
+          <>
+            {line('Current', addr(s.address?.current))}
+            {line('Permanent', s.address?.permanentSameAsCurrent ? 'Same as current' : addr(s.address?.permanent))}
+            {editable('address') && <Button kind="secondary" title={s.address ? 'Request a change' : 'Add your address'} onPress={() => open('address')} testID="edit-address" />}
+          </>
+        )}
       </Card>
 
       <Card testID="profile-bank">
         <CardTitle help="profile.masked">Bank and identity</CardTitle>
         {status('bank')}
         {status('identity')}
-        {s.bank?.hidden || s.identity?.hidden ? <Text muted size={13}>Hidden.</Text> : (
+        {editing === 'bank' ? (
+          <>
+            <Field label="Account holder name" value={f('accountHolderName')} onChangeText={setF('accountHolderName')} maxLength={120} />
+            <Field label="Bank name" value={f('bankName')} onChangeText={setF('bankName')} maxLength={120} />
+            <Field label="Account number" value={f('accountNumber')} onChangeText={setF('accountNumber')} keyboardType="number-pad" autoCapitalize="characters" maxLength={40} secureTextEntry hint="Type the full number. It is stored encrypted." />
+            <Field label="Account number again" value={f('accountNumber2')} onChangeText={setF('accountNumber2')} keyboardType="number-pad" autoCapitalize="characters" maxLength={40} />
+            <Field label="IFSC" value={f('ifsc')} onChangeText={setF('ifsc')} autoCapitalize="characters" maxLength={15} hint="Or the sort code or routing number outside India." />
+            <Field label="Branch (optional)" value={f('branchName')} onChangeText={setF('branchName')} maxLength={120} />
+            <Choice label="Account type" value={f('accountType')} onChange={setF('accountType')} options={ACCOUNT_TYPES.map((t) => ({ value: t, label: ACCOUNT_LABEL[t] ?? t }))} />
+            {msg?.tone === 'danger' && <Notice tone="danger">{msg.text}</Notice>}
+            <Button title="Send to HR" disabled={!f('accountNumber').trim() || !f('bankName').trim() || !f('ifsc').trim()} busy={busy === 'send'} onPress={send} testID="send-bank" />
+            <Button kind="secondary" title="Cancel" onPress={() => setEditing(null)} />
+          </>
+        ) : s.bank?.hidden || s.identity?.hidden ? <Text muted size={13}>Hidden.</Text> : (
           <>
             {line('Bank', s.bank?.bankName)}
             {line('Account', s.bank?.accountNumber)}
             {line('IFSC', s.bank?.ifsc)}
             {line('PAN', s.identity?.pan)}
             {line('Aadhaar', s.identity?.aadhaar)}
+            {editable('bank') && <Button kind="secondary" title={s.bank?.accountNumber ? 'Change bank account' : 'Add bank account'} onPress={() => open('bank')} testID="edit-bank" />}
           </>
         )}
         <Text muted size={12}>Numbers are stored encrypted and show only the last 4 characters.</Text>
       </Card>
 
+      <Card testID="profile-skills">
+        <CardTitle>{PROFILE_SECTION_LABELS.skills}</CardTitle>
+        {status('skills')}
+        {editing === 'skills' ? (
+          <>
+            <Field label="Skills" value={f('skills')} onChangeText={setF('skills')} multiline maxLength={2000} hint="Separate them with commas." />
+            <Field label="Languages" value={f('languages')} onChangeText={setF('languages')} maxLength={600} hint="Separate them with commas." />
+            <Field label="Certifications" value={f('certifications')} onChangeText={setF('certifications')} multiline maxLength={2000} hint="Separate them with commas." />
+            {msg?.tone === 'danger' && <Notice tone="danger">{msg.text}</Notice>}
+            <Button title="Send to HR" busy={busy === 'send'} onPress={send} testID="send-skills" />
+            <Button kind="secondary" title="Cancel" onPress={() => setEditing(null)} />
+          </>
+        ) : (
+          <>
+            {line('Skills', s.skills?.skills.join(', ') || null)}
+            {line('Languages', s.skills?.languages.join(', ') || null)}
+            {line('Certifications', s.skills?.certifications.join(', ') || null)}
+            {editable('skills') && <Button kind="secondary" title="Request a change" onPress={() => open('skills')} testID="edit-skills" />}
+          </>
+        )}
+      </Card>
+
       <Card>
         <CardTitle>More on the web</CardTitle>
-        <Text muted size={13}>Change your address, education, previous jobs, skills, bank and identity details, with documents, in SampCrew on the web under My profile.</Text>
-        {(['education', 'employment', 'skills'] as const).map((k) => line(PROFILE_SECTION_LABELS[k], k === 'skills' ? (s.skills?.skills.join(', ') || null) : `${(k === 'education' ? s.education?.records.length : s.employment?.records.length) ?? 0} added`))}
+        <Text muted size={13}>Education, previous jobs and identity numbers need their documents, so they are changed in SampCrew on the web under My profile.</Text>
+        {(['education', 'employment'] as const).map((k) => line(PROFILE_SECTION_LABELS[k], `${(k === 'education' ? s.education?.records.length : s.employment?.records.length) ?? 0} added`))}
       </Card>
     </Screen>
   );

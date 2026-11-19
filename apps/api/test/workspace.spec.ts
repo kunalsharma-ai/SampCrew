@@ -79,6 +79,22 @@ describe('employee workspace: attendance rewards and calendar', () => {
     expect(punctual).toMatchObject({ status: 'missed', reason: 'Late on 1 day' });
   });
 
+  it('HR sees who earned each reward last month, and downloads it; employees cannot', async () => {
+    expect((await api(app, emp).get('/workspace/reward-winners')).status).toBe(403);
+    const w = ok(await api(app, hr).get(`/workspace/reward-winners?month=${lastMonth}`));
+    expect(w.month).toBe(lastMonth);
+    const perfect = w.rules.find((x: { kind: string }) => x.kind === 'perfect_attendance');
+    const punctual = w.rules.find((x: { kind: string }) => x.kind === 'punctuality');
+    expect(perfect.winners).toEqual([expect.objectContaining({ employeeId, name: 'Esha Test' })]);
+    expect(punctual.winners).toEqual([]);
+    // The current month is not finished, so it falls back to last month.
+    expect(ok(await api(app, hr).get(`/workspace/reward-winners?month=${thisMonth}`)).month).toBe(lastMonth);
+    const x = await api(app, hr).get(`/workspace/reward-winners/export.xlsx?month=${lastMonth}`);
+    expect(x.status).toBe(200);
+    expect(x.headers['content-type']).toContain('spreadsheetml');
+    expect(x.headers['content-disposition']).toContain(`attendance-rewards-${lastMonth}.xlsx`);
+  });
+
   it('HR changes the rules: one late day allowed, and casual leave instead of sick is no longer excused', async () => {
     const rules = ok(await api(app, hr).get('/workspace/reward-rules')) as unknown as Record<string, unknown>[];
     const punctual = rules.find((x) => x.kind === 'punctuality')!;

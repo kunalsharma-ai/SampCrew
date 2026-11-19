@@ -9,10 +9,11 @@
  *
  * 1. HR gives Neha an acknowledgement task and a document task, and launches an appraisal cycle for her department.
  * 2. Neha's Home shows her open tasks and the self-appraisal waiting for her.
- * 3. She acknowledges the policy, photographs the document and uploads it with a remark; HR verifies it and the
+ * 3. She acknowledges the policy, photographs the document and uploads it with a remark (and a PDF for a PDF-only task); HR verifies it and the
  *    task is completed.
  * 4. She scores every question, writes her answers, saves a draft and submits; the appraisal moves to her manager.
  * 5. She asks to change her mobile number; it waits for HR, HR approves it and her profile shows the new number.
+ * 6. She changes her address, bank account and skills; HR approves each and the account number shows masked.
  * Fails on any browser error.
  */
 const http = require('node:http');
@@ -195,6 +196,45 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     await p.reload();
     await p.getByTestId('profile-personal').getByText(new RegExp(mobile.slice(-5))).waitFor();
     ok('asks to change the mobile number; HR approves and the profile shows it');
+
+    // 6. Address, bank account (typed twice, shown masked) and skills, each approved by HR.
+    const city = `Pune ${run}`;
+    await p.getByTestId('edit-address').click();
+    await p.getByLabel('Address line 1').fill('14 Lake View Road');
+    await p.getByLabel('City').fill(city);
+    await p.getByLabel('State').fill('Maharashtra');
+    await p.getByLabel('Postal code').fill('411001');
+    await p.getByLabel('Country').fill('India');
+    await p.getByTestId('send-address').click();
+    await p.getByText('Sent to HR. Your profile changes once HR approves it.').waitFor();
+    const account = `5010${String(Date.now()).slice(-8)}`;
+    await p.getByTestId('edit-bank').click();
+    await p.getByLabel('Bank name').fill('HDFC Bank');
+    await p.getByLabel('Account number', { exact: true }).fill(account);
+    await p.getByLabel('Account number again').fill(`${account.slice(0, -1)}0`);
+    await p.getByLabel('IFSC').fill('HDFC0000123');
+    await p.getByTestId('send-bank').click();
+    await p.getByText('The two account numbers do not match. Type them again.').waitFor();
+    await p.getByLabel('Account number again').fill(account);
+    await p.getByTestId('send-bank').click();
+    await p.getByText('Sent to HR. Your profile changes once HR approves it.').waitFor();
+    await p.getByTestId('edit-skills').click();
+    await p.getByLabel('Skills').fill('Line balancing, Kaizen, Line balancing');
+    await p.getByLabel('Languages').fill('Marathi, Hindi, English');
+    await p.getByTestId('send-skills').click();
+    await p.getByText('Sent to HR. Your profile changes once HR approves it.').waitFor();
+    const updates = (await api(hr, 'GET', '/profile/updates')).filter((u) => u.employee.name.startsWith('Neha') && u.status === 'pending');
+    for (const section of ['address', 'bank', 'skills']) {
+      const u = updates.find((x) => x.section === section);
+      assert(u, `the ${section} update waits for HR`);
+      await api(hr, 'POST', `/profile/updates/${u.id}/decide`, { decision: 'approve' });
+    }
+    await p.reload();
+    await p.getByTestId('profile-address').getByText(new RegExp(city)).waitFor();
+    const bankText = await p.getByTestId('profile-bank').innerText();
+    assert(bankText.includes(account.slice(-4)) && !bankText.includes(account), 'the new account shows masked');
+    await p.getByTestId('profile-skills').getByText('Line balancing, Kaizen').waitFor();
+    ok('changes address, bank account (typed twice, shown masked) and skills; HR approves each');
 
     assert(errs.length === 0, `no browser errors:\n${errs.join('\n')}`);
     ok('no browser errors');

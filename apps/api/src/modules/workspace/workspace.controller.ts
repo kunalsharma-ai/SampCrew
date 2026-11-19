@@ -1,7 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { rewardMonthQuery, rewardRuleInput, type RewardRuleInput } from '@crew/contracts';
+import type { Response } from 'express';
 import { z } from 'zod';
 import { RequireFeature } from '../../platform/authz/decorators';
+import { sendFile, toXlsx } from '../../platform/export/tabular';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { WorkspaceService } from './workspace.service';
@@ -53,6 +55,21 @@ export class WorkspaceController {
   @Doc({ summary: 'Remove an attendance reward rule' })
   remove(@Param('id', UuidPipe) id: string) {
     return this.workspace.deleteRule(id);
+  }
+
+  @Get('reward-winners')
+  @RequireFeature('attendance_basic')
+  @Doc({ summary: 'Who earned each active reward rule in a finished month, last month by default (attendance:configure)', query: rewardMonthQuery })
+  winners(@Query(new ZodPipe(rewardMonthQuery)) q: z.infer<typeof rewardMonthQuery>) {
+    return this.workspace.winners(q.month);
+  }
+
+  @Get('reward-winners/export.xlsx')
+  @RequireFeature('attendance_basic')
+  @Doc({ summary: 'The reward winners for a finished month as an Excel workbook', query: rewardMonthQuery })
+  async winnersExport(@Query(new ZodPipe(rewardMonthQuery)) q: z.infer<typeof rewardMonthQuery>, @Res() res: Response) {
+    const w = await this.workspace.winnerRows(q.month);
+    sendFile(res, { fileName: `attendance-rewards-${w.month}.xlsx`, content: toXlsx('Attendance rewards', w.rows) }, 'xlsx');
   }
 
   @Get('calendar')
