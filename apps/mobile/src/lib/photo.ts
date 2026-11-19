@@ -1,3 +1,5 @@
+import { TASK_FILE_FORMATS } from '@crew/contracts';
+import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Platform } from 'react-native';
 import { type Api, fromBase64 } from './api';
@@ -37,7 +39,7 @@ export async function pickPhoto(source: 'library' | 'camera'): Promise<PickResul
 export async function photoBytes(p: PickedPhoto, read: (uri: string) => Promise<ArrayBuffer> = async (uri) => (await fetch(uri)).arrayBuffer()): Promise<Uint8Array> {
   if (p.base64) return fromBase64(p.base64.replace(/^data:[^,]*,/, ''));
   if (Platform.OS === 'web' || p.uri.startsWith('data:') || p.uri.startsWith('blob:')) return new Uint8Array(await read(p.uri));
-  throw new Error('Could not read the photo on this phone. Choose it again.');
+  throw new Error('Could not read the file on this phone. Choose it again.');
 }
 
 /** Sends the photo to SampCrew as the employee's profile photo. */
@@ -61,4 +63,29 @@ export async function pickDocumentPhoto(source: 'library' | 'camera', maxBytes: 
   if (a.fileSize != null && a.fileSize > maxBytes) return { ok: false, message: `The file can be up to ${Math.round(maxBytes / 1048576)} MB. Choose a smaller one.` };
   const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
   return { ok: true, photo: { uri: a.uri, mimeType, fileName: a.fileName ?? `document.${ext}`, size: a.fileSize ?? null, base64: a.base64 ?? null } };
+}
+
+/** MIME types for each file format an HR document task can ask for (the same list the API checks). */
+export const DOCUMENT_TYPES: Record<string, readonly string[]> = TASK_FILE_FORMATS;
+
+/**
+ * Picks a file (PDF, Word, text or a picture) from the phone's files for a task that asks for one. Only the formats
+ * the task accepts can be chosen, and the size is checked before anything is sent.
+ */
+export async function pickDocumentFile(formats: readonly string[], maxBytes: number): Promise<PickResult> {
+  const types = formats.flatMap((f) => DOCUMENT_TYPES[f] ?? []);
+  const r = await DocumentPicker.getDocumentAsync({ type: types.length ? [...types] : '*/*', copyToCacheDirectory: true, multiple: false, base64: true });
+  if (r.canceled || !r.assets?.[0]) return { ok: false, cancelled: true };
+  const a = r.assets[0];
+  const mimeType = a.mimeType ?? a.file?.type ?? mimeFromName(a.name);
+  if (!mimeType || (types.length && !types.includes(mimeType))) return { ok: false, message: `This task accepts ${formats.map((f) => f.toUpperCase()).join(', ')} files. Choose another file.` };
+  const size = a.size ?? a.file?.size ?? null;
+  if (size != null && size > maxBytes) return { ok: false, message: `The file can be up to ${Math.round(maxBytes / 1048576)} MB. Choose a smaller one.` };
+  return { ok: true, photo: { uri: a.uri, mimeType, fileName: a.name, size, base64: a.base64 ?? null } };
+}
+
+/** The MIME type for a file name, for pickers that leave it out. */
+export function mimeFromName(name: string): string | null {
+  const ext = name.toLowerCase().split('.').pop() ?? '';
+  return ({ pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', txt: 'text/plain', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' } as Record<string, string>)[ext] ?? null;
 }

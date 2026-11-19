@@ -72,7 +72,7 @@ export const MOBILE_HELP = {
   'tasks.document': {
     title: 'Document',
     what: 'The document this task asks for. HR checks it and verifies or rejects it.',
-    how: 'Take a clear photo or choose one, add a remark if needed, then upload. If HR rejects it, the task reopens with their reason.',
+    how: 'Take a clear photo, choose one, or choose a file (PDF, Word or text) from your phone, as the task allows. Add a remark if needed, then upload. If HR rejects it, the task reopens with their reason.',
   },
   appraisal: {
     title: 'Appraisal',

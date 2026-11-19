@@ -102,12 +102,13 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     const run = Date.now().toString(36);
     await api(hr, 'POST', '/tasks', { category: 'hr', kind: 'acknowledgement', title: `Read the safety handbook ${run}`, priority: 'normal', dueOn: soon(5), employeeIds: [neha.id] });
     await api(hr, 'POST', '/tasks', { category: 'hr', kind: 'document', title: `Upload your address proof ${run}`, description: 'A photo of a utility bill is fine.', priority: 'high', dueOn: soon(3), employeeIds: [neha.id], document: { formats: ['image', 'pdf'], maxMb: 5 } });
+    await api(hr, 'POST', '/tasks', { category: 'hr', kind: 'document', title: `Upload your signed offer letter ${run}`, priority: 'normal', dueOn: soon(4), employeeIds: [neha.id], document: { formats: ['pdf'], maxMb: 2 } });
     const form = await api(hr, 'POST', '/appraisals/forms/from-template', { key: 'frequent_research' });
     const flat = (l) => l.flatMap((d) => [d, ...flat(d.children ?? [])]);
     const dept = flat(await api(hr, 'GET', '/org/departments')).find((d) => d.name.toLowerCase().includes('assembly'));
     const cycle = await api(hr, 'POST', '/appraisals/cycles', { name: `Mobile appraisal ${run}`, formId: form.id, periodStart: '2026-01-01', periodEnd: '2026-12-31', selfDue: soon(10), managerDue: soon(20), hrDue: soon(30), departmentIds: [dept.id] });
     await api(hr, 'POST', `/appraisals/cycles/${cycle.id}/launch`);
-    ok('HR assigns two tasks and launches an appraisal cycle');
+    ok('HR assigns three tasks and launches an appraisal cycle');
 
     // 2. Home.
     await signIn(p, 'operator2@demo.crew.local');
@@ -141,6 +142,25 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     await p.reload();
     await p.getByText('Verified').first().waitFor();
     ok('uploads a photo of the document with a remark; HR verifies it');
+
+    // A PDF-only task: no photo buttons, the file picker only takes the formats the task accepts.
+    await p.goBack();
+    await p.getByTestId('tasks-list').getByText(`Upload your signed offer letter ${run}`).click();
+    await p.getByTestId('task-document').waitFor();
+    assert((await p.getByTestId('doc-library').count()) === 0, 'a PDF-only task offers no photo picker');
+    let fc = p.waitForEvent('filechooser');
+    await p.getByTestId('doc-file').click();
+    await (await fc).setFiles({ name: 'offer.png', mimeType: 'image/png', buffer: PNG });
+    await p.getByTestId('task-message').getByText(/accepts PDF files/).waitFor();
+    fc = p.waitForEvent('filechooser');
+    await p.getByTestId('doc-file').click();
+    await (await fc).setFiles({ name: 'offer-letter.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n% signed offer letter for the mobile flow\n') });
+    await p.getByTestId('doc-picked').getByText('Ready to send: offer-letter.pdf').waitFor();
+    await p.getByTestId('doc-upload').click();
+    await p.getByText('Uploaded. HR will verify it and you will be notified.').waitFor();
+    const pdfTask = (await api(hr, 'GET', '/tasks?scope=assigned&category=hr&status=all')).find((t) => t.title === `Upload your signed offer letter ${run}`);
+    assert(pdfTask.status === 'pending_review' && pdfTask.document?.fileName === 'offer-letter.pdf', `PDF uploaded (${pdfTask.status}, ${pdfTask.document?.fileName})`);
+    ok('uploads a PDF from the phone\'s files for a PDF-only task (a picture is refused first)');
 
     // 4. Appraisal.
     await p.goto(APP + '/appraisal');

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { ApiError } from '../../src/lib/api';
 import { taskStatusLabel, taskTone } from '../../src/lib/labels';
-import { photoBytes, pickDocumentPhoto, type PickedPhoto } from '../../src/lib/photo';
+import { photoBytes, pickDocumentFile, pickDocumentPhoto, type PickedPhoto } from '../../src/lib/photo';
 import { useSession } from '../../src/lib/session';
 import type { MyTask } from '../../src/lib/types';
 import { Badge, Button, Card, CardTitle, Field, fmt, Loading, Notice, Row, Screen, Text, useLoad } from '../../src/ui';
@@ -51,16 +51,24 @@ export default function TaskScreen() {
   const workable = task.isMine && !closed && task.status !== 'pending_review';
   const doc = task.document;
   const imagesAllowed = !doc || doc.spec.formats.includes('image');
+  // PDF, Word and text files come from the phone's files (images can be picked there too).
+  const filesAllowed = !!doc && doc.spec.formats.some((f) => f !== 'image');
+  const fileWord = doc && doc.spec.formats.length === 1 ? (FORMAT[doc.spec.formats[0]!] ?? 'file') : 'file';
   const progress = (status: string, done: string) => act(status, () => api.post(`/tasks/${task.id}/progress`, { status, remarks: remarks.trim() || null }), done);
   const pick = async (source: 'library' | 'camera') => {
     const r = await pickDocumentPhoto(source, (doc?.spec.maxMb ?? 5) * 1048576);
     if (r.ok) setPhoto(r.photo);
     else if (r.message) setMsg({ tone: 'danger', text: r.message });
   };
+  const pickFile = async () => {
+    const r = await pickDocumentFile(doc?.spec.formats ?? ['pdf'], (doc?.spec.maxMb ?? 5) * 1048576);
+    if (r.ok) setPhoto(r.photo);
+    else if (r.message) setMsg({ tone: 'danger', text: r.message });
+  };
   const upload = () =>
     act('upload', async () => {
       const bytes = await photoBytes(photo!);
-      if (!bytes.length) throw new Error('Could not read the picture. Choose it again.');
+      if (!bytes.length) throw new Error('Could not read the file. Choose it again.');
       await api.uploadFile('POST', `/tasks/${task.id}/document`, { field: 'file', fileName: photo!.fileName, type: photo!.mimeType, bytes, fields: remarks.trim() ? { remarks: remarks.trim() } : undefined });
     }, 'Uploaded. HR will verify it and you will be notified.');
 
@@ -92,19 +100,18 @@ export default function TaskScreen() {
             </Row>
           )}
           {doc.verificationRemarks && <Text muted size={13}>{`HR: ${doc.verificationRemarks}`}</Text>}
-          {workable && (imagesAllowed ? (
+          {workable && (
             <View style={{ gap: 8 }}>
-              <Row>
-                {Platform.OS !== 'web' && <Button kind="secondary" title="Take a photo" onPress={() => pick('camera')} testID="doc-camera" />}
-                <Button kind="secondary" title="Choose a photo" onPress={() => pick('library')} testID="doc-library" />
+              <Row style={{ flexWrap: 'wrap' }}>
+                {imagesAllowed && Platform.OS !== 'web' && <Button kind="secondary" title="Take a photo" onPress={() => pick('camera')} testID="doc-camera" />}
+                {imagesAllowed && <Button kind="secondary" title="Choose a photo" onPress={() => pick('library')} testID="doc-library" />}
+                {filesAllowed && <Button kind="secondary" title={imagesAllowed ? 'Choose a file' : `Choose the ${fileWord}`} onPress={pickFile} testID="doc-file" />}
               </Row>
               {photo && <Text size={13} testID="doc-picked">{`Ready to send: ${photo.fileName}`}</Text>}
               <Field label="Remarks (optional)" value={remarks} onChangeText={setRemarks} maxLength={2000} />
               <Button title={doc.id ? 'Upload again' : 'Upload'} disabled={!photo} busy={busy === 'upload'} onPress={upload} testID="doc-upload" />
             </View>
-          ) : (
-            <Notice tone="info">This task needs a PDF. Upload it from SampCrew on the web, under My tasks.</Notice>
-          ))}
+          )}
         </Card>
       )}
 
