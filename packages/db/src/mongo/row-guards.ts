@@ -56,26 +56,41 @@ const helpdeskCasesGuard: RowGuard = async (ctx, op, before, after) => {
   if (changed(before, after, ['number', 'employee_id', 'raised_by_membership_id', 'description', 'created_at'])) throw fail('the original request of a helpdesk case cannot be changed');
 };
 
-/** announcements_guard: a published announcement keeps its wording and audience, and is archived, never deleted. */
+/**
+ * announcements_guard: a published announcement keeps its wording and audience unless it is edited as a new version
+ * (version raised), so every acknowledgement refers to a version; it is archived or marked deleted, never removed.
+ */
 const announcementsGuard: RowGuard = async (ctx, op, before, after) => {
   const fail = (m: string) => frozenError(m, ctx.table);
   if (op === 'delete') {
-    if (before?.status !== 'draft') throw fail('published announcements cannot be deleted; archive them instead');
+    if (before?.status !== 'draft' && before?.status !== 'scheduled') throw fail('published announcements cannot be deleted; archive them instead');
     return;
   }
   if (op !== 'update' || !before || !after) return;
-  if (before.status !== 'draft' && changed(before, after, ['title', 'body', 'requires_ack', 'legal_entity_id', 'department_id', 'location_id', 'published_at'])) {
+  const published = before.status === 'published' || before.status === 'archived';
+  const newVersion = Number(after.version ?? 1) > Number(before.version ?? 1);
+  if (published && !newVersion && changed(before, after, ['title', 'body', 'body_html', 'requires_ack', 'legal_entity_id', 'department_id', 'location_id', 'audience', 'file_ids'])) {
     throw fail('a published announcement cannot be reworded or readdressed');
   }
+  if (published && changed(before, after, ['published_at'])) throw fail('the publishing time cannot be changed');
+  if (Number(after.ack_version ?? 1) < Number(before.ack_version ?? 1) || Number(after.version ?? 1) < Number(before.version ?? 1)) throw fail('versions only go up');
   if (before.status === 'archived' && after.status !== 'archived') throw fail('archived announcements cannot be republished');
+  if (before.deleted_at && !sameValue(before.deleted_at, after.deleted_at)) throw fail('a deleted announcement stays deleted');
 };
 
-/** announcement_receipts_guard: the first read stays, and an acknowledgement once given stays. */
+/**
+ * announcement_receipts_guard: the first read stays, and an acknowledgement once given stays; a new one replaces it
+ * only for a newer version of the announcement (the earlier one moves to ack_history).
+ */
 const announcementReceiptsGuard: RowGuard = async (ctx, op, before, after) => {
   const fail = (m: string) => frozenError(m, ctx.table);
   if (op === 'delete') throw fail('announcement receipts cannot be deleted');
   if (op !== 'update' || !before || !after) return;
-  if (before.acknowledged_at && !sameValue(before.acknowledged_at, after.acknowledged_at)) throw fail('an acknowledgement cannot be changed');
+  if (before.acknowledged_at && !sameValue(before.acknowledged_at, after.acknowledged_at)) {
+    const newer = Number(after.acknowledged_version ?? 1) > Number(before.acknowledged_version ?? 1);
+    const kept = Array.isArray(after.ack_history) && after.ack_history.some((h: { at?: unknown }) => sameValue(h.at, before.acknowledged_at));
+    if (!newer || !kept || !after.acknowledged_at) throw fail('an acknowledgement cannot be changed');
+  }
   if (!sameValue(before.read_at, after.read_at)) throw fail('the first read time cannot be changed');
 };
 

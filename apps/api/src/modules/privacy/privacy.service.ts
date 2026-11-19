@@ -161,6 +161,11 @@ export class PrivacyService {
       records.helpdesk_messages = (await tx.collection('helpdesk_messages').find({ case_id: { $in: caseIds }, internal: false }, { sort: { created_at: 1 }, limit: MAX_ROWS }))
         .map((m) => ({ case_id: m.case_id, body: m.body, created_at: m.created_at }));
     }
+    // Chat messages the person sent (Communication); other people's messages are theirs and are not copied.
+    if (employee.membership_id) {
+      const chat = await tx.collection('chat_messages').find({ sender_membership_id: employee.membership_id, deleted_at: null }, { sort: { created_at: 1 }, limit: MAX_ROWS });
+      if (chat.length) records.chat_messages = chat.map((m) => ({ conversation_id: m.conversation_id, body: m.body, file_ids: m.file_ids, created_at: m.created_at, edited_at: m.edited_at ?? null }));
+    }
     const sens = await tx.collection('employee_sensitive').findOne({ employee_id: employeeId });
     const sensitive = sens ? { bank_name: sens.bank_name ?? null, bank_account_on_file: !!sens.bank_account_enc, tax_id_on_file: !!sens.tax_id_enc, national_id_on_file: !!sens.national_id_enc } : null;
     let account: Doc | null = null;
@@ -253,6 +258,16 @@ export class PrivacyService {
       if (e.membership_id) {
         // Messages are insert-only for the workspace; erasure rewrites them in the same transaction, limited to this workspace.
         counts.helpdeskMessages = await tx.unscoped('helpdesk_messages', ERASURE).update({ tenant_id: tenantId, author_membership_id: e.membership_id }, { $set: { body: '[erased]' } });
+        // Chat (Communication): what they wrote and the files they shared go; the conversations stay for the others.
+        counts.chatMessages = await tx.collection('chat_messages', ERASURE).update({ sender_membership_id: e.membership_id, system: false }, { $set: { body: '[erased]', file_ids: [] } });
+        const shared = await tx.collection('comm_files').find({ uploaded_by_membership_id: e.membership_id, name: { $ne: '[erased]' } }, { projection: { storage_key: 1 } });
+        const emailFiles = shared.length ? new Set((await tx.collection('comm_emails').find({ file_ids: { $in: shared.map((f) => f.id) } }, { projection: { file_ids: 1 } })).flatMap((m) => m.file_ids as string[])) : new Set<string>();
+        // Files they attached to HR emails belong to the workspace's record of what was sent, so those stay.
+        const own = shared.filter((f) => !emailFiles.has(f.id));
+        if (own.length) await tx.collection('comm_files', ERASURE).update({ id: { $in: own.map((f) => f.id) } }, { $set: { name: '[erased]', sha256: '' } });
+        files.push(...own.map((f) => f.storage_key as string));
+        counts.chatFiles = own.length;
+        counts.emailAddresses = await tx.collection('comm_email_recipients', ERASURE).update({ membership_id: e.membership_id }, { $set: { address: `erased-${e.membership_id}@erased.invalid` } });
         await tx.collection('memberships').updateOne({ id: e.membership_id }, { $set: { status: 'suspended', scim_external_id: null } });
         // The login is global: it is anonymised only when it belongs to no other workspace.
         const userId = (await tx.collection('memberships').findOne({ id: e.membership_id }))!.user_id as string;

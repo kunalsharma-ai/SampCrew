@@ -14,7 +14,10 @@ export const dynamic = 'force-dynamic';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await loadSession<Me>('/me');
   const handlesHelpdesk = Boolean(me.permissions['helpdesk:manage']) && me.features.includes('helpdesk');
-  const [notifications, prefs, inbox, cookieAppearance, helpdesk, notificationPrefs, taskCounts] = await Promise.all([
+  const chatsOn = me.features.includes('helpdesk') && Boolean(me.permissions['helpdesk:use']);
+  const newsOn = me.features.includes('announcements') && Boolean(me.permissions['announcements:read']);
+  // Everything the shell needs is fetched together, so each page waits for one round of requests.
+  const [notifications, prefs, inbox, cookieAppearance, helpdesk, notificationPrefs, taskCounts, chats, news] = await Promise.all([
     loadOptional<Notifications & { items: NotificationView[] }>('/notifications?limit=15'),
     loadOptional<MemberPreferences>('/me/preferences'),
     loadOptional<unknown[]>('/approvals/inbox'),
@@ -22,11 +25,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     handlesHelpdesk ? loadOptional<{ queue: { awaitingHr: number } | null }>('/helpdesk/summary') : Promise.resolve(null),
     loadOptional<NotificationPreferences>('/notifications/preferences'),
     loadOptional<TaskCounts>('/tasks/counts'),
+    chatsOn ? loadOptional<{ unread: number }>('/communication/unread') : Promise.resolve(null),
+    newsOn ? loadOptional<{ total: number }>('/announcements/unread') : Promise.resolve(null),
   ]);
   const counts: Record<string, number> = {};
   if (inbox?.length) counts['/approvals'] = inbox.length;
   // Questions from employees that HR still has to answer, on the HR helpdesk menu item.
   if (helpdesk?.queue?.awaitingHr) counts['/helpdesk/queue'] = helpdesk.queue.awaitingHr;
+  // Unread chat messages, and for HR the help requests waiting for an answer, on the Communication menu item.
+  const comm = (chats?.unread ?? 0) + (helpdesk?.queue?.awaitingHr ?? 0);
+  if (comm) counts['/communication'] = comm;
+  // Announcements not read yet, or waiting for an acknowledgement.
+  if (news?.total) counts['/announcements'] = news.total;
   // Open HR and manager tasks, plus work others sent me to check.
   const tasks = taskCounts ? taskCounts.hr.open + taskCounts.manager.open + taskCounts.toReview + taskCounts.documentsToVerify : 0;
   if (tasks) counts['/tasks'] = tasks;

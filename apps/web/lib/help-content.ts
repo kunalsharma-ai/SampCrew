@@ -100,6 +100,54 @@ export const WEB_HELP: HelpContent = {
       how: 'Approve or reject it here when it waits for you. Remarks are needed to reject, and the person sees them.',
       where: 'Open it from Approvals, a notification or the record itself.',
     },
+    '/communication': {
+      title: 'Communication',
+      what: 'The HR team\'s overview of communication: emails sent and delivered, chat activity, messages to HR waiting for a reply and recent emails.',
+      how: 'Start an email or a chat from the buttons, or open a waiting message to answer it.',
+      where: 'Communication replaces Ask HR. Help requests (Ask HR cases) are one of its tabs.',
+    },
+    '/communication/chat': {
+      title: 'Chat',
+      what: 'Your conversations: one to one, groups, departments and your conversation with the HR team. New messages arrive as they are sent.',
+      how: 'Choose a conversation or start a new one. Search finds conversations by name; press Enter to search messages too.',
+      where: 'Everyone can chat. Messages to HR are read and answered by anyone in the HR team; your manager cannot see them.',
+    },
+    '/communication/chat/[id]': {
+      title: 'Conversation',
+      what: 'One conversation. Your messages show Sent, Delivered (their app has it) and Read (they opened it).',
+      how: 'Write and press Enter to send (Shift+Enter for a new line). Attach up to 5 files. Mute a busy conversation, or leave a group.',
+      where: 'Group owners can rename the group and change its members.',
+    },
+    '/communication/emails': {
+      title: 'Emails',
+      what: 'For HR: emails to everyone, departments, designations, groups or chosen people, with their delivery status. For everyone: emails HR sent you.',
+      how: 'Filter by status or search. Open one to see who it was delivered to, or a draft to finish it.',
+      where: 'Emails go out through the email provider set up for SampCrew.',
+    },
+    '/communication/emails/new': {
+      title: 'New email',
+      what: 'Write an email to people in the workspace. Each person gets their own copy; Cc and Bcc addresses get one copy each.',
+      how: 'Choose who it is for, write the subject and message, attach files, then save a draft or send.',
+      where: 'Sent emails appear on each person\'s communication record.',
+    },
+    '/communication/emails/[id]': {
+      title: 'Email',
+      what: 'A sent email and its delivery to each person, or a draft to finish.',
+      how: 'Delivery updates as the email provider sends each copy. Open a person to see their communication record.',
+      where: 'Sent emails cannot be changed or deleted.',
+    },
+    '/communication/groups': {
+      title: 'Groups',
+      what: 'Your own lists of people, for example night-shift leads or first aiders.',
+      how: 'Add a group and its people. Choose it as the audience of an email or an announcement.',
+      where: 'Only the HR team sees and uses groups.',
+    },
+    '/communication/people/[id]': {
+      title: 'Communication record',
+      what: 'Everything HR sent or discussed with one person: emails with their delivery, the conversation with HR and help requests.',
+      how: 'Email or message the person from here.',
+      where: 'Open it from an email\'s delivery list.',
+    },
     '/notifications': {
       title: 'Notification Center',
       what: 'Every notification SampCrew sent you, by category, with important ones first. It updates live.',
@@ -186,8 +234,8 @@ export const WEB_HELP: HelpContent = {
     },
     '/announcements': {
       title: 'Announcements',
-      what: 'Company news published to you by HR or internal communications.',
-      how: 'Open an announcement to read it. If it asks you to acknowledge, press Acknowledge once you have read it.',
+      what: 'Company news published to you by HR or internal communications, with urgent ones and pinned ones first.',
+      how: 'Open an announcement to read it and download its files. Filter by category or show only unread ones. If it asks you to acknowledge, press I have read this; if HR changes it later you may be asked again.',
       where: 'For everyone. New announcements also appear on Home and in notifications.',
     },
     '/announcements/[id]': {
@@ -198,14 +246,26 @@ export const WEB_HELP: HelpContent = {
     },
     '/announcements/manage': {
       title: 'Manage announcements',
-      what: 'Write, target and publish announcements to the whole company or to one entity, department or location.',
-      how: 'Create a draft, choose the audience, then publish. After publishing the text cannot change, so check it first.',
+      what: 'Write, target, schedule and publish announcements to everyone or to departments, designations, groups and chosen people.',
+      how: 'Create one, choose the audience, category and priority, then publish now or schedule it. Edit, archive or delete it later; edits after publishing are saved as new versions.',
       where: 'For HR and internal communications.',
     },
     '/announcements/manage/[id]': {
       title: 'Announcement details',
       what: 'The message you published and who has read or acknowledged it.',
-      how: 'Use the People list to follow up with anyone who has not acknowledged yet.',
+      how: 'Use the People list, or Remind, to follow up with anyone who has not acknowledged yet. Edit, unschedule, archive or delete it from here.',
+      where: 'For the people who manage announcements.',
+    },
+    '/announcements/manage/new': {
+      title: 'New announcement',
+      what: 'Write an announcement with formatting and files, and choose who it is for.',
+      how: 'Pick the audience, category and priority, write it, then save a draft, publish now or schedule it for later. Urgent ones are also emailed.',
+      where: 'For the people who manage announcements.',
+    },
+    '/announcements/manage/[id]/edit': {
+      title: 'Edit announcement',
+      what: 'Change a draft, a scheduled announcement or a published one.',
+      how: 'For a published one, changes to the wording, audience or files are saved as a new version. Tick Ask everyone to acknowledge again if the change matters.',
       where: 'For the people who manage announcements.',
     },
     '/helpdesk': {
@@ -258,9 +318,15 @@ export const WEB_HELP: HelpContent = {
     },
     '/leave': {
       title: 'Leave',
-      what: 'Your leave balances, your requests and who is away soon.',
-      how: 'Press Request time off, choose the type and dates, and send. Your approver is notified; you can cancel while it is pending.',
-      where: 'For every employee. Managers also see their team’s requests here.',
+      what: 'Your leave balances, your month or year calendar, your requests and who is away soon.',
+      how: 'Press Apply for leave, choose the type and dates, and send. Change or cancel a request while it waits. A change to approved leave replaces it once approved. Year view shows all twelve months.',
+      where: 'For every employee. Managers also see their team’s requests here, and Team balances shows what their people have left.',
+    },
+    '/leave/balances': {
+      title: 'Leave balances',
+      what: 'What everyone you can see has available for each leave type, and every manual adjustment with its remark.',
+      how: 'Filter by department or search a name. Adjust adds or deducts days with a required remark the person sees (comp-off is credited this way). Adjustment history lists every change.',
+      where: 'For managers (their team) and HR (their scope).',
     },
     '/payslips': {
       title: 'Payslips',
@@ -703,7 +769,7 @@ export const WEB_HELP: HelpContent = {
     '/settings/leave': {
       title: 'Leave settings',
       what: 'Leave types, who gets how much, holiday calendars and the approval chain.',
-      how: 'Create leave types and policies, assign holiday calendars, and set who approves.',
+      how: 'Add standard types (maternity, comp-off, work from home and more) or your own. Give each a policy for everyone or by entity, department, designation or location; the most specific wins. Set up to five approval steps.',
       where: 'For HR, usually at setup and the start of each leave year.',
     },
     '/settings/onboarding': {
@@ -755,6 +821,13 @@ export const WEB_HELP: HelpContent = {
     'Supporting documents': { what: 'Files attached to the request, such as a receipt. Opening one is recorded.' },
     'Your decision': { what: 'Approve or reject this request. Your remarks are shared with the person who asked.', how: 'Remarks are needed when you reject.' },
     'Approval history': { what: 'Every step of the approval chain in order: who decided it, when, and their remarks, then the final decision.' },
+    'Messages to HR waiting for a reply': { what: 'Conversations where an employee wrote to HR last. Anyone in the HR team can answer.' },
+    'Recent emails': { what: 'The latest emails HR sent, with how many copies were delivered.' },
+    Message: { what: 'The email as people received it, with its attachments.' },
+    Delivery: { what: 'Each copy of the email and whether the email provider sent it.', how: '"Not sent" means email delivery is not set up for SampCrew; people can still read it in Communication.' },
+    Emails: { what: 'Emails HR sent this person and whether each was delivered.' },
+    'Conversation with HR': { what: 'The person\'s chat with the HR team.' },
+    'Help requests': { what: 'The person\'s Ask HR cases and their status.' },
     'What you are told about': { what: 'Each category of notification, in SampCrew and by email.', how: 'Switch a category off to stop it. Approvals and workspace notices always show in SampCrew.' },
     Sound: { what: 'A short, quiet tone for new notices while SampCrew is open. It never plays when a page loads.', how: 'Switch it on, set the volume and which notices make a sound, and try the preview.' },
     'Pop-ups': { what: 'A small pop-up in the corner when a notice arrives while SampCrew is open.' },

@@ -228,6 +228,7 @@ export const ERASURE_RULES = [
   { area: 'Documents', action: 'erased', detail: 'Files deleted from storage and their records removed.' },
   { area: 'Sign-in account', action: 'erased', detail: 'Removed from this workspace and signed out everywhere; if the login belongs to no other workspace, its name and email are replaced and it is disabled.' },
   { area: 'Helpdesk cases they raised', action: 'erased', detail: 'Subject, description, rating comment and the messages they wrote replaced with "[erased]".' },
+  { area: 'Chat messages and shared files', action: 'erased', detail: 'What they wrote in chat is replaced with "[erased]" and the files they shared in chat are deleted; the conversations stay for the other people.' },
   { area: 'Reviews, feedback and goals', action: 'erased', detail: 'Written answers, comments, goal titles, descriptions and check-in notes replaced with "[erased]". Ratings, scores and dates are kept for workforce reports.' },
   { area: 'Recognition', action: 'erased', detail: 'Messages written to them replaced with "[erased]".' },
   { area: 'Requests and notes about them', action: 'erased', detail: 'Reasons on leave, attendance corrections and overtime claims, notes on job changes and courses, expense descriptions, attrition notes and scores, and approval summaries replaced or removed.' },

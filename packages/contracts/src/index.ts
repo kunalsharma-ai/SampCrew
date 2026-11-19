@@ -72,3 +72,4 @@ export * from './profile';
 export * from './rewards';
 export * from './notifications';
 export * from './approval-categories';
+export * from './communication';

@@ -287,15 +287,86 @@ describe('helpdesk and announcements', () => {
       await expect(pool.update('announcement_receipts', { announcement_id: ids.ann }, { $set: { acknowledged_at: null } })).rejects.toThrow(/acknowledgement cannot be changed/);
     });
 
-    it('freezes the wording once published; only pinning and expiry change, then archive', async () => {
-      ok(await as('hr').put(`/announcements/${ids.ann}`).send({ title: 'Changed title', body: 'Changed body', pinned: true }));
-      const a = ok(await as('hr').get(`/announcements/manage/${ids.ann}`));
-      expect(a).toMatchObject({ title: 'Plant shutdown on Friday', pinned: true });
+    it('edits a published announcement as a new version: tampering is refused, acknowledgements are asked for again', async () => {
+      // Pinning only: no new version, nobody asked again.
+      expect(ok(await as('hr').put(`/announcements/${ids.ann}`).send({ title: 'Plant shutdown on Friday', body: 'The Operations floor is closed on Friday for maintenance.', departmentId: ops, requiresAck: true, pinned: true })).version).toBe(1);
+      // Changing the database directly (without a new version) is refused.
       await expect(pool.update('announcements', { id: ids.ann }, { $set: { body: 'tampered' } })).rejects.toThrow(/cannot be reworded/);
-      fails(await as('hr').delete(`/announcements/${ids.ann}`), 409, 'not_draft');
+      // A reworded announcement is version 2; askAgain makes everyone acknowledge the new wording.
+      const edit = ok(await as('hr').put(`/announcements/${ids.ann}`).send({ title: 'Plant shutdown on Friday and Saturday', body: 'The Operations floor is closed on Friday and Saturday.', departmentId: ops, requiresAck: true, pinned: true, askAgain: true }));
+      expect(edit.version).toBe(2);
+      const asha = ok(await as('asha').get(`/announcements/${ids.ann}`));
+      expect(asha).toMatchObject({ title: 'Plant shutdown on Friday and Saturday', version: 2, acknowledgedAt: null, needsAck: true });
+      expect(asha.acknowledgedEarlierAt).toBeTruthy();
+      expect(await unread('asha', 'announcement.updated')).toContain('Updated: Please read and acknowledge: Plant shutdown on Friday and Saturday');
+      expect(ok(await as('asha').get('/announcements/unread'))).toMatchObject({ toAcknowledge: 1 });
+      ok(await as('asha').post(`/announcements/${ids.ann}/acknowledge`));
+      const receipt = (await pool.one('announcement_receipts', { announcement_id: ids.ann, membership_id: people.asha!.membershipId }))!;
+      expect(receipt).toMatchObject({ acknowledged_version: 2 });
+      expect(receipt.ack_history).toHaveLength(1);
+      expect(ok(await as('asha').get('/announcements/unread'))).toMatchObject({ toAcknowledge: 0 });
+      const audit = await pool.find('audit_events', { action: 'announcement.edited', resource_id: ids.ann });
+      expect(audit[0]?.metadata).toMatchObject({ version: 2, askAgain: true, previous: { title: 'Plant shutdown on Friday' } });
+      // HR reminds those who have not acknowledged; not again within the hour.
+      expect(ok(await as('hr').post(`/announcements/${ids.ann}/remind`)).reminded).toBe(2);
+      fails(await as('hr').post(`/announcements/${ids.ann}/remind`), 409, 'reminded_recently');
+      expect(await unread('bala', 'announcement.reminder')).toContain('Reminder: please read and acknowledge "Plant shutdown on Friday and Saturday"');
+    });
+
+    it('archives, and deletes a published announcement from every feed while keeping its receipts', async () => {
       ok(await as('hr').post(`/announcements/${ids.ann}/archive`));
       expect((ok(await as('asha').get('/announcements')) as unknown as { title: string }[]).map((x) => x.title)).toEqual(['Town hall']);
       fails(await as('hr').post(`/announcements/${ids.ann}/publish`), 409, 'not_draft');
+      ok(await as('asha').get(`/announcements/${ids.allHands}`));
+      expect((await as('hr').delete(`/announcements/${ids.allHands}`)).status).toBe(204);
+      expect(ok(await as('asha').get('/announcements'))).toEqual([]);
+      fails(await as('asha').get(`/announcements/${ids.allHands}`), 404);
+      expect((ok(await as('hr').get('/announcements/manage')) as unknown as { id: string }[]).some((a) => a.id === ids.allHands)).toBe(false);
+      expect((ok(await as('hr').get('/announcements/manage?deleted=true')) as unknown as { id: string }[]).map((a) => a.id)).toContain(ids.allHands);
+      expect(await pool.count('announcement_receipts', { announcement_id: ids.allHands })).toBeGreaterThan(0);
+      await expect(pool.delete('announcements', { id: ids.allHands })).rejects.toThrow(/cannot be deleted/);
+    });
+
+    it('addresses people, groups and departments; with category, priority, rich text, files and scheduling', async () => {
+      const group = ok(await as('hr').post('/communication/groups').send({ name: 'Fire wardens', membershipIds: [people.olly!.membershipId] }), 201);
+      const file = ok(await as('hr').post('/announcements/files').attach('file', Buffer.from('%PDF-1.4 drill plan'), { filename: 'drill.pdf', contentType: 'application/pdf' }), 201);
+      expect(file.href).toBe(`/announcement-files/${file.id}`);
+      const body = {
+        title: 'Fire drill', html: '<p>Meet at <b>gate 2</b>.<script>alert(1)</script></p>', audience: { groupIds: [group.id], membershipIds: [people.asha!.membershipId] },
+        category: 'safety', priority: 'urgent', fileIds: [file.id], requiresAck: true,
+      };
+      const id = ok(await as('hr').post('/announcements').send(body), 201).id;
+      const draft = ok(await as('hr').get(`/announcements/manage/${id}`));
+      expect(draft).toMatchObject({ html: '<p>Meet at <b>gate 2</b>.</p>', body: 'Meet at gate 2.', category: 'safety', categoryLabel: 'Safety', priority: 'urgent', audienceLabel: 'Fire wardens and 1 person' });
+      expect(draft.people.map((p: { name: string }) => p.name).sort()).toEqual(['Asha Test', 'Olly Test']);
+      // Scheduled: nobody sees it until its time.
+      const at = new Date(Date.now() + 3_600_000).toISOString();
+      expect(ok(await as('hr').post(`/announcements/${id}/publish`).send({ publishAt: at }))).toMatchObject({ audience: 2, scheduledFor: at });
+      expect(ok(await as('hr').get(`/announcements/manage/${id}`)).status).toBe('scheduled');
+      expect(ok(await as('olly').get('/announcements'))).toEqual([]);
+      fails(await as('olly').post(`/announcements/files/${file.id}/link`), 404);
+      await pool.update('announcements', { id }, { $set: { publish_at: new Date(Date.now() - 1000) } });
+      // Due: published when anyone opens a feed (and by the minute job), notifying loudly.
+      const feed = ok(await as('olly').get('/announcements')) as unknown as Record<string, any>[];
+      expect(feed[0]).toMatchObject({ id, priority: 'urgent', category: 'safety', needsAck: true, files: [expect.objectContaining({ name: 'drill.pdf' })] });
+      const note = await pool.one('notifications', { membership_id: people.olly!.membershipId, kind: 'announcement', link: `/announcements/${id}` });
+      expect(note).toMatchObject({ title: 'Urgent: Please read and acknowledge: Fire drill', priority: 'urgent', category: 'announcements' });
+      expect(await pool.count('email_messages', { subject: { $regex: 'Fire drill' } })).toBeGreaterThan(0);
+      expect(ok(await as('olly').post(`/announcements/files/${file.id}/link`)).path).toMatch(/\/files\/comm\//);
+      fails(await as('bala').post(`/announcements/files/${file.id}/link`), 404);
+      expect((ok(await as('bala').get('/announcements')) as unknown as { id: string }[]).some((a) => a.id === id)).toBe(false);
+      // Filters: category and unread.
+      expect((ok(await as('asha').get('/announcements?category=safety')) as unknown as { id: string }[]).map((a) => a.id)).toEqual([id]);
+      expect(ok(await as('olly').get('/announcements/unread'))).toMatchObject({ unread: 1, toAcknowledge: 1 });
+      ok(await as('olly').get(`/announcements/${id}`));
+      expect(ok(await as('olly').get('/announcements/unread'))).toMatchObject({ unread: 0, toAcknowledge: 1 });
+      // Draft and scheduled can be turned back and deleted for good.
+      const later = ok(await as('hr').post('/announcements').send({ title: 'Later', body: 'Soon.', audience: { all: true } }), 201).id;
+      ok(await as('hr').post(`/announcements/${later}/publish`).send({ publishAt: at }));
+      ok(await as('hr').post(`/announcements/${later}/unschedule`));
+      expect(ok(await as('hr').get(`/announcements/manage/${later}`)).status).toBe('draft');
+      expect((await as('hr').delete(`/announcements/${later}`)).status).toBe(204);
+      fails(await as('hr').get(`/announcements/manage/${later}`), 404);
     });
   });
 

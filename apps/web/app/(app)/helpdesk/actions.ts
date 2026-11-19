@@ -1,7 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { act, api } from '@/lib/api';
-import type { Article } from './types';
+import { act, api, apiForm } from '@/lib/api';
+import type { AnnouncementFile, Article } from './types';
 
 type Body = Record<string, unknown>;
 const refresh = (...paths: string[]) => {
@@ -101,42 +101,63 @@ export async function deleteArticleAction(id: string) {
 
 // Announcements -----------------------------------------------------------------------------------------------
 
+const ANNOUNCEMENT_PAGES = ['/announcements/manage', '/announcements', '/'];
+
 export async function saveAnnouncementAction(id: string | null, body: Body) {
-  const r = await act(() => api<{ id: string }>(id ? `/announcements/${id}` : '/announcements', { method: id ? 'PUT' : 'POST', body }), id ? 'Announcement saved.' : 'Draft saved. Nobody sees it until you publish it.');
-  refresh('/announcements/manage', ...(id ? [`/announcements/manage/${id}`] : []));
+  const r = await act(() => api<{ id: string; version: number }>(id ? `/announcements/${id}` : '/announcements', { method: id ? 'PUT' : 'POST', body }), id ? 'Announcement saved.' : 'Draft saved. Nobody sees it until you publish it.');
+  refresh(...ANNOUNCEMENT_PAGES, ...(id ? [`/announcements/manage/${id}`, `/announcements/${id}`] : []));
   return r;
 }
 
 /**
- * Saves the announcement and publishes it in one go, so it appears on everyone's feed (Web Portal and mobile app)
- * and they are notified. If publishing is refused (for example nobody is in the audience) the draft stays saved.
+ * Saves the announcement and publishes it in one go (or schedules it for publishAt), so it appears on everyone's
+ * feed (Web Portal and mobile app) and they are notified. If publishing is refused (for example nobody is in the
+ * audience) the draft stays saved.
  */
-export async function saveAndPublishAnnouncementAction(id: string | null, body: Body) {
+export async function saveAndPublishAnnouncementAction(id: string | null, body: Body, publishAt: string | null = null) {
   const saved = await act(() => api<{ id: string }>(id ? `/announcements/${id}` : '/announcements', { method: id ? 'PUT' : 'POST', body }), 'Draft saved.');
   if (!saved.ok || !saved.data) return saved;
   const draftId = saved.data.id;
-  const r = await act(() => api<{ id: string; audience: number }>(`/announcements/${draftId}/publish`, { method: 'POST' }), 'Published. Everyone it is addressed to has been notified.');
-  refresh('/announcements/manage', `/announcements/manage/${draftId}`, '/announcements', '/');
-  if (r.ok && r.data) return { ...r, message: `Published to ${r.data.audience} ${r.data.audience === 1 ? 'person' : 'people'}. They see it in the Web Portal and the mobile app and have been notified.` };
-  return r.ok ? r : { ...r, code: 'saved_not_published', message: `The draft is saved but not published: ${r.message}` };
+  const r = await act(() => api<{ id: string; audience: number; scheduledFor: string | null }>(`/announcements/${draftId}/publish`, { method: 'POST', body: { publishAt } }), 'Published.');
+  refresh(...ANNOUNCEMENT_PAGES, `/announcements/manage/${draftId}`);
+  const people = (n: number) => `${n} ${n === 1 ? 'person' : 'people'}`;
+  if (r.ok && r.data?.scheduledFor) return { ...r, message: `Scheduled. It goes to ${people(r.data.audience)} at the time you chose, and they are notified then.` };
+  if (r.ok && r.data) return { ...r, message: `Published to ${people(r.data.audience)}. They see it in the Web Portal and the mobile app and have been notified.` };
+  return r.ok ? r : { ...r, data: { id: draftId }, code: 'saved_not_published', message: `The draft is saved but not published: ${r.message}` };
 }
 
 export async function publishAnnouncementAction(id: string) {
-  const r = await act(() => api(`/announcements/${id}/publish`, { method: 'POST' }), 'Published. Everyone it is addressed to has been notified.');
-  refresh('/announcements/manage', `/announcements/manage/${id}`, '/announcements', '/');
+  const r = await act(() => api(`/announcements/${id}/publish`, { method: 'POST', body: {} }), 'Published. Everyone it is addressed to has been notified.');
+  refresh(...ANNOUNCEMENT_PAGES, `/announcements/manage/${id}`);
   return r;
+}
+
+export async function unscheduleAnnouncementAction(id: string) {
+  const r = await act(() => api(`/announcements/${id}/unschedule`, { method: 'POST' }), 'No longer scheduled; it is a draft again.');
+  refresh(...ANNOUNCEMENT_PAGES, `/announcements/manage/${id}`);
+  return r;
+}
+
+export async function remindAnnouncementAction(id: string) {
+  const r = await act(() => api<{ reminded: number }>(`/announcements/${id}/remind`, { method: 'POST' }), 'Reminder sent.');
+  refresh(`/announcements/manage/${id}`);
+  return r.ok && r.data ? { ...r, message: r.data.reminded ? `Reminded ${r.data.reminded} ${r.data.reminded === 1 ? 'person' : 'people'} who had not acknowledged it.` : 'Everyone has acknowledged it already.' } : r;
 }
 
 export async function archiveAnnouncementAction(id: string) {
   const r = await act(() => api(`/announcements/${id}/archive`, { method: 'POST' }), 'Taken off the feed.');
-  refresh('/announcements/manage', `/announcements/manage/${id}`, '/announcements', '/');
+  refresh(...ANNOUNCEMENT_PAGES, `/announcements/manage/${id}`);
   return r;
 }
 
 export async function deleteAnnouncementAction(id: string) {
-  const r = await act(() => api(`/announcements/${id}`, { method: 'DELETE' }), 'Draft deleted.');
-  refresh('/announcements/manage');
+  const r = await act(() => api(`/announcements/${id}`, { method: 'DELETE' }), 'Announcement deleted.');
+  refresh(...ANNOUNCEMENT_PAGES);
   return r;
+}
+
+export async function uploadAnnouncementFileAction(form: FormData) {
+  return act(() => apiForm<AnnouncementFile>('/announcements/files', form));
 }
 
 export async function acknowledgeAction(id: string) {

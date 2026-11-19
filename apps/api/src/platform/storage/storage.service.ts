@@ -10,7 +10,7 @@ import { Errors } from '../http/errors';
 import { PlatformIntegrationsService } from '../integrations/platform-integrations.service';
 import { scanWithClamd } from './malware-scan';
 
-export type FileLinkKind = 'files' | 'resumes' | 'receipts';
+export type FileLinkKind = 'files' | 'resumes' | 'receipts' | 'comm';
 
 /**
  * File storage. The local driver writes under STORAGE_DIR and is meant for development and single-node

@@ -157,7 +157,11 @@ export class OverviewService {
   private async onLeaveToday(tx: Tx, s: Subject, features: Set<string>, today: string) {
     if (!features.has('leave') || !wide(s, 'leave:read')) return null;
     const people = await this.people(tx, 'leave:read');
-    const away = await tx.collection('leave_requests').distinct<string>('employee_id', { employee_id: { $in: [...people.keys()] }, status: 'approved', start_date: { $lte: today }, end_date: { $gte: today } });
+    // Working from home is not being away.
+    const wfh = await tx.collection('leave_types').distinct<string>('id', { kind: 'wfh' });
+    const away = await tx.collection('leave_requests').distinct<string>('employee_id', {
+      employee_id: { $in: [...people.keys()] }, status: 'approved', start_date: { $lte: today }, end_date: { $gte: today }, leave_type_id: { $nin: wfh },
+    });
     return away.length;
   }
 

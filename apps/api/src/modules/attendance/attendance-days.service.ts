@@ -224,21 +224,25 @@ export class AttendanceDaysService {
     return out;
   }
 
+  /** Approved leave by day, and approved work from home by day (which counts as present, not as leave). */
   private async leaveParts(tx: TenantTx, employeeId: string, from: string, to: string) {
-    const rows = await tx.collection<{ start_date: string; end_date: string; start_half: string; end_half: string; id: string }>('leave_requests').find({
+    const rows = await tx.collection<{ start_date: string; end_date: string; start_half: string; end_half: string; id: string; leave_type_id: string }>('leave_requests').find({
       employee_id: employeeId,
       status: 'approved',
       end_date: { $gte: from },
       start_date: { $lte: to },
     });
-    const out = new Map<string, 'full' | 'first_half' | 'second_half'>();
+    const wfhTypes = new Set(rows.length ? await tx.collection('leave_types').distinct<string>('id', { id: { $in: [...new Set(rows.map((r) => r.leave_type_id))] }, kind: 'wfh' }) : []);
+    const leave = new Map<string, 'full' | 'first_half' | 'second_half'>();
+    const remote = new Map<string, 'full' | 'first_half' | 'second_half'>();
     for (const r of rows) {
+      const out = wfhTypes.has(r.leave_type_id) ? remote : leave;
       for (let d = r.start_date; d <= r.end_date; d = addDays(d, 1)) {
         if (d < from || d > to) continue;
         out.set(d, d === r.start_date && r.start_half === 'second_half' ? 'second_half' : d === r.end_date && r.end_half === 'first_half' ? 'first_half' : 'full');
       }
     }
-    return out;
+    return { leave, remote };
   }
 
   /** Raw punches for one employee between two instants, from every source. */
@@ -295,7 +299,7 @@ export class AttendanceDaysService {
     const results = new Map<string, DayResult>();
     if (!e) return results;
     const plan = await this.plan(tx, e, from, addDays(to, 1));
-    const leave = await this.leaveParts(tx, e.id, from, to);
+    const { leave, remote } = await this.leaveParts(tx, e.id, from, to);
     const policy = await this.policy(tx, e.location_id);
     const approvedOt = new Map(
       (await tx.collection('overtime_claims').find({ employee_id: e.id, status: 'approved', work_date: { $gte: from, $lte: to } })).map((r) => [r.work_date as string, r.minutes as number]),
@@ -308,7 +312,7 @@ export class AttendanceDaysService {
       const punches = await this.punches(tx, e.id, win.from, win.to);
       const employed = d >= e.date_of_joining && (!e.last_working_day || d <= e.last_working_day);
       const r = computeDay({
-        workDate: d, timeZone: e.tz, shift: day.shift ? toRule(day.shift) : null, dayType: day.dayType, leave: leave.get(d) ?? null,
+        workDate: d, timeZone: e.tz, shift: day.shift ? toRule(day.shift) : null, dayType: day.dayType, leave: leave.get(d) ?? null, remote: remote.get(d) ?? null,
         punches: punches.map((p) => ({ at: p.captured_at.getTime(), direction: p.direction, outsideGeofence: p.geofence_result === 'outside' })),
         now, employed,
       });

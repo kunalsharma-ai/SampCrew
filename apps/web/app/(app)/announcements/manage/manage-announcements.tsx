@@ -1,103 +1,67 @@
 'use client';
-import { Alert, Badge, Button, Card, CardHeader, Checkbox, Dialog, Field, Input, Select, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
+import { Alert, Badge, Button, Card, CardHeader, Table, TBody, TD, TH, THead, TR, buttonClass } from '@crew/ui';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
-import type { Department, LegalEntity, Location } from '@/lib/types';
 import { useRunner } from '../../recruitment/use-runner';
-import { archiveAnnouncementAction, deleteAnnouncementAction, publishAnnouncementAction, saveAndPublishAnnouncementAction, saveAnnouncementAction } from '../../helpdesk/actions';
-import { audienceLabel, dateTime } from '../../helpdesk/labels';
+import { archiveAnnouncementAction, deleteAnnouncementAction, publishAnnouncementAction, unscheduleAnnouncementAction } from '../../helpdesk/actions';
+import { ANN_PRIORITY_LABEL, ANN_PRIORITY_TONE, ANN_STATUS_LABEL, ANN_STATUS_TONE, dateTime } from '../../helpdesk/labels';
 import type { Announcement } from '../../helpdesk/types';
 
-const STATE_TONE = { draft: 'neutral', published: 'success', archived: 'neutral' } as const;
-const STATE = { draft: 'Draft', published: 'Published', archived: 'Archived' };
-
-export function ManageAnnouncements({ items, entities, departments, locations }: { items: Announcement[]; entities: LegalEntity[]; departments: Department[]; locations: Location[] }) {
-  const { pending, notice, setNotice, run } = useRunner();
-  const [editing, setEditing] = useState<Announcement | 'new' | null>(null);
+/** HR's list: state (with the scheduled time), audience, reads and acknowledgements, and what can be done next. */
+export function ManageAnnouncements({ items, deleted }: { items: Announcement[]; deleted: boolean }) {
+  const { pending, notice, run } = useRunner();
   return (
     <div className="grid gap-6">
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
       <Card>
-        <CardHeader title="Announcements" action={<Button size="sm" onClick={() => setEditing('new')}>New announcement</Button>} />
+        <CardHeader
+          title={deleted ? 'Deleted announcements' : 'Announcements'}
+          description={deleted ? 'Off every feed; kept with their read receipts and acknowledgements.' : undefined}
+          action={<div className="flex gap-2">
+            <Link className={buttonClass('ghost', 'sm')} href={deleted ? '/announcements/manage' : '/announcements/manage?deleted=true'}>{deleted ? 'Back to current' : 'Deleted'}</Link>
+            {!deleted && <Link className={buttonClass('primary', 'sm')} href="/announcements/manage/new">New announcement</Link>}
+          </div>}
+        />
         <Table>
           <THead><tr><TH>Title</TH><TH>Audience</TH><TH>State</TH><TH>Read</TH><TH>Acknowledged</TH><TH /></tr></THead>
           <TBody>
             {items.length === 0 && <TR><TD colSpan={6} className="text-fg-muted">Nothing yet.</TD></TR>}
             {items.map((a) => (
-              <TR key={a.id}>
+              <TR key={a.id} data-testid="announcement-row">
                 <TD>
                   <Link className="font-medium text-accent hover:underline" href={`/announcements/manage/${a.id}`}>{a.title}</Link>
-                  {a.pinned && <Badge className="ml-2">Pinned</Badge>}
-                  <div className="text-xs text-fg-muted">{a.publishedAt ? `Published ${dateTime(a.publishedAt)}` : `Created ${dateTime(a.createdAt)}`}{a.expiresOn ? ` · until ${a.expiresOn}` : ''}</div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                    <Badge>{a.categoryLabel}</Badge>
+                    {a.priority !== 'normal' && <Badge tone={ANN_PRIORITY_TONE[a.priority]}>{ANN_PRIORITY_LABEL[a.priority]}</Badge>}
+                    {a.pinned && <Badge>Pinned</Badge>}
+                    {a.files.length > 0 && <span className="text-xs text-fg-subtle">{a.files.length} {a.files.length === 1 ? 'file' : 'files'}</span>}
+                  </div>
+                  <div className="text-xs text-fg-muted">
+                    {a.publishedAt ? `Published ${dateTime(a.publishedAt)}` : `Created ${dateTime(a.createdAt)}`}
+                    {a.version > 1 ? ` · version ${a.version}` : ''}{a.expiresOn ? ` · until ${a.expiresOn}` : ''}
+                  </div>
                 </TD>
-                <TD className="text-fg-muted">{audienceLabel(a)}</TD>
-                <TD><Badge tone={STATE_TONE[a.status]}>{STATE[a.status]}</Badge></TD>
-                <TD className="tabular-nums">{a.status === 'draft' ? '–' : `${a.readCount} of ${a.audienceSize}`}</TD>
-                <TD className="tabular-nums">{a.requiresAck ? (a.status === 'draft' ? 'Asked' : `${a.ackCount} of ${a.audienceSize}`) : 'Not asked'}</TD>
+                <TD className="max-w-56 text-fg-muted">{a.audienceLabel}</TD>
+                <TD>
+                  <Badge tone={ANN_STATUS_TONE[a.status]}>{a.deletedAt ? 'Deleted' : ANN_STATUS_LABEL[a.status]}</Badge>
+                  {a.status === 'scheduled' && a.publishAt && <div className="mt-0.5 text-xs text-fg-muted" suppressHydrationWarning>{dateTime(a.publishAt)}</div>}
+                </TD>
+                <TD className="tabular-nums">{a.status === 'draft' || a.status === 'scheduled' ? '–' : `${a.readCount} of ${a.audienceSize}`}</TD>
+                <TD className="tabular-nums">{a.requiresAck ? (a.status === 'draft' || a.status === 'scheduled' ? 'Asked' : `${a.ackCount} of ${a.audienceSize}`) : 'Not asked'}</TD>
                 <TD className="whitespace-nowrap text-right">
-                  {a.status !== 'archived' && <Button size="sm" variant="ghost" onClick={() => setEditing(a)}>{a.status === 'draft' ? 'Edit' : 'Pin or expiry'}</Button>}
-                  {a.status === 'draft' && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Publish "${a.title}" and notify ${audienceLabel(a).toLowerCase()}? The text cannot change afterwards.`) && run(() => publishAnnouncementAction(a.id))}>Publish</Button>}
-                  {a.status === 'draft' && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Delete this draft?') && run(() => deleteAnnouncementAction(a.id))}>Delete</Button>}
+                  {!deleted && a.status !== 'archived' && <Link className={buttonClass('ghost', 'sm')} href={`/announcements/manage/${a.id}/edit`}>Edit</Link>}
+                  {a.status === 'draft' && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Publish "${a.title}" now and notify ${a.audienceLabel}?`) && run(() => publishAnnouncementAction(a.id))}>Publish</Button>}
+                  {a.status === 'scheduled' && <Button size="sm" variant="ghost" loading={pending} onClick={() => run(() => unscheduleAnnouncementAction(a.id))}>Unschedule</Button>}
                   {a.status === 'published' && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Take it off the feed? Read receipts are kept.') && run(() => archiveAnnouncementAction(a.id))}>Archive</Button>}
+                  {!deleted && (
+                    <Button size="sm" variant="ghost" loading={pending}
+                      onClick={() => confirm(a.status === 'draft' || a.status === 'scheduled' ? 'Delete this announcement for good?' : 'Delete it? It leaves everyone\'s feed; its read receipts and acknowledgements are kept.') && run(() => deleteAnnouncementAction(a.id))}>Delete</Button>
+                  )}
                 </TD>
               </TR>
             ))}
           </TBody>
         </Table>
       </Card>
-      {editing && <AnnouncementDialog key={editing === 'new' ? 'new' : editing.id} a={editing === 'new' ? null : editing} entities={entities} departments={departments} locations={locations} onClose={() => setEditing(null)} onSaved={(text, tone = 'success') => setNotice({ tone, text })} />}
     </div>
-  );
-}
-
-function AnnouncementDialog({ a, entities, departments, locations, onClose, onSaved }: { a: Announcement | null; entities: LegalEntity[]; departments: Department[]; locations: Location[]; onClose: () => void; onSaved: (text: string, tone?: 'success' | 'danger') => void }) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [fe, setFe] = useState<Record<string, string>>({});
-  const [requiresAck, setRequiresAck] = useState(a?.requiresAck ?? false);
-  const [pinned, setPinned] = useState(a?.pinned ?? false);
-  const frozen = a !== null && a.status !== 'draft';
-  return (
-    <Dialog open onClose={onClose} title={a ? (frozen ? 'Pinning and expiry' : 'Edit draft') : 'New announcement'} description={frozen ? 'The announcement is published, so only pinning and the expiry date can change.' : undefined} size="lg"
-      footer={<>
-        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button type="submit" form="announcement-form" variant={frozen ? 'primary' : 'secondary'} loading={pending} name="intent" value="save">{a ? 'Save' : 'Save draft'}</Button>
-        {/* A draft reaches nobody: publishing is what puts it on everyone's feed (web and mobile) and notifies them. */}
-        {!frozen && <Button type="submit" form="announcement-form" loading={pending} name="intent" value="publish" data-testid="announcement-publish-now">Publish now</Button>}
-      </>}>
-      <form id="announcement-form" className="grid grid-cols-2 gap-4" onSubmit={(e) => {
-        e.preventDefault();
-        const f = new FormData(e.currentTarget);
-        const v = (k: string) => (String(f.get(k) ?? '') || null);
-        const body = frozen
-          ? { title: a.title, body: a.body, legalEntityId: a.legalEntityId, departmentId: a.departmentId, locationId: a.locationId, requiresAck: a.requiresAck, pinned, expiresOn: v('expiresOn') }
-          : { title: f.get('title'), body: f.get('body'), legalEntityId: v('legalEntityId'), departmentId: v('departmentId'), locationId: v('locationId'), requiresAck, pinned, expiresOn: v('expiresOn') };
-        setError(null);
-        setFe({});
-        const publish = !frozen && ((e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value === 'publish';
-        start(async () => {
-          const r = publish ? await saveAndPublishAnnouncementAction(a?.id ?? null, body) : await saveAnnouncementAction(a?.id ?? null, body);
-          if (r.ok) { onSaved(r.message ?? 'Saved.'); onClose(); router.refresh(); }
-          // Saved as a draft, but publishing was refused: show why on the page, where the draft now is.
-          else if (r.code === 'saved_not_published') { onSaved(r.message, 'danger'); onClose(); router.refresh(); }
-          else { setError(r.message); setFe(r.fieldErrors ?? {}); }
-        });
-      }}>
-        {error && <Alert tone="danger" className="col-span-2">{error}</Alert>}
-        <Field label="Title" required error={fe.title} className="col-span-2">{(p) => <Input {...p} name="title" required minLength={3} maxLength={200} defaultValue={a?.title} disabled={frozen} />}</Field>
-        <Field label="Message" required error={fe.body} className="col-span-2">{(p) => <Textarea {...p} name="body" rows={8} required maxLength={10000} defaultValue={a?.body} disabled={frozen} />}</Field>
-        <p className="col-span-2 -mb-2 text-[0.8125rem] font-medium">Who is it for? <span className="font-normal text-fg-muted">Leave all three empty for everyone.</span></p>
-        <Field label="Legal entity" error={fe.legalEntityId}>{(p) => <Select {...p} name="legalEntityId" defaultValue={a?.legalEntityId ?? ''} disabled={frozen}><option value="">Any</option>{entities.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select>}</Field>
-        <Field label="Department" hint="Includes its sub-departments" error={fe.departmentId}>{(p) => <Select {...p} name="departmentId" defaultValue={a?.departmentId ?? ''} disabled={frozen}><option value="">Any</option>{departments.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select>}</Field>
-        <Field label="Location" error={fe.locationId}>{(p) => <Select {...p} name="locationId" defaultValue={a?.locationId ?? ''} disabled={frozen}><option value="">Any</option>{locations.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select>}</Field>
-        <Field label="Take off the feed after" hint="Optional" error={fe.expiresOn}>{(p) => <Input {...p} name="expiresOn" type="date" defaultValue={a?.expiresOn ?? ''} />}</Field>
-        <div className="col-span-2 grid gap-2">
-          <Checkbox label="Ask people to acknowledge it" description="Each person confirms they have read it; you see who has and who has not." checked={requiresAck} disabled={frozen} onChange={(e) => setRequiresAck(e.target.checked)} />
-          <Checkbox label="Pin to the top of the feed" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
-        </div>
-      </form>
-    </Dialog>
   );
 }

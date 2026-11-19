@@ -88,7 +88,7 @@ export function countLeaveDays(
 }
 
 export interface AccrualPolicy {
-  accrualMethod: 'annual_upfront' | 'monthly' | 'none';
+  accrualMethod: 'annual_upfront' | 'monthly' | 'granted' | 'none';
   annualEntitlement: Hundredths;
   rounding: 'none' | 'half_day';
 }
@@ -110,7 +110,7 @@ export interface AccrualCredit {
  * the key as an idempotency key, so running this daily (or twice) never double-credits.
  */
 export function accrualsDue(policy: AccrualPolicy, emp: Employment, asOf: string): AccrualCredit[] {
-  if (policy.accrualMethod === 'none' || policy.annualEntitlement <= 0) return [];
+  if (policy.accrualMethod === 'none' || policy.accrualMethod === 'granted' || policy.annualEntitlement <= 0) return [];
   const year = yearOf(asOf);
   const yStart = `${year}-01-01`;
   const yEnd = `${year}-12-31`;

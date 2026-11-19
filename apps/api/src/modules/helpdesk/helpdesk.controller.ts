@@ -1,7 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, UploadedFile as File, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  announcementFeedQuery,
   announcementInput,
   type AnnouncementInput,
+  announcementPublishInput,
+  COMM_FILE_MAX_BYTES,
   articleInput,
   type ArticleInput,
   CASE_STATUSES,
@@ -21,6 +25,8 @@ import { RequireFeature, RequirePermission } from '../../platform/authz/decorato
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { AnnouncementsService } from './announcements.service';
+import { CommFilesService } from '../communication/files.service';
+import type { UploadedFile } from '../documents/documents.service';
 import { HelpdeskService } from './helpdesk.service';
 
 const caseQuery = z.object({
@@ -32,6 +38,7 @@ const caseQuery = z.object({
 });
 const articleQuery = z.object({ categoryId: z.uuid().optional(), q: z.string().trim().max(80).optional(), all: z.enum(['true', 'false']).optional() });
 const categoryQuery = z.object({ manage: z.enum(['true', 'false']).optional() });
+const manageQuery = z.object({ deleted: z.enum(['true', 'false']).optional() });
 
 @Controller('helpdesk')
 @RequireFeature('helpdesk')
@@ -187,20 +194,30 @@ export class HelpdeskController {
 @Controller('announcements')
 @RequireFeature('announcements')
 export class AnnouncementsController {
-  constructor(private readonly announcements: AnnouncementsService) {}
+  constructor(
+    private readonly announcements: AnnouncementsService,
+    private readonly files: CommFilesService,
+  ) {}
 
   @Get()
   @RequirePermission('announcements:read')
-  @Doc({ summary: 'Announcements addressed to me, pinned first' })
-  feed() {
-    return this.announcements.feed();
+  @Doc({ summary: 'Announcements addressed to me: pinned first, then urgent, then newest. Filter by category, unread (or still to acknowledge) and text.', query: announcementFeedQuery })
+  feed(@Query(new ZodPipe(announcementFeedQuery)) q: z.infer<typeof announcementFeedQuery>) {
+    return this.announcements.feed(q);
+  }
+
+  @Get('unread')
+  @RequirePermission('announcements:read')
+  @Doc({ summary: 'How many announcements I have not read, and how many wait for my acknowledgement' })
+  unread() {
+    return this.announcements.unread();
   }
 
   @Get('manage')
   @RequirePermission('announcements:manage')
-  @Doc({ summary: 'All announcements with audience size, reads and acknowledgements' })
-  list() {
-    return this.announcements.list();
+  @Doc({ summary: 'All announcements with audience size, reads and acknowledgements (deleted=true lists deleted ones)', query: manageQuery })
+  list(@Query(new ZodPipe(manageQuery)) q: z.infer<typeof manageQuery>) {
+    return this.announcements.list(q);
   }
 
   @Get('manage/:id')
@@ -208,6 +225,23 @@ export class AnnouncementsController {
   @Doc({ summary: 'One announcement with who has read and acknowledged it' })
   detail(@Param('id', UuidPipe) id: string) {
     return this.announcements.detail(id);
+  }
+
+  @Post('files')
+  @RequirePermission('announcements:manage')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: COMM_FILE_MAX_BYTES, files: 1 } }))
+  @Doc({ summary: 'Upload a file to attach to an announcement (multipart/form-data: file). Up to 10 MB.' })
+  async upload(@File() file?: UploadedFile) {
+    const f = await this.files.upload(file);
+    return { ...f, href: `/announcement-files/${f.id}` };
+  }
+
+  @Post('files/:id/link')
+  @HttpCode(200)
+  @RequirePermission('announcements:read')
+  @Doc({ summary: 'A 5-minute download link for a file on an announcement addressed to me' })
+  fileLink(@Param('id', UuidPipe) id: string) {
+    return this.announcements.fileLink(id);
   }
 
   @Get(':id')
@@ -220,7 +254,7 @@ export class AnnouncementsController {
   @Post(':id/acknowledge')
   @HttpCode(200)
   @RequirePermission('announcements:read')
-  @Doc({ summary: 'Acknowledge an announcement that asks for it' })
+  @Doc({ summary: 'Acknowledge an announcement that asks for it (again after it was reworded)' })
   acknowledge(@Param('id', UuidPipe) id: string) {
     return this.announcements.acknowledge(id);
   }
@@ -234,7 +268,7 @@ export class AnnouncementsController {
 
   @Put(':id')
   @RequirePermission('announcements:manage')
-  @Doc({ summary: 'Change a draft; after publishing only pinning and expiry can change', body: announcementInput })
+  @Doc({ summary: 'Change an announcement. After publishing, a change to the wording, audience or files is a new version (askAgain asks for acknowledgements again).', body: announcementInput })
   update(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(announcementInput)) body: AnnouncementInput) {
     return this.announcements.save(id, body);
   }
@@ -242,9 +276,25 @@ export class AnnouncementsController {
   @Post(':id/publish')
   @HttpCode(200)
   @RequirePermission('announcements:manage')
-  @Doc({ summary: 'Publish a draft and notify its audience' })
-  publish(@Param('id', UuidPipe) id: string) {
-    return this.announcements.publish(id);
+  @Doc({ summary: 'Publish a draft now and notify its audience, or schedule it (publishAt)', body: announcementPublishInput })
+  publish(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(announcementPublishInput)) body: z.infer<typeof announcementPublishInput>) {
+    return this.announcements.publish(id, body.publishAt);
+  }
+
+  @Post(':id/unschedule')
+  @HttpCode(200)
+  @RequirePermission('announcements:manage')
+  @Doc({ summary: 'Turn a scheduled announcement back into a draft' })
+  unschedule(@Param('id', UuidPipe) id: string) {
+    return this.announcements.unschedule(id);
+  }
+
+  @Post(':id/remind')
+  @HttpCode(200)
+  @RequirePermission('announcements:manage')
+  @Doc({ summary: 'Remind everyone who has not acknowledged it yet (at most once an hour)' })
+  remind(@Param('id', UuidPipe) id: string) {
+    return this.announcements.remind(id);
   }
 
   @Post(':id/archive')
@@ -258,7 +308,7 @@ export class AnnouncementsController {
   @Delete(':id')
   @HttpCode(204)
   @RequirePermission('announcements:manage')
-  @Doc({ summary: 'Delete a draft' })
+  @Doc({ summary: 'Delete an announcement: drafts and scheduled ones are removed; published ones leave every feed and stay on record' })
   async remove(@Param('id', UuidPipe) id: string) {
     await this.announcements.remove(id);
   }

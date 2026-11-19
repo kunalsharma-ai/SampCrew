@@ -33,8 +33,8 @@ export const NAV: NavGroup[] = [
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
-      { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'helpdesk', hiddenWith: 'helpdesk:manage' },
-      { href: '/helpdesk/queue', label: 'HR helpdesk', icon: 'headset', permission: 'helpdesk:manage', feature: 'helpdesk' },
+      // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
+      { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
     ],
   },
   {
@@ -84,6 +84,7 @@ export const NAV: NavGroup[] = [
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
       { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
       { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
+      { href: '/leave/balances', label: 'Leave balances', icon: 'calendar-range', permission: 'leave:approve', feature: 'leave' },
       { href: '/settings/leave', label: 'Leave settings', icon: 'sliders', permission: 'leave:configure', feature: 'leave' },
     ],
   },
