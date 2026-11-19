@@ -18,6 +18,7 @@ export const Errors = {
   mfaRequired: () => new AppError(HttpStatus.FORBIDDEN, 'mfa_required', 'This action needs multi-factor authentication. Verify with your authenticator app and try again.'),
   passwordChangeRequired: () => new AppError(HttpStatus.FORBIDDEN, 'password_change_required', 'Choose a new password before you continue. Yours was set by another admin.'),
   featureSwitchedOff: (feature: string) => new AppError(HttpStatus.FORBIDDEN, 'feature_disabled', `${feature} is switched off for this workspace by SAMPLEDGE.`, { feature }),
+  featureSwitchedOffByAdmin: (feature: string) => new AppError(HttpStatus.FORBIDDEN, 'feature_switched_off', `${feature} is switched off in this workspace. An administrator can switch it on in HR Workspace Admin.`, { feature }),
   featureNotForMember: (feature: string) => new AppError(HttpStatus.FORBIDDEN, 'feature_not_for_member', `You do not have access to ${feature} in this workspace.`, { feature }),
   featureNotInPlan: (feature: string) => new AppError(HttpStatus.PAYMENT_REQUIRED, 'feature_not_in_plan', `Your plan does not include ${feature}. Upgrade to use it.`, { feature }),
   notFound: (what = 'Resource') => new AppError(HttpStatus.NOT_FOUND, 'not_found', `${what} not found`),

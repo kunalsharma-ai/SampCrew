@@ -4358,6 +4358,10 @@ export const TABLES: Record<string, TableSpec> = {
       is_system: {"default": false, "required": true, "type": "bool"},
       key: {"required": true, "type": "string"},
       name: {"required": true, "type": "string"},
+      // System roles: the template grants the workspace has already been given (syncSystemRolesMongo adds only new
+      // ones, so a grant HR removed is not put back), and when HR last changed the role's grants.
+      template_grants: {"type": "string[]"},
+      customised_at: {"type": "timestamp"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
     },
@@ -5678,6 +5682,530 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((length(notes) <= 2000))",
       "CHECK ((jsonb_typeof(changes) = 'array'::text))",
       "CHECK ((jsonb_typeof(assumptions) = 'object'::text))",
+    ],
+  },
+  workspace_modules: {
+    // Modules the workspace's own administrators switched off (HR Workspace Admin > Modules), within what the plan includes. One document, key "workspace".
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      disabled_features: {"default": {"json": []}, "required": true, "type": "string[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"default": "workspace", "enum": ["workspace"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "workspace_modules_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "workspace_modules_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "workspace_modules_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+    ],
+    checks: [
+    ],
+  },
+  custom_fields: {
+    // HR's own fields on a module's forms (packages/contracts/src/custom-fields.ts). Never deleted while it holds values: archived instead.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      archived_at: {"type": "timestamp"},
+      config: {"default": {"json": {}}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      default_value: {"type": "json"},
+      edit_roles: {"default": {"json": []}, "required": true, "type": "string[]"},
+      employee_editable: {"default": false, "required": true, "type": "bool"},
+      enabled: {"default": true, "required": true, "type": "bool"},
+      entity: {"enum": ["employee", "asset", "bgv_case", "candidate", "leave_request"], "required": true, "type": "string"},
+      help_text: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      label: {"required": true, "type": "string"},
+      options: {"default": {"json": []}, "required": true, "type": "json"},
+      position: {"default": 0, "required": true, "type": "int"},
+      required: {"default": false, "required": true, "type": "bool"},
+      section: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      type: {"enum": ["short_text", "long_text", "number", "date", "datetime", "dropdown", "multi_select", "radio", "checkbox", "email", "phone", "file", "currency", "url"], "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+      view_roles: {"default": {"json": []}, "required": true, "type": "string[]"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "custom_fields_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "custom_fields_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "entity"}, {"col": "key"}], "name": "custom_fields_entity_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"name": "custom_fields_entity_position", "cols": [{"col": "tenant_id"}, {"col": "entity"}, {"col": "position"}]},
+    ],
+    checks: [
+      "CHECK (((length(label) >= 1) AND (length(label) <= 120)))",
+    ],
+  },
+  custom_field_values: {
+    // The value of one custom field on one record (an employee, asset, verification case ...). Values outlive their field's archiving and type changes.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      entity: {"required": true, "type": "string"},
+      field_id: {"required": true, "type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      record_id: {"required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+      value: {"type": "json"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "custom_field_values_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "custom_field_values_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "field_id"}, {"col": "record_id"}], "name": "custom_field_values_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "field_id"], "onDelete": "restrict", "ref": "custom_fields", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "custom_field_values_record", "cols": [{"col": "tenant_id"}, {"col": "entity"}, {"col": "record_id"}]},
+    ],
+    checks: [
+    ],
+  },
+  custom_field_files: {
+    // Files uploaded into custom fields of the file type. The value holds the file id.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      content_type: {"required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      field_id: {"required": true, "type": "uuid"},
+      file_name: {"required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      record_id: {"required": true, "type": "uuid"},
+      sha256: {"required": true, "type": "string"},
+      size_bytes: {"required": true, "type": "int"},
+      storage_key: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      uploaded_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "custom_field_files_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "custom_field_files_tenant_id_id_key"},
+      {"cols": [{"col": "storage_key"}], "name": "custom_field_files_storage_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "field_id"], "onDelete": "restrict", "ref": "custom_fields", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+    ],
+    checks: [
+    ],
+  },
+  bgv_agencies: {
+    // External background verification agencies the workspace works with.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      address: {"type": "string"},
+      contact_name: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      email: {"required": true, "type": "citext"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      name: {"required": true, "type": "string"},
+      notes: {"type": "string"},
+      phone: {"type": "string"},
+      services: {"default": {"json": []}, "required": true, "type": "string[]"},
+      tenant_id: {"required": true, "type": "uuid"},
+      turnaround_days: {"type": "int"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      website: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "bgv_agencies_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "bgv_agencies_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "name", "fold": "lower"}], "name": "bgv_agencies_name"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+    ],
+    checks: [
+    ],
+  },
+  bgv_cases: {
+    // One background verification of an employee: done internally by HR or by an agency. status is the overall (final) result.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      agency_id: {"type": "uuid"},
+      agency_reference: {"type": "string"},
+      assignee_membership_id: {"type": "uuid"},
+      cancelled_reason: {"type": "string"},
+      completed_on: {"type": "date"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      decided_at: {"type": "timestamp"},
+      decided_by_membership_id: {"type": "uuid"},
+      decision_remarks: {"type": "string"},
+      due_date: {"type": "date"},
+      employee_id: {"required": true, "type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      method: {"enum": ["internal", "external"], "required": true, "type": "string"},
+      notes: {"type": "string"},
+      reference: {"required": true, "type": "string"},
+      sent_to_agency_at: {"type": "timestamp"},
+      status: {"default": "pending", "enum": ["pending", "in_progress", "verified", "failed", "on_hold", "cancelled"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "bgv_cases_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "bgv_cases_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "reference"}], "name": "bgv_cases_reference"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "agency_id"], "onDelete": "restrict", "ref": "bgv_agencies", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "bgv_cases_employee", "cols": [{"col": "tenant_id"}, {"col": "employee_id"}]},
+      {"name": "bgv_cases_status", "cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "created_at", "desc": true}]},
+    ],
+    checks: [
+    ],
+  },
+  bgv_checks: {
+    // One check in a case (identity, address, education, employment, reference, document). details hold what is being verified; identifiers are encrypted.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      agency_feedback: {"type": "string"},
+      case_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      details: {"default": {"json": {}}, "required": true, "type": "json"},
+      document_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      position: {"default": 0, "required": true, "type": "int"},
+      remarks: {"type": "string"},
+      // Identifiers (document, roll and ID numbers) encrypted with the field key ring; details keep them masked.
+      secret_details: {"default": {"json": {}}, "required": true, "type": "json"},
+      status: {"default": "pending", "enum": ["pending", "in_progress", "verified", "failed", "on_hold"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      type: {"enum": ["identity", "address", "education", "employment", "reference", "document"], "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      verified_at: {"type": "timestamp"},
+      verified_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "bgv_checks_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "bgv_checks_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "case_id"], "onDelete": "cascade", "ref": "bgv_cases", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "bgv_checks_case", "cols": [{"col": "tenant_id"}, {"col": "case_id"}, {"col": "position"}]},
+    ],
+    checks: [
+    ],
+  },
+  bgv_files: {
+    // Supporting documents and agency reports of a case. shared files can be read by the agency through its link.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      case_id: {"required": true, "type": "uuid"},
+      check_id: {"type": "uuid"},
+      content_type: {"required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      file_name: {"required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["supporting", "agency_report"], "required": true, "type": "string"},
+      removed_at: {"type": "timestamp"},
+      sha256: {"required": true, "type": "string"},
+      shared_with_agency: {"default": false, "required": true, "type": "bool"},
+      size_bytes: {"required": true, "type": "int"},
+      storage_key: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      title: {"required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      uploaded_by_agency: {"type": "string"},
+      uploaded_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "bgv_files_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "bgv_files_tenant_id_id_key"},
+      {"cols": [{"col": "storage_key"}], "name": "bgv_files_storage_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "case_id"], "onDelete": "cascade", "ref": "bgv_cases", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "check_id"], "onDelete": "set_null", "ref": "bgv_checks", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "bgv_files_case", "cols": [{"col": "tenant_id"}, {"col": "case_id"}]},
+    ],
+    checks: [
+    ],
+  },
+  bgv_events: {
+    // The history of a case: every status change, finding, file and share, in order (the audit trail keeps the same, hash-chained).
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      action: {"required": true, "type": "string"},
+      actor_label: {"type": "string"},
+      actor_membership_id: {"type": "uuid"},
+      case_id: {"required": true, "type": "uuid"},
+      check_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      from_status: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      note: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      to_status: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "bgv_events_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "bgv_events_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "case_id"], "onDelete": "cascade", "ref": "bgv_cases", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "bgv_events_case", "cols": [{"col": "tenant_id"}, {"col": "case_id"}, {"col": "created_at"}]},
+    ],
+    checks: [
+    ],
+  },
+  bgv_agency_links: {
+    // Private links an agency uses to read the shared documents of one case and send its findings. Only the SHA-256 of the token is stored.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      agency_id: {"required": true, "type": "uuid"},
+      case_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      expires_at: {"required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      last_used_at: {"type": "timestamp"},
+      revoked_at: {"type": "timestamp"},
+      submitted_at: {"type": "timestamp"},
+      tenant_id: {"required": true, "type": "uuid"},
+      token_hash: {"required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "bgv_agency_links_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "bgv_agency_links_tenant_id_id_key"},
+      {"cols": [{"col": "token_hash"}], "name": "bgv_agency_links_token"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "case_id"], "onDelete": "cascade", "ref": "bgv_cases", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "agency_id"], "onDelete": "cascade", "ref": "bgv_agencies", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "bgv_agency_links_case", "cols": [{"col": "tenant_id"}, {"col": "case_id"}]},
+    ],
+    checks: [
+    ],
+  },
+  asset_categories: {
+    // Kinds of company asset (laptops, SIM cards, ID cards ...). The defaults are added on first use; HR adds its own.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      archived_at: {"type": "timestamp"},
+      code: {"required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      description: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      is_default: {"default": false, "required": true, "type": "bool"},
+      name: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "asset_categories_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "asset_categories_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "code"}], "name": "asset_categories_code"},
+      {"cols": [{"col": "tenant_id"}, {"col": "name", "fold": "lower"}], "name": "asset_categories_name"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+    ],
+    checks: [
+      "CHECK ((code ~ '^[A-Z0-9]{2,8}$'::text))",
+    ],
+  },
+  assets: {
+    // The asset register. status follows the asset's life; the open assignment says who holds it.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      asset_code: {"required": true, "type": "citext"},
+      brand: {"type": "string"},
+      category_id: {"required": true, "type": "uuid"},
+      condition: {"default": "new", "enum": ["new", "good", "fair", "poor", "damaged"], "required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      currency: {"type": "string"},
+      current_assignment_id: {"type": "uuid"},
+      description: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      location: {"type": "string"},
+      model: {"type": "string"},
+      name: {"required": true, "type": "string"},
+      purchase_date: {"type": "date"},
+      purchase_price: {"scale": 2, "type": "decimal"},
+      remarks: {"type": "string"},
+      serial_number: {"type": "string"},
+      status: {"default": "available", "enum": ["available", "assigned", "under_maintenance", "damaged", "lost", "retired"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      vendor: {"type": "string"},
+      warranty_expiry: {"type": "date"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "assets_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "assets_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "asset_code", "fold": "lower"}], "name": "assets_code"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "category_id"], "onDelete": "restrict", "ref": "asset_categories", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "assets_status", "cols": [{"col": "tenant_id"}, {"col": "status"}]},
+      {"name": "assets_category", "cols": [{"col": "tenant_id"}, {"col": "category_id"}]},
+      {"name": "assets_serial", "cols": [{"col": "tenant_id"}, {"col": "serial_number"}]},
+    ],
+    checks: [
+    ],
+  },
+  asset_assignments: {
+    // An asset held by an employee, from assignment to return, with the employee's digital acknowledgement.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      acknowledged_at: {"type": "timestamp"},
+      acknowledged_comment: {"type": "string"},
+      acknowledged_ip: {"type": "string"},
+      acknowledged_name: {"type": "string"},
+      acknowledged_text: {"type": "string"},
+      acknowledged_text_sha256: {"type": "string"},
+      acknowledged_user_agent: {"type": "string"},
+      asset_id: {"required": true, "type": "uuid"},
+      assigned_by_membership_id: {"type": "uuid"},
+      assigned_on: {"required": true, "type": "date"},
+      condition_at_assignment: {"enum": ["new", "good", "fair", "poor", "damaged"], "required": true, "type": "string"},
+      condition_at_return: {"enum": ["new", "good", "fair", "poor", "damaged"], "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      department_id: {"type": "uuid"},
+      department_name: {"type": "string"},
+      designation_name: {"type": "string"},
+      employee_id: {"required": true, "type": "uuid"},
+      expected_return_on: {"type": "date"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      notes: {"type": "string"},
+      received_by_membership_id: {"type": "uuid"},
+      requires_acknowledgement: {"default": true, "required": true, "type": "bool"},
+      return_notes: {"type": "string"},
+      returned_on: {"type": "date"},
+      status: {"default": "active", "enum": ["active", "returned"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "asset_assignments_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "asset_assignments_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "asset_id"}], "name": "asset_assignments_one_open", "where": [{"col": "status", "op": "eq", "value": "active"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "asset_id"], "onDelete": "cascade", "ref": "assets", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "asset_assignments_employee", "cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "status"}]},
+      {"name": "asset_assignments_asset", "cols": [{"col": "tenant_id"}, {"col": "asset_id"}, {"col": "assigned_on", "desc": true}]},
+    ],
+    checks: [
+    ],
+  },
+  asset_events: {
+    // Each asset's history: registered, changed, assigned, acknowledged, returned, maintenance, written off, retired.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      actor_membership_id: {"type": "uuid"},
+      asset_id: {"required": true, "type": "uuid"},
+      assignment_id: {"type": "uuid"},
+      cost: {"scale": 2, "type": "decimal"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      from_status: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"required": true, "type": "string"},
+      note: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      to_status: {"type": "string"},
+      vendor: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "asset_events_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "asset_events_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "asset_id"], "onDelete": "cascade", "ref": "assets", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "asset_events_asset", "cols": [{"col": "tenant_id"}, {"col": "asset_id"}, {"col": "created_at"}]},
+      {"name": "asset_events_kind", "cols": [{"col": "tenant_id"}, {"col": "kind"}, {"col": "created_at"}]},
+    ],
+    checks: [
+    ],
+  },
+  asset_files: {
+    // Supporting documents of an asset (invoice, warranty card, photos).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      asset_id: {"required": true, "type": "uuid"},
+      content_type: {"required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      file_name: {"required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      removed_at: {"type": "timestamp"},
+      sha256: {"required": true, "type": "string"},
+      size_bytes: {"required": true, "type": "int"},
+      storage_key: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      title: {"required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      uploaded_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "asset_files_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "asset_files_tenant_id_id_key"},
+      {"cols": [{"col": "storage_key"}], "name": "asset_files_storage_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "asset_id"], "onDelete": "cascade", "ref": "assets", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "asset_files_asset", "cols": [{"col": "tenant_id"}, {"col": "asset_id"}]},
+    ],
+    checks: [
     ],
   },
 };
