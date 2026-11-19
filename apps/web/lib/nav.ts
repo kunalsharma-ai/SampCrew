@@ -31,7 +31,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/', label: 'Home', icon: 'home' },
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
-      { href: '/tasks', label: 'My tasks', icon: 'list-checks', feature: 'onboarding' },
+      { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
       { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'helpdesk', hiddenWith: 'helpdesk:manage' },
       { href: '/helpdesk/queue', label: 'HR helpdesk', icon: 'headset', permission: 'helpdesk:manage', feature: 'helpdesk' },
@@ -44,7 +44,6 @@ export const NAV: NavGroup[] = [
       { href: '/leave', label: 'Leave', icon: 'calendar', permission: 'leave:request', feature: 'leave' },
       { href: '/payslips', label: 'Payslips', icon: 'file-text', permission: 'payslips:read', feature: 'payroll' },
       { href: '/expenses', label: 'Expenses', icon: 'receipt', permission: 'expenses:submit', feature: 'expenses' },
-      { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'interviews:feedback', feature: 'recruitment' },
     ],
   },
   {
@@ -61,6 +60,8 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/recruitment', label: 'Jobs', icon: 'briefcase', permission: 'requisitions:read', feature: 'recruitment' },
       { href: '/recruitment/candidates', label: 'Candidates', icon: 'user-search', permission: 'candidates:read', feature: 'recruitment' },
+      // Interview panels: only for people who work in recruitment, not in every employee's menu (scorecards still open from notifications).
+      { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'requisitions:read', feature: 'recruitment' },
       { href: '/settings/recruitment', label: 'Recruitment settings', icon: 'sliders', permission: 'recruitment:configure', feature: 'recruitment' },
     ],
   },

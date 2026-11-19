@@ -84,7 +84,7 @@ export interface InboxItem { id: string; resourceType: string; resourceId: strin
 export interface SameDayLeaveDetails { sameDay: boolean; appliedOn: string | null; policyEnabled: boolean; mode: 'auto' | 'manual'; exempt: boolean; suggestedDays: string | null; penalty: { id: string; days: string; source: string; status: string } | null }
 export interface OnboardingTask { id: string; employeeId: string; title: string; description: string | null; owner: string; assigneeMembershipId: string | null; assigneeName: string | null; dueOn: string | null; status: string; completedAt: string | null; completedBy: string | null; employeeName: string; employeeCode: string; overdue: boolean }
 export interface OnboardingTemplate { id: string; name: string; description: string | null; isDefault: boolean; tasks: { title: string; description?: string; owner: string; dueOffsetDays: number }[] }
-export interface EmployeeDocument { id: string; employeeId: string; category: string; title: string; fileName: string; contentType: string; sizeBytes: number; sha256: string; visibility: string; uploadedBy: string | null; createdAt: string }
+export interface EmployeeDocument { id: string; employeeId: string; category: string; title: string; fileName: string; contentType: string; sizeBytes: number; sha256: string; visibility: string; uploadedBy: string | null; createdAt: string; verificationStatus?: 'pending' | 'verified' | 'rejected' | null; verificationRemarks?: string | null; verifiedAt?: string | null; taskId?: string | null }
 export interface Notification { id: string; kind: string; title: string; body: string | null; link: string | null; readAt: string | null; createdAt: string }
 
 // Phase 3: attendance and workforce
@@ -266,3 +266,17 @@ export interface LateMonth {
 
 /** The caller's own leave calendar for a range (GET /leave/calendar). */
 export interface LeaveCalendarData { from: string; to: string; weeklyOffs: number[]; holidays: { date: string; name: string; optional: boolean }[]; requests: LeaveRequest[] }
+
+// Employee workspace: HR Tasks and Manager Tasks
+export interface WorkTask {
+  id: string; category: 'hr' | 'manager'; kind: 'general' | 'document' | 'acknowledgement'; title: string; description: string | null; priority: 'low' | 'normal' | 'high' | 'urgent';
+  status: 'new' | 'not_started' | 'in_progress' | 'pending_review' | 'completed' | 'reopened' | 'cancelled';
+  displayStatus: WorkTask['status'] | 'overdue'; overdue: boolean; isNew: boolean; dueOn: string | null; assignedAt: string; assignedBy: string | null; assignedByMe: boolean;
+  employeeId: string; employeeName: string | null; employeeCode: string | null; departmentName: string | null; employeeRemarks: string | null; reviewerRemarks: string | null;
+  submittedAt: string | null; completedAt: string | null; acknowledgedAt: string | null; isMine: boolean; verificationRequestId: string | null;
+  document: null | { spec: { category: string; formats: string[]; maxMb: number }; id: string | null; title?: string; fileName?: string; sizeBytes?: number; contentType?: string; verificationStatus?: 'pending' | 'verified' | 'rejected' | null; verificationRemarks?: string | null; verifiedAt?: string | null };
+  history: { at: string; by: string | null; action: string; status: string | null; remarks: string | null }[];
+}
+export interface WorkTaskDetail extends WorkTask { canManage: boolean; approvalTrail: { seq: number; status: string; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null; role: string | null }[] }
+export interface TaskCounts { hr: { open: number; new: number; overdue: number; review: number }; manager: { open: number; new: number; overdue: number; review: number }; toReview: number; documentsToVerify: number }
+export interface AssignablePerson { id: string; name: string; code: string | null; departmentName: string | null; designationName: string | null }

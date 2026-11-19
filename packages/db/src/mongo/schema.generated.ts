@@ -1721,7 +1721,14 @@ export const TABLES: Record<string, TableSpec> = {
       tenant_id: {"required": true, "type": "uuid"},
       title: {"required": true, "type": "string"},
       uploaded_by_membership_id: {"type": "uuid"},
+      // HR verification of an employee upload (HR Tasks, profile changes). Null for documents nobody needs to check.
+      verification_remarks: {"type": "string"},
+      verification_status: {"enum": ["pending", "verified", "rejected"], "type": "string"},
+      verified_at: {"type": "timestamp"},
+      verified_by_membership_id: {"type": "uuid"},
       visibility: {"default": "employee", "enum": ["employee", "hr_only"], "required": true, "type": "string"},
+      // The HR task or profile change the upload belongs to.
+      task_id: {"type": "uuid"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "employee_documents_pkey", "primary": true},
@@ -1913,6 +1920,56 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     checks: [
       "CHECK (((level >= 1) AND (level <= 4)))",
+    ],
+  },
+  employee_tasks: {
+    // HR Tasks and Manager Tasks assigned to one employee (see packages/contracts/src/tasks.ts). A document task
+    // links the upload (employee_documents) that HR verifies through the approvals engine (document_verification).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      acknowledged_at: {"type": "timestamp"},
+      assigned_by_membership_id: {"required": true, "type": "uuid"},
+      assignee_membership_id: {"type": "uuid"},
+      category: {"enum": ["hr", "manager"], "required": true, "type": "string"},
+      completed_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      description: {"type": "string"},
+      // For document tasks: {category, formats, maxMb}.
+      document_spec: {"type": "json"},
+      // The latest upload for a document task, and its approval request.
+      document_id: {"type": "uuid"},
+      due_on: {"type": "date"},
+      employee_id: {"required": true, "type": "uuid"},
+      employee_remarks: {"type": "string"},
+      // Every change: [{at, by, action, status, remarks}].
+      history: {"default": {"json": []}, "required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["general", "document", "acknowledgement"], "required": true, "type": "string"},
+      priority: {"default": "normal", "enum": ["low", "normal", "high", "urgent"], "required": true, "type": "string"},
+      reviewer_remarks: {"type": "string"},
+      // When the employee first opened it (clears the "new" count).
+      seen_at: {"type": "timestamp"},
+      status: {"default": "new", "enum": ["new", "not_started", "in_progress", "pending_review", "completed", "reopened", "cancelled"], "required": true, "type": "string"},
+      submitted_at: {"type": "timestamp"},
+      tenant_id: {"required": true, "type": "uuid"},
+      title: {"required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      verification_request_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "employee_tasks_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "employee_tasks_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "employee_tasks_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "assigned_by_membership_id"}, {"col": "created_at", "desc": true}], "name": "employee_tasks_assigner"},
+    ],
+    checks: [
+      "CHECK (((length(title) >= 1) AND (length(title) <= 200)))",
     ],
   },
   employees: {

@@ -42,6 +42,8 @@ import { UniverseService } from './modules/universe/universe.service';
 import { NotificationsController } from './modules/notifications/notifications.controller';
 import { OnboardingController } from './modules/onboarding/onboarding.controller';
 import { OnboardingService } from './modules/onboarding/onboarding.service';
+import { TasksController } from './modules/tasks/tasks.controller';
+import { TasksService } from './modules/tasks/tasks.service';
 import { SetupController } from './modules/setup/setup.controller';
 import { SignatureAgentController, SignaturesController } from './modules/signatures/signatures.controller';
 import { SignaturesService } from './modules/signatures/signatures.service';
@@ -149,6 +151,7 @@ export const CONTROLLERS = [
   DesignationsController,
   EmployeesController,
   OnboardingController,
+  TasksController,
   SetupController,
   SignaturesController,
   SignatureAgentController,
@@ -255,6 +258,7 @@ export const CONTROLLERS = [
     LensesService,
     SkillCatalogueService,
     OnboardingService,
+    TasksService,
     SetupService,
     SignaturesService,
     LeaveService,

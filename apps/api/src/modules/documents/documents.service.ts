@@ -26,6 +26,7 @@ async function docViews(tx: TenantTx, docs: Record<string, any>[]) {
   return docs.map((d) => ({
     id: d.id, employeeId: d.employee_id, category: d.category, title: d.title, fileName: d.file_name, contentType: d.content_type, sizeBytes: d.size_bytes,
     sha256: d.sha256, visibility: d.visibility, uploadedBy: by.get(d.uploaded_by_membership_id) ?? null, createdAt: d.created_at,
+    verificationStatus: d.verification_status ?? null, verificationRemarks: d.verification_remarks ?? null, verifiedAt: d.verified_at ?? null, taskId: d.task_id ?? null,
   }));
 }
 
@@ -65,12 +66,34 @@ export class DocumentsService {
     });
   }
 
-  async upload(employeeId: string, meta: z.infer<typeof documentMetaInput>, file: UploadedFile | undefined) {
+  /** The checks every upload passes: a file is attached, of an allowed type and size, and its bytes match the type. */
+  static check(file: UploadedFile | undefined): asserts file is UploadedFile {
     if (!file) throw Errors.badRequest('file_required', 'Attach a file');
     if (!(DOCUMENT_TYPES as readonly string[]).includes(file.mimetype)) throw Errors.badRequest('unsupported_type', 'Upload a PDF, PNG, JPEG, WebP, Word document or plain text file');
     if (file.size <= 0 || file.size > DOCUMENT_MAX_BYTES) throw Errors.badRequest('file_too_large', 'Files can be up to 10 MB');
     if (!sniffMatches(file.mimetype, file.buffer.subarray(0, 512))) throw Errors.badRequest('content_mismatch', 'The file content does not match its type');
+  }
+
+  /**
+   * Stores a checked file as an employee document in the caller's transaction (used by HR Tasks and profile changes,
+   * which do their own access checks). `extra` adds columns such as the verification status.
+   */
+  async store(tx: TenantTx, employeeId: string, meta: z.infer<typeof documentMetaInput>, file: UploadedFile, extra: Record<string, unknown> = {}) {
     const actor = requestContext.tenantActor();
+    const key = this.storage.newKey(actor.tenantId);
+    const sha = createHash('sha256').update(file.buffer).digest('hex');
+    const name = safeFileName(file.originalname, 'file');
+    await this.storage.put(key, file.buffer, { upload: true });
+    const row = await tx.collection('employee_documents').insert({
+      employee_id: employeeId, category: meta.category, title: meta.title, file_name: name, content_type: file.mimetype, size_bytes: file.size, sha256: sha,
+      storage_key: key, visibility: meta.visibility, uploaded_by_membership_id: actor.membershipId, ...extra,
+    });
+    await this.audit.record(tx, { action: 'document.uploaded', resourceType: 'employee', resourceId: employeeId, metadata: { documentId: row.id, category: meta.category, title: meta.title, sha256: sha } });
+    return (await docViews(tx, [row]))[0]!;
+  }
+
+  async upload(employeeId: string, meta: z.infer<typeof documentMetaInput>, file: UploadedFile | undefined) {
+    DocumentsService.check(file);
     return this.db.tenant(async (tx) => {
       const a = await this.access(tx, employeeId);
       // People who manage documents for this employee can upload anything; employees can add their own,
@@ -82,19 +105,11 @@ export class DocumentsService {
         }
         if (meta.visibility === 'hr_only') throw Errors.forbidden('Only HR can add HR-only documents');
       }
-      const key = this.storage.newKey(actor.tenantId);
-      const sha = createHash('sha256').update(file.buffer).digest('hex');
-      const name = safeFileName(file.originalname, 'file');
-      await this.storage.put(key, file.buffer, { upload: true });
-      const row = await tx.collection('employee_documents').insert({
-        employee_id: employeeId, category: meta.category, title: meta.title, file_name: name, content_type: file.mimetype, size_bytes: file.size, sha256: sha,
-        storage_key: key, visibility: meta.visibility, uploaded_by_membership_id: actor.membershipId,
-      });
-      await this.audit.record(tx, { action: 'document.uploaded', resourceType: 'employee', resourceId: employeeId, metadata: { documentId: row.id, category: meta.category, title: meta.title, sha256: sha } });
+      const view = await this.store(tx, employeeId, meta, file);
       if (!a.isSelf && meta.visibility === 'employee') {
         await this.notifications.notify(tx, { membershipIds: [a.e.membership_id], kind: 'document.added', title: `New document: ${meta.title}`, link: `/employees/${employeeId}?tab=documents` });
       }
-      return (await docViews(tx, [row]))[0];
+      return view;
     });
   }
 

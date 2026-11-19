@@ -55,6 +55,7 @@ const MANAGER_TEAM: Partial<Record<PermissionKey, Scope>> = {
   'requisitions:read': 'team',
   'requisitions:create': 'team',
   'reports:read': 'team',
+  'tasks:assign': 'team',
 };
 
 export const SYSTEM_ROLES: readonly RoleTemplate[] = [
@@ -94,6 +95,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'engagement:manage': 'tenant', 'helpdesk:manage': 'tenant', 'helpdesk:configure': 'tenant', 'announcements:manage': 'tenant', 'reports:read': 'tenant', 'automation:manage': 'tenant', 'insights:attrition': 'tenant',
       'requisitions:read': 'tenant', 'requisitions:approve': 'tenant', 'candidates:read': 'tenant', 'offers:approve': 'tenant', 'recruitment:configure': 'tenant',
       'privacy:manage': 'tenant', 'bids:read': 'tenant', 'bids:approve': 'tenant',
+      'tasks:assign': 'tenant', 'tasks:hr': 'tenant', 'profiles:review': 'tenant',
     },
   },
   {
@@ -108,7 +110,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'attendance:read': 'entity', 'attendance:approve': 'entity', 'shifts:read': 'entity', 'shifts:manage': 'entity',
       'performance:read': 'entity', 'performance:manage': 'entity', 'learning:read': 'entity', 'learning:manage': 'entity',
       'requisitions:read': 'entity', 'requisitions:approve': 'entity', 'offers:approve': 'entity', 'reports:read': 'entity',
-      'helpdesk:manage': 'entity',
+      'helpdesk:manage': 'entity', 'tasks:assign': 'entity', 'tasks:hr': 'entity', 'profiles:review': 'entity',
     },
   },
   {

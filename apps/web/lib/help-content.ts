@@ -96,9 +96,15 @@ export const WEB_HELP: HelpContent = {
     },
     '/tasks': {
       title: 'My tasks',
-      what: 'Onboarding and workflow tasks assigned to you, soonest due first.',
-      how: 'Open a task, do it, then mark it done so the checklist moves on.',
-      where: 'For anyone given tasks, often managers, IT and HR during a new joiner’s first weeks.',
+      what: 'Your HR tasks (documents, forms, acknowledgements from HR) and manager tasks (work from your reporting manager), with due dates, priority and progress.',
+      how: 'Open a task to start it, upload what it asks for or send it for review. Managers and HR use "Assign a task" and check work under Tasks I assign and Documents to verify.',
+      where: 'For everyone. New tasks also show in notifications and on Home; the number on the menu counts open tasks and work waiting for you.',
+    },
+    '/tasks/[id]': {
+      title: 'Task',
+      what: 'One task: what is needed, who asked, when it is due, any document upload and its HR check, and the full history.',
+      how: 'The employee updates progress or uploads the document; the person who assigned it (or HR) accepts, reopens with a reason, cancels, or verifies the document.',
+      where: 'Opened from My tasks, a notification, or Approvals (document checks).',
     },
     '/announcements': {
       title: 'Announcements',
@@ -976,6 +982,24 @@ export const WEB_HELP: HelpContent = {
   },
 
   routes: {
+    '/tasks': {
+      sections: {
+        'HR tasks': { what: 'Tasks HR gave you that are still open or waiting for review.', how: 'Open one to work on it. Document tasks are done once HR verifies your upload.' },
+        'Manager tasks': { what: 'Tasks from your reporting manager that are still open or waiting for review.', how: 'Open one, update its progress, then send it for review or mark it completed.' },
+        'Completed and cancelled': { what: 'Your finished tasks and ones that were called off, with their history.' },
+        'Tasks I assign': { what: 'Tasks you assigned, and tasks of the people whose tasks you look after.', how: 'Open one in Pending review to accept it or send it back with a reason.' },
+        'Documents to verify': { what: 'Documents employees uploaded for HR tasks, waiting for your check.', how: 'Open one, download the file, then verify it or reject it with what to fix.', where: 'The same checks are in Approvals as Document verification.' },
+        'Onboarding tasks': { what: 'Onboarding checklist items for new joiners assigned to you.', how: 'Tick an item when it is done.' },
+      },
+    },
+    '/tasks/[id]': {
+      sections: {
+        Details: { what: 'What the task is, who it is for, who assigned it and when it is due.' },
+        Document: { what: 'The document this task asks for, the accepted formats and size, the latest upload and HR’s check.', how: 'Choose a file and upload it. If HR rejects it, read their note and upload again.' },
+        Actions: { what: 'What you can do with the task now.', how: 'Employees start, send for review or complete; the assigner accepts, reopens or cancels.' },
+        History: { what: 'Every change to the task: who did what, when, and their remarks.' },
+      },
+    },
     '/settings/signature': {
       sections: { Preview: { what: 'Your signature exactly as Outlook will show it, and how your computers keep it up to date.', how: 'Save to send it to your computers. "Sync my computers" makes them install it again.' } },
     },
