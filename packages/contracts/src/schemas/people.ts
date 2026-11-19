@@ -160,6 +160,8 @@ export const createEmployeeInput = placementInput
     confirmationDate: isoDate.optional(),
     /** Existing employees only: the leave they have available today, per leave type. */
     openingLeaveBalances: z.array(openingLeaveBalance).max(30).optional(),
+    /** Company assets handed to them now (laptop, ID card...). Each must be available; they are asked to acknowledge it. */
+    assetIds: z.array(z.uuid()).max(20).optional(),
   })
   .refine((v) => !v.workEmail || !v.personalEmail || v.workEmail !== v.personalEmail, { message: 'Use their work email here, not their personal email', path: ['workEmail'] })
   .superRefine((v, ctx) => { const m = dateOfBirthError(v.dateOfBirth, v.dateOfJoining); if (m) ctx.addIssue({ code: 'custom', message: m, path: ['dateOfBirth'] }); })

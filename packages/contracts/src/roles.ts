@@ -35,6 +35,7 @@ const EMPLOYEE_SELF: Partial<Record<PermissionKey, Scope>> = {
   'announcements:read': 'own',
   'ai:use': 'own',
   'interviews:feedback': 'own',
+  'assets:view': 'own',
 };
 
 const MANAGER_TEAM: Partial<Record<PermissionKey, Scope>> = {
@@ -55,6 +56,7 @@ const MANAGER_TEAM: Partial<Record<PermissionKey, Scope>> = {
   'requisitions:read': 'team',
   'requisitions:create': 'team',
   'reports:read': 'team',
+  'assets:view': 'team',
 };
 
 export const SYSTEM_ROLES: readonly RoleTemplate[] = [
@@ -73,7 +75,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'users:read': 'tenant', 'users:invite': 'tenant', 'users:manage': 'tenant',
       'roles:read': 'tenant', 'roles:manage': 'tenant', 'audit:read': 'tenant', 'billing:read': 'tenant',
       'employees:read': 'tenant', 'integrations:manage': 'tenant', 'automation:manage': 'tenant', 'ai:configure': 'tenant',
-      'reports:read': 'tenant',
+      'reports:read': 'tenant', 'modules:manage': 'tenant', 'fields:manage': 'tenant',
     },
   },
   {
@@ -94,6 +96,9 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'engagement:manage': 'tenant', 'helpdesk:manage': 'tenant', 'helpdesk:configure': 'tenant', 'announcements:manage': 'tenant', 'reports:read': 'tenant', 'automation:manage': 'tenant', 'insights:attrition': 'tenant',
       'requisitions:read': 'tenant', 'requisitions:approve': 'tenant', 'candidates:read': 'tenant', 'offers:approve': 'tenant', 'recruitment:configure': 'tenant',
       'privacy:manage': 'tenant', 'bids:read': 'tenant', 'bids:approve': 'tenant',
+      'fields:manage': 'tenant',
+      'bgv:view': 'tenant', 'bgv:create': 'tenant', 'bgv:edit': 'tenant', 'bgv:delete': 'tenant', 'bgv:approve': 'tenant', 'bgv:export': 'tenant', 'bgv:manage': 'tenant',
+      'assets:view': 'tenant', 'assets:create': 'tenant', 'assets:edit': 'tenant', 'assets:delete': 'tenant', 'assets:approve': 'tenant', 'assets:export': 'tenant', 'assets:manage': 'tenant',
     },
   },
   {
@@ -109,6 +114,22 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'performance:read': 'entity', 'performance:manage': 'entity', 'learning:read': 'entity', 'learning:manage': 'entity',
       'requisitions:read': 'entity', 'requisitions:approve': 'entity', 'offers:approve': 'entity', 'reports:read': 'entity',
       'helpdesk:manage': 'entity',
+      'bgv:view': 'entity', 'bgv:create': 'entity', 'bgv:edit': 'entity', 'bgv:approve': 'entity', 'bgv:export': 'entity',
+      'assets:view': 'entity', 'assets:create': 'entity', 'assets:edit': 'entity', 'assets:approve': 'entity', 'assets:export': 'entity',
+    },
+  },
+  {
+    key: 'hr_executive',
+    name: 'HR Executive',
+    description: 'Day-to-day HR work across the organisation: employee records, documents, background checks and assets. No approvals, settings or payroll.',
+    grants: {
+      ...EMPLOYEE_SELF,
+      'org:read': 'tenant', 'users:read': 'tenant',
+      'employees:read': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant',
+      'documents:read': 'tenant', 'documents:manage': 'tenant', 'leave:read': 'tenant', 'attendance:read': 'tenant', 'shifts:read': 'tenant',
+      'helpdesk:manage': 'tenant',
+      'bgv:view': 'tenant', 'bgv:create': 'tenant', 'bgv:edit': 'tenant',
+      'assets:view': 'tenant', 'assets:create': 'tenant', 'assets:edit': 'tenant',
     },
   },
   {
@@ -172,6 +193,17 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
     name: 'Department Manager',
     description: 'Manages their reporting team: approvals, schedules, performance.',
     grants: { ...EMPLOYEE_SELF, 'org:read': 'tenant', ...MANAGER_TEAM },
+  },
+  {
+    key: 'reporting_manager',
+    name: 'Reporting Manager',
+    description: 'Approves leave, attendance and expenses for their direct and indirect reports and sees their records. No rosters, requisitions or settings.',
+    grants: {
+      ...EMPLOYEE_SELF, 'org:read': 'tenant',
+      'users:read': 'team', 'employees:read': 'team', 'documents:read': 'team', 'leave:read': 'team', 'leave:approve': 'team',
+      'attendance:read': 'team', 'attendance:approve': 'team', 'shifts:read': 'team', 'expenses:approve': 'team',
+      'performance:read': 'team', 'performance:manage': 'team', 'assets:view': 'team',
+    },
   },
   {
     key: 'employee',

@@ -46,6 +46,7 @@ export class EntitlementsService {
       const name = FEATURES.find((f) => f.key === feature)?.name ?? feature;
       const reason = e.blocked[feature];
       if (reason === 'workspace_off') throw Errors.featureSwitchedOff(name);
+      if (reason === 'admin_off') throw Errors.featureSwitchedOffByAdmin(name);
       if (reason === 'member_blocked') throw Errors.featureNotForMember(name);
       if (reason === 'channel_off') throw Errors.featureOffInApp(name, (requestContext.get()?.actor as { client?: string } | undefined)?.client ?? 'web');
       throw Errors.featureNotInPlan(name);
@@ -107,6 +108,11 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
         if (features.delete(key)) blocked[key] = 'workspace_off';
       }
     } else if (typeof value === 'number') limits[key] = value;
+  }
+  // Modules the workspace's own administrators switched off in HR Workspace Admin (within what the plan includes).
+  const own = await tx.collection('workspace_modules').findOne({ key: 'workspace' });
+  for (const key of (own?.disabled_features ?? []) as string[]) {
+    if (!CORE.has(key) && features.delete(key)) blocked[key] = 'admin_off';
   }
   if (membershipId) {
     const member = await tx.collection('member_feature_access').findOne({ membership_id: membershipId });
