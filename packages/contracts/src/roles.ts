@@ -56,6 +56,7 @@ const MANAGER_TEAM: Partial<Record<PermissionKey, Scope>> = {
   'requisitions:read': 'team',
   'requisitions:create': 'team',
   'reports:read': 'team',
+  'tasks:assign': 'team',
   'assets:view': 'team',
 };
 
@@ -96,6 +97,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'engagement:manage': 'tenant', 'helpdesk:manage': 'tenant', 'helpdesk:configure': 'tenant', 'announcements:manage': 'tenant', 'reports:read': 'tenant', 'automation:manage': 'tenant', 'insights:attrition': 'tenant',
       'requisitions:read': 'tenant', 'requisitions:approve': 'tenant', 'candidates:read': 'tenant', 'offers:approve': 'tenant', 'recruitment:configure': 'tenant',
       'privacy:manage': 'tenant', 'bids:read': 'tenant', 'bids:approve': 'tenant',
+      'tasks:assign': 'tenant', 'tasks:hr': 'tenant', 'profiles:review': 'tenant',
       'fields:manage': 'tenant',
       'bgv:view': 'tenant', 'bgv:create': 'tenant', 'bgv:edit': 'tenant', 'bgv:delete': 'tenant', 'bgv:approve': 'tenant', 'bgv:export': 'tenant', 'bgv:manage': 'tenant',
       'assets:view': 'tenant', 'assets:create': 'tenant', 'assets:edit': 'tenant', 'assets:delete': 'tenant', 'assets:approve': 'tenant', 'assets:export': 'tenant', 'assets:manage': 'tenant',
@@ -113,7 +115,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'attendance:read': 'entity', 'attendance:approve': 'entity', 'shifts:read': 'entity', 'shifts:manage': 'entity',
       'performance:read': 'entity', 'performance:manage': 'entity', 'learning:read': 'entity', 'learning:manage': 'entity',
       'requisitions:read': 'entity', 'requisitions:approve': 'entity', 'offers:approve': 'entity', 'reports:read': 'entity',
-      'helpdesk:manage': 'entity',
+      'helpdesk:manage': 'entity', 'tasks:assign': 'entity', 'tasks:hr': 'entity', 'profiles:review': 'entity',
       'bgv:view': 'entity', 'bgv:create': 'entity', 'bgv:edit': 'entity', 'bgv:approve': 'entity', 'bgv:export': 'entity',
       'assets:view': 'entity', 'assets:create': 'entity', 'assets:edit': 'entity', 'assets:approve': 'entity', 'assets:export': 'entity',
     },
@@ -127,7 +129,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'org:read': 'tenant', 'users:read': 'tenant',
       'employees:read': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant',
       'documents:read': 'tenant', 'documents:manage': 'tenant', 'leave:read': 'tenant', 'attendance:read': 'tenant', 'shifts:read': 'tenant',
-      'helpdesk:manage': 'tenant',
+      'helpdesk:manage': 'tenant', 'tasks:hr': 'tenant',
       'bgv:view': 'tenant', 'bgv:create': 'tenant', 'bgv:edit': 'tenant',
       'assets:view': 'tenant', 'assets:create': 'tenant', 'assets:edit': 'tenant',
     },

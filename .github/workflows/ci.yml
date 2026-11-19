@@ -100,6 +100,8 @@ jobs:
           pnpm e2e:universe
           pnpm e2e:talent
           pnpm e2e:helpdesk
+          pnpm e2e:communication
+          pnpm e2e:leave
           pnpm e2e:attendance
           pnpm e2e:payroll
           pnpm e2e:mobile
@@ -108,6 +110,7 @@ jobs:
           pnpm e2e:recruitment
           pnpm e2e:ats
           pnpm e2e:iq
+          pnpm e2e:notifications
       - name: Payroll outside India end-to-end flow
         # On a fresh demo workspace: the flow enrols the payroll lead's MFA and saves new UK statutory settings.
         run: |
@@ -116,6 +119,15 @@ jobs:
           node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:payroll-countries
+      - name: Employee workspace end-to-end flows, web and mobile (home, tasks, appraisal, profile)
+        # On a fresh demo workspace: the flows launch appraisal cycles, add reward rules and approve profile updates.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:workspace
+          pnpm e2e:mobile-workspace
       - name: Late coming and attendance penalties end-to-end flow
         # On a fresh demo workspace: the flow switches on late-coming and same-day leave rules, which would change
         # what the other flows see (reminders, payslip deductions).

@@ -3,7 +3,8 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { load, loadOptional } from '@/lib/api';
 import { can, quickActions, workflowActions } from '@/lib/nav';
-import type { Me } from '@/lib/types';
+import type { AttendanceMonth, AttendanceToday, LeaveBalance, Me, MyCalendar, MyRewards, TaskCounts } from '@/lib/types';
+import { MyDay } from './my-day';
 import type { Announcement, Summary } from './helpdesk/types';
 import { HomeDashboard, type Dashboard } from './home-dashboard';
 
@@ -11,8 +12,8 @@ interface Overview { legalEntities: number; businessUnits: number; locations: nu
 
 const SCOPE_LABEL: Record<string, string> = { own: 'Yourself', team: 'Your team', department: 'Your department', entity: 'Your legal entity', tenant: 'Whole organization' };
 
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
-  const { welcome } = await searchParams;
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ welcome?: string; month?: string }> }) {
+  const { welcome, month } = await searchParams;
   const me = await load<Me>('/me');
   // First sign-in to a new workspace: its administrators set up the company before anything else (unless they chose "Finish later").
   if (!me.tenant.setupCompletedAt && can(me, 'org:manage') && !(await cookies()).get('crew_setup_later')) redirect('/setup');
@@ -26,6 +27,22 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     hasHelpdesk && (can(me, 'helpdesk:use') || can(me, 'helpdesk:manage')) ? loadOptional<Summary>('/helpdesk/summary') : null,
   ]);
   const isAdmin = can(me, 'org:manage') || can(me, 'users:invite');
+
+  // The person's own day (clock, hours, leave, rewards, calendar) for anyone with an employee record.
+  const self = me.employee;
+  const has = (f: string) => me.features.includes(f);
+  const istToday = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+  const calMonth = month && /^\d{4}-\d{2}$/.test(month) ? month : istToday.slice(0, 7);
+  const [today, monthDays, balances, rewards, calendar, taskCounts] = self
+    ? await Promise.all([
+        has('attendance_basic') && can(me, 'attendance:punch') ? loadOptional<AttendanceToday>('/attendance/today') : null,
+        has('attendance_basic') && can(me, 'attendance:read') ? loadOptional<AttendanceMonth>(`/attendance/days?from=${istToday.slice(0, 8)}01&to=${istToday}`) : null,
+        has('leave') && can(me, 'leave:read') ? loadOptional<{ balances: LeaveBalance[] }>(`/leave/balances?year=${istToday.slice(0, 4)}`).then((b) => b?.balances ?? null) : null,
+        has('attendance_basic') ? loadOptional<MyRewards>('/workspace/rewards?history=0') : null,
+        loadOptional<MyCalendar>(`/workspace/calendar?month=${calMonth}`),
+        has('core_hr') ? loadOptional<TaskCounts>('/tasks/counts') : null,
+      ])
+    : [null, null, null, null, null, null];
 
   const steps = overview && isAdmin
     ? [
@@ -65,6 +82,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         canView: can(me, 'billing:read'),
       }}
       actions={[...quickActions(me), ...workflowActions(me).filter((a) => a.key !== 'theme')]}
+      recruiter={can(me, 'requisitions:read') || can(me, 'candidates:read')}
+      myDay={self ? <MyDay renderedAt={Date.now()} firstName={me.user.fullName.split(' ')[0] ?? ''} today={today} month={monthDays} balances={balances} rewards={rewards} calendar={calendar} taskCounts={taskCounts} /> : null}
     />
   );
 }

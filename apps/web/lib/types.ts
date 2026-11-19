@@ -74,17 +74,20 @@ export interface EmployeeProfile extends Employee {
 export interface Designation { id: string; name: string; code: string | null; level: number | null; employeeCount: number }
 export interface JobRecord { id: string; effectiveFrom: string; effectiveTo: string | null; reason: string; note: string | null; legalEntityName: string | null; departmentName: string | null; locationName: string | null; designationName: string | null; managerName: string | null; grade: string | null; employmentType: string; scheduled: boolean }
 export interface LifecycleEvent { id: string; kind: string; effectiveOn: string; details: Record<string, unknown>; createdAt: string; by: string | null }
-export interface LeaveType { id: string; code: string; name: string; description: string | null; paid: boolean; allowHalfDay: boolean; color: string }
-export interface LeavePolicy { id: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; legalEntityId: string | null; legalEntityName: string | null; accrualMethod: string; annualEntitlement: string; carryForwardMax: string; allowNegativeBalance: boolean; minNoticeDays: number; maxConsecutiveDays: string | null; availableDuringProbation: boolean; rounding: string }
-export interface LeaveBalance { leaveTypeId: string; code: string; name: string; color: string; paid: boolean; allowHalfDay: boolean; tracked: boolean; annualEntitlement: string; accrualMethod: string; accrued: string; carriedForward: string; adjusted: string; taken: string; lapsed: string; balance: string; pending: string; available: string | null }
-export interface LeaveRequest { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; color: string; startDate: string; endDate: string; startHalf: string; endHalf: string; days: string; reason: string | null; status: string; approvalId: string | null; waitingOn?: string | null; createdAt: string; decidedAt: string | null; cancelReason: string | null; requestedBy: string | null; approvalTrail?: ApprovalStep[]; sameDay?: boolean; appliedOn?: string | null; penalty?: { id: string; days: string; source: string; status: string; statusReason: string | null } | null }
+export interface LeaveType { id: string; code: string; name: string; description: string | null; paid: boolean; allowHalfDay: boolean; color: string; kind: string; eligibleGender: string; countsCalendarDays: boolean }
+export interface StandardLeaveType { code: string; name: string; kind: string; paid: boolean; allowHalfDay: boolean; eligibleGender: string; countsCalendarDays: boolean; accrualMethod: string; annualEntitlement: string; added: boolean }
+export interface LeavePolicy { id: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; legalEntityId: string | null; legalEntityName: string | null; departmentId: string | null; departmentName: string | null; designationId: string | null; designationName: string | null; locationId: string | null; locationName: string | null; accrualMethod: string; annualEntitlement: string; carryForwardMax: string; allowNegativeBalance: boolean; minNoticeDays: number; maxConsecutiveDays: string | null; availableDuringProbation: boolean; rounding: string }
+export interface LeaveBalance { leaveTypeId: string; code: string; name: string; color: string; paid: boolean; allowHalfDay: boolean; kind?: string; tracked: boolean; annualEntitlement: string; accrualMethod: string; accrued: string; carriedForward: string; adjusted: string; taken: string; lapsed: string; balance: string; pending: string; available: string | null }
+export interface LeaveRequest { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; leaveTypeKind?: string; color: string; startDate: string; endDate: string; startHalf: string; endHalf: string; days: string; reason: string | null; status: string; approvalId: string | null; waitingOn?: string | null; createdAt: string; decidedAt: string | null; cancelReason: string | null; requestedBy: string | null; approvalTrail?: ApprovalStep[]; sameDay?: boolean; appliedOn?: string | null; penalty?: { id: string; days: string; source: string; status: string; statusReason: string | null } | null; replacesRequestId?: string | null; modifications?: { at: string; by: string | null; leaveTypeName: string | null; startDate: string; endDate: string; days: string; reason: string | null }[] }
+export interface LeaveAdjustment { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string | null; year: number; quantity: string; note: string | null; opening: boolean; by: string | null; createdAt: string }
+export interface LeaveOverview { year: number; truncated: boolean; types: { id: string; code: string; name: string; color: string; kind: string }[]; rows: { employeeId: string; name: string; code: string; departmentId: string | null; departmentName: string | null; balances: Record<string, { balance: string | null; available: string | null; taken: string; pending: string }> }[] }
 export interface ApprovalStep { seq: number; kind: string; status: string; role: string | null; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null }
 export interface HolidayCalendar { id: string; name: string; legalEntityId: string | null; legalEntityName: string | null; locationId: string | null; locationName: string | null; isDefault: boolean; weeklyOffs: number[]; holidays: { id: string; date: string; name: string; isOptional: boolean }[] }
-export interface InboxItem { id: string; resourceType: string; resourceId: string; summary: string; createdAt: string; stepSeq: number; stepCount: number; requestedBy: string | null; subjectName: string | null; viaRole: string | null; link: string; label: string; details?: { sameDayLeave?: SameDayLeaveDetails } | null }
+export interface InboxItem { id: string; resourceType: string; resourceId: string; summary: string; createdAt: string; stepSeq: number; stepCount: number; requestedBy: string | null; subjectName: string | null; viaRole: string | null; link: string; label: string; details?: { sameDayLeave?: SameDayLeaveDetails } | null; category?: string; ref?: string }
 export interface SameDayLeaveDetails { sameDay: boolean; appliedOn: string | null; policyEnabled: boolean; mode: 'auto' | 'manual'; exempt: boolean; suggestedDays: string | null; penalty: { id: string; days: string; source: string; status: string } | null }
 export interface OnboardingTask { id: string; employeeId: string; title: string; description: string | null; owner: string; assigneeMembershipId: string | null; assigneeName: string | null; dueOn: string | null; status: string; completedAt: string | null; completedBy: string | null; employeeName: string; employeeCode: string; overdue: boolean }
 export interface OnboardingTemplate { id: string; name: string; description: string | null; isDefault: boolean; tasks: { title: string; description?: string; owner: string; dueOffsetDays: number }[] }
-export interface EmployeeDocument { id: string; employeeId: string; category: string; title: string; fileName: string; contentType: string; sizeBytes: number; sha256: string; visibility: string; uploadedBy: string | null; createdAt: string }
+export interface EmployeeDocument { id: string; employeeId: string; category: string; title: string; fileName: string; contentType: string; sizeBytes: number; sha256: string; visibility: string; uploadedBy: string | null; createdAt: string; verificationStatus?: 'pending' | 'verified' | 'rejected' | null; verificationRemarks?: string | null; verifiedAt?: string | null; taskId?: string | null }
 export interface Notification { id: string; kind: string; title: string; body: string | null; link: string | null; readAt: string | null; createdAt: string }
 
 // Phase 3: attendance and workforce
@@ -192,6 +195,7 @@ export interface RequisitionDetail extends Requisition {
   posting: Posting | null;
   careerSite: { slug: string; enabled: boolean } | null;
   can: { edit: boolean; manageCandidates: boolean; readCandidates: boolean; manageOffers: boolean };
+  approval?: { id: string; status: string; autoApproved: boolean; decidedAt: string | null; trail: { seq: number; kind: string; status: string; role: string | null; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null }[] } | null;
 }
 export interface RecruitPerson { membershipId: string; name: string; title: string | null; departmentName: string | null }
 export interface Stage { id: string; name: string; kind: string; position: number; activeApplications?: number }
@@ -266,3 +270,89 @@ export interface LateMonth {
 
 /** The caller's own leave calendar for a range (GET /leave/calendar). */
 export interface LeaveCalendarData { from: string; to: string; weeklyOffs: number[]; holidays: { date: string; name: string; optional: boolean }[]; requests: LeaveRequest[] }
+
+// Employee workspace: HR Tasks and Manager Tasks
+export interface WorkTask {
+  id: string; category: 'hr' | 'manager'; kind: 'general' | 'document' | 'acknowledgement'; title: string; description: string | null; priority: 'low' | 'normal' | 'high' | 'urgent';
+  status: 'new' | 'not_started' | 'in_progress' | 'pending_review' | 'completed' | 'reopened' | 'cancelled';
+  displayStatus: WorkTask['status'] | 'overdue'; overdue: boolean; isNew: boolean; dueOn: string | null; assignedAt: string; assignedBy: string | null; assignedByMe: boolean;
+  employeeId: string; employeeName: string | null; employeeCode: string | null; departmentName: string | null; employeeRemarks: string | null; reviewerRemarks: string | null;
+  submittedAt: string | null; completedAt: string | null; acknowledgedAt: string | null; isMine: boolean; verificationRequestId: string | null;
+  document: null | { spec: { category: string; formats: string[]; maxMb: number }; id: string | null; title?: string; fileName?: string; sizeBytes?: number; contentType?: string; verificationStatus?: 'pending' | 'verified' | 'rejected' | null; verificationRemarks?: string | null; verifiedAt?: string | null };
+  history: { at: string; by: string | null; action: string; status: string | null; remarks: string | null }[];
+}
+export interface WorkTaskDetail extends WorkTask { canManage: boolean; approvalTrail: { seq: number; status: string; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null; role: string | null }[] }
+export interface TaskCounts { hr: { open: number; new: number; overdue: number; review: number }; manager: { open: number; new: number; overdue: number; review: number }; toReview: number; documentsToVerify: number }
+export interface AssignablePerson { id: string; name: string; code: string | null; departmentName: string | null; designationName: string | null }
+
+// Employee workspace: appraisals
+export type AppraisalStageKey = 'self' | 'manager' | 'hr' | 'finalized' | 'published';
+export interface AppraisalSummary {
+  id: string; cycleId: string; cycleName: string; periodStart: string; periodEnd: string; selfDue: string; managerDue: string; hrDue: string | null; stage: AppraisalStageKey;
+  employeeId: string; employeeName: string | null; departmentName: string | null; managerName: string | null; formTitle: string; selfCompletion: number;
+  selfPercent: number | null; managerPercent: number | null; finalPercent: number | null; band: string | null; overdue: boolean; publishedAt: string | null;
+}
+export type AnswerValue = { score?: number | null; comment?: string | null; text?: string | null };
+export interface AppraisalDetail {
+  id: string; stage: AppraisalStageKey; role: 'employee' | 'manager' | 'hr'; canEdit: boolean;
+  cycle: { id: string; name: string; periodStart: string; periodEnd: string; selfDue: string; managerDue: string; hrDue: string | null; status: string };
+  employee: { name: string; code: string | null; designation: string | null; department: string | null; dateOfJoining: string | null; managerName: string | null };
+  reviewDate: string;
+  definition: import('@crew/contracts').AppraisalDefinition;
+  answers: { employee: Record<string, AnswerValue>; manager: Record<string, AnswerValue>; hr: Record<string, AnswerValue>; finalScores: Record<string, number | null> };
+  result: { selfPercent: number | null; managerPercent: number | null; hrPercent: number | null; calculatedPercent: number | null; finalPercent: number | null; band: string | null; finals: Record<string, number | null>; levels: Record<string, string | null> };
+  overrideReason: string | null; finalPercentOverride: number | null;
+  completion: { employee: number; manager: number; hr: number };
+  selfSubmittedAt: string | null; managerSubmittedAt: string | null; finalizedAt: string | null; publishedAt: string | null;
+  history: { at: string; by: string | null; action: string; stage: string; note: string | null }[];
+}
+export interface AppraisalForm { id: string; name: string; description: string | null; active: boolean; isDefault: boolean; audience: string; departmentIds: string[]; designationIds: string[]; version: number; templateKey: string | null; definition: import('@crew/contracts').AppraisalDefinition; updatedAt: string }
+export interface AppraisalCycle {
+  id: string; name: string; status: 'draft' | 'active' | 'closed'; formId: string | null; formName: string | null; periodStart: string; periodEnd: string; selfDue: string; managerDue: string; hrDue: string | null;
+  departmentIds: string[]; departmentNames: string[]; hrReviewerMembershipIds: string[]; launchedAt: string | null; closedAt: string | null; byStage: Record<AppraisalStageKey, number>; participants: number;
+}
+
+// Employee workspace: complete profile and profile updates
+export type ProfileSectionKey = import('@crew/contracts').ProfileSection;
+export interface ProfileChange { field: string; label: string; old: string | null; new: string | null }
+export interface ProfileUpdateBrief { id: string; status: string; createdAt: string; decidedAt: string | null; remarks: string | null; changes: ProfileChange[] }
+export interface PostalAddressView { line1: string; line2: string; city: string; state: string; postalCode: string; country: string }
+export interface FullProfile {
+  employee: { id: string; name: string; code: string; photo: boolean; photoUpdatedAt: string | null };
+  self: boolean; completeness: number; filled: Record<ProfileSectionKey, boolean>;
+  professional: {
+    employeeCode: string; designation: string | null; department: string | null; manager: string | null; employmentType: string; status: string; dateOfJoining: string;
+    confirmationDate: string | null; probationEndDate: string | null; workEmail: string | null; grade: string | null;
+    location: { name: string; address: string | null } | null; company: { name: string; address: string | null } | null;
+    shift: { name: string; start: string; end: string } | null; workingDays: string[];
+  };
+  sections: {
+    personal: { firstName: string; lastName: string; preferredName: string | null; dateOfBirth: string | null; gender: string | null; personalEmail: string | null; phone: string | null; nationality: string | null; maritalStatus: string | null; bloodGroup: string | null };
+    address: { current: PostalAddressView | null; permanentSameAsCurrent: boolean; permanent: PostalAddressView | null } | null;
+    emergency: { contacts: { name: string; relationship: string; phone: string; email: string | null }[] } | null;
+    education: { highestQualification: string | null; records: { level: string; degree: string | null; institution: string; yearCompleted: number | null; percentage: number | null; documentId: string | null }[] } | null;
+    employment: { totalExperienceMonths: number | null; records: { company: string; designation: string | null; from: string; to: string | null; lastSalary: number | null; reasonForLeaving: string | null; documentId: string | null }[] } | null;
+    skills: { skills: string[]; languages: string[]; certifications: string[] } | null;
+    bank: ({ accountHolderName: string | null; bankName: string | null; branchName: string | null; accountType: string | null; accountNumber: string | null; ifsc: string | null } & { hidden?: undefined }) | { hidden: true } | null;
+    identity: ({ aadhaar: string | null; pan: string | null; otherIdType: string | null; otherIdNumber: string | null; identityDocumentId: string | null; addressProofDocumentId: string | null } & { hidden?: undefined }) | { hidden: true } | null;
+  };
+  updates: Partial<Record<ProfileSectionKey, ProfileUpdateBrief>>;
+  can: { submit: boolean; editDirect: boolean; editSensitive: boolean; seeSensitive: boolean; review: boolean };
+}
+export interface ProfileUpdate {
+  id: string; section: ProfileSectionKey; sectionLabel: string; status: string;
+  employee: { id: string; name: string; code: string; department: string | null };
+  changes: ProfileChange[]; note: string | null; remarks: string | null; createdAt: string; decidedAt: string | null; decidedBy: string | null;
+  history: { at: string; by: string | null; action: string; remarks: string | null }[]; mine: boolean; canDecide: boolean;
+}
+export interface ProfileUpdateDetail extends ProfileUpdate {
+  documents: { id: string; title: string; fileName: string; category: string }[];
+  approvalTrail: { seq: number; status: string; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null; role: string | null }[];
+}
+
+// Employee workspace: attendance rewards and calendar
+export interface RewardRule { id: string; name: string; kind: 'perfect_attendance' | 'punctuality'; description: string | null; icon: 'trophy' | 'medal' | 'star' | 'clock'; active: boolean; maxLateDays: number; excusedLeaveTypeIds: string[]; allowHalfDays: boolean; minWorkingDays: number }
+export interface RewardWinners { month: string; evaluated: number; rules: (RewardRule & { winners: { employeeId: string; name: string; code: string | null; departmentName: string | null; daysCounted: number }[] })[] }
+export interface RewardResult extends RewardRule { status: 'earned' | 'on_track' | 'missed' | 'not_eligible'; done: number; total: number; reason: string | null }
+export interface MyRewards { month: string; complete: boolean; rewards: RewardResult[]; history: { month: string; earned: { id: string; name: string; icon: string }[] }[] }
+export interface MyCalendar { month: string; today: string; days: { date: string; dayType: string; holidayName: string | null; events: { kind: string; title: string; href: string; status?: string; color?: string | null }[] }[] }

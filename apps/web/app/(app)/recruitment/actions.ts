@@ -27,8 +27,9 @@ export async function saveRequisitionAction(id: string | null, values: Record<st
 }
 
 export async function submitRequisitionAction(id: string) {
-  const r = await act(() => api(`/recruitment/requisitions/${id}/submit`, { method: 'POST' }), 'Sent for approval.');
+  const r = await act(() => api<{ status: string; autoApproved?: boolean }>(`/recruitment/requisitions/${id}/submit`, { method: 'POST' }), 'Sent for approval.');
   refresh(job(id));
+  if (r.ok && r.data?.autoApproved) return { ...r, message: 'Approved automatically, because you are the only Owner and nobody else can approve it. You can open it now.' };
   return r;
 }
 

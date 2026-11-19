@@ -69,6 +69,7 @@ const PUBLIC_CHECKED_IN_SERVICE: Record<string, string> = {
   CareersPublicController: 'recruitment (CareersService)',
   ResumeFilesController: 'signed, expiring links issued by a gated module',
   ReceiptFilesController: 'signed, expiring links issued by a gated module',
+  'CommFilesController.file': 'signed, expiring links issued by a gated module (communication, announcements)',
   'DocumentsController.file': 'signed, expiring links issued by a gated module',
   SignatureAgentController: 'email_signatures (SignaturesService.agentByToken)',
   PlatformAuthController: 'none (SAMPLEDGE Console sign-in)',

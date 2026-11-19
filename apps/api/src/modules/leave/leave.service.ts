@@ -1,10 +1,13 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { z } from 'zod';
-import { DEFAULT_LEAVE_TYPES, leaveMath, type WorkCalendar } from '@crew/contracts';
+import { DEFAULT_LEAVE_TYPES, leaveMath, leavePolicyRank, STANDARD_LEAVE_TYPES, type WorkCalendar } from '@crew/contracts';
 import type {
   holidayCalendarInput,
   holidayInput,
   leaveAdjustmentInput,
+  leaveAdjustmentsQuery,
+  leaveBalanceOverviewQuery,
+  LeaveModifyInput,
   leavePolicyInput,
   LeaveRequestInput,
   leaveTypeInput,
@@ -28,7 +31,10 @@ interface PolicyRow {
   id: string;
   leave_type_id: string;
   legal_entity_id: string | null;
-  accrual_method: 'annual_upfront' | 'monthly' | 'none';
+  department_id?: string | null;
+  designation_id?: string | null;
+  location_id?: string | null;
+  accrual_method: 'annual_upfront' | 'monthly' | 'granted' | 'none';
   annual_entitlement: string;
   carry_forward_max: string;
   allow_negative_balance: boolean;
@@ -46,7 +52,9 @@ interface EmployeeLite {
   last_working_day: string | null;
   legal_entity_id: string | null;
   department_id: string | null;
+  designation_id: string | null;
   location_id: string | null;
+  gender: string | null;
   name: string;
 }
 
@@ -60,6 +68,11 @@ interface RequestRow {
   status: string;
   approval_request_id: string | null;
   requested_by_membership_id: string | null;
+  start_half: 'full' | 'second_half';
+  end_half: 'full' | 'first_half';
+  reason?: string | null;
+  replaces_request_id?: string | null;
+  modifications?: Doc[];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,6 +82,9 @@ type Doc = Record<string, any>;
 async function policyViews(tx: TenantTx, policies: Doc[]) {
   const types = new Map((await tx.collection('leave_types').find({ id: { $in: policies.map((p) => p.leave_type_id) } })).map((t) => [t.id as string, t]));
   const entities = await fieldById(tx, 'legal_entities', policies.map((p) => p.legal_entity_id));
+  const departments = await fieldById(tx, 'departments', policies.map((p) => p.department_id));
+  const designations = await fieldById(tx, 'designations', policies.map((p) => p.designation_id));
+  const locations = await fieldById(tx, 'locations', policies.map((p) => p.location_id));
   return policies
     .filter((p) => types.has(p.leave_type_id))
     .map((p) => {
@@ -80,6 +96,12 @@ async function policyViews(tx: TenantTx, policies: Doc[]) {
         leaveTypeCode: t.code,
         legalEntityId: p.legal_entity_id ?? null,
         legalEntityName: entities.get(p.legal_entity_id) ?? null,
+        departmentId: p.department_id ?? null,
+        departmentName: departments.get(p.department_id) ?? null,
+        designationId: p.designation_id ?? null,
+        designationName: designations.get(p.designation_id) ?? null,
+        locationId: p.location_id ?? null,
+        locationName: locations.get(p.location_id) ?? null,
         accrualMethod: p.accrual_method,
         annualEntitlement: p.annual_entitlement,
         carryForwardMax: p.carry_forward_max,
@@ -115,6 +137,7 @@ async function requestViews(tx: TenantTx, requests: Doc[]) {
         leaveTypeId: r.leave_type_id as string,
         leaveTypeName: t.name as string,
         leaveTypeCode: t.code as string,
+        leaveTypeKind: (t.kind as string | undefined) ?? 'standard',
         color: t.color as string,
         startDate: r.start_date as string,
         endDate: r.end_date as string,
@@ -131,6 +154,11 @@ async function requestViews(tx: TenantTx, requests: Doc[]) {
         requestedBy: requesters.get(r.requested_by_membership_id) ?? null,
         sameDay: Boolean(r.same_day),
         appliedOn: (r.applied_on as string | null) ?? null,
+        replacesRequestId: (r.replaces_request_id as string | null) ?? null,
+        modifications: ((r.modifications as Doc[] | undefined) ?? []).map((m) => ({
+          at: m.at, by: (m.by as string | null) ?? null, leaveTypeName: (m.leave_type_name as string | null) ?? null,
+          startDate: m.start_date as string, endDate: m.end_date as string, days: m.days as string, reason: (m.reason as string | null) ?? null,
+        })),
         penalty: penalties.has(r.id)
           ? (({ id, value, source, status, status_reason }) => ({ id: id as string, days: value as string, source: source as string, status: status as string, statusReason: (status_reason as string | null) ?? null }))(penalties.get(r.id)!)
           : null,
@@ -148,17 +176,46 @@ function lite(e: Doc): EmployeeLite {
     last_working_day: e.last_working_day ?? null,
     legal_entity_id: e.current_legal_entity_id ?? null,
     department_id: e.current_department_id ?? null,
+    designation_id: e.current_designation_id ?? null,
     location_id: e.current_location_id ?? null,
+    gender: e.gender ?? null,
     name: displayName(e as never),
   };
 }
 
 const sumBy = <T>(rows: T[], value: (r: T) => unknown) => rows.reduce((t, r) => t + toH(String(value(r) ?? '0')), 0);
-const typeView = (t: Doc) => ({ id: t.id, code: t.code, name: t.name, description: t.description ?? null, paid: t.paid, allowHalfDay: t.allow_half_day, color: t.color });
+const typeView = (t: Doc) => ({
+  id: t.id, code: t.code, name: t.name, description: t.description ?? null, paid: t.paid, allowHalfDay: t.allow_half_day, color: t.color,
+  kind: (t.kind as string | undefined) ?? 'standard', eligibleGender: (t.eligible_gender as string | undefined) ?? 'any', countsCalendarDays: Boolean(t.counts_calendar_days),
+});
+
+/**
+ * Whether a leave type is open to a person. A type for women or for men is closed only to someone whose record says
+ * otherwise; nobody is blocked for having no recorded gender, or a non-binary one.
+ */
+const eligible = (t: Doc, e: Pick<EmployeeLite, 'gender'>) => {
+  const g = (t.eligible_gender as string | undefined) ?? 'any';
+  return g === 'any' || !(e.gender === 'female' || e.gender === 'male') || e.gender === g;
+};
+const scopeOf = (e: EmployeeLite) => ({ legalEntityId: e.legal_entity_id, departmentId: e.department_id, designationId: e.designation_id, locationId: e.location_id });
+/** The policy of a leave type that fits a person best, from a list of active policies. */
+function pickPolicy(policies: PolicyRow[], leaveTypeId: string, e: EmployeeLite): PolicyRow | undefined {
+  let best: PolicyRow | undefined;
+  let bestRank = -1;
+  for (const p of policies) {
+    if (p.leave_type_id !== leaveTypeId) continue;
+    const rank = leavePolicyRank({ legalEntityId: p.legal_entity_id ?? null, departmentId: p.department_id ?? null, designationId: p.designation_id ?? null, locationId: p.location_id ?? null }, scopeOf(e));
+    if (rank > bestRank) { best = p; bestRank = rank; }
+  }
+  return best;
+}
 
 const { accrualsDue, addDays, countLeaveDays, fromH, toH, yearEnd, yearOf } = leaveMath;
 const today = () => new Date().toISOString().slice(0, 10);
-const LEAVE_TYPE_COLUMNS = { code: 'code', name: 'name', description: 'description', paid: 'paid', allowHalfDay: 'allow_half_day', color: 'color' } as const;
+const LEAVE_TYPE_COLUMNS = {
+  code: 'code', name: 'name', description: 'description', paid: 'paid', allowHalfDay: 'allow_half_day', color: 'color',
+  kind: 'kind', eligibleGender: 'eligible_gender', countsCalendarDays: 'counts_calendar_days',
+} as const;
 
 /**
  * Leave: types, policies, holiday calendars, requests and the append-only balance ledger. A request is
@@ -217,10 +274,13 @@ export class LeaveService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const row = await tx
         .collection('leave_types')
-        .insert({ code: input.code, name: input.name, description: input.description ?? null, paid: input.paid, allow_half_day: input.allowHalfDay, color: input.color })
+        .insert({
+          code: input.code, name: input.name, description: input.description ?? null, paid: input.paid, allow_half_day: input.allowHalfDay, color: input.color,
+          kind: input.kind, eligible_gender: input.eligibleGender, counts_calendar_days: input.countsCalendarDays,
+        })
         .catch(conflictOn('23505', 'leave_type_exists', 'A leave type with this code already exists'));
       await this.audit.record(tx, { action: 'leave_type.created', resourceType: 'leave_type', resourceId: row!.id, changes: input });
-      return { id: row!.id, ...input };
+      return typeView(row!);
     });
   }
 
@@ -265,11 +325,39 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
+  /**
+   * Adds types from the standard catalogue (maternity, paternity, bereavement, comp-off, optional holiday, work from
+   * home and the rest), each with a workspace-wide starting policy. Codes the workspace already uses are skipped, so
+   * it is safe to run again; balances are credited straight away.
+   */
+  addStandardTypes(codes: string[]) {
+    return this.db.tenant(async (tx) => {
+      const wanted = STANDARD_LEAVE_TYPES.filter((t) => codes.includes(t.code));
+      const unknown = codes.filter((c) => !STANDARD_LEAVE_TYPES.some((t) => t.code === c));
+      if (unknown.length) throw Errors.badRequest('unknown_standard_type', `Not in the standard list: ${unknown.join(', ')}`);
+      const taken = new Set((await tx.collection('leave_types').find({ code: { $in: wanted.map((t) => t.code) } }, { projection: { code: 1 } })).map((t) => t.code as string));
+      const added: string[] = [];
+      for (const lt of wanted) {
+        if (taken.has(lt.code)) continue;
+        const type = await tx.collection('leave_types').insert({
+          code: lt.code, name: lt.name, paid: lt.paid, allow_half_day: lt.allowHalfDay, color: lt.color, kind: lt.kind,
+          eligible_gender: lt.eligibleGender, counts_calendar_days: lt.countsCalendarDays, description: 'Standard leave type. Change it on Leave settings.',
+        });
+        await tx.collection('leave_policies').insert({ leave_type_id: type.id, legal_entity_id: null, accrual_method: lt.accrualMethod, annual_entitlement: lt.annualEntitlement, carry_forward_max: lt.carryForwardMax });
+        added.push(lt.code);
+      }
+      const credited = added.length ? await this.runAccruals(tx, today()) : 0;
+      await this.audit.record(tx, { action: 'leave_type.standard_added', resourceType: 'leave_type', metadata: { added, skipped: wanted.map((t) => t.code).filter((c) => taken.has(c)), accrualsPosted: credited } });
+      return { added, skipped: wanted.map((t) => t.code).filter((c) => taken.has(c)), accrualsPosted: credited };
+    });
+  }
+
   listPolicies() {
     return this.db.tenant(async (tx) => {
       const rows = (await policyViews(tx, await tx.collection('leave_policies').find({ active: true }))).filter((p) => !p.typeArchived);
-      // By leave type, then the workspace-wide policy before entity ones.
-      rows.sort((a, b) => cmp(a.leaveTypeName, b.leaveTypeName) || Number(a.legalEntityName !== null) - Number(b.legalEntityName !== null) || cmp(a.legalEntityName, b.legalEntityName));
+      // By leave type, then the widest policy first.
+      const width = (p: (typeof rows)[number]) => leavePolicyRank({ legalEntityId: p.legalEntityId, departmentId: p.departmentId, designationId: p.designationId, locationId: p.locationId }, { legalEntityId: p.legalEntityId, departmentId: p.departmentId, designationId: p.designationId, locationId: p.locationId });
+      rows.sort((a, b) => cmp(a.leaveTypeName, b.leaveTypeName) || width(a) - width(b) || cmp(a.legalEntityName, b.legalEntityName) || cmp(a.departmentName, b.departmentName) || cmp(a.designationName, b.designationName) || cmp(a.locationName, b.locationName));
       return rows.map(({ typeArchived: _t, ...p }) => p);
     });
   }
@@ -281,10 +369,14 @@ export class LeaveService implements OnModuleInit {
       if (input.legalEntityId && !(await tx.collection('legal_entities').exists({ id: input.legalEntityId, archived_at: null }))) {
         throw Errors.badRequest('invalid_legal_entity', 'Legal entity not found');
       }
-      const prev = await tx.collection('leave_policies').updateAndGet({ active: true, leave_type_id: input.leaveTypeId, legal_entity_id: input.legalEntityId ?? null }, { $set: { active: false } });
+      for (const [field, table, label] of [['departmentId', 'departments', 'Department'], ['designationId', 'designations', 'Designation'], ['locationId', 'locations', 'Location']] as const) {
+        if (input[field] && !(await tx.collection(table).exists({ id: input[field] }))) throw Errors.badRequest(`invalid_${table}`, `${label} not found`);
+      }
+      const scope = { legal_entity_id: input.legalEntityId ?? null, department_id: input.departmentId ?? null, designation_id: input.designationId ?? null, location_id: input.locationId ?? null };
+      const prev = await tx.collection('leave_policies').updateAndGet({ active: true, leave_type_id: input.leaveTypeId, ...scope }, { $set: { active: false } });
       const row = await tx.collection('leave_policies').insert({
         leave_type_id: input.leaveTypeId,
-        legal_entity_id: input.legalEntityId ?? null,
+        ...scope,
         accrual_method: input.accrualMethod,
         annual_entitlement: input.annualEntitlement,
         carry_forward_max: input.carryForwardMax,
@@ -308,10 +400,9 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
-  private async policyFor(tx: TenantTx, leaveTypeId: string, legalEntityId: string | null): Promise<PolicyRow | undefined> {
-    // The entity's own policy wins over the workspace-wide one.
-    const rows = await tx.collection<PolicyRow>('leave_policies').find({ active: true, leave_type_id: leaveTypeId, legal_entity_id: { $in: [legalEntityId, null] } });
-    return rows.find((p) => p.legal_entity_id !== null && p.legal_entity_id === legalEntityId) ?? rows.find((p) => p.legal_entity_id === null);
+  /** The policy of a leave type for a person: the most specific active one that fits them (see leavePolicyRank). */
+  private async policyFor(tx: TenantTx, leaveTypeId: string, e: EmployeeLite): Promise<PolicyRow | undefined> {
+    return pickPolicy(await tx.collection<PolicyRow>('leave_policies').find({ active: true, leave_type_id: leaveTypeId }), leaveTypeId, e);
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -452,9 +543,11 @@ export class LeaveService implements OnModuleInit {
     const types = await tx.collection('leave_types').find({ archived_at: null }, { sort: { name: 1 } });
     const ledger = await tx.collection('leave_ledger').find({ employee_id: e.id, leave_year: year }, { projection: { leave_type_id: 1, kind: 1, quantity: 1 } });
     const open = await tx.collection('leave_requests').find({ employee_id: e.id, status: 'pending', start_date: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } }, { projection: { leave_type_id: 1, days: 1 } });
+    const policies = await tx.collection<PolicyRow>('leave_policies').find({ active: true });
     const out = [];
     for (const t of types) {
-      const policy = await this.policyFor(tx, t.id, e.legal_entity_id);
+      if (!eligible(t, e)) continue;
+      const policy = pickPolicy(policies, t.id, e);
       if (!policy) continue;
       const k = (kind: string) => sumBy(ledger.filter((l) => l.leave_type_id === t.id && l.kind === kind), (l) => l.quantity);
       const accrued = k('accrual');
@@ -466,7 +559,7 @@ export class LeaveService implements OnModuleInit {
       const pend = sumBy(open.filter((p) => p.leave_type_id === t.id), (p) => p.days);
       const tracked = policy.accrual_method !== 'none';
       out.push({
-        leaveTypeId: t.id, code: t.code, name: t.name, color: t.color, paid: t.paid, allowHalfDay: t.allow_half_day,
+        leaveTypeId: t.id, code: t.code, name: t.name, color: t.color, paid: t.paid, allowHalfDay: t.allow_half_day, kind: (t.kind as string | undefined) ?? 'standard',
         tracked, annualEntitlement: policy.annual_entitlement, accrualMethod: policy.accrual_method,
         accrued: fromH(accrued), carriedForward: fromH(carried), adjusted: fromH(adjusted), taken: fromH(taken), lapsed: fromH(lapsed),
         balance: fromH(balance), pending: fromH(pend), available: tracked ? fromH(balance - pend) : null,
@@ -520,11 +613,16 @@ export class LeaveService implements OnModuleInit {
     return { e, onBehalf };
   }
 
-  private async evaluate(tx: TenantTx, e: EmployeeLite, input: LeaveRequestInput, onBehalf: boolean) {
-    const type = await tx.collection<{ id: string; name: string; allow_half_day: boolean }>('leave_types').findOne({ id: input.leaveTypeId, archived_at: null });
+  /**
+   * Checks a draft request against the type, policy, calendar and balance. When it changes an existing request, that
+   * request's days are counted as available again (they are given back when the change goes through).
+   */
+  private async evaluate(tx: TenantTx, e: EmployeeLite, input: Omit<LeaveRequestInput, 'employeeId'>, onBehalf: boolean, replacing?: RequestRow) {
+    const type = await tx.collection<Doc>('leave_types').findOne({ id: input.leaveTypeId, archived_at: null });
     if (!type) throw Errors.badRequest('invalid_leave_type', 'Leave type not found');
-    const policy = await this.policyFor(tx, type.id, e.legal_entity_id);
-    if (!policy) throw Errors.badRequest('no_policy', `${type.name} is not available for this employee's legal entity`);
+    if (!eligible(type, e)) throw Errors.badRequest('not_eligible', `${type.name} is not available to this employee`);
+    const policy = await this.policyFor(tx, type.id, e);
+    if (!policy) throw Errors.badRequest('no_policy', `${type.name} is not available for this employee: no policy covers their entity, department, designation or location`);
     if (yearOf(input.startDate) !== yearOf(input.endDate)) throw Errors.badRequest('spans_years', 'Split leave that crosses 31 December into one request per year');
     if (!type.allow_half_day && (input.startHalf !== 'full' || input.endHalf !== 'full')) throw Errors.badRequest('no_half_days', `${type.name} cannot be taken in half days`);
     if (e.status === 'exited') throw Errors.badRequest('employee_exited', 'This person has left');
@@ -533,8 +631,15 @@ export class LeaveService implements OnModuleInit {
     if (e.status === 'probation' && !policy.available_during_probation) throw Errors.badRequest('not_during_probation', `${type.name} is available after probation`);
 
     const cal = await this.calendarFor(tx, e);
-    const daysH = countLeaveDays(input, cal);
+    // Some types (maternity, usually) count every calendar day.
+    const daysH = countLeaveDays(input, type.counts_calendar_days ? { weeklyOffs: [], holidays: new Set() } : cal);
     if (daysH <= 0) throw Errors.badRequest('no_working_days', 'Those dates are all weekly offs or holidays');
+    if (type.kind === 'optional_holiday') {
+      const optional = new Set(cal.id ? (await tx.collection('holidays').find({ calendar_id: cal.id, is_optional: true, holiday_date: { $gte: input.startDate, $lte: input.endDate } }, { projection: { holiday_date: 1 } })).map((h) => h.holiday_date as string) : []);
+      for (let d = input.startDate; d <= input.endDate; d = addDays(d, 1)) {
+        if (leaveMath.isWorkingDay(d, cal) && !optional.has(d)) throw Errors.badRequest('not_optional_holiday', `${type.name} can only be taken on a day the holiday calendar marks as an optional holiday; ${d} is not one`);
+      }
+    }
     if (policy.max_consecutive_days && daysH > toH(policy.max_consecutive_days)) {
       throw Errors.badRequest('too_long', `${type.name} allows at most ${policy.max_consecutive_days} days in one request`);
     }
@@ -543,7 +648,9 @@ export class LeaveService implements OnModuleInit {
     }
     const balance = (await this.balanceRows(tx, e, yearOf(input.startDate))).find((b) => b.leaveTypeId === type.id);
     const tracked = policy.accrual_method !== 'none';
-    const availableH = balance?.available ? toH(balance.available) : 0;
+    // The days of the request being changed come back when the change goes through.
+    const giveBack = replacing && replacing.leave_type_id === type.id && yearOf(replacing.start_date) === yearOf(input.startDate) ? toH(replacing.days) : 0;
+    const availableH = (balance?.available ? toH(balance.available) : 0) + giveBack;
     const afterH = availableH - daysH;
     if (tracked && afterH < 0 && !policy.allow_negative_balance) {
       throw Errors.badRequest('insufficient_balance', `Not enough ${type.name}: ${fromH(availableH)} available, ${fromH(daysH)} requested`);
@@ -589,6 +696,7 @@ export class LeaveService implements OnModuleInit {
       const approvalId = await this.approvals.start(tx, {
         resourceType: 'leave_request', resourceId: row.id, subjectEmployeeId: e.id,
         summary: `${e.name}: ${type.name}, ${range} (${preview.days} days)${input.reason ? `. "${input.reason}"` : ''}${sameDay ? ` ${sameDay}` : ''}`,
+        meta: { leaveTypeCode: type.code, leaveTypeName: type.name, paid: Boolean(type.paid), halfDay: input.startHalf !== 'full' || input.endHalf !== 'full' || type.code === 'HD' },
       });
       await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
       await this.audit.record(tx, {
@@ -605,6 +713,8 @@ export class LeaveService implements OnModuleInit {
     // The status check is part of the write, so a cancellation made meanwhile is not overwritten.
     const r = await tx.collection<RequestRow>('leave_requests').findOne({ id: req.resource_id });
     if (!r || !(await tx.collection('leave_requests').updateOne({ id: r.id, status: 'pending' }, { $set: { status: 'approved', decided_at: new Date() } }))) return;
+    // A change to approved leave: the leave it replaces is cancelled and its days given back first.
+    if (r.replaces_request_id) await this.retire(tx, r.replaces_request_id, r.id);
     await tx.collection('leave_ledger').insert({
       employee_id: r.employee_id,
       leave_type_id: r.leave_type_id,
@@ -650,6 +760,11 @@ export class LeaveService implements OnModuleInit {
       }
       if (r.status === 'pending' && r.approval_request_id) await this.approvals.cancel(tx, r.approval_request_id);
       await this.discipline.onLeaveClosed(tx, id, 'cancelled');
+      // Cancelling leave also withdraws a change to it that is still waiting.
+      for (const change of await tx.collection<RequestRow>('leave_requests').find({ replaces_request_id: id, status: 'pending' })) {
+        await tx.collection('leave_requests').updateOne({ id: change.id, status: 'pending' }, { $set: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: 'The leave it changed was cancelled' } });
+        if (change.approval_request_id) await this.approvals.cancel(tx, change.approval_request_id);
+      }
       if (r.status === 'approved') {
         await tx.collection('leave_ledger').insert({
           employee_id: r.employee_id,
@@ -680,6 +795,116 @@ export class LeaveService implements OnModuleInit {
       }
       return this.loadRequest(tx, id);
     });
+  }
+
+  /** Who the caller is to a request: the person (or who filed it), and whether they approve leave for that person. */
+  private async rolesOn(tx: TenantTx, r: RequestRow, e: EmployeeLite) {
+    const actor = requestContext.tenantActor();
+    const s = await this.authz.subject(tx);
+    const attrs = this.attrsOf(e);
+    const isOwner = s.employeeId === e.id || r.requested_by_membership_id === actor.membershipId;
+    const isApprover = grantsFor(s, 'leave:approve').some((g) => grantCovers(s, g, attrs)) && s.employeeId !== e.id;
+    if (!isOwner && !isApprover) {
+      await this.authz.require('leave:read', attrs, tx); // 404 when they cannot even see it
+      throw Errors.forbidden();
+    }
+    if (isApprover && !isOwner) await this.authz.require('leave:approve', attrs, tx);
+    return { isOwner, isApprover, self: s.employeeId === e.id };
+  }
+
+  /**
+   * Changes a request. A pending one is changed in place and its approval starts again from the first step (the earlier
+   * dates are kept in its history). Approved leave stays as it is until a change to it is approved: the change is a new
+   * request, and approving it cancels the original and gives its days back. Rejecting it leaves the original standing.
+   */
+  async modify(id: string, input: LeaveModifyInput) {
+    const actor = requestContext.tenantActor();
+    return this.db.tenant(async (tx) => {
+      const r = await tx.collection<RequestRow>('leave_requests').findOne({ id });
+      if (!r) throw Errors.notFound('Leave request');
+      const e = await this.employee(tx, r.employee_id);
+      await tx.collection('employees').lock({ id: e.id });
+      const { isApprover, self } = await this.rolesOn(tx, r, e);
+      if (r.status !== 'pending' && r.status !== 'approved') throw Errors.conflict('invalid_state', `This request is already ${r.status}`);
+      if (r.status === 'approved' && !isApprover && r.start_date <= today()) throw Errors.forbidden('Leave that has started can only be changed by your approver or HR');
+      if (r.status === 'approved' && (await tx.collection('leave_requests').exists({ replaces_request_id: id, status: 'pending' }))) {
+        throw Errors.conflict('change_pending', 'A change to this leave is already waiting for approval. Cancel that change first.');
+      }
+      const same = input.leaveTypeId === r.leave_type_id && input.startDate === r.start_date && input.endDate === r.end_date && input.startHalf === r.start_half && input.endHalf === r.end_half;
+      if (same && (input.reason ?? null) === (r.reason ?? null)) throw Errors.badRequest('no_change', 'Nothing was changed');
+      if (same && r.status === 'approved') throw Errors.badRequest('no_change', 'The dates and type are the same; approved leave only needs a change of dates or type');
+      const preview = await this.evaluate(tx, e, input, !self, r);
+      if (await tx.collection('leave_requests').exists({
+        employee_id: e.id, id: { $ne: id }, replaces_request_id: { $ne: id }, status: { $in: ['pending', 'approved'] }, start_date: { $lte: input.endDate }, end_date: { $gte: input.startDate },
+      })) {
+        throw Errors.conflict('overlapping_leave', 'There is already another pending or approved request on these dates');
+      }
+      const type = (await tx.collection('leave_types').findOne({ id: input.leaveTypeId }))!;
+      const oldType = (await tx.collection('leave_types').findOne({ id: r.leave_type_id }))!;
+      const range = (a: string, b: string) => (a === b ? a : `${a} to ${b}`);
+      const meta = { leaveTypeCode: type.code, leaveTypeName: type.name, paid: Boolean(type.paid), halfDay: input.startHalf !== 'full' || input.endHalf !== 'full' };
+      const changes = { leaveTypeId: input.leaveTypeId, startDate: input.startDate, endDate: input.endDate, days: preview.days };
+      const before = { leaveTypeId: r.leave_type_id, startDate: r.start_date, endDate: r.end_date, days: r.days };
+
+      if (r.status === 'pending') {
+        if (r.approval_request_id) await this.approvals.cancel(tx, r.approval_request_id);
+        const by = (await membershipUserNames(tx, [actor.membershipId])).get(actor.membershipId) ?? null;
+        const history = [...(r.modifications ?? []), {
+          at: new Date(), by, by_membership_id: actor.membershipId, leave_type_id: r.leave_type_id, leave_type_name: oldType.name,
+          start_date: r.start_date, end_date: r.end_date, start_half: r.start_half, end_half: r.end_half, days: r.days, reason: r.reason ?? null,
+        }];
+        await tx.collection('leave_requests').updateOne({ id, status: 'pending' }, { $set: {
+          leave_type_id: input.leaveTypeId, start_date: input.startDate, end_date: input.endDate, start_half: input.startHalf, end_half: input.endHalf,
+          days: preview.days, reason: input.reason ?? null, modifications: history,
+        } });
+        const approvalId = await this.approvals.start(tx, {
+          resourceType: 'leave_request', resourceId: id, subjectEmployeeId: e.id,
+          summary: `${e.name} changed a request: ${type.name}, ${range(input.startDate, input.endDate)} (${preview.days} days), was ${oldType.name}, ${range(r.start_date, r.end_date)}${input.reason ? `. "${input.reason}"` : ''}`,
+          meta,
+        });
+        await tx.collection('leave_requests').updateOne({ id }, { $set: { approval_request_id: approvalId } });
+        await this.audit.record(tx, { action: 'leave_request.modified', resourceType: 'leave_request', resourceId: id, changes, metadata: { before, restartedApproval: true } });
+        await this.outbox.publish(tx, actor.tenantId, 'leave.requested', { leaveRequestId: id, employeeId: e.id });
+        return this.loadRequest(tx, id);
+      }
+
+      const row = await tx.collection('leave_requests').insert({
+        employee_id: e.id, leave_type_id: input.leaveTypeId, start_date: input.startDate, end_date: input.endDate, start_half: input.startHalf, end_half: input.endHalf,
+        days: preview.days, reason: input.reason ?? null, requested_by_membership_id: actor.membershipId, replaces_request_id: id,
+      });
+      const approvalId = await this.approvals.start(tx, {
+        resourceType: 'leave_request', resourceId: row.id, subjectEmployeeId: e.id,
+        summary: `${e.name} wants to change approved leave: ${type.name}, ${range(input.startDate, input.endDate)} (${preview.days} days) instead of ${oldType.name}, ${range(r.start_date, r.end_date)} (${r.days} days)${input.reason ? `. "${input.reason}"` : ''}`,
+        meta,
+      });
+      await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
+      await this.audit.record(tx, { action: 'leave_request.change_requested', resourceType: 'leave_request', resourceId: row.id, changes, metadata: { replaces: id, before } });
+      await this.outbox.publish(tx, actor.tenantId, 'leave.requested', { leaveRequestId: row.id, employeeId: e.id });
+      return this.loadRequest(tx, row.id as string);
+    });
+  }
+
+  /** Days and balance impact of a change to a request, without saving it. */
+  async previewModify(id: string, input: LeaveModifyInput) {
+    return this.db.tenant(async (tx) => {
+      const r = await tx.collection<RequestRow>('leave_requests').findOne({ id });
+      if (!r) throw Errors.notFound('Leave request');
+      const e = await this.employee(tx, r.employee_id);
+      const { self } = await this.rolesOn(tx, r, e);
+      return this.evaluate(tx, e, input, !self, r);
+    });
+  }
+
+  /** Cancels approved leave that an approved change replaces, giving its days back. */
+  private async retire(tx: TenantTx, id: string, by: string) {
+    const o = await tx.collection<RequestRow>('leave_requests').findOne({ id });
+    if (!o || !(await tx.collection('leave_requests').updateOne({ id, status: 'approved' }, { $set: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: 'Replaced by an approved change' } }))) return;
+    await tx.collection('leave_ledger').insert({
+      employee_id: o.employee_id, leave_type_id: o.leave_type_id, leave_year: yearOf(o.start_date), kind: 'reversal', quantity: o.days,
+      effective_on: o.start_date, leave_request_id: id, note: 'Replaced by an approved change', created_by: requestContext.tenantActor().userId,
+    });
+    await this.attendance.recomputeFor(tx, o.employee_id, o.start_date, o.end_date);
+    await this.audit.record(tx, { action: 'leave_request.replaced', resourceType: 'leave_request', resourceId: id, metadata: { by } });
   }
 
   async listRequests(q: { employeeId?: string; status?: string; from?: string; to?: string; scope?: 'mine' | 'visible'; limit: number }) {
@@ -768,6 +993,93 @@ export class LeaveService implements OnModuleInit {
   }
 
   /**
+   * Every manual change to balances (with its remark, who made it and when), for the people the caller may see.
+   * Opening balances set when a record was added are included and marked.
+   */
+  async adjustments(q: z.infer<typeof leaveAdjustmentsQuery>) {
+    return this.db.tenant(async (tx) => {
+      const visible = await this.visibleEmployeeIds(tx, 'leave:read');
+      const filter: Record<string, unknown> = { kind: 'adjustment', employee_id: { $in: q.employeeId ? visible.filter((v) => v === q.employeeId) : visible } };
+      if (q.leaveTypeId) filter.leave_type_id = q.leaveTypeId;
+      if (q.year) filter.leave_year = q.year;
+      const lines = await tx.collection('leave_ledger').find(filter, { sort: { created_at: -1 }, limit: q.limit });
+      const people = await employeeNames(tx, lines.map((l) => l.employee_id));
+      const types = await fieldById(tx, 'leave_types', lines.map((l) => l.leave_type_id));
+      const users = await (await usersTable(tx)).find({ id: { $in: [...new Set(lines.map((l) => l.created_by).filter(Boolean))] } }, { projection: { full_name: 1 } });
+      const by = new Map(users.map((u) => [u.id, u.full_name ?? null]));
+      return lines.filter((l) => people.has(l.employee_id)).map((l) => ({
+        id: l.id as string,
+        employeeId: l.employee_id as string,
+        employeeName: people.get(l.employee_id)!.name,
+        employeeCode: people.get(l.employee_id)!.doc.employee_code as string,
+        leaveTypeId: l.leave_type_id as string,
+        leaveTypeName: types.get(l.leave_type_id) ?? null,
+        year: l.leave_year as number,
+        quantity: l.quantity as string,
+        note: (l.note as string | null) ?? null,
+        opening: typeof l.accrual_key === 'string' && l.accrual_key.startsWith('OPEN'),
+        by: by.get(l.created_by) ?? null,
+        createdAt: l.created_at,
+      }));
+    });
+  }
+
+  /**
+   * Balances of everyone the caller may see, one row per person and one column per leave type, for HR and managers.
+   * At most 500 people; narrow by department or search for more.
+   */
+  async balanceOverview(q: z.infer<typeof leaveBalanceOverviewQuery>) {
+    const year = q.year ?? yearOf(today());
+    return this.db.tenant(async (tx) => {
+      const scope = await this.authz.filter('leave:read', EMPLOYEE_FIELDS, tx);
+      const and: Record<string, unknown>[] = [scope, { status: { $ne: 'exited' } }];
+      if (q.departmentId) and.push({ current_department_id: q.departmentId });
+      if (q.q) {
+        const rx = new RegExp(q.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        and.push({ $or: [{ first_name: rx }, { last_name: rx }, { preferred_name: rx }, { employee_code: rx }] });
+      }
+      const docs = await tx.collection('employees').find({ $and: and }, { sort: { first_name: 1, last_name: 1 }, limit: 501 });
+      const truncated = docs.length > 500;
+      const people = docs.slice(0, 500).map((d) => ({ doc: d, e: lite(d) }));
+      const ids = people.map((p) => p.e.id);
+      const types = await tx.collection('leave_types').find({ archived_at: null }, { sort: { name: 1 } });
+      const policies = await tx.collection<PolicyRow>('leave_policies').find({ active: true });
+      const ledger = await tx.collection('leave_ledger').find({ employee_id: { $in: ids }, leave_year: year }, { projection: { employee_id: 1, leave_type_id: 1, kind: 1, quantity: 1 } });
+      const open = await tx.collection('leave_requests').find({ employee_id: { $in: ids }, status: 'pending', start_date: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } }, { projection: { employee_id: 1, leave_type_id: 1, days: 1 } });
+      const departments = await fieldById(tx, 'departments', people.map((p) => p.e.department_id));
+      const sums = new Map<string, number>();
+      for (const l of ledger) {
+        const k = `${l.employee_id}|${l.leave_type_id}`;
+        sums.set(k, (sums.get(k) ?? 0) + toH(l.quantity as string));
+        if (l.kind === 'taken' || l.kind === 'reversal') sums.set(`${k}|taken`, (sums.get(`${k}|taken`) ?? 0) - toH(l.quantity as string));
+      }
+      for (const r of open) sums.set(`${r.employee_id}|${r.leave_type_id}|pending`, (sums.get(`${r.employee_id}|${r.leave_type_id}|pending`) ?? 0) + toH(r.days as string));
+      const shown = new Set<string>();
+      const rows = people.map(({ doc, e }) => {
+        const balances: Record<string, { balance: string | null; available: string | null; taken: string; pending: string }> = {};
+        for (const t of types) {
+          if (!eligible(t, e)) continue;
+          const p = pickPolicy(policies, t.id, e);
+          if (!p) continue;
+          shown.add(t.id);
+          const k = `${e.id}|${t.id}`;
+          const tracked = p.accrual_method !== 'none';
+          const bal = sums.get(k) ?? 0;
+          const pend = sums.get(`${k}|pending`) ?? 0;
+          balances[t.id] = { balance: tracked ? fromH(bal) : null, available: tracked ? fromH(bal - pend) : null, taken: fromH(sums.get(`${k}|taken`) ?? 0), pending: fromH(pend) };
+        }
+        return { employeeId: e.id, name: e.name, code: doc.employee_code as string, departmentId: e.department_id, departmentName: (e.department_id && departments.get(e.department_id)) || null, balances };
+      });
+      return {
+        year,
+        truncated,
+        types: types.filter((t) => shown.has(t.id)).map((t) => ({ id: t.id as string, code: t.code as string, name: t.name as string, color: t.color as string, kind: (t.kind as string | undefined) ?? 'standard' })),
+        rows,
+      };
+    });
+  }
+
+  /**
    * Opening balances for someone already working here when their record is added: one adjustment per leave type
    * that brings this year's balance (after the accruals SampCrew has just posted) to what they have available
    * today. Keyed per year, so it is posted once. Runs inside the hire's transaction; the caller checks access.
@@ -808,7 +1120,8 @@ export class LeaveService implements OnModuleInit {
         ...(employeeId ? { id: employeeId } : {}),
       })
     ).map(lite);
-    const types = await tx.collection('leave_types').find({ archived_at: null }, { projection: { _id: 1 } });
+    const types = await tx.collection('leave_types').find({ archived_at: null }, { projection: { _id: 1, eligible_gender: 1 } });
+    const policies = await tx.collection<PolicyRow>('leave_policies').find({ active: true });
     // Credits already posted, so each period is credited once (the accrual_key unique index enforces it too).
     const posted_ = new Set(
       (await tx.collection('leave_ledger').find({ employee_id: { $in: employees.map((e) => e.id) }, accrual_key: { $ne: null } }, { projection: { employee_id: 1, leave_type_id: 1, accrual_key: 1 } })).map(
@@ -818,7 +1131,8 @@ export class LeaveService implements OnModuleInit {
     let posted = 0;
     for (const e of employees) {
       for (const t of types) {
-        const p = await this.policyFor(tx, t.id, e.legal_entity_id);
+        if (!eligible(t, e)) continue;
+        const p = pickPolicy(policies, t.id, e);
         if (!p) continue;
         const credits = accrualsDue({ accrualMethod: p.accrual_method, annualEntitlement: toH(p.annual_entitlement), rounding: p.rounding },
           { dateOfJoining: e.date_of_joining, lastWorkingDay: e.last_working_day }, asOf);
@@ -861,8 +1175,9 @@ export class LeaveService implements OnModuleInit {
         cur.q += toH(l.quantity);
         keyed.set(k, cur);
       }
-      const entityOf = new Map((await tx.collection('employees').find({ id: { $in: [...new Set(lines.map((l) => l.employee_id))] } }, { projection: { current_legal_entity_id: 1 } })).map((e) => [e.id as string, (e.current_legal_entity_id as string | null) ?? null]));
-      const rows = [...keyed.values()].filter((r) => entityOf.has(r.employee_id)).map((r) => ({ ...r, legal_entity_id: entityOf.get(r.employee_id)! }));
+      const people = new Map((await tx.collection('employees').find({ id: { $in: [...new Set(lines.map((l) => l.employee_id))] } })).map((e) => [e.id as string, lite(e)]));
+      const policies = await tx.collection<PolicyRow>('leave_policies').find({ active: true });
+      const rows = [...keyed.values()].filter((r) => people.has(r.employee_id));
       const done = new Set(
         (await tx.collection('leave_ledger').find({ accrual_key: { $in: [`L${year}`, `CO${year}`, `CI${year}`] } }, { projection: { employee_id: 1, leave_type_id: 1, accrual_key: 1 } })).map(
           (l) => `${l.employee_id}|${l.leave_type_id}|${l.accrual_key}`,
@@ -878,7 +1193,7 @@ export class LeaveService implements OnModuleInit {
       for (const r of rows) {
         const bal = r.q;
         if (bal === 0) continue;
-        const p = await this.policyFor(tx, r.leave_type_id, r.legal_entity_id);
+        const p = pickPolicy(policies, r.leave_type_id, people.get(r.employee_id)!);
         if (!p || p.accrual_method === 'none') continue;
         const { carry, lapse } = yearEnd(bal, toH(p.carry_forward_max));
         if (lapse) {

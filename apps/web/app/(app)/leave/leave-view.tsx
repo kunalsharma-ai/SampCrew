@@ -6,17 +6,34 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import type { LeaveBalance, LeaveRequest } from '@/lib/types';
 import { RequestsTable } from '../employees/[id]/tabs';
-import { addDefaultLeaveTypesAction, cancelLeaveAction, type Preview, previewLeaveAction, requestLeaveAction } from './actions';
+import { addDefaultLeaveTypesAction, cancelLeaveAction, modifyLeaveAction, type Preview, previewLeaveAction, previewModifyLeaveAction, requestLeaveAction } from './actions';
 
 export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
-  const router = useRouter();
   const [open, setOpen, prefill] = useCreateParam('leave', ['date']);
+  if (!balances.length) return null;
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}><CalendarPlus className="size-4" /> Apply for leave</Button>
+      <LeaveDialog balances={balances} open={open} onClose={() => setOpen(false)} date={prefill.date} />
+    </>
+  );
+}
+
+/** The single-day duration a request shows in the form ("first_half" lives in endHalf for one day). */
+const formOf = (r: LeaveRequest) => ({
+  leaveTypeId: r.leaveTypeId, startDate: r.startDate, endDate: r.endDate,
+  startHalf: r.startDate === r.endDate && r.endHalf === 'first_half' ? 'first_half' : r.startHalf, endHalf: r.startDate === r.endDate ? 'full' : r.endHalf, reason: r.reason ?? '',
+});
+
+/** Applying for leave, or changing a request (change set): same fields, live preview, the server's rules. */
+function LeaveDialog({ balances, open, onClose, date, change }: { balances: LeaveBalance[]; open: boolean; onClose: () => void; date?: string; change?: LeaveRequest }) {
+  const router = useRouter();
   const today = new Date().toISOString().slice(0, 10);
-  const [form, setForm] = useState({ leaveTypeId: balances[0]?.leaveTypeId ?? '', startDate: today, endDate: today, startHalf: 'full', endHalf: 'full', reason: '' });
+  const [form, setForm] = useState(change ? formOf(change) : { leaveTypeId: balances[0]?.leaveTypeId ?? '', startDate: today, endDate: today, startHalf: 'full', endHalf: 'full', reason: '' });
   // A day chosen on the leave calendar starts the request on that day.
   useEffect(() => {
-    if (prefill.date && /^\d{4}-\d{2}-\d{2}$/.test(prefill.date)) setForm((f) => ({ ...f, startDate: prefill.date!, endDate: prefill.date! }));
-  }, [prefill.date]);
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setForm((f) => ({ ...f, startDate: date, endDate: date }));
+  }, [date]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,33 +57,31 @@ export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
   useEffect(() => {
     if (!open || !form.leaveTypeId || !form.startDate || !form.endDate) return;
     const t = setTimeout(async () => {
-      const r = await previewLeaveAction(body());
+      const r = change ? await previewModifyLeaveAction(change.id, body()) : await previewLeaveAction(body());
       if (r.ok) { setPreview(r.data!); setPreviewError(null); } else { setPreview(null); setPreviewError(r.message); }
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, form.leaveTypeId, form.startDate, form.endDate, form.startHalf, form.endHalf]);
 
-  if (!balances.length) return null;
+  const formId = change ? `leave-change-${change.id}` : 'leave-form';
   return (
-    <>
-      <Button onClick={() => setOpen(true)}><CalendarPlus className="size-4" /> Apply for leave</Button>
-      <Dialog
+    <Dialog
         open={open}
-        onClose={() => setOpen(false)}
-        title="Apply for leave"
-        footer={<><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit" form="leave-form" loading={pending} disabled={!!previewError}>Submit request</Button></>}
+        onClose={onClose}
+        title={change ? 'Change leave request' : 'Apply for leave'}
+        footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form={formId} loading={pending} disabled={!!previewError}>{change ? 'Send change' : 'Submit request'}</Button></>}
       >
         <form
-          id="leave-form"
+          id={formId}
           className="grid grid-cols-1 gap-4 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault();
             setError(null);
             start(async () => {
-              const r = await requestLeaveAction(body());
+              const r = change ? await modifyLeaveAction(change.id, body()) : await requestLeaveAction(body());
               if (r.ok) {
-                setOpen(false);
+                onClose();
                 // The page then says who the request went to.
                 router.push(`/leave?sent=${(r.data as { id: string }).id}&month=${form.startDate.slice(0, 7)}`, { scroll: false });
                 router.refresh();
@@ -74,6 +89,13 @@ export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
             });
           }}
         >
+          {change && (
+            <Alert tone="info" className="sm:col-span-2">
+              {change.status === 'approved'
+                ? 'This leave is approved. Your change goes to your approver; until it is approved, the leave stays as it is.'
+                : 'Changing a request that is waiting sends it back for approval from the first step.'}
+            </Alert>
+          )}
           {error && <Alert tone="danger" className="sm:col-span-2">{error}</Alert>}
           <Field label="Leave type" className="sm:col-span-2">
             {(p) => (
@@ -107,30 +129,44 @@ export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
           </div>
         </form>
       </Dialog>
-    </>
   );
 }
 
-export function MyRequests({ requests }: { requests: LeaveRequest[] }) {
+export function MyRequests({ requests, balances }: { requests: LeaveRequest[]; balances: LeaveBalance[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [changing, setChanging] = useState<LeaveRequest | null>(null);
   const today = new Date().toISOString().slice(0, 10);
+  // Approved leave with a change waiting cannot be changed again until that change is decided.
+  const changeWaiting = new Set(requests.filter((r) => r.status === 'pending' && r.replacesRequestId).map((r) => r.replacesRequestId!));
+  const byId = new Map(requests.map((r) => [r.id, r]));
   return (
     <>
       {error && <div className="px-5"><Alert tone="danger">{error}</Alert></div>}
       <RequestsTable
         requests={requests}
-        actions={(r) =>
-          (r.status === 'pending' || (r.status === 'approved' && r.startDate > today)) && (
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => {
-              const reason = prompt('Cancel this request? Add a reason (optional):');
-              if (reason === null) return;
-              start(async () => { const res = await cancelLeaveAction(r.id, reason || undefined); if (res.ok) router.refresh(); else setError(res.message); });
-            }}>Cancel</Button>
-          )
-        }
+        actions={(r) => {
+          const open = r.status === 'pending' || (r.status === 'approved' && r.startDate > today);
+          const replaces = r.replacesRequestId ? byId.get(r.replacesRequestId) : undefined;
+          return (
+            <div className="flex flex-wrap items-center justify-end gap-1">
+              {r.replacesRequestId && <span className="text-xs text-fg-muted" data-testid="leave-change-note">Change to {replaces ? `${replaces.leaveTypeName} ${replaces.startDate}` : 'approved leave'}</span>}
+              {!!r.modifications?.length && <span className="text-xs text-fg-muted" title={r.modifications.map((m) => `Was ${m.leaveTypeName ?? ''} ${m.startDate} to ${m.endDate} (${m.days})`).join('\n')}>Changed {r.modifications.length}×</span>}
+              {changeWaiting.has(r.id) && <span className="text-xs text-warning">Change waiting for approval</span>}
+              {open && !changeWaiting.has(r.id) && <Button size="sm" variant="ghost" disabled={pending} onClick={() => setChanging(r)}>Change</Button>}
+              {open && (
+                <Button size="sm" variant="ghost" disabled={pending} onClick={() => {
+                  const reason = prompt('Cancel this request? Add a reason (optional):');
+                  if (reason === null) return;
+                  start(async () => { const res = await cancelLeaveAction(r.id, reason || undefined); if (res.ok) router.refresh(); else setError(res.message); });
+                }}>Cancel</Button>
+              )}
+            </div>
+          );
+        }}
       />
+      {changing && <LeaveDialog key={changing.id} balances={balances} open onClose={() => setChanging(null)} change={changing} />}
     </>
   );
 }

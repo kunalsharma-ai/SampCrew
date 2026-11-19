@@ -31,10 +31,10 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/', label: 'Home', icon: 'home' },
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
-      { href: '/tasks', label: 'My tasks', icon: 'list-checks', feature: 'onboarding' },
+      { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
-      { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'helpdesk', hiddenWith: 'helpdesk:manage' },
-      { href: '/helpdesk/queue', label: 'HR helpdesk', icon: 'headset', permission: 'helpdesk:manage', feature: 'helpdesk' },
+      // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
+      { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
     ],
   },
   {
@@ -44,7 +44,7 @@ export const NAV: NavGroup[] = [
       { href: '/leave', label: 'Leave', icon: 'calendar', permission: 'leave:request', feature: 'leave' },
       { href: '/payslips', label: 'Payslips', icon: 'file-text', permission: 'payslips:read', feature: 'payroll' },
       { href: '/expenses', label: 'Expenses', icon: 'receipt', permission: 'expenses:submit', feature: 'expenses' },
-      { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'interviews:feedback', feature: 'recruitment' },
+      { href: '/appraisal', label: 'Appraisal', icon: 'award', permission: 'performance:read', feature: 'performance' },
       { href: '/assets/mine', label: 'My assets', icon: 'laptop', permission: 'assets:view', feature: 'asset_management' },
     ],
   },
@@ -54,6 +54,7 @@ export const NAV: NavGroup[] = [
       { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
+      { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
       { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
       { href: '/employees/import', label: 'Import employees', icon: 'upload', permission: 'employees:create' },
       { href: '/verification', label: 'Background verification', icon: 'shield-check', permission: 'bgv:view', feature: 'background_verification' },
@@ -65,6 +66,8 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/recruitment', label: 'Jobs', icon: 'briefcase', permission: 'requisitions:read', feature: 'recruitment' },
       { href: '/recruitment/candidates', label: 'Candidates', icon: 'user-search', permission: 'candidates:read', feature: 'recruitment' },
+      // Interview panels: only for people who work in recruitment, not in every employee's menu (scorecards still open from notifications).
+      { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'requisitions:read', feature: 'recruitment' },
       { href: '/settings/recruitment', label: 'Recruitment settings', icon: 'sliders', permission: 'recruitment:configure', feature: 'recruitment' },
     ],
   },
@@ -85,6 +88,7 @@ export const NAV: NavGroup[] = [
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
       { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
       { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
+      { href: '/leave/balances', label: 'Leave balances', icon: 'calendar-range', permission: 'leave:approve', feature: 'leave' },
       { href: '/settings/leave', label: 'Leave settings', icon: 'sliders', permission: 'leave:configure', feature: 'leave' },
     ],
   },
@@ -102,6 +106,7 @@ export const NAV: NavGroup[] = [
       { href: '/goals', label: 'Goals', icon: 'target', permission: 'performance:read', feature: 'performance' },
       { href: '/reviews', label: 'Reviews', icon: 'messages-square', permission: 'performance:read', feature: 'performance' },
       { href: '/reviews/cycles', label: 'Review cycles', icon: 'calendar-range', permission: 'performance:configure', feature: 'performance' },
+      { href: '/settings/appraisals', label: 'Appraisal forms & cycles', icon: 'award', permission: 'performance:configure', feature: 'performance' },
       { href: '/learning', label: 'Learning', icon: 'graduation-cap', permission: 'learning:read', feature: 'learning' },
       { href: '/learning/catalogue', label: 'Course catalogue', icon: 'book-open', permission: 'learning:configure', feature: 'learning' },
     ],
@@ -147,11 +152,14 @@ export const NAV: NavGroup[] = [
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
       { href: '/settings/signature/company', label: 'Email signatures', icon: 'mail', permission: 'org:manage', feature: 'email_signatures' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
+      { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
     ],
   },
   {
     label: 'You',
     items: [
+      { href: '/notifications', label: 'Notifications', icon: 'bell' },
+      { href: '/settings/notifications', label: 'Notification settings', icon: 'bell' },
       { href: '/settings/appearance', label: 'Appearance', icon: 'palette' },
       { href: '/settings/signature', label: 'Email signature', icon: 'mail', feature: 'email_signatures' },
       { href: '/settings/security', label: 'Security', icon: 'key' },
@@ -194,7 +202,7 @@ export function workflowActions(me: Me): QuickAction[] {
  */
 export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: string; href: string }[] {
   return [
-    ...(me.employee ? [{ key: 'profile', label: 'My profile', href: `/employees/${me.employee.id}` }] : []),
+    ...(me.employee ? [{ key: 'profile', label: 'My profile', href: '/profile' }] : []),
     { key: 'security', label: 'Password & sign-in', href: '/settings/security' },
     { key: 'appearance', label: 'Appearance', href: '/settings/appearance' },
   ];

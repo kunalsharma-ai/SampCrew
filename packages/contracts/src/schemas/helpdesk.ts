@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CASE_PRIORITIES, CASE_STATUSES } from '../helpdesk-math';
 import { isoDate } from './people';
+import { audienceInput } from '../communication';
 
 const text = (min: number, max: number) => z.string().trim().min(min).max(max);
 const hours = z.number().int().min(1).max(2160).nullable();
@@ -65,17 +66,51 @@ export const satisfactionInput = z.object({
 
 // Announcements -----------------------------------------------------------------------------------------------
 
-export const ANNOUNCEMENT_STATUSES = ['draft', 'published', 'archived'] as const;
 
-export const announcementInput = z.object({
-  title: text(3, 200),
-  body: text(1, 10_000),
-  /** Leave all three empty to address everyone in the workspace. */
-  legalEntityId: z.uuid().nullable().default(null),
-  departmentId: z.uuid().nullable().default(null),
-  locationId: z.uuid().nullable().default(null),
-  requiresAck: z.boolean().default(false),
-  pinned: z.boolean().default(false),
-  expiresOn: isoDate.nullable().default(null),
-});
+export const ANNOUNCEMENT_CATEGORIES = ['general', 'policy', 'event', 'holiday', 'celebration', 'safety', 'benefits', 'it', 'other'] as const;
+export type AnnouncementCategory = (typeof ANNOUNCEMENT_CATEGORIES)[number];
+export const ANNOUNCEMENT_CATEGORY_LABELS: Record<AnnouncementCategory, string> = {
+  general: 'General', policy: 'Policy', event: 'Event', holiday: 'Holiday', celebration: 'Celebration', safety: 'Safety', benefits: 'Benefits', it: 'IT and systems', other: 'Other',
+};
+export const ANNOUNCEMENT_PRIORITIES = ['normal', 'important', 'urgent'] as const;
+export type AnnouncementPriority = (typeof ANNOUNCEMENT_PRIORITIES)[number];
+export const ANNOUNCEMENT_STATUSES = ['draft', 'scheduled', 'published', 'archived'] as const;
+export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
+
+export const announcementInput = z
+  .object({
+    title: text(3, 200),
+    /** Plain text. With `html`, it is worked out from the HTML on the server and this is ignored. */
+    body: z.string().trim().max(10_000).default(''),
+    /** Rich text (bold, lists, links ...), cleaned on the server. */
+    html: z.string().max(100_000).nullable().default(null),
+    /**
+     * Who it is for: everyone, or any mix of departments, designations, groups and people. Null keeps the older
+     * way of addressing (legal entity, department and location below, all empty for everyone).
+     */
+    audience: audienceInput.nullable().default(null),
+    /** Narrows the audience to one legal entity or location (optional). */
+    legalEntityId: z.uuid().nullable().default(null),
+    departmentId: z.uuid().nullable().default(null),
+    locationId: z.uuid().nullable().default(null),
+    category: z.enum(ANNOUNCEMENT_CATEGORIES).default('general'),
+    priority: z.enum(ANNOUNCEMENT_PRIORITIES).default('normal'),
+    /** Files uploaded with POST /announcements/files. */
+    fileIds: z.array(z.uuid()).max(10).default([]),
+    requiresAck: z.boolean().default(false),
+    pinned: z.boolean().default(false),
+    expiresOn: isoDate.nullable().default(null),
+    /** Publish later, at this time (with POST /announcements/:id/publish). */
+    publishAt: z.iso.datetime({ offset: true }).nullable().default(null),
+    /** On a published announcement whose wording changes: ask everyone to acknowledge the new version again. */
+    askAgain: z.boolean().default(false),
+  })
+  .refine((a) => (a.html ? a.html.replace(/<[^>]+>/g, '').trim().length > 0 : a.body.length > 0), { message: 'Write the message', path: ['body'] });
 export type AnnouncementInput = z.infer<typeof announcementInput>;
+/** Publishing now, or at a later time. */
+export const announcementPublishInput = z.object({ publishAt: z.iso.datetime({ offset: true }).nullable().default(null) });
+export const announcementFeedQuery = z.object({
+  category: z.enum(ANNOUNCEMENT_CATEGORIES).optional(),
+  unread: z.enum(['true', 'false']).optional(),
+  q: z.string().trim().max(100).optional(),
+});

@@ -8,11 +8,13 @@
  * 1. HR adds a category with a handler and response targets; a confidential category without a handler is refused.
  *    HR writes a help article.
  * 2. An operator starts a question, is shown the article as a suggestion, reads it, and raises the case anyway.
- * 3. HR's menu shows the HR helpdesk with a waiting count instead of Ask HR. HR finds it in the queue, adds an internal note, replies and asks for more; the operator answers (and cannot
+ * 3. HR's menu shows Communication (which replaced Ask HR and the HR helpdesk) with a waiting count. HR finds it in the queue, adds an internal note, replies and asks for more; the operator answers (and cannot
  *    see the internal note). HR raises the priority and resolves it; the operator rates it and confirms.
  * 4. The operator raises a confidential grievance; their supervisor cannot open it.
- * 5. HR drafts an announcement for the Assembly Line, asks for acknowledgement and publishes it. The operator sees
- *    it on Home, opens it and acknowledges; HR sees the read receipt.
+ * 5. HR writes an important announcement for the Assembly Line (rich text, audience picker), asks for
+ *    acknowledgement and publishes it. The operator sees it on Home, opens it and acknowledges; HR sees the read
+ *    receipt. HR edits it and asks again; the operator acknowledges the new version. HR publishes an urgent safety
+ *    announcement with a file in one step; it leads the mobile feed and the file downloads.
  * 6. The operator's Security page lists their phones (none yet).
  * Fails on any browser error.
  */
@@ -99,7 +101,10 @@ const alertText = (p, re) => p.getByText(re).first().waitFor();
 
     // 2. The operator asks a question and is shown the article first.
     neha = current = await signIn(b, 'operator2@demo.crew.local');
-    await neha.getByRole('link', { name: 'Ask HR' }).first().click();
+    // Ask HR now lives under Communication, as Help requests.
+    await neha.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Communication/ }).click();
+    await neha.waitForURL(/\/communication\/chat/);
+    await neha.getByRole('navigation', { name: 'Communication' }).getByRole('link', { name: 'Help requests' }).click();
     await neha.waitForURL(/\/helpdesk$/);
     await neha.getByLabel('What is it about?').selectOption({ label: 'Pay and payslips' });
     const subject = `Payslip deductions question ${stamp}`;
@@ -114,14 +119,14 @@ const alertText = (p, re) => p.getByText(re).first().waitFor();
     const ref = (await neha.locator('text=/^HR-\\d{4}$/').first().textContent()).trim();
     ok(`operator saw the suggested article, then raised ${ref}`);
 
-    // 3. HR works the case. HR's menu has the HR helpdesk (with the count of questions waiting) instead of Ask HR,
-    //    and Ask HR's address takes them to the queue.
+    // 3. HR works the case. HR's menu has Communication (with the count of questions waiting) instead of Ask HR and
+    //    the HR helpdesk, and Ask HR's address takes them to the queue.
     current = hr;
     await hr.goto(BASE + '/');
     const hrNav = hr.getByRole('navigation', { name: 'Main' });
-    await hrNav.getByRole('link', { name: /^HR helpdesk/ }).waitFor();
-    if (await hrNav.getByRole('link', { name: 'Ask HR', exact: true }).count()) throw new Error('HR still sees Ask HR in the menu');
-    await hrNav.getByRole('link', { name: /^HR helpdesk/ }).locator('[aria-label$="waiting"]').waitFor();
+    await hrNav.getByRole('link', { name: /^Communication/ }).waitFor();
+    if (await hrNav.getByRole('link', { name: /^(Ask HR|HR helpdesk)/ }).count()) throw new Error('HR still sees Ask HR or HR helpdesk in the menu');
+    await hrNav.getByRole('link', { name: /^Communication/ }).locator('[aria-label$="waiting"]').waitFor();
     await hr.getByTestId('helpdesk-awaiting').waitFor();
     await hr.goto(BASE + '/helpdesk');
     await hr.waitForURL(/\/helpdesk\/queue/);
@@ -188,54 +193,101 @@ const alertText = (p, re) => p.getByText(re).first().waitFor();
     await sup.close();
     ok("operator raised a confidential grievance; their supervisor can't open it");
 
-    // 5. Announcement with acknowledgement.
+    // 5. Announcement with acknowledgement, written on its own page with rich text and the audience picker.
     current = hr;
     const title = `Canteen closed on Saturday ${stamp}`;
     await hr.goto(BASE + '/announcements/manage');
-    await hr.getByRole('button', { name: 'New announcement' }).click();
-    d = dialogOf(hr);
-    await d.getByLabel('Title').fill(title);
-    await d.getByLabel('Message').fill('The canteen is closed this Saturday for maintenance. Packed lunches will be provided. (e2e)');
-    await d.getByLabel('Department').selectOption({ label: 'Assembly Line' });
-    await d.getByRole('checkbox', { name: /^Ask people to acknowledge/ }).check();
-    await d.getByRole('button', { name: 'Save draft' }).click();
-    const row = hr.getByRole('row').filter({ hasText: title });
+    await hr.getByRole('link', { name: 'New announcement' }).click();
+    await hr.waitForURL(/\/announcements\/manage\/new$/);
+    await hr.getByRole('textbox', { name: /^Title/ }).fill(title);
+    await hr.getByLabel('Category').selectOption({ label: 'Event' });
+    await hr.getByLabel(/^Priority/).selectOption({ label: 'Important' });
+    await hr.getByTestId('rich-text').click();
+    await hr.keyboard.type('The canteen is closed this Saturday for maintenance. ');
+    await hr.keyboard.press('Control+B');
+    await hr.keyboard.type('Packed lunches');
+    await hr.keyboard.press('Control+B');
+    await hr.keyboard.type(' will be provided. (e2e)');
+    await hr.getByTestId('audience-departments').getByRole('button', { name: 'Assembly Line' }).click();
+    await hr.getByTestId('audience-reach').getByText(/Reaches \d+ (person|people)/).waitFor();
+    await hr.getByRole('checkbox', { name: /^Ask people to acknowledge/ }).check();
+    await hr.getByRole('button', { name: 'Save draft' }).click();
+    await hr.waitForURL(/\/announcements\/manage\/[0-9a-f-]{36}/);
+    await alertText(hr, /Draft saved/);
+    await hr.goto(BASE + '/announcements/manage');
+    const row = hr.getByTestId('announcement-row').filter({ hasText: title });
     await row.getByText('Draft').waitFor();
+    await row.getByText('Important').waitFor();
     await row.getByRole('button', { name: 'Publish' }).click();
     await alertText(hr, /Published/);
     await row.getByText('Published', { exact: true }).waitFor();
-    ok('HR drafted an announcement for the Assembly Line and published it');
+    ok('HR wrote an important announcement for the Assembly Line with bold text and published it');
 
     current = neha;
     await neha.goto(BASE + '/');
     const item = neha.getByRole('listitem').filter({ hasText: title });
     await item.getByText('Please acknowledge').waitFor();
     await item.getByRole('link', { name: title }).click();
+    await neha.locator('.prose-email b', { hasText: 'Packed lunches' }).waitFor();
     await neha.getByRole('button', { name: 'I have read this' }).click();
     await neha.getByText(/You acknowledged this on/).waitFor();
-    ok('operator saw it on Home and acknowledged it');
+    ok('operator saw it on Home, read the formatted text and acknowledged it');
 
     current = hr;
     await hr.goto(BASE + '/announcements/manage');
-    await hr.getByRole('row').filter({ hasText: title }).getByRole('link', { name: title }).click();
-    const person = hr.getByRole('row').filter({ hasText: 'Neha Deshmukh' });
+    await hr.getByTestId('announcement-row').filter({ hasText: title }).getByRole('link', { name: title }).click();
+    let person = hr.getByRole('row').filter({ hasText: 'Neha Deshmukh' });
     await person.waitFor();
     if (await person.getByText('Not yet').count()) throw new Error('read receipt missing for Neha');
     ok('HR sees that the operator read and acknowledged it');
 
-    // 5b. "Publish now" in the dialog: saved and published in one step, so it is on the feed the mobile app reads.
+    // 5a. HR corrects it after publishing and asks everyone to acknowledge again; the operator is asked again.
+    await hr.getByRole('link', { name: 'Edit', exact: true }).click();
+    await hr.waitForURL(/\/edit$/);
+    await hr.getByTestId('rich-text').click();
+    await hr.keyboard.press('End');
+    await hr.keyboard.type(' The vending machines stay on.');
+    await hr.getByRole('checkbox', { name: /^Ask everyone to acknowledge again/ }).check();
+    await hr.getByRole('button', { name: 'Save changes' }).click();
+    await hr.waitForURL(/\/announcements\/manage\/[0-9a-f-]{36}\?saved/);
+    person = hr.getByRole('row').filter({ hasText: 'Neha Deshmukh' });
+    await person.getByText('Earlier version only').waitFor();
+    current = neha;
+    await neha.goto(BASE + '/announcements?unread=true');
+    await neha.getByTestId('announcement-card').filter({ hasText: title }).getByText('Changed: please acknowledge again').waitFor();
+    await neha.getByTestId('announcement-card').filter({ hasText: title }).getByRole('link', { name: title }).click();
+    await neha.getByText(/HR changed this after you acknowledged it/).waitFor();
+    await neha.getByText('The vending machines stay on.').waitFor();
+    await neha.getByRole('button', { name: 'I have read this' }).click();
+    await neha.getByText(/You acknowledged this on/).waitFor();
+    ok('HR edited it as a new version and asked again; the operator acknowledged the new wording');
+
+    // 5b. "Publish now" with a file and urgent priority: on the feed the mobile app reads, and the file downloads.
+    current = hr;
     const now = `Fire drill on Friday ${stamp}`;
-    await hr.goto(BASE + '/announcements/manage');
-    await hr.getByRole('button', { name: 'New announcement' }).click();
-    d = dialogOf(hr);
-    await d.getByLabel('Title').fill(now);
-    await d.getByLabel('Message').fill('There is a fire drill at 11:00 on Friday. Leave by the nearest exit. (e2e)');
-    await d.getByRole('button', { name: 'Publish now' }).click();
+    await hr.goto(BASE + '/announcements/manage/new');
+    await hr.getByRole('textbox', { name: /^Title/ }).fill(now);
+    await hr.getByLabel(/^Priority/).selectOption({ label: 'Urgent' });
+    await hr.getByLabel('Category').selectOption({ label: 'Safety' });
+    await hr.getByTestId('rich-text').click();
+    await hr.keyboard.type('There is a fire drill at 11:00 on Friday. Leave by the nearest exit. (e2e)');
+    await hr.getByTestId('audience-picker').getByRole('checkbox', { name: 'Everyone in the workspace' }).check();
+    await hr.getByTestId('announcement-file-input').setInputFiles({ name: `exits-${stamp}.pdf`, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n% exits\n%%EOF\n') });
+    await hr.getByRole('list', { name: 'Attachments' }).getByText(`exits-${stamp}.pdf`).waitFor();
+    await hr.getByRole('button', { name: 'Publish now' }).click();
     await alertText(hr, /Published to \d+ (person|people)/);
-    await hr.getByRole('row').filter({ hasText: now }).getByText('Published', { exact: true }).waitFor();
     const feed = await (await fetch(`${process.env.CREW_API_URL ?? 'http://localhost:4000'}/api/v1/announcements`, { headers: { authorization: `Bearer ${await operatorToken()}`, 'x-crew-client': 'mobile' } })).json();
-    if (!feed.some((a) => a.title === now)) throw new Error('the published announcement is not on the feed the mobile app reads');
-    ok('HR published an announcement in one step; it is on the operator\'s mobile feed');
+    const mobile = feed.find((a) => a.title === now);
+    if (!mobile) throw new Error('the published announcement is not on the feed the mobile app reads');
+    // Pinned ones come first, then urgent ones.
+    if (mobile.priority !== 'urgent' || feed.filter((a) => !a.pinned)[0]?.title !== now) throw new Error('urgent announcement is not first on the feed');
+    current = neha;
+    await neha.goto(BASE + '/announcements?category=safety');
+    await neha.getByTestId('announcement-card').filter({ hasText: now }).getByText('Urgent').waitFor();
+    await neha.getByTestId('announcement-card').filter({ hasText: now }).getByRole('link', { name: now }).click();
+    const [download] = await Promise.all([neha.waitForEvent('download'), neha.getByTestId('announcement-files').getByText(`exits-${stamp}.pdf`).click()]);
+    if (await download.failure()) throw new Error('attachment download failed');
+    ok('HR published an urgent safety announcement with a file in one step; it leads the mobile feed and the file downloads');
 
     // 6. Phones on the Security page.
     current = neha;

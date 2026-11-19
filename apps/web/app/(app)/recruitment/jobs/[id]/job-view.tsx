@@ -57,8 +57,22 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
-      {s === 'pending_approval' && <Alert tone="warning" title="Waiting for approval">HR approves new requisitions. You will get a notification when it is decided.</Alert>}
-      {s === 'rejected' && <Alert tone="danger" title="Not approved">{req.statusReason ?? 'Change the requisition and submit it again, or cancel it.'}</Alert>}
+      {s === 'pending_approval' && <Alert tone="warning" title="Waiting for approval">{req.approval?.trail.find((x) => x.status === 'pending')?.approver ? `Waiting for ${req.approval.trail.find((x) => x.status === 'pending')!.approver}. ` : 'HR approves new requisitions. '}You will get a notification when it is decided.{req.approval && <> <Link className="underline" href={`/approvals/${req.approval.id}`}>See the approval</Link></>}</Alert>}
+      {s === 'rejected' && (
+        <div data-testid="requisition-rejection"><Alert tone="danger" title="Not approved">
+          {(() => {
+            const step = req.approval?.trail.find((x) => x.status === 'rejected');
+            return (
+              <>
+                {step?.decidedBy && <span className="block">Rejected by {step.decidedBy}{step.decidedAt ? <span suppressHydrationWarning> on {new Date(step.decidedAt).toLocaleDateString()}</span> : null}.</span>}
+                <span className="block">{(step?.comment ?? req.statusReason) ? `Remarks: ${step?.comment ?? req.statusReason}` : 'No remarks were given.'}</span>
+                <span className="block text-xs">Change the requisition and submit it again, or cancel it.</span>
+              </>
+            );
+          })()}
+        </Alert></div>
+      )}
+      {req.approval?.autoApproved && s !== 'rejected' && <Alert tone="info">Approved automatically: you are the only Owner of this workspace and nobody else could approve it. This is recorded in the audit trail.</Alert>}
 
       <Card>
         <CardHeader

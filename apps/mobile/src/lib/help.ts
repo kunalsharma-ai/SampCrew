@@ -54,6 +54,69 @@ export const MOBILE_HELP = {
     what: 'One question to HR: the conversation and what happens next.',
     how: 'Reply at the bottom. When it is resolved, rate how HR handled it.',
   },
+  tasks: {
+    title: 'My tasks',
+    what: 'Tasks HR and your manager gave you, such as uploading a document, reading a policy or finishing a piece of work.',
+    how: 'Switch between HR tasks and Manager tasks. Tap a task to update it.',
+    where: 'Overdue tasks are open tasks past their due date.',
+  },
+  'tasks.list': {
+    title: 'Task list',
+    what: 'Your tasks with their status. Open shows what still needs you; All includes finished ones.',
+  },
+  'tasks.task': {
+    title: 'Task',
+    what: 'One task: what it asks for, who gave it and its history.',
+    how: 'Start it, send it for review or mark it completed. For a document task, take or choose a photo and upload it.',
+  },
+  'tasks.document': {
+    title: 'Document',
+    what: 'The document this task asks for. HR checks it and verifies or rejects it.',
+    how: 'Take a clear photo, choose one, or choose a file (PDF, Word or text) from your phone, as the task allows. Add a remark if needed, then upload. If HR rejects it, the task reopens with their reason.',
+  },
+  appraisal: {
+    title: 'Appraisal',
+    what: 'Your performance appraisals: the self-appraisal to fill in and results HR has shared.',
+    how: 'Open the current one to score yourself and write your answers.',
+  },
+  'appraisal.list': {
+    title: 'Self-appraisal',
+    what: 'The appraisal waiting for your self-assessment, and how much you have answered.',
+    where: 'Submit it before the due date. Your manager evaluates it next.',
+  },
+  'appraisal.form': {
+    title: 'Appraisal form',
+    what: 'Score each question on the scale and answer the written questions.',
+    how: 'Save a draft any time. Submit once every required question is answered; it then locks.',
+  },
+  'appraisal.result': {
+    title: 'Your result',
+    what: 'The final percentage and band HR approved, with your own and your manager’s scores.',
+  },
+  profile: {
+    title: 'My profile',
+    what: 'Your personal, contact, emergency, address, bank and identity details, and your work details.',
+    how: 'Tap Request a change on personal details, emergency contact, address, bank account or skills. HR approves it before your record changes, and you are notified. Education, previous jobs and identity numbers need documents, so change them on the web.',
+  },
+  'profile.work': {
+    title: 'Work details',
+    what: 'Your job, manager, location, shift and working days, as HR keeps them.',
+    where: 'Ask HR if something here is wrong.',
+  },
+  'profile.updates': {
+    title: 'Profile updates',
+    what: 'Changes you send go to HR for approval. Only one update per section is open at a time.',
+    how: 'Withdraw a pending update to change it, or wait for HR. If HR asks for more information, send a new update.',
+  },
+  'profile.masked': {
+    title: 'Masked numbers',
+    what: 'Bank account, PAN and Aadhaar numbers are stored encrypted and show only their last 4 characters.',
+  },
+  'home.workspace': {
+    title: 'My workspace',
+    what: 'Your open tasks, the self-appraisal waiting for you and this month’s attendance rewards.',
+    how: 'Tap a line to open it.',
+  },
   me: {
     title: 'Me',
     what: 'Your profile, photo, payslips, security and how the app looks.',

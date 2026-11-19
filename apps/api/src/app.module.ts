@@ -51,6 +51,14 @@ import { UniverseService } from './modules/universe/universe.service';
 import { NotificationsController } from './modules/notifications/notifications.controller';
 import { OnboardingController } from './modules/onboarding/onboarding.controller';
 import { OnboardingService } from './modules/onboarding/onboarding.service';
+import { TasksController } from './modules/tasks/tasks.controller';
+import { ProfileController } from './modules/employees/profile.controller';
+import { ProfileService } from './modules/employees/profile.service';
+import { WorkspaceController } from './modules/workspace/workspace.controller';
+import { WorkspaceService } from './modules/workspace/workspace.service';
+import { AppraisalsController } from './modules/talent/appraisals.controller';
+import { AppraisalsService } from './modules/talent/appraisals.service';
+import { TasksService } from './modules/tasks/tasks.service';
 import { SetupController } from './modules/setup/setup.controller';
 import { SignatureAgentController, SignaturesController } from './modules/signatures/signatures.controller';
 import { SignaturesService } from './modules/signatures/signatures.service';
@@ -99,6 +107,11 @@ import { EngagementController, GoalsController, LearningController, ReviewsContr
 import { AnnouncementsService } from './modules/helpdesk/announcements.service';
 import { AnnouncementsController, HelpdeskController } from './modules/helpdesk/helpdesk.controller';
 import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
+import { ChatService } from './modules/communication/chat.service';
+import { CommFilesController, CommunicationController } from './modules/communication/communication.controller';
+import { CommunicationService } from './modules/communication/communication.service';
+import { CommEmailService } from './modules/communication/email.service';
+import { CommFilesService } from './modules/communication/files.service';
 import { MobileController } from './modules/mobile/mobile.controller';
 import { AiController } from './modules/ai/ai.controller';
 import { AiGatewayService } from './modules/ai/ai-gateway.service';
@@ -136,6 +149,7 @@ import { IdempotencyInterceptor } from './platform/http/idempotency.interceptor'
 import { PlatformIntegrationsService } from './platform/integrations/platform-integrations.service';
 import { MailerService } from './platform/notify/mailer.service';
 import { NotificationService } from './platform/notify/notification.service';
+import { LiveService } from './platform/notify/live.service';
 import { PushService } from './platform/notify/push.service';
 import { StorageService } from './platform/storage/storage.service';
 
@@ -168,6 +182,10 @@ export const CONTROLLERS = [
   CustomFieldFilesController,
   HrAdminController,
   OnboardingController,
+  TasksController,
+  ProfileController,
+  WorkspaceController,
+  AppraisalsController,
   SetupController,
   SignaturesController,
   SignatureAgentController,
@@ -206,6 +224,8 @@ export const CONTROLLERS = [
   EngagementController,
   HelpdeskController,
   AnnouncementsController,
+  CommunicationController,
+  CommFilesController,
   MobileController,
   AiController,
   AutomationController,
@@ -260,6 +280,7 @@ export const CONTROLLERS = [
     StatutoryPacksService,
     TenantControlService,
     NotificationService,
+    LiveService,
     PlatformIntegrationsService,
     FirstRunService,
     MailerService,
@@ -274,6 +295,10 @@ export const CONTROLLERS = [
     LensesService,
     SkillCatalogueService,
     OnboardingService,
+    TasksService,
+    ProfileService,
+    WorkspaceService,
+    AppraisalsService,
     SetupService,
     SignaturesService,
     LeaveService,
@@ -304,6 +329,10 @@ export const CONTROLLERS = [
     LearningService,
     EngagementService,
     HelpdeskService,
+    ChatService,
+    CommEmailService,
+    CommFilesService,
+    CommunicationService,
     AnnouncementsService,
     MobileService,
     AiGatewayService,

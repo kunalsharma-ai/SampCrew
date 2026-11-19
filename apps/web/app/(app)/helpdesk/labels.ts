@@ -1,5 +1,5 @@
 import type { Tone } from '@crew/ui';
-import type { Announcement, TargetState } from './types';
+import type { TargetState } from './types';
 
 export const STATUS: Record<string, string> = { open: 'Open', in_progress: 'In progress', waiting_on_employee: 'Waiting on employee', resolved: 'Resolved', closed: 'Closed' };
 /** The same statuses as the person who asked sees them. */
@@ -17,7 +17,9 @@ export const HISTORY: Record<string, string> = {
 export const dateTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 export const hours = (h: number | null) => (h === null ? 'No target' : h % 24 === 0 ? `${h / 24} day${h === 24 ? '' : 's'}` : `${h} hours`);
 
-export function audienceLabel(a: Pick<Announcement, 'legalEntityName' | 'departmentName' | 'locationName'>) {
-  const parts = [a.legalEntityName, a.departmentName && `${a.departmentName} (and sub-departments)`, a.locationName].filter(Boolean);
-  return parts.length ? parts.join(' · ') : 'Everyone';
-}
+
+/** Announcements. */
+export const ANN_PRIORITY_TONE = { normal: 'neutral', important: 'warning', urgent: 'danger' } as const;
+export const ANN_PRIORITY_LABEL = { normal: 'Normal', important: 'Important', urgent: 'Urgent' } as const;
+export const ANN_STATUS_LABEL = { draft: 'Draft', scheduled: 'Scheduled', published: 'Published', archived: 'Archived' } as const;
+export const ANN_STATUS_TONE = { draft: 'neutral', scheduled: 'info', published: 'success', archived: 'neutral' } as const;

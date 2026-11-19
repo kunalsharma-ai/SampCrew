@@ -373,6 +373,9 @@ export const TABLES: Record<string, TableSpec> = {
     access: "tenant", grants: ["insert", "select", "update"], triggers: ["announcement_receipts_guard"],
     columns: {
       acknowledged_at: {"type": "timestamp"},
+      // The announcement's ack_version this acknowledgement is for; earlier ones move to ack_history.
+      acknowledged_version: {"type": "int"},
+      ack_history: {"default": {"json": []}, "required": true, "type": "json"},
       announcement_id: {"required": true, "type": "uuid"},
       membership_id: {"required": true, "type": "uuid"},
       read_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -392,22 +395,43 @@ export const TABLES: Record<string, TableSpec> = {
   announcements: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true, triggers: ["announcements_guard"],
     columns: {
+      // Ack version: raised when a published announcement is reworded and people are asked to acknowledge again.
+      ack_version: {"default": 1, "required": true, "type": "int"},
+      // Who it is for ({ all, membershipIds, departmentIds, designationIds, groupIds }); null = the older addressing by
+      // legal entity, department and location. Legal entity and location also narrow a new-style audience.
+      audience: {"type": "json"},
+      // Plain text (the mobile app and notifications show it); body_html is the rich text, cleaned on the server.
       body: {"required": true, "type": "string"},
+      body_html: {"type": "string"},
+      category: {"default": "general", "enum": ["general", "policy", "event", "holiday", "celebration", "safety", "benefits", "it", "other"], "required": true, "type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       created_by_membership_id: {"required": true, "type": "uuid"},
+      deleted_at: {"type": "timestamp"},
+      deleted_by_membership_id: {"type": "uuid"},
       department_id: {"type": "uuid"},
+      edited_at: {"type": "timestamp"},
+      edited_by_membership_id: {"type": "uuid"},
       expires_on: {"type": "date"},
+      file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       legal_entity_id: {"type": "uuid"},
       location_id: {"type": "uuid"},
       pinned: {"default": false, "required": true, "type": "bool"},
+      priority: {"default": "normal", "enum": ["normal", "important", "urgent"], "required": true, "type": "string"},
+      // When a scheduled announcement goes out (status "scheduled" until then).
+      publish_at: {"type": "timestamp"},
       published_at: {"type": "timestamp"},
       published_by_membership_id: {"type": "uuid"},
+      // When HR last reminded the people who had not acknowledged (at most once an hour).
+      reminded_at: {"type": "timestamp"},
       requires_ack: {"default": false, "required": true, "type": "bool"},
-      status: {"default": "draft", "enum": ["draft", "published", "archived"], "required": true, "type": "string"},
+      scheduled_by_membership_id: {"type": "uuid"},
+      status: {"default": "draft", "enum": ["draft", "scheduled", "published", "archived"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
       title: {"required": true, "type": "string"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Raised on every change to the wording, audience or files after publishing.
+      version: {"default": 1, "required": true, "type": "int"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "announcements_pkey", "primary": true},
@@ -423,10 +447,11 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "published_at", "desc": true}], "name": "announcements_feed"},
+      {"cols": [{"col": "status"}, {"col": "publish_at"}], "name": "announcements_due", "where": [{"col": "status", "op": "eq", "value": "scheduled"}]},
     ],
     checks: [
       "CHECK (((length(title) >= 3) AND (length(title) <= 200)))",
-      "CHECK (((length(body) >= 1) AND (length(body) <= 10000)))",
+      "CHECK (((length(body) >= 1) AND (length(body) <= 20000)))",
     ],
   },
   api_keys: {
@@ -536,6 +561,362 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((status <> 'hired'::text) OR (employee_id IS NOT NULL)))",
     ],
   },
+  appraisal_cycles: {
+    // An appraisal period: the form(s) people fill in, the deadlines for each stage and who is in it.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      closed_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      department_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      // Null: each person's form is picked by the forms' rules.
+      form_id: {"type": "uuid"},
+      hr_due: {"type": "date"},
+      hr_reviewer_membership_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      launched_at: {"type": "timestamp"},
+      manager_due: {"required": true, "type": "date"},
+      name: {"required": true, "type": "string"},
+      period_end: {"required": true, "type": "date"},
+      period_start: {"required": true, "type": "date"},
+      self_due: {"required": true, "type": "date"},
+      status: {"default": "draft", "enum": ["draft", "active", "closed"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "appraisal_cycles_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "appraisal_cycles_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "appraisal_cycles_recent"},
+    ],
+    checks: [
+      "CHECK (((length(name) >= 1) AND (length(name) <= 160)))",
+    ],
+  },
+  appraisal_forms: {
+    // Appraisal forms HR builds (packages/contracts/src/appraisals.ts appraisalDefinition): sections, questions,
+    // weights, the rating scale, bands and the final-score method. Cycles copy the definition when they launch.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      archived_at: {"type": "timestamp"},
+      audience: {"default": "all", "enum": ["all", "managers", "non_managers"], "required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      definition: {"required": true, "type": "json"},
+      department_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      description: {"type": "string"},
+      designation_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      is_default: {"default": false, "required": true, "type": "bool"},
+      name: {"required": true, "type": "string"},
+      // The built-in template it was made from, if any.
+      template_key: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+      version: {"default": 1, "required": true, "type": "int"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "appraisal_forms_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "appraisal_forms_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK (((length(name) >= 1) AND (length(name) <= 160)))",
+    ],
+  },
+  appraisals: {
+    // One person's appraisal in a cycle, with the form as it was at launch, every score and answer by stage, and
+    // the results. Stages: self -> manager -> hr -> finalized -> published.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      cycle_id: {"required": true, "type": "uuid"},
+      definition: {"required": true, "type": "json"},
+      employee_answers: {"default": {"json": {}}, "required": true, "type": "json"},
+      employee_id: {"required": true, "type": "uuid"},
+      final_percent_override: {"type": "decimal", "scale": 1},
+      final_scores: {"default": {"json": {}}, "required": true, "type": "json"},
+      finalized_at: {"type": "timestamp"},
+      finalized_by_membership_id: {"type": "uuid"},
+      form_id: {"type": "uuid"},
+      history: {"default": {"json": []}, "required": true, "type": "json"},
+      hr_answers: {"default": {"json": {}}, "required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Whether the person managed people at launch (manager-only sections apply).
+      is_manager: {"default": false, "required": true, "type": "bool"},
+      manager_answers: {"default": {"json": {}}, "required": true, "type": "json"},
+      manager_employee_id: {"type": "uuid"},
+      manager_submitted_at: {"type": "timestamp"},
+      override_reason: {"type": "string"},
+      published_at: {"type": "timestamp"},
+      // Results as last worked out: {selfPercent, managerPercent, hrPercent, calculatedPercent, finalPercent, band}.
+      result: {"default": {"json": {}}, "required": true, "type": "json"},
+      self_submitted_at: {"type": "timestamp"},
+      stage: {"default": "self", "enum": ["self", "manager", "hr", "finalized", "published"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "appraisals_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "appraisals_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "cycle_id"}, {"col": "employee_id"}], "name": "appraisals_one_per_cycle"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "cycle_id"], "onDelete": "cascade", "ref": "appraisal_cycles", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "appraisals_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "manager_employee_id"}, {"col": "stage"}], "name": "appraisals_manager"},
+    ],
+    checks: [],
+  },
+  chat_conversations: {
+    // Internal chat (Communication): one to one ("direct"), groups, departments and an employee's conversation with the
+    // HR team ("hr", seen by everyone who handles the HR helpdesk). The latest message is copied here for the list.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      archived_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      department_id: {"type": "uuid"},
+      // Sorted pair of membership ids for a direct conversation, so there is only one per pair.
+      direct_key: {"type": "string"},
+      // The employee an HR conversation is with.
+      employee_membership_id: {"type": "uuid"},
+      // When someone in the HR team last received the employee's messages (their app listed or got them), for "Delivered".
+      hr_delivered_at: {"type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["direct", "group", "department", "hr"], "required": true, "type": "string"},
+      // { body, senderMembershipId, at }
+      last_message: {"type": "json"},
+      last_message_at: {"type": "timestamp"},
+      tenant_id: {"required": true, "type": "uuid"},
+      title: {"default": "", "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "chat_conversations_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "direct_key"}], "name": "chat_conversations_one_direct", "where": [{"col": "direct_key", "op": "notnull"}]},
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_membership_id"}], "name": "chat_conversations_one_hr", "where": [{"col": "employee_membership_id", "op": "notnull"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "kind"}, {"col": "last_message_at", "desc": true}], "name": "chat_conversations_by_kind"},
+    ],
+    checks: [],
+  },
+  chat_members: {
+    // Who is in a conversation, and how far each has received and read. HR team members of an "hr" conversation get a
+    // row when they first open it (to keep their read position); being in the HR team is what lets them in.
+    access: "tenant", grants: ["delete", "insert", "select", "update"],
+    columns: {
+      conversation_id: {"required": true, "type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      joined_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      last_delivered_at: {"type": "timestamp"},
+      last_read_at: {"type": "timestamp"},
+      left_at: {"type": "timestamp"},
+      membership_id: {"required": true, "type": "uuid"},
+      muted: {"default": false, "required": true, "type": "bool"},
+      role: {"default": "member", "enum": ["owner", "member", "hr"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "chat_members_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "conversation_id"}, {"col": "membership_id"}], "name": "chat_members_one_per_person"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}], "name": "chat_members_by_person"},
+    ],
+    checks: [],
+  },
+  chat_messages: {
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      body: {"default": "", "required": true, "type": "string"},
+      client_id: {"type": "string"},
+      conversation_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      deleted_at: {"type": "timestamp"},
+      edited_at: {"type": "timestamp"},
+      file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Null for a note SampCrew adds ("Asha added Ravi").
+      sender_membership_id: {"type": "uuid"},
+      system: {"default": false, "required": true, "type": "bool"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "chat_messages_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "sender_membership_id"}, {"col": "client_id"}], "name": "chat_messages_one_per_client_id", "where": [{"col": "client_id", "op": "notnull"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "conversation_id"}, {"col": "created_at", "desc": true}], "name": "chat_messages_by_conversation"},
+    ],
+    checks: [],
+  },
+  comm_email_recipients: {
+    // One row per person an HR email went to, with its delivery status (copied from email_messages as it is sent).
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      address: {"required": true, "type": "citext"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      email_id: {"required": true, "type": "uuid"},
+      email_message_id: {"type": "uuid"},
+      employee_id: {"type": "uuid"},
+      error: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"default": "to", "enum": ["to", "cc", "bcc"], "required": true, "type": "string"},
+      membership_id: {"type": "uuid"},
+      sent_at: {"type": "timestamp"},
+      status: {"default": "queued", "enum": ["queued", "sent", "failed", "skipped"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "comm_email_recipients_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "email_id"}], "name": "comm_email_recipients_by_email"},
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}], "name": "comm_email_recipients_by_employee"},
+      {"cols": [{"col": "status"}], "name": "comm_email_recipients_queued", "where": [{"col": "status", "op": "eq", "value": "queued"}]},
+    ],
+    checks: [],
+  },
+  comm_emails: {
+    // Emails HR writes in Communication: drafts, then sent to an audience through the workspace's email provider.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      // { all, membershipIds, departmentIds, designationIds, groupIds }
+      audience: {"default": {"json": {}}, "required": true, "type": "json"},
+      bcc: {"default": {"json": []}, "required": true, "type": "string[]"},
+      cc: {"default": {"json": []}, "required": true, "type": "string[]"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"required": true, "type": "uuid"},
+      failed_count: {"default": 0, "required": true, "type": "int"},
+      file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      html: {"default": "", "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      recipient_count: {"default": 0, "required": true, "type": "int"},
+      sent_at: {"type": "timestamp"},
+      sent_by_membership_id: {"type": "uuid"},
+      sent_count: {"default": 0, "required": true, "type": "int"},
+      status: {"default": "draft", "enum": ["draft", "sending", "sent", "partly_failed", "failed"], "required": true, "type": "string"},
+      subject: {"default": "", "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      text: {"default": "", "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "comm_emails_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "updated_at", "desc": true}], "name": "comm_emails_by_status"},
+    ],
+    checks: [],
+  },
+  comm_files: {
+    // Files attached to chat messages, HR emails and announcements. Downloaded through short signed links.
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      name: {"required": true, "type": "string"},
+      sha256: {"required": true, "type": "string"},
+      size: {"required": true, "type": "int"},
+      storage_key: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      type: {"required": true, "type": "string"},
+      uploaded_by_membership_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "comm_files_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  comm_groups: {
+    // HR's own lists of people (Communication > Groups), used as an audience for emails and announcements.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      archived_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"required": true, "type": "uuid"},
+      description: {"default": "", "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      membership_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      name: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "comm_groups_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "name", "fold": "lower"}], "name": "comm_groups_name", "where": [{"col": "archived_at", "op": "null"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  approval_categories: {
+    // HR's own approval categories (Approval settings), checked before the built-in ones in contracts/approval-categories.ts.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      color: {"default": "#4f46e5", "required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      description: {"default": "", "required": true, "type": "string"},
+      icon: {"default": "inbox", "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      label: {"required": true, "type": "string"},
+      position: {"default": 0, "required": true, "type": "int"},
+      // { resourceTypes, leaveTypeCodes, paid, halfDay, expenseCategoryIds }
+      rule: {"required": true, "type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "approval_categories_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "approval_categories_tenant_id_key_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK (((length(label) >= 2) AND (length(label) <= 60)))",
+    ],
+  },
   approval_policies: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
     columns: {
@@ -570,6 +951,12 @@ export const TABLES: Record<string, TableSpec> = {
       status: {"default": "pending", "enum": ["pending", "approved", "rejected", "cancelled"], "required": true, "type": "string"},
       subject_employee_id: {"type": "uuid"},
       summary: {"required": true, "type": "string"},
+      // Facts the approvals page groups by (leave type code, half day, expense category), set by the owning module.
+      meta: {"type": "json"},
+      // Approval category key (contracts approvals.ts), worked out when the request starts.
+      category: {"type": "string"},
+      // Set when the engine approved it without a person (the sole Owner raised it and nobody else can decide).
+      auto_approved: {"type": "bool"},
       tenant_id: {"required": true, "type": "uuid"},
     },
     unique: [
@@ -583,6 +970,8 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "resource_type"}, {"col": "resource_id"}], "name": "approval_requests_resource"},
+      {"cols": [{"col": "tenant_id"}, {"col": "requested_by_membership_id"}, {"col": "created_at", "desc": true}], "name": "approval_requests_requester"},
+      {"cols": [{"col": "tenant_id"}, {"col": "subject_employee_id"}, {"col": "created_at", "desc": true}], "name": "approval_requests_subject"},
     ],
     checks: [],
   },
@@ -937,6 +1326,34 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((early_window_minutes >= 30) AND (early_window_minutes <= 720)))",
       "CHECK (((correction_window_days >= 0) AND (correction_window_days <= 366)))",
     ],
+  },
+  attendance_reward_rules: {
+    // Attendance rewards HR sets (see packages/contracts/src/rewards.ts): perfect attendance and punctuality.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      allow_half_days: {"default": false, "required": true, "type": "bool"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      description: {"type": "string"},
+      excused_leave_type_ids: {"default": {"json": []}, "required": true, "type": "json"},
+      icon: {"default": "trophy", "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["perfect_attendance", "punctuality"], "required": true, "type": "string"},
+      max_late_days: {"default": 0, "required": true, "type": "int"},
+      min_working_days: {"default": 10, "required": true, "type": "int"},
+      name: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "attendance_reward_rules_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "attendance_reward_rules_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
   },
   attrition_reviews: {
     access: "tenant", grants: ["insert", "select"],
@@ -1681,6 +2098,8 @@ export const TABLES: Record<string, TableSpec> = {
       attachments: {"default": {"json": []}, "required": true, "type": "json"},
       attempts: {"default": 0, "required": true, "type": "int"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Rich-text version (already made safe by the sender); the text body is always sent too.
+      html_body: {"type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       last_error: {"type": "string"},
       next_attempt_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -1721,7 +2140,14 @@ export const TABLES: Record<string, TableSpec> = {
       tenant_id: {"required": true, "type": "uuid"},
       title: {"required": true, "type": "string"},
       uploaded_by_membership_id: {"type": "uuid"},
+      // HR verification of an employee upload (HR Tasks, profile changes). Null for documents nobody needs to check.
+      verification_remarks: {"type": "string"},
+      verification_status: {"enum": ["pending", "verified", "rejected"], "type": "string"},
+      verified_at: {"type": "timestamp"},
+      verified_by_membership_id: {"type": "uuid"},
       visibility: {"default": "employee", "enum": ["employee", "hr_only"], "required": true, "type": "string"},
+      // The HR task or profile change the upload belongs to.
+      task_id: {"type": "uuid"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "employee_documents_pkey", "primary": true},
@@ -1788,6 +2214,37 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((next_value > 0))",
     ],
   },
+  employee_profiles: {
+    // The rest of the employee profile (see packages/contracts/src/profile.ts): addresses, emergency contacts,
+    // education, previous employment, skills. Employees change it through profile updates that HR approves.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      address: {"type": "json"},
+      blood_group: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      education: {"type": "json"},
+      emergency: {"type": "json"},
+      employee_id: {"required": true, "type": "uuid"},
+      employment: {"type": "json"},
+      // Identity and address proof uploads: {identityDocumentId, addressProofDocumentId}.
+      identity_documents: {"type": "json"},
+      marital_status: {"type": "string"},
+      nationality: {"type": "string"},
+      skills: {"type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}], "name": "employee_profiles_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
   employee_salaries: {
     access: "tenant", grants: ["delete", "insert", "select"],
     columns: {
@@ -1849,11 +2306,17 @@ export const TABLES: Record<string, TableSpec> = {
   employee_sensitive: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
+      account_holder_name: {"type": "string"},
+      account_type: {"type": "string"},
       bank_account_enc: {"type": "string"},
+      bank_branch: {"type": "string"},
       bank_name: {"type": "string"},
       bank_routing_enc: {"type": "string"},
       employee_id: {"required": true, "type": "uuid"},
       national_id_enc: {"type": "string"},
+      // Another government ID (passport, voter ID, driving licence): its type, and the number encrypted.
+      other_id_enc: {"type": "string"},
+      other_id_type: {"type": "string"},
       tax_id_enc: {"type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -1913,6 +2376,56 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     checks: [
       "CHECK (((level >= 1) AND (level <= 4)))",
+    ],
+  },
+  employee_tasks: {
+    // HR Tasks and Manager Tasks assigned to one employee (see packages/contracts/src/tasks.ts). A document task
+    // links the upload (employee_documents) that HR verifies through the approvals engine (document_verification).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      acknowledged_at: {"type": "timestamp"},
+      assigned_by_membership_id: {"required": true, "type": "uuid"},
+      assignee_membership_id: {"type": "uuid"},
+      category: {"enum": ["hr", "manager"], "required": true, "type": "string"},
+      completed_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      description: {"type": "string"},
+      // For document tasks: {category, formats, maxMb}.
+      document_spec: {"type": "json"},
+      // The latest upload for a document task, and its approval request.
+      document_id: {"type": "uuid"},
+      due_on: {"type": "date"},
+      employee_id: {"required": true, "type": "uuid"},
+      employee_remarks: {"type": "string"},
+      // Every change: [{at, by, action, status, remarks}].
+      history: {"default": {"json": []}, "required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["general", "document", "acknowledgement"], "required": true, "type": "string"},
+      priority: {"default": "normal", "enum": ["low", "normal", "high", "urgent"], "required": true, "type": "string"},
+      reviewer_remarks: {"type": "string"},
+      // When the employee first opened it (clears the "new" count).
+      seen_at: {"type": "timestamp"},
+      status: {"default": "new", "enum": ["new", "not_started", "in_progress", "pending_review", "completed", "reopened", "cancelled"], "required": true, "type": "string"},
+      submitted_at: {"type": "timestamp"},
+      tenant_id: {"required": true, "type": "uuid"},
+      title: {"required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      verification_request_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "employee_tasks_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "employee_tasks_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "employee_tasks_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "assigned_by_membership_id"}, {"col": "created_at", "desc": true}], "name": "employee_tasks_assigner"},
+    ],
+    checks: [
+      "CHECK (((length(title) >= 1) AND (length(title) <= 200)))",
     ],
   },
   employees: {
@@ -3010,16 +3523,21 @@ export const TABLES: Record<string, TableSpec> = {
   leave_policies: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
     columns: {
-      accrual_method: {"enum": ["annual_upfront", "monthly", "none"], "required": true, "type": "string"},
+      // 'granted': a balance only adjustments add to (comp-off).
+      accrual_method: {"enum": ["annual_upfront", "monthly", "granted", "none"], "required": true, "type": "string"},
       active: {"default": true, "required": true, "type": "bool"},
       allow_negative_balance: {"default": false, "required": true, "type": "bool"},
       annual_entitlement: {"default": 0, "required": true, "scale": 2, "type": "decimal"},
       available_during_probation: {"default": true, "required": true, "type": "bool"},
       carry_forward_max: {"default": 0, "required": true, "scale": 2, "type": "decimal"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Scope: each one set narrows who the policy is for; the most specific policy that fits a person wins.
+      department_id: {"type": "uuid"},
+      designation_id: {"type": "uuid"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       leave_type_id: {"required": true, "type": "uuid"},
       legal_entity_id: {"type": "uuid"},
+      location_id: {"type": "uuid"},
       max_consecutive_days: {"scale": 2, "type": "decimal"},
       min_notice_days: {"default": 0, "required": true, "type": "int"},
       rounding: {"default": "half_day", "enum": ["none", "half_day"], "required": true, "type": "string"},
@@ -3029,12 +3547,15 @@ export const TABLES: Record<string, TableSpec> = {
     unique: [
       {"cols": [{"col": "id"}], "name": "leave_policies_pkey", "primary": true},
       {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "leave_policies_tenant_id_id_key"},
-      {"cols": [{"col": "tenant_id"}, {"col": "leave_type_id"}, {"col": "legal_entity_id", "nullEqual": true}], "name": "leave_policies_one_active", "where": [{"col": "active", "op": "true"}]},
+      {"cols": [{"col": "tenant_id"}, {"col": "leave_type_id"}, {"col": "legal_entity_id", "nullEqual": true}, {"col": "department_id", "nullEqual": true}, {"col": "designation_id", "nullEqual": true}, {"col": "location_id", "nullEqual": true}], "name": "leave_policies_one_active", "where": [{"col": "active", "op": "true"}]},
     ],
     fks: [
       {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
       {"cols": ["tenant_id", "leave_type_id"], "onDelete": "no_action", "ref": "leave_types", "refCols": ["tenant_id", "id"]},
       {"cols": ["tenant_id", "legal_entity_id"], "onDelete": "no_action", "ref": "legal_entities", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "department_id"], "onDelete": "no_action", "ref": "departments", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "designation_id"], "onDelete": "no_action", "ref": "designations", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "location_id"], "onDelete": "no_action", "ref": "locations", "refCols": ["tenant_id", "id"]},
     ],
     indexes: [],
     checks: [
@@ -3102,7 +3623,11 @@ export const TABLES: Record<string, TableSpec> = {
       end_half: {"default": "full", "enum": ["full", "first_half"], "required": true, "type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       leave_type_id: {"required": true, "type": "uuid"},
+      // Each change made while it was pending: the earlier dates, type and reason, who changed it and when.
+      modifications: {"default": {"json": []}, "required": true, "type": "json"},
       reason: {"type": "string"},
+      // A change to approved leave is a new request; approving it cancels the one it replaces.
+      replaces_request_id: {"type": "uuid"},
       requested_by_membership_id: {"type": "uuid"},
       // Applied on the day it starts, or after (see discipline_policies); true or absent.
       same_day: {"type": "bool"},
@@ -3141,8 +3666,14 @@ export const TABLES: Record<string, TableSpec> = {
       code: {"required": true, "type": "string"},
       color: {"default": "#4f46e5", "required": true, "type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Every calendar day counts, weekly offs and holidays included (maternity leave, for example).
+      counts_calendar_days: {"default": false, "required": true, "type": "bool"},
       description: {"type": "string"},
+      // Read from the employee's recorded gender; someone with none recorded is not blocked.
+      eligible_gender: {"default": "any", "enum": ["any", "female", "male"], "required": true, "type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // standard: time off; wfh: counts as present; comp_off: credited by HR; optional_holiday: only on optional holidays.
+      kind: {"default": "standard", "enum": ["standard", "wfh", "comp_off", "optional_holiday"], "required": true, "type": "string"},
       name: {"required": true, "type": "string"},
       paid: {"default": true, "required": true, "type": "bool"},
       tenant_id: {"required": true, "type": "uuid"},
@@ -3295,6 +3826,8 @@ export const TABLES: Record<string, TableSpec> = {
       favourites: {"default": {"json": []}, "required": true, "type": "string[]"},
       membership_id: {"required": true, "type": "uuid"},
       notes: {"default": "", "required": true, "type": "string"},
+      // Notification channels per category and sound settings (contracts notificationPreferencesInput).
+      notifications: {"type": "json"},
       recents: {"default": {"json": []}, "required": true, "type": "json"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -3399,6 +3932,30 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((length(push_token) <= 250))",
     ],
   },
+  live_events: {
+    // Short-lived events pushed to open browsers over /notifications/stream (new notices, chat messages, read
+    // receipts). Written in the transaction that caused them, so only committed changes are pushed; every API server
+    // watches this collection and forwards events to its own connected members. Rows older than an hour are deleted.
+    access: "tenant", grants: ["insert", "select", "delete"],
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      data: {"default": {"json": {}}, "required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      membership_ids: {"required": true, "type": "uuid[]"},
+      tenant_id: {"required": true, "type": "uuid"},
+      type: {"required": true, "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "live_events_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "created_at"}], "name": "live_events_created"},
+    ],
+    checks: [],
+  },
   notifications: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
@@ -3411,9 +3968,20 @@ export const TABLES: Record<string, TableSpec> = {
       read_at: {"type": "timestamp"},
       tenant_id: {"required": true, "type": "uuid"},
       title: {"required": true, "type": "string"},
+      // Shared notification model (contracts/notifications.ts). Absent on notices raised before it (read as derived values).
+      category: {"type": "string"},
+      priority: {"enum": ["low", "normal", "high", "urgent"], "type": "string"},
+      // How many events this notice stands for: repeated events with the same dedupe_key fold into one unread notice.
+      count: {"type": "int"},
+      dedupe_key: {"type": "string"},
+      resource_type: {"type": "string"},
+      resource_id: {"type": "string"},
+      actor_membership_id: {"type": "uuid"},
+      updated_at: {"type": "timestamp"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "notifications_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "dedupe_key"}], "name": "notifications_one_unread_per_key", "where": [{"col": "dedupe_key", "op": "notnull"}, {"col": "read_at", "op": "null"}]},
     ],
     fks: [
       {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
@@ -3421,6 +3989,7 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "created_at", "desc": true}], "name": "notifications_inbox"},
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "category"}, {"col": "created_at", "desc": true}], "name": "notifications_by_category"},
     ],
     checks: [
       "CHECK (((link IS NULL) OR (link ~ '^/'::text)))",
@@ -3978,6 +4547,46 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((export_sha256 ~ '^[0-9a-f]{64}$'::text))",
       "CHECK (((status = 'open'::text) = (completed_at IS NULL)))",
     ],
+  },
+  profile_change_requests: {
+    // Profile updates employees submit for HR to approve (approval type profile_update). Old and new values are
+    // kept for comparison; bank and identity numbers are kept encrypted (new_enc) and only masked in old/new.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      approval_request_id: {"type": "uuid"},
+      // [{field, label, old, new}] as shown to HR (sensitive values masked).
+      changes: {"default": {"json": []}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      decided_at: {"type": "timestamp"},
+      decided_by_membership_id: {"type": "uuid"},
+      employee_id: {"required": true, "type": "uuid"},
+      // [{at, by, action, remarks}].
+      history: {"default": {"json": []}, "required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // The submitted section data; for bank and identity sections it is encrypted (new_enc) instead.
+      new_data: {"type": "json"},
+      new_enc: {"type": "string"},
+      note: {"type": "string"},
+      remarks: {"type": "string"},
+      requested_by_membership_id: {"required": true, "type": "uuid"},
+      section: {"enum": ["personal", "address", "emergency", "education", "employment", "skills", "bank", "identity"], "required": true, "type": "string"},
+      status: {"default": "pending", "enum": ["pending", "approved", "rejected", "info_requested", "cancelled", "superseded"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "profile_change_requests_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "profile_change_requests_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "profile_change_requests_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "created_at", "desc": true}], "name": "profile_change_requests_status"},
+    ],
+    checks: [],
   },
   push_messages: {
     access: "tenant", grants: ["insert"],

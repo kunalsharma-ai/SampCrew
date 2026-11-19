@@ -49,6 +49,10 @@ describe('API client', () => {
     }
     const body = new TextDecoder().decode(multipart({ field: 'file', fileName: 'a"b\r\n.png', type: 'image/png', bytes: new Uint8Array([1]) }, 'B').bytes);
     expect(body).toContain('filename="a_b__.png"');
+    // Text fields (such as remarks on a task upload) go before the file.
+    const withFields = new TextDecoder().decode(multipart({ field: 'file', fileName: 'scan.jpg', type: 'image/jpeg', bytes: new Uint8Array([1]), fields: { remarks: 'Both sides' } }, 'B').bytes);
+    expect(withFields.indexOf('name="remarks"\r\n\r\nBoth sides\r\n')).toBeGreaterThan(0);
+    expect(withFields.indexOf('name="remarks"')).toBeLessThan(withFields.indexOf('name="file"'));
   });
 
   it('refreshes an expired token once for concurrent requests and retries', async () => {

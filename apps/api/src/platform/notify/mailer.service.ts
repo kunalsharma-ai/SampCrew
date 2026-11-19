@@ -12,7 +12,7 @@ const MAX_ATTEMPTS = 5;
 /** How long a sender holds a message it took, so another server does not send it too. */
 const LEASE_SECONDS = 120;
 
-interface QueuedEmail { id: string; to_email: string; subject: string; text_body: string; attempts: number; attachments: EmailAttachment[]; next_attempt_at: Date }
+interface QueuedEmail { id: string; to_email: string; subject: string; text_body: string; html_body?: string | null; attempts: number; attachments: EmailAttachment[]; next_attempt_at: Date }
 
 /**
  * Sends queued email over SMTP, with the email settings SAMPLEDGE saved in the Super Admin Console (Integrations),
@@ -88,7 +88,7 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
         }
         try {
           const attachments = await Promise.all((m.attachments ?? []).map(async (a) => ({ filename: a.filename, contentType: a.contentType, content: await this.read(a.storageKey) })));
-          await smtp.transport.sendMail({ from: smtp.from, to: m.to_email, subject: m.subject, text: m.text_body, attachments });
+          await smtp.transport.sendMail({ from: smtp.from, to: m.to_email, subject: m.subject, text: m.text_body, ...(m.html_body ? { html: m.html_body } : {}), attachments });
           await update(m.id, { status: 'sent', sent_at: new Date(), last_error: null }, { attempts: 1 });
           out.sent++;
         } catch (err) {

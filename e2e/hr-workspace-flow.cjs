@@ -209,14 +209,14 @@ async function run(b) {
   const identity = hr.getByRole('form', { name: 'Identity check' });
   await identity.getByLabel('Check status').selectOption('verified');
   await identity.getByLabel('Internal remarks').fill('Matched the Aadhaar card with the original');
-  await Promise.all([hr.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/verification/')), identity.getByRole('button', { name: /^Save identity/ }).click()]);
+  await Promise.all([hr.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/verification/') && (r.request().postData() ?? '').includes('"status":"verified"')), identity.getByRole('button', { name: /^Save identity/ }).click()]);
   await see(hr, 'Check saved.');
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bgv-'));
   const letter = path.join(tmp, 'relieving-letter.pdf');
   fs.writeFileSync(letter, '%PDF-1.4\n% relieving letter for the e2e flow\n');
   await hr.getByLabel('Title').fill('Relieving letter');
-  await hr.getByLabel('File').setInputFiles(letter);
+  await hr.getByLabel('File', { exact: true }).setInputFiles(letter);
   await hr.getByLabel('Share with the agency').check();
   await hr.getByRole('button', { name: /Upload/ }).first().click();
   await hr.getByRole('table', { name: 'Case files' }).getByText('Relieving letter').waitFor({ timeout: 10000 }).catch((e) => fail(hr, e));
@@ -249,8 +249,10 @@ async function run(b) {
     const f = hr.getByRole('form', { name: `${name} check` });
     if (!(await f.count())) continue;
     await f.getByLabel('Check status').selectOption('verified');
-    // Wait for the save to come back before the next one (each save refreshes the page).
-    await Promise.all([hr.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/verification/')), f.getByRole('button', { name: new RegExp(`^Save ${name.toLowerCase()}`) }).click()]);
+    await f.getByRole('button', { name: new RegExp(`^Save ${name.toLowerCase()}`) }).click();
+    // Wait until the saved check shows who verified it before the next one (each save refreshes the page). Waiting
+    // for "a POST to this page" is not enough: the page's live connection also calls a server action on this URL.
+    await f.getByText(/^by .+ on /).waitFor({ timeout: 10000 }).catch((e) => fail(hr, e));
   }
   await hr.reload();
   await hr.getByRole('button', { name: 'Record the result' }).click();

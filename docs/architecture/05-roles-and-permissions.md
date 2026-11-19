@@ -136,6 +136,10 @@ SampCrew combines **RBAC** (roles bundle permissions) with **ABAC** (each grant 
 | `assets:approve` Write assets off as lost or damaged | 27 |  | A | · | A | E | · | · | · | · | · | · | · | · | · | · |
 | `assets:export` Download asset reports in Excel and PDF | 27 |  | A | · | A | E | · | · | · | · | · | · | · | · | · | · |
 | `assets:manage` Manage asset categories | 27 |  | A | · | A | · | · | · | · | · | · | · | · | · | · | · |
+| **People** | | |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| `tasks:assign` Assign Manager Tasks to people in scope and review their progress | 28 |  | A | · | A | E | · | · | · | · | · | · | T | · | · | · |
+| `tasks:hr` Assign HR Tasks (documents, forms, acknowledgements) and verify the documents people upload | 28 |  | A | · | A | E | A | · | · | · | · | · | · | · | · | · |
+| `profiles:review` Review the profile changes employees submit: compare, approve, reject or ask for more | 28 |  | A | · | A | E | · | · | · | · | · | · | · | · | · | · |
 
 Legend: O own, T team, D department, E legal entity, A all (tenant), · not granted.
 

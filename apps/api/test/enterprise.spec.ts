@@ -302,13 +302,19 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
 
     it('erases a leaver\'s identity, contact details and login, and keeps what the law needs', async () => {
       ok(await as('hr').post(`/employees/${leaverId}/exit`).send({ exitType: 'resignation', resignationDate: plus(today(), -30), lastWorkingDay: plus(today(), -1) }), 201);
+      // Lou wrote to HR in chat and shared a file there.
+      const conv = await pool.insert('chat_conversations', { tenant_id: ent.id, kind: 'hr', employee_membership_id: leaver.membershipId, last_message_at: new Date() });
+      const file = await pool.insert('comm_files', { tenant_id: ent.id, name: 'payslip-query.pdf', type: 'application/pdf', size: 10, sha256: 'x', storage_key: `${ent.id}/lou-file`, uploaded_by_membership_id: leaver.membershipId });
+      const msg = await pool.insert('chat_messages', { tenant_id: ent.id, conversation_id: conv.id, sender_membership_id: leaver.membershipId, body: 'My home address changed to 4 Elm Road', file_ids: [file.id] });
       const access = ok(await as('hr').post('/privacy/requests').send({ employeeId: leaverId, kind: 'access', source: 'Portal' }), 201);
-      ok(await as('hr').post(`/privacy/requests/${access.id}/export`).send({ note: 'Prepared' }));
+      expect(ok(await as('hr').post(`/privacy/requests/${access.id}/export`).send({ note: 'Prepared' })).records).toMatchObject({ chat_messages: 1 });
       const r = ok(await as('hr').post('/privacy/requests').send({ employeeId: leaverId, kind: 'erasure', source: 'Email from Lou' }), 201);
       const before = ok(await as('hr').get(`/privacy/requests/${r.id}`));
       expect(before.erasureRules.map((x: any) => x.action)).toContain('kept');
       const res = ok(await as('hr').post(`/privacy/requests/${r.id}/erase`).send({ note: 'Lou left last month; payroll kept for tax' }));
-      expect(res.removed).toMatchObject({ sensitive: 1, loginErased: 1 });
+      expect(res.removed).toMatchObject({ sensitive: 1, loginErased: 1, chatMessages: 1, chatFiles: 1 });
+      expect(await pool.one('chat_messages', { id: msg.id })).toMatchObject({ body: '[erased]', file_ids: [] });
+      expect(await pool.one('comm_files', { id: file.id })).toMatchObject({ name: '[erased]' });
       const e = (await pool.one('employees', { id: leaverId }))!;
       expect(e).toMatchObject({ first_name: 'Erased', last_name: 'person', personal_email: null });
       expect(e.employee_code).toMatch(/^ERASED-/);

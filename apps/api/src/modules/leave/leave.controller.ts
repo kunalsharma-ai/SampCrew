@@ -4,12 +4,18 @@ import {
   holidayInput,
   isoDate,
   leaveAdjustmentInput,
+  leaveAdjustmentsQuery,
+  leaveBalanceOverviewQuery,
   leaveCancelInput,
+  leaveModifyInput,
+  type LeaveModifyInput,
   leavePolicyInput,
   leaveRequestInput,
   type LeaveRequestInput,
   leaveRunInput,
+  leaveStandardTypesInput,
   leaveTypeInput,
+  STANDARD_LEAVE_TYPES,
   yearEndInput,
 } from '@crew/contracts';
 import { z } from 'zod';
@@ -57,6 +63,23 @@ export class LeaveController {
   @Doc({ summary: 'Add the standard leave types (casual, sick, earned, without pay) with workspace-wide policies; only when the workspace has no leave types yet' })
   addDefaultTypes() {
     return this.leave.addDefaultTypes();
+  }
+
+  @Get('types/standard')
+  @RequireFeature('leave')
+  @RequirePermission('leave:configure')
+  @Doc({ summary: 'The standard leave type catalogue (maternity, paternity, bereavement, comp-off, optional holiday, work from home and more), marking the codes this workspace already uses' })
+  async standardTypes() {
+    const used = new Set((await this.leave.listTypes(true)).map((t) => t.code as string));
+    return STANDARD_LEAVE_TYPES.map((t) => ({ ...t, added: used.has(t.code) }));
+  }
+
+  @Post('types/standard')
+  @RequireFeature('leave')
+  @RequirePermission('leave:configure')
+  @Doc({ summary: 'Add chosen types from the standard catalogue, each with a workspace-wide starting policy (codes already used are skipped)', body: leaveStandardTypesInput })
+  addStandardTypes(@Body(new ZodPipe(leaveStandardTypesInput)) body: z.infer<typeof leaveStandardTypesInput>) {
+    return this.leave.addStandardTypes(body.codes);
   }
 
   @Patch('types/:id')
@@ -153,6 +176,14 @@ export class LeaveController {
     return this.leave.balances(q.employeeId, q.year);
   }
 
+  @Get('balances/overview')
+  @RequireFeature('leave')
+  @RequirePermission('leave:read')
+  @Doc({ summary: 'Balances of everyone you can see, per leave type, for a year (HR and managers)', query: leaveBalanceOverviewQuery })
+  overview(@Query(new ZodPipe(leaveBalanceOverviewQuery)) q: z.infer<typeof leaveBalanceOverviewQuery>) {
+    return this.leave.balanceOverview(q);
+  }
+
   @Get('ledger')
   @RequireFeature('leave')
   @RequirePermission('leave:read')
@@ -198,6 +229,20 @@ export class LeaveController {
     return this.leave.cancel(id, body.reason);
   }
 
+  @Post('requests/:id/modify/preview')
+  @RequireFeature('leave')
+  @Doc({ summary: 'Working days and balance impact of a change to a request (nothing is saved)', body: leaveModifyInput })
+  previewModify(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(leaveModifyInput)) body: LeaveModifyInput) {
+    return this.leave.previewModify(id, body);
+  }
+
+  @Post('requests/:id/modify')
+  @RequireFeature('leave')
+  @Doc({ summary: 'Change a request: a pending one is changed and its approval restarts; a change to approved leave is approved on its own and then replaces it', body: leaveModifyInput })
+  modify(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(leaveModifyInput)) body: LeaveModifyInput) {
+    return this.leave.modify(id, body);
+  }
+
   @Get('calendar')
   @RequireFeature('leave')
   @RequirePermission('leave:read')
@@ -212,6 +257,14 @@ export class LeaveController {
   @Doc({ summary: 'Who is on (or has requested) leave in a date range', query: rangeQuery })
   away(@Query(new ZodPipe(rangeQuery)) q: z.infer<typeof rangeQuery>) {
     return this.leave.whoIsAway(q.from, q.to);
+  }
+
+  @Get('adjustments')
+  @RequireFeature('leave')
+  @RequirePermission('leave:read')
+  @Doc({ summary: 'History of balance adjustments with their remarks, for the people you can see', query: leaveAdjustmentsQuery })
+  adjustments(@Query(new ZodPipe(leaveAdjustmentsQuery)) q: z.infer<typeof leaveAdjustmentsQuery>) {
+    return this.leave.adjustments(q);
   }
 
   @Post('adjustments')

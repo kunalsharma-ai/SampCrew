@@ -22,3 +22,5 @@ export const runAccrualsAction = async () => done(await act(() => api<{ posted: 
 export const closeYearAction = async (year: number) => done(await act(() => api<{ carried: number; lapsed: number }>('/leave/year-end', { method: 'POST', body: { year } })));
 export const saveApprovalChainAction = async (steps: unknown[]) =>
   done(await act(() => api('/approvals/policies/leave_request', { method: 'PUT', body: { steps } }), 'Approval chain saved'));
+export const addStandardTypesAction = async (codes: string[]) =>
+  done(await act(() => api<{ added: string[]; skipped: string[] }>('/leave/types/standard', { method: 'POST', body: { codes } })));

@@ -1,18 +1,24 @@
 'use client';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, EmptyState, Input, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
-import { Plus, Trash2 } from 'lucide-react';
+import { LEAVE_TYPE_KIND_LABELS, type LeaveTypeKind } from '@crew/contracts';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Input, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
+import { ListPlus, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { type FieldDef, ResourceDialog } from '@/components/resource-form';
 import type { ActionResult } from '@/lib/api';
-import type { HolidayCalendar, LeavePolicy, LeaveType, LegalEntity, Location, Role } from '@/lib/types';
+import type { Department, Designation, HolidayCalendar, LeavePolicy, LeaveType, LegalEntity, Location, Role, StandardLeaveType } from '@/lib/types';
 import {
-  addHolidayAction, archiveLeaveTypeAction, closeYearAction, deleteCalendarAction, removeHolidayAction, removePolicyAction, runAccrualsAction,
+  addHolidayAction, addStandardTypesAction, archiveLeaveTypeAction, closeYearAction, deleteCalendarAction, removeHolidayAction, removePolicyAction, runAccrualsAction,
   saveApprovalChainAction, saveCalendarAction, saveLeaveTypeAction, savePolicyAction,
 } from './actions';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const ACCRUAL: Record<string, string> = { annual_upfront: 'Up front each year (prorated for joiners)', monthly: 'Monthly (1/12 each month)', none: 'No balance (e.g. unpaid leave)' };
+const ACCRUAL: Record<string, string> = {
+  annual_upfront: 'Up front each year (prorated for joiners)', monthly: 'Monthly (1/12 each month)', granted: 'Credited by HR (e.g. comp-off)', none: 'No balance (e.g. unpaid leave)',
+};
+const GENDER: Record<string, string> = { any: 'Everyone', female: 'Women', male: 'Men' };
+/** Who a policy is for, in words: "Everyone", or "Engineering · Senior engineer". */
+const policyScope = (p: LeavePolicy) => [p.legalEntityName, p.departmentName, p.designationName, p.locationName].filter(Boolean).join(' · ') || 'Everyone';
 const yesNo = [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }];
 
 interface Props {
@@ -23,6 +29,9 @@ interface Props {
   locations: Location[];
   chain: { steps: { type: string; role?: string }[]; fallbackRole: string } | null;
   roles: Role[];
+  departments: Department[];
+  designations: Designation[];
+  standard: StandardLeaveType[];
 }
 
 export function LeaveSettingsView(props: Props) {
@@ -58,28 +67,43 @@ export function LeaveSettingsView(props: Props) {
 
 type Run = (fn: () => Promise<ActionResult<unknown>>, ok?: (data: unknown) => string) => void;
 
-function TypesCard({ types, run }: Props & { run: Run }) {
+function TypesCard({ types, standard, run }: Props & { run: Run }) {
   const [editing, setEditing] = useState<LeaveType | null | 'new'>(null);
   const fields: FieldDef[] = [
     { name: 'code', label: 'Code', required: true, half: true, hint: 'e.g. CL, SL, AL' },
     { name: 'name', label: 'Name', required: true, half: true },
     { name: 'paid', label: 'Paid', type: 'select', options: yesNo, required: true, half: true },
     { name: 'allowHalfDay', label: 'Half days allowed', type: 'select', options: yesNo, required: true, half: true },
+    { name: 'kind', label: 'What it is for', type: 'select', required: true, options: Object.entries(LEAVE_TYPE_KIND_LABELS).map(([value, label]) => ({ value, label })) },
+    { name: 'eligibleGender', label: 'Who can take it', type: 'select', required: true, options: Object.entries(GENDER).map(([value, label]) => ({ value, label })), half: true, hint: 'Read from the gender on the employee record; nobody without one is blocked' },
+    { name: 'countsCalendarDays', label: 'Count every calendar day', type: 'select', required: true, options: yesNo, half: true, hint: 'Weekly offs and holidays count too, as maternity leave usually does' },
     { name: 'color', label: 'Colour', half: true, placeholder: '#4f46e5' },
     { name: 'description', label: 'Description', type: 'textarea' },
   ];
   const current = editing && editing !== 'new' ? editing : null;
+  const [picking, setPicking] = useState(false);
   return (
     <Card>
-      <CardHeader title="Leave types" action={<Button size="sm" onClick={() => setEditing('new')}><Plus className="size-3.5" /> Add type</Button>} />
+      <CardHeader
+        title="Leave types"
+        description="Half days are a setting on each type (for example half-day casual leave), not a type of their own."
+        action={<div className="flex gap-2">
+          {standard.some((x) => !x.added) && <Button size="sm" variant="secondary" onClick={() => setPicking(true)}><ListPlus className="size-3.5" /> Add standard types</Button>}
+          <Button size="sm" onClick={() => setEditing('new')}><Plus className="size-3.5" /> Add type</Button>
+        </div>}
+      />
       {types.length ? (
         <Table>
-          <THead><tr><TH>Type</TH><TH>Code</TH><TH>Paid</TH><TH>Half days</TH><TH /></tr></THead>
+          <THead><tr><TH>Type</TH><TH>Code</TH><TH>For</TH><TH>Paid</TH><TH>Half days</TH><TH /></tr></THead>
           <TBody>
             {types.map((t) => (
-              <TR key={t.id}>
-                <TD><span className="flex items-center gap-2"><span className="size-2.5 rounded-full" style={{ background: t.color }} />{t.name}</span></TD>
+              <TR key={t.id} data-testid="leave-type-row">
+                <TD>
+                  <span className="flex items-center gap-2"><span className="size-2.5 rounded-full" style={{ background: t.color }} />{t.name}</span>
+                  <span className="text-xs text-fg-muted">{[t.kind !== 'standard' ? LEAVE_TYPE_KIND_LABELS[t.kind as LeaveTypeKind] : null, t.countsCalendarDays ? 'counts calendar days' : null].filter(Boolean).join(' · ')}</span>
+                </TD>
                 <TD className="font-mono text-xs">{t.code}</TD>
+                <TD className="text-fg-muted">{GENDER[t.eligibleGender] ?? 'Everyone'}</TD>
                 <TD>{t.paid ? 'Paid' : 'Unpaid'}</TD>
                 <TD>{t.allowHalfDay ? 'Yes' : 'No'}</TD>
                 <TD className="whitespace-nowrap text-right">
@@ -96,19 +120,66 @@ function TypesCard({ types, run }: Props & { run: Run }) {
         onClose={() => setEditing(null)}
         title={current ? `Edit ${current.name}` : 'Add leave type'}
         fields={fields}
-        initial={current ? { ...current, paid: String(current.paid), allowHalfDay: String(current.allowHalfDay) } : { paid: 'true', allowHalfDay: 'true', color: '#4f46e5' }}
+        initial={current
+          ? { ...current, paid: String(current.paid), allowHalfDay: String(current.allowHalfDay), countsCalendarDays: String(current.countsCalendarDays) }
+          : { paid: 'true', allowHalfDay: 'true', color: '#4f46e5', kind: 'standard', eligibleGender: 'any', countsCalendarDays: 'false' }}
         submitLabel="Save"
-        onSubmit={(v) => saveLeaveTypeAction(current?.id ?? null, { ...v, paid: v.paid === 'true', allowHalfDay: v.allowHalfDay === 'true' })}
+        onSubmit={(v) => saveLeaveTypeAction(current?.id ?? null, { ...v, paid: v.paid === 'true', allowHalfDay: v.allowHalfDay === 'true', countsCalendarDays: v.countsCalendarDays === 'true' })}
       />
+      <StandardTypesDialog open={picking} onClose={() => setPicking(false)} standard={standard} run={run} />
     </Card>
   );
 }
 
-function PoliciesCard({ types, policies, entities, run }: Props & { run: Run }) {
+/** Pick types from the standard catalogue; each comes with a starting policy for everyone that HR then changes. */
+function StandardTypesDialog({ open, onClose, standard, run }: { open: boolean; onClose: () => void; standard: StandardLeaveType[]; run: Run }) {
+  const [chosen, setChosen] = useState<string[]>([]);
+  const left = standard.filter((x) => !x.added);
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Add standard leave types"
+      footer={<>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button disabled={!chosen.length} onClick={() => {
+          run(() => addStandardTypesAction(chosen), (d) => `Added ${(d as { added: string[] }).added.length} leave type(s) with starting policies.`);
+          setChosen([]);
+          onClose();
+        }}>Add {chosen.length || ''} type{chosen.length === 1 ? '' : 's'}</Button>
+      </>}
+    >
+      <p className="mb-3 text-[0.8125rem] text-fg-muted">Each type comes with a starting policy for everyone. The numbers are common starting points, not any country&apos;s statutory minimum: change them under Policies.</p>
+      <div className="grid gap-2">
+        {left.map((x) => (
+          <Checkbox
+            key={x.code}
+            label={`${x.name} (${x.code})`}
+            description={[
+              x.accrualMethod === 'none' ? 'No balance' : x.accrualMethod === 'granted' ? 'Credited by HR' : `${Number(x.annualEntitlement)} days a year`,
+              x.kind !== 'standard' ? LEAVE_TYPE_KIND_LABELS[x.kind as LeaveTypeKind] : null,
+              x.eligibleGender !== 'any' ? `for ${(GENDER[x.eligibleGender] ?? '').toLowerCase()}` : null,
+              x.countsCalendarDays ? 'counts calendar days' : null,
+              x.paid ? null : 'unpaid',
+              x.allowHalfDay ? 'half days allowed' : null,
+            ].filter(Boolean).join(' · ')}
+            checked={chosen.includes(x.code)}
+            onChange={(e) => setChosen((c) => (e.target.checked ? [...c, x.code] : c.filter((y) => y !== x.code)))}
+          />
+        ))}
+      </div>
+    </Dialog>
+  );
+}
+
+function PoliciesCard({ types, policies, entities, departments, designations, locations, run }: Props & { run: Run }) {
   const [editing, setEditing] = useState<Partial<LeavePolicy> | null>(null);
   const fields: FieldDef[] = [
     { name: 'leaveTypeId', label: 'Leave type', type: 'select', required: true, options: types.map((t) => ({ value: t.id, label: t.name })), half: true },
-    { name: 'legalEntityId', label: 'Applies to', type: 'select', options: entities.map((e) => ({ value: e.id, label: e.name })), half: true, hint: 'None means every entity without its own policy' },
+    { name: 'legalEntityId', label: 'Legal entity', type: 'select', options: entities.map((e) => ({ value: e.id, label: e.name })), half: true, hint: 'Empty means every entity' },
+    { name: 'departmentId', label: 'Department', type: 'select', options: departments.map((d) => ({ value: d.id, label: d.name })), half: true, hint: 'Empty means every department' },
+    { name: 'designationId', label: 'Designation', type: 'select', options: designations.map((d) => ({ value: d.id, label: d.name })), half: true, hint: 'Empty means every designation' },
+    { name: 'locationId', label: 'Location', type: 'select', options: locations.map((l) => ({ value: l.id, label: l.name })), half: true, hint: 'Empty means every location' },
     { name: 'accrualMethod', label: 'How it accrues', type: 'select', required: true, options: Object.entries(ACCRUAL).map(([value, label]) => ({ value, label })) },
     { name: 'annualEntitlement', label: 'Days per year', type: 'number', step: '0.5', required: true, half: true },
     { name: 'carryForwardMax', label: 'Carry forward up to', type: 'number', step: '0.5', half: true },
@@ -122,7 +193,7 @@ function PoliciesCard({ types, policies, entities, run }: Props & { run: Run }) 
     <Card>
       <CardHeader
         title="Policies"
-        description="Saving a policy for a type and entity replaces the active one. The previous version is kept for history."
+        description="A policy is for everyone or narrowed by legal entity, department, designation or location. When several fit a person the most specific one wins (location, then designation, then department, then entity). Saving a policy for the same type and scope replaces the active one; the previous version is kept for history."
         action={types.length > 0 && <Button size="sm" onClick={() => setEditing({})}><Plus className="size-3.5" /> Add policy</Button>}
       />
       {policies.length ? (
@@ -132,9 +203,9 @@ function PoliciesCard({ types, policies, entities, run }: Props & { run: Run }) 
             {policies.map((p) => (
               <TR key={p.id}>
                 <TD className="font-medium">{p.leaveTypeName}</TD>
-                <TD className="text-fg-muted">{p.legalEntityName ?? 'All entities'}</TD>
+                <TD className="text-fg-muted" data-testid="policy-scope">{policyScope(p)}</TD>
                 <TD className="text-fg-muted">{ACCRUAL[p.accrualMethod]?.split(' (')[0]}</TD>
-                <TD className="tabular-nums">{p.accrualMethod === 'none' ? '—' : p.annualEntitlement}</TD>
+                <TD className="tabular-nums">{p.accrualMethod === 'none' || p.accrualMethod === 'granted' ? '—' : p.annualEntitlement}</TD>
                 <TD className="tabular-nums">{p.carryForwardMax}</TD>
                 <TD className="text-xs text-fg-muted">
                   {[p.minNoticeDays ? `${p.minNoticeDays}d notice` : null, p.maxConsecutiveDays ? `max ${p.maxConsecutiveDays} per request` : null, !p.availableDuringProbation ? 'not on probation' : null, p.allowNegativeBalance ? 'can go negative' : null].filter(Boolean).join(' · ') || '—'}
@@ -161,6 +232,9 @@ function PoliciesCard({ types, policies, entities, run }: Props & { run: Run }) 
         onSubmit={(v) => savePolicyAction({
           ...v,
           legalEntityId: v.legalEntityId ?? null,
+          departmentId: v.departmentId ?? null,
+          designationId: v.designationId ?? null,
+          locationId: v.locationId ?? null,
           annualEntitlement: String(v.annualEntitlement ?? '0'),
           carryForwardMax: String(v.carryForwardMax ?? '0'),
           maxConsecutiveDays: v.maxConsecutiveDays === undefined || v.maxConsecutiveDays === null ? null : String(v.maxConsecutiveDays),

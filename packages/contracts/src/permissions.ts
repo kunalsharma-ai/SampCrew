@@ -173,6 +173,10 @@ export const PERMISSIONS = [
   { key: 'assets:approve', module: 'Assets', description: 'Write assets off as lost or damaged', phase: 27, scopes: ['entity', 'tenant'], action: 'approve' },
   { key: 'assets:export', module: 'Assets', description: 'Download asset reports in Excel and PDF', phase: 27, scopes: ['department', 'entity', 'tenant'], action: 'export' },
   { key: 'assets:manage', module: 'Assets', description: 'Manage asset categories', phase: 27, scopes: TENANT_ONLY, action: 'manage' },
+  // Phase 28: employee workspace (HR Tasks, Manager Tasks, profile changes)
+  { key: 'tasks:assign', module: 'People', description: 'Assign Manager Tasks to people in scope and review their progress', phase: 28, scopes: ['team', 'department', 'entity', 'tenant'] },
+  { key: 'tasks:hr', module: 'People', description: 'Assign HR Tasks (documents, forms, acknowledgements) and verify the documents people upload', phase: 28, scopes: ['department', 'entity', 'tenant'] },
+  { key: 'profiles:review', module: 'People', description: 'Review the profile changes employees submit: compare, approve, reject or ask for more', phase: 28, scopes: ['department', 'entity', 'tenant'] },
 ] as const satisfies readonly PermissionDefinition[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

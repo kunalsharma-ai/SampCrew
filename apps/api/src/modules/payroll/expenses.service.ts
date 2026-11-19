@@ -70,6 +70,10 @@ export class ExpensesService implements OnModuleInit {
       attributes: async (tx, id) => attrsOf(await payrollEmployee(tx, (await this.load(tx, id)).employee_id)),
       onApproved: (tx, req) => this.decided(tx, req.resource_id, 'approved'),
       onRejected: (tx, req) => this.decided(tx, req.resource_id, 'rejected'),
+      documents: async (tx, id) => {
+        const c = await tx.collection('expense_claims').findOne({ id }, { projection: { receipt_key: 1, receipt_name: 1 } });
+        return c?.receipt_key ? [{ name: (c.receipt_name as string | null) ?? 'Receipt', href: `/expense-receipts/${id}` }] : [];
+      },
     });
   }
 
@@ -181,7 +185,9 @@ export class ExpensesService implements OnModuleInit {
           receipt_sha256: file ? createHash('sha256').update(file.buffer).digest('hex') : null, submitted_by_membership_id: actor.membershipId,
         });
         const summary = `${e.name}: ${cat.name} expense of ${money.formatMoney(money.toMinor(input.amount), currency)} on ${input.spentOn}. ${input.description}`;
-        const approvalId = await this.approvals.start(tx, { resourceType: 'expense_claim', resourceId: row.id, subjectEmployeeId: e.id, summary });
+        const approvalId = await this.approvals.start(tx, {
+          resourceType: 'expense_claim', resourceId: row.id, subjectEmployeeId: e.id, summary, meta: { expenseCategoryId: input.categoryId, expenseCategoryName: cat.name },
+        });
         await tx.collection('expense_claims').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
         await this.audit.record(tx, { action: 'expense_claim.submitted', resourceType: 'expense_claim', resourceId: row.id, changes: input, metadata: { receipt: Boolean(file) } });
         return { id: row.id, status: 'pending' };

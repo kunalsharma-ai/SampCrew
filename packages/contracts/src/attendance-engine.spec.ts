@@ -130,6 +130,18 @@ describe('attendance engine', () => {
     expect(day({ times: [], leave: 'first_half' }).status).toBe('absent');
   });
 
+  it('approved work from home counts as present, never as leave or an absence', () => {
+    expect(day({ times: [], remote: 'full' })).toMatchObject({ status: 'present', workedMinutes: 0 });
+    // Punching in from home on a short day still counts as a full day present.
+    expect(day({ times: ['10:00', '13:00'], remote: 'full' }).status).toBe('present');
+    // Half a day from home: the other half needs punches, otherwise it is a half day.
+    expect(day({ times: ['13:30', '18:00'], remote: 'first_half' })).toMatchObject({ status: 'present', lateMinutes: 0 });
+    expect(day({ times: [], remote: 'second_half' }).status).toBe('half_day');
+    // Leave on the same day wins over working from home, and days off stay days off.
+    expect(day({ times: [], leave: 'full', remote: 'full' }).status).toBe('on_leave');
+    expect(day({ times: [], remote: 'full', dayType: 'weekly_off' }).status).toBe('weekly_off');
+  });
+
   it('short days are half days or absent by the shift thresholds', () => {
     expect(day({ times: ['09:00', '14:30'] })).toMatchObject({ status: 'half_day', flags: ['early_leave', 'short_hours'] });
     expect(day({ times: ['09:00', '11:00'] })).toMatchObject({ status: 'absent', workedMinutes: 120 });

@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useSession } from '../../src/lib/session';
-import type { Announcement, Balance, InboxItem, Notification, Today } from '../../src/lib/types';
+import type { Announcement, AppraisalBrief, Balance, InboxItem, MyRewards, Notification, TaskCounts, Today } from '../../src/lib/types';
 import { dayStatus } from '../../src/lib/labels';
 import { Badge, Button, Card, CardTitle, DemoBanner, Empty, fmt, Hero, ListItem, Notice, QuickActions, Screen, Text, Tile, TileGrid, useLoad, useReloadOnFocus } from '../../src/ui';
 
@@ -22,16 +22,23 @@ export default function Home() {
   const hasNews = hasFeature('announcements') && can('announcements:read');
   const leave = hasFeature('leave');
   const helpdesk = hasFeature('helpdesk') && can('helpdesk:use');
+  const isEmployee = !!me?.employee;
+  const tasks = isEmployee && hasFeature('core_hr');
+  const appraisal = isEmployee && hasFeature('performance');
+  const rewards = isEmployee && hasFeature('attendance_basic');
   const { data, error, loading, reload } = useLoad(async () => {
-    const [today, inbox, notes, news, balances] = await Promise.all([
+    const [today, inbox, notes, news, balances, taskCounts, appraisals, myRewards] = await Promise.all([
       attendance ? api.get<Today>('/attendance/today').catch(() => null) : null,
       api.get<InboxItem[]>('/approvals/inbox').catch(() => []),
       api.get<{ unread: number; items: Notification[] }>('/notifications?limit=5'),
       hasNews ? api.get<Announcement[]>('/announcements') : [],
       leave ? api.get<{ balances: Balance[] }>('/leave/balances').then((b) => b.balances.filter((x) => x.tracked)).catch(() => null) : null,
+      tasks ? api.get<TaskCounts>('/tasks/counts').catch(() => null) : null,
+      appraisal ? api.get<AppraisalBrief[]>('/appraisals/mine').catch(() => null) : null,
+      rewards ? api.get<MyRewards>('/workspace/rewards?history=0').catch(() => null) : null,
     ]);
-    return { today, inbox, notes, news, balances };
-  }, [api, attendance, hasNews, leave]);
+    return { today, inbox, notes, news, balances, taskCounts, appraisals, myRewards };
+  }, [api, attendance, hasNews, leave, tasks, appraisal, rewards]);
   useReloadOnFocus(reload);
 
   const firstName = me?.user.fullName.split(' ')[0] ?? '';
@@ -79,6 +86,7 @@ export default function Home() {
         actions={[
           ...(attendance ? [{ label: data?.today?.nextDirection === 'out' ? 'Punch out' : 'Punch in', icon: '◷', tone: 'violet' as const, onPress: () => router.push('/attendance'), testID: 'qa-punch' }] : []),
           ...(leave ? [{ label: 'Apply for leave', icon: '☼', tone: 'orange' as const, onPress: () => router.push('/leave/new'), testID: 'qa-leave' }] : []),
+          ...(tasks ? [{ label: 'My tasks', icon: '☰', tone: 'blue' as const, onPress: () => router.push('/tasks'), testID: 'qa-tasks' }] : []),
           ...(helpdesk ? [{ label: 'Ask HR', icon: '?', tone: 'pink' as const, onPress: () => router.push('/helpdesk/new'), testID: 'qa-askhr' }] : []),
           { label: 'Approvals', icon: '✓', tone: 'teal' as const, onPress: () => router.push('/approvals') },
         ]}
@@ -94,6 +102,33 @@ export default function Home() {
           <Button title={data.today.nextDirection === 'in' ? 'Punch in' : 'Punch out'} onPress={() => router.push('/attendance')} />
         </Card>
       )}
+
+      {data && (data.taskCounts || data.appraisals?.length || data.myRewards?.rewards.length) ? (
+        <Card testID="home-workspace">
+          <CardTitle help="home.workspace">My workspace</CardTitle>
+          {data.taskCounts && (
+            <ListItem
+              testID="home-tasks"
+              title={`${data.taskCounts.hr.open + data.taskCounts.manager.open} open task${data.taskCounts.hr.open + data.taskCounts.manager.open === 1 ? '' : 's'}`}
+              subtitle={`${data.taskCounts.hr.open} from HR · ${data.taskCounts.manager.open} from your manager`}
+              right={data.taskCounts.hr.overdue + data.taskCounts.manager.overdue > 0 ? <Badge tone="danger">{`${data.taskCounts.hr.overdue + data.taskCounts.manager.overdue} overdue`}</Badge> : undefined}
+              onPress={() => router.push('/tasks')}
+            />
+          )}
+          {data.appraisals?.filter((a) => a.stage === 'self').map((a) => (
+            <ListItem key={a.id} testID="home-appraisal" title="Self-appraisal waiting" subtitle={`${a.cycleName}${a.selfDue ? ` · due ${fmt.date(a.selfDue)}` : ''}`} right={<Badge tone={a.overdue ? 'danger' : 'warn'}>{`${a.selfCompletion}% done`}</Badge>} onPress={() => router.push(`/appraisal/${a.id}`)} />
+          ))}
+          {data.myRewards?.rewards.map((r) => (
+            <ListItem
+              key={r.id}
+              testID={`home-reward-${r.kind}`}
+              title={r.name}
+              subtitle={r.reason ?? (r.description ?? undefined)}
+              right={<Badge tone={r.status === 'earned' ? 'ok' : r.status === 'on_track' ? 'info' : r.status === 'missed' ? 'danger' : 'neutral'}>{r.status === 'earned' ? 'Earned' : r.status === 'on_track' ? 'On track' : r.status === 'missed' ? 'Missed this month' : 'Not eligible'}</Badge>}
+            />
+          ))}
+        </Card>
+      ) : null}
 
       {data && data.inbox.length > 0 && (
         <Card>

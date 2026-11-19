@@ -39,6 +39,7 @@ export function LeaveCalendar({ data, month, today, canApply }: { data: LeaveCal
             <span className="min-w-32 text-center text-sm font-semibold" data-testid="leave-calendar-month">{title}</span>
             <Link aria-label="Next month" className={buttonClass('ghost', 'sm')} href={`/leave?month=${next}`} scroll={false}><ChevronRight className="size-4" /></Link>
             {month !== today.slice(0, 7) && <Link className={buttonClass('secondary', 'sm')} href="/leave" scroll={false}>Today</Link>}
+            <Link className={buttonClass('secondary', 'sm')} href={`/leave?view=year&year=${y}`} scroll={false} data-testid="leave-year-link">Year view</Link>
           </div>
         }
       />

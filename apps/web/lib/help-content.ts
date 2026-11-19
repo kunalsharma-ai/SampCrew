@@ -84,26 +84,158 @@ export const WEB_HELP: HelpContent = {
   pages: {
     '/': {
       title: 'Home',
-      what: 'Your dashboard: what needs you today, key workforce numbers, announcements, your tasks and shortcuts.',
-      how: 'Work through the items that need attention from the top. Use Customize to add, move or hide cards.',
+      what: 'Your dashboard: clock in and out, your hours, leave balances, attendance this month, rewards, your calendar and tasks, then what needs you today, key numbers, announcements and shortcuts.',
+      how: 'Clock in at the top when you start and clock out when you finish. Work through the items that need attention. Use Customize to add, move or hide the cards below.',
       where: 'Open it at the start of the day. The cards you see follow your role.',
     },
     '/approvals': {
       title: 'Approvals',
-      what: 'Every request waiting for your decision: leave, attendance corrections, expenses, job requisitions, offers, bids and workflow approvals.',
-      how: 'Open a request to see the details, then approve or reject it. Add a note when you reject so the person knows why.',
-      where: 'For managers and approvers. Check it daily; requesters are notified as soon as you decide.',
+      what: 'Requests in category cards: those waiting for your decision, your own requests with their status, and what you decided.',
+      how: 'Pick a view, then a card to see its requests. Approve or reject with remarks; open a request for its full history.',
+      where: 'For everyone: managers and HR decide here, and everyone follows their own requests here.',
+    },
+    '/approvals/[id]': {
+      title: 'Approval request',
+      what: 'One request: its ID, type, details, supporting documents, current status, who decides it and every step with remarks.',
+      how: 'Approve or reject it here when it waits for you. Remarks are needed to reject, and the person sees them.',
+      where: 'Open it from Approvals, a notification or the record itself.',
+    },
+    '/communication': {
+      title: 'Communication',
+      what: 'The HR team\'s overview of communication: emails sent and delivered, chat activity, messages to HR waiting for a reply and recent emails.',
+      how: 'Start an email or a chat from the buttons, or open a waiting message to answer it.',
+      where: 'Communication replaces Ask HR. Help requests (Ask HR cases) are one of its tabs.',
+    },
+    '/communication/chat': {
+      title: 'Chat',
+      what: 'Your conversations: one to one, groups, departments and your conversation with the HR team. New messages arrive as they are sent.',
+      how: 'Choose a conversation or start a new one. Search finds conversations by name; press Enter to search messages too.',
+      where: 'Everyone can chat. Messages to HR are read and answered by anyone in the HR team; your manager cannot see them.',
+    },
+    '/communication/chat/[id]': {
+      title: 'Conversation',
+      what: 'One conversation. Your messages show Sent, Delivered (their app has it) and Read (they opened it).',
+      how: 'Write and press Enter to send (Shift+Enter for a new line). Attach up to 5 files. Mute a busy conversation, or leave a group.',
+      where: 'Group owners can rename the group and change its members.',
+    },
+    '/communication/emails': {
+      title: 'Emails',
+      what: 'For HR: emails to everyone, departments, designations, groups or chosen people, with their delivery status. For everyone: emails HR sent you.',
+      how: 'Filter by status or search. Open one to see who it was delivered to, or a draft to finish it.',
+      where: 'Emails go out through the email provider set up for SampCrew.',
+    },
+    '/communication/emails/new': {
+      title: 'New email',
+      what: 'Write an email to people in the workspace. Each person gets their own copy; Cc and Bcc addresses get one copy each.',
+      how: 'Choose who it is for, write the subject and message, attach files, then save a draft or send.',
+      where: 'Sent emails appear on each person\'s communication record.',
+    },
+    '/communication/emails/[id]': {
+      title: 'Email',
+      what: 'A sent email and its delivery to each person, or a draft to finish.',
+      how: 'Delivery updates as the email provider sends each copy. Open a person to see their communication record.',
+      where: 'Sent emails cannot be changed or deleted.',
+    },
+    '/communication/groups': {
+      title: 'Groups',
+      what: 'Your own lists of people, for example night-shift leads or first aiders.',
+      how: 'Add a group and its people. Choose it as the audience of an email or an announcement.',
+      where: 'Only the HR team sees and uses groups.',
+    },
+    '/communication/people/[id]': {
+      title: 'Communication record',
+      what: 'Everything HR sent or discussed with one person: emails with their delivery, the conversation with HR and help requests.',
+      how: 'Email or message the person from here.',
+      where: 'Open it from an email\'s delivery list.',
+    },
+    '/notifications': {
+      title: 'Notification Center',
+      what: 'Every notification SampCrew sent you, by category, with important ones first. It updates live.',
+      how: 'Filter by category, unread or priority, search, mark read or unread, and open a notice to go to its record.',
+      where: 'Also reachable from the bell. Change what you are told about in Notification settings.',
+    },
+    '/settings/notifications': {
+      title: 'Notification settings',
+      what: 'What you are told about in SampCrew and by email, per category, and whether new notices make a sound or a pop-up.',
+      how: 'Switch categories on or off, set the sound and its volume, try the preview, then save.',
+      where: 'Your own settings. Approvals and workspace notices always show in SampCrew.',
+    },
+    '/settings/approvals': {
+      title: 'Approval settings',
+      what: 'Who approves each kind of request and in what order, and the categories the Approvals page groups requests into.',
+      how: 'Change a chain and save it; new requests follow it. Add your own category to give some requests a card of their own.',
+      where: 'For workspace admins. Every change is recorded in the audit trail.',
     },
     '/tasks': {
       title: 'My tasks',
-      what: 'Onboarding and workflow tasks assigned to you, soonest due first.',
-      how: 'Open a task, do it, then mark it done so the checklist moves on.',
-      where: 'For anyone given tasks, often managers, IT and HR during a new joiner’s first weeks.',
+      what: 'Your HR tasks (documents, forms, acknowledgements from HR) and manager tasks (work from your reporting manager), with due dates, priority and progress.',
+      how: 'Open a task to start it, upload what it asks for or send it for review. Managers and HR use "Assign a task" and check work under Tasks I assign and Documents to verify.',
+      where: 'For everyone. New tasks also show in notifications and on Home; the number on the menu counts open tasks and work waiting for you.',
+    },
+    '/tasks/[id]': {
+      title: 'Task',
+      what: 'One task: what is needed, who asked, when it is due, any document upload and its HR check, and the full history.',
+      how: 'The employee updates progress or uploads the document; the person who assigned it (or HR) accepts, reopens with a reason, cancels, or verifies the document.',
+      where: 'Opened from My tasks, a notification, or Approvals (document checks).',
+    },
+    '/appraisal': {
+      title: 'Appraisal & performance',
+      what: 'Your appraisal for each cycle: your self-appraisal, your manager\u2019s evaluation, HR\u2019s review and the final result with its performance category.',
+      how: 'Open the current appraisal to fill it in, save a draft as you go and submit when done. Managers evaluate their team under My team; HR reviews and shares results under HR review.',
+      where: 'For everyone in an appraisal cycle. You are notified when a cycle starts, when your appraisal moves on and when the result is shared.',
+    },
+    '/appraisal/[id]': {
+      title: 'Appraisal',
+      what: 'One appraisal: the questions by section, the scores and comments from each stage you can see, the rating scale, the result and the timeline.',
+      how: 'Pick a score for each rated question, add comments and written answers, then submit. Your part locks after you submit; only HR can reopen it.',
+      where: 'Opened from Appraisal, a notification or an appraisal cycle.',
+    },
+    '/settings/appraisals': {
+      title: 'Appraisal forms & cycles',
+      what: 'The appraisal forms HR builds and the cycles that send them to people.',
+      how: 'Add the Frequent Research template or a blank form, change it to fit, then create a cycle with its period and deadlines and launch it.',
+      where: 'For HR. Each appraisal keeps a copy of its form, so editing a form never changes an appraisal already started.',
+    },
+    '/settings/appraisals/forms/[id]': {
+      title: 'Appraisal form',
+      what: 'The form builder: sections, questions, weights, the rating scale, performance categories and how the final score is worked out.',
+      how: 'Change any part and save. Sections can be for everyone, for people managers only (such as Management Skills) or for individual contributors.',
+      where: 'Opened from Appraisal forms & cycles.',
+    },
+    '/settings/appraisals/cycles/[id]': {
+      title: 'Appraisal cycle',
+      what: 'One cycle: its deadlines, how many appraisals are at each stage and every appraisal in it.',
+      how: 'Launch a draft cycle to create the appraisals, share finalised results when HR is done, and close the cycle at the end.',
+      where: 'Opened from Appraisal forms & cycles.',
+    },
+    '/profile': {
+      title: 'My profile',
+      what: 'Everything HR keeps about you: personal and contact details, address, emergency contacts, education, previous employment, skills, bank and identity details, and your job details.',
+      how: 'Open a section and press Update. Your changes go to HR for approval and your current details stay until HR approves. Bank and identity numbers are shown masked.',
+      where: 'From your avatar menu. You are notified when HR approves, rejects or asks about an update.',
+    },
+    '/profile/[employeeId]': {
+      title: 'Employee profile',
+      what: 'One employee\u2019s complete profile, as far as your role lets you see it.',
+      how: 'HR can change a section directly with Edit; the employee is told and the change is audited. Bank and identity details need finance or HR access.',
+      where: 'Opened from an employee record.',
+    },
+    '/profile/updates': {
+      title: 'Profile updates',
+      what: 'Changes employees submitted to their profiles, waiting for HR review, and every earlier update.',
+      how: 'Open one to compare old and new values, then approve, reject or ask for more information.',
+      where: 'For HR. The same updates also show in Approvals.',
+    },
+    '/profile/updates/[id]': {
+      title: 'Profile update',
+      what: 'One profile update: what is on record now, what the employee submitted, any proof they attached, and its history.',
+      how: 'Approve to update the official record at once, or reject or ask for information with remarks the employee will see.',
+      where: 'Opened from Profile updates, Approvals or a notification.',
     },
     '/announcements': {
       title: 'Announcements',
-      what: 'Company news published to you by HR or internal communications.',
-      how: 'Open an announcement to read it. If it asks you to acknowledge, press Acknowledge once you have read it.',
+      what: 'Company news published to you by HR or internal communications, with urgent ones and pinned ones first.',
+      how: 'Open an announcement to read it and download its files. Filter by category or show only unread ones. If it asks you to acknowledge, press I have read this; if HR changes it later you may be asked again.',
       where: 'For everyone. New announcements also appear on Home and in notifications.',
     },
     '/announcements/[id]': {
@@ -114,14 +246,26 @@ export const WEB_HELP: HelpContent = {
     },
     '/announcements/manage': {
       title: 'Manage announcements',
-      what: 'Write, target and publish announcements to the whole company or to one entity, department or location.',
-      how: 'Create a draft, choose the audience, then publish. After publishing the text cannot change, so check it first.',
+      what: 'Write, target, schedule and publish announcements to everyone or to departments, designations, groups and chosen people.',
+      how: 'Create one, choose the audience, category and priority, then publish now or schedule it. Edit, archive or delete it later; edits after publishing are saved as new versions.',
       where: 'For HR and internal communications.',
     },
     '/announcements/manage/[id]': {
       title: 'Announcement details',
       what: 'The message you published and who has read or acknowledged it.',
-      how: 'Use the People list to follow up with anyone who has not acknowledged yet.',
+      how: 'Use the People list, or Remind, to follow up with anyone who has not acknowledged yet. Edit, unschedule, archive or delete it from here.',
+      where: 'For the people who manage announcements.',
+    },
+    '/announcements/manage/new': {
+      title: 'New announcement',
+      what: 'Write an announcement with formatting and files, and choose who it is for.',
+      how: 'Pick the audience, category and priority, write it, then save a draft, publish now or schedule it for later. Urgent ones are also emailed.',
+      where: 'For the people who manage announcements.',
+    },
+    '/announcements/manage/[id]/edit': {
+      title: 'Edit announcement',
+      what: 'Change a draft, a scheduled announcement or a published one.',
+      how: 'For a published one, changes to the wording, audience or files are saved as a new version. Tick Ask everyone to acknowledge again if the change matters.',
       where: 'For the people who manage announcements.',
     },
     '/helpdesk': {
@@ -174,9 +318,15 @@ export const WEB_HELP: HelpContent = {
     },
     '/leave': {
       title: 'Leave',
-      what: 'Your leave balances, your requests and who is away soon.',
-      how: 'Press Request time off, choose the type and dates, and send. Your approver is notified; you can cancel while it is pending.',
-      where: 'For every employee. Managers also see their team’s requests here.',
+      what: 'Your leave balances, your month or year calendar, your requests and who is away soon.',
+      how: 'Press Apply for leave, choose the type and dates, and send. Change or cancel a request while it waits. A change to approved leave replaces it once approved. Year view shows all twelve months.',
+      where: 'For every employee. Managers also see their team’s requests here, and Team balances shows what their people have left.',
+    },
+    '/leave/balances': {
+      title: 'Leave balances',
+      what: 'What everyone you can see has available for each leave type, and every manual adjustment with its remark.',
+      how: 'Filter by department or search a name. Adjust adds or deducts days with a required remark the person sees (comp-off is credited this way). Adjustment history lists every change.',
+      where: 'For managers (their team) and HR (their scope).',
     },
     '/payslips': {
       title: 'Payslips',
@@ -600,7 +750,7 @@ export const WEB_HELP: HelpContent = {
     },
     '/settings/attendance': {
       title: 'Attendance settings',
-      what: 'Shifts, punching rules, payroll locks and QR kiosks.',
+      what: 'Shifts, punching rules, late-coming reminders, attendance rewards, payroll locks and QR kiosks.',
       how: 'Set the rules once. Geofences are set on each location under Organization. Every change is audited.',
       where: 'For HR operations.',
     },
@@ -619,7 +769,7 @@ export const WEB_HELP: HelpContent = {
     '/settings/leave': {
       title: 'Leave settings',
       what: 'Leave types, who gets how much, holiday calendars and the approval chain.',
-      how: 'Create leave types and policies, assign holiday calendars, and set who approves.',
+      how: 'Add standard types (maternity, comp-off, work from home and more) or your own. Give each a policy for everyone or by entity, department, designation or location; the most specific wins. Set up to five approval steps.',
       where: 'For HR, usually at setup and the start of each leave year.',
     },
     '/settings/onboarding': {
@@ -636,8 +786,8 @@ export const WEB_HELP: HelpContent = {
     },
     '/settings/recruitment': {
       title: 'Recruitment settings',
-      what: 'Your hiring pipeline stages and public career site.',
-      how: 'Add, rename or reorder stages. Stages are shared by every job.',
+      what: 'Your hiring pipeline stages, public career site and who approves new job requisitions.',
+      how: 'Add, rename or reorder stages. Stages are shared by every job. Set the requisition approval chain at the top.',
       where: 'For recruitment admins.',
     },
     '/settings/helpdesk': {
@@ -733,6 +883,21 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    'Request details': { what: 'The request ID, its type, when and by whom it was submitted, its status and who decides it now.' },
+    'Supporting documents': { what: 'Files attached to the request, such as a receipt. Opening one is recorded.' },
+    'Your decision': { what: 'Approve or reject this request. Your remarks are shared with the person who asked.', how: 'Remarks are needed when you reject.' },
+    'Approval history': { what: 'Every step of the approval chain in order: who decided it, when, and their remarks, then the final decision.' },
+    'Messages to HR waiting for a reply': { what: 'Conversations where an employee wrote to HR last. Anyone in the HR team can answer.' },
+    'Recent emails': { what: 'The latest emails HR sent, with how many copies were delivered.' },
+    Message: { what: 'The email as people received it, with its attachments.' },
+    Delivery: { what: 'Each copy of the email and whether the email provider sent it.', how: '"Not sent" means email delivery is not set up for SampCrew; people can still read it in Communication.' },
+    Emails: { what: 'Emails HR sent this person and whether each was delivered.' },
+    'Conversation with HR': { what: 'The person\'s chat with the HR team.' },
+    'Help requests': { what: 'The person\'s Ask HR cases and their status.' },
+    'What you are told about': { what: 'Each category of notification, in SampCrew and by email.', how: 'Switch a category off to stop it. Approvals and workspace notices always show in SampCrew.' },
+    Sound: { what: 'A short, quiet tone for new notices while SampCrew is open. It never plays when a page loads.', how: 'Switch it on, set the volume and which notices make a sound, and try the preview.' },
+    'Pop-ups': { what: 'A small pop-up in the corner when a notice arrives while SampCrew is open.' },
+    'Approval categories': { what: 'The cards on the Approvals page. Built-in ones cover the usual requests; yours are checked first.', how: 'Add a category for some request types, leave types or expense categories.' },
     // HR Workspace Admin, assets and verification
     'Module access': { what: 'Every module in your plan and whether it is on for this workspace.', how: 'Switch a module off to hide it for everyone. Core modules are always on.' },
     'Permission matrix': { what: 'What each role can do in each module: View, Create, Edit, Delete, Approve, Export and Manage.', how: 'Pick a role to change its permissions. Workspace Owner always has everything.' },
@@ -1065,6 +1230,86 @@ export const WEB_HELP: HelpContent = {
   },
 
   routes: {
+    '/tasks': {
+      sections: {
+        'HR tasks': { what: 'Tasks HR gave you that are still open or waiting for review.', how: 'Open one to work on it. Document tasks are done once HR verifies your upload.' },
+        'Manager tasks': { what: 'Tasks from your reporting manager that are still open or waiting for review.', how: 'Open one, update its progress, then send it for review or mark it completed.' },
+        'Completed and cancelled': { what: 'Your finished tasks and ones that were called off, with their history.' },
+        'Tasks I assign': { what: 'Tasks you assigned, and tasks of the people whose tasks you look after.', how: 'Open one in Pending review to accept it or send it back with a reason.' },
+        'Documents to verify': { what: 'Documents employees uploaded for HR tasks, waiting for your check.', how: 'Open one, download the file, then verify it or reject it with what to fix.', where: 'The same checks are in Approvals as Document verification.' },
+        'Onboarding tasks': { what: 'Onboarding checklist items for new joiners assigned to you.', how: 'Tick an item when it is done.' },
+      },
+    },
+    '/tasks/[id]': {
+      sections: {
+        Details: { what: 'What the task is, who it is for, who assigned it and when it is due.' },
+        Document: { what: 'The document this task asks for, the accepted formats and size, the latest upload and HR’s check.', how: 'Choose a file and upload it. If HR rejects it, read their note and upload again.' },
+        Actions: { what: 'What you can do with the task now.', how: 'Employees start, send for review or complete; the assigner accepts, reopens or cancels.' },
+        History: { what: 'Every change to the task: who did what, when, and their remarks.' },
+      },
+    },
+    '/appraisal': {
+      sections: {
+        'Team appraisals': { what: 'Appraisals of the people who report to you.', how: 'Open one after the person submits their self-appraisal and give your scores and comments.' },
+        'Waiting for HR': { what: 'Appraisals whose manager evaluation is in, and finalised ones not yet shared.', how: 'Open one to review, adjust final scores with a reason, finalise and share.' },
+        'Previous appraisals': { what: 'Your earlier appraisals with their final percentage and category.' },
+      },
+    },
+    '/appraisal/[id]': {
+      sections: {
+        'Rating scale': { what: 'What each score range means on this form.' },
+        'Final percentage': { what: 'The calculated result and, if HR records a different approved percentage, the reason for it.', how: 'Leave the box empty to use the calculated percentage.' },
+        Result: { what: 'The self, manager and final percentages and the performance category, as far as you can see them now.' },
+        'Performance categories': { what: 'The category each final percentage range falls in. Yours is highlighted once known.' },
+        Timeline: { what: 'Every step of this appraisal: who submitted, reopened or shared it, and when.' },
+      },
+    },
+    '/settings/appraisals': {
+      sections: {
+        'Appraisal forms': { what: 'Your forms, who each one is for and its version.', how: 'Open one to change it, copy it to start a variant, or remove one no cycle uses.' },
+        'Appraisal cycles': { what: 'Each cycle, its status, period and progress.', how: 'Create a cycle, then open it to launch it.' },
+      },
+    },
+    '/settings/appraisals/forms/[id]': {
+      sections: {
+        'Form settings': { what: 'The form name, title, introduction and who it is for when a cycle picks forms by rule.' },
+        'Sections and questions': { what: 'Every section and question, in order, with weights for rated questions.', how: 'Add, move, switch off or remove sections and questions. Weights decide how much each question counts.' },
+        'Rating scale': { what: 'The lowest and highest score and the meaning of each range.' },
+        'Performance categories': { what: 'The categories by final percentage, such as Very Good Performance from 85%.' },
+        'Final score': { what: 'Whose score becomes the final one: the manager, HR, or a weighted mix.' },
+      },
+    },
+    '/settings/appraisals/cycles/[id]': {
+      sections: {
+        'Cycle status': { what: 'Whether the cycle is a draft, running or closed, and its deadlines.', how: 'Launch, share finalised results or close it from here.' },
+        'Appraisals in this cycle': { what: 'Each person in the cycle, their stage and scores.', how: 'Open one to see or review it.' },
+      },
+    },
+    '/profile': {
+      sections: { 'Professional details': { what: 'Your job details as HR keeps them: employee ID, designation, department, manager, joining date, location, shift and working days.', how: 'These are HR managed. Ask HR if something is wrong.' } },
+    },
+    '/profile/[employeeId]': {
+      sections: { 'Professional details': { what: 'The employee\u2019s job details as HR keeps them.', how: 'Change them from the employee record (transfer, promotion and so on).' } },
+    },
+    '/profile/updates/[id]': {
+      sections: {
+        'Old and new values': { what: 'Each changed field, what is on record now and what the employee submitted.' },
+        'Supporting documents': { what: 'Certificates and proofs the employee attached to this update.', how: 'Open them to check the new values.' },
+        'Your decision': { what: 'Approve, reject or ask for more information.', how: 'Remarks are needed to reject or ask, and the employee sees them.' },
+        'HR remarks': { what: 'What HR said when deciding this update.' },
+        History: { what: 'Every step of this update, with who and when.' },
+      },
+    },
+    '/': {
+      sections: {
+        'This month': { what: 'Your attendance this month so far: days present, late, absent, on leave, missing punches and hours worked.', where: 'Open Attendance for each day in detail.' },
+        'Attendance rewards': { what: 'The rewards HR set, such as perfect attendance and always on time, and how you are doing this month.', how: 'Holidays and weekly offs never count, and leave of the types HR excuses (sick leave by default) does not break a reward.' },
+        'My calendar': { what: 'Your month: holidays, weekly offs, your leave and your task and appraisal deadlines.', how: 'Pick a day to see what is on it; use the arrows for other months.' },
+      },
+    },
+    '/settings/attendance': {
+      sections: { 'Attendance rewards': { what: 'The monthly rewards employees see on Home, such as perfect attendance and always on time.', how: 'Add the standard rules or your own: late days allowed, working days needed, and which leave types never break a reward (sick leave by default).' }, 'Reward winners': { what: 'Who earned each active reward in a finished month, worked out from the same attendance days people see.', how: 'Move between months with the arrows and download the list to Excel, for example to hand out certificates or add a bonus in payroll.' } },
+    },
     '/settings/signature': {
       sections: { Preview: { what: 'Your signature exactly as Outlook will show it, and how your computers keep it up to date.', how: 'Save to send it to your computers. "Sync my computers" makes them install it again.' } },
     },
