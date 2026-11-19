@@ -345,3 +345,9 @@ export interface ProfileUpdateDetail extends ProfileUpdate {
   documents: { id: string; title: string; fileName: string; category: string }[];
   approvalTrail: { seq: number; status: string; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null; role: string | null }[];
 }
+
+// Employee workspace: attendance rewards and calendar
+export interface RewardRule { id: string; name: string; kind: 'perfect_attendance' | 'punctuality'; description: string | null; icon: 'trophy' | 'medal' | 'star' | 'clock'; active: boolean; maxLateDays: number; excusedLeaveTypeIds: string[]; allowHalfDays: boolean; minWorkingDays: number }
+export interface RewardResult extends RewardRule { status: 'earned' | 'on_track' | 'missed' | 'not_eligible'; done: number; total: number; reason: string | null }
+export interface MyRewards { month: string; complete: boolean; rewards: RewardResult[]; history: { month: string; earned: { id: string; name: string; icon: string }[] }[] }
+export interface MyCalendar { month: string; today: string; days: { date: string; dayType: string; holidayName: string | null; events: { kind: string; title: string; href: string; status?: string; color?: string | null }[] }[] }

@@ -6,6 +6,8 @@ import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { WorkspaceService } from './workspace.service';
 
+const rewardsQuery = rewardMonthQuery.extend({ history: z.enum(['0', '1']).optional() });
+
 /** The employee's own workspace: attendance rewards and the month calendar. */
 @Controller('workspace')
 export class WorkspaceController {
@@ -13,9 +15,9 @@ export class WorkspaceController {
 
   @Get('rewards')
   @RequireFeature('attendance_basic')
-  @Doc({ summary: 'My attendance rewards for a month (this month by default) and the last six months', query: rewardMonthQuery })
-  rewards(@Query(new ZodPipe(rewardMonthQuery)) q: z.infer<typeof rewardMonthQuery>) {
-    return this.workspace.rewards(q.month);
+  @Doc({ summary: 'My attendance rewards for a month (this month by default) and, unless history=0, the last six months', query: rewardsQuery })
+  rewards(@Query(new ZodPipe(rewardsQuery)) q: z.infer<typeof rewardsQuery>) {
+    return this.workspace.rewards(q.month, q.history !== '0');
   }
 
   @Get('reward-rules')

@@ -84,8 +84,8 @@ export const WEB_HELP: HelpContent = {
   pages: {
     '/': {
       title: 'Home',
-      what: 'Your dashboard: what needs you today, key workforce numbers, announcements, your tasks and shortcuts.',
-      how: 'Work through the items that need attention from the top. Use Customize to add, move or hide cards.',
+      what: 'Your dashboard: clock in and out, your hours, leave balances, attendance this month, rewards, your calendar and tasks, then what needs you today, key numbers, announcements and shortcuts.',
+      how: 'Clock in at the top when you start and clock out when you finish. Work through the items that need attention. Use Customize to add, move or hide the cards below.',
       where: 'Open it at the start of the day. The cards you see follow your role.',
     },
     '/approvals': {
@@ -660,7 +660,7 @@ export const WEB_HELP: HelpContent = {
     },
     '/settings/attendance': {
       title: 'Attendance settings',
-      what: 'Shifts, punching rules, payroll locks and QR kiosks.',
+      what: 'Shifts, punching rules, late-coming reminders, attendance rewards, payroll locks and QR kiosks.',
       how: 'Set the rules once. Geofences are set on each location under Organization. Every change is audited.',
       where: 'For HR operations.',
     },
@@ -1105,6 +1105,16 @@ export const WEB_HELP: HelpContent = {
         'HR remarks': { what: 'What HR said when deciding this update.' },
         History: { what: 'Every step of this update, with who and when.' },
       },
+    },
+    '/': {
+      sections: {
+        'This month': { what: 'Your attendance this month so far: days present, late, absent, on leave, missing punches and hours worked.', where: 'Open Attendance for each day in detail.' },
+        'Attendance rewards': { what: 'The rewards HR set, such as perfect attendance and always on time, and how you are doing this month.', how: 'Holidays and weekly offs never count, and leave of the types HR excuses (sick leave by default) does not break a reward.' },
+        'My calendar': { what: 'Your month: holidays, weekly offs, your leave and your task and appraisal deadlines.', how: 'Pick a day to see what is on it; use the arrows for other months.' },
+      },
+    },
+    '/settings/attendance': {
+      sections: { 'Attendance rewards': { what: 'The monthly rewards employees see on Home, such as perfect attendance and always on time.', how: 'Add the standard rules or your own: late days allowed, working days needed, and which leave types never break a reward (sick leave by default).' } },
     },
     '/settings/signature': {
       sections: { Preview: { what: 'Your signature exactly as Outlook will show it, and how your computers keep it up to date.', how: 'Save to send it to your computers. "Sync my computers" makes them install it again.' } },

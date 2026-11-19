@@ -49,6 +49,10 @@ export function HomeDashboard(props: {
   access: { key: string; description: string; scope: string }[];
   plan: { name: string | null; status: string | null; included: number; total: number; maxEmployees: number; canView: boolean };
   actions: QuickAction[];
+  /** Interviews only show for people who work on hiring; employees never see interview widgets. */
+  recruiter?: boolean;
+  /** The person's own day, shown first. */
+  myDay?: React.ReactNode;
 }) {
   const { dashboard: d } = props;
   const { openThemes, openAssistant } = useExperience();
@@ -65,7 +69,9 @@ export function HomeDashboard(props: {
       case 'helpdesk': return Boolean(props.helpdesk);
       case 'setup': return props.steps.length > 0;
       case 'headcount': return Boolean(d && (d.funnel || d.attendance));
-      case 'attention': case 'tasks': return Boolean(d);
+      case 'attention': return Boolean(d);
+      // The My day panel already shows HR and manager tasks for an employee.
+      case 'tasks': return Boolean(d) && !props.myDay;
       default: return true;
     }
   };
@@ -97,10 +103,10 @@ export function HomeDashboard(props: {
 
   const render = (w: DashboardWidget) => {
     switch (w) {
-      case 'attention': return <AttentionWidget items={d!.attention} />;
+      case 'attention': return <AttentionWidget items={props.recruiter ? d!.attention : d!.attention.filter((a) => a.kind !== 'interview')} />;
       case 'announcements': return <AnnouncementsWidget news={props.news!} />;
       case 'headcount': return <WorkforceWidget d={d!} />;
-      case 'tasks': return <TasksWidget items={d!.attention.filter((a) => a.kind === 'task' || a.kind === 'interview')} />;
+      case 'tasks': return <TasksWidget items={d!.attention.filter((a) => a.kind === 'task' || (props.recruiter && a.kind === 'interview'))} />;
       case 'recent': return <RecentWidget />;
       case 'quick-actions': return <QuickActionsWidget actions={props.actions} />;
       case 'notes': return <NotesWidget initial={props.notes} />;
@@ -141,8 +147,9 @@ export function HomeDashboard(props: {
         </div>
       </div>
 
+      {props.myDay}
       {d && d.kpis.length > 0 && <KpiStrip kpis={d.kpis} />}
-      {d && <Spotlight d={d} actions={props.actions} openAssistant={openAssistant} />}
+      {d && <Spotlight d={d} actions={props.actions} openAssistant={openAssistant} recruiter={!!props.recruiter} />}
       {!d && <Card className="mb-6 p-5 text-[0.8125rem] text-fg-muted">The dashboard could not load just now. Your pages in the menu still work.</Card>}
 
       {editing && <p className="mb-3 text-[0.8125rem] text-fg-muted">Drag widgets to reorder them, or use the arrow buttons. Hidden widgets stay here while you edit.</p>}
@@ -253,7 +260,7 @@ function KpiStrip({ kpis }: { kpis: Kpi[] }) {
 
 const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function Spotlight({ d, actions, openAssistant }: { d: Dashboard; actions: QuickAction[]; openAssistant: (() => void) | null }) {
+function Spotlight({ d, actions, openAssistant, recruiter }: { d: Dashboard; actions: QuickAction[]; openAssistant: (() => void) | null; recruiter: boolean }) {
   const head = d.kpis.find((k) => k.key === 'headcount');
   const m = Number(d.today.slice(5, 7)) - 1;
   const trend = head?.trend?.map((value, i, all) => ({ label: MONTH[(m - (all.length - 1 - i) + 120) % 12]!, value })) ?? [];
@@ -264,7 +271,7 @@ function Spotlight({ d, actions, openAssistant }: { d: Dashboard; actions: Quick
   const highlights = [
     { label: 'Pending approvals', value: d.counts.approvals, href: '/approvals', icon: Inbox, tone: 'text-accent' },
     ...(d.attendance ? [{ label: 'Attendance exceptions', value: d.attendance.missing + d.attendance.absent, href: '/attendance/team?status=missing_punch', icon: Zap, tone: 'text-danger' }] : []),
-    { label: 'Interviews this week', value: d.counts.interviews, href: '/recruitment/interviews', icon: CalendarClock, tone: 'text-info' },
+    ...(recruiter ? [{ label: 'Interviews this week', value: d.counts.interviews, href: '/recruitment/interviews', icon: CalendarClock, tone: 'text-info' }] : []),
     { label: 'Open tasks', value: d.counts.tasks, href: '/tasks', icon: ClipboardCheck, tone: 'text-success' },
   ];
   return (
@@ -491,7 +498,7 @@ function WorkforceWidget({ d }: { d: Dashboard }) {
 function TasksWidget({ items }: { items: AttentionItem[] }) {
   return (
     <Card className="h-full">
-      <CardHeader title="My tasks" description={items.length ? `${items.length} coming up` : 'No open tasks or interviews'} action={<Link href="/tasks" className={buttonClass('secondary', 'sm')}>All tasks</Link>} />
+      <CardHeader title="My tasks" description={items.length ? `${items.length} coming up` : 'Nothing coming up'} action={<Link href="/tasks" className={buttonClass('secondary', 'sm')}>All tasks</Link>} />
       <ul className="divide-y divide-border pb-1">
         {items.slice(0, 6).map((i) => (
           <li key={i.key} className="flex items-center gap-3 px-5 py-2 text-[0.8125rem]">
@@ -500,7 +507,7 @@ function TasksWidget({ items }: { items: AttentionItem[] }) {
             {i.at && <span className={cn('shrink-0 text-xs', i.overdue ? 'text-danger' : 'text-fg-subtle')}>{when(i.at)}</span>}
           </li>
         ))}
-        {!items.length && <li className="px-5 pb-4 text-[0.8125rem] text-fg-muted">When someone assigns you an onboarding task or an interview, it appears here.</li>}
+        {!items.length && <li className="px-5 pb-4 text-[0.8125rem] text-fg-muted">When someone assigns you a task, it appears here.</li>}
       </ul>
     </Card>
   );

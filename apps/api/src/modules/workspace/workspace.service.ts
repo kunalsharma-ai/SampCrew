@@ -110,7 +110,7 @@ export class WorkspaceService {
   // Rewards -------------------------------------------------------------------------------------------------------
 
   /** My rewards for a month (this month by default), with the last six months' results. */
-  async rewards(month?: string) {
+  async rewards(month?: string, withHistory = true) {
     const { e, rules, today } = await this.db.tenant(async (tx) => {
       const e = await this.myEmployee(tx);
       const rules = (await tx.collection('attendance_reward_rules').find({ active: true }, { sort: { created_at: 1 } })).map(ruleView);
@@ -132,7 +132,7 @@ export class WorkspaceService {
     };
     const results = await evaluate(target);
     const history: { month: string; earned: { id: string; name: string; icon: string }[] }[] = [];
-    if (rules.length) {
+    if (rules.length && withHistory) {
       let m = prevMonth(target);
       for (let i = 0; i < 6; i++, m = prevMonth(m)) {
         const r = await evaluate(m);
