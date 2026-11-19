@@ -87,14 +87,14 @@ pnpm e2e:ai         # AI, Automation Studio and attrition flow against the local
 pnpm e2e:console    # browser test of the console, including support access across both apps (fresh db, API + web + console)
 pnpm e2e:a11y       # accessibility (axe-core, WCAG 2.1 A and AA) on 33 web, console and mobile screens, light and dark
 pnpm load-test:workflows  # hiring, salaries and payroll at scale, then punches, leave and helpdesk concurrently (fresh db; API with API_RATE_LIMIT_PER_MINUTE=1000000)
-pnpm e2e:deploy     # builds the production images and tests infra/deploy/compose.yml from outside (needs Docker)
+pnpm e2e:deploy     # builds the production images and tests infra/stack/compose.yml from outside (needs Docker)
 ```
 
 CI runs all of these on every pull request.
 
 ## Running in production
 
-`infra/deploy/` has everything to run SampCrew on a host with Docker: one Dockerfile for the API, Web Portal, Console and
+`infra/stack/` has everything to run SampCrew on a host with Docker: one Dockerfile for the API, Web Portal, Console and
 the tools image (migrations, backups, restore), a compose file with a TLS proxy, a MongoDB replica set, Redis and daily encrypted
 backups, an environment template and a secret generator. The steps, upgrades, rollback, restore and secret rotation
 are in [docs/ops/runbook.md](docs/ops/runbook.md); the security review is in

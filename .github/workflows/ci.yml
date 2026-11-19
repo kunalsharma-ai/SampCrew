@@ -253,7 +253,7 @@ jobs:
         run: tail -n 200 api.log web.log console.log stub.log || true
 
   deploy:
-    # Builds the production images and runs infra/deploy/compose.yml as a real stack (TLS proxy, MongoDB, Redis,
+    # Builds the production images and runs infra/stack/compose.yml as a real stack (TLS proxy, MongoDB, Redis,
     # migration job, backups), then checks it from outside and restores a backup into a new database.
     runs-on: ubuntu-latest
     needs: test
@@ -267,10 +267,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - name: Production stack smoke test
-        run: infra/deploy/smoke.sh
+        run: infra/stack/smoke.sh
       - name: Stack logs
         if: failure()
-        run: grep -v -e RouterExplorer -e RoutesResolver infra/deploy/smoke-logs.txt | tail -n 300 || true
+        run: grep -v -e RouterExplorer -e RoutesResolver infra/stack/smoke-logs.txt | tail -n 300 || true
   malware-scan:
     # The upload scanning tests (apps/api/test/gaps.spec.ts) against a real ClamAV daemon with current signatures,
     # instead of the protocol stub the "test" job uses. ClamAV downloads its signatures when the container starts.

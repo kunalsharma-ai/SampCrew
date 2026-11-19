@@ -14,9 +14,13 @@ next-env.d.ts
 dist-web/
 .expo/
 *-failure.png
-# Deployment folder: each server keeps its own deployment files (compose overrides, proxy config, logs, keys).
-# Nothing new in it is committed; the install kit already in git (compose.yml, scripts/, smoke.sh) stays tracked,
-# because the Docker images, CI and the install package use it. Add a shared file with `git add -f`.
+# The deployment folder belongs to each server (its compose file, proxy config, .env, keys, logs, backups) and is
+# never committed. Start one from the reference stack: cp -r infra/stack infra/deploy (docs/ops/runbook.md).
 /deploy/
-infra/deploy/*
-!infra/deploy/scripts/
+infra/deploy/
+# Files the reference stack's smoke test writes.
+infra/stack/.env
+infra/stack/.env.smoke
+infra/stack/smoke-logs.txt
+infra/stack/offsite.env
+infra/stack/backups/
