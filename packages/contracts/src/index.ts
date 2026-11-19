@@ -68,3 +68,4 @@ export * from './signature-occasions';
 export * from './discipline';
 export * from './notifications';
 export * from './approval-categories';
+export * from './communication';

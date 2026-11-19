@@ -170,7 +170,8 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
         e.preventDefault();
         void update({ focusMode: !appearance.focusMode });
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target instanceof HTMLElement && e.target.isContentEditable))) {
+        // (In the rich-text editor Ctrl+B is bold.)
         e.preventDefault();
         void update({ sidebar: collapsed ? 'expanded' : 'collapsed' });
       }

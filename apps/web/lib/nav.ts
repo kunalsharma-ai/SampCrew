@@ -33,8 +33,8 @@ export const NAV: NavGroup[] = [
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks', feature: 'onboarding' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
-      { href: '/helpdesk', label: 'Ask HR', icon: 'life-buoy', permission: 'helpdesk:use', feature: 'helpdesk', hiddenWith: 'helpdesk:manage' },
-      { href: '/helpdesk/queue', label: 'HR helpdesk', icon: 'headset', permission: 'helpdesk:manage', feature: 'helpdesk' },
+      // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
+      { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
     ],
   },
   {

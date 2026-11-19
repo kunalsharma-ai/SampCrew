@@ -189,7 +189,7 @@ describe('Phase 12 production readiness', () => {
     // reviewed and added here on purpose. Each one does its own check: a signed link, a one-time token, a device key,
     // a kiosk token, or it is a sign-in step, a health probe or a public careers or proposal page.
     const REVIEWED_PUBLIC = [
-      'GET /auth/invitations/:token', 'GET /auth/sso/saml/metadata', 'GET /files/:id', 'GET /files/receipts/:id', 'GET /files/resumes/:id',
+      'GET /auth/invitations/:token', 'GET /auth/sso/saml/metadata', 'GET /files/:id', 'GET /files/comm/:id', 'GET /files/receipts/:id', 'GET /files/resumes/:id',
       'GET /health/live', 'GET /health/ready', 'GET /iclock/cdata', 'GET /iclock/getrequest', 'GET /kiosk/qr',
       'GET /public/careers/:site', 'GET /public/careers/:site/jobs/:job', 'GET /public/proposals/:token', 'GET /public/proposals/:token/proposal.pdf',
       'POST /auth/initial-password', 'POST /auth/invitations/accept', 'POST /auth/login', 'POST /auth/mfa/verify', 'POST /auth/refresh', 'POST /auth/select-tenant', 'POST /auth/signup',

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { armAudioUnlock, playNotificationSound } from '@/lib/notification-sound';
 import { markNotificationReadAction } from '@/app/(app)/shell-actions';
+import { deliveredAction } from '@/app/(app)/communication/actions';
 
 type Handler = (data: any) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -119,10 +120,13 @@ export function LiveProvider({ initial, prefs: initialPrefs, children }: { initi
     let fallback: ReturnType<typeof setInterval> | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let failures = 0;
+    let lastDelivered = 0;
     let closed = false;
     const connect = () => {
       es = new EventSource('/live');
       es.addEventListener('ready', () => {
+        // Messages that arrived while this browser was away are delivered now.
+        void deliveredAction().catch(() => undefined);
         failures = 0;
         setConnected(true);
         if (fallback) {
@@ -150,6 +154,11 @@ export function LiveProvider({ initial, prefs: initialPrefs, children }: { initi
         es.addEventListener(type, (e) => {
           const d = JSON.parse((e as MessageEvent).data);
           if (type === 'notifications.read' && typeof d.unread === 'number') setUnread(d.unread);
+          // A chat message reached this browser: tell the sender it was delivered (at most every few seconds).
+          if (type === 'chat.message' && Date.now() - lastDelivered > 3000) {
+            lastDelivered = Date.now();
+            void deliveredAction().catch(() => undefined);
+          }
           emit(type, d);
         });
       }

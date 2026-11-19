@@ -1,3 +1,4 @@
+import type { AnnouncementCategory, AnnouncementPriority, AnnouncementStatus, AudienceInput } from '@crew/contracts';
 export type TargetState = 'none' | 'on_time' | 'due_soon' | 'overdue' | 'met' | 'missed';
 
 export interface Category {
@@ -54,25 +55,43 @@ export interface CaseDetail extends CaseRow {
 
 export interface Summary { mine: { open: number; waiting: number; resolved: number }; assignedToMe: number | null; queue: { awaitingHr: number; unassigned: number } | null }
 
+export interface AnnouncementFile { id: string; name: string; type: string; size: number; href: string }
+
 export interface Announcement {
   id: string;
   title: string;
   body: string;
+  /** Rich text, cleaned on the server (older announcements have only plain text). */
+  html: string | null;
+  audience: AudienceInput | null;
+  audienceLabel: string;
   legalEntityId: string | null;
   legalEntityName: string | null;
   departmentId: string | null;
   departmentName: string | null;
   locationId: string | null;
   locationName: string | null;
+  category: AnnouncementCategory;
+  categoryLabel: string;
+  priority: AnnouncementPriority;
+  files: AnnouncementFile[];
   requiresAck: boolean;
   pinned: boolean;
-  status: 'draft' | 'published' | 'archived';
+  status: AnnouncementStatus;
   publishedAt: string | null;
+  publishAt: string | null;
   expiresOn: string | null;
   createdAt: string;
   publishedByName: string | null;
+  scheduledByName: string | null;
+  version: number;
+  editedAt: string | null;
+  editedByName: string | null;
+  deletedAt: string | null;
   readAt?: string | null;
   acknowledgedAt?: string | null;
+  acknowledgedEarlierAt?: string | null;
+  needsAck?: boolean;
   readCount?: number;
   ackCount?: number;
   audienceSize?: number;

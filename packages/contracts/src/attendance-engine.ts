@@ -49,6 +49,8 @@ export interface DayInput {
   shift: ShiftRule | null;
   dayType: DayType;
   leave: LeavePart | null;
+  /** Approved work from home: the covered part of the day counts as worked, with or without punches. */
+  remote?: LeavePart | null;
   punches: EnginePunch[];
   /** Instant now; a day whose window has not closed yet is "in progress" rather than absent or missing a punch. */
   now: number;
@@ -164,6 +166,10 @@ export function computeDay(input: DayInput): DayResult {
     return empty(input.dayType === 'holiday' ? 'holiday' : 'weekly_off', input.dayType === 'holiday' ? 'Holiday.' : 'Weekly off.');
   }
   if (input.leave === 'full' && !intervals.length && !orphanOut) return empty('on_leave', 'On approved leave for the full day.');
+  const remote = input.leave ? null : (input.remote ?? null);
+  if (remote === 'full' && !isOff && !intervals.length && !orphanOut) return empty('present', 'Working from home (approved), so the day counts as present.');
+  // The part of the day that is covered, by leave or by working from home.
+  const part = input.leave ?? remote;
 
   // 4. Scheduled unpaid break.
   const halfMin = s?.halfDayMinutes ?? 240;
@@ -184,14 +190,14 @@ export function computeDay(input: DayInput): DayResult {
     const end = start + shiftLength(s) * 60_000;
     const lateBy = mins(firstIn - start);
     // Half-day leave in the first half excuses a late start; in the second half it excuses leaving early.
-    if (lateBy > s.graceLateMinutes && input.leave !== 'first_half') {
+    if (lateBy > s.graceLateMinutes && part !== 'first_half') {
       late = lateBy;
       flags.add('late');
       explanation.push(`Arrived at ${clock(firstIn)}, ${lateBy} minutes after the shift start of ${fmtHhmm(s.startMinutes)} (grace ${s.graceLateMinutes} min).`);
     }
     if (lastOut !== null) {
       const earlyBy = mins(end - lastOut);
-      if (earlyBy > s.graceEarlyMinutes && input.leave !== 'second_half') {
+      if (earlyBy > s.graceEarlyMinutes && part !== 'second_half') {
         early = earlyBy;
         flags.add('early_leave');
         explanation.push(`Left at ${clock(lastOut)}, ${earlyBy} minutes before the shift end of ${fmtHhmm(s.endMinutes)} (grace ${s.graceEarlyMinutes} min).`);
@@ -228,12 +234,12 @@ export function computeDay(input: DayInput): DayResult {
       explanation.push('No punches yet today.');
     } else {
       status = 'absent';
-      explanation.push(input.leave ? 'No punches on the half of the day not covered by leave.' : 'No punches on a working day.');
+      explanation.push(part ? 'No punches on the half of the day not covered by leave.' : 'No punches on a working day.');
     }
   } else if (incomplete) {
     status = 'missing_punch';
     explanation.push('A punch is missing, so the day needs a correction before it counts.');
-  } else if (input.leave === 'first_half' || input.leave === 'second_half') {
+  } else if (part === 'first_half' || part === 'second_half') {
     if (worked >= halfMin) {
       status = 'half_day_leave';
       explanation.push(`Half-day leave plus ${worked} minutes worked (half day needs ${halfMin}).`);
@@ -253,6 +259,20 @@ export function computeDay(input: DayInput): DayResult {
     status = 'absent';
     flags.add('short_hours');
     explanation.push(`Worked only ${worked} minutes, less than the ${halfMin} needed for a half day.`);
+  }
+
+  // Working from home counts as worked time, so it never turns into leave or an absence.
+  if (remote === 'full' && !isOff && status !== 'in_progress' && status !== 'missing_punch') {
+    status = 'present';
+    explanation.push('Working from home (approved) for the full day.');
+  } else if ((remote === 'first_half' || remote === 'second_half') && !isOff) {
+    if (status === 'half_day_leave') {
+      status = 'present';
+      explanation.push('Worked from home for the other half (approved).');
+    } else if (status === 'absent') {
+      status = 'half_day';
+      explanation.push('Worked from home for half the day (approved).');
+    }
   }
 
   return {

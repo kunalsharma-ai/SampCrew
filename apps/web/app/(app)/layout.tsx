@@ -22,10 +22,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     handlesHelpdesk ? loadOptional<{ queue: { awaitingHr: number } | null }>('/helpdesk/summary') : Promise.resolve(null),
     loadOptional<NotificationPreferences>('/notifications/preferences'),
   ]);
+  const chats = me.features.includes('helpdesk') && me.permissions['helpdesk:use'] ? await loadOptional<{ unread: number }>('/communication/unread') : null;
+  const news = me.features.includes('announcements') && me.permissions['announcements:read'] ? await loadOptional<{ total: number }>('/announcements/unread') : null;
   const counts: Record<string, number> = {};
   if (inbox?.length) counts['/approvals'] = inbox.length;
   // Questions from employees that HR still has to answer, on the HR helpdesk menu item.
   if (helpdesk?.queue?.awaitingHr) counts['/helpdesk/queue'] = helpdesk.queue.awaitingHr;
+  // Unread chat messages, and for HR the help requests waiting for an answer, on the Communication menu item.
+  const comm = (chats?.unread ?? 0) + (helpdesk?.queue?.awaitingHr ?? 0);
+  if (comm) counts['/communication'] = comm;
+  // Announcements not read yet, or waiting for an acknowledgement.
+  if (news?.total) counts['/announcements'] = news.total;
   return (
     <>
       {me.tenant.isDemo && <DemoBanner />}

@@ -90,6 +90,11 @@ import { EngagementController, GoalsController, LearningController, ReviewsContr
 import { AnnouncementsService } from './modules/helpdesk/announcements.service';
 import { AnnouncementsController, HelpdeskController } from './modules/helpdesk/helpdesk.controller';
 import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
+import { ChatService } from './modules/communication/chat.service';
+import { CommFilesController, CommunicationController } from './modules/communication/communication.controller';
+import { CommunicationService } from './modules/communication/communication.service';
+import { CommEmailService } from './modules/communication/email.service';
+import { CommFilesService } from './modules/communication/files.service';
 import { MobileController } from './modules/mobile/mobile.controller';
 import { AiController } from './modules/ai/ai.controller';
 import { AiGatewayService } from './modules/ai/ai-gateway.service';
@@ -188,6 +193,8 @@ export const CONTROLLERS = [
   EngagementController,
   HelpdeskController,
   AnnouncementsController,
+  CommunicationController,
+  CommFilesController,
   MobileController,
   AiController,
   AutomationController,
@@ -282,6 +289,10 @@ export const CONTROLLERS = [
     LearningService,
     EngagementService,
     HelpdeskService,
+    ChatService,
+    CommEmailService,
+    CommFilesService,
+    CommunicationService,
     AnnouncementsService,
     MobileService,
     AiGatewayService,

@@ -36,6 +36,7 @@
     "reflect-metadata": "0.2.2",
     "regenerator-runtime": "0.14.1",
     "rxjs": "7.8.2",
+    "sanitize-html": "2.17.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
@@ -45,6 +46,7 @@
     "@swc/core": "1.16.21",
     "@types/express": "5.0.6",
     "@types/nodemailer": "8.0.2",
+    "@types/sanitize-html": "2.16.0",
     "@types/smtp-server": "3.5.10",
     "@types/supertest": "7.2.1",
     "smtp-server": "3.13.6",
