@@ -83,7 +83,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       }}
       actions={[...quickActions(me), ...workflowActions(me).filter((a) => a.key !== 'theme')]}
       recruiter={can(me, 'requisitions:read') || can(me, 'candidates:read')}
-      myDay={self ? <MyDay firstName={me.user.fullName.split(' ')[0] ?? ''} today={today} month={monthDays} balances={balances} rewards={rewards} calendar={calendar} taskCounts={taskCounts} /> : null}
+      myDay={self ? <MyDay renderedAt={Date.now()} firstName={me.user.fullName.split(' ')[0] ?? ''} today={today} month={monthDays} balances={balances} rewards={rewards} calendar={calendar} taskCounts={taskCounts} /> : null}
     />
   );
 }

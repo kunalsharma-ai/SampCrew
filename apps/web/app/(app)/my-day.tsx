@@ -46,12 +46,14 @@ function tally(punches: AttendanceToday['punches'], now: number) {
   return { worked: Math.max(0, Math.round(worked / 60000)), breaks: Math.round(breaks / 60000), open, firstIn: punches.find((p) => p.direction === 'in')?.at ?? null };
 }
 
-function ClockCard({ today }: { today: AttendanceToday }) {
+function ClockCard({ today, renderedAt }: { today: AttendanceToday; renderedAt: number }) {
   const router = useRouter();
-  const [now, setNow] = useState(() => Date.now());
+  // The first render uses the server's time so the page hydrates cleanly; the clock then ticks from the browser.
+  const [now, setNow] = useState(renderedAt);
   const [pending, start] = useTransition();
   const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null);
   useEffect(() => {
+    setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
@@ -270,16 +272,16 @@ function MonthCalendar({ calendar }: { calendar: MyCalendar }) {
 }
 
 /** The employee's own day at the top of Home: clock, hours, leave, month, rewards and calendar. */
-export function MyDay({ firstName, today, month, balances, rewards, calendar, taskCounts }: {
-  firstName: string; today: AttendanceToday | null; month: AttendanceMonth | null; balances: LeaveBalance[] | null; rewards: MyRewards | null; calendar: MyCalendar | null; taskCounts: TaskCounts | null;
+export function MyDay({ firstName, today, month, balances, rewards, calendar, taskCounts, renderedAt }: {
+  renderedAt: number; firstName: string; today: AttendanceToday | null; month: AttendanceMonth | null; balances: LeaveBalance[] | null; rewards: MyRewards | null; calendar: MyCalendar | null; taskCounts: TaskCounts | null;
 }) {
   if (!today && !balances && !calendar) return null;
   const open = taskCounts ? taskCounts.hr.open + taskCounts.manager.open : 0;
   const overdue = taskCounts ? taskCounts.hr.overdue + taskCounts.manager.overdue : 0;
   return (
-    <section aria-label={`${firstName}'s day`} className="mb-6 grid gap-5 animate-fade-in">
+    <section data-testid="my-day" aria-label={`${firstName}'s day`} className="mb-6 grid gap-5 animate-fade-in">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        {today ? <ClockCard today={today} /> : <div />}
+        {today ? <ClockCard today={today} renderedAt={renderedAt} /> : <div />}
         {month && <MonthStats month={month} />}
       </div>
       {balances && <LeaveCards balances={balances} />}

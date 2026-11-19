@@ -21,7 +21,9 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const assigns = people.hr.length > 0 || people.manager.length > 0;
   const onboarding = me.features.includes('onboarding') ? await loadOptional<OnboardingTask[]>('/onboarding/my-tasks') : null;
   const allowed: Tab[] = ['hr', 'manager', ...(onboarding?.length ? (['onboarding'] as Tab[]) : []), 'done', ...(assigns ? (['team'] as Tab[]) : []), ...(people.hr.length ? (['verify'] as Tab[]) : [])];
-  const tab: Tab = allowed.includes(sp.tab as Tab) ? (sp.tab as Tab) : 'hr';
+  // Without a tab, open the first list that has something in it (a new joiner usually has only onboarding tasks).
+  const firstWithWork: Tab = counts.hr.open + counts.hr.review > 0 ? 'hr' : counts.manager.open + counts.manager.review > 0 ? 'manager' : onboarding?.length ? 'onboarding' : 'hr';
+  const tab: Tab = allowed.includes(sp.tab as Tab) ? (sp.tab as Tab) : firstWithWork;
 
   const items: SubNavItem[] = [
     { href: '/tasks?tab=hr', label: 'HR tasks', count: counts.hr.open + counts.hr.review, alert: counts.hr.overdue > 0, testId: 'tab-hr' },

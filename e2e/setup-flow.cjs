@@ -160,7 +160,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
       await emp.getByTestId(trigger).click();
       await emp.getByRole('menu', { name: 'Your account' }).getByRole('menuitem', { name: 'My profile' }).click();
       await emp.waitForURL((u) => u.pathname === '/profile');
-      await emp.getByRole('heading', { name: 'Ravi Kale' }).waitFor();
+      await emp.getByRole('heading', { name: 'Ravi Kale', level: 1 }).waitFor();
     }
     await emp.getByTestId('account-menu-header').click();
     await emp.getByRole('menu', { name: 'Your account' }).getByRole('menuitem', { name: 'Password & sign-in' }).click();
