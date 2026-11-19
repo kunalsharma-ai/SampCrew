@@ -34,10 +34,11 @@ export function FormsToolbar({ templates }: { templates: { key: string; name: st
   const { pending, notice, run, router } = useRun();
   return (
     <div className="grid gap-3">
+      {templates.length > 0 && <p className="text-[0.8125rem] text-fg-muted">Ready-made: {templates.map((t) => t.name).join(', ')}.</p>}
       <div className="flex flex-wrap gap-2">
         {templates.map((t) => (
-          <Button key={t.key} variant={t.added ? 'secondary' : 'primary'} loading={pending} onClick={() => run(() => addTemplateAction(t.key), (r) => { if (r.ok && r.data) router.push(`/settings/appraisals/forms/${(r.data as AppraisalForm).id}`); })}>
-            {t.added ? `Add another copy of the ${t.name}` : `Add the ${t.name}`}
+          <Button key={t.key} variant={t.added ? 'secondary' : 'primary'} loading={pending} title={t.name} onClick={() => run(() => addTemplateAction(t.key), (r) => { if (r.ok && r.data) router.push(`/settings/appraisals/forms/${(r.data as AppraisalForm).id}`); })}>
+            {t.added ? `Add another copy${templates.length > 1 ? ` of ${t.name}` : ''}` : `Add ${templates.length > 1 ? t.name : 'the ready-made form'}`}
           </Button>
         ))}
         <Button variant="secondary" loading={pending} onClick={() => run(() => saveFormAction(null, { name: 'New appraisal form', definition: BLANK }), (r) => { if (r.ok && r.data) router.push(`/settings/appraisals/forms/${(r.data as AppraisalForm).id}`); })}>New blank form</Button>

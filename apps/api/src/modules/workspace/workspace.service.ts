@@ -133,11 +133,13 @@ export class WorkspaceService {
     const results = await evaluate(target);
     const history: { month: string; earned: { id: string; name: string; icon: string }[] }[] = [];
     if (rules.length && withHistory) {
-      let m = prevMonth(target);
-      for (let i = 0; i < 6; i++, m = prevMonth(m)) {
-        const r = await evaluate(m);
+      const months: string[] = [];
+      for (let i = 0, m = prevMonth(target); i < 6; i++, m = prevMonth(m)) months.push(m);
+      // The six months are independent, so they are worked out together; history stops at the joining month.
+      const results = await Promise.all(months.map(evaluate));
+      for (const [i, r] of results.entries()) {
         if (!r) break;
-        history.push({ month: m, earned: r.filter((x) => x.status === 'earned').map((x) => ({ id: x.id, name: x.name, icon: x.icon })) });
+        history.push({ month: months[i]!, earned: r.filter((x) => x.status === 'earned').map((x) => ({ id: x.id, name: x.name, icon: x.icon })) });
       }
     }
     return { month: target, complete: target < current, rewards: results ?? [], history };

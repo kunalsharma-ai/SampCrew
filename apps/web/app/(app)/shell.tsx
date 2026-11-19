@@ -216,15 +216,16 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
             <button className="rounded-md p-1.5 text-fg-muted hover:bg-bg-subtle lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu className="size-5" /></button>
             <button
               onClick={() => setPaletteOpen(true)}
-              className="crew-search flex h-9 w-full max-w-md items-center gap-2 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] text-fg-subtle shadow-card transition-colors hover:border-border-strong"
+              className="crew-search flex h-9 w-full min-w-9 max-w-md items-center gap-2 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] text-fg-subtle shadow-card transition-colors hover:border-border-strong"
             >
               <Search className="size-4" aria-hidden />
-              <span className="flex-1 truncate text-left">Search employees, candidates, pages…</span>
+              <span className="hidden flex-1 truncate text-left sm:inline">Search employees, candidates, pages…</span><span className="sr-only sm:hidden">Search</span>
               <span className="hidden sm:inline"><Kbd>Ctrl</Kbd> <Kbd>K</Kbd></span>
             </button>
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ml-auto flex shrink-0 items-center gap-1">
               {me.subscription?.status === 'trialing' && me.subscription.trialEndsOn && (
-                <Badge tone="info" className="mr-1 hidden xl:inline-flex">Trial until {new Date(me.subscription.trialEndsOn).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Badge>
+                // Wrapped: Badge's own inline-flex would otherwise beat `hidden`, and the badge pushed the header off phone screens.
+                <span className="mr-1 hidden xl:inline-flex"><Badge tone="info">Trial until {new Date(me.subscription.trialEndsOn).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Badge></span>
               )}
               {hasIq && <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} className="crew-ai-button mr-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] font-semibold shadow-card hover:border-accent/50" title="SampCrew IQ, your AI HR assistant (Ctrl+J)">
                 <Sparkles className="size-4 text-accent" aria-hidden /><span className="hidden sm:inline">SampCrew IQ</span><span className="sr-only sm:hidden">SampCrew IQ</span>

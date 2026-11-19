@@ -104,12 +104,13 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
     await e.getByRole('button', { name: 'Update' }).click();
     await e.getByLabel('Account holder name').fill('Neha Sharma');
     await e.getByLabel('Bank name').fill('State Bank of India');
-    await e.getByLabel(/^Account number(?! again)/).fill('123456786789');
-    await e.getByLabel('Account number again').fill('123456786789');
+    const account = `1234${String(Date.now()).slice(-8)}`;
+    await e.getByLabel(/^Account number(?! again)/).fill(account);
+    await e.getByLabel('Account number again').fill(account);
     await e.getByLabel('IFSC').fill('SBIN0001234');
     await e.getByRole('button', { name: 'Send to HR for approval' }).click();
     await e.getByText('Waiting for HR approval').first().waitFor();
-    assert((await e.getByText('123456786789').count()) === 0, 'the full account number is never shown');
+    assert((await e.getByText(account).count()) === 0, 'the full account number is never shown');
     current = hr;
     await hr.goto(`${BASE}/profile/updates`);
     await hr.getByRole('link', { name: /Neha/ }).first().click();
@@ -117,8 +118,8 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
     await hr.getByText('Approved').first().waitFor();
     current = e;
     await e.goto(`${BASE}/profile?tab=bank`);
-    await e.getByText(/6789$/).first().waitFor();
-    assert((await e.content()).indexOf('123456786789') === -1, 'the account number stays masked after approval');
+    await e.getByText(new RegExp(`${account.slice(-4)}$`)).first().waitFor();
+    assert((await e.content()).indexOf(account) === -1, 'the account number stays masked after approval');
     ok('sends bank details; HR approves; the number shows masked');
 
     // 4. Appraisal.

@@ -8,7 +8,7 @@ import { cn } from '../cn';
 export function Table({ className, children, 'aria-label': label }: { className?: string; children: ReactNode; 'aria-label'?: string }) {
   return (
     <div
-      className="overflow-x-auto rounded-[inherit] outline-none focus-visible:ring-3 focus-visible:ring-accent/40"
+      className="relative overflow-x-auto rounded-[inherit] outline-none focus-visible:ring-3 focus-visible:ring-accent/40"
       tabIndex={0}
       role="region"
       aria-label={label ?? 'Table'}

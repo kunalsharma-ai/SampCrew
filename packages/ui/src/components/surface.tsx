@@ -3,22 +3,23 @@ import { cn } from '../cn';
 import { AutoHelp, type HelpProp } from './help';
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('crew-card rounded-xl border border-border bg-surface shadow-card', className)} {...props} />;
+  return <div className={cn('crew-card min-w-0 rounded-xl border border-border bg-surface shadow-card', className)} {...props} />;
 }
 
 /** A card heading. An "i" icon follows the title when the app's help content has an entry for it (or `help` gives one). */
 export function CardHeader({ title, description, action, className, help }: { title: ReactNode; description?: ReactNode; action?: ReactNode; className?: string; help?: HelpProp }) {
   const id = useId();
   return (
-    <div className={cn('flex items-start justify-between gap-4 px-5 pt-5 pb-3', className)}>
-      <div className="min-w-0">
+    // On narrow screens a wide action (several buttons) wraps under the title instead of pushing the card wider.
+    <div className={cn('flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5 pt-5 pb-3', className)}>
+      <div className="min-w-0 flex-[1_1_14rem]">
         <div className="flex items-center gap-1">
           <h3 id={id} className="text-[0.9375rem] font-semibold text-fg">{title}</h3>
           <AutoHelp kind="section" text={title} help={help} describedBy={id} />
         </div>
         {description && <p className="mt-0.5 text-[0.8125rem] text-fg-muted">{description}</p>}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {action && <div className="max-w-full shrink-0">{action}</div>}
     </div>
   );
 }

@@ -158,7 +158,7 @@ export function HomeDashboard(props: {
           <section
             key={w}
             aria-label={WIDGET_LABEL[w]}
-            className={cn(WIDE.includes(w) && 'xl:col-span-2', editing && 'rounded-xl outline-2 outline-dashed outline-offset-4 outline-border-strong', editing && layout.hidden.includes(w) && 'opacity-50')}
+            className={cn('min-w-0', WIDE.includes(w) && 'xl:col-span-2', editing && 'rounded-xl outline-2 outline-dashed outline-offset-4 outline-border-strong', editing && layout.hidden.includes(w) && 'opacity-50')}
             draggable={editing}
             onDragStart={() => { dragging.current = w; }}
             onDragOver={(e) => editing && e.preventDefault()}
