@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateReward, type RewardDay, type RewardRuleInput } from './rewards';
+import { evaluateReward, rewardRuleInput, type RewardDay, type RewardRuleInput } from './rewards';
 
-const perfect: RewardRuleInput = { name: 'Perfect', kind: 'perfect_attendance', description: null, icon: 'trophy', active: true, maxLateDays: 0, excusedLeaveTypeIds: ['sick'], allowHalfDays: false, minWorkingDays: 3 };
+const perfect: RewardRuleInput = { name: 'Perfect', kind: 'perfect_attendance', description: null, icon: 'trophy', active: true, maxLateDays: 0, excusedLeaveTypeIds: ['sick'], allowHalfDays: false, minWorkingDays: 3, payoutType: 'none', payoutAmount: null, payoutLeaveTypeId: null, payoutDays: null };
 const onTime: RewardRuleInput = { ...perfect, name: 'On time', kind: 'punctuality', allowHalfDays: true };
 const day = (date: string, status = 'present', extra: Partial<RewardDay> = {}): RewardDay => ({ date, dayType: 'working', status, lateMinutes: 0, ...extra });
 
@@ -32,5 +32,16 @@ describe('attendance rewards', () => {
 
   it('a month with too few working days (new joiner) is not eligible', () => {
     expect(evaluateReward({ ...perfect, minWorkingDays: 10 }, month, true)).toMatchObject({ status: 'not_eligible' });
+  });
+
+  it('a paying rule needs its payout: an amount for a bonus, a leave type and days for a leave credit', () => {
+    const base = { name: 'Perfect', kind: 'perfect_attendance' as const };
+    expect(rewardRuleInput.parse(base).payoutType).toBe('none');
+    expect(rewardRuleInput.safeParse({ ...base, payoutType: 'bonus' }).error?.issues[0]?.message).toBe('Enter the bonus amount');
+    expect(rewardRuleInput.parse({ ...base, payoutType: 'bonus', payoutAmount: '500' }).payoutAmount).toBe('500');
+    const leave = rewardRuleInput.safeParse({ ...base, payoutType: 'leave_credit', payoutDays: '0.75' });
+    expect(leave.error?.issues.map((i) => i.message)).toEqual(['Use whole or half days, like 1 or 0.5', 'Choose the leave type to credit'])
+    expect(rewardRuleInput.safeParse({ ...base, payoutType: 'leave_credit' }).error?.issues.map((i) => i.message)).toEqual(['Choose the leave type to credit', 'Enter the days to credit']);
+    expect(rewardRuleInput.parse({ ...base, payoutType: 'leave_credit', payoutDays: '1', payoutLeaveTypeId: '7c9e6679-7425-40de-944b-e07fc1f90ae7' }).payoutDays).toBe('1');
   });
 });

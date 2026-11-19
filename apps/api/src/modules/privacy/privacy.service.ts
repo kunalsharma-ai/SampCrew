@@ -312,6 +312,7 @@ export class PrivacyService {
     total += await t('overtime_claims').update({ employee_id: employeeId, reason: { $ne: null } }, { $set: { reason: null } });
     total += await t('late_reminders').update({ employee_id: employeeId, $or: [{ note: { $ne: null } }, { withdrawn_reason: { $ne: null } }] }, { $set: { note: null, withdrawn_reason: null } });
     total += await t('attendance_penalties').update({ employee_id: employeeId, $or: [{ reason: { $ne: null } }, { status_reason: { $ne: null } }] }, { $set: { reason: null, status_reason: null } });
+    total += await t('attendance_reward_grants').update({ employee_id: employeeId, revoke_reason: { $ne: null } }, { $set: { revoke_reason: null } });
     total += await t('employment_records').update({ employee_id: employeeId, note: { $ne: null } }, { $set: { note: null } });
     total += await t('course_assignments').update(
       { employee_id: employeeId, $or: [{ completion_note: { $ne: null } }, { cancelled_reason: { $ne: null } }] },

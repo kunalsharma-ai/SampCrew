@@ -239,8 +239,10 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     ok('changes address, bank account (typed twice, shown masked) and skills; HR approves each');
 
     // 7. Her manager evaluates on the phone, HR finalises and shares it on the phone, and she sees the result.
+    // SHOTS_DIR=<folder> also saves screenshots of the review screens (for PRs and docs).
+    const snap = (q, name, full = false) => (process.env.SHOTS_DIR ? q.screenshot({ path: `${process.env.SHOTS_DIR}/${name}.png`, fullPage: full }) : null);
     const phone = async (email) => {
-      const c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+      const c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: process.env.SHOTS_DIR ? 2 : 1 });
       const q = await c.newPage();
       q.on('pageerror', (e) => errs.push(`${email} PAGEERROR ${e.message}`));
       await signIn(q, email);
@@ -250,6 +252,7 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     await mgr.goto(APP + '/appraisal');
     const teamCard = mgr.getByTestId('appraisal-team');
     await teamCard.waitFor();
+    await snap(mgr, 'phone-manager-appraisals');
     await teamCard.getByText(new RegExp(`Mobile appraisal ${run}`)).first().click();
     await mgr.getByTestId('appraisal-actions').waitFor();
     await mgr.getByText(/Employee: 4/).first().waitFor();
@@ -259,6 +262,7 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     for (let i = 0; i < mn; i++) await mRadios.nth(i).click();
     for (const box of await mgr.locator('textarea').all()) if (!(await box.inputValue())) await box.fill('Reliable on line 2; next year, lead the changeover training.');
     await mgr.getByText('Every required question is answered.').waitFor();
+    await snap(mgr, 'phone-manager-evaluation');
     await mgr.getByTestId('appraisal-submit').click();
     await mgr.getByText('Evaluation submitted. HR has been told.').waitFor();
     ok('her manager scores each question next to her own scores and submits the evaluation on the phone');
@@ -267,6 +271,7 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     await hrp.goto(APP + '/appraisal');
     const hrCard = hrp.getByTestId('appraisal-hr');
     await hrCard.waitFor();
+    await snap(hrp, 'phone-hr-appraisals');
     await hrCard.getByText('Neha Deshmukh').first().click();
     await hrp.getByTestId('appraisal-final-percent').waitFor();
     await hrp.getByText(/Manager: 3/).first().waitFor();
@@ -274,11 +279,14 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     await hrp.getByTestId('appraisal-save').click();
     await hrp.getByText('Say why the approved percentage differs from the calculated one.').waitFor();
     await hrp.getByLabel('Reason for the change').fill('Calibrated with the Assembly line results');
+    await hrp.getByTestId('appraisal-final-percent').scrollIntoViewIfNeeded();
+    await snap(hrp, 'phone-hr-final-percent', false);
     for (const box of await hrp.locator('textarea').all()) if (!(await box.inputValue())) await box.fill('Agreed with the manager.');
     await hrp.getByTestId('appraisal-submit').click();
     await hrp.getByText('Finalised. Share the result when you are ready.').waitFor();
     await hrp.getByTestId('appraisal-share').click();
     await hrp.getByText('Result shared. The employee has been told.').waitFor();
+    await snap(hrp, 'phone-hr-shared', false);
     ok('HR records an approved 72% with a reason, finalises and shares the result on the phone');
 
     await p.goto(APP + '/appraisal');

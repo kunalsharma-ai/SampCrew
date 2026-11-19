@@ -6,6 +6,7 @@ import { m0030NotificationCenter } from './0030_notification_center';
 import { m0031ApprovalCategories } from './0031_approval_categories';
 import { m0032AnnouncementsUpgrade } from './0032_announcements_upgrade';
 import { m0033LeaveUpgrade } from './0033_leave_upgrade';
+import { m0034RewardPayouts } from './0034_reward_payouts';
 
 /** Every MongoDB migration, in order. Append new ones; never edit or reorder one that has shipped. */
-export const MONGO_MIGRATIONS: MongoMigration[] = [m0001Foundation, m0002PlatformAdminPasswordChange, m0020EmployeeWorkspacePermissions, m0030NotificationCenter, m0031ApprovalCategories, m0032AnnouncementsUpgrade, m0033LeaveUpgrade];
+export const MONGO_MIGRATIONS: MongoMigration[] = [m0001Foundation, m0002PlatformAdminPasswordChange, m0020EmployeeWorkspacePermissions, m0030NotificationCenter, m0031ApprovalCategories, m0032AnnouncementsUpgrade, m0033LeaveUpgrade, m0034RewardPayouts];

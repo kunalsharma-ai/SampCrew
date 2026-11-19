@@ -37,7 +37,7 @@ export default async function AttendanceSettingsPage({ searchParams }: { searchP
       <div className="grid gap-6">
         <AttendanceSettingsView shifts={shifts} policies={policies} locks={locks} kiosks={kiosks} locations={locations ?? []} entities={entities ?? []} />
         <LateRulesCard policy={discipline} />
-        <RewardsCard rules={rewards ?? []} leaveTypes={(leaveTypes ?? []).map((t) => ({ leaveTypeId: t.id, name: t.name }))} />
+        <RewardsCard rules={rewards ?? []} currency={winners?.currency ?? 'INR'} leaveTypes={(leaveTypes ?? []).map((t) => ({ leaveTypeId: t.id, name: t.name }))} />
         {winners && <RewardWinnersCard data={winners} latest={lastFinishedMonth()} />}
       </div>
     </>

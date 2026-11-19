@@ -48,6 +48,22 @@ merges of #52 and #53.
   the formats and size the task allows; Appraisal (self-appraisal form with save and submit, and the shared result);
   My profile (masked numbers; requests to change personal details, emergency contact, address, bank account, typed
   twice, and skills; withdraw a pending change). Home gains a "My workspace" card and a My tasks quick action; Me links to all three.
+- **Appraisal review on the phone** (follow-up): managers see a My team card (their turn when the self-appraisal is
+  in) and score each question next to the employee's own score; HR sees an HR review card, scores, records an
+  approved percentage that differs from the calculated one only with a reason, finalises and shares the result.
+- **Reward payouts** (follow-up): each reward rule says what winners get: recognition only, a bonus in payroll, or
+  extra days of one leave type. On Reward winners HR grants a finished month's winners their payout. A bonus becomes
+  an earning line ("Reward: <rule> (<month>)") in the next payroll run of the person's legal entity, is marked paid
+  when that run is finalised, and goes back for the next run if the person was held or the run cancelled. Leave is
+  credited to the ledger at once. Each rule pays a person at most once a month (unique key), winners are decided
+  again when granting, the payout is copied from the rule at that moment, every grant and take-back is audited, and
+  winners are told. HR can take a grant back with a reason until its bonus is paid (leave days come off again).
+  Employees see what a reward pays on Home. Migration 0034 marks existing rules "recognition only".
+- **Phone app builds** (follow-up): `apps/mobile/eas.json` (preview and production profiles), a manual GitHub
+  Actions workflow **Mobile build**, and `docs/ops/mobile-builds.md` with the accounts and keys only the owner can
+  provide. Android and iOS JavaScript bundles compile and `expo prebuild` makes both native projects; the
+  microphone, "draw over other apps", "always" location and motion purpose strings were removed, and
+  `expo-system-ui` added so dark mode applies to the Android system bars.
 - **Layout**: at 390 px wide, Home, tasks, appraisal, profile, profile updates and the attendance and appraisal
   settings have no sideways scrolling (the header, card headers and table screen-reader text used to push pages
   wider). Animations stay light and respect the reduced-motion setting.
@@ -55,17 +71,17 @@ merges of #52 and #53.
   ten grants the role templates give, changed nothing else, and does nothing when run again.
 
 ### Not yet working, or not yet verified
-- **Appraisal on mobile is for employees.** Managers and HR review on the web.
-- **Rewards are shown, not paid.** HR sees each finished month's winners and downloads them to Excel; there is no
-  certificate and no automatic payroll bonus.
+- **No reward certificates.** Rewards pay a bonus or leave; a printable certificate is not made.
+- **Per-question HR overrides** stay on the web; the phone records HR's scores, remarks and approved percentage.
 - **Mobile profile edits** cover personal details, emergency contact, address, bank account and skills. Education,
   previous jobs and identity numbers need their documents and are changed on the web.
-- **Native builds not run.** The mobile flows run on the app's web build; the iOS and Android builds share the
-  screens but were not built or tried on a device in this phase.
+- **Native builds not run end to end.** This environment cannot reach Expo's build servers or the Android SDK, so
+  no APK or iOS build was produced and nothing was tried on a device. It needs an Expo token and the store accounts
+  listed in `docs/ops/mobile-builds.md`.
 - **Interviews on the web** are hidden from people without recruitment access; the data and the recruiter pages
   are unchanged.
 
 ## Tests
 - API: `apps/api/test/tasks.spec.ts`, `appraisals.spec.ts`, `profile.spec.ts`, `workspace.spec.ts`;
-  `packages/contracts/src/rewards.spec.ts` for the reward rules.
+  `packages/contracts/src/rewards.spec.ts` for the reward rules; `payroll.spec.ts` pays a granted reward bonus.
 - Browser: `pnpm e2e:workspace` and `pnpm e2e:mobile-workspace`, run in CI on a fresh demo workspace.

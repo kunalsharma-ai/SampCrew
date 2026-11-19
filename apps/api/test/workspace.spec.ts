@@ -95,6 +95,60 @@ describe('employee workspace: attendance rewards and calendar', () => {
     expect(x.headers['content-disposition']).toContain(`attendance-rewards-${lastMonth}.xlsx`);
   });
 
+  it('HR turns a reward into extra leave for the winners: credited once, audited, told, and taken back with a reason', async () => {
+    // No rule pays anything yet: nothing to grant.
+    expect(ok(await api(app, hr).post('/workspace/reward-winners/grant').send({ month: lastMonth }), 201)).toMatchObject({ granted: 0 });
+    const rules = ok(await api(app, hr).get('/workspace/reward-rules')) as unknown as Record<string, unknown>[];
+    const perfect = rules.find((x) => x.kind === 'perfect_attendance')!;
+    expect(perfect.payoutType).toBe('none');
+    const bad = await api(app, hr).put(`/workspace/reward-rules/${perfect.id}`).send({ ...perfect, id: undefined, payoutType: 'leave_credit', payoutDays: '1' });
+    expect(bad.status).toBe(422);
+    ok(await api(app, hr).put(`/workspace/reward-rules/${perfect.id}`).send({ ...perfect, id: undefined, payoutType: 'leave_credit', payoutDays: '1', payoutLeaveTypeId: casual }));
+    let w = ok(await api(app, hr).get(`/workspace/reward-winners?month=${lastMonth}`));
+    let rule = w.rules.find((x: { kind: string }) => x.kind === 'perfect_attendance');
+    expect(rule).toMatchObject({ payout: { type: 'leave_credit', label: '1 day of Casual leave' }, toGrant: 1 });
+    expect((await api(app, emp).post('/workspace/reward-winners/grant').send({ month: lastMonth })).status).toBe(403);
+    expect((await api(app, hr).post('/workspace/reward-winners/grant').send({ month: thisMonth })).body.error.code).toBe('month_not_finished');
+
+    const g = ok(await api(app, hr).post('/workspace/reward-winners/grant').send({ month: lastMonth }), 201);
+    expect(g).toMatchObject({ granted: 1, grants: [{ employeeId, status: 'credited', days: '1.00', leaveTypeName: 'Casual leave', label: '1 day of Casual leave' }] });
+    const grantId = g.grants[0].id as string;
+    const credit = await pool.one('leave_ledger', { tenant_id: t.id, accrual_key: `RWD:${grantId}` });
+    expect(credit).toMatchObject({ employee_id: employeeId, leave_type_id: casual, kind: 'adjustment', quantity: '1.00', note: `Reward: Perfect attendance for ${lastMonth}` });
+    // Granting again pays nobody twice.
+    expect(ok(await api(app, hr).post('/workspace/reward-winners/grant').send({ month: lastMonth }), 201)).toMatchObject({ granted: 0 });
+    w = ok(await api(app, hr).get(`/workspace/reward-winners?month=${lastMonth}`));
+    rule = w.rules.find((x: { kind: string }) => x.kind === 'perfect_attendance');
+    expect(rule.toGrant).toBe(0);
+    expect(rule.winners[0].grant).toMatchObject({ id: grantId, status: 'credited' });
+    expect(await pool.count('audit_events', { tenant_id: t.id, action: 'attendance_reward.granted' })).toBe(1);
+    const note = await pool.one('notifications', { tenant_id: t.id, kind: 'attendance.reward_granted' });
+    expect(note).toMatchObject({ title: `You earned Perfect attendance for ${lastMonth}`, body: '1 day of Casual leave were added to your leave balance.' });
+    // The employee sees what the reward pays and that it was granted.
+    const mine = ok(await api(app, emp).get(`/workspace/rewards?month=${lastMonth}`));
+    expect(mine.rewards.find((x: { kind: string }) => x.kind === 'perfect_attendance')).toMatchObject({ payout: '1 day of Casual leave', grant: { status: 'credited' } });
+
+    // Taken back: a reason is needed, the day comes off again, and it cannot be taken back twice.
+    expect((await api(app, hr).post(`/workspace/reward-grants/${grantId}/revoke`).send({ reason: 'no' })).status).toBe(422);
+    expect((await api(app, emp).post(`/workspace/reward-grants/${grantId}/revoke`).send({ reason: 'Granted by mistake' })).status).toBe(403);
+    expect(ok(await api(app, hr).post(`/workspace/reward-grants/${grantId}/revoke`).send({ reason: 'Granted by mistake' }), 201)).toMatchObject({ status: 'revoked', revokeReason: 'Granted by mistake' });
+    expect(await pool.one('leave_ledger', { tenant_id: t.id, accrual_key: `RWD-REV:${grantId}` })).toMatchObject({ quantity: '-1.00' });
+    expect((await api(app, hr).post(`/workspace/reward-grants/${grantId}/revoke`).send({ reason: 'Granted by mistake' })).status).toBe(409);
+    expect(await pool.count('audit_events', { tenant_id: t.id, action: 'attendance_reward.revoked' })).toBe(1);
+  });
+
+  it('a bonus reward waits for the next payroll run; a paid one cannot be taken back', async () => {
+    const r = ok(await api(app, hr).post('/workspace/reward-rules').send({ name: 'Star month', kind: 'perfect_attendance', maxLateDays: 2, excusedLeaveTypeIds: [sick], minWorkingDays: 10, payoutType: 'bonus', payoutAmount: '500' }), 201);
+    expect(r).toMatchObject({ payoutType: 'bonus', payoutAmount: '500.00', payoutLeaveTypeId: null, payoutDays: null });
+    const g = ok(await api(app, hr).post('/workspace/reward-winners/grant').send({ month: lastMonth, ruleId: r.id }), 201);
+    expect(g).toMatchObject({ granted: 1, grants: [{ employeeId, status: 'granted', amount: '500.00', currency: 'INR', payrollRunId: null }] });
+    const note = (await pool.find('notifications', { tenant_id: t.id, kind: 'attendance.reward_granted' })).find((n) => n.title.startsWith('You earned Star month'))!;
+    expect(note.body).toMatch(/^You get a bonus of INR 500\.00, paid with your next salary\.$/);
+    await pool.update('attendance_reward_grants', { id: g.grants[0].id }, { $set: { status: 'paid', paid_at: new Date() } });
+    expect((await api(app, hr).post(`/workspace/reward-grants/${g.grants[0].id}/revoke`).send({ reason: 'Changed our mind' })).body.error.code).toBe('already_paid');
+    ok(await api(app, hr).delete(`/workspace/reward-rules/${r.id}`));
+  });
+
   it('HR changes the rules: one late day allowed, and casual leave instead of sick is no longer excused', async () => {
     const rules = ok(await api(app, hr).get('/workspace/reward-rules')) as unknown as Record<string, unknown>[];
     const punctual = rules.find((x) => x.kind === 'punctuality')!;
@@ -104,7 +158,7 @@ describe('employee workspace: attendance rewards and calendar', () => {
     const r = ok(await api(app, emp).get(`/workspace/rewards?month=${lastMonth}`));
     expect(r.rewards.find((x: { kind: string }) => x.kind === 'punctuality')).toMatchObject({ status: 'earned' });
     expect(r.rewards.find((x: { kind: string }) => x.kind === 'perfect_attendance')).toMatchObject({ status: 'missed', reason: `Leave on ${lastMonth}-09` });
-    expect(await pool.count('audit_events', { tenant_id: t.id, action: 'attendance_reward.updated' })).toBe(2);
+    expect(await pool.count('audit_events', { tenant_id: t.id, action: 'attendance_reward.updated' })).toBe(3);
     // The current month is open: on track or missed, never earned yet; history lists earlier months.
     const cur = ok(await api(app, emp).get('/workspace/rewards'));
     expect(cur).toMatchObject({ month: thisMonth, complete: false });

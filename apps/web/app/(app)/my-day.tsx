@@ -186,7 +186,7 @@ function Rewards({ rewards }: { rewards: MyRewards }) {
             <li key={r.id} className="flex items-center gap-3" data-testid={`reward-${r.kind}`}>
               <span className={cn('grid size-10 shrink-0 place-items-center rounded-xl', r.status === 'earned' ? 'bg-success text-white' : r.status === 'missed' ? 'bg-bg-subtle text-fg-subtle' : 'bg-accent/15 text-accent')}><Icon className="size-5" aria-hidden /></span>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{r.name}</span><Badge tone={tone}>{label}</Badge></div>
+                <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{r.name}</span><Badge tone={tone}>{label}</Badge>{r.payout && <span className="text-xs font-medium text-success" data-testid="reward-payout">Wins {r.payout}</span>}</div>
                 <div className="truncate text-xs text-fg-muted">{r.reason ?? r.description ?? ''}{!r.reason && r.total ? ` ${r.done} of ${r.total} working days so far.` : ''}</div>
                 {r.status !== 'missed' && r.total > 0 && <div className="mt-1 h-1 overflow-hidden rounded-full bg-bg-subtle"><div className="h-full bg-accent" style={{ width: `${pct}%` }} /></div>}
               </div>

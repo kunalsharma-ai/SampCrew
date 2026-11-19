@@ -25,3 +25,17 @@ export async function addDefaultRewardsAction() {
   refresh();
   return r;
 }
+
+export async function grantRewardsAction(month: string, ruleId?: string) {
+  const r = await act(() => api<{ granted: number }>('/workspace/reward-winners/grant', { method: 'POST', body: { month, ...(ruleId ? { ruleId } : {}) } }));
+  if (r.ok) r.message = r.data?.granted ? `Granted to ${r.data.granted} ${r.data.granted === 1 ? 'winner' : 'winners'}. Each one has been told.` : 'Everyone who earned it has it already.';
+  refresh();
+  revalidatePath('/payroll');
+  return r;
+}
+
+export async function revokeRewardGrantAction(id: string, reason: string) {
+  const r = await act(() => api(`/workspace/reward-grants/${id}/revoke`, { method: 'POST', body: { reason } }), 'Reward taken back.');
+  refresh();
+  return r;
+}
