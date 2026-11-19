@@ -536,6 +536,127 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((status <> 'hired'::text) OR (employee_id IS NOT NULL)))",
     ],
   },
+  appraisal_cycles: {
+    // An appraisal period: the form(s) people fill in, the deadlines for each stage and who is in it.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      closed_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      department_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      // Null: each person's form is picked by the forms' rules.
+      form_id: {"type": "uuid"},
+      hr_due: {"type": "date"},
+      hr_reviewer_membership_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      launched_at: {"type": "timestamp"},
+      manager_due: {"required": true, "type": "date"},
+      name: {"required": true, "type": "string"},
+      period_end: {"required": true, "type": "date"},
+      period_start: {"required": true, "type": "date"},
+      self_due: {"required": true, "type": "date"},
+      status: {"default": "draft", "enum": ["draft", "active", "closed"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "appraisal_cycles_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "appraisal_cycles_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "appraisal_cycles_recent"},
+    ],
+    checks: [
+      "CHECK (((length(name) >= 1) AND (length(name) <= 160)))",
+    ],
+  },
+  appraisal_forms: {
+    // Appraisal forms HR builds (packages/contracts/src/appraisals.ts appraisalDefinition): sections, questions,
+    // weights, the rating scale, bands and the final-score method. Cycles copy the definition when they launch.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      archived_at: {"type": "timestamp"},
+      audience: {"default": "all", "enum": ["all", "managers", "non_managers"], "required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      definition: {"required": true, "type": "json"},
+      department_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      description: {"type": "string"},
+      designation_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      is_default: {"default": false, "required": true, "type": "bool"},
+      name: {"required": true, "type": "string"},
+      // The built-in template it was made from, if any.
+      template_key: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+      version: {"default": 1, "required": true, "type": "int"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "appraisal_forms_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "appraisal_forms_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK (((length(name) >= 1) AND (length(name) <= 160)))",
+    ],
+  },
+  appraisals: {
+    // One person's appraisal in a cycle, with the form as it was at launch, every score and answer by stage, and
+    // the results. Stages: self -> manager -> hr -> finalized -> published.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      cycle_id: {"required": true, "type": "uuid"},
+      definition: {"required": true, "type": "json"},
+      employee_answers: {"default": {"json": {}}, "required": true, "type": "json"},
+      employee_id: {"required": true, "type": "uuid"},
+      final_percent_override: {"type": "decimal", "scale": 1},
+      final_scores: {"default": {"json": {}}, "required": true, "type": "json"},
+      finalized_at: {"type": "timestamp"},
+      finalized_by_membership_id: {"type": "uuid"},
+      form_id: {"type": "uuid"},
+      history: {"default": {"json": []}, "required": true, "type": "json"},
+      hr_answers: {"default": {"json": {}}, "required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Whether the person managed people at launch (manager-only sections apply).
+      is_manager: {"default": false, "required": true, "type": "bool"},
+      manager_answers: {"default": {"json": {}}, "required": true, "type": "json"},
+      manager_employee_id: {"type": "uuid"},
+      manager_submitted_at: {"type": "timestamp"},
+      override_reason: {"type": "string"},
+      published_at: {"type": "timestamp"},
+      // Results as last worked out: {selfPercent, managerPercent, hrPercent, calculatedPercent, finalPercent, band}.
+      result: {"default": {"json": {}}, "required": true, "type": "json"},
+      self_submitted_at: {"type": "timestamp"},
+      stage: {"default": "self", "enum": ["self", "manager", "hr", "finalized", "published"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "appraisals_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "appraisals_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "cycle_id"}, {"col": "employee_id"}], "name": "appraisals_one_per_cycle"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "cycle_id"], "onDelete": "cascade", "ref": "appraisal_cycles", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "appraisals_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "manager_employee_id"}, {"col": "stage"}], "name": "appraisals_manager"},
+    ],
+    checks: [],
+  },
   approval_policies: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
     columns: {

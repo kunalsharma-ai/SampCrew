@@ -44,6 +44,7 @@ export const NAV: NavGroup[] = [
       { href: '/leave', label: 'Leave', icon: 'calendar', permission: 'leave:request', feature: 'leave' },
       { href: '/payslips', label: 'Payslips', icon: 'file-text', permission: 'payslips:read', feature: 'payroll' },
       { href: '/expenses', label: 'Expenses', icon: 'receipt', permission: 'expenses:submit', feature: 'expenses' },
+      { href: '/appraisal', label: 'Appraisal', icon: 'award', permission: 'performance:read', feature: 'performance' },
     ],
   },
   {
@@ -99,6 +100,7 @@ export const NAV: NavGroup[] = [
       { href: '/goals', label: 'Goals', icon: 'target', permission: 'performance:read', feature: 'performance' },
       { href: '/reviews', label: 'Reviews', icon: 'messages-square', permission: 'performance:read', feature: 'performance' },
       { href: '/reviews/cycles', label: 'Review cycles', icon: 'calendar-range', permission: 'performance:configure', feature: 'performance' },
+      { href: '/settings/appraisals', label: 'Appraisal forms & cycles', icon: 'award', permission: 'performance:configure', feature: 'performance' },
       { href: '/learning', label: 'Learning', icon: 'graduation-cap', permission: 'learning:read', feature: 'learning' },
       { href: '/learning/catalogue', label: 'Course catalogue', icon: 'book-open', permission: 'learning:configure', feature: 'learning' },
     ],

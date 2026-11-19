@@ -280,3 +280,30 @@ export interface WorkTask {
 export interface WorkTaskDetail extends WorkTask { canManage: boolean; approvalTrail: { seq: number; status: string; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null; role: string | null }[] }
 export interface TaskCounts { hr: { open: number; new: number; overdue: number; review: number }; manager: { open: number; new: number; overdue: number; review: number }; toReview: number; documentsToVerify: number }
 export interface AssignablePerson { id: string; name: string; code: string | null; departmentName: string | null; designationName: string | null }
+
+// Employee workspace: appraisals
+export type AppraisalStageKey = 'self' | 'manager' | 'hr' | 'finalized' | 'published';
+export interface AppraisalSummary {
+  id: string; cycleId: string; cycleName: string; periodStart: string; periodEnd: string; selfDue: string; managerDue: string; hrDue: string | null; stage: AppraisalStageKey;
+  employeeId: string; employeeName: string | null; departmentName: string | null; managerName: string | null; formTitle: string; selfCompletion: number;
+  selfPercent: number | null; managerPercent: number | null; finalPercent: number | null; band: string | null; overdue: boolean; publishedAt: string | null;
+}
+export type AnswerValue = { score?: number | null; comment?: string | null; text?: string | null };
+export interface AppraisalDetail {
+  id: string; stage: AppraisalStageKey; role: 'employee' | 'manager' | 'hr'; canEdit: boolean;
+  cycle: { id: string; name: string; periodStart: string; periodEnd: string; selfDue: string; managerDue: string; hrDue: string | null; status: string };
+  employee: { name: string; code: string | null; designation: string | null; department: string | null; dateOfJoining: string | null; managerName: string | null };
+  reviewDate: string;
+  definition: import('@crew/contracts').AppraisalDefinition;
+  answers: { employee: Record<string, AnswerValue>; manager: Record<string, AnswerValue>; hr: Record<string, AnswerValue>; finalScores: Record<string, number | null> };
+  result: { selfPercent: number | null; managerPercent: number | null; hrPercent: number | null; calculatedPercent: number | null; finalPercent: number | null; band: string | null; finals: Record<string, number | null>; levels: Record<string, string | null> };
+  overrideReason: string | null; finalPercentOverride: number | null;
+  completion: { employee: number; manager: number; hr: number };
+  selfSubmittedAt: string | null; managerSubmittedAt: string | null; finalizedAt: string | null; publishedAt: string | null;
+  history: { at: string; by: string | null; action: string; stage: string; note: string | null }[];
+}
+export interface AppraisalForm { id: string; name: string; description: string | null; active: boolean; isDefault: boolean; audience: string; departmentIds: string[]; designationIds: string[]; version: number; templateKey: string | null; definition: import('@crew/contracts').AppraisalDefinition; updatedAt: string }
+export interface AppraisalCycle {
+  id: string; name: string; status: 'draft' | 'active' | 'closed'; formId: string | null; formName: string | null; periodStart: string; periodEnd: string; selfDue: string; managerDue: string; hrDue: string | null;
+  departmentIds: string[]; departmentNames: string[]; hrReviewerMembershipIds: string[]; launchedAt: string | null; closedAt: string | null; byStage: Record<AppraisalStageKey, number>; participants: number;
+}

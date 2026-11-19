@@ -106,6 +106,36 @@ export const WEB_HELP: HelpContent = {
       how: 'The employee updates progress or uploads the document; the person who assigned it (or HR) accepts, reopens with a reason, cancels, or verifies the document.',
       where: 'Opened from My tasks, a notification, or Approvals (document checks).',
     },
+    '/appraisal': {
+      title: 'Appraisal & performance',
+      what: 'Your appraisal for each cycle: your self-appraisal, your manager\u2019s evaluation, HR\u2019s review and the final result with its performance category.',
+      how: 'Open the current appraisal to fill it in, save a draft as you go and submit when done. Managers evaluate their team under My team; HR reviews and shares results under HR review.',
+      where: 'For everyone in an appraisal cycle. You are notified when a cycle starts, when your appraisal moves on and when the result is shared.',
+    },
+    '/appraisal/[id]': {
+      title: 'Appraisal',
+      what: 'One appraisal: the questions by section, the scores and comments from each stage you can see, the rating scale, the result and the timeline.',
+      how: 'Pick a score for each rated question, add comments and written answers, then submit. Your part locks after you submit; only HR can reopen it.',
+      where: 'Opened from Appraisal, a notification or an appraisal cycle.',
+    },
+    '/settings/appraisals': {
+      title: 'Appraisal forms & cycles',
+      what: 'The appraisal forms HR builds and the cycles that send them to people.',
+      how: 'Add the Frequent Research template or a blank form, change it to fit, then create a cycle with its period and deadlines and launch it.',
+      where: 'For HR. Each appraisal keeps a copy of its form, so editing a form never changes an appraisal already started.',
+    },
+    '/settings/appraisals/forms/[id]': {
+      title: 'Appraisal form',
+      what: 'The form builder: sections, questions, weights, the rating scale, performance categories and how the final score is worked out.',
+      how: 'Change any part and save. Sections can be for everyone, for people managers only (such as Management Skills) or for individual contributors.',
+      where: 'Opened from Appraisal forms & cycles.',
+    },
+    '/settings/appraisals/cycles/[id]': {
+      title: 'Appraisal cycle',
+      what: 'One cycle: its deadlines, how many appraisals are at each stage and every appraisal in it.',
+      how: 'Launch a draft cycle to create the appraisals, share finalised results when HR is done, and close the cycle at the end.',
+      where: 'Opened from Appraisal forms & cycles.',
+    },
     '/announcements': {
       title: 'Announcements',
       what: 'Company news published to you by HR or internal communications.',
@@ -998,6 +1028,43 @@ export const WEB_HELP: HelpContent = {
         Document: { what: 'The document this task asks for, the accepted formats and size, the latest upload and HR’s check.', how: 'Choose a file and upload it. If HR rejects it, read their note and upload again.' },
         Actions: { what: 'What you can do with the task now.', how: 'Employees start, send for review or complete; the assigner accepts, reopens or cancels.' },
         History: { what: 'Every change to the task: who did what, when, and their remarks.' },
+      },
+    },
+    '/appraisal': {
+      sections: {
+        'Team appraisals': { what: 'Appraisals of the people who report to you.', how: 'Open one after the person submits their self-appraisal and give your scores and comments.' },
+        'Waiting for HR': { what: 'Appraisals whose manager evaluation is in, and finalised ones not yet shared.', how: 'Open one to review, adjust final scores with a reason, finalise and share.' },
+        'Previous appraisals': { what: 'Your earlier appraisals with their final percentage and category.' },
+      },
+    },
+    '/appraisal/[id]': {
+      sections: {
+        'Rating scale': { what: 'What each score range means on this form.' },
+        'Final percentage': { what: 'The calculated result and, if HR records a different approved percentage, the reason for it.', how: 'Leave the box empty to use the calculated percentage.' },
+        Result: { what: 'The self, manager and final percentages and the performance category, as far as you can see them now.' },
+        'Performance categories': { what: 'The category each final percentage range falls in. Yours is highlighted once known.' },
+        Timeline: { what: 'Every step of this appraisal: who submitted, reopened or shared it, and when.' },
+      },
+    },
+    '/settings/appraisals': {
+      sections: {
+        'Appraisal forms': { what: 'Your forms, who each one is for and its version.', how: 'Open one to change it, copy it to start a variant, or remove one no cycle uses.' },
+        'Appraisal cycles': { what: 'Each cycle, its status, period and progress.', how: 'Create a cycle, then open it to launch it.' },
+      },
+    },
+    '/settings/appraisals/forms/[id]': {
+      sections: {
+        'Form settings': { what: 'The form name, title, introduction and who it is for when a cycle picks forms by rule.' },
+        'Sections and questions': { what: 'Every section and question, in order, with weights for rated questions.', how: 'Add, move, switch off or remove sections and questions. Weights decide how much each question counts.' },
+        'Rating scale': { what: 'The lowest and highest score and the meaning of each range.' },
+        'Performance categories': { what: 'The categories by final percentage, such as Very Good Performance from 85%.' },
+        'Final score': { what: 'Whose score becomes the final one: the manager, HR, or a weighted mix.' },
+      },
+    },
+    '/settings/appraisals/cycles/[id]': {
+      sections: {
+        'Cycle status': { what: 'Whether the cycle is a draft, running or closed, and its deadlines.', how: 'Launch, share finalised results or close it from here.' },
+        'Appraisals in this cycle': { what: 'Each person in the cycle, their stage and scores.', how: 'Open one to see or review it.' },
       },
     },
     '/settings/signature': {

@@ -67,3 +67,4 @@ export * from './signatures';
 export * from './signature-occasions';
 export * from './discipline';
 export * from './tasks';
+export * from './appraisals';
