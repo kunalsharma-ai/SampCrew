@@ -90,9 +90,33 @@ export const WEB_HELP: HelpContent = {
     },
     '/approvals': {
       title: 'Approvals',
-      what: 'Every request waiting for your decision: leave, attendance corrections, expenses, job requisitions, offers, bids and workflow approvals.',
-      how: 'Open a request to see the details, then approve or reject it. Add a note when you reject so the person knows why.',
-      where: 'For managers and approvers. Check it daily; requesters are notified as soon as you decide.',
+      what: 'Requests in category cards: those waiting for your decision, your own requests with their status, and what you decided.',
+      how: 'Pick a view, then a card to see its requests. Approve or reject with remarks; open a request for its full history.',
+      where: 'For everyone: managers and HR decide here, and everyone follows their own requests here.',
+    },
+    '/approvals/[id]': {
+      title: 'Approval request',
+      what: 'One request: its ID, type, details, supporting documents, current status, who decides it and every step with remarks.',
+      how: 'Approve or reject it here when it waits for you. Remarks are needed to reject, and the person sees them.',
+      where: 'Open it from Approvals, a notification or the record itself.',
+    },
+    '/notifications': {
+      title: 'Notification Center',
+      what: 'Every notification SampCrew sent you, by category, with important ones first. It updates live.',
+      how: 'Filter by category, unread or priority, search, mark read or unread, and open a notice to go to its record.',
+      where: 'Also reachable from the bell. Change what you are told about in Notification settings.',
+    },
+    '/settings/notifications': {
+      title: 'Notification settings',
+      what: 'What you are told about in SampCrew and by email, per category, and whether new notices make a sound or a pop-up.',
+      how: 'Switch categories on or off, set the sound and its volume, try the preview, then save.',
+      where: 'Your own settings. Approvals and workspace notices always show in SampCrew.',
+    },
+    '/settings/approvals': {
+      title: 'Approval settings',
+      what: 'Who approves each kind of request and in what order, and the categories the Approvals page groups requests into.',
+      how: 'Change a chain and save it; new requests follow it. Add your own category to give some requests a card of their own.',
+      where: 'For workspace admins. Every change is recorded in the audit trail.',
     },
     '/tasks': {
       title: 'My tasks',
@@ -636,8 +660,8 @@ export const WEB_HELP: HelpContent = {
     },
     '/settings/recruitment': {
       title: 'Recruitment settings',
-      what: 'Your hiring pipeline stages and public career site.',
-      how: 'Add, rename or reorder stages. Stages are shared by every job.',
+      what: 'Your hiring pipeline stages, public career site and who approves new job requisitions.',
+      how: 'Add, rename or reorder stages. Stages are shared by every job. Set the requisition approval chain at the top.',
       where: 'For recruitment admins.',
     },
     '/settings/helpdesk': {
@@ -667,6 +691,14 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    'Request details': { what: 'The request ID, its type, when and by whom it was submitted, its status and who decides it now.' },
+    'Supporting documents': { what: 'Files attached to the request, such as a receipt. Opening one is recorded.' },
+    'Your decision': { what: 'Approve or reject this request. Your remarks are shared with the person who asked.', how: 'Remarks are needed when you reject.' },
+    'Approval history': { what: 'Every step of the approval chain in order: who decided it, when, and their remarks, then the final decision.' },
+    'What you are told about': { what: 'Each category of notification, in SampCrew and by email.', how: 'Switch a category off to stop it. Approvals and workspace notices always show in SampCrew.' },
+    Sound: { what: 'A short, quiet tone for new notices while SampCrew is open. It never plays when a page loads.', how: 'Switch it on, set the volume and which notices make a sound, and try the preview.' },
+    'Pop-ups': { what: 'A small pop-up in the corner when a notice arrives while SampCrew is open.' },
+    'Approval categories': { what: 'The cards on the Approvals page. Built-in ones cover the usual requests; yours are checked first.', how: 'Add a category for some request types, leave types or expense categories.' },
     // Email signature
     'Choose a design': { what: 'The 20 signature designs, shown with your own details.', how: 'Click one to use it. If your company locked the design, only that one is shown.' },
     Customise: { what: 'Colours, font, size, what is shown and your own text and links.', how: 'Leave a field empty to use what HR has on record. The preview updates as you type.' },

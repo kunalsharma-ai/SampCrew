@@ -179,7 +179,7 @@ export class NotificationsController {
               const n = await tx.collection('notifications').findOne({ id: m.data.notificationId, membership_id: actor.membershipId });
               if (!n) return null;
               const names = await membershipUserNames(tx, [n.actor_membership_id]);
-              return { notification: notificationView(n, names), folded: Boolean(m.data.folded), unread: await unreadCount(tx, actor.membershipId) };
+              return { notification: notificationView(n, names), folded: Boolean(m.data.folded), self: m.data.by === actor.membershipId, unread: await unreadCount(tx, actor.membershipId) };
             }, scope);
             if (out) send('notification', out);
           } else if (m.type === 'notifications.read') {

@@ -25,7 +25,8 @@ import type { Me, Notification } from '@/lib/types';
 import { paletteSearchAction, recordVisitAction, resetAppearanceAction, saveAppearanceAction, saveFavouritesAction, syncAppearanceCookieAction } from './experience-actions';
 import { IqPanel } from './iq-panel';
 import { ThemePanel } from './theme-panel';
-import { logoutAction, markAllNotificationsReadAction, markNotificationReadAction, switchTenantAction } from './shell-actions';
+import { logoutAction, switchTenantAction } from './shell-actions';
+import { NotificationBell } from '@/components/notification-bell';
 
 export { ICONS };
 
@@ -236,7 +237,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               </Link>
               <Link href="/tasks" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="My tasks" title="My tasks"><ListChecks className="size-4" /></Link>
               {me.permissions['leave:request'] && me.features.includes('leave') && <Link href="/leave" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="Leave calendar" title="Leave calendar"><CalendarDays className="size-4" /></Link>}
-              {notifications && <NotificationBell data={notifications} />}
+              {notifications && <NotificationBell />}
               <ThemeMenu />
               <HeaderUser me={me} />
             </div>
@@ -531,66 +532,6 @@ function QuickCreate({ actions }: { actions: QuickAction[] }) {
               </li>
             );
           })}
-        </ul>
-      </Popover>
-    </div>
-  );
-}
-
-function NotificationBell({ data }: { data: Notifications }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [pending, start] = useTransition();
-  const close = useCallback(() => setOpen(false), []);
-  useEffect(() => {
-    // Keep the count fresh while the tab is open.
-    const t = setInterval(() => router.refresh(), 60_000);
-    return () => clearInterval(t);
-  }, [router]);
-  const go = (n: Notification) => {
-    setOpen(false);
-    start(async () => {
-      if (!n.readAt) await markNotificationReadAction(n.id);
-      if (n.link) router.push(n.link);
-      else router.refresh();
-    });
-  };
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="relative rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg"
-        aria-label={data.unread ? `Notifications, ${data.unread > 99 ? '99+' : data.unread} unread` : 'Notifications'}
-        aria-expanded={open}
-      >
-        <Bell className="size-4" />
-        {data.unread > 0 && (
-          <span aria-hidden className="absolute right-0.5 top-0.5 flex min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[0.625rem] font-semibold leading-4 text-surface">{data.unread > 99 ? '99+' : data.unread}</span>
-        )}
-      </button>
-      <Popover open={open} onClose={close} className="w-[min(22rem,calc(100vw-2rem))]">
-        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-          <span className="text-[0.8125rem] font-semibold">Notifications</span>
-          {data.unread > 0 && (
-            <button className="text-xs font-medium text-accent hover:underline" disabled={pending} onClick={() => start(async () => { await markAllNotificationsReadAction(); router.refresh(); })}>
-              Mark all read
-            </button>
-          )}
-        </div>
-        <ul className="max-h-96 overflow-y-auto">
-          {data.items.length === 0 && <li className="px-4 py-6 text-center text-[0.8125rem] text-fg-subtle">Nothing yet</li>}
-          {data.items.map((n) => (
-            <li key={n.id}>
-              <button onClick={() => go(n)} className={cn('flex w-full gap-3 px-4 py-2.5 text-left hover:bg-bg-subtle', !n.readAt && 'bg-accent-subtle/40')}>
-                <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', n.readAt ? 'bg-transparent' : 'bg-accent')} />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[0.8125rem] font-medium text-fg">{n.title}</span>
-                  {n.body && <span className="line-clamp-2 block text-xs text-fg-muted">{n.body}</span>}
-                  <span className="block text-[0.6875rem] text-fg-subtle">{new Date(n.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                </span>
-              </button>
-            </li>
-          ))}
         </ul>
       </Popover>
     </div>

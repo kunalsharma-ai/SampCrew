@@ -37,6 +37,12 @@ export class ApprovalsController {
     return this.approvals.detail(id);
   }
 
+  @Get('types')
+  @Doc({ summary: 'Request types that go through approvals, with the chain for those you may configure' })
+  types() {
+    return this.approvals.types();
+  }
+
   @Get('categories')
   @Doc({ summary: 'Approval categories: the workspace own ones and the built-in ones' })
   categories() {

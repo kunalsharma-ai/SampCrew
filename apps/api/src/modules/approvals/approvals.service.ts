@@ -380,6 +380,7 @@ export class ApprovalsService {
         counts.set(st.request_id, (counts.get(st.request_id) ?? 0) + 1);
       }
       const requesters = await membershipUserNames(tx, requests.map((x) => x.requested_by_membership_id));
+      const custom = await this.customCategories(tx);
       const subjects = new Map(
         (await tx.collection('employees').find({ id: { $in: requests.map((x) => x.subject_employee_id).filter(Boolean) } }, { projection: { first_name: 1, last_name: 1 } })).map((e) => [
           e.id as string,
@@ -397,6 +398,8 @@ export class ApprovalsService {
         requestedBy: requesters.get(x.requested_by_membership_id) ?? null,
         subjectName: subjects.get(x.subject_employee_id) ?? null,
         viaRole: (stepOf.get(x.id)!.approver_role_key as string | null) ?? null,
+        category: (x.category as string | undefined) ?? categorizeApproval(x.resource_type, x.meta, custom),
+        ref: approvalRef(x.id),
       }));
       const out = [];
       for (const c of candidates) {
@@ -441,6 +444,19 @@ export class ApprovalsService {
       await tx.collection('approval_policies').upsert({ resource_type: resourceType }, { resource_type: resourceType, steps }, { $set: { steps } });
       await this.audit.record(tx, { action: 'approval_policy.updated', resourceType: 'approval_policy', resourceId: resourceType, changes: { from: before, to: steps } });
       return { resourceType, steps };
+    });
+  }
+
+  /** Every request type that goes through approvals, with its chain when the caller may change it. */
+  async types() {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      const out = [];
+      for (const [resourceType, h] of this.handlers) {
+        const canConfigure = s.grants.some((g) => g.permission === h.configurePermission);
+        out.push({ resourceType, label: h.label, canConfigure, fallbackRole: h.fallbackRole, steps: canConfigure ? await this.steps(tx, resourceType) : null, autoApproveSoleOwner: Boolean(h.autoApproveSoleOwner) });
+      }
+      return out.sort((a, b) => a.label.localeCompare(b.label));
     });
   }
 

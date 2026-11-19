@@ -3,10 +3,11 @@ import {
   categoryOfKind, resolveNotificationPreferences, type NotificationCategory, type NotificationPriority, type NotificationView,
 } from '@crew/contracts';
 import { APP_CONFIG, type AppConfig } from '../config/config';
+import { requestContext } from '../context/request-context';
 import { type AnyTx, type PlatformTx, type TenantTx, usersTable } from '../database/mongo.service';
 
 /**
- * One notification for one or more people. This is the API every module uses (see docs/notifications.md):
+ * One notification for one or more people. This is the API every module uses (see docs/architecture/notifications.md):
  *
  *   await this.notifications.notify(tx, { membershipIds: [m], kind: 'leave.approved', title: 'Leave approved', link: '/leave' });
  *
@@ -81,11 +82,13 @@ export class NotificationService {
     );
     const active = memberships.filter((m) => m.status === 'active').map((m) => ({ id: m.id as string, tenant_id: m.tenant_id as string, email: emails.get(m.user_id)! }));
     const live: Doc[] = [];
+    // Who caused it, so their own open page does not pop up a notice about what they just did.
+    const by = (() => { const a = requestContext.get()?.actor; return a?.kind === 'user' ? a.membershipId : null; })();
     for (const r of active) {
       const channel = prefs.get(r.id) ?? { inApp: true, email: true };
       if (channel.inApp) {
         const n = await this.store(tx, r, notice, category, priority);
-        live.push({ tenant_id: r.tenant_id, membership_ids: [r.id], type: 'notification', data: { notificationId: n.id, folded: n.folded } });
+        live.push({ tenant_id: r.tenant_id, membership_ids: [r.id], type: 'notification', data: { notificationId: n.id, folded: n.folded, by } });
         if (!n.folded) {
           // A push to each signed-in phone. It carries only the notification id; the app loads the text after sign-in.
           const devices = await tx.collection('mobile_devices').find({ membership_id: r.id, push_token: { $ne: null }, revoked_at: null }, { projection: { _id: 1, tenant_id: 1 } });

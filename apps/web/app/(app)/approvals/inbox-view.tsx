@@ -55,7 +55,10 @@ function Item({ item, result: decidedResult, onDecided }: { item: InboxItem; res
           </div>
           <p className="mt-1 text-sm text-fg">{item.summary}</p>
           {item.details?.sameDayLeave && <SameDayPenalty requestId={item.resourceId} d={item.details.sameDayLeave} />}
-          <p className="mt-1 text-xs text-fg-subtle">Requested {item.requestedBy && item.requestedBy !== item.subjectName ? `by ${item.requestedBy} ` : ''}on {new Date(item.createdAt).toLocaleString()}</p>
+          <p className="mt-1 text-xs text-fg-subtle" suppressHydrationWarning>
+            {item.ref && <span className="mr-1 font-mono">{item.ref}</span>}Requested {item.requestedBy && item.requestedBy !== item.subjectName ? `by ${item.requestedBy} ` : ''}on {new Date(item.createdAt).toLocaleString()}
+            {' · '}<Link href={`/approvals/${item.id}`} className="font-medium text-accent hover:underline">Details and history</Link>
+          </p>
           {result ? <Alert tone={result.tone} className="mt-3">{result.text}</Alert> : (
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
               <Textarea aria-label="Comment" placeholder="Comment (optional, shared with the requester)" value={comment} onChange={(e) => setComment(e.target.value)} maxLength={1000} className="min-h-9 flex-1" rows={1} />

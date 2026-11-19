@@ -1,3 +1,13 @@
 @import "tailwindcss";
 @import "@crew/ui/styles.css";
 @source "../../../packages/ui/src";
+
+/* The bell swings briefly when a notification arrives (only when the person allows motion). */
+@keyframes bell-ring {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-12deg); }
+  45% { transform: rotate(8deg); }
+  60% { transform: rotate(-6deg); }
+  75% { transform: rotate(3deg); }
+}
