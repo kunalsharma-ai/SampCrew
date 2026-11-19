@@ -1916,6 +1916,37 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((next_value > 0))",
     ],
   },
+  employee_profiles: {
+    // The rest of the employee profile (see packages/contracts/src/profile.ts): addresses, emergency contacts,
+    // education, previous employment, skills. Employees change it through profile updates that HR approves.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      address: {"type": "json"},
+      blood_group: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      education: {"type": "json"},
+      emergency: {"type": "json"},
+      employee_id: {"required": true, "type": "uuid"},
+      employment: {"type": "json"},
+      // Identity and address proof uploads: {identityDocumentId, addressProofDocumentId}.
+      identity_documents: {"type": "json"},
+      marital_status: {"type": "string"},
+      nationality: {"type": "string"},
+      skills: {"type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}], "name": "employee_profiles_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
   employee_salaries: {
     access: "tenant", grants: ["delete", "insert", "select"],
     columns: {
@@ -1977,11 +2008,17 @@ export const TABLES: Record<string, TableSpec> = {
   employee_sensitive: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
+      account_holder_name: {"type": "string"},
+      account_type: {"type": "string"},
       bank_account_enc: {"type": "string"},
+      bank_branch: {"type": "string"},
       bank_name: {"type": "string"},
       bank_routing_enc: {"type": "string"},
       employee_id: {"required": true, "type": "uuid"},
       national_id_enc: {"type": "string"},
+      // Another government ID (passport, voter ID, driving licence): its type, and the number encrypted.
+      other_id_enc: {"type": "string"},
+      other_id_type: {"type": "string"},
       tax_id_enc: {"type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -4156,6 +4193,46 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((export_sha256 ~ '^[0-9a-f]{64}$'::text))",
       "CHECK (((status = 'open'::text) = (completed_at IS NULL)))",
     ],
+  },
+  profile_change_requests: {
+    // Profile updates employees submit for HR to approve (approval type profile_update). Old and new values are
+    // kept for comparison; bank and identity numbers are kept encrypted (new_enc) and only masked in old/new.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      approval_request_id: {"type": "uuid"},
+      // [{field, label, old, new}] as shown to HR (sensitive values masked).
+      changes: {"default": {"json": []}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      decided_at: {"type": "timestamp"},
+      decided_by_membership_id: {"type": "uuid"},
+      employee_id: {"required": true, "type": "uuid"},
+      // [{at, by, action, remarks}].
+      history: {"default": {"json": []}, "required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // The submitted section data; for bank and identity sections it is encrypted (new_enc) instead.
+      new_data: {"type": "json"},
+      new_enc: {"type": "string"},
+      note: {"type": "string"},
+      remarks: {"type": "string"},
+      requested_by_membership_id: {"required": true, "type": "uuid"},
+      section: {"enum": ["personal", "address", "emergency", "education", "employment", "skills", "bank", "identity"], "required": true, "type": "string"},
+      status: {"default": "pending", "enum": ["pending", "approved", "rejected", "info_requested", "cancelled", "superseded"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "profile_change_requests_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "profile_change_requests_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "profile_change_requests_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "created_at", "desc": true}], "name": "profile_change_requests_status"},
+    ],
+    checks: [],
   },
   push_messages: {
     access: "tenant", grants: ["insert"],

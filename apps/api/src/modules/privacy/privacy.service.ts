@@ -235,6 +235,8 @@ export class PrivacyService {
         },
       });
       counts.sensitive = await tx.collection('employee_sensitive').delete({ employee_id: r.employee_id });
+      counts.profile = await tx.collection('employee_profiles').delete({ employee_id: r.employee_id });
+      counts.profileUpdates = await tx.collection('profile_change_requests').delete({ employee_id: r.employee_id });
       const docs = await tx.collection('employee_documents').find({ employee_id: r.employee_id }, { projection: { storage_key: 1 } });
       await tx.collection('employee_documents').delete({ employee_id: r.employee_id });
       files.push(...docs.map((d) => d.storage_key as string));
