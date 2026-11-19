@@ -249,9 +249,10 @@ async function run(b) {
     const f = hr.getByRole('form', { name: `${name} check` });
     if (!(await f.count())) continue;
     await f.getByLabel('Check status').selectOption('verified');
-    // Wait for this check's save to come back before the next one (each save refreshes the page). Other page
-    // actions also post to this URL, so the wait matches the save itself.
-    await Promise.all([hr.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/verification/') && (r.request().postData() ?? '').includes('"status":"verified"')), f.getByRole('button', { name: new RegExp(`^Save ${name.toLowerCase()}`) }).click()]);
+    await f.getByRole('button', { name: new RegExp(`^Save ${name.toLowerCase()}`) }).click();
+    // Wait until the saved check shows who verified it before the next one (each save refreshes the page). Waiting
+    // for "a POST to this page" is not enough: the page's live connection also calls a server action on this URL.
+    await f.getByText(/^by .+ on /).waitFor({ timeout: 10000 }).catch((e) => fail(hr, e));
   }
   await hr.reload();
   await hr.getByRole('button', { name: 'Record the result' }).click();
