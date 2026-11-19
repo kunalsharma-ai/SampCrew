@@ -4968,6 +4968,81 @@
         }
       }
     },
+    "/api/v1/employees/import/template.xlsx": {
+      "get": {
+        "tags": [
+          "EmployeeImport"
+        ],
+        "summary": "The import template as an Excel workbook (with a column per leave type)",
+        "description": "Requires permission `employees:create`.",
+        "operationId": "EmployeeImport_template",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/employees/import": {
+      "post": {
+        "tags": [
+          "EmployeeImport"
+        ],
+        "summary": "Check (dryRun=true, the default) or import a filled-in template of existing employees. Multipart: file.",
+        "description": "Requires permission `employees:create`.",
+        "operationId": "EmployeeImport_run",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dryRun",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "true",
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/employees": {
       "get": {
         "tags": [
@@ -5373,6 +5448,15 @@
                         "leaveTypeId",
                         "days"
                       ]
+                    }
+                  },
+                  "assetIds": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                     }
                   }
                 },
@@ -7273,6 +7357,4166 @@
         "summary": "Withdraw a scheduled exit",
         "description": "Requires permission `employees:lifecycle`.",
         "operationId": "Employees_withdraw",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Assets I may see (the whole inventory, or what people in my scope hold), with counts by status",
+        "description": "Requires permission `assets:view`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_list",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "available",
+                "assigned",
+                "under_maintenance",
+                "damaged",
+                "lost",
+                "retired"
+              ]
+            }
+          },
+          {
+            "name": "categoryId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "employeeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Register an asset (the asset ID is numbered in its category when left out)",
+        "description": "Requires permission `assets:create`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_create",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "assetCode": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]*$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "categoryId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "brand": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "model": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "serialNumber": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "purchaseDate": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "purchasePrice": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{1,12}(\\.\\d{1,2})?$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "currency": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
+                  },
+                  "vendor": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "warrantyExpiry": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "condition": {
+                    "default": "new",
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "good",
+                      "fair",
+                      "poor",
+                      "damaged"
+                    ]
+                  },
+                  "location": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "remarks": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "name",
+                  "categoryId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/mine": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Assets I hold or held, and which still need my acknowledgement",
+        "description": "Requires permission `assets:view`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_mine",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/assignments/{id}/acknowledge": {
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Acknowledge an asset assigned to me: my typed name and acceptance are kept as the digital record",
+        "description": "Requires permission `assets:view`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_acknowledge",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "fullName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "accept": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "fullName",
+                  "accept"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/categories": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Asset categories (the defaults are added on first use)",
+        "description": "Requires permission `assets:view`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_categories",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Add an asset category",
+        "description": "Requires permission `assets:manage`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_createCategory",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9]{2,8}$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "name",
+                  "code"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/categories/{id}": {
+      "patch": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Rename, recode or archive a category",
+        "description": "Requires permission `assets:manage`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_updateCategory",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9]{2,8}$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "archived": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/reports/{kind}.{format}": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "An asset report as Excel or PDF: employee, department, available, assigned, returned, damaged_lost, purchases, maintenance",
+        "description": "Requires permission `assets:export`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_report",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "categoryId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{id}": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "An asset with its assignments, acknowledgements, history and files",
+        "description": "Requires permission `assets:view`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_get",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Change an asset’s details",
+        "description": "Requires permission `assets:edit`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_update",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "assetCode": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]*$"
+                  },
+                  "categoryId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "brand": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "serialNumber": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "purchaseDate": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "purchasePrice": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{1,12}(\\.\\d{1,2})?$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "currency": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
+                  },
+                  "vendor": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 160
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "warrantyExpiry": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "condition": {
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "good",
+                      "fair",
+                      "poor",
+                      "damaged"
+                    ]
+                  },
+                  "location": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 160
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "remarks": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Delete an asset that was never assigned (others are retired instead)",
+        "description": "Requires permission `assets:delete`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_remove",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{id}/assign": {
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Assign an available asset to an employee, who is asked to acknowledge it",
+        "description": "Requires permission `assets:create`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_assign",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "employeeId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "assignedOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "expectedReturnOn": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "condition": {
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "good",
+                      "fair",
+                      "poor",
+                      "damaged"
+                    ]
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "requireAcknowledgement": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "employeeId",
+                  "assignedOn",
+                  "condition"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{id}/return": {
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Record the return of an assigned asset and its condition",
+        "description": "Requires permission `assets:edit`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_returnAsset",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "returnedOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "condition": {
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "good",
+                      "fair",
+                      "poor",
+                      "damaged"
+                    ]
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "nextStatus": {
+                    "default": "available",
+                    "type": "string",
+                    "enum": [
+                      "available",
+                      "under_maintenance",
+                      "damaged"
+                    ]
+                  }
+                },
+                "required": [
+                  "returnedOn",
+                  "condition"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{id}/status": {
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Maintenance, back in service, damaged, lost (needs Approve) or retired (needs Delete)",
+        "description": "Requires permission `assets:view`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_status",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "available",
+                      "assigned",
+                      "under_maintenance",
+                      "damaged",
+                      "lost",
+                      "retired"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  },
+                  "vendor": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{1,12}(\\.\\d{1,2})?$"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "note"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{id}/files": {
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Attach a document (invoice, warranty, photo). Multipart: file, title.",
+        "description": "Requires permission `assets:edit`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_upload",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/files/{fileId}": {
+      "delete": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Remove a document from an asset (kept in storage)",
+        "description": "Requires permission `assets:edit`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_removeFile",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/files/{fileId}/link": {
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "A 5-minute download link for an asset document",
+        "description": "Requires permission `assets:view`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "Assets_link",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/employees/{id}/assets": {
+      "get": {
+        "tags": [
+          "AssetsEmployee"
+        ],
+        "summary": "Assets an employee holds and held",
+        "description": "Requires permission `assets:view`.\n\nRequires plan feature `asset_management`.",
+        "operationId": "AssetsEmployee_forEmployee",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/files/assets/{id}": {
+      "get": {
+        "tags": [
+          "AssetsEmployee"
+        ],
+        "summary": "Download an asset document through a signed link",
+        "operationId": "AssetsEmployee_file",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases": {
+      "get": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Verification cases of the employees I may see",
+        "description": "Requires permission `bgv:view`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_list",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_progress",
+                "verified",
+                "failed",
+                "on_hold",
+                "cancelled",
+                "open"
+              ]
+            }
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "internal",
+                "external"
+              ]
+            }
+          },
+          {
+            "name": "agencyId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "employeeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Start background verification for an employee (internal, or with an agency)",
+        "description": "Requires permission `bgv:create`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_create",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "employeeId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "internal",
+                      "external"
+                    ]
+                  },
+                  "agencyId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "checks": {
+                    "minItems": 1,
+                    "maxItems": 30,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "identity",
+                            "address",
+                            "education",
+                            "employment",
+                            "reference",
+                            "document"
+                          ]
+                        },
+                        "details": {
+                          "default": {},
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "pattern": "^[a-zA-Z]{1,40}$"
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        },
+                        "documentIds": {
+                          "default": [],
+                          "maxItems": 20,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "dueDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "assigneeMembershipId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "employeeId",
+                  "method",
+                  "checks"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases/export.xlsx": {
+      "get": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Verification cases as an Excel workbook (the same filters as the list)",
+        "description": "Requires permission `bgv:export`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_export",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_progress",
+                "verified",
+                "failed",
+                "on_hold",
+                "cancelled",
+                "open"
+              ]
+            }
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "internal",
+                "external"
+              ]
+            }
+          },
+          {
+            "name": "agencyId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "employeeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases/{id}": {
+      "get": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "A case with its checks, files, history and agency links",
+        "description": "Requires permission `bgv:view`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_get",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Change the due date, verifier, notes or agency reference",
+        "description": "Requires permission `bgv:edit`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_update",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "dueDate": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "assigneeMembershipId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "notes": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "agencyReference": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases/{id}/checks": {
+      "post": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Add a check to a case",
+        "description": "Requires permission `bgv:edit`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_addCheck",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "identity",
+                      "address",
+                      "education",
+                      "employment",
+                      "reference",
+                      "document"
+                    ]
+                  },
+                  "details": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z]{1,40}$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "documentIds": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases/{id}/checks/{checkId}": {
+      "patch": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Record a check: status, details, linked documents, internal remarks, agency feedback",
+        "description": "Requires permission `bgv:edit`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_updateCheck",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "in_progress",
+                      "verified",
+                      "failed",
+                      "on_hold"
+                    ]
+                  },
+                  "details": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z]{1,40}$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "documentIds": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "remarks": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 4000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "agencyFeedback": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 4000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases/{id}/decision": {
+      "post": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Set the case result: verified (every check verified), failed, on hold, or back in progress",
+        "description": "Requires permission `bgv:approve`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_decide",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "failed",
+                      "on_hold",
+                      "in_progress"
+                    ]
+                  },
+                  "remarks": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 4000
+                  },
+                  "completedOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  }
+                },
+                "required": [
+                  "status",
+                  "remarks"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Cancel a case (kept with its history); any agency link stops working",
+        "description": "Requires permission `bgv:delete`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_cancel",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases/{id}/files": {
+      "post": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Upload a supporting document (multipart: file, title, checkId, shared). PDF, images, Word or text, up to 10 MB.",
+        "description": "Requires permission `bgv:edit`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_uploadFile",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/files/{fileId}/shared": {
+      "put": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Share a file with the agency, or stop sharing it",
+        "description": "Requires permission `bgv:edit`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_share",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "shared": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "shared"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/files/{fileId}": {
+      "delete": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Take a file off the case (it stays in the history)",
+        "description": "Requires permission `bgv:delete`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_removeFile",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/files/{fileId}/link": {
+      "post": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "A 5-minute download link for a case file (audited)",
+        "description": "Requires permission `bgv:view`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_link",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases/{id}/share": {
+      "post": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Assign the case to an agency: email it a private link to the shared files and the findings form",
+        "description": "Requires permission `bgv:edit`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_sendToAgency",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "agencyId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "expiresInDays": {
+                    "default": 30,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 90
+                  }
+                },
+                "required": [
+                  "agencyId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/cases/{id}/links/{linkId}/revoke": {
+      "post": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Switch an agency link off",
+        "description": "Requires permission `bgv:edit`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_revoke",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "linkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/agencies": {
+      "get": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Verification agencies",
+        "description": "Requires permission `bgv:view`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_agencies",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Add a verification agency",
+        "description": "Requires permission `bgv:manage`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_createAgency",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "contactName": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "website": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 300,
+                        "format": "uri"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "address": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "services": {
+                    "minItems": 1,
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "identity",
+                        "address",
+                        "education",
+                        "employment",
+                        "reference",
+                        "document"
+                      ]
+                    }
+                  },
+                  "turnaroundDays": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 180
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "active": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "email",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/agencies/{id}": {
+      "put": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Change a verification agency (switch it off with active: false)",
+        "description": "Requires permission `bgv:manage`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_updateAgency",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "contactName": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "website": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 300,
+                        "format": "uri"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "address": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "services": {
+                    "minItems": 1,
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "identity",
+                        "address",
+                        "education",
+                        "employment",
+                        "reference",
+                        "document"
+                      ]
+                    }
+                  },
+                  "turnaroundDays": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 180
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "active": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "email",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv/verifiers": {
+      "get": {
+        "tags": [
+          "Bgv"
+        ],
+        "summary": "Members who can be made a case’s verifier (they hold the Edit permission)",
+        "description": "Requires permission `bgv:create`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "Bgv_verifiers",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/employees/{id}/bgv": {
+      "get": {
+        "tags": [
+          "BgvEmployee"
+        ],
+        "summary": "An employee's verification cases",
+        "description": "Requires permission `bgv:view`.\n\nRequires plan feature `background_verification`.",
+        "operationId": "BgvEmployee_forEmployee",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/files/bgv/{id}": {
+      "get": {
+        "tags": [
+          "BgvEmployee"
+        ],
+        "summary": "Download a case file through a signed link",
+        "operationId": "BgvEmployee_file",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv-portal/{token}": {
+      "get": {
+        "tags": [
+          "BgvPortal"
+        ],
+        "summary": "An agency reads a verification request: the checks and the files shared with it",
+        "operationId": "BgvPortal_get",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv-portal/{token}/files/{fileId}": {
+      "get": {
+        "tags": [
+          "BgvPortal"
+        ],
+        "summary": "An agency downloads a shared file (audited)",
+        "operationId": "BgvPortal_file",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv-portal/{token}/findings": {
+      "post": {
+        "tags": [
+          "BgvPortal"
+        ],
+        "summary": "An agency sends its findings per check and the completion date",
+        "operationId": "BgvPortal_findings",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reporterName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "summary": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "completedOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "checks": {
+                    "default": [],
+                    "maxItems": 30,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "checkId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "in_progress",
+                            "verified",
+                            "failed",
+                            "on_hold"
+                          ]
+                        },
+                        "feedback": {
+                          "type": "string",
+                          "maxLength": 4000
+                        }
+                      },
+                      "required": [
+                        "checkId",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "reporterName"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bgv-portal/{token}/report": {
+      "post": {
+        "tags": [
+          "BgvPortal"
+        ],
+        "summary": "An agency uploads its report (multipart: file, title)",
+        "operationId": "BgvPortal_report",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/custom-fields": {
+      "get": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "Field definitions (all kinds of record, or one); archived ones too with archived=true",
+        "operationId": "CustomFields_list",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "employee",
+                "asset",
+                "bgv_case",
+                "candidate",
+                "leave_request"
+              ]
+            }
+          },
+          {
+            "name": "archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "Add a custom field",
+        "description": "Requires permission `fields:manage`.",
+        "operationId": "CustomFields_create",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "short_text",
+                      "long_text",
+                      "number",
+                      "date",
+                      "datetime",
+                      "dropdown",
+                      "multi_select",
+                      "radio",
+                      "checkbox",
+                      "email",
+                      "phone",
+                      "file",
+                      "currency",
+                      "url"
+                    ]
+                  },
+                  "helpText": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "required": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "defaultValue": {},
+                  "options": {
+                    "default": [],
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "label"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "section": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "enabled": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "viewRoles": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{2,40}$"
+                    }
+                  },
+                  "editRoles": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{2,40}$"
+                    }
+                  },
+                  "employeeEditable": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "config": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "min": {
+                        "type": "number"
+                      },
+                      "max": {
+                        "type": "number"
+                      },
+                      "maxLength": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000
+                      },
+                      "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "entity": {
+                    "type": "string",
+                    "enum": [
+                      "employee",
+                      "asset",
+                      "bgv_case",
+                      "candidate",
+                      "leave_request"
+                    ]
+                  },
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,40}$"
+                  }
+                },
+                "required": [
+                  "label",
+                  "type",
+                  "entity"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/custom-fields/history": {
+      "get": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "The audit trail of field definition changes",
+        "description": "Requires permission `fields:manage`.",
+        "operationId": "CustomFields_history",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/custom-fields/order": {
+      "put": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "Set the order fields are shown in",
+        "description": "Requires permission `fields:manage`.",
+        "operationId": "CustomFields_reorder",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "entity": {
+                    "type": "string",
+                    "enum": [
+                      "employee",
+                      "asset",
+                      "bgv_case",
+                      "candidate",
+                      "leave_request"
+                    ]
+                  },
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "entity",
+                  "ids"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/custom-fields/{id}": {
+      "patch": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "Rename a field, change its type, options, rules or who may see and edit it (values are kept)",
+        "description": "Requires permission `fields:manage`.",
+        "operationId": "CustomFields_update",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "short_text",
+                      "long_text",
+                      "number",
+                      "date",
+                      "datetime",
+                      "dropdown",
+                      "multi_select",
+                      "radio",
+                      "checkbox",
+                      "email",
+                      "phone",
+                      "file",
+                      "currency",
+                      "url"
+                    ]
+                  },
+                  "helpText": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "required": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "defaultValue": {},
+                  "options": {
+                    "default": [],
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "label"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "section": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "enabled": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "viewRoles": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{2,40}$"
+                    }
+                  },
+                  "editRoles": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{2,40}$"
+                    }
+                  },
+                  "employeeEditable": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "config": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "min": {
+                        "type": "number"
+                      },
+                      "max": {
+                        "type": "number"
+                      },
+                      "maxLength": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000
+                      },
+                      "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "Delete a field that never held a value (others are archived instead)",
+        "description": "Requires permission `fields:manage`.",
+        "operationId": "CustomFields_remove",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/custom-fields/{id}/archive": {
+      "post": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "Archive a field (its values are kept and hidden) or bring it back",
+        "description": "Requires permission `fields:manage`.",
+        "operationId": "CustomFields_archive",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "archived"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/custom-fields/values/{entity}/{recordId}": {
+      "get": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "A record’s custom field values that I may see, and which ones I may change",
+        "operationId": "CustomFields_values",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "Save a record’s custom field values (only the ones I may change)",
+        "operationId": "CustomFields_save",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "values": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{1,40}$"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "values"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/custom-fields/values/{entity}/{recordId}/files": {
+      "post": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "Upload the file for a file field (multipart: file, key). Save the returned fileId as the value.",
+        "operationId": "CustomFields_upload",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/custom-fields/files/{fileId}/link": {
+      "post": {
+        "tags": [
+          "CustomFields"
+        ],
+        "summary": "A 5-minute download link for a file field’s file",
+        "operationId": "CustomFields_link",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/files/fields/{id}": {
+      "get": {
+        "tags": [
+          "CustomFieldFiles"
+        ],
+        "summary": "Download a custom field file through a signed link",
+        "operationId": "CustomFieldFiles_file",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hr-admin/modules": {
+      "get": {
+        "tags": [
+          "HrAdmin"
+        ],
+        "summary": "Modules the plan includes and whether this workspace has them switched on",
+        "description": "Requires permission `tenant:read`.",
+        "operationId": "HrAdmin_modules",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "HrAdmin"
+        ],
+        "summary": "Switch modules off for everyone in the workspace, or back on (within the plan)",
+        "description": "Requires permission `modules:manage`.",
+        "operationId": "HrAdmin_setModules",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "changes": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "changes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hr-admin/permissions": {
+      "get": {
+        "tags": [
+          "HrAdmin"
+        ],
+        "summary": "Every role against every permission, by module and action (View, Create, Edit, Delete, Approve, Export, Manage)",
+        "description": "Requires permission `roles:read`.",
+        "operationId": "HrAdmin_matrix",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hr-admin/roles/{id}/permissions": {
+      "put": {
+        "tags": [
+          "HrAdmin"
+        ],
+        "summary": "Replace a role’s permissions (built-in roles too, except Workspace Owner)",
+        "description": "Requires permission `roles:manage`.",
+        "operationId": "HrAdmin_setGrants",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "grants": {
+                    "maxItems": 300,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "permission": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 64
+                        },
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "own",
+                            "team",
+                            "department",
+                            "entity",
+                            "tenant"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "permission",
+                        "scope"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "grants"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hr-admin/roles/{id}/reset": {
+      "post": {
+        "tags": [
+          "HrAdmin"
+        ],
+        "summary": "Put a built-in role back to the permissions it ships with",
+        "description": "Requires permission `roles:manage`.",
+        "operationId": "HrAdmin_reset",
         "security": [
           {
             "bearer": []

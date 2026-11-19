@@ -3,6 +3,7 @@ import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { load, loadOptional } from '@/lib/api';
+import type { AssetList } from '../assets/types';
 import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
 import type { Department, Designation, Employee, LegalEntity, Location, Me, OnboardingTemplate, Page } from '@/lib/types';
@@ -51,7 +52,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const canDocs = can(me, 'documents:manage');
   const canAttendance = me.features.includes('attendance_basic');
   const canOpenBalances = canHire && me.features.includes('leave') && can(me, 'leave:approve');
-  const [page, departments, entities, locations, designations, managers, templates, drafts, structures, shifts, devices, policies] = await Promise.all([
+  const canHandOver = canHire && me.features.includes('asset_management') && can(me, 'assets:create');
+  const [page, departments, entities, locations, designations, managers, templates, drafts, structures, shifts, devices, policies, freeAssets] = await Promise.all([
     load<Page<Employee> & { total?: number }>(`/employees?${qs}`),
     loadOptional<Department[]>('/org/departments'),
     loadOptional<LegalEntity[]>('/org/legal-entities'),
@@ -64,6 +66,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     canHire && canAttendance ? loadOptional<ShiftOption[]>('/shifts/templates') : null,
     canHire && canAttendance && can(me, 'devices:manage') ? loadOptional<DeviceOption[]>('/attendance/devices') : null,
     canOpenBalances ? loadOptional<LeavePolicyOption[]>('/leave/policies') : null,
+    canHandOver ? loadOptional<AssetList>('/assets?status=available&limit=500') : null,
   ]);
   // A new workspace finishes company setup before its first hire; admins are sent there from Add employee.
   const setupPending = !me.tenant.setupCompletedAt;
@@ -78,6 +81,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
       <ModuleOverview module="employees" actions={allowed(me, [
         { label: 'Add employee', href: '/employees?create=employee', icon: 'user-plus', permission: 'employees:create' },
         { label: 'Structure', href: '/organization', icon: 'building', permission: 'org:read' },
+        { label: 'Import existing employees', href: '/employees/import', icon: 'upload', permission: 'employees:create' },
         { label: 'Onboarding checklists', href: '/settings/onboarding', icon: 'list-checks', permission: 'employees:create' },
         { label: 'Logins & access', href: '/people', icon: 'users', permission: 'users:read' },
         { label: 'Workforce Universe', href: '/insights/universe', icon: 'orbit', permission: 'employees:read', feature: 'workforce_universe' },
@@ -105,6 +109,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         canAttendance={canAttendance}
         canConfigureShifts={canAttendance && can(me, 'attendance:configure')}
         leavePolicies={canOpenBalances ? (policies ?? []).filter((x) => !x.typeArchived && x.accrualMethod !== 'none') : null}
+        availableAssets={canHandOver ? (freeAssets?.items ?? []).map((a) => ({ id: a.id, assetCode: a.assetCode, name: a.name, category: a.category })) : null}
         setupPending={setupPending}
       />
     </>

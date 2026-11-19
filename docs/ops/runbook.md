@@ -1,12 +1,19 @@
 # SampCrew production runbook
 
-How to run SampCrew in production on one Linux host with Docker, using `infra/deploy/compose.yml`. The same images run on
+How to run SampCrew in production on one Linux host with Docker, using a deployment folder made from the reference stack in `infra/stack/`. The same images run on
 any container platform (Kubernetes, ECS, Cloud Run); the compose file is the reference for which settings each service
 needs and how the services depend on each other.
 
 What going live still needs from you, and nothing else: **a host, three DNS names, an SMTP account** and, when you want
 them, **real keys** for the Claude API and Expo push. Everything below is already built and tested
-(`infra/deploy/smoke.sh`, CI job `deploy`).
+(`infra/stack/smoke.sh`, CI job `deploy`).
+
+**The deployment folder is not in git.** `infra/deploy/` belongs to each server (its compose file, proxy
+configuration, `.env`, keys, logs) and `.gitignore` excludes it. `infra/stack/` is the tested reference it starts from;
+compare the two after an upgrade (`diff -r infra/stack infra/deploy`) and copy over what changed. A server that still
+has the folder from before 2026-11-19, when it was tracked, keeps it with:
+`cp -a infra/deploy /tmp/deploy-keep && git pull && cp -a /tmp/deploy-keep/. infra/deploy/` (the pull removes the
+tracked copies).
 
 ## 1. What runs
 
@@ -42,6 +49,7 @@ Health checks:
    `console.crew.example.com`.
 3. **Settings**:
    ```sh
+   cp -r infra/stack infra/deploy   # the server's own deployment folder; git ignores it, so local changes stay
    cd infra/deploy
    cp env.production.example .env
    ./gen-secrets.sh >> .env      # fresh database and Redis passwords and the backup passphrase

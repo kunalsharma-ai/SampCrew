@@ -14,7 +14,13 @@ next-env.d.ts
 dist-web/
 .expo/
 *-failure.png
-infra/deploy/backups/
-infra/deploy/.env.smoke
-infra/deploy/smoke-logs.txt
-infra/deploy/offsite.env
+# The deployment folder belongs to each server (its compose file, proxy config, .env, keys, logs, backups) and is
+# never committed. Start one from the reference stack: cp -r infra/stack infra/deploy (docs/ops/runbook.md).
+/deploy/
+infra/deploy/
+# Files the reference stack's smoke test writes.
+infra/stack/.env
+infra/stack/.env.smoke
+infra/stack/smoke-logs.txt
+infra/stack/offsite.env
+infra/stack/backups/

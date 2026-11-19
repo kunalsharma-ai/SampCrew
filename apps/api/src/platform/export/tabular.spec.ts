@@ -24,3 +24,15 @@ describe('tabular export', () => {
     expect(strFromU8(files['xl/workbook.xml']!)).toContain('name="People"');
   });
 });
+
+describe('readXlsx', () => {
+  it('reads back a workbook toXlsx wrote, keeping codes and blanks', async () => {
+    const { readXlsx, toXlsx } = await import('./tabular');
+    const rows = readXlsx(toXlsx('People', [['Employee ID', 'Name', 'Joined'], ['0012', 'Asha & Co <x>', 44291], ['FR-2', '', '2021-04-05']]));
+    expect(rows).toEqual([['Employee ID', 'Name', 'Joined'], ['0012', 'Asha & Co <x>', '44291'], ['FR-2', '', '2021-04-05']]);
+  });
+  it('refuses a file that is not a workbook', async () => {
+    const { readXlsx } = await import('./tabular');
+    expect(() => readXlsx(Buffer.from('hello'))).toThrow('not_xlsx');
+  });
+});
