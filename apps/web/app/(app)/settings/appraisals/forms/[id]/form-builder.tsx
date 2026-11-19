@@ -8,7 +8,7 @@ import type { AppraisalForm } from '@/lib/types';
 import { saveFormAction } from '../../../../appraisal/actions';
 
 type Option = { id: string; name: string };
-const SECTION_KIND: Record<AppraisalSection['kind'], string> = { rated: 'Rated by employee and manager', self: 'Written by the employee', manager: 'Written by the manager', hr: 'Written by HR' };
+const SECTION_KIND: Record<AppraisalSection['kind'], string> = { rated: 'Scored (employee + manager)', self: 'Employee writes', manager: 'Manager writes', hr: 'HR writes' };
 const slug = (s: string, taken: Set<string>) => {
   const base = s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'item';
   let id = base;

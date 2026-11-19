@@ -11,7 +11,7 @@ import { day, pct, StageBadge, StageStepper } from '../appraisal-ui';
 type Role = AppraisalDetail['role'];
 const ROLE_LABEL: Record<Role, string> = { employee: 'Employee', manager: 'Manager', hr: 'HR' };
 const ACTION_LABEL: Record<string, string> = {
-  created: 'Appraisal opened', self_submitted: 'Self-appraisal submitted', manager_submitted: 'Manager evaluation submitted', finalized: 'Finalised by HR',
+  created: 'Appraisal opened', assigned: 'Appraisal opened', self_submitted: 'Self-appraisal submitted', manager_submitted: 'Manager evaluation submitted', finalized: 'Finalised by HR',
   published: 'Result shared with the employee', reopened: 'Reopened',
 };
 const when = (iso: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }).format(new Date(iso));
