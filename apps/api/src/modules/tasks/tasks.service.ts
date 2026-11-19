@@ -260,7 +260,7 @@ export class TasksService implements OnModuleInit {
         await this.notifications.notify(tx, {
           membershipIds: [e.membership_id],
           kind: 'task.assigned',
-          title: `New ${CATEGORY_LABEL[input.category].toLowerCase()}: ${input.title}`,
+          title: `New ${input.category === 'hr' ? 'HR task' : 'task from your manager'}: ${input.title}`,
           body: `${actor.label} assigned it to you${input.dueOn ? `, due ${input.dueOn}` : ''}. Priority: ${input.priority}.`,
           link: `/tasks/${row.id}`,
           email: input.priority === 'high' || input.priority === 'urgent',

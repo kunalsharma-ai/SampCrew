@@ -118,6 +118,15 @@ export default function Me() {
         </Card>
       )}
 
+      {employee && hasFeature('core_hr') && (
+        <Card testID="me-work">
+          <CardTitle>My work</CardTitle>
+          <ListItem title="My profile" subtitle="Personal details, contacts, bank and ID" onPress={() => router.push('/profile')} testID="me-profile" />
+          <ListItem title="My tasks" subtitle="From HR and your manager" onPress={() => router.push('/tasks')} testID="me-tasks" />
+          {hasFeature('performance') && <ListItem title="Appraisal" subtitle="Self-appraisal and results" onPress={() => router.push('/appraisal')} testID="me-appraisal" />}
+        </Card>
+      )}
+
       {payslips && (
         <Card testID="payslips">
           <CardTitle help="me.payslips">Payslips</CardTitle>

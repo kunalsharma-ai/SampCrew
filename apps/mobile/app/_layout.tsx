@@ -109,6 +109,11 @@ function Gate() {
       <Stack.Screen name="payslips/[id]" options={{ title: 'Payslip', ...screenHelp('payslip') }} />
       <Stack.Screen name="announcements/[id]" options={{ title: 'Announcement', ...screenHelp('announcement') }} />
       <Stack.Screen name="devices" options={{ title: 'Signed-in devices', ...screenHelp('devices') }} />
+      <Stack.Screen name="tasks/index" options={{ title: 'My tasks', ...screenHelp('tasks') }} />
+      <Stack.Screen name="tasks/[id]" options={{ title: 'Task', ...screenHelp('tasks.task') }} />
+      <Stack.Screen name="appraisal/index" options={{ title: 'Appraisal', ...screenHelp('appraisal') }} />
+      <Stack.Screen name="appraisal/[id]" options={{ title: 'Appraisal', ...screenHelp('appraisal.form') }} />
+      <Stack.Screen name="profile" options={{ title: 'My profile', ...screenHelp('profile') }} />
     </Stack>
   );
 }

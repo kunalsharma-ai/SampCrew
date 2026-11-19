@@ -130,7 +130,7 @@ export class Api {
    * the app's fetch (expo/fetch) cannot send React Native's { uri } file entries, so those uploads never left the
    * phone. Bytes work the same with every fetch the app can run on.
    */
-  uploadFile<T>(method: 'POST' | 'PUT', path: string, file: { field: string; fileName: string; type: string; bytes: Uint8Array }) {
+  uploadFile<T>(method: 'POST' | 'PUT', path: string, file: { field: string; fileName: string; type: string; bytes: Uint8Array; fields?: Record<string, string> }) {
     return this.request<T>(method, path, multipart(file));
   }
 
@@ -199,9 +199,11 @@ export function fromBase64(text: string): Uint8Array {
 const utf8 = (s: string) => new TextEncoder().encode(s);
 
 /** A multipart/form-data body with one file field. */
-export function multipart(file: { field: string; fileName: string; type: string; bytes: Uint8Array }, boundary = `----SampCrew${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`): RawBody {
+export function multipart(file: { field: string; fileName: string; type: string; bytes: Uint8Array; fields?: Record<string, string> }, boundary = `----SampCrew${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`): RawBody {
   const safeName = file.fileName.replace(/["\r\n\\]/g, '_');
-  const head = utf8(`--${boundary}\r\nContent-Disposition: form-data; name="${file.field}"; filename="${safeName}"\r\nContent-Type: ${file.type}\r\n\r\n`);
+  // Plain text fields go first, then the file.
+  const fields = Object.entries(file.fields ?? {}).map(([k, v]) => `--${boundary}\r\nContent-Disposition: form-data; name="${k.replace(/["\r\n\\]/g, '_')}"\r\n\r\n${v}\r\n`).join('');
+  const head = utf8(`${fields}--${boundary}\r\nContent-Disposition: form-data; name="${file.field}"; filename="${safeName}"\r\nContent-Type: ${file.type}\r\n\r\n`);
   const tail = utf8(`\r\n--${boundary}--\r\n`);
   const bytes = new Uint8Array(head.length + file.bytes.length + tail.length);
   bytes.set(head, 0);

@@ -1,3 +1,4 @@
+import { TASK_STATUS_LABELS } from '@crew/contracts';
 export const caseStatus: Record<string, string> = {
   open: 'Open',
   in_progress: 'In progress',
@@ -60,4 +61,20 @@ export const syncReason: Record<string, string> = {
   not_started: 'Employment not started',
   employment_ended: 'Employment ended',
   refused: 'Refused',
+};
+
+/** Task status words and badge tones (overdue is shown, not stored). */
+export const taskStatusLabel = (s: string) => TASK_STATUS_LABELS[s as keyof typeof TASK_STATUS_LABELS] ?? s;
+export const taskTone = (s: string): 'danger' | 'ok' | 'info' | 'warn' | 'neutral' =>
+  s === 'overdue' ? 'danger' : s === 'completed' ? 'ok' : s === 'pending_review' ? 'info' : s === 'new' || s === 'reopened' ? 'warn' : 'neutral';
+
+/** Appraisal stages in the words employees see. */
+export const appraisalStage: Record<string, string> = {
+  draft: 'Not started', self: 'Your self-appraisal', manager: 'With your manager', hr: 'With HR', finalized: 'Finalised, not shared yet', published: 'Result shared', closed: 'Closed',
+};
+
+/** Profile update statuses. */
+export const profileUpdateStatus: Record<string, { label: string; tone: 'warn' | 'ok' | 'danger' | 'info' | 'neutral' }> = {
+  pending: { label: 'Waiting for HR', tone: 'warn' }, approved: { label: 'Approved', tone: 'ok' }, rejected: { label: 'Rejected', tone: 'danger' },
+  info_requested: { label: 'HR needs more information', tone: 'info' }, cancelled: { label: 'Withdrawn', tone: 'neutral' }, superseded: { label: 'Replaced', tone: 'neutral' },
 };

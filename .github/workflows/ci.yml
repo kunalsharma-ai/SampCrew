@@ -116,6 +116,14 @@ jobs:
           node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:payroll-countries
+      - name: Mobile employee workspace end-to-end flow (tasks, appraisal, profile)
+        # On a fresh demo workspace: the flow launches an appraisal cycle and approves a profile update.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:mobile-workspace
       - name: Late coming and attendance penalties end-to-end flow
         # On a fresh demo workspace: the flow switches on late-coming and same-day leave rules, which would change
         # what the other flows see (reminders, payslip deductions).
