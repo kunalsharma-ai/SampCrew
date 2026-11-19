@@ -69,3 +69,4 @@ export * from './discipline';
 export * from './tasks';
 export * from './appraisals';
 export * from './profile';
+export * from './rewards';

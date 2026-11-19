@@ -1059,6 +1059,34 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((correction_window_days >= 0) AND (correction_window_days <= 366)))",
     ],
   },
+  attendance_reward_rules: {
+    // Attendance rewards HR sets (see packages/contracts/src/rewards.ts): perfect attendance and punctuality.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      allow_half_days: {"default": false, "required": true, "type": "bool"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      description: {"type": "string"},
+      excused_leave_type_ids: {"default": {"json": []}, "required": true, "type": "json"},
+      icon: {"default": "trophy", "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["perfect_attendance", "punctuality"], "required": true, "type": "string"},
+      max_late_days: {"default": 0, "required": true, "type": "int"},
+      min_working_days: {"default": 10, "required": true, "type": "int"},
+      name: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "attendance_reward_rules_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "attendance_reward_rules_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
   attrition_reviews: {
     access: "tenant", grants: ["insert", "select"],
     columns: {

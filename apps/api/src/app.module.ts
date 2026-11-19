@@ -45,6 +45,8 @@ import { OnboardingService } from './modules/onboarding/onboarding.service';
 import { TasksController } from './modules/tasks/tasks.controller';
 import { ProfileController } from './modules/employees/profile.controller';
 import { ProfileService } from './modules/employees/profile.service';
+import { WorkspaceController } from './modules/workspace/workspace.controller';
+import { WorkspaceService } from './modules/workspace/workspace.service';
 import { AppraisalsController } from './modules/talent/appraisals.controller';
 import { AppraisalsService } from './modules/talent/appraisals.service';
 import { TasksService } from './modules/tasks/tasks.service';
@@ -157,6 +159,7 @@ export const CONTROLLERS = [
   OnboardingController,
   TasksController,
   ProfileController,
+  WorkspaceController,
   AppraisalsController,
   SetupController,
   SignaturesController,
@@ -266,6 +269,7 @@ export const CONTROLLERS = [
     OnboardingService,
     TasksService,
     ProfileService,
+    WorkspaceService,
     AppraisalsService,
     SetupService,
     SignaturesService,
