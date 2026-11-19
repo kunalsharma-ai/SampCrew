@@ -209,8 +209,8 @@ async function run(b) {
   const identity = hr.getByRole('form', { name: 'Identity check' });
   await identity.getByLabel('Check status').selectOption('verified');
   await identity.getByLabel('Internal remarks').fill('Matched the Aadhaar card with the original');
-  await identity.getByRole('button', { name: /^Save identity/ }).click();
-  await see(hr, /saved|updated/i);
+  await Promise.all([hr.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/verification/')), identity.getByRole('button', { name: /^Save identity/ }).click()]);
+  await see(hr, 'Check saved.');
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bgv-'));
   const letter = path.join(tmp, 'relieving-letter.pdf');
@@ -238,7 +238,8 @@ async function run(b) {
   await agency.getByLabel('Your name').fill('Ravi, Trust Check');
   await agency.getByLabel('Summary').fill('Employment confirmed');
   await agency.getByRole('button', { name: 'Send findings' }).click();
-  await see(agency, /Thank you|sent/i);
+  // "Findings received" appears only once the findings are saved (the page already says "sent" elsewhere).
+  await see(agency, 'Findings received');
   await save(agency, '06-agency-portal');
   ok('the agency opened its private link without signing in, saw only the shared file and sent its findings');
 
@@ -248,8 +249,8 @@ async function run(b) {
     const f = hr.getByRole('form', { name: `${name} check` });
     if (!(await f.count())) continue;
     await f.getByLabel('Check status').selectOption('verified');
-    await f.getByRole('button', { name: new RegExp(`^Save ${name.toLowerCase()}`) }).click();
-    await hr.waitForTimeout(800);
+    // Wait for the save to come back before the next one (each save refreshes the page).
+    await Promise.all([hr.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/verification/')), f.getByRole('button', { name: new RegExp(`^Save ${name.toLowerCase()}`) }).click()]);
   }
   await hr.reload();
   await hr.getByRole('button', { name: 'Record the result' }).click();
