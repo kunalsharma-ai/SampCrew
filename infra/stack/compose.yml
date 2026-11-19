@@ -1,4 +1,17 @@
-name: samp-crew
+# SampCrew production stack on one host: self-hosted MongoDB (a replica set with authentication) with point-in-time
+# backups (pbm), Redis, the API, the Web Portal, the Super Admin Console, a TLS reverse proxy, daily encrypted
+# archives copied off-site (backup), and a one-shot migration job that runs before the API starts.
+#
+#   cp env.production.example .env && ./gen-secrets.sh >> .env    # then fill in the addresses and email settings
+#   docker compose up -d --build                                    # or pull images you built and pushed
+#
+# See docs/ops/runbook.md for the full procedure (first start, upgrades, backups, restore, rollback) and
+# docs/ops/mongodb.md for the database (replica set, point-in-time restore, adding members).
+# Optional, MongoDB Atlas instead of the bundled server: set MONGODB_URL (the API's user) and MONGODB_ADMIN_URL
+# (migrations and backups) in .env and start without it:  docker compose up -d --scale mongo=0 --scale pbm=0
+name: crew
+
+# Rotated container logs, so a busy service cannot fill the disk the database lives on.
 x-logging: &logging
   driver: json-file
   options: { max-size: "20m", max-file: "5" }
@@ -14,9 +27,12 @@ x-app-env: &app-env
 
 services:
   mongo:
-    image: registry.sampledge.com/db/mongo
+    # Pin the exact release in production (MONGO_IMAGE=mongo:8.0.x) and move it on deliberately: docs/ops/mongodb.md.
+    image: ${MONGO_IMAGE:-mongo:8.0}
     restart: unless-stopped
     logging: *logging
+    # A replica set (transactions need one) with authentication: the root user is created on the first start, the
+    # replica set the first time the health check runs. See scripts/mongo-start.sh.
     entrypoint: ["bash", "/crew/mongo-start.sh"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
@@ -133,7 +149,7 @@ services:
     environment:
       CREW_API_URL: http://api:4000
       WEB_PUBLIC_URL: ${WEB_PUBLIC_URL}
-      SESSION_COOKIE_SECURE: "false"
+      SESSION_COOKIE_SECURE: "true"
     depends_on:
       api: { condition: service_healthy }
     networks: [edge]
@@ -143,47 +159,40 @@ services:
     build: { <<: *build, target: console }
     restart: unless-stopped
     logging: *logging
-    env_file:
-      - ./.env
     environment:
       CREW_API_URL: http://api:4000
-      SESSION_COOKIE_SECURE: "false"
+      SESSION_COOKIE_SECURE: "true"
     depends_on:
       api: { condition: service_healthy }
     networks: [edge]
 
-  samp-crew:
-    image: registry.sampledge.com/microservice/api-gateway:1.0.0
+  proxy:
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
     restart: unless-stopped
-    networks:
-      - publicweb 
-      - edge
+    logging: *logging
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      CREW_WEB_ADDRESS: ${CREW_WEB_ADDRESS:?set CREW_WEB_ADDRESS}
+      CREW_API_ADDRESS: ${CREW_API_ADDRESS:?set CREW_API_ADDRESS}
+      CREW_CONSOLE_ADDRESS: ${CREW_CONSOLE_ADDRESS:?set CREW_CONSOLE_ADDRESS}
+      CONSOLE_ALLOWED_IPS: ${CONSOLE_ALLOWED_IPS:-private_ranges}
+      CREW_TLS_DIRECTIVE: ${CREW_TLS_DIRECTIVE:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
-      - ./config:/etc/nginx/http.d
-      - ./logs:/data/logs
-    # image: ${CADDY_IMAGE:-caddy:2-alpine}
-    # logging: *logging
-    # environment:
-    #   CREW_WEB_ADDRESS: ${CREW_WEB_ADDRESS:?set CREW_WEB_ADDRESS}
-    #   CREW_API_ADDRESS: ${CREW_API_ADDRESS:?set CREW_API_ADDRESS}
-    #   CREW_CONSOLE_ADDRESS: ${CREW_CONSOLE_ADDRESS:?set CREW_CONSOLE_ADDRESS}
-    #   CONSOLE_ALLOWED_IPS: ${CONSOLE_ALLOWED_IPS:-private_ranges}
-    #   CREW_TLS_DIRECTIVE: ${CREW_TLS_DIRECTIVE:-}
-    #   ACME_EMAIL: ${ACME_EMAIL:-}
-    # volumes:
-    #   - ./Caddyfile:/etc/caddy/Caddyfile:ro
-    #   - caddy-data:/data
-    #   - caddy-config:/config
-    # # Start only once the apps answer their health checks, so the proxy's own first checks find them up.
-    # depends_on:
-    #   web: { condition: service_healthy }
-    #   api: { condition: service_healthy }
-    #   console: { condition: service_healthy }
-    # networks: [edge,publicweb]
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    # Start only once the apps answer their health checks, so the proxy's own first checks find them up.
+    depends_on:
+      web: { condition: service_healthy }
+      api: { condition: service_healthy }
+      console: { condition: service_healthy }
+    networks: [edge]
 
-  # Virus scanning of uploads (optional): `docker compose --profile scan up -d` and CLAMAV_URL=tcp://clamav:3310 in
-  # .env. ClamAV downloads and updates its signatures itself (it needs outbound access to database.clamav.net) and
-  # wants about 1.5 GB of memory. While CLAMAV_URL is set and clamd is down, uploads are refused, not stored unscanned.
+  # Virus scanning of uploads (optional): `docker compose --profile scan up -d`, then in the Super Admin Console >
+  # Integrations > Virus scanning enter tcp://clamav:3310, test and switch on. ClamAV downloads and updates its
+  # signatures itself (it needs outbound access to database.clamav.net) and wants about 1.5 GB of memory. While
+  # scanning is on and clamd is down, uploads are refused, not stored unscanned.
   clamav:
     image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
     profiles: [scan]
@@ -196,8 +205,10 @@ services:
     restart: unless-stopped
     logging: *logging
     command: ["/app/infra/deploy/scripts/backup.sh", "--loop"]
-    # The off-site storage account (RCLONE_CONFIG_OFFSITE_* settings, see offsite.env.example). Kept in its own file
-    # so only this service sees those keys.
+    # The off-site storage and its keys are set up in Console > Integrations > Off-site backups and read from the
+    # database before every copy (decrypted with the encryption key the API keeps in the same database). offsite.env and BACKUP_REMOTE are only
+    # for disaster recovery, when the database itself is gone (docs/ops/mongodb.md, "Losing the server"), and for an
+    # older install, whose values are moved into the database on first use.
     env_file:
       - path: offsite.env
         required: false
@@ -207,7 +218,7 @@ services:
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
       BACKUP_REMOTE: ${BACKUP_REMOTE:-}
-      BACKUP_REMOTE_KEEP_DAYS: ${BACKUP_REMOTE_KEEP_DAYS:-30}
+      BACKUP_REMOTE_KEEP_DAYS: ${BACKUP_REMOTE_KEEP_DAYS:-}
       BACKUP_SYNC_MINUTES: ${BACKUP_SYNC_MINUTES:-15}
       BACKUP_ALERT_WEBHOOK: ${BACKUP_ALERT_WEBHOOK:-}
     volumes:
@@ -228,8 +239,6 @@ networks:
   # The database and Redis are only on "data"; nothing on the internet-facing side can reach them directly.
   data: {}
   edge: {}
-  publicweb:
-    external: true
 
 volumes:
   mongodata:

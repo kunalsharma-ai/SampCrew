@@ -26,8 +26,8 @@ const BLOCKING = new Set(['serious', 'critical']);
 
 const pages = {
   public: ['/login', '/signup', '/careers/northwind-demo'],
-  'uk.hr@demo.crew.local': ['/', '/people', '/employees', '/insights', '/reviews', '/learning', '/leave', '/attendance', '/approvals', '/helpdesk', '/organization', '/settings/workspace', '/settings/appearance'],
-  'operator1@demo.crew.local': ['/', '/payslips', '/leave', '/attendance', '/helpdesk', '/goals'],
+  'uk.hr@demo.crew.local': ['/', '/people', '/employees', '/insights', '/reviews', '/learning', '/leave', '/attendance', '/approvals', '/helpdesk', '/organization', '/settings/workspace', '/settings/appearance', '/verification', '/assets', '/assets/reports', '/settings/hr-admin', '/settings/custom-fields', '/employees/import'],
+  'operator1@demo.crew.local': ['/', '/payslips', '/leave', '/attendance', '/helpdesk', '/goals', '/assets/mine'],
 };
 
 async function check(page, label) {

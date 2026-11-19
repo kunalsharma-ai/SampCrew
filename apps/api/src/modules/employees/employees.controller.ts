@@ -25,6 +25,7 @@ import { RequireFeature, RequirePermission } from '../../platform/authz/decorato
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { sendFile } from '../../platform/export/tabular';
+import { AssetsService } from '../assets/assets.service';
 import { EmployeesService } from './employees.service';
 
 const linkInput = z.object({ membershipId: z.uuid() });
@@ -66,7 +67,10 @@ export class DesignationsController {
 
 @Controller('employees')
 export class EmployeesController {
-  constructor(private readonly employees: EmployeesService) {}
+  constructor(
+    private readonly employees: EmployeesService,
+    private readonly assets: AssetsService,
+  ) {}
 
   @Get()
   @RequirePermission('employees:read')
@@ -136,7 +140,8 @@ export class EmployeesController {
   @RequirePermission('employees:create')
   @Doc({ summary: 'Hire: create the employee, job record, onboarding checklist and (optionally) a SampCrew invitation', body: createEmployeeInput })
   create(@Body(new ZodPipe(createEmployeeInput)) body: CreateEmployeeInput) {
-    return this.employees.create(body);
+    const assetIds = body.assetIds ?? [];
+    return this.employees.create(body, assetIds.length ? (tx, id) => this.assets.assignAtHire(tx, id, assetIds, 'Handed over when they were added') : undefined);
   }
 
   @Get(':id')

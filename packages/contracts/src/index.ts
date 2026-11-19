@@ -66,3 +66,7 @@ export * from './setup';
 export * from './signatures';
 export * from './signature-occasions';
 export * from './discipline';
+export * from './bgv';
+export * from './assets';
+export * from './custom-fields';
+export * from './hr-admin';

@@ -91,7 +91,8 @@ RUN --mount=type=secret,id=ca,required=false \
  && rclone version | head -1
 # The database package with its scripts (and tsx to run them), nothing from the apps.
 COPY --from=build --chown=node:node /out/db /app/db
-COPY infra/deploy/scripts /app/infra/deploy/scripts
+# Kept at /app/infra/deploy/scripts inside the image, the path every server's compose file uses.
+COPY infra/stack/scripts /app/infra/deploy/scripts
 RUN chmod +x /app/infra/deploy/scripts/*.sh \
  && mkdir -p /backups /data/files && chown node:node /backups /data/files
 WORKDIR /app

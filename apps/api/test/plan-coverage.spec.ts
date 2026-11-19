@@ -28,6 +28,9 @@ const FOUNDATION: Record<string, string> = {
   ViewsController: 'Saved list views',
   HolidayCalendarsController: 'Holiday calendars are shared by leave, attendance, shifts and payroll',
   MembersController: 'Workspace members and invitations (seat limit enforced in the service)',
+  CustomFieldsController: 'Custom fields are part of HR Workspace Admin; a field on a module record checks that module in CustomFieldsService',
+  HrAdminController: 'HR Workspace Admin: module switches (within the plan) and the role permission matrix',
+  EmployeeImportController: 'Core HR (always included): adding existing employees; leave balances and assets check their modules',
   RolesController: 'Viewing roles; creating custom roles is the custom_roles module',
   PermissionsController: 'The permission catalogue',
   NotificationsController: 'In-app notifications from every module',
@@ -70,6 +73,10 @@ const PUBLIC_CHECKED_IN_SERVICE: Record<string, string> = {
   SignatureAgentController: 'email_signatures (SignaturesService.agentByToken)',
   PlatformAuthController: 'none (SAMPLEDGE Console sign-in)',
   PlatformSetupController: 'none (first-run Console setup, needs the one-time setup code from the API log)',
+  BgvPortalController: 'background_verification (BgvService.linkByToken)',
+  BgvEmployeeController: 'signed, expiring links issued by a gated module',
+  AssetsEmployeeController: 'signed, expiring links issued by a gated module',
+  CustomFieldFilesController: 'signed, expiring links issued by a gated module',
   BillingWebhooksController: 'none (payment confirmations from Razorpay and Stripe, signed with the webhook secret)',
 };
 

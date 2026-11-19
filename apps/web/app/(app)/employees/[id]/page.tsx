@@ -3,13 +3,16 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
-import type { AttendanceRegistration, Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, LoginDetails, OnboardingTask, Page } from '@/lib/types';
+import type { AttendanceRegistration, Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, LoginDetails, Me, OnboardingTask, Page } from '@/lib/types';
 import { EmployeeStatus } from '../status';
 import type { EmployeeSkill } from '@crew/contracts';
 import { ActivityTab, AtAGlance, type Summary360 } from './at-a-glance';
 import { AttendanceCard, type DeviceOption, LoginCard, LoginControlCard, PhotoAvatar, type ShiftOption } from './profile-extras';
 import { SkillsCard } from './skills-card';
 import { DocumentsTab, JobTab, LeaveTab, OnboardingTab, OverviewTab } from './tabs';
+import { AssetsTab, type EmployeeAsset, VerificationTab } from './hr-tabs';
+import { CustomFieldsCard, type FieldValue } from '@/components/custom-fields-card';
+import type { CaseRow } from '../../verification/types';
 
 export const metadata: Metadata = { title: 'Employee' };
 
@@ -19,6 +22,8 @@ const TABS = [
   { key: 'leave', label: 'Leave' },
   { key: 'documents', label: 'Documents' },
   { key: 'onboarding', label: 'Onboarding' },
+  { key: 'verification', label: 'Verification' },
+  { key: 'assets', label: 'Assets' },
   { key: 'activity', label: 'Activity' },
 ] as const;
 
@@ -32,12 +37,18 @@ export default async function EmployeePage({ params, searchParams }: { params: P
     if (err instanceof ApiError && err.status === 404) notFound();
     return load<never>(`/employees/${id}`);
   }
-  const tabs = TABS.filter((t) => (t.key === 'documents' ? e.can.readDocuments : t.key === 'leave' ? e.can.readLeave : t.key === 'onboarding' ? e.can.onboarding !== false : true));
+  const me = await load<Me>('/me');
+  const has = (perm: string, feature: string) => Boolean(me.permissions[perm]) && me.features.includes(feature);
+  // Verification is for HR with explicit access; an employee sees their own assets, not their own checks.
+  const canBgv = has('bgv:view', 'background_verification') && !e.isSelf;
+  const canAssets = has('assets:view', 'asset_management') && (me.permissions['assets:view'] !== 'own' || e.isSelf);
+  const visible: Record<string, boolean> = { documents: e.can.readDocuments, leave: e.can.readLeave, onboarding: e.can.onboarding !== false, verification: canBgv, assets: canAssets };
+  const tabs = TABS.filter((t) => visible[t.key] ?? true);
   const tab = tabs.find((t) => t.key === rawTab)?.key ?? 'overview';
 
   let content: React.ReactNode;
   if (tab === 'overview') {
-    const [summary, skills, registration, shifts, devices, login] = await Promise.all([
+    const [summary, skills, registration, shifts, devices, login, fields] = await Promise.all([
       loadOptional<Summary360>(`/employees/${id}/360`),
       loadOptional<{ skills: EmployeeSkill[]; canEdit: boolean }>(`/employees/${id}/skills`),
       loadOptional<AttendanceRegistration>(`/employees/${id}/attendance-registration`),
@@ -45,6 +56,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
       e.can.update ? loadOptional<DeviceOption[]>('/attendance/devices') : null,
       // Only people with users:manage get an answer; everyone else gets a 403 or 404 and sees no card.
       e.membershipId && !e.isSelf ? loadOptional<LoginDetails>(`/employees/${id}/login`) : null,
+      loadOptional<FieldValue[]>(`/custom-fields/values/employee/${id}`),
     ]);
     content = (
       <>
@@ -57,6 +69,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
             {login && <LoginControlCard e={e} details={login} />}
           </div>
         )}
+        {fields && fields.length > 0 && <div className="mt-6"><CustomFieldsCard entity="employee" recordId={id} initial={fields} path={`/employees/${id}`} /></div>}
         {skills && <SkillsCard employeeId={id} initial={skills.skills} canEdit={skills.canEdit} />}
       </>
     );
@@ -84,6 +97,10 @@ export default async function EmployeePage({ params, searchParams }: { params: P
       load<LeaveRequest[]>(`/leave/requests?scope=visible&employeeId=${id}&limit=50`),
     ]);
     content = <LeaveTab balances={balances} requests={requests} />;
+  } else if (tab === 'verification') {
+    content = <VerificationTab employeeId={id} cases={await load<CaseRow[]>(`/employees/${id}/bgv`)} canCreate={Boolean(me.permissions['bgv:create'])} />;
+  } else if (tab === 'assets') {
+    content = <AssetsTab assets={await load<EmployeeAsset[]>(`/employees/${id}/assets`)} canAssign={Boolean(me.permissions['assets:create'])} />;
   } else if (tab === 'documents') {
     content = <DocumentsTab e={e} documents={await load<EmployeeDocument[]>(`/employees/${id}/documents`)} />;
   } else {
