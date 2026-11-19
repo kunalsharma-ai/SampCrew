@@ -37,6 +37,8 @@ export const FEATURES = [
   { key: 'engagement', name: 'Recognition wall, company values and surveys', module: 'Engagement', kind: 'boolean', phase: 6 },
   { key: 'helpdesk', name: 'HR helpdesk (Ask HR) and help articles', module: 'Helpdesk', kind: 'boolean', phase: 7 },
   { key: 'announcements', name: 'Announcements with read receipts', module: 'Announcements', kind: 'boolean', phase: 7 },
+  { key: 'background_verification', name: 'Background verification, internal and with agencies', module: 'Background verification', kind: 'boolean', phase: 27 },
+  { key: 'asset_management', name: 'Asset inventory, allocation and acknowledgement', module: 'Assets', kind: 'boolean', phase: 27 },
   { key: 'email_signatures', name: 'Email signatures, Outlook sync and festival wishes', module: 'Communication', kind: 'boolean', phase: 18 },
   { key: 'automation', name: 'Workflow Automation Studio', module: 'Automation', kind: 'boolean', phase: 8 },
   { key: 'ai_copilot', name: 'SampCrew AI Copilots', module: 'AI', kind: 'boolean', phase: 8 },
@@ -80,7 +82,7 @@ export interface PlanTemplate {
   limits: Record<LimitFeatureKey, number>;
 }
 
-const STARTER: BooleanFeatureKey[] = ['core_hr', 'leave', 'self_service', 'documents', 'onboarding', 'attendance_basic', 'helpdesk', 'announcements', 'email_signatures', 'crew_iq', 'workforce_universe'];
+const STARTER: BooleanFeatureKey[] = ['core_hr', 'leave', 'self_service', 'documents', 'onboarding', 'attendance_basic', 'helpdesk', 'announcements', 'email_signatures', 'crew_iq', 'workforce_universe', 'background_verification', 'asset_management'];
 const PROFESSIONAL: BooleanFeatureKey[] = [...STARTER, 'recruitment', 'staffing_bids', 'attendance_advanced', 'shift_scheduling', 'automation', 'custom_roles'];
 const BUSINESS: BooleanFeatureKey[] = [...PROFESSIONAL, 'payroll', 'expenses', 'performance', 'learning', 'engagement', 'ai_copilot', 'workforce_analytics', 'integrations_advanced', 'multi_entity', 'audit_export'];
 const ENTERPRISE: BooleanFeatureKey[] = [...BUSINESS, 'global_payroll', 'sso', 'enterprise_support'];
@@ -135,6 +137,8 @@ export const PERMISSION_MODULE_FEATURE: Record<string, BooleanFeatureKey> = {
   AI: 'ai_copilot',
   Integrations: 'integrations_advanced',
   'Staffing bids': 'staffing_bids',
+  'Background verification': 'background_verification',
+  Assets: 'asset_management',
 };
 
 export const BOOLEAN_FEATURES = FEATURES.filter((f) => f.kind === 'boolean') as readonly Extract<(typeof FEATURES)[number], { kind: 'boolean' }>[];

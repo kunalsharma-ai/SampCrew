@@ -13,6 +13,8 @@ import type { HireDone } from './employees-view';
 
 export interface EmployeeDraft { id: string; step: number; data: DraftData; updatedAt: string }
 /** A leave policy that keeps a balance, for an existing employee's opening balances. */
+/** An asset that is free to hand over, offered when adding someone who already works here. */
+export interface AssetOption { id: string; assetCode: string; name: string; category: string | null }
 export interface LeavePolicyOption { leaveTypeId: string; leaveTypeName: string; legalEntityId: string | null; accrualMethod: string; typeArchived: boolean }
 
 export const HIRE_STEPS = ['Personal details', 'Employment', 'Department & reporting', 'Compensation', 'Documents', 'Attendance & access', 'Review'] as const;
@@ -77,6 +79,8 @@ interface Props {
   canConfigureShifts: boolean;
   /** Leave policies that keep balances, when this person may set balances; null hides opening balances. */
   leavePolicies?: LeavePolicyOption[] | null;
+  /** Available assets, when this person may hand them over; null hides the picker. */
+  availableAssets?: AssetOption[] | null;
 }
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
@@ -112,6 +116,8 @@ export function HireWizard(p: Props) {
   const [adding, setAdding] = useState<null | Kind>(null);
   const [newName, setNewName] = useState('');
   const [shiftTimes, setShiftTimes] = useState({ start: '09:00', end: '18:00' });
+  const [handOver, setHandOver] = useState<string[]>([]);
+  const [assetQuery, setAssetQuery] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [matches, setMatches] = useState<Match[] | null>(null);
@@ -138,6 +144,8 @@ export function HireWizard(p: Props) {
     setPhotoPreview(null);
     setOwnPassword(false);
     setPassword('');
+    setHandOver([]);
+    setAssetQuery('');
     setDesignations(p.designations);
     setDepartments(p.departments);
     setAdding(null);
@@ -327,6 +335,7 @@ export function HireWizard(p: Props) {
       if (str(v.employeeCode).trim()) employee.employeeCode = str(v.employeeCode).trim();
       if (str(v.confirmationDate)) employee.confirmationDate = str(v.confirmationDate);
       if (openingRows.length) employee.openingLeaveBalances = openingRows.map((t) => ({ leaveTypeId: t.leaveTypeId, days: str(opening[t.leaveTypeId]).trim() }));
+      if (p.availableAssets && handOver.length) employee.assetIds = handOver;
     }
     const tpl = str(v.onboardingTemplateId);
     employee.onboardingTemplateId = tpl === 'none' ? null : tpl || undefined;
@@ -655,6 +664,35 @@ export function HireWizard(p: Props) {
                     {errors.openingLeaveBalances && <p className="mt-1 text-xs text-danger">{errors.openingLeaveBalances}</p>}
                   </fieldset>
                 )}
+                {p.availableAssets && (
+                  <fieldset className="sm:col-span-2" data-testid="hire-assets">
+                    <legend className="text-[0.8125rem] font-medium">Assets they already hold</legend>
+                    <p className="mb-2 text-xs text-fg-subtle">Pick the company assets this person has today. Each is recorded as assigned to them from today and they are asked to acknowledge it.</p>
+                    {p.availableAssets.length === 0 ? (
+                      <p className="text-xs text-fg-muted">No assets are available to assign. Add them in Assets first, or assign them later from the asset.</p>
+                    ) : (
+                      <>
+                        {p.availableAssets.length > 8 && <Input aria-label="Search available assets" placeholder="Search by code or name" value={assetQuery} onChange={(e) => setAssetQuery(e.target.value)} className="mb-2" />}
+                        <div className="grid max-h-48 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
+                          {p.availableAssets
+                            .filter((a) => handOver.includes(a.id) || !assetQuery.trim() || `${a.assetCode} ${a.name} ${a.category ?? ''}`.toLowerCase().includes(assetQuery.trim().toLowerCase()))
+                            .slice(0, 60)
+                            .map((a) => (
+                              <Checkbox
+                                key={a.id}
+                                label={`${a.assetCode} · ${a.name}`}
+                                description={a.category ?? undefined}
+                                checked={handOver.includes(a.id)}
+                                disabled={!handOver.includes(a.id) && handOver.length >= 20}
+                                onChange={(e) => setHandOver((cur) => (e.target.checked ? [...cur, a.id] : cur.filter((x) => x !== a.id)))}
+                              />
+                            ))}
+                        </div>
+                        {handOver.length > 0 && <p className="mt-1 text-xs text-fg-muted">{handOver.length} selected{handOver.length >= 20 ? ' (20 at most here)' : ''}.</p>}
+                      </>
+                    )}
+                  </fieldset>
+                )}
               </>
             )}
           </>
@@ -788,6 +826,7 @@ export function HireWizard(p: Props) {
             />
             <Summary label="Entity and designation" value={`${lookup(p.entities, v.legalEntityId)} · ${designationMatch?.name ?? (designationText ? `${designationText} (new)` : '—')}`} onEdit={() => setStep(1)} />
             {dob && <Summary label="Date of birth" value={`${dob} · ${ageOn(dob, joining)} on joining${minor ? ', a minor: employment confirmed' : ''}`} onEdit={() => setStep(0)} />}
+            {existing && p.availableAssets && handOver.length > 0 && <Summary label="Assets they hold" value={handOver.map((id) => p.availableAssets?.find((a) => a.id === id)?.assetCode ?? id).join(', ')} onEdit={() => setStep(1)} />}
             {existing && openingRows.length > 0 && <Summary label="Opening leave balances" value={openingRows.map((t) => `${t.leaveTypeName} ${str(opening[t.leaveTypeId]).trim()}`).join(', ')} onEdit={() => setStep(1)} />}
             <Summary label="Department and location" value={`${lookup(departments, v.departmentId)} · ${lookup(locations, v.locationId)}`} onEdit={() => setStep(2)} />
             <Summary label="Reports to" value={manager?.displayName ?? 'No manager'} onEdit={() => setStep(2)} />

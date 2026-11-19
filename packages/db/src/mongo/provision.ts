@@ -35,7 +35,7 @@ export async function provisionTenantMongo(tx: Tables, input: ProvisionTenantInp
 
   const roleIds = new Map<string, string>();
   for (const role of SYSTEM_ROLES) {
-    const r = await t('roles').insert(own({ key: role.key, name: role.name, description: role.description, is_system: true }));
+    const r = await t('roles').insert(own({ key: role.key, name: role.name, description: role.description, is_system: true, template_grants: Object.keys(role.grants).sort() }));
     roleIds.set(role.key, r.id as string);
     const grants = Object.entries(role.grants);
     if (grants.length) await t('role_permissions').insertMany(grants.map(([permission, scope]) => own({ role_id: r.id, permission, scope })));
@@ -174,9 +174,53 @@ export async function syncStatutoryPacksMongo(tx: Tables): Promise<void> {
   }
 }
 
+/**
+ * Brings every workspace's system roles up to the role templates in code (packages/contracts/src/roles.ts):
+ *  - a system role a workspace does not have yet (added in a release) is created with its template grants;
+ *  - a template grant the workspace has never been given is added, at the template's scope.
+ * Each role remembers the template grants it was given (template_grants), so a grant HR removed in HR Workspace
+ * Admin is not added back, and a grant HR changed keeps HR's scope. Safe on every deploy.
+ */
+export async function syncSystemRolesMongo(tx: Tables): Promise<{ rolesCreated: number; grantsAdded: number }> {
+  let rolesCreated = 0;
+  let grantsAdded = 0;
+  const tenants = await tx.collection('tenants').find({}, { projection: { _id: 1 } });
+  for (const tenant of tenants) {
+    const tenantId = tenant.id as string;
+    const roles = new Map((await tx.collection('roles').find({ tenant_id: tenantId, is_system: true })).map((r) => [r.key as string, r]));
+    for (const tpl of SYSTEM_ROLES) {
+      const keys = Object.keys(tpl.grants).sort();
+      const existing = roles.get(tpl.key);
+      if (!existing) {
+        if (await tx.collection('roles').exists({ tenant_id: tenantId, key: tpl.key })) continue; // a custom role took the key
+        const r = await tx.collection('roles').insert({ tenant_id: tenantId, key: tpl.key, name: tpl.name, description: tpl.description, is_system: true, template_grants: keys });
+        const grants = Object.entries(tpl.grants);
+        if (grants.length) await tx.collection('role_permissions').insertMany(grants.map(([permission, scope]) => ({ tenant_id: tenantId, role_id: r.id, permission, scope })));
+        rolesCreated++;
+        grantsAdded += grants.length;
+        continue;
+      }
+      const current = new Set((await tx.collection('role_permissions').find({ role_id: existing.id }, { projection: { permission: 1 } })).map((g) => g.permission as string));
+      // Before this sync existed, system roles could not be edited, so what they hold is what they were given.
+      const seen = new Set<string>((existing.template_grants as string[] | undefined) ?? [...current]);
+      const fresh = keys.filter((k) => !seen.has(k) && !current.has(k));
+      if (fresh.length) {
+        await tx.collection('role_permissions').insertMany(fresh.map((permission) => ({ tenant_id: tenantId, role_id: existing.id, permission, scope: tpl.grants[permission as keyof typeof tpl.grants]! })));
+        grantsAdded += fresh.length;
+      }
+      const remembered = [...new Set([...seen, ...keys])].sort();
+      if (JSON.stringify(remembered) !== JSON.stringify(((existing.template_grants as string[] | undefined) ?? []).slice().sort())) {
+        await tx.collection('roles').updateOne({ id: existing.id }, { $set: { template_grants: remembered } });
+      }
+    }
+  }
+  return { rolesCreated, grantsAdded };
+}
+
 /** MongoDB version of syncCatalogue (../catalogue.ts): the feature catalogue, default plans and statutory packs, safe on every deploy. */
 export async function syncCatalogueMongo(tx: Tables): Promise<void> {
   await syncStatutoryPacksMongo(tx);
+  await syncSystemRolesMongo(tx);
   const features = tx.collection('features');
   const plans = tx.collection('plans');
   const planFeatures = tx.collection('plan_features');

@@ -29,6 +29,35 @@ export interface PermissionDefinition {
   requiresMfa?: boolean;
   /** Marks access to highly sensitive personal data (bank, national IDs, payroll, biometrics). */
   sensitive?: boolean;
+  /**
+   * Which column of the HR Workspace Admin permission matrix it belongs to. Left out, it follows from the verb after
+   * the last colon (see permissionAction).
+   */
+  action?: PermissionAction;
+}
+
+/** The columns of the permission matrix: every permission is one of these for its module. */
+export const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'] as const;
+export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
+export const PERMISSION_ACTION_LABEL: Record<PermissionAction, string> = {
+  view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete', approve: 'Approve', export: 'Export', manage: 'Manage',
+};
+
+const VERB_ACTION: Record<string, PermissionAction> = {
+  read: 'view', view: 'view', use: 'view', respond: 'view', feedback: 'edit',
+  create: 'create', invite: 'create', request: 'create', submit: 'create', punch: 'create', give: 'create',
+  update: 'edit', edit: 'edit', correct: 'edit', run: 'edit',
+  delete: 'delete', archive: 'delete',
+  approve: 'approve', review: 'approve',
+  export: 'export',
+  manage: 'manage', configure: 'manage', lifecycle: 'manage', assign: 'manage', attrition: 'view',
+};
+
+/** The matrix column of a permission: its own `action`, or the one its verb implies (unknown verbs count as manage). */
+export function permissionAction(p: { key: string; action?: PermissionAction }): PermissionAction {
+  if (p.action) return p.action;
+  const verb = p.key.split(':').pop()!;
+  return VERB_ACTION[verb] ?? 'manage';
 }
 
 const ALL: readonly Scope[] = SCOPES;
@@ -127,10 +156,27 @@ export const PERMISSIONS = [
   { key: 'bids:manage', module: 'Staffing bids', description: 'Create and price staffing bids, manage clients and templates, send approved proposals', phase: 11, scopes: ['own', 'entity', 'tenant'] },
   { key: 'bids:approve', module: 'Staffing bids', description: 'Approve staffing bids and their margins before they go to the client', phase: 11, scopes: ['entity', 'tenant'] },
 
-  // Phase 27: employee workspace
-  { key: 'tasks:assign', module: 'People', description: 'Assign Manager Tasks to people in scope and review their progress', phase: 27, scopes: ['team', 'department', 'entity', 'tenant'] },
-  { key: 'tasks:hr', module: 'People', description: 'Assign HR Tasks (documents, forms, acknowledgements) and verify the documents people upload', phase: 27, scopes: ['department', 'entity', 'tenant'] },
-  { key: 'profiles:review', module: 'People', description: 'Review the profile changes employees submit: compare, approve, reject or ask for more', phase: 27, scopes: ['department', 'entity', 'tenant'] },
+  // Phase 27: HR Workspace Admin, background verification, assets, custom fields
+  { key: 'modules:manage', module: 'Administration', description: 'Switch modules off (or back on) for the workspace, within what the plan includes', phase: 27, scopes: TENANT_ONLY, requiresMfa: true, action: 'manage' },
+  { key: 'fields:manage', module: 'Administration', description: 'Add, change, reorder and archive custom fields on employee, asset, verification and other forms', phase: 27, scopes: TENANT_ONLY, action: 'manage' },
+  { key: 'bgv:view', module: 'Background verification', description: 'View background verification cases, checks, findings and reports', phase: 27, scopes: ['department', 'entity', 'tenant'], sensitive: true, action: 'view' },
+  { key: 'bgv:create', module: 'Background verification', description: 'Start background verification for an employee, internally or with an agency', phase: 27, scopes: ['department', 'entity', 'tenant'], action: 'create' },
+  { key: 'bgv:edit', module: 'Background verification', description: 'Work on checks: record findings and remarks, upload documents, share them with the agency', phase: 27, scopes: ['department', 'entity', 'tenant'], sensitive: true, action: 'edit' },
+  { key: 'bgv:delete', module: 'Background verification', description: 'Cancel a verification case or remove a file from it (kept in the history)', phase: 27, scopes: ['entity', 'tenant'], action: 'delete' },
+  { key: 'bgv:approve', module: 'Background verification', description: 'Set the final verification result: verified, failed or on hold', phase: 27, scopes: ['department', 'entity', 'tenant'], action: 'approve' },
+  { key: 'bgv:export', module: 'Background verification', description: 'Export verification cases to Excel', phase: 27, scopes: ['entity', 'tenant'], sensitive: true, action: 'export' },
+  { key: 'bgv:manage', module: 'Background verification', description: 'Add and manage external verification agencies', phase: 27, scopes: TENANT_ONLY, action: 'manage' },
+  { key: 'assets:view', module: 'Assets', description: 'View company assets and who holds them (own scope: the assets you hold)', phase: 27, scopes: ALL, action: 'view' },
+  { key: 'assets:create', module: 'Assets', description: 'Register assets and assign them to employees', phase: 27, scopes: ['department', 'entity', 'tenant'], action: 'create' },
+  { key: 'assets:edit', module: 'Assets', description: 'Change asset details, take returns, record maintenance', phase: 27, scopes: ['department', 'entity', 'tenant'], action: 'edit' },
+  { key: 'assets:delete', module: 'Assets', description: 'Delete assets that were never assigned, or retire them', phase: 27, scopes: ['entity', 'tenant'], action: 'delete' },
+  { key: 'assets:approve', module: 'Assets', description: 'Write assets off as lost or damaged', phase: 27, scopes: ['entity', 'tenant'], action: 'approve' },
+  { key: 'assets:export', module: 'Assets', description: 'Download asset reports in Excel and PDF', phase: 27, scopes: ['department', 'entity', 'tenant'], action: 'export' },
+  { key: 'assets:manage', module: 'Assets', description: 'Manage asset categories', phase: 27, scopes: TENANT_ONLY, action: 'manage' },
+  // Phase 28: employee workspace (HR Tasks, Manager Tasks, profile changes)
+  { key: 'tasks:assign', module: 'People', description: 'Assign Manager Tasks to people in scope and review their progress', phase: 28, scopes: ['team', 'department', 'entity', 'tenant'] },
+  { key: 'tasks:hr', module: 'People', description: 'Assign HR Tasks (documents, forms, acknowledgements) and verify the documents people upload', phase: 28, scopes: ['department', 'entity', 'tenant'] },
+  { key: 'profiles:review', module: 'People', description: 'Review the profile changes employees submit: compare, approve, reject or ask for more', phase: 28, scopes: ['department', 'entity', 'tenant'] },
 ] as const satisfies readonly PermissionDefinition[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

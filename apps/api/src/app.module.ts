@@ -16,6 +16,15 @@ import { PlatformBillingService } from './modules/billing/platform-billing.servi
 import { DocumentsController } from './modules/documents/documents.controller';
 import { DocumentsService } from './modules/documents/documents.service';
 import { DesignationsController, EmployeesController } from './modules/employees/employees.controller';
+import { AssetsController, AssetsEmployeeController } from './modules/assets/assets.controller';
+import { AssetsService } from './modules/assets/assets.service';
+import { BgvController, BgvEmployeeController, BgvPortalController } from './modules/bgv/bgv.controller';
+import { BgvService } from './modules/bgv/bgv.service';
+import { CustomFieldFilesController, CustomFieldsController } from './modules/custom-fields/custom-fields.controller';
+import { CustomFieldsService } from './modules/custom-fields/custom-fields.service';
+import { EmployeeImportController, HrAdminController } from './modules/hr-admin/hr-admin.controller';
+import { EmployeeImportService } from './modules/hr-admin/employee-import.service';
+import { HrAdminService } from './modules/hr-admin/hr-admin.service';
 import { EmployeesService } from './modules/employees/employees.service';
 import { HealthController } from './modules/health/health.controller';
 import { HrJobsService } from './modules/hr-jobs/hr-jobs.service';
@@ -161,7 +170,17 @@ export const CONTROLLERS = [
   BillingController,
   BillingWebhooksController,
   DesignationsController,
+  // Before EmployeesController, so /employees/import is not read as an employee id.
+  EmployeeImportController,
   EmployeesController,
+  AssetsController,
+  AssetsEmployeeController,
+  BgvController,
+  BgvEmployeeController,
+  BgvPortalController,
+  CustomFieldsController,
+  CustomFieldFilesController,
+  HrAdminController,
   OnboardingController,
   TasksController,
   ProfileController,
@@ -284,6 +303,11 @@ export const CONTROLLERS = [
     SignaturesService,
     LeaveService,
     EmployeesService,
+    AssetsService,
+    BgvService,
+    CustomFieldsService,
+    HrAdminService,
+    EmployeeImportService,
     DocumentsService,
     AttendanceDaysService,
     DisciplineService,

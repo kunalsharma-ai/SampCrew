@@ -73,3 +73,7 @@ export * from './rewards';
 export * from './notifications';
 export * from './approval-categories';
 export * from './communication';
+export * from './bgv';
+export * from './assets';
+export * from './custom-fields';
+export * from './hr-admin';

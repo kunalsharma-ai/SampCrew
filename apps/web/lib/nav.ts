@@ -45,6 +45,7 @@ export const NAV: NavGroup[] = [
       { href: '/payslips', label: 'Payslips', icon: 'file-text', permission: 'payslips:read', feature: 'payroll' },
       { href: '/expenses', label: 'Expenses', icon: 'receipt', permission: 'expenses:submit', feature: 'expenses' },
       { href: '/appraisal', label: 'Appraisal', icon: 'award', permission: 'performance:read', feature: 'performance' },
+      { href: '/assets/mine', label: 'My assets', icon: 'laptop', permission: 'assets:view', feature: 'asset_management' },
     ],
   },
   {
@@ -55,6 +56,9 @@ export const NAV: NavGroup[] = [
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
       { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
       { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
+      { href: '/employees/import', label: 'Import employees', icon: 'upload', permission: 'employees:create' },
+      { href: '/verification', label: 'Background verification', icon: 'shield-check', permission: 'bgv:view', feature: 'background_verification' },
+      { href: '/assets', label: 'Assets', icon: 'laptop', permission: 'assets:view', beyondOwn: true, feature: 'asset_management' },
     ],
   },
   {
@@ -139,7 +143,9 @@ export const NAV: NavGroup[] = [
   {
     label: 'Administration',
     items: [
+      { href: '/settings/hr-admin', label: 'HR Workspace Admin', icon: 'layout-grid', permission: 'tenant:read' },
       { href: '/settings/roles', label: 'Roles & permissions', icon: 'shield', permission: 'roles:read' },
+      { href: '/settings/custom-fields', label: 'Custom fields', icon: 'text-cursor-input', permission: 'fields:manage' },
       { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },
       { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },

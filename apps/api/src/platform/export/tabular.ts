@@ -1,4 +1,4 @@
-import { strToU8, zipSync } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import type { Response } from 'express';
 import { contentDisposition } from '../http/content-disposition';
 
@@ -100,4 +100,71 @@ export function sendFile(res: Response, f: { fileName: string; content: string |
   res.setHeader('content-disposition', contentDisposition('attachment', f.fileName));
   res.setHeader('cache-control', 'private, no-store');
   res.send(f.content);
+}
+
+const unesc = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16))).replace(/&amp;/g, '&');
+
+/** Column letters of a cell reference ("C12") to a zero-based index. */
+function columnIndex(ref: string) {
+  const letters = /^[A-Z]+/.exec(ref)?.[0] ?? 'A';
+  let n = 0;
+  for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+/**
+ * Reads the first sheet of an Excel workbook (.xlsx) as rows of text, as typed: shared and inline strings, numbers
+ * (dates come through as Excel serial numbers) and booleans. Formulas give their last calculated value. Nothing is
+ * evaluated. Throws on a file that is not a workbook.
+ */
+export function readXlsx(buf: Buffer, maxRows = 10_000): string[][] {
+  let files: Record<string, Uint8Array>;
+  try {
+    files = unzipSync(new Uint8Array(buf), { filter: (f) => f.name.startsWith('xl/') && f.name.endsWith('.xml') || f.name.endsWith('.rels') });
+  } catch {
+    throw new Error('not_xlsx');
+  }
+  const text = (name: string) => (files[name] ? strFromU8(files[name]!) : null);
+  const workbook = text('xl/workbook.xml');
+  if (!workbook) throw new Error('not_xlsx');
+  const firstSheetRid = /<sheet\b[^>]*\br:id="([^"]+)"/.exec(workbook)?.[1];
+  const rels = text('xl/_rels/workbook.xml.rels') ?? '';
+  let target = 'worksheets/sheet1.xml';
+  if (firstSheetRid) {
+    const rel = new RegExp(`<Relationship\\b[^>]*Id="${firstSheetRid}"[^>]*>`).exec(rels)?.[0];
+    const t = rel && /Target="([^"]+)"/.exec(rel)?.[1];
+    if (t) target = t.replace(/^\/?xl\//, '').replace(/^\//, '');
+  }
+  const sheet = text(`xl/${target}`);
+  if (!sheet) throw new Error('not_xlsx');
+  const shared: string[] = [];
+  const sst = text('xl/sharedStrings.xml');
+  if (sst) {
+    for (const si of sst.match(/<si\b[\s\S]*?<\/si>/g) ?? []) {
+      shared.push(unesc((si.replace(/<rPh\b[\s\S]*?<\/rPh>/g, '').match(/<t\b[^>]*>([\s\S]*?)<\/t>/g) ?? []).map((t) => t.replace(/<[^>]+>/g, '')).join('')));
+    }
+  }
+  const rows: string[][] = [];
+  for (const rowXml of sheet.match(/<row\b[\s\S]*?(?:<\/row>|\/>)/g) ?? []) {
+    if (rows.length >= maxRows) break;
+    const rowNum = Number(/\br="(\d+)"/.exec(rowXml)?.[1] ?? rows.length + 1);
+    const row: string[] = [];
+    for (const m of rowXml.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      const attrs = m[1] ?? '';
+      const inner = m[2] ?? '';
+      const ref = /\br="([A-Z]+)\d+"/.exec(attrs)?.[1];
+      const type = /\bt="([^"]+)"/.exec(attrs)?.[1];
+      const v = /<v>([\s\S]*?)<\/v>/.exec(inner)?.[1];
+      let value = '';
+      if (type === 's') value = shared[Number(v)] ?? '';
+      else if (type === 'inlineStr') value = unesc((inner.match(/<t\b[^>]*>([\s\S]*?)<\/t>/g) ?? []).map((t) => t.replace(/<[^>]+>/g, '')).join(''));
+      else if (type === 'b') value = v === '1' ? 'TRUE' : 'FALSE';
+      else value = v !== undefined ? unesc(v) : '';
+      row[ref ? columnIndex(ref) : row.length] = value;
+    }
+    while (rows.length < rowNum - 1) rows.push([]);
+    rows.push(Array.from(row, (c) => c ?? ''));
+  }
+  return rows;
 }
