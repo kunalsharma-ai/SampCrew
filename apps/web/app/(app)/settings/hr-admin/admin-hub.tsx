@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
+import { useMfaRetry } from '@/components/mfa-step-up';
 import type { Me } from '@/lib/types';
 import { resetRoleAction, setModulesAction, setRoleGrantsAction } from './actions';
 import type { Matrix, MatrixRole, ModuleRow } from './types';
@@ -57,9 +58,11 @@ function Modules({ rows, canManage }: { rows: ModuleRow[]; canManage: boolean })
   const [list, setList] = useState(rows);
   const [flash, setFlash] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [pending, start] = useTransition();
+  // Switching modules needs a recent MFA check: the step-up dialog opens in place and the change is retried.
+  const withMfa = useMfaRetry();
   const groups = useMemo(() => [...new Set(list.map((r) => r.module))], [list]);
   const toggle = (r: ModuleRow, enabled: boolean) => start(async () => {
-    const res = await setModulesAction([{ key: r.key, enabled }]);
+    const res = await withMfa(() => setModulesAction([{ key: r.key, enabled }]));
     if (res.ok && res.data) setList(res.data);
     setFlash({ tone: res.ok ? 'success' : 'danger', text: res.ok ? `${r.name}: ${res.message}` : res.message });
   });
@@ -108,14 +111,15 @@ function RoleEditor({ matrix, role, canManage }: { matrix: Matrix; role: MatrixR
   const [grants, setGrants] = useState<Record<string, string>>(role.grants);
   const [flash, setFlash] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [pending, start] = useTransition();
+  const withMfa = useMfaRetry();
   const dirty = JSON.stringify(Object.entries(grants).sort()) !== JSON.stringify(Object.entries(role.grants).sort());
   const set = (perm: string, scope: string) => setGrants((g) => { const n = { ...g }; if (scope) n[perm] = scope; else delete n[perm]; return n; });
   const save = () => start(async () => {
-    const r = await setRoleGrantsAction(role.id, Object.entries(grants).map(([permission, scope]) => ({ permission, scope })));
+    const r = await withMfa(() => setRoleGrantsAction(role.id, Object.entries(grants).map(([permission, scope]) => ({ permission, scope }))));
     setFlash({ tone: r.ok ? 'success' : 'danger', text: r.message ?? '' });
     if (r.ok) router.refresh();
   });
-  const reset = () => start(async () => { const r = await resetRoleAction(role.id); setFlash({ tone: r.ok ? 'success' : 'danger', text: r.message ?? '' }); if (r.ok && r.data) { setGrants((r.data as { grants: Record<string, string> }).grants); router.refresh(); } });
+  const reset = () => start(async () => { const r = await withMfa(() => resetRoleAction(role.id)); setFlash({ tone: r.ok ? 'success' : 'danger', text: r.message ?? '' }); if (r.ok && r.data) { setGrants((r.data as { grants: Record<string, string> }).grants); router.refresh(); } });
 
   return (
     <>

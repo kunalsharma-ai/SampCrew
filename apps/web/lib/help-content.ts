@@ -754,6 +754,7 @@ export const WEB_HELP: HelpContent = {
     'Field change log': { what: 'Every change to custom fields: added, changed, archived and restored, and by whom.' },
     'Case files': { what: 'Documents for this case, such as ID proofs, certificates and agency reports.', how: 'Upload a file and choose whether the agency may download it.' },
     'Case history': { what: 'Everything that happened on this case, by whom and when.' },
+    'Additional details': { what: 'Fields your workspace added in Custom fields, such as blood group or T-shirt size.', how: 'Select Edit to fill them in. Fields you may only see are shown without an input.' },
     'Case details': { what: 'Who is verified, who is working on it, the agency, due date and notes.' },
     // Email signature
     'Choose a design': { what: 'The 20 signature designs, shown with your own details.', how: 'Click one to use it. If your company locked the design, only that one is shown.' },

@@ -188,6 +188,9 @@ export class EmployeeImportService {
       const p: Prepared = { result, assetIds: [] };
       out.push(p);
       for (const h of unknownLeave) warnings.push(`No leave type with the code in "${h}": that column is ignored`);
+      // Required columns are reported with every other problem on the row, so one check shows all that needs fixing.
+      if (!code) err('employeeCode', 'Enter the employee ID');
+      if (!firstName) err('firstName', 'Enter the first name');
 
       // Duplicates: the same person already in SampCrew, or twice in this file.
       if (code) {
