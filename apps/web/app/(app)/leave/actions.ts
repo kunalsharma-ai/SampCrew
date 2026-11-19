@@ -34,3 +34,15 @@ export async function addDefaultLeaveTypesAction() {
   revalidatePath('/settings/leave');
   return r;
 }
+
+export async function previewModifyLeaveAction(id: string, values: Record<string, unknown>) {
+  return act(() => api<Preview>(`/leave/requests/${id}/modify/preview`, { method: 'POST', body: values }));
+}
+
+/** A pending request changes and goes back for approval; a change to approved leave waits for its own approval. */
+export async function modifyLeaveAction(id: string, values: Record<string, unknown>) {
+  const r = await act(() => api<{ id: string; status: string; replacesRequestId: string | null }>(`/leave/requests/${id}/modify`, { method: 'POST', body: values }));
+  revalidatePath('/leave');
+  revalidatePath('/approvals');
+  return r;
+}

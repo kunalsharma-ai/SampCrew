@@ -229,6 +229,13 @@ export class LeaveController {
     return this.leave.cancel(id, body.reason);
   }
 
+  @Post('requests/:id/modify/preview')
+  @RequireFeature('leave')
+  @Doc({ summary: 'Working days and balance impact of a change to a request (nothing is saved)', body: leaveModifyInput })
+  previewModify(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(leaveModifyInput)) body: LeaveModifyInput) {
+    return this.leave.previewModify(id, body);
+  }
+
   @Post('requests/:id/modify')
   @RequireFeature('leave')
   @Doc({ summary: 'Change a request: a pending one is changed and its approval restarts; a change to approved leave is approved on its own and then replaces it', body: leaveModifyInput })

@@ -258,9 +258,15 @@ export const WEB_HELP: HelpContent = {
     },
     '/leave': {
       title: 'Leave',
-      what: 'Your leave balances, your requests and who is away soon.',
-      how: 'Press Request time off, choose the type and dates, and send. Your approver is notified; you can cancel while it is pending.',
-      where: 'For every employee. Managers also see their team’s requests here.',
+      what: 'Your leave balances, your month or year calendar, your requests and who is away soon.',
+      how: 'Press Apply for leave, choose the type and dates, and send. Change or cancel a request while it waits. A change to approved leave replaces it once approved. Year view shows all twelve months.',
+      where: 'For every employee. Managers also see their team’s requests here, and Team balances shows what their people have left.',
+    },
+    '/leave/balances': {
+      title: 'Leave balances',
+      what: 'What everyone you can see has available for each leave type, and every manual adjustment with its remark.',
+      how: 'Filter by department or search a name. Adjust adds or deducts days with a required remark the person sees (comp-off is credited this way). Adjustment history lists every change.',
+      where: 'For managers (their team) and HR (their scope).',
     },
     '/payslips': {
       title: 'Payslips',
@@ -703,7 +709,7 @@ export const WEB_HELP: HelpContent = {
     '/settings/leave': {
       title: 'Leave settings',
       what: 'Leave types, who gets how much, holiday calendars and the approval chain.',
-      how: 'Create leave types and policies, assign holiday calendars, and set who approves.',
+      how: 'Add standard types (maternity, comp-off, work from home and more) or your own. Give each a policy for everyone or by entity, department, designation or location; the most specific wins. Set up to five approval steps.',
       where: 'For HR, usually at setup and the start of each leave year.',
     },
     '/settings/onboarding': {

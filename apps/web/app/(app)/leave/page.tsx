@@ -6,12 +6,13 @@ import { can } from '@/lib/nav';
 import type { LeaveBalance, LeaveCalendarData, LeaveRequest, Me } from '@/lib/types';
 import { BalanceCards } from '../employees/[id]/tabs';
 import { LeaveCalendar } from './leave-calendar';
+import { LeaveYear } from './leave-year';
 import { monthRange } from './month';
 import { AddDefaultLeaveTypes, ApplyLeave, MyRequests, TeamAway } from './leave-view';
 
 export const metadata: Metadata = { title: 'Leave' };
 
-export default async function LeavePage({ searchParams }: { searchParams: Promise<{ month?: string; sent?: string }> }) {
+export default async function LeavePage({ searchParams }: { searchParams: Promise<{ month?: string; sent?: string; view?: string; year?: string }> }) {
   const sp = await searchParams;
   const me = await load<Me>('/me');
   let balances: { year: number; balances: LeaveBalance[] } | null = null;
@@ -31,7 +32,10 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
   const scope = me.permissions['leave:read'];
   const today = new Date().toISOString().slice(0, 10);
   const month = sp.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month) ? sp.month : today.slice(0, 7);
-  const { from, to } = monthRange(month);
+  // The year view shows all twelve months; the month view one month with room to apply from a day.
+  const yearView = sp.view === 'year';
+  const year = sp.year && /^\d{4}$/.test(sp.year) ? Number(sp.year) : Number(today.slice(0, 4));
+  const { from, to } = yearView ? { from: `${year}-01-01`, to: `${year}-12-31` } : monthRange(month);
   const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const [requests, away, calendar] = await Promise.all([
     load<LeaveRequest[]>('/leave/requests?scope=mine&limit=100'),
@@ -46,6 +50,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
       <ModuleOverview module="leave" actions={allowed(me, [
         { label: 'Apply leave', href: '/leave?create=leave', icon: 'calendar', permission: 'leave:request' },
         { label: 'Approve requests', href: '/approvals', icon: 'check', permission: 'leave:approve' },
+        { label: 'Team balances', href: '/leave/balances', icon: 'users-round', permission: 'leave:approve' },
         { label: 'Team attendance', href: '/attendance/team?status=on_leave', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },
         { label: 'Leave policy', href: '/settings/leave', icon: 'sliders', permission: 'leave:configure' },
       ])} />
@@ -70,10 +75,10 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
           )
         )}
         <BalanceCards balances={balances.balances} />
-        <LeaveCalendar data={calendar} month={month} today={today} canApply={canApply} />
+        {yearView ? <LeaveYear data={calendar} year={year} today={today} /> : <LeaveCalendar data={calendar} month={month} today={today} canApply={canApply} />}
         <Card>
-          <CardHeader title="My requests" />
-          <MyRequests requests={requests} />
+          <CardHeader title="My requests" description="A request waiting for approval can be changed or cancelled. Approved leave that has not started can be changed too: the change goes for approval and replaces it once approved." />
+          <MyRequests requests={requests} balances={balances.balances} />
         </Card>
         {away && <TeamAway rows={away} />}
       </div>

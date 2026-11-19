@@ -884,6 +884,17 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
+  /** Days and balance impact of a change to a request, without saving it. */
+  async previewModify(id: string, input: LeaveModifyInput) {
+    return this.db.tenant(async (tx) => {
+      const r = await tx.collection<RequestRow>('leave_requests').findOne({ id });
+      if (!r) throw Errors.notFound('Leave request');
+      const e = await this.employee(tx, r.employee_id);
+      const { self } = await this.rolesOn(tx, r, e);
+      return this.evaluate(tx, e, input, !self, r);
+    });
+  }
+
   /** Cancels approved leave that an approved change replaces, giving its days back. */
   private async retire(tx: TenantTx, id: string, by: string) {
     const o = await tx.collection<RequestRow>('leave_requests').findOne({ id });
