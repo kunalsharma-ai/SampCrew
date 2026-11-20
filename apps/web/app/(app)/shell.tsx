@@ -1,5 +1,5 @@
 'use client';
-import { DEFAULT_APPEARANCE, THEME_PRESETS, buildTheme, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
+import { DEFAULT_APPEARANCE, FEATURE_ACTION_KEYS, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
 import { AutoHelp, Avatar, Badge, CrewLogo, Dialog, HelpProvider, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronDown, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
@@ -27,6 +27,8 @@ import { IqPanel } from './iq-panel';
 import { ThemePanel } from './theme-panel';
 import { logoutAction, switchTenantAction } from './shell-actions';
 import { NotificationBell } from '@/components/notification-bell';
+import { FeatureGate } from '@/components/feature-gate';
+import { useDesignLevel } from '@/lib/design-level';
 
 export { ICONS };
 
@@ -154,6 +156,12 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   const allHrefs = allItems.map((i) => i.href);
 
   useEffect(() => setMobileOpen(false), [pathname]);
+  // Each level has its own design system (colours, shape, motion): see data-level in @crew/ui styles.css.
+  const designLevel = designLevelOf(me.levels);
+  useEffect(() => {
+    document.documentElement.dataset.level = designLevel;
+    return () => { delete document.documentElement.dataset.level; };
+  }, [designLevel]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -196,11 +204,16 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
+  // Feature management, buttons: a button switched off at any level (Console, Super Workspace, HR Workspace) leaves
+  // every page it is on. The server refuses its request too; this only keeps it out of sight.
+  const hiddenActions = useMemo(() => FEATURE_ACTION_KEYS.filter((k) => !me.features.includes(k)).map((k) => `[data-feature="${k}"]`).join(','), [me.features]);
+
   const sidebar = (rail: boolean) => <Sidebar me={me} nav={nav} counts={counts} rail={rail} pathname={pathname} allHrefs={allHrefs} onCollapse={() => void update({ sidebar: rail ? 'expanded' : 'collapsed' })} />;
 
   return (
     <HelpProvider content={WEB_HELP} pathname={pathname}>
     <ExperienceContext.Provider value={experience}>
+      {hiddenActions && <style>{`${hiddenActions}{display:none!important}`}</style>}
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:shadow-pop">Skip to content</a>
       <div className="flex min-h-dvh">
         <aside className={cn('crew-glass crew-sidebar sticky top-0 hidden h-dvh shrink-0 border-r border-border transition-[width] duration-200 lg:block', collapsed ? 'w-[4.5rem]' : 'w-64')}>{sidebar(collapsed)}</aside>
@@ -244,7 +257,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               <HeaderUser me={me} />
             </div>
           </header>
-          <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+          <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><div key={pathname} className="crew-page"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></div></main>
         </div>
         {hasIq && <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />}
         <ThemePanel open={themesOpen} onClose={() => setThemesOpen(false)} appearance={appearance} update={update} />
@@ -380,13 +393,13 @@ function UpgradeCard({ me }: { me: Me }) {
 
 /** Greeting chip on the right of the top bar (wide screens); opens the member's account menu. */
 function HeaderUser({ me }: { me: Me }) {
-  const role = me.membership.roles.find((r) => r.key !== 'employee') ?? me.membership.roles[0];
+  const level = workspaceLevelLabel(me.levels);
   return (
     <AccountMenu me={me} wrapperClassName="ml-1 hidden shrink-0 xl:block" buttonClassName="flex items-center whitespace-nowrap gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-bg-subtle" testId="account-menu-header">
       <Avatar name={me.user.fullName} size={32} src={me.employee ? photoUrl(me.employee) : null} />
       <span className="flex flex-col text-left leading-tight">
         <span className="text-[0.8125rem] font-semibold">Hi, {me.user.fullName.split(' ')[0]}</span>
-        <span className="text-[0.6875rem] text-fg-subtle">{role?.name}</span>
+        <span className="text-[0.6875rem] text-fg-subtle">{level}</span>
       </span>
     </AccountMenu>
   );
@@ -477,14 +490,14 @@ function TenantSwitcher({ me }: { me: Me }) {
 
 function UserMenu({ me, rail }: { me: Me; rail: boolean }) {
   const [pending, start] = useTransition();
-  const primaryRole = me.membership.roles.find((r) => r.key !== 'employee') ?? me.membership.roles[0];
+  const level = workspaceLevelLabel(me.levels, { withName: true });
   return (
     <div className={cn('flex items-center gap-2.5 rounded-lg border border-border px-2.5 py-2', rail && 'flex-col border-0 px-0')}>
       <AccountMenu me={me} up wrapperClassName="shrink-0" buttonClassName="block rounded-full" testId="account-menu-sidebar"><Avatar name={me.user.fullName} size={30} src={me.employee ? photoUrl(me.employee) : null} /></AccountMenu>
       {!rail && (
         <div className="min-w-0 flex-1">
           <div className="truncate text-[0.8125rem] font-medium">{me.user.fullName}</div>
-          <div className="truncate text-[0.6875rem] text-fg-subtle">{primaryRole?.name}</div>
+          <div className="truncate text-[0.6875rem] text-fg-subtle" title={level}>{level}</div>
         </div>
       )}
       <button onClick={() => start(() => logoutAction())} disabled={pending} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Sign out" title="Sign out">
@@ -542,7 +555,7 @@ function QuickCreate({ actions }: { actions: QuickAction[] }) {
 
 /** Swatch showing a preset's own colours, independent of the current theme. */
 export function PresetSwatch({ preset, mode, size = 'sm' }: { preset: string; mode: 'light' | 'dark'; size?: 'sm' | 'lg' }) {
-  const t = buildTheme({ ...DEFAULT_APPEARANCE, preset: preset as Appearance['preset'] }, mode);
+  const t = buildTheme({ ...DEFAULT_APPEARANCE, preset: preset as Appearance['preset'] }, mode, useDesignLevel());
   return (
     <span className={cn('relative inline-flex overflow-hidden rounded-full border border-border', size === 'sm' ? 'size-5' : 'size-8')} style={{ background: t.bg }} aria-hidden>
       <span className="absolute inset-0" style={{ background: `conic-gradient(from 200deg, ${t['glow-1']}, ${t['glow-2']}, ${t['glow-3']}, ${t['glow-1']})`, clipPath: 'polygon(50% 0, 100% 0, 100% 100%, 50% 100%)' }} />
@@ -552,6 +565,7 @@ export function PresetSwatch({ preset, mode, size = 'sm' }: { preset: string; mo
 
 function ThemeMenu() {
   const { appearance, update, openThemes } = useExperience();
+  const designLevel = useDesignLevel();
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ModeIcon = appearance.mode === 'light' ? Sun : appearance.mode === 'dark' ? Moon : Monitor;
@@ -573,7 +587,7 @@ function ThemeMenu() {
         </div>
         <div className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle">Theme</div>
         <div className="mb-3 grid grid-cols-6 gap-1.5" role="radiogroup" aria-label="Theme preset">
-          {THEME_PRESETS.map((p) => (
+          {presetChoices(designLevel).map((p) => (
             <button key={p.key} role="radio" aria-checked={appearance.preset === p.key} aria-label={p.name} title={p.name} onClick={() => void update({ preset: p.key })} className={cn('flex items-center justify-center rounded-lg p-1 ring-offset-2 ring-offset-surface-raised', appearance.preset === p.key ? 'ring-2 ring-accent' : 'hover:bg-bg-subtle')}>
               <PresetSwatch preset={p.key} mode={swatchMode} size="lg" />
             </button>
@@ -603,6 +617,7 @@ interface PaletteItem { id: string; section: string; label: string; detail?: str
 function CommandPalette({ open, onClose, nav, me, quick, workflows }: { open: boolean; onClose: () => void; nav: NavGroup[]; me: Me; quick: QuickAction[]; workflows: QuickAction[] }) {
   const router = useRouter();
   const { appearance, update, recents } = useExperience();
+  const designLevel = useDesignLevel();
   const [q, setQ] = useState('');
   const [index, setIndex] = useState(0);
   const [hits, setHits] = useState<Awaited<ReturnType<typeof paletteSearchAction>>>([]);
@@ -643,7 +658,7 @@ function CommandPalette({ open, onClose, nav, me, quick, workflows }: { open: bo
       { id: 't-dark', section: 'Appearance', label: 'Switch to dark mode', icon: Moon, run: () => { void update({ mode: 'dark' }); onClose(); } },
       { id: 't-light', section: 'Appearance', label: 'Switch to light mode', icon: Sun, run: () => { void update({ mode: 'light' }); onClose(); } },
       { id: 't-focus', section: 'Appearance', label: appearance.focusMode ? 'Turn focus mode off' : 'Turn focus mode on', icon: Focus, run: () => { void update({ focusMode: !appearance.focusMode }); onClose(); } },
-      ...THEME_PRESETS.map((p) => ({ id: `t-${p.key}`, section: 'Appearance', label: `Theme: ${p.name}`, detail: p.description, icon: Palette, run: () => { void update({ preset: p.key }); onClose(); } })),
+      ...presetChoices(designLevel).map((p) => ({ id: `t-${p.key}`, section: 'Appearance', label: `Theme: ${p.name}`, detail: p.description, icon: Palette, run: () => { void update({ preset: p.key }); onClose(); } })),
     ];
     if (term) for (const c of themeCmds) if (match(c.label, c.detail, 'theme appearance')) out.push(c);
     return out;

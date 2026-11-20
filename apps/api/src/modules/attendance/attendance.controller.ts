@@ -39,6 +39,7 @@ const range = z
   .refine((v) => v.to >= v.from, { message: 'to is before from', path: ['to'] })
   .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, { message: 'Ask for at most 63 days at a time', path: ['to'] });
 const teamQuery = z.object({ date: isoDate, status: z.enum(DAY_STATUSES).optional(), departmentId: z.uuid().optional(), locationId: z.uuid().optional() });
+const registerQuery = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM'), departmentId: z.uuid().optional(), locationId: z.uuid().optional(), q: z.string().trim().max(100).optional() });
 const listQuery = z.object({ scope: z.enum(['mine', 'visible']).default('mine'), status: z.enum(['pending', 'approved', 'rejected', 'cancelled']).optional() });
 const unlockInput = z.object({ reason: z.string().trim().min(3).max(300) });
 const dateQuery = z.object({ date: isoDate });
@@ -90,6 +91,13 @@ export class AttendanceController {
   @Doc({ summary: 'Attendance of everyone I can see on a date, with counts by status', query: teamQuery })
   team(@Query(new ZodPipe(teamQuery)) q: z.infer<typeof teamQuery>) {
     return this.attendance.team(q);
+  }
+
+  @Get('register')
+  @RequirePermission('attendance:read')
+  @Doc({ summary: 'Monthly attendance register: every employee I can see, one status per day, with totals', query: registerQuery })
+  register(@Query(new ZodPipe(registerQuery)) q: z.infer<typeof registerQuery>) {
+    return this.attendance.register(q);
   }
 
   @Post('corrections')

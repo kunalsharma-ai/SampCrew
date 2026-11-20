@@ -5,6 +5,33 @@
 import type { TableSpec } from './schema';
 
 export const TABLES: Record<string, TableSpec> = {
+  access_level_migrations: {
+    // The move from the old built-in roles to the four access levels (Super, HR and Employee Workspace), one row per
+    // person or setting changed: what it was before (kept for rollback) and what it became. Written once per tenant.
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      after: {"default": {"json": {}}, "required": true, "type": "json"},
+      before: {"default": {"json": {}}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["membership", "approval_policy", "approval_step", "custom_field", "scim_group"], "required": true, "type": "string"},
+      // Plain-language notes on access the old roles gave that the new level does not.
+      notes: {"default": {"json": []}, "required": true, "type": "string[]"},
+      rolled_back_at: {"type": "timestamp"},
+      subject_id: {"required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "access_level_migrations_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "kind"}, {"col": "subject_id"}], "name": "access_level_migrations_subject"},
+    ],
+    checks: [],
+  },
   addons: {
     // The add-on catalogue SAMPLEDGE sells on top of plans (Console > Billing > Add-ons).
     access: "shared", grants: ["select"], touch: true,
@@ -868,6 +895,8 @@ export const TABLES: Record<string, TableSpec> = {
     access: "tenant", grants: ["insert", "select", "update"], touch: true,
     columns: {
       archived_at: {"type": "timestamp"},
+      // The group chat opened from the group (Communication > Groups > Open group chat); its members follow the group.
+      chat_conversation_id: {"type": "uuid"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       created_by_membership_id: {"required": true, "type": "uuid"},
       description: {"default": "", "required": true, "type": "string"},
@@ -2480,6 +2509,133 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((length(title) >= 1) AND (length(title) <= 200)))",
     ],
   },
+  hr_workspaces: {
+    // An HR Workspace (Console > Super Workspace > HR Workspace > Employee): a department, branch or region of the
+    // company with its own admins and a subset of the company's modules (features). Its people are the employees
+    // whose hr_workspace_id points here. Archived ones keep their history; their people go back to the central group.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      archived_at: {"type": "timestamp"},
+      code: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      department_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      description: {"default": "", "required": true, "type": "string"},
+      // Switched off for Employee Workspace people of this HR Workspace by its admins (within its own features).
+      employee_off_features: {"default": {"json": []}, "required": true, "type": "string[]"},
+      features: {"default": {"json": []}, "required": true, "type": "string[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"default": "department", "enum": ["department", "branch", "region", "business_unit", "other"], "required": true, "type": "string"},
+      location_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      // -1: no limit of its own (the company's employee limit still applies).
+      max_employees: {"default": -1, "required": true, "type": "int"},
+      name: {"required": true, "type": "string"},
+      status: {"default": "active", "enum": ["active", "suspended", "archived"], "required": true, "type": "string"},
+      status_reason: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Goes up on every change, so a change made on an older version is refused instead of overwriting another.
+      version: {"default": 1, "required": true, "type": "int"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "hr_workspaces_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "hr_workspaces_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "name", "fold": "lower"}], "name": "hr_workspaces_name", "where": [{"col": "archived_at", "op": "null"}]},
+      {"cols": [{"col": "tenant_id"}, {"col": "code"}], "name": "hr_workspaces_code", "where": [{"col": "code", "op": "notnull"}, {"col": "archived_at", "op": "null"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "status"}], "name": "hr_workspaces_status"},
+    ],
+    checks: [
+      "CHECK (((length(name) >= 2) AND (length(name) <= 80)))",
+      "CHECK ((max_employees >= '-1'::integer))",
+    ],
+  },
+  member_module_assignments: {
+    // Modules one employee does NOT get although their HR Workspace (or, in the central group, the company) holds
+    // them, chosen by the HR Workspace admins or the Super Workspace. Stored as what is withheld, so a module the HR
+    // Workspace gains later reaches its people unless someone takes it away from them.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      membership_id: {"required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_level: {"enum": ["super", "hr"], "type": "string"},
+      updated_by_membership_id: {"type": "uuid"},
+      version: {"default": 1, "required": true, "type": "int"},
+      withheld_features: {"default": {"json": []}, "required": true, "type": "string[]"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "member_module_assignments_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}], "name": "member_module_assignments_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "membership_id"], "onDelete": "cascade", "ref": "memberships", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  employee_transfers: {
+    // Every move of an employee between HR Workspaces (or to and from the central group). Attendance, leave and
+    // payroll records stay with the person; only who looks after them changes.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      employee_id: {"required": true, "type": "uuid"},
+      from_hr_workspace_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      reason: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      to_hr_workspace_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "employee_transfers_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "employee_transfers_employee"},
+    ],
+    checks: [],
+  },
+  config_versions: {
+    // Change history of the delegation chain: each change to what the company, an HR Workspace or one employee may
+    // use, with the level that made it (console, super, hr), the values before and after, and the new version.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      action: {"required": true, "type": "string"},
+      actor_label: {"type": "string"},
+      actor_membership_id: {"type": "uuid"},
+      changes: {"default": {"json": {}}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      level: {"enum": ["console", "super", "hr", "employee"], "required": true, "type": "string"},
+      target_id: {"required": true, "type": "string"},
+      target_type: {"enum": ["company", "hr_workspace", "member"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      version: {"required": true, "type": "int"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "config_versions_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "target_type"}, {"col": "target_id"}, {"col": "created_at", "desc": true}], "name": "config_versions_target"},
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "config_versions_recent"},
+    ],
+    checks: [],
+  },
   employees: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true, triggers: ["employees_no_manager_cycle", "employees_sync_membership"],
     columns: {
@@ -2500,6 +2656,9 @@ export const TABLES: Record<string, TableSpec> = {
       exit_reason: {"type": "string"},
       exit_type: {"enum": ["resignation", "termination", "retirement", "contract_end", "other"], "type": "string"},
       first_name: {"required": true, "type": "string"},
+      // The HR Workspace that looks after the person (Super > HR > Employee). Null: the company's central group, run by
+      // the Super Workspace. Changed only by a transfer, which is kept in employee_transfers.
+      hr_workspace_id: {"type": "uuid"},
       gender: {"enum": ["female", "male", "non_binary", "undisclosed"], "type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       // How the record was added: a new joiner, or someone already working here (past joining date, own code,
@@ -2537,10 +2696,12 @@ export const TABLES: Record<string, TableSpec> = {
       {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
       {"cols": ["tenant_id", "current_legal_entity_id"], "onDelete": "no_action", "ref": "legal_entities", "refCols": ["tenant_id", "id"]},
       {"cols": ["tenant_id", "default_shift_id"], "onDelete": "no_action", "ref": "shift_templates", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "hr_workspace_id"], "onDelete": "no_action", "ref": "hr_workspaces", "refCols": ["tenant_id", "id"]},
     ],
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "current_manager_employee_id"}], "name": "employees_manager"},
       {"cols": [{"col": "tenant_id"}, {"col": "current_department_id"}], "name": "employees_department"},
+      {"cols": [{"col": "tenant_id"}, {"col": "hr_workspace_id"}], "name": "employees_hr_workspace"},
       {"name": "employees_name", "skip": "col: lower(((first_name || ' '::text) || last_name))"},
     ],
     checks: [
@@ -2819,6 +2980,8 @@ export const TABLES: Record<string, TableSpec> = {
     access: "tenant", grants: ["insert", "select", "update"], touch: true, triggers: ["helpdesk_cases_guard"],
     columns: {
       assignee_membership_id: {"type": "uuid"},
+      // Other handlers working the case with the assignee (the lead). They see it in "Assigned to me" and get its replies.
+      collaborator_membership_ids: {"default": {"json": []}, "type": "uuid[]"},
       category_id: {"required": true, "type": "uuid"},
       closed_at: {"type": "timestamp"},
       confidential: {"required": true, "type": "bool"},
@@ -2935,7 +3098,7 @@ export const TABLES: Record<string, TableSpec> = {
   helpdesk_events: {
     access: "tenant", grants: ["insert", "select"],
     columns: {
-      action: {"enum": ["created", "status", "assigned", "priority", "category", "rated"], "required": true, "type": "string"},
+      action: {"enum": ["created", "status", "assigned", "collaborator_added", "collaborator_removed", "priority", "category", "rated"], "required": true, "type": "string"},
       by_membership_id: {"type": "uuid"},
       case_id: {"required": true, "type": "uuid"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -4478,6 +4641,28 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((trial_days >= 0) AND (trial_days <= 90)))",
     ],
   },
+  platform_feature_states: {
+    // Console > Feature management: whether each module or part (FEATURE_PARTS) is released for the whole application.
+    // "off" and "pending" take it away from every company whatever its plan; records are kept. A feature missing here
+    // is active. New features are written as "pending" by the catalogue sync until SAMPLEDGE activates them.
+    access: "shared", grants: ["select"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      reason: {"type": "string"},
+      state: {"default": "active", "enum": ["active", "off", "pending"], "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "platform_feature_states_pkey", "primary": true},
+      {"cols": [{"col": "key"}], "name": "platform_feature_states_key"},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [],
+  },
   platform_admins: {
     access: "platform", grants: [], touch: true,
     columns: {
@@ -4971,7 +5156,7 @@ export const TABLES: Record<string, TableSpec> = {
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       membership_id: {"required": true, "type": "uuid"},
       role_id: {"required": true, "type": "uuid"},
-      source: {"default": "manual", "enum": ["manual", "scim"], "required": true, "type": "string"},
+      source: {"default": "manual", "enum": ["manual", "scim", "hr_workspace"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
     },
     unique: [
@@ -5198,6 +5383,8 @@ export const TABLES: Record<string, TableSpec> = {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Limits on the level the group gives (see LevelConstraints in packages/contracts/src/roles.ts).
+      constraints: {"default": {"json": {}}, "required": true, "type": "json"},
       display_name: {"required": true, "type": "string"},
       external_id: {"type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
@@ -5961,6 +6148,10 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       device_vendors_disabled: {"default": {"json": []}, "required": true, "type": "string[]"},
       disabled_permissions: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Console: modules the company holds but may not pass down to its HR Workspaces (kept at company level).
+      non_delegable_features: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Console: whether the Super Workspace may add employees straight into the central group.
+      super_may_create_employees: {"default": true, "required": true, "type": "bool"},
       mobile_app_enabled: {"default": true, "required": true, "type": "bool"},
       mobile_off_features: {"default": {"json": []}, "required": true, "type": "string[]"},
       tenant_id: {"required": true, "type": "uuid"},
@@ -6351,6 +6542,12 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       disabled_features: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Switched off by the Super Workspace for everyone at Employee Workspace level (HR Workspace cannot switch them on).
+      employee_level_off: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Switched off for Employee Workspace in the central group by company-wide HR Workspace people.
+      employee_level_off_by_hr: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Switched off by the Super Workspace for everyone at HR Workspace level.
+      hr_level_off: {"default": {"json": []}, "required": true, "type": "string[]"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       key: {"default": "workspace", "enum": ["workspace"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},

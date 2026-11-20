@@ -104,9 +104,9 @@ export function Compose({ id, initial, files: initialFiles, options, knownNames 
             <div className="flex items-center gap-2" data-testid="send-confirm">
               <span className="text-[0.8125rem]">Send it now? It cannot be called back.</span>
               <Button variant="ghost" onClick={() => setConfirm(false)}>Not yet</Button>
-              <Button loading={pending} onClick={send}><Send className="size-3.5" /> Yes, send</Button>
+              <Button loading={pending} onClick={send} data-feature="helpdesk.send_email"><Send className="size-3.5" /> Yes, send</Button>
             </div>
-          ) : <Button onClick={() => setConfirm(true)} disabled={!subject.trim()}><Send className="size-3.5" /> Send</Button>}
+          ) : <Button onClick={() => setConfirm(true)} disabled={!subject.trim()} data-feature="helpdesk.send_email"><Send className="size-3.5" /> Send</Button>}
         </div>
       </CardBody>
     </Card>

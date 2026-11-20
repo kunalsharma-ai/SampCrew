@@ -107,8 +107,8 @@ export class BidsService implements OnModuleInit {
     this.approvals.register('staffing_bid', {
       permission: 'bids:approve',
       configurePermission: 'tenant:manage',
-      defaultSteps: [{ type: 'role', role: 'finance_manager' }],
-      fallbackRole: 'tenant_owner',
+      defaultSteps: [{ type: 'role', role: 'hr_workspace' }],
+      fallbackRole: 'super_workspace',
       label: 'Staffing bid',
       link: (id) => `/staffing/bids/${id}`,
       attributes: async (tx, id) => attrs(await this.load(tx, id)),

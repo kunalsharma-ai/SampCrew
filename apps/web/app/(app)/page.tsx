@@ -1,4 +1,4 @@
-import { FEATURES, PERMISSIONS, type MemberPreferences } from '@crew/contracts';
+import { FEATURES, PERMISSIONS, workspaceLevelLabel, type MemberPreferences } from '@crew/contracts';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { load, loadOptional } from '@/lib/api';
@@ -71,7 +71,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       news={news}
       helpdesk={helpdesk}
       steps={steps}
-      roles={me.membership.roles.map((r) => ({ key: r.key, name: r.name }))}
+      roles={[{ key: 'level', name: workspaceLevelLabel(me.levels, { withName: true }) }]}
       access={access}
       plan={{
         name: me.subscription?.plan ?? null,

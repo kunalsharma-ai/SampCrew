@@ -83,7 +83,7 @@ export function ApprovalsBoard({ view, overview, counts, inbox, rows, category, 
 function CategoryCard({ c, selected, href, view }: { c: ApprovalCard; selected: boolean; href: string; view: string }) {
   const Icon = ICONS[c.icon] ?? Inbox;
   return (
-    <Link href={href} aria-current={selected ? 'true' : undefined} data-testid={`approval-card-${c.key}`} className={cn('group relative overflow-hidden rounded-xl border bg-surface p-4 shadow-card transition hover:-translate-y-0.5 hover:shadow-pop', selected ? 'border-accent ring-2 ring-accent/30' : 'border-border', c.total === 0 && 'opacity-60')}>
+    <Link href={href} aria-current={selected ? 'true' : undefined} data-testid={`approval-card-${c.key}`} className={cn('group relative min-w-0 overflow-hidden rounded-xl border bg-surface p-4 shadow-card transition hover:-translate-y-0.5 hover:shadow-pop', selected ? 'border-accent ring-2 ring-accent/30' : 'border-border', c.total === 0 && 'opacity-60')}>
       <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: c.color }} />
       <div className="flex items-start gap-3">
         <span className="flex size-9 items-center justify-center rounded-lg" style={{ background: `${c.color}1f`, color: c.color }} aria-hidden><Icon className="size-4.5" /></span>
@@ -109,9 +109,9 @@ function CategoryCard({ c, selected, href, view }: { c: ApprovalCard; selected: 
       {view !== 'waiting' && c.recent.length > 0 && (
         <ul className="mt-3 grid gap-1 border-t border-border pt-2">
           {c.recent.slice(0, 2).map((r) => (
-            <li key={r.id} className="flex items-center gap-2 text-[0.6875rem] text-fg-muted">
+            <li key={r.id} className="flex min-w-0 items-center gap-2 text-[0.6875rem] text-fg-muted" title={r.summary}>
               <span className={cn('size-1.5 shrink-0 rounded-full', r.status === 'pending' ? 'bg-warning' : r.status === 'approved' ? 'bg-success' : r.status === 'rejected' ? 'bg-danger' : 'bg-fg-subtle')} aria-hidden />
-              <span className="truncate">{r.summary}</span>
+              <span className="min-w-0 flex-1 truncate">{r.summary}</span>
             </li>
           ))}
         </ul>

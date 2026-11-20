@@ -28,7 +28,15 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     return (
       <>
         <PageHeader title="Attendance" />
-        <Alert tone="info" title="No employee record linked">Your login is not linked to an employee record yet, so there is no attendance to show. Ask HR to link it from your employee profile.</Alert>
+        {can(me, 'attendance:approve') ? (
+          <Alert tone="info" title="Your own attendance is not tracked">
+            Your login has no employee record, so you have no punches of your own. Everyone else&apos;s attendance is here:{' '}
+            <Link className="font-medium underline" href="/attendance/register">All employees attendance</Link> (a month at a glance) or{' '}
+            <Link className="font-medium underline" href="/attendance/team">Team attendance</Link> (one day in detail).
+          </Alert>
+        ) : (
+          <Alert tone="info" title="No employee record linked">Your login is not linked to an employee record yet, so there is no attendance to show. Ask HR to link it from your employee profile.</Alert>
+        )}
       </>
     );
   }
@@ -46,6 +54,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         actions={can(me, 'attendance:approve') && <Link className="text-sm font-medium text-accent hover:underline" href="/attendance/team">Team attendance</Link>}
       />
       {own && <ModuleOverview module="attendance" actions={allowed(me, [
+        { label: 'All employees attendance', href: '/attendance/register', icon: 'calendar-range', permission: 'attendance:approve' },
         { label: 'Team attendance', href: '/attendance/team', icon: 'users-round', permission: 'attendance:approve' },
         { label: 'Missing punches', href: '/attendance/team?status=missing_punch', icon: 'clock', permission: 'attendance:approve' },
         { label: 'Late coming & penalties', href: '/attendance/late', icon: 'alarm-clock', permission: 'attendance:approve' },

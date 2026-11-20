@@ -127,7 +127,7 @@ describe('Workspace access controls', () => {
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(1);
     expect(list.body.items[0]).toMatchObject({ email: member.email, blockedFeatures: [] });
-    expect(list.body.items[0].roles).toContain('Recruiter');
+    expect(list.body.items[0].roles).toContain('HR Workspace');
 
     const rita = await login(app, member.email);
     expect((await api(app, rita.accessToken).get('/recruitment/requisitions')).status).toBe(200);

@@ -214,15 +214,15 @@ const post = (url, body) => fetch(url, { method: 'POST', body: JSON.stringify(bo
     await owner.reload();
     const row = owner.locator('[data-testid="scim-group-Payroll team"]');
     await row.waitFor();
-    await row.locator('select').selectOption({ label: 'Payroll Admin' });
-    await owner.waitForSelector("text=Role granted to the group's members");
+    await row.locator('select').selectOption({ label: 'HR Workspace' });
+    await owner.waitForSelector("text=Access given to the group's members");
     const sup = await api(null, 'POST', '/auth/login', { email: 'supervisor@demo.crew.local', password: PASSWORD });
     const me = await api(sup.body.accessToken, 'GET', '/me');
-    expect(me.body.membership.roles.some((r) => r.key === 'payroll_admin'), `group member holds the mapped role (${JSON.stringify(me.body.membership.roles)})`);
+    expect(me.body.membership.roles.some((r) => r.key === 'hr_workspace'), `group member holds HR Workspace access (${JSON.stringify(me.body.membership.roles)})`);
     await scim('PATCH', `/Groups/${g.body.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'remove', path: `members[value eq "${memberId}"]` }] });
     const me2 = await api(sup.body.accessToken, 'GET', '/me');
-    expect(!me2.body.membership.roles.some((r) => r.key === 'payroll_admin'), 'removed from the group, the role goes');
-    ok('a group pushed over SCIM was mapped to a role in Settings; joining and leaving the group granted and removed it');
+    expect(!me2.body.membership.roles.some((r) => r.key === 'hr_workspace'), 'removed from the group, the access goes');
+    ok('a group pushed over SCIM was given HR Workspace access in Settings; joining and leaving the group gave and removed it');
 
     // 5. Retention schedule.
     current = hr;

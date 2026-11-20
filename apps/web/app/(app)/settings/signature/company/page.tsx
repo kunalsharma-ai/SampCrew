@@ -1,8 +1,8 @@
 import { type CompanyBanner, todayIn } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { load, loadOptional } from '@/lib/api';
+import { SignatureTabs } from '../tabs';
 import type { CompanySignature, SignatureAgent } from '../types';
 import { BannersManager } from './banners-manager';
 import { CompanySignatureView, type SignaturePerson } from './company-view';
@@ -21,10 +21,10 @@ export default async function CompanySignaturePage() {
     <>
       <PageHeader
         eyebrow="Outlook"
-        title="Company email signature"
-        description="Company details, logo and colours that every signature uses, which design people start from, and how their computers keep Outlook up to date."
-        actions={<Link href="/settings/signature" className="text-[0.8125rem] font-medium text-accent hover:underline">My own signature</Link>}
+        title="Email signature"
+        description="One place for email signatures: your own, and the company design, logo and details every signature uses, which design people start from, and how their computers keep Outlook up to date."
       />
+      <SignatureTabs current="/settings/signature/company" />
       <CompanySignatureView settings={settings} people={overview.people} agents={overview.agents} banners={<BannersManager banners={banners} today={today} brandColor={settings.brandColor} />} />
     </>
   );

@@ -1,3 +1,4 @@
+import { levelStylesheet } from '@crew/contracts';
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 // Fonts are served from SampCrew itself (not Google Fonts), so no page view sends visitors' addresses to a third party.
@@ -28,8 +29,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // The script nonce for this request (middleware.ts); the Content Security Policy runs no inline script without it.
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
-    <html lang="en" data-style="neon" data-backdrop="aurora" suppressHydrationWarning>
+    <html lang="en" data-style="neon" data-backdrop="aurora" data-level="console" suppressHydrationWarning>
       <head>
+        {/* The Console's own design system, Command Center: deep navy, graphite, electric blue and cyan. */}
+        <style id="crew-level" dangerouslySetInnerHTML={{ __html: levelStylesheet('console') }} />
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>

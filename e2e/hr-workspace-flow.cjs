@@ -6,8 +6,8 @@
  *   pnpm dev:api & pnpm dev:web &
  *   node e2e/hr-workspace-flow.cjs
  *
- * 1. The owner switches Assets off in HR Workspace Admin (it leaves the menu and its page refuses), then back on, and
- *    opens the role matrix for HR Executive.
+ * 1. The owner switches Assets off in Super Workspace Admin (it leaves the menu and its page refuses), then back on, and
+ *    opens the permission matrix for the HR Workspace level.
  * 2. HR registers a laptop and assigns it to Neha; Neha acknowledges it on My assets; HR sees the acknowledgement.
  * 3. HR adds an agency, starts a verification for Neha, verifies the identity check, shares a file and sends the case
  *    to the agency; the agency opens its private link (no login), sees only the shared file and sends its findings;
@@ -109,8 +109,8 @@ async function stepUp(p) {
 async function run(b) {
   // 1. Module access and the role matrix.
   const owner = await signIn(b, 'owner@demo.crew.local');
-  await owner.goto(BASE + '/settings/hr-admin');
-  await owner.getByRole('heading', { name: 'HR Workspace Admin' }).first().waitFor({ timeout: 10000 }).catch((e) => fail(owner, e));
+  await owner.goto(BASE + '/settings/hr-admin?tab=modules');
+  await owner.getByRole('heading', { name: 'Super Workspace Admin' }).first().waitFor({ timeout: 10000 }).catch((e) => fail(owner, e));
   const assetsSwitch = owner.getByRole('switch', { name: /^Asset inventory.* on$/ });
   if ((await assetsSwitch.getAttribute('aria-checked')) !== 'true') {
     await assetsSwitch.click();
@@ -121,17 +121,18 @@ async function run(b) {
   await see(owner, 'Switched off here');
   await owner.waitForFunction(() => document.querySelector('[role=switch][aria-label^="Asset inventory"]')?.getAttribute('aria-checked') === 'false');
   await save(owner, '01-modules-off');
-  await owner.goto(BASE + '/settings/hr-admin');
+  await owner.goto(BASE + '/settings/hr-admin?tab=modules');
   if (await owner.getByRole('navigation').getByRole('link', { name: 'Assets', exact: true }).count()) throw new Error('Assets still in the menu while switched off');
   await owner.getByRole('switch', { name: /^Asset inventory.* on$/ }).click();
   await owner.waitForFunction(() => document.querySelector('[role=switch][aria-label^="Asset inventory"]')?.getAttribute('aria-checked') === 'true');
   ok('owner switched Assets off for the workspace (gone from the menu) and back on');
 
-  await owner.getByRole('tab', { name: 'Permissions' }).click();
-  // The role list shows each role with its member count: "HR Executive · 0 members".
-  const roleSelect = owner.getByLabel('Role', { exact: true });
-  await roleSelect.selectOption(await roleSelect.locator('option', { hasText: /^HR Executive ·/ }).getAttribute('value'));
-  await owner.getByRole('table', { name: /Permission matrix for HR Executive/ }).waitFor({ timeout: 10000 }).catch((e) => fail(owner, e));
+  await owner.getByRole('tab', { name: 'Access levels' }).click();
+  // The access levels show how many people hold each: "HR Workspace · 3 people".
+  const roleSelect = owner.getByLabel('Access level', { exact: true });
+  await roleSelect.waitFor({ timeout: 10000 }).catch((e) => fail(owner, e));
+  await roleSelect.selectOption(await roleSelect.locator('option', { hasText: /^HR Workspace ·/ }).getAttribute('value'));
+  await owner.getByRole('table', { name: /Permission matrix for HR Workspace/ }).waitFor({ timeout: 10000 }).catch((e) => fail(owner, e));
   for (const action of ['View', 'Create', 'Edit', 'Delete', 'Approve', 'Export', 'Manage']) await owner.getByRole('columnheader', { name: action }).first().waitFor({ timeout: 5000 });
   await save(owner, '02-role-matrix');
   if (SHOTS) {
@@ -139,7 +140,7 @@ async function run(b) {
     await owner.getByText('Module settings').nth(1).waitFor({ timeout: 10000 }).catch(() => {});
     await save(owner, '02b-module-settings');
   }
-  ok('owner opened the permission matrix for HR Executive with all seven actions');
+  ok('owner opened the permission matrix for the HR Workspace level with all seven actions');
 
   // 2. Assets: register, assign, acknowledge.
   const hr = await signIn(b, 'hr.admin@demo.crew.local');

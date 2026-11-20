@@ -208,7 +208,7 @@ async function switchOn(c, key) {
     await owner.click('text=Invite people');
     await owner.fill('input[name=fullName]', 'Console Smtp');
     await owner.fill('dialog input[name=email]', invitee);
-    await owner.check('input[name=roles][value=recruiter]');
+    await owner.getByTestId('access-level').selectOption('hr');
     await owner.click('text=Send invitation');
     await waitFor(() => mails.some((m) => m.to === invitee && m.body.includes('accept-invite?token=')), 'the invitation email was not delivered through the Console SMTP settings', 30000);
     ok('Web Portal shows Claude AI and Email as provided by SAMPLEDGE, and an invitation is delivered through the Console SMTP settings');

@@ -43,6 +43,8 @@ const COLUMNS: DataColumn<Employee>[] = [
   { key: 'type', label: 'Employment type', render: (e) => muted(TYPE_LABEL[e.employmentType] ?? e.employmentType) },
   { key: 'joined', label: 'Joined', sort: 'joined', className: 'whitespace-nowrap', render: (e) => muted(e.dateOfJoining) },
   { key: 'status', label: 'Status', sort: 'status', render: (e) => <EmployeeStatus status={e.status} /> },
+  { key: 'access', label: 'Workspace access', render: (e) => muted(e.membershipId ? (e.accessLabel ?? 'Employee Workspace') : null) },
+  { key: 'workspace', label: 'Assigned workspace', render: (e) => muted(e.hrWorkspaceName ?? 'Central group') },
 ];
 
 interface Props {
@@ -66,6 +68,9 @@ interface Props {
   devices: DeviceOption[] | null;
   leavePolicies: LeavePolicyOption[] | null;
   availableAssets: AssetOption[] | null;
+  hrWorkspaces: { options: { id: string; name: string }[]; central: boolean } | null;
+  /** Who may give workspace access while adding someone (Super Workspace people); null: Employee Workspace only. */
+  accessChoice: { canGiveSuper: boolean; hrWorkspaces: { id: string; name: string }[] } | null;
   canManageOrg: boolean;
   canAttendance: boolean;
   canConfigureShifts: boolean;
@@ -178,10 +183,10 @@ export function EmployeesView(props: Props) {
                 current={state}
                 onApply={(v) => router.push(v ? viewUrl(v.state, v.id) : '/employees?view=all')}
               />
-              <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}`} download>
+              <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}`} download data-feature="core_hr.people_export">
                 <Download className="size-3.5" /> Export CSV
               </a>
-              <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}&format=xlsx`} download>
+              <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}&format=xlsx`} download data-feature="core_hr.people_export">
                 <Download className="size-3.5" /> Export Excel
               </a>
               {canHire && (props.setupPending && props.canManageOrg

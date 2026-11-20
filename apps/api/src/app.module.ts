@@ -25,6 +25,9 @@ import { CustomFieldsService } from './modules/custom-fields/custom-fields.servi
 import { EmployeeImportController, HrAdminController } from './modules/hr-admin/hr-admin.controller';
 import { EmployeeImportService } from './modules/hr-admin/employee-import.service';
 import { HrAdminService } from './modules/hr-admin/hr-admin.service';
+import { HierarchyController } from './modules/hierarchy/hierarchy.controller';
+import { HierarchyService } from './modules/hierarchy/hierarchy.service';
+import { FeatureLevelsService } from './modules/hierarchy/feature-levels.service';
 import { EmployeesService } from './modules/employees/employees.service';
 import { HealthController } from './modules/health/health.controller';
 import { HrJobsService } from './modules/hr-jobs/hr-jobs.service';
@@ -76,6 +79,7 @@ import { FirstRunService } from './modules/platform-admin/first-run.service';
 import { PlatformAuthService } from './modules/platform-admin/platform-auth.service';
 import { PlatformService } from './modules/platform-admin/platform.service';
 import { AccessControlsService } from './modules/platform-admin/access-controls.service';
+import { PlatformFeaturesService } from './modules/platform-admin/platform-features.service';
 import { PlansService } from './modules/platform-admin/plans.service';
 import { StatutoryPacksService } from './modules/platform-admin/statutory-packs.service';
 import { TenantControlService } from './modules/platform-admin/tenant-control.service';
@@ -181,6 +185,7 @@ export const CONTROLLERS = [
   CustomFieldsController,
   CustomFieldFilesController,
   HrAdminController,
+  HierarchyController,
   OnboardingController,
   TasksController,
   ProfileController,
@@ -276,6 +281,7 @@ export const CONTROLLERS = [
     PlatformAuthService,
     PlatformService,
     AccessControlsService,
+    PlatformFeaturesService,
     PlansService,
     StatutoryPacksService,
     TenantControlService,
@@ -307,6 +313,8 @@ export const CONTROLLERS = [
     BgvService,
     CustomFieldsService,
     HrAdminService,
+    HierarchyService,
+    FeatureLevelsService,
     EmployeeImportService,
     DocumentsService,
     AttendanceDaysService,

@@ -1,19 +1,21 @@
 'use client';
 import { useMfaRetry } from '@/components/mfa-step-up';
 import { useCreateParam } from '@/lib/use-create-param';
-import { Alert, Avatar, Badge, Button, Card, Checkbox, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
+import { Alert, Avatar, Badge, Button, Card, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Copy, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import type { Department, LegalEntity, Location, Me, Member, Page, Role } from '@/lib/types';
-import { inviteAction, resendInviteAction, setRolesAction, updateMemberAction } from './actions';
+import type { SetAccessRequest } from '@crew/contracts';
+import { AccessEditor, AccessLabel, accessBody, accessFromMember } from '@/components/access-editor';
+import type { Department, LegalEntity, Location, Me, Member, Page } from '@/lib/types';
+import { inviteAction, resendInviteAction, setAccessAction, updateMemberAction } from './actions';
 
 interface Props {
   me: Me;
   page: Page<Member>;
   query: { q: string; status: string };
-  roles: Role[];
+  hrWorkspaces: { id: string; name: string }[];
   departments: Department[];
   entities: LegalEntity[];
   locations: Location[];
@@ -70,7 +72,7 @@ export function PeopleView(props: Props) {
         </div>
         {page.items.length ? (
           <Table>
-            <THead><tr><TH>Name</TH><TH>Department</TH><TH>Location</TH><TH>Manager</TH><TH>Roles</TH><TH>Status</TH></tr></THead>
+            <THead><tr><TH>Name</TH><TH>Department</TH><TH>Location</TH><TH>Manager</TH><TH>Workspace access</TH><TH>Status</TH></tr></THead>
             <TBody>
               {page.items.map((m) => (
                 <TR key={m.id} className="cursor-pointer" onClick={() => setSelected(m)}>
@@ -86,12 +88,7 @@ export function PeopleView(props: Props) {
                   <TD className="text-fg-muted">{m.departmentName ?? '—'}</TD>
                   <TD className="text-fg-muted">{m.locationName ?? '—'}</TD>
                   <TD className="text-fg-muted">{m.managerName ?? '—'}</TD>
-                  <TD>
-                    <div className="flex flex-wrap gap-1">
-                      {m.roles.filter((r) => r.key !== 'employee').map((r) => <Badge key={r.key} tone="accent">{r.name}</Badge>)}
-                      {m.roles.every((r) => r.key === 'employee') && <span className="text-xs text-fg-subtle">Employee</span>}
-                    </div>
-                  </TD>
+                  <TD><AccessLabel access={m.access} /></TD>
                   <TD><StatusPill status={m.status} /></TD>
                 </TR>
               ))}
@@ -112,13 +109,13 @@ export function PeopleView(props: Props) {
   );
 }
 
-function InviteDialog({ open, onClose, onInvited, roles, departments, entities, locations, canAssignRoles }: Props & { open: boolean; onClose: () => void; onInvited: (link: string | null) => void }) {
+function InviteDialog({ open, onClose, onInvited, hrWorkspaces, departments, entities, locations, canAssignRoles, me }: Props & { open: boolean; onClose: () => void; onInvited: (link: string | null) => void }) {
   const router = useRouter();
   const withMfa = useMfaRetry();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [fe, setFe] = useState<Record<string, string>>({});
-  const assignable = roles.filter((r) => r.key !== 'employee' && r.key !== 'tenant_owner');
+  const [access, setAccess] = useState<SetAccessRequest>({ level: 'employee' });
   return (
     <Dialog
       open={open}
@@ -133,8 +130,7 @@ function InviteDialog({ open, onClose, onInvited, roles, departments, entities, 
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
-          const roleKeys = f.getAll('roles').map(String);
-          const body: Record<string, unknown> = { email: f.get('email'), fullName: f.get('fullName'), roleKeys: roleKeys.length ? roleKeys : ['employee'] };
+          const body: Record<string, unknown> = { email: f.get('email'), fullName: f.get('fullName'), access: accessBody(access) };
           for (const k of ['departmentId', 'legalEntityId', 'locationId']) if (f.get(k)) body[k] = f.get(k);
           setError(null);
           setFe({});
@@ -145,7 +141,7 @@ function InviteDialog({ open, onClose, onInvited, roles, departments, entities, 
               onClose();
               router.refresh();
             } else {
-              setError(r.code === 'mfa_required' ? 'Assigning roles needs two-step verification. Verify with your authenticator app, then try again.' : r.message);
+              setError(r.code === 'mfa_required' ? 'Giving workspace access needs two-step verification. Verify with your authenticator app, then try again.' : r.message);
               setFe(r.fieldErrors ?? {});
             }
           });
@@ -157,29 +153,24 @@ function InviteDialog({ open, onClose, onInvited, roles, departments, entities, 
         <Field label="Legal entity" className="col-span-2 sm:col-span-1">{(p) => <Select {...p} name="legalEntityId"><option value="">Default</option>{entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</Select>}</Field>
         <Field label="Department" className="col-span-2 sm:col-span-1">{(p) => <Select {...p} name="departmentId"><option value="">None</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}</Field>
         <Field label="Location" className="col-span-2">{(p) => <Select {...p} name="locationId"><option value="">None</option>{locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>}</Field>
-        <fieldset className="col-span-2">
-          <legend className="mb-2 text-[0.8125rem] font-medium">Roles <span className="font-normal text-fg-subtle">(everyone also gets Employee self-service)</span></legend>
+        <div className="col-span-2">
           {canAssignRoles ? (
-            <div className="grid gap-2.5 sm:grid-cols-2">
-              {assignable.map((r) => <Checkbox key={r.key} name="roles" value={r.key} label={r.name} />)}
-            </div>
+            <AccessEditor value={access} onChange={setAccess} canGiveSuper={Boolean(me.levels?.super)} hrWorkspaces={hrWorkspaces} entities={entities} departments={departments} />
           ) : (
-            <p className="text-xs text-fg-subtle">You can invite people as Employees. Ask an admin with role management rights to assign other roles.</p>
+            <p className="text-xs text-fg-subtle">You can invite people with Employee Workspace access. A Super Workspace or HR Workspace person who manages access can give more.</p>
           )}
-        </fieldset>
+        </div>
       </form>
     </Dialog>
   );
 }
 
-function MemberDialog({ member, onClose, onLink, roles, departments, entities, locations, canManage, canAssignRoles, me, page }: Props & { member: Member; onClose: () => void; onLink: (l: string | null) => void }) {
+function MemberDialog({ member, onClose, onLink, hrWorkspaces, departments, entities, locations, canManage, canAssignRoles, me, page }: Props & { member: Member; onClose: () => void; onLink: (l: string | null) => void }) {
   const router = useRouter();
   const withMfa = useMfaRetry();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
-  const [roleKeys, setRoleKeys] = useState<string[]>(member.roles.map((r) => r.key));
-  const firstConstraint = member.roles.find((r) => r.constraints?.legalEntityIds?.length)?.constraints?.legalEntityIds?.[0] ?? '';
-  const [limitEntity, setLimitEntity] = useState<string>(firstConstraint);
+  const [access, setAccess] = useState<SetAccessRequest>(accessFromMember(member.access));
   const run = (fn: () => Promise<{ ok: boolean; message?: string; code?: string }>, success: string) =>
     start(async () => {
       const r = await withMfa(fn);
@@ -225,38 +216,17 @@ function MemberDialog({ member, onClose, onLink, roles, departments, entities, l
 
         {canAssignRoles && (
           <div className="flex flex-col gap-3">
-            <h3 className="text-[0.8125rem] font-semibold">Roles</h3>
-            <div className="grid gap-2.5 sm:grid-cols-2">
-              {roles.map((r) => (
-                <Checkbox
-                  key={r.key}
-                  label={r.name}
-                  description={`${Object.keys(r.grants).length} permissions`}
-                  checked={roleKeys.includes(r.key)}
-                  disabled={r.key === 'employee'}
-                  onChange={(e) => setRoleKeys((ks) => (e.target.checked ? [...ks, r.key] : ks.filter((k) => k !== r.key)))}
-                />
-              ))}
-            </div>
-            <Field label="Limit admin roles to one legal entity" hint="Optional. For example, an HR Manager who should only see the UK company.">
-              {(p) => <Select {...p} value={limitEntity} onChange={(e) => setLimitEntity(e.target.value)}><option value="">No limit</option>{entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</Select>}
-            </Field>
+            <h3 className="text-[0.8125rem] font-semibold">Workspace access</h3>
+            <AccessEditor value={access} onChange={setAccess} current={member.access} canGiveSuper={Boolean(me.levels?.super)} disabled={member.access?.fromGroup} hrWorkspaces={hrWorkspaces} entities={entities} departments={departments} />
             <div className="flex justify-end">
-              <Button
-                size="sm"
-                variant="secondary"
-                loading={pending}
-                onClick={() =>
-                  run(
-                    () => setRolesAction(member.id, [...new Set(['employee', ...roleKeys])].map((k) => ({ roleKey: k, constraints: k !== 'employee' && k !== 'tenant_owner' && limitEntity ? { legalEntityIds: [limitEntity] } : undefined }))),
-                    'Roles updated.',
-                  )
-                }
-              >
-                Save roles
+              <Button size="sm" variant="secondary" loading={pending} disabled={member.access?.fromGroup} onClick={() => run(() => setAccessAction(member.id, accessBody(access)), 'Workspace access saved.')}>
+                Save workspace access
               </Button>
             </div>
           </div>
+        )}
+        {!canAssignRoles && (
+          <div className="flex items-center gap-2 text-[0.8125rem]"><span className="font-medium">Workspace access</span><AccessLabel access={member.access} /></div>
         )}
 
         {canManage && !isSelf && (

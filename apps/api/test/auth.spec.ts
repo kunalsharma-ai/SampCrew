@@ -27,7 +27,7 @@ describe('authentication', () => {
     expect(res.status).toBe(201);
     const me = await api(app, res.body.accessToken).get('/me');
     expect(me.body.tenant.slug).toBe(slug);
-    expect(me.body.membership.roles.map((r: { key: string }) => r.key)).toContain('tenant_owner');
+    expect(me.body.membership.roles.map((r: { key: string }) => r.key)).toContain('super_workspace');
     expect(me.body.subscription).toMatchObject({ plan: 'professional', status: 'trialing' });
     expect(me.body.features).toContain('recruitment');
     const audit = await pool.find('audit_events', { tenant_id: res.body.tenantId }, { sort: { chain_seq: 1 } });
@@ -91,8 +91,9 @@ describe('authentication', () => {
     const ok = await api(app).post('/auth/mfa/verify').send({ mfaToken: challenge.body.mfaToken, code: currentTotp(setup.body.secret) });
     expect(ok.body.status).toBe('ok');
     s = ok.body;
+    // Past the MFA check now: the request itself is answered (custom roles gave way to the access levels).
     const allowed = await api(app, s.accessToken).post('/roles').send({ key: 'custom_x', name: 'X', grants: [{ permission: 'org:read', scope: 'tenant' }] });
-    expect(allowed.status).toBe(201);
+    expect(allowed.body.error.code).toBe('access_levels_only');
   });
 
   it('offers a workspace picker to people in several tenants', async () => {
@@ -125,7 +126,7 @@ describe('authentication', () => {
     const accepted = await api(app).post('/auth/invitations/accept').send({ token, fullName: 'New Hire', password: 'Another-Str0ng-Pass' });
     expect(accepted.status).toBe(200);
     const me = await api(app, accepted.body.accessToken).get('/me');
-    expect(me.body.membership.roles.map((r: { key: string }) => r.key).sort()).toEqual(['employee', 'recruiter']);
+    expect(me.body.membership.roles.map((r: { key: string }) => r.key).sort()).toEqual(['employee_workspace', 'hr_workspace']);
     // Single use.
     expect((await api(app).post('/auth/invitations/accept').send({ token, fullName: 'X', password: 'Another-Str0ng-Pass' })).status).toBe(404);
   });

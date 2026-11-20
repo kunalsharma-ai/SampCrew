@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ACCESS_LEVEL_LABEL, levelRoleKeyFor, RETIRED_ROLE_KEYS } from './roles';
 
 /**
  * Automation Studio: workflow definitions and the pure parts of running them (validation, conditions,
@@ -151,6 +152,8 @@ export function validateDefinition(input: unknown, knownRoles?: readonly string[
   const parsed = workflowDefinition.safeParse(input);
   if (!parsed.success) return { ok: false, issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) };
   const def = parsed.data;
+  // Recipients and approvers are access levels: a role name from before the levels means the level it became.
+  for (const s of def.steps) if ((s.type === 'notify' || s.type === 'approval') && s.role && RETIRED_ROLE_KEYS.has(s.role)) s.role = levelRoleKeyFor(s.role);
   const fields = new Map(fieldsFor(def.trigger.event).map((f) => [f.key, f]));
   const issues: DefinitionIssue[] = [];
   const seen = new Set<string>();
@@ -247,9 +250,9 @@ export const retryDelayMs = (attempt: number) => 30_000 * 4 ** Math.max(0, attem
 export function describeStep(s: WorkflowStep): string {
   switch (s.type) {
     case 'condition': return `Continue only if ${s.field} ${OP_LABEL[s.op]} ${Array.isArray(s.value) ? s.value.join(', ') : s.value}`;
-    case 'notify': return `Notify ${s.to === 'role' ? `everyone with the ${s.role} role` : s.to === 'member' ? 'a chosen person' : `the ${s.to}`}: "${s.title}"${s.email ? ' (and email)' : ''}`;
+    case 'notify': return `Notify ${s.to === 'role' ? `everyone with ${ACCESS_LEVEL_LABEL[levelRoleKeyFor(s.role ?? '')]} access` : s.to === 'member' ? 'a chosen person' : `the ${s.to}`}: "${s.title}"${s.email ? ' (and email)' : ''}`;
     case 'delay': return `Wait ${s.amount} ${s.amount === 1 ? s.unit.replace(/s$/, '') : s.unit}`;
-    case 'approval': return `Ask ${s.approver === 'manager' ? "the employee's manager" : `the ${s.role} role`} to approve: "${s.summary}"`;
+    case 'approval': return `Ask ${s.approver === 'manager' ? "the employee's manager" : `someone with ${ACCESS_LEVEL_LABEL[levelRoleKeyFor(s.role ?? '')]} access`} to approve: "${s.summary}"`;
     case 'assign_course': return `Assign a course${s.dueInDays ? `, due in ${s.dueInDays} days` : ''}`;
     case 'slack': return `Post to Slack: "${s.text.length > 80 ? `${s.text.slice(0, 77)}...` : s.text}"`;
     case 'webhook': return `Send to a webhook endpoint: "${s.message}"`;

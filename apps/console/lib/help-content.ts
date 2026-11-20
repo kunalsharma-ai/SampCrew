@@ -79,6 +79,12 @@ export const CONSOLE_HELP: HelpContent = {
       how: 'Switch machine brands on or off, and pause a single machine with a reason shown to the workspace.',
       where: 'For support and operations.',
     },
+    '/features': {
+      title: 'Feature management',
+      what: 'Every module of SampCrew with each of its pages, and whether it is active, switched off or pending for the whole application.',
+      how: 'Switch a module or page off to take it from every company and every level at once; switch it on to give it back. Activate pending features when they are ready.',
+      where: 'Records are never deleted. Each change is in the platform audit log. For one company only, use its Access tab.',
+    },
     '/plans': {
       title: 'Plans & pricing',
       what: 'Every plan SampCrew sells: the modules and limits it includes, its per-seat prices, and requests from workspace admins.',
@@ -118,6 +124,7 @@ export const CONSOLE_HELP: HelpContent = {
   },
 
   sections: {
+    'Workspace hierarchy': { what: 'This company’s four levels: Console Admin (SAMPLEDGE), Super Workspace, HR Workspace and Employee Workspace, with how many people hold each.', where: 'People are counted once, at their highest level. Names are shown only for Super Workspace.' },
     'Country packs': { what: 'Every country with ready-made starting values, whether it is offered, and whether it was changed in Console.', how: 'Open one to edit it, or add a country below the list.' },
     'Pack settings': { what: 'The contributions, income tax bands and regional taxes of one country pack.', how: 'Change the values and save. Workspaces see them the next time they open statutory settings for an entity there.' },
     Backups: { what: 'The last daily archive (copied off-site or not) and how far back the database can be restored to any second.', how: 'Red means the last backup or its off-site copy failed: check the backup service logs today.' },
@@ -146,6 +153,7 @@ export const CONSOLE_HELP: HelpContent = {
     'Support access': { what: 'Time-limited access the customer gave Sampledge to see their HR data.', how: 'Only the customer can grant it. You see when it ends.' },
     'Subscription history': { what: 'Every change to the subscription, who made it and why.' },
     Modules: { what: 'Modules this workspace can use. Switching one off hides it everywhere for everyone.' },
+    'Pages and buttons': { what: 'Switch one page or one button off for this workspace only, while the rest of its module stays on.', how: 'Open a module to see its pages and buttons. The Super Workspace and HR Workspace cannot switch back on what you switched off here.' },
     'Modules in each app': { what: 'Switch a module off in the web portal or the mobile app only.' },
     'Module access per person': { what: 'Take a module away from one person, whatever their roles allow.' },
     Events: { what: 'Events from the workspace’s audit trail.', how: 'Open an event to see what changed.' },

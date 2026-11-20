@@ -16,7 +16,7 @@ export async function saveSsoAction(body: SsoBody) {
   return done(await act(() => api('/security/sso', { method: 'PUT', body }), msg));
 }
 export async function mapScimGroupAction(groupId: string, roleId: string | null) {
-  return done(await act(() => api(`/security/scim/groups/${groupId}/role`, { method: 'PUT', body: { roleId } }), roleId ? 'Role granted to the group\'s members.' : 'The group no longer grants a role.'));
+  return done(await act(() => api(`/security/scim/groups/${groupId}/role`, { method: 'PUT', body: { roleId } }), roleId ? 'Access given to the group\'s members.' : 'The group no longer gives access.'));
 }
 export async function testSsoAction() {
   return act(() => api<{ authorizationUrl: string }>('/security/sso/test', { method: 'POST' }));

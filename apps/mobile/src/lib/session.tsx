@@ -234,7 +234,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     queue,
     notice,
     can: (p) => Boolean(me?.permissions[p]),
-    hasFeature: (f) => Boolean(me?.features.includes(f)),
+    // A page key ("leave.requests") follows its module when the server sends no page keys (an older server).
+    hasFeature: (f) => Boolean(me?.features.includes(f) || (f.includes('.') && !me?.features.some((k) => k.includes('.')) && me?.features.includes(f.split('.')[0]!))),
     signIn: async (email, password, workspace) =>
       finishSignIn(await api.publicRequest<LoginResponse>('POST', '/auth/login', { email, password, ...(workspace ? { tenantSlug: workspace } : {}) })),
     async signInWithSso(email) {

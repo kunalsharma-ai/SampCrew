@@ -110,6 +110,11 @@ export function OverviewTab({ e }: { e: EmployeeProfile }) {
         <CardHeader title="Employment" />
         <CardBody>
           <dl className="grid gap-4">
+            <Detail label="Designation">{e.designationName}</Detail>
+            <Detail label="Department">{e.departmentName}</Detail>
+            <Detail label="Workspace access">{e.membershipId ? (e.accessLabel ?? 'Employee Workspace') : 'None (no login)'}</Detail>
+            <Detail label="Assigned workspace">{e.hrWorkspaceName ?? 'Central group'}</Detail>
+            <Detail label="Status">{humanize(e.status)}</Detail>
             <Detail label="Joined">{e.dateOfJoining}</Detail>
             <Detail label="Probation ends">{e.probationEndDate}</Detail>
             <Detail label="Confirmed on">{e.confirmationDate}</Detail>

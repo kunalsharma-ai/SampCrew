@@ -1,4 +1,5 @@
-import type { MemberPreferences, NotificationPreferences, NotificationView } from '@crew/contracts';
+import { designLevelOf, type MemberPreferences, type NotificationPreferences, type NotificationView } from '@crew/contracts';
+import { headers } from 'next/headers';
 import { DemoBanner } from '@crew/ui';
 import Link from 'next/link';
 import { loadOptional, loadSession } from '@/lib/api';
@@ -40,8 +41,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Open HR and manager tasks, plus work others sent me to check.
   const tasks = taskCounts ? taskCounts.hr.open + taskCounts.manager.open + taskCounts.toReview + taskCounts.documentsToVerify : 0;
   if (tasks) counts['/tasks'] = tasks;
+  // The level's design is on <html> before the first paint (the shell keeps it in step afterwards).
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
+  const levelScript = `document.documentElement.dataset.level=${JSON.stringify(designLevelOf(me.levels))}`;
   return (
     <>
+      <script nonce={nonce} dangerouslySetInnerHTML={{ __html: levelScript }} />
       {me.tenant.isDemo && <DemoBanner />}
       {me.subscription?.locked && (
         <div role="alert" data-testid="read-only-banner" className="border-b border-danger/30 bg-danger-subtle px-4 py-1.5 text-center text-xs font-medium text-danger">

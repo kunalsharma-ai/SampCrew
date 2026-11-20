@@ -104,8 +104,8 @@ export class RequisitionsService implements OnModuleInit {
     this.approvals.register('job_requisition', {
       permission: 'requisitions:approve',
       configurePermission: 'recruitment:configure',
-      defaultSteps: [{ type: 'role', role: 'hr_admin' }],
-      fallbackRole: 'tenant_owner',
+      defaultSteps: [{ type: 'role', role: 'hr_workspace' }],
+      fallbackRole: 'super_workspace',
       label: 'Job requisition',
       link: (id) => `/recruitment/jobs/${id}`,
       // A one-person workspace: the Owner raising a requisition cannot approve their own, and nobody else can.

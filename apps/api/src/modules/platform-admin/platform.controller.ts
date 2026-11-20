@@ -4,6 +4,7 @@ import {
   firstAdminRequest,
   email,
   featureSwitchUpdate,
+  platformFeaturesInput,
   integrationTestExtras,
   PLATFORM_INTEGRATION_KEYS,
   type PlatformIntegrationKey,
@@ -21,6 +22,7 @@ import {
   name,
   paginationQuery,
   password,
+  delegationPolicyInput,
   planCreate,
   planEntitlementsUpdate,
   planPriceUpdate,
@@ -46,6 +48,7 @@ import { FirstRunService } from './first-run.service';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformService } from './platform.service';
 import { AccessControlsService } from './access-controls.service';
+import { PlatformFeaturesService } from './platform-features.service';
 import { PlansService } from './plans.service';
 import { StatutoryPacksService } from './statutory-packs.service';
 import { TenantControlService } from './tenant-control.service';
@@ -179,7 +182,22 @@ export class PlatformController {
     private readonly control: TenantControlService,
     private readonly plansService: PlansService,
     private readonly statutoryPacksService: StatutoryPacksService,
+    private readonly features: PlatformFeaturesService,
   ) {}
+
+  @PlatformRealm('tenants:read')
+  @Get('features')
+  @Doc({ summary: 'Feature management: every module and page of the application with its state (active, off, pending)' })
+  featureList() {
+    return this.features.list();
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('features')
+  @Doc({ summary: 'Switch modules or pages on or off for the whole application, or release a pending one', body: platformFeaturesInput })
+  setFeatureStates(@Body(new ZodPipe(platformFeaturesInput)) body: z.infer<typeof platformFeaturesInput>) {
+    return this.features.set(body);
+  }
 
   @PlatformRealm('access:manage')
   @Put('tenants/:id/access/apps')
@@ -283,6 +301,20 @@ export class PlatformController {
     return this.access.setFeatures(id, body.changes);
   }
 
+  @PlatformRealm('tenants:read')
+  @Get('tenants/:id/hierarchy')
+  @Doc({ summary: 'A company\'s delegation policy, central group and HR Workspaces (counts only, no HR records)' })
+  hierarchy(@Param('id', UuidPipe) id: string) {
+    return this.access.delegation(id);
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('tenants/:id/access/delegation')
+  @Doc({ summary: 'Keep modules at company level (not passed to HR Workspaces) and choose whether the Super Workspace may add employees itself', body: delegationPolicyInput })
+  setDelegation(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(delegationPolicyInput)) body: z.infer<typeof delegationPolicyInput>) {
+    return this.access.setDelegation(id, body);
+  }
+
   @PlatformRealm('access:manage')
   @Put('tenants/:id/access/permissions')
   @Doc({ summary: 'Switch permissions on or off for every role in a workspace', body: permissionSwitchUpdate })
@@ -342,8 +374,10 @@ export class PlatformController {
   @PlatformRealm('billing:manage')
   @Put('tenants/:id/subscription')
   @Doc({ summary: 'Override plan, status, seats, trial end or individual feature entitlements', body: subscriptionOverride })
-  subscription(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(subscriptionOverride)) body: z.infer<typeof subscriptionOverride>) {
-    return this.platform.overrideSubscription(id, body);
+  async subscription(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(subscriptionOverride)) body: z.infer<typeof subscriptionOverride>) {
+    const result = await this.platform.overrideSubscription(id, body);
+    await this.access.recalculate(id);
+    return result;
   }
 
   @PlatformRealm('support:request')

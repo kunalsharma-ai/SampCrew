@@ -1,3 +1,4 @@
+import { partForWebPath } from '@crew/contracts';
 import type { Me } from './types';
 
 export interface NavItem {
@@ -52,6 +53,8 @@ export const NAV: NavGroup[] = [
     label: 'Employee management',
     items: [
       { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
+      { href: '/hr-workspaces', label: 'HR Workspaces', icon: 'network', permission: 'hierarchy:read' },
+      { href: '/employee-features', label: 'Employee features', icon: 'toggle-right', permission: 'modules:assign' },
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
       { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
@@ -83,6 +86,7 @@ export const NAV: NavGroup[] = [
   {
     label: 'Attendance & time',
     items: [
+      { href: '/attendance/register', label: 'All employees attendance', icon: 'calendar-range', permission: 'attendance:approve', feature: 'attendance_basic' },
       { href: '/attendance/team', label: 'Team attendance', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },
       { href: '/attendance/late', label: 'Late coming & penalties', icon: 'alarm-clock', permission: 'attendance:approve', feature: 'attendance_basic' },
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
@@ -143,14 +147,13 @@ export const NAV: NavGroup[] = [
   {
     label: 'Administration',
     items: [
-      { href: '/settings/hr-admin', label: 'HR Workspace Admin', icon: 'layout-grid', permission: 'tenant:read' },
-      { href: '/settings/roles', label: 'Roles & permissions', icon: 'shield', permission: 'roles:read' },
+      { href: '/settings/hr-admin', label: 'Super Workspace Admin', icon: 'layout-grid', permission: 'tenant:read' },
+      { href: '/settings/roles', label: 'Access levels', icon: 'shield', permission: 'roles:read' },
       { href: '/settings/custom-fields', label: 'Custom fields', icon: 'text-cursor-input', permission: 'fields:manage' },
       { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },
       { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
-      { href: '/settings/signature/company', label: 'Email signatures', icon: 'mail', permission: 'org:manage', feature: 'email_signatures' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
       { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
     ],
@@ -217,6 +220,9 @@ export function visibleNav(me: Me): NavGroup[] {
     ...g,
     items: g.items.flatMap((i): NavItem[] => {
       if (!allowed(i)) return [];
+      // Feature management: a page switched off at any level (Console, Super Workspace, HR Workspace) leaves the menu.
+      const part = partForWebPath(i.href);
+      if (part && me.features.includes(part.feature) && !me.features.includes(part.key)) return [];
       if (!i.feature || me.features.includes(i.feature)) return [i];
       if (!upsell || upsell.has(i.feature) || NOT_SOLD.has(i.feature)) return [];
       upsell.add(i.feature);

@@ -72,6 +72,21 @@ describe('mobile theme', () => {
     expect(contrast(NIGHT.muted, NIGHT.bg)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('gives each level its own design while the workspace design is on, and keeps a chosen palette for everyone', () => {
+    const levels = ['super', 'hr', 'employee'] as const;
+    const themes = levels.map((l) => mobileTheme(DEFAULT_APPEARANCE, 'light', l));
+    expect(new Set(themes.map((t) => t.accent)).size).toBe(3);
+    expect(new Set(themes.map((t) => t.night.bg)).size).toBe(3);
+    expect(themes.map((t) => t.radius)).toEqual([14, 20, 22]);
+    for (const t of themes) {
+      expect(contrast(t.night.fg, t.night.bg)).toBeGreaterThanOrEqual(7);
+      expect(contrast(t.night.muted, t.night.bg)).toBeGreaterThanOrEqual(4.5);
+    }
+    const chosen = levels.map((l) => mobileTheme({ ...DEFAULT_APPEARANCE, preset: 'rose' }, 'light', l));
+    expect(new Set(chosen.map((t) => t.accent)).size).toBe(1);
+    expect(chosen[0]!.night).toEqual(NIGHT);
+  });
+
   it('writes colours with alpha for glass and glows', () => {
     expect(alpha('#ff8000', 0.5)).toBe('rgba(255,128,0,0.5)');
   });

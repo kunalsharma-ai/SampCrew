@@ -200,7 +200,8 @@ export function ProfileView({ profile, tab: initialTab }: { profile: FullProfile
         <Card>
           <CardHeader title="Professional details" description="Set by HR. Ask HR if anything here is wrong." action={<Badge tone="neutral"><Lock className="size-3" aria-hidden /> HR managed</Badge>} />
           <Rows rows={[
-            ['Employee ID', p.professional.employeeCode], ['Designation', p.professional.designation], ['Department', p.professional.department], ['Reporting manager', p.professional.manager],
+            ['Employee ID', p.professional.employeeCode], ['Designation', p.professional.designation], ['Department', p.professional.department],
+            ['Workspace access', p.professional.workspaceAccess ?? 'None (no login)'], ['Assigned workspace', p.professional.assignedWorkspace ?? 'Central group'], ['Reporting manager', p.professional.manager],
             ['Employment type', label(p.professional.employmentType)], ['Status', label(p.professional.status)], ['Date of joining', day(p.professional.dateOfJoining)],
             ['Confirmation date', day(p.professional.confirmationDate ?? p.professional.probationEndDate)], ['Work email', p.professional.workEmail], ['Grade', p.professional.grade],
             ['Office location', p.professional.location ? <>{p.professional.location.name}{p.professional.location.address && <div className="text-xs font-normal text-fg-muted">{p.professional.location.address}</div>}</> : null],

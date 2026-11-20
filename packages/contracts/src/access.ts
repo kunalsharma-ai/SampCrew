@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { featurePart } from './feature-parts';
 import { BOOLEAN_FEATURES, isCoreFeature } from './features';
 import { isPermissionKey } from './permissions';
 import { DEVICE_VENDORS } from './schemas/attendance';
@@ -16,8 +17,12 @@ const switchableFeatureKey = booleanFeatureKey.refine((k) => !isCoreFeature(k), 
 export const FEATURE_SWITCH_STATES = ['plan', 'on', 'off'] as const;
 export type FeatureSwitchState = (typeof FEATURE_SWITCH_STATES)[number];
 
+/** A module, or one of its pages or buttons: SAMPLEDGE can switch any of them for one company. */
+const companySwitchKey = z.string().refine((k) => Boolean(featurePart(k)) || (BOOLEAN_FEATURES.some((f) => f.key === k) && !isCoreFeature(k)), 'Unknown module, page or button');
+
 export const featureSwitchUpdate = z.object({
-  changes: z.array(z.object({ key: switchableFeatureKey, state: z.enum(FEATURE_SWITCH_STATES) }).strict()).min(1).max(100),
+  /** For a page or button, "off" switches it off for the company and "on" or "plan" lets it follow its module. */
+  changes: z.array(z.object({ key: companySwitchKey, state: z.enum(FEATURE_SWITCH_STATES) }).strict()).min(1).max(100),
 }).strict();
 
 export const permissionSwitchUpdate = z.object({
@@ -35,7 +40,19 @@ export const memberAccessQuery = z.object({
 });
 
 /** Why a module is unavailable to the current member; returned by /me so the apps can explain it. */
-export type FeatureBlockReason = 'not_in_plan' | 'workspace_off' | 'member_blocked' | 'channel_off' | 'admin_off';
+export type FeatureBlockReason = 'not_in_plan' | 'workspace_off' | 'member_blocked' | 'channel_off' | 'admin_off'
+  /** The person's HR Workspace was not given the module by the Super Workspace. */
+  | 'hr_workspace_off'
+  /** The person's HR Workspace admins (or the Super Workspace) did not give the module to them. */
+  | 'hr_member_off'
+  /** SAMPLEDGE switched the feature off (or has not yet released it) for the whole application, in the Console. */
+  | 'platform_off'
+  /** The Super Workspace switched the feature off for the person's level (HR Workspace or Employee Workspace). */
+  | 'level_off'
+  /** HR Workspace switched the feature off for Employee Workspace (for the central group or one HR Workspace). */
+  | 'hr_level_off'
+  /** The module the page belongs to is unavailable. */
+  | 'module_off';
 
 /** The two apps people use SampCrew through. API keys and integrations are not affected by app switches. */
 export const APP_CHANNELS = ['web', 'mobile'] as const;
@@ -139,6 +156,11 @@ export interface WorkspaceAccess {
     /** Members of this workspace who have this module taken away. */
     blockedMembers: number;
   }[];
+  /**
+   * The pages and buttons of every module, for switching one off for this company only. `off` is SAMPLEDGE's switch
+   * for this company; `effective` is whether the company has it now (its module on and nothing above switched it off).
+   */
+  parts: { key: string; name: string; feature: string; kind: 'page' | 'action'; page: string | null; audience: 'employee' | 'hr' | 'admin'; off: boolean; effective: boolean }[];
   permissions: {
     key: string; module: string; description: string; sensitive: boolean;
     enabled: boolean; feature: string | null; featureOn: boolean;

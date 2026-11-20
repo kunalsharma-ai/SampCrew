@@ -1,5 +1,5 @@
 'use client';
-import { LEAVE_TYPE_KIND_LABELS, type LeaveTypeKind } from '@crew/contracts';
+import { ACCESS_LEVEL_LABEL, LEAVE_TYPE_KIND_LABELS, type LeaveTypeKind, levelRoleKeyFor } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Input, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { ListPlus, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -8,9 +8,13 @@ import { type FieldDef, ResourceDialog } from '@/components/resource-form';
 import type { ActionResult } from '@/lib/api';
 import type { Department, Designation, HolidayCalendar, LeavePolicy, LeaveType, LegalEntity, Location, Role, StandardLeaveType } from '@/lib/types';
 import {
+
   addHolidayAction, addStandardTypesAction, archiveLeaveTypeAction, closeYearAction, deleteCalendarAction, removeHolidayAction, removePolicyAction, runAccrualsAction,
   saveApprovalChainAction, saveCalendarAction, saveLeaveTypeAction, savePolicyAction,
 } from './actions';
+
+const APPROVER_LEVELS = ['hr_workspace', 'super_workspace'] as const;
+const levelName = (key: string | undefined) => ACCESS_LEVEL_LABEL[levelRoleKeyFor(key ?? '') as keyof typeof ACCESS_LEVEL_LABEL] ?? 'HR Workspace';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const ACCRUAL: Record<string, string> = {
@@ -327,22 +331,22 @@ function CalendarBlock({ c, run, onEdit }: { c: HolidayCalendar; run: Run; onEdi
   );
 }
 
-function ChainCard({ chain, roles, run }: Props & { run: Run }) {
+function ChainCard({ chain, run }: Props & { run: Run }) {
   const [steps, setSteps] = useState(chain?.steps ?? [{ type: 'manager' }]);
   if (!chain) return null;
-  const label = (s: { type: string; role?: string }) => s.type === 'manager' ? 'Their manager' : s.type === 'skip_level_manager' ? "Their manager's manager" : `Anyone with the ${roles.find((r) => r.key === s.role)?.name ?? s.role} role who covers them`;
+  const label = (s: { type: string; role?: string }) => s.type === 'manager' ? 'Their manager' : s.type === 'skip_level_manager' ? "Their manager's manager" : `Everyone with ${levelName(s.role)} access who covers them`;
   return (
     <Card>
       <CardHeader
         title="Leave approval chain"
-        description={`Steps run in order. Nobody approves their own request; if no one can, it goes to the ${chain.fallbackRole.replace('_', ' ')} role, then to workspace owners.`}
+        description={`Steps run in order. Nobody approves their own request; if no one can, it goes to everyone with ${levelName(chain.fallbackRole)} access, then to Super Workspace.`}
       />
       <CardBody className="grid gap-3">
         <ol className="grid gap-2">
           {steps.map((s, i) => (
             <li key={i} className="flex items-center gap-2 text-sm">
               <span className="flex size-6 items-center justify-center rounded-full bg-accent-subtle text-xs font-semibold text-accent">{i + 1}</span>
-              <Select aria-label={`Step ${i + 1}`} value={s.type === 'role' ? `role:${s.role}` : s.type} className="max-w-md" onChange={(e) => {
+              <Select aria-label={`Step ${i + 1}`} value={s.type === 'role' ? `role:${levelRoleKeyFor(s.role ?? '')}` : s.type} className="max-w-md" onChange={(e) => {
                 const v = e.target.value;
                 const next = [...steps];
                 next[i] = v.startsWith('role:') ? { type: 'role', role: v.slice(5) } : { type: v };
@@ -350,7 +354,7 @@ function ChainCard({ chain, roles, run }: Props & { run: Run }) {
               }}>
                 <option value="manager">Their manager</option>
                 <option value="skip_level_manager">Their manager&apos;s manager</option>
-                {roles.filter((r) => r.key !== 'employee').map((r) => <option key={r.key} value={`role:${r.key}`}>{r.name} role</option>)}
+                {APPROVER_LEVELS.map((k) => <option key={k} value={`role:${k}`}>Everyone with {ACCESS_LEVEL_LABEL[k]} access</option>)}
               </Select>
               {steps.length > 1 && <button className="text-fg-subtle hover:text-danger" aria-label={`Remove step ${i + 1}`} onClick={() => setSteps(steps.filter((_, j) => j !== i))}><Trash2 className="size-4" /></button>}
             </li>
@@ -358,7 +362,7 @@ function ChainCard({ chain, roles, run }: Props & { run: Run }) {
         </ol>
         <p className="text-xs text-fg-subtle">{steps.map(label).join(', then ')}.</p>
         <div className="flex gap-2">
-          {steps.length < 5 && <Button size="sm" variant="secondary" onClick={() => setSteps([...steps, { type: 'role', role: 'hr_admin' }])}><Plus className="size-3.5" /> Add step</Button>}
+          {steps.length < 5 && <Button size="sm" variant="secondary" onClick={() => setSteps([...steps, { type: 'role', role: 'hr_workspace' }])}><Plus className="size-3.5" /> Add step</Button>}
           <Button size="sm" onClick={() => run(() => saveApprovalChainAction(steps))}>Save chain</Button>
         </div>
       </CardBody>

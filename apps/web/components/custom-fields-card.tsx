@@ -1,8 +1,8 @@
 'use client';
 import type { CustomFieldDefinition } from '@crew/contracts';
-import { Alert, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, Select, Textarea } from '@crew/ui';
+import { Alert, Button, Card, CardBody, CardHeader, Checkbox, Dialog, Field, Input, Select, Textarea } from '@crew/ui';
 import { useState, useTransition } from 'react';
-import { saveFieldValuesAction, uploadFieldFileAction } from '@/app/(app)/custom-field-actions';
+import { loadFieldValuesAction, saveFieldValuesAction, uploadFieldFileAction } from '@/app/(app)/custom-field-actions';
 
 export interface FieldValue { field: CustomFieldDefinition; value: unknown; text: string; editable: boolean; fits: boolean }
 
@@ -52,6 +52,27 @@ export function CustomFieldsCard({ entity, recordId, initial, title = 'Additiona
         {editing && <div className="flex gap-2"><Button loading={pending} onClick={save}>Save</Button><Button variant="secondary" onClick={() => { setEditing(false); setFe({}); }}>Cancel</Button></div>}
       </CardBody>
     </Card>
+  );
+}
+
+/** A button that opens a record's custom fields (for rows in a list, such as leave requests). */
+export function RecordFieldsButton({ entity, recordId, title = 'Details' }: { entity: string; recordId: string; title?: string }) {
+  const [rows, setRows] = useState<FieldValue[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <>
+      <Button size="sm" variant="ghost" loading={pending} onClick={() => start(async () => {
+        const r = await loadFieldValuesAction(entity, recordId);
+        if (r.ok) setRows(r.data ?? []);
+        else setError(r.message);
+      })}>{title}</Button>
+      {(rows || error) && (
+        <Dialog open onClose={() => { setRows(null); setError(null); }} title={title} size="lg">
+          {error ? <Alert tone="danger">{error}</Alert> : rows && rows.length ? <CustomFieldsCard entity={entity} recordId={recordId} initial={rows} /> : <p className="text-[0.8125rem] text-fg-muted">No additional details for this record.</p>}
+        </Dialog>
+      )}
+    </>
   );
 }
 

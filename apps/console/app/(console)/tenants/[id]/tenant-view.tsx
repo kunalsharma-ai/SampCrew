@@ -69,6 +69,8 @@ export function TenantView({ t, plans, history, snapshot, caps }: { t: TenantDet
         <Tile tone="blue" icon={<Activity className="size-5" />} label="Last activity" value={t.lastActivityAt ? <LocalTime value={t.lastActivityAt} dateOnly /> : 'Never'} hint={`${t.aiCreditsThisMonth} AI credits this month`} href={`/tenants/${t.id}/activity`} />
       </TileRow>
 
+      {t.hierarchy && <HierarchyCard h={t.hierarchy} />}
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader title="Subscription" />
@@ -277,5 +279,39 @@ function SupportDialog({ t, onClose, onDone }: { t: TenantDetail; onClose: () =>
         )}</Field>
       </div>
     </Dialog>
+  );
+}
+
+/** The four levels of this company, top to bottom. Console Admin stays SAMPLEDGE's own level, apart from the company's. */
+function HierarchyCard({ h }: { h: NonNullable<TenantDetail['hierarchy']> }) {
+  const levels = [
+    { key: 'console', label: 'Console Admin', who: `${h.consoleAdmin} (this Console). Creates the company and its Super Workspace.`, count: null as number | null },
+    { key: 'super', label: 'Super Workspace', who: h.superWorkspace.length ? h.superWorkspace.map((p) => p.name).join(', ') : 'Nobody yet', count: h.counts.super },
+    { key: 'hr', label: 'HR Workspace', who: `${h.counts.companyHr} for the whole company · ${h.hrWorkspaces.length} HR Workspace${h.hrWorkspaces.length === 1 ? '' : 's'}`, count: h.counts.hr },
+    { key: 'employee', label: 'Employee Workspace', who: 'Everyone else with a login', count: h.counts.employee },
+  ];
+  return (
+    <Card data-testid="tenant-hierarchy">
+      <CardHeader title="Workspace hierarchy" description="Each level gives only part of what the level above it has. People are counted once, at their highest level." />
+      <CardBody className="grid gap-4">
+        <ol className="grid gap-2">
+          {levels.map((l, i) => (
+            <li key={l.key} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 text-[13px]" style={{ marginLeft: `${i * 16}px` }} data-testid={`level-${l.key}`}>
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-xs font-semibold text-accent">{i + 1}</span>
+              <span className="min-w-0 flex-1"><span className="block font-medium">{l.label}</span><span className="block truncate text-xs text-fg-subtle">{l.who}</span></span>
+              {l.count !== null && <Badge tone="accent">{l.count} {l.count === 1 ? 'person' : 'people'}</Badge>}
+            </li>
+          ))}
+        </ol>
+        {h.hrWorkspaces.length > 0 && (
+          <Table>
+            <THead><TR><TH>HR Workspace</TH><TH>Status</TH><TH>Admins</TH><TH>People</TH></TR></THead>
+            <TBody>
+              {h.hrWorkspaces.map((w) => <TR key={w.id}><TD className="font-medium">{w.name}</TD><TD><Badge tone={w.status === 'active' ? 'success' : 'neutral'}>{w.status}</Badge></TD><TD className="tabular">{w.admins}</TD><TD className="tabular">{w.people}</TD></TR>)}
+            </TBody>
+          </Table>
+        )}
+      </CardBody>
+    </Card>
   );
 }

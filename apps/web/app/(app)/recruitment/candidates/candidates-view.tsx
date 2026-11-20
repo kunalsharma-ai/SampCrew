@@ -116,10 +116,10 @@ export function CandidatesView({ candidates, state, views, activeViewId, jobs, c
                 current={state}
                 onApply={(v) => router.push(v ? candidateViewUrl(v.state, v.id) : '/recruitment/candidates?view=all')}
               />
-              <a className={buttonClass('secondary', 'sm')} href={`/candidates-export?${exportQs}`} download>
+              <a className={buttonClass('secondary', 'sm')} href={`/candidates-export?${exportQs}`} download data-feature="recruitment.candidates_export">
                 <Download className="size-3.5" /> Export CSV
               </a>
-              <a className={buttonClass('secondary', 'sm')} href={`/candidates-export?${exportQs}&format=xlsx`} download>
+              <a className={buttonClass('secondary', 'sm')} href={`/candidates-export?${exportQs}&format=xlsx`} download data-feature="recruitment.candidates_export">
                 <Download className="size-3.5" /> Export Excel
               </a>
               {canAdd && <Button size="sm" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Add candidate</Button>}

@@ -1,4 +1,4 @@
-import { buildTheme, DEFAULT_APPEARANCE, THEME_PRESETS, THEME_TEMPLATES } from '@crew/contracts';
+import { buildTheme, DEFAULT_APPEARANCE, designLevelOf, presetChoices, THEME_TEMPLATES, workspaceLevelLabel } from '@crew/contracts';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, View } from 'react-native';
@@ -13,7 +13,7 @@ import { Avatar, Badge, Button, Card, CardTitle, Choice, DemoBanner, Empty, erro
 export default function Me() {
   const { api, me, device, setDevice, signOut, can, hasFeature, refreshMe } = useSession();
   const router = useRouter();
-  const payslips = hasFeature('payroll') && can('payslips:read');
+  const payslips = hasFeature('payroll.payslips') && can('payslips:read');
   const { data, error, reload, loading } = useLoad(() => (payslips ? api.get<PayslipRow[]>('/payslips?mine=true') : Promise.resolve([])), [api, payslips]);
   useReloadOnFocus(reload);
   const [bio, setBio] = useState<{ support: BiometricSupport; on: boolean } | null>(null);
@@ -101,7 +101,7 @@ export default function Me() {
         <Avatar name={me?.user.fullName ?? ''} size={60} uri={photo} testID="me-photo" />
         <View style={{ flex: 1, gap: 2 }}>
           <Title>{me?.user.fullName ?? 'Me'}</Title>
-          <Text muted size={14}>{me?.membership.roles.map((r) => r.name).join(', ') || me?.user.email || ''}</Text>
+          <Text muted size={14}>{me ? workspaceLevelLabel(me.levels, { withName: true }) : ''}</Text>
         </View>
       </Row>
       <Text muted size={14}>{`${me?.user.email ?? ''} · ${me?.tenant.name ?? ''}`}</Text>
@@ -123,7 +123,7 @@ export default function Me() {
           <CardTitle>My work</CardTitle>
           <ListItem title="My profile" subtitle="Personal details, contacts, bank and ID" onPress={() => router.push('/profile')} testID="me-profile" />
           <ListItem title="My tasks" subtitle="From HR and your manager" onPress={() => router.push('/tasks')} testID="me-tasks" />
-          {hasFeature('performance') && <ListItem title="Appraisal" subtitle="Self-appraisal and results" onPress={() => router.push('/appraisal')} testID="me-appraisal" />}
+          {hasFeature('performance.my_appraisal') && <ListItem title="Appraisal" subtitle="Self-appraisal and results" onPress={() => router.push('/appraisal')} testID="me-appraisal" />}
         </Card>
       )}
 
@@ -179,6 +179,7 @@ export default function Me() {
  */
 function AppearanceCard({ onMessage }: { onMessage: (m: { tone: 'ok' | 'warn' | 'danger'; text: string }) => void }) {
   const { appearance, theme, update } = useAppearance();
+  const { me } = useSession();
   const save = (patch: Parameters<typeof update>[0], done: string) =>
     update(patch).then(() => onMessage({ tone: 'ok', text: done }), (e) => onMessage({ tone: 'danger', text: errorText(e) }));
   return (
@@ -247,9 +248,9 @@ function AppearanceCard({ onMessage }: { onMessage: (m: { tone: 'ok' | 'warn' | 
       />
       <Text size={13} weight="600">Theme</Text>
       <View accessibilityRole="radiogroup" accessibilityLabel="Theme" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {THEME_PRESETS.map((p) => {
+        {presetChoices(designLevelOf(me?.levels)).map((p) => {
           const on = p.key === appearance.preset;
-          const swatch = buildTheme({ ...DEFAULT_APPEARANCE, preset: p.key }, theme.mode);
+          const swatch = buildTheme({ ...DEFAULT_APPEARANCE, preset: p.key }, theme.mode, designLevelOf(me?.levels));
           return (
             <Pressable
               key={p.key}

@@ -1,12 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_APPEARANCE, THEME_PRESETS, THEME_TOKENS, appearanceAttributes, appearancePatch, appPath, buildTheme, contrast, dashboardLayoutInput,
+  DEFAULT_APPEARANCE, DESIGN_LEVELS, designLevelOf, LEVEL_PRESET, THEME_PRESETS, THEME_TOKENS, appearanceAttributes, appearancePatch, appPath, buildTheme, contrast, dashboardLayoutInput,
   normaliseAppearance, PALETTE_SWATCHES, resolveLayout, THEME_TEMPLATES, themeStylesheet,
 } from './experience';
 
+describe('workspace design (one design system per level)', () => {
+  it('is the default, and shows each level its own palette', () => {
+    expect(DEFAULT_APPEARANCE.preset).toBe('workspace');
+    const accents = DESIGN_LEVELS.map((l) => buildTheme(DEFAULT_APPEARANCE, 'light', l).accent);
+    expect(new Set(accents).size).toBe(4);
+    expect(buildTheme(DEFAULT_APPEARANCE, 'light', 'super')).toEqual(buildTheme({ ...DEFAULT_APPEARANCE, preset: LEVEL_PRESET.super }, 'light'));
+    expect(buildTheme(DEFAULT_APPEARANCE, 'dark')).toEqual(buildTheme({ ...DEFAULT_APPEARANCE, preset: 'everyday' }, 'dark'));
+  });
+  it('writes one rule per level, keyed on data-level, and a single rule for a chosen palette', () => {
+    const css = themeStylesheet(DEFAULT_APPEARANCE);
+    for (const l of ['console', 'super', 'hr']) expect(css).toContain(`[data-level="${l}"]`);
+    expect(themeStylesheet({ ...DEFAULT_APPEARANCE, preset: 'rose' })).not.toContain('data-level');
+  });
+  it('picks the level from what the person is', () => {
+    expect(designLevelOf({ super: true, companyHr: true, hrWorkspaces: [] })).toBe('super');
+    expect(designLevelOf({ super: false, companyHr: true, hrWorkspaces: [] })).toBe('hr');
+    expect(designLevelOf({ super: false, companyHr: false, hrWorkspaces: [{}] })).toBe('hr');
+    expect(designLevelOf({ super: false, companyHr: false, hrWorkspaces: [] })).toBe('employee');
+    expect(designLevelOf(null)).toBe('employee');
+  });
+  it('keeps a palette someone chose', () => {
+    expect(normaliseAppearance({ preset: 'midnight' }).preset).toBe('midnight');
+    expect(normaliseAppearance({}).preset).toBe('workspace');
+  });
+});
+
 describe('theme presets', () => {
-  it('ships the thirteen named presets', () => {
+  it('ships the four level designs and the thirteen named presets', () => {
     expect(THEME_PRESETS.map((p) => p.name)).toEqual([
+      'Command Center', 'Executive', 'People Studio', 'Everyday',
       'Midnight Intelligence', 'Aurora Glass', 'Executive Pearl', 'Graphite Elite', 'Oceanic Intelligence', 'Emerald Command',
       'Royal Amethyst', 'Sunset Fusion', 'Arctic Frost', 'Copper Executive', 'Rose Quartz', 'Monochrome Precision', 'Cyber Neon',
     ]);
@@ -53,8 +80,8 @@ describe('theme presets', () => {
 });
 
 describe('appearance preferences', () => {
-  it('defaults to Midnight Intelligence, comfortable density and balanced motion', () => {
-    expect(DEFAULT_APPEARANCE).toMatchObject({ preset: 'midnight', mode: 'system', density: 'comfortable', motion: 'balanced', focusMode: false });
+  it('defaults to the workspace design, comfortable density and balanced motion', () => {
+    expect(DEFAULT_APPEARANCE).toMatchObject({ preset: 'workspace', mode: 'system', density: 'comfortable', motion: 'balanced', focusMode: false });
   });
 
   it('defaults to the neon style with the aurora backdrop, and keeps older saved preferences working', () => {

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { ChatMessageInput, ChatMessageView, CommFile, ConversationInput, ConversationView, MessageDelivery } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
-import { AuthzService } from '../../platform/authz/authz.service';
+import { AuthzService, permissionHolderIds } from '../../platform/authz/authz.service';
 import { hasPermission, type Subject } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
 import { ilike, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
@@ -27,9 +27,7 @@ export async function fileViews(tx: TenantTx, ids: string[]): Promise<Map<string
 
 /** Active members holding `helpdesk:manage`: the HR team that answers employees' messages to HR. */
 export async function hrTeam(tx: TenantTx): Promise<string[]> {
-  const perms = await tx.collection('role_permissions').find({ permission: 'helpdesk:manage' }, { projection: { role_id: 1 } });
-  const ids = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: { $in: perms.map((p) => p.role_id) } });
-  return tx.collection('memberships').distinct<string>('id', { id: { $in: ids }, status: 'active' });
+  return permissionHolderIds(tx, 'helpdesk:manage');
 }
 
 /**
@@ -247,6 +245,43 @@ export class ChatService {
       await this.audit.record(tx, { action: 'chat.department_created', resourceType: 'chat_conversation', resourceId: c.id, changes: { departmentId: input.departmentId } });
       return { id: c.id as string, created: true };
     });
+  }
+
+  /**
+   * The chat of one of HR's groups (Communication > Groups): opened the first time it is asked for, with the group's
+   * members in it and the person opening it as its owner. Afterwards it is the same conversation, and people added
+   * to the group since join it (people who left the chat themselves are not pulled back in).
+   */
+  groupChat(groupId: string) {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      if (!this.isHr(s)) throw Errors.forbidden();
+      const g = await tx.collection('comm_groups').findOne({ id: groupId, archived_at: null });
+      if (!g) throw Errors.notFound('Group');
+      const convs = tx.collection('chat_conversations');
+      let conv = g.chat_conversation_id ? await convs.findOne({ id: g.chat_conversation_id, archived_at: null }) : undefined;
+      let created = false;
+      if (!conv) {
+        conv = await convs.insert({ kind: 'group', title: (g.name as string).slice(0, 80), created_by_membership_id: s.membershipId });
+        await tx.collection('comm_groups').updateOne({ id: groupId }, { $set: { chat_conversation_id: conv.id } });
+        created = true;
+      }
+      await this.syncGroupChat(tx, conv, [...(g.membership_ids as string[]), s.membershipId], s.membershipId);
+      if (created) {
+        const name = (await memberNames(tx, [s.membershipId])).get(s.membershipId) ?? 'Someone';
+        await this.post(tx, conv, null, `${name} opened the chat for the group "${g.name as string}"`, [], true);
+        await this.audit.record(tx, { action: 'chat.group_created', resourceType: 'chat_conversation', resourceId: conv.id as string, changes: { title: g.name, fromGroup: groupId } });
+      }
+      return { id: conv.id as string, created };
+    });
+  }
+
+  /** Adds the group's active members who were never in its chat. Owner is the person who opened it. */
+  async syncGroupChat(tx: TenantTx, conv: Doc, membershipIds: string[], owner?: string) {
+    const active = new Set(await tx.collection('memberships').distinct<string>('id', { id: { $in: membershipIds }, status: 'active' }));
+    const already = new Set(await tx.collection('chat_members').distinct<string>('membership_id', { conversation_id: conv.id }));
+    const add = [...new Set(membershipIds)].filter((m) => active.has(m) && !already.has(m));
+    if (add.length) await tx.collection('chat_members').insertMany(add.map((m) => ({ conversation_id: conv.id, membership_id: m, role: m === owner && !already.size ? 'owner' : 'member' })));
   }
 
   /** One conversation with its latest messages (oldest first), and what each of your messages has reached. */

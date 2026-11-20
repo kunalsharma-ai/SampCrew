@@ -66,8 +66,8 @@ export class PayrollRunsService implements OnModuleInit {
     this.approvals.register('payroll_run', {
       permission: 'payroll:approve',
       configurePermission: 'payroll:configure',
-      defaultSteps: [{ type: 'role', role: 'finance_manager' }],
-      fallbackRole: 'tenant_owner',
+      defaultSteps: [{ type: 'role', role: 'hr_workspace' }],
+      fallbackRole: 'super_workspace',
       label: 'Payroll run',
       link: (id) => `/payroll/runs/${id}`,
       attributes: async (tx, id) => ({ legalEntityId: (await this.load(tx, id)).legal_entity_id }),

@@ -64,7 +64,7 @@ export class ExpensesService implements OnModuleInit {
       permission: 'expenses:approve',
       configurePermission: 'payroll:configure',
       defaultSteps: [{ type: 'manager' }],
-      fallbackRole: 'finance_manager',
+      fallbackRole: 'hr_workspace',
       label: 'Expense claim',
       link: () => `/expenses?view=approvals`,
       attributes: async (tx, id) => attrsOf(await payrollEmployee(tx, (await this.load(tx, id)).employee_id)),

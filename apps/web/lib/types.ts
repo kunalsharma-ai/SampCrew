@@ -1,4 +1,4 @@
-import type { MeResponse } from '@crew/contracts';
+import type { MeResponse, MemberAccess } from '@crew/contracts';
 
 export type Me = MeResponse;
 
@@ -21,6 +21,7 @@ export interface Member {
   joinedAt: string | null;
   lastLoginAt: string | null;
   roles: { key: string; name: string; constraints: Record<string, string[]> }[];
+  access?: MemberAccess;
 }
 
 export interface LegalEntity { id: string; name: string; legalName: string | null; countryCode: string; currency: string; timezone: string; registrationNumber: string | null; taxId: string | null; fiscalYearStartMonth: number; address: string | null }
@@ -65,6 +66,10 @@ export interface Employee {
   loginStatus: string | null;
   /** Set when the employee has a photo; also used to refresh cached copies. */
   photoUpdatedAt?: string | null;
+  hrWorkspaceId?: string | null;
+  hrWorkspaceName?: string | null;
+  accessLevel?: 'super' | 'hr' | 'employee' | null;
+  accessLabel?: string | null;
   defaultShiftId?: string | null;
 }
 export interface EmployeeProfile extends Employee {
@@ -325,6 +330,7 @@ export interface FullProfile {
     confirmationDate: string | null; probationEndDate: string | null; workEmail: string | null; grade: string | null;
     location: { name: string; address: string | null } | null; company: { name: string; address: string | null } | null;
     shift: { name: string; start: string; end: string } | null; workingDays: string[];
+    workspaceAccess?: string | null; assignedWorkspace?: string | null;
   };
   sections: {
     personal: { firstName: string; lastName: string; preferredName: string | null; dateOfBirth: string | null; gender: string | null; personalEmail: string | null; phone: string | null; nationality: string | null; maritalStatus: string | null; bloodGroup: string | null };

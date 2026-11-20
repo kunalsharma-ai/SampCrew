@@ -10,7 +10,7 @@
  * 2. Modules: Staffing bids is switched off. The recruiter's navigation loses it, and opening it directly shows
  *    "This module is switched off".
  * 3. Permissions: "Configure leave types" (leave:configure) is switched off. HR's navigation loses Leave settings,
- *    and Settings > Roles shows the permission as switched off by SAMPLEDGE.
+ *    and Settings > Access levels shows the permission as switched off by SAMPLEDGE.
  * 4. People: the recruiter alone loses Recruitment. Their navigation has no Jobs and the page says it is not
  *    available to them; HR still has Jobs.
  * 5. Everything is switched back (reset to plan, activate all, allow all) and the recruiter has the modules again.
@@ -124,10 +124,10 @@ async function toggle(page, testId, want) {
     await hr.goto(WEB + '/');
     expect(!(await navLinks(hr)).includes('/settings/leave'), 'Leave settings should be hidden for HR');
     await hr.goto(WEB + '/settings/roles');
-    await hr.getByRole('button', { name: /HR Admin \d+$/ }).click();
+    await hr.getByRole('button', { name: /HR Workspace \d+$/ }).click();
     await hr.getByText('Switched off by SAMPLEDGE').first().waitFor();
     await shot(hr, 'access-web-roles');
-    ok('HR loses Leave settings and Roles shows the permission as switched off by SAMPLEDGE');
+    ok('HR loses Leave settings and Access levels shows the permission as switched off by SAMPLEDGE');
 
     // 4. Take Recruitment away from the recruiter only.
     current = admin;

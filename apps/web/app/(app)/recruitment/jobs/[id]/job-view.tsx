@@ -210,7 +210,7 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
                     <Button size="sm" variant="ghost" onClick={() => setPicked([])}>Clear</Button>
                     <span className="flex-1" />
                     {req.can.manageCandidates && pickedActive.length > 0 && (
-                      <>
+                      <span className="contents" data-feature="recruitment.bulk_add">
                         <Select
                           aria-label="Move selected to"
                           className="h-8 !w-44 text-xs"
@@ -223,7 +223,7 @@ export function JobView({ req, pipeline, show, refs }: { req: RequisitionDetail;
                         </Select>
                         <Button size="sm" variant="secondary" onClick={() => setDialog('bulk-email')}><Mail className="size-3.5" /> Email {pickedActive.length}</Button>
                         <Button size="sm" variant="secondary" onClick={() => setDialog('bulk-reject')}><UserX className="size-3.5" /> Reject {pickedActive.length}</Button>
-                      </>
+                      </span>
                     )}
                     {picked.length >= 2 && picked.length <= 4
                       ? <Link href={`${path}/compare?applications=${picked.join(',')}`} className={buttonClass('primary', 'sm')}><Columns3 className="size-3.5" /> Compare {picked.length}</Link>

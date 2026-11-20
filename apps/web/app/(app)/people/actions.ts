@@ -20,6 +20,12 @@ export async function setRolesAction(id: string, assignments: { roleKey: string;
   return r;
 }
 
+export async function setAccessAction(id: string, access: Record<string, unknown>) {
+  const r = await act(() => api(`/members/${id}/access`, { method: 'PUT', body: access }), 'Workspace access saved');
+  revalidatePath('/people');
+  return r;
+}
+
 export async function resendInviteAction(id: string) {
   return act(() => api<{ inviteUrl?: string }>(`/members/${id}/resend-invite`, { method: 'POST' }));
 }

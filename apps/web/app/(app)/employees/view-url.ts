@@ -1,6 +1,6 @@
 import type { ViewState } from '@crew/contracts';
 
-export const DEFAULT_COLUMNS = ['name', 'code', 'department', 'location', 'manager', 'joined', 'status'];
+export const DEFAULT_COLUMNS = ['name', 'code', 'designation', 'department', 'access', 'manager', 'joined', 'status'];
 
 /** The address for a table state (and the saved view it came from, if any). */
 export function viewUrl(s: ViewState, viewId?: string | null) {

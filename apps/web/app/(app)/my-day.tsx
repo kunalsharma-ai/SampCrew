@@ -98,7 +98,7 @@ function ClockCard({ today, renderedAt }: { today: AttendanceToday; renderedAt: 
         </div>
         <div className="flex flex-col items-stretch gap-2 sm:items-end">
           {canPunch ? (
-            <Button size="lg" loading={pending} onClick={punch} variant={next === 'out' ? 'secondary' : 'primary'} data-testid="clock-button">
+            <Button size="lg" loading={pending} onClick={punch} variant={next === 'out' ? 'secondary' : 'primary'} data-testid="clock-button" data-feature="attendance_basic.web_punch">
               {next === 'in' ? <LogIn className="size-5" /> : <LogOut className="size-5" />}{next === 'in' ? 'Clock in' : 'Clock out'}
             </Button>
           ) : <span className="text-sm text-fg-muted">{today.locked ? 'This day is locked by HR.' : 'Web clock-in is off; use the mobile app or the site kiosk.'}</span>}

@@ -128,7 +128,7 @@ export class TenantControlService {
       const users = tx.collection<{ status: string; mfa_enabled: boolean; locked_until: Date | null }>('users');
       const user = await tx.collection<{ email: string; full_name: string }>('users').findOne({ id: mem.user_id });
       if (!user) throw Errors.notFound('Member');
-      const ownerRoles = await tx.collection('roles').distinct<string>('id', { tenant_id: tenantId, key: 'tenant_owner' });
+      const ownerRoles = await tx.collection('roles').distinct<string>('id', { tenant_id: tenantId, key: 'super_workspace', is_system: true });
       const m = { ...mem, email: user.email, full_name: user.full_name, owner: await tx.collection('role_assignments').exists({ membership_id: mem.id, role_id: { $in: ownerRoles } }) };
       let detail: Record<string, unknown> = {};
       switch (action) {

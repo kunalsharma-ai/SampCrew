@@ -9,6 +9,14 @@ export interface GrantConstraints {
   legalEntityIds?: string[];
   departmentIds?: string[];
   locationIds?: string[];
+  /** HR Workspace Admins: only the people in these HR Workspaces (employees whose hr_workspace_id is one of them). */
+  hrWorkspaceIds?: string[];
+}
+
+/** The people of a set of HR Workspaces: their employee records and the logins linked to them. */
+export interface HrWorkspacePeople {
+  employeeIds: ReadonlySet<string>;
+  membershipIds: ReadonlySet<string>;
 }
 
 export interface Grant {
@@ -36,6 +44,8 @@ export interface Subject {
   departmentSubtree: (ids: string[]) => ReadonlySet<string>;
   grants: Grant[];
   mfa: boolean;
+  /** Resolves the people of HR Workspaces named in grant constraints (loaded once with the subject). */
+  hrWorkspacePeople?: (ids: string[]) => HrWorkspacePeople;
 }
 
 /** Attributes of the record being accessed. */
@@ -50,7 +60,13 @@ export interface ResourceAttributes {
 
 export type Decision = { allowed: true; via: Grant } | { allowed: false; reason: 'no_grant' | 'mfa_required' | 'out_of_scope' };
 
+const NOBODY: HrWorkspacePeople = { employeeIds: new Set(), membershipIds: new Set() };
+
 function withinConstraints(subject: Subject, c: GrantConstraints, r: ResourceAttributes): boolean {
+  if (c.hrWorkspaceIds?.length) {
+    const people = subject.hrWorkspacePeople?.(c.hrWorkspaceIds) ?? NOBODY;
+    if (!((r.employeeId && people.employeeIds.has(r.employeeId)) || (r.membershipId && people.membershipIds.has(r.membershipId)))) return false;
+  }
   if (c.legalEntityIds?.length && !(r.legalEntityId && c.legalEntityIds.includes(r.legalEntityId))) return false;
   if (c.departmentIds?.length && !(r.departmentId && subject.departmentSubtree(c.departmentIds).has(r.departmentId))) return false;
   if (c.locationIds?.length && !(r.locationId && c.locationIds.includes(r.locationId))) return false;
@@ -128,6 +144,11 @@ export function scopePredicate(
   const clauses = grants.map((g) => {
     const parts: string[] = [];
     const c = g.constraints;
+    if (c.hrWorkspaceIds?.length) {
+      const people = subject.hrWorkspacePeople?.(c.hrWorkspaceIds) ?? NOBODY;
+      const byMembership = `${cols.membershipId} = any(${p([...people.membershipIds])}::uuid[])`;
+      parts.push(cols.employeeId ? `(${byMembership} or ${cols.employeeId} = any(${p([...people.employeeIds])}::uuid[]))` : byMembership);
+    }
     if (c.legalEntityIds?.length) parts.push(`${cols.legalEntityId} = any(${p(c.legalEntityIds)}::uuid[])`);
     if (c.departmentIds?.length) parts.push(`${cols.departmentId} = any(${p([...subject.departmentSubtree(c.departmentIds)])}::uuid[])`);
     if (c.locationIds?.length) parts.push(`${cols.locationId} = any(${p(c.locationIds)}::uuid[])`);
@@ -174,6 +195,11 @@ export function scopeFilter(
   const clauses = grants.map((g) => {
     const parts: Record<string, unknown>[] = [];
     const c = g.constraints;
+    if (c.hrWorkspaceIds?.length) {
+      const people = subject.hrWorkspacePeople?.(c.hrWorkspaceIds) ?? NOBODY;
+      const byMembership = anyOf(fields.membershipId, people.membershipIds);
+      parts.push(fields.employeeId ? { $or: [byMembership, anyOf(fields.employeeId, people.employeeIds)] } : byMembership);
+    }
     if (c.legalEntityIds?.length) parts.push(anyOf(fields.legalEntityId, c.legalEntityIds));
     if (c.departmentIds?.length) parts.push(anyOf(fields.departmentId, subject.departmentSubtree(c.departmentIds)));
     if (c.locationIds?.length) parts.push(anyOf(fields.locationId, c.locationIds));

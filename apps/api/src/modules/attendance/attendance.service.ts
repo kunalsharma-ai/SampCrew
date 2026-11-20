@@ -131,7 +131,7 @@ export class AttendanceService implements OnModuleInit {
       permission: 'attendance:approve',
       configurePermission: 'attendance:configure',
       defaultSteps: [{ type: 'manager' as const }],
-      fallbackRole: 'hr_admin',
+      fallbackRole: 'hr_workspace',
     };
     this.approvals.register('attendance_correction', {
       ...common,
@@ -675,6 +675,69 @@ export class AttendanceService implements OnModuleInit {
       const summary: Record<string, number> = { total: all.length, late: all.filter((r) => r.lateMinutes > 0).length, onSiteNow: all.filter((r) => r.status === 'in_progress' && r.firstIn && !r.lastOut).length };
       for (const r of all) summary[r.status] = (summary[r.status] ?? 0) + 1;
       return { date: q.date, summary, rows };
+    });
+  }
+
+  /**
+   * The monthly register HR and the workspace owner use to see everyone's attendance at once: one row per employee
+   * they can see, one cell per day of the month (the stored day status, or null where the day has not been counted
+   * yet or is outside the person's employment), and totals per row. Reads stored days only, so it never recomputes
+   * a whole month for the whole company on a page view; each person's own page and the team view refresh days.
+   */
+  async register(q: { month: string; departmentId?: string; locationId?: string; q?: string }) {
+    const [y, m] = q.month.split('-').map(Number) as [number, number];
+    const from = `${q.month}-01`;
+    const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    const dates: string[] = [];
+    for (let d = from; d <= to; d = addDays(d, 1)) dates.push(d);
+    return this.db.tenant(async (tx) => {
+      const scope = await this.authz.filter('attendance:read', EMPLOYEE_FIELDS, tx);
+      const and: Record<string, unknown>[] = [scope, { date_of_joining: { $lte: to } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: from } }] }];
+      if (q.departmentId) and.push({ current_department_id: q.departmentId });
+      if (q.locationId) and.push({ current_location_id: q.locationId });
+      let employees = await tx.collection('employees').find({ $and: and }, { limit: 2000 });
+      if (q.q) {
+        const needle = q.q.toLowerCase();
+        employees = employees.filter((e) => `${e.preferred_name ?? e.first_name} ${e.last_name} ${e.employee_code}`.toLowerCase().includes(needle));
+      }
+      const ids = employees.map((e) => e.id as string);
+      const days = ids.length ? await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: { $gte: from, $lte: to } }) : [];
+      const byEmployee = new Map<string, Map<string, { status: string; late: number }>>();
+      for (const d of days) {
+        const row = byEmployee.get(d.employee_id as string) ?? new Map();
+        row.set(d.work_date as string, { status: d.status as string, late: (d.late_minutes as number) ?? 0 });
+        byEmployee.set(d.employee_id as string, row);
+      }
+      const departments = await fieldById(tx, 'departments', employees.map((e) => e.current_department_id));
+      const PRESENT = new Set(['present', 'half_day', 'half_day_leave', 'in_progress']);
+      const rows = employees
+        .map((e) => {
+          const own = byEmployee.get(e.id as string) ?? new Map<string, { status: string; late: number }>();
+          const cells = dates.map((d) => {
+            if (d < (e.date_of_joining as string) || (e.last_working_day && d > (e.last_working_day as string))) return null;
+            const day = own.get(d);
+            return day ? { status: day.status, late: day.late > 0 } : null;
+          });
+          const totals = { present: 0, absent: 0, leave: 0, late: 0, off: 0 };
+          for (const c of cells) {
+            if (!c) continue;
+            if (PRESENT.has(c.status)) totals.present += c.status === 'present' || c.status === 'in_progress' ? 1 : 0.5;
+            if (c.status === 'absent' || c.status === 'missing_punch') totals.absent += 1;
+            if (c.status === 'on_leave' || c.status === 'half_day_leave') totals.leave += c.status === 'on_leave' ? 1 : 0.5;
+            if (c.status === 'weekly_off' || c.status === 'holiday') totals.off += 1;
+            if (c.late) totals.late += 1;
+          }
+          return {
+            employeeId: e.id as string,
+            employeeName: `${e.preferred_name ?? e.first_name} ${e.last_name}`.trim(),
+            employeeCode: e.employee_code as string,
+            department: departments.get(e.current_department_id) ?? null,
+            cells,
+            totals,
+          };
+        })
+        .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+      return { month: q.month, dates, rows };
     });
   }
 

@@ -11,7 +11,7 @@ export const TARGET: Record<TargetState, string> = { none: 'No target', on_time:
 export const TARGET_TONE: Record<TargetState, Tone> = { none: 'neutral', on_time: 'success', due_soon: 'warning', overdue: 'danger', met: 'success', missed: 'danger' };
 export const MOVE: Record<string, string> = { in_progress: 'Start working', waiting_on_employee: 'Ask the employee', resolved: 'Resolve', closed: 'Confirm it is solved', open: 'Reopen' };
 export const HISTORY: Record<string, string> = {
-  created: 'raised the case', status: 'changed the status', assigned: 'assigned it', priority: 'changed the priority', category: 'moved it to another category',
+  created: 'raised the case', status: 'changed the status', assigned: 'assigned it', collaborator_added: 'shared it with', collaborator_removed: 'took off the case', priority: 'changed the priority', category: 'moved it to another category',
   rated: 'rated the help', auto_closed: 'closed it automatically',
 };
 export const dateTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });

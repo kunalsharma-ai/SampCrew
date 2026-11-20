@@ -215,7 +215,7 @@ export class ScimService {
         provisioned_by: 'scim',
         joined_at: null,
       });
-      const role = (await tx.collection('roles').findOne({ key: 'employee' }))!;
+      const role = (await tx.collection('roles').findOne({ key: 'employee_workspace', is_system: true }))!;
       await tx.collection('role_assignments').insert({ membership_id: m.id, role_id: role.id, granted_by: actor.membershipId });
       // Connect the login to the person's employee record when HR already created one with this work email.
       const linked = await tx.collection('employees').updateAndGet({ work_email: email, membership_id: null, status: { $ne: 'exited' } }, { $set: { membership_id: m.id } });
@@ -258,9 +258,9 @@ export class ScimService {
 
   private async apply(tx: TenantTx, r: MemberRow, next: { active: boolean; givenName: string; familyName: string; externalId: string | null }, method: string, detail?: string, keepName = false) {
     const actor = requestContext.tenantActor();
-    const ownerRole = await tx.collection('roles').findOne({ key: 'tenant_owner' });
+    const ownerRole = await tx.collection('roles').findOne({ key: 'super_workspace', is_system: true });
     const owner = ownerRole && (await tx.collection('role_assignments').exists({ membership_id: r.id, role_id: ownerRole.id }));
-    if (owner && !next.active) throw new ScimError(400, 'mutability', 'Workspace owners are not deactivated by provisioning. Change owners in SampCrew.');
+    if (owner && !next.active) throw new ScimError(400, 'mutability', 'Super Workspace people are not deactivated by provisioning. Change their access in SampCrew first.');
     if (r.status === 'invited' && !next.active) throw new ScimError(400, 'mutability', 'This person has a pending invitation; revoke it in SampCrew');
     const status = r.status === 'invited' ? 'invited' : next.active ? 'active' : 'suspended';
     if (status === 'active' && r.status === 'suspended') {

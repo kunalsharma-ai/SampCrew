@@ -1,6 +1,6 @@
 'use client';
 import type { MemberAccessRow, WorkspaceAccess } from '@crew/contracts';
-import { Alert, Badge, Button, Card, CardHeader, Dialog, EmptyState, Input, Switch, Table, TBody, TD, TH, THead, TR, cn } from '@crew/ui';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, Dialog, FeatureSwitchBoard, EmptyState, Input, Switch, Table, TBody, TD, TH, THead, TR, cn } from '@crew/ui';
 import { Blocks, Globe, KeyRound, Search, Smartphone, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -49,6 +49,7 @@ export function AccessView({ tenantId, tab, access, members, page, pageSize, q, 
         ))}
       </nav>
       {tab === 'modules' && <ModulesTab tenantId={tenantId} features={access.features} canManage={canManage} setFlash={setFlash} />}
+      {tab === 'modules' && <PartsCard tenantId={tenantId} access={access} canManage={canManage} setFlash={setFlash} />}
       {tab === 'apps' && <AppsTab tenantId={tenantId} access={access} canManage={canManage} setFlash={setFlash} />}
       {tab === 'permissions' && <PermissionsTab tenantId={tenantId} access={access} canManage={canManage} setFlash={setFlash} />}
       {tab === 'people' && (canManage && members
@@ -122,6 +123,54 @@ function ModulesTab({ tenantId, features, canManage, setFlash }: { tenantId: str
           ))}
         </TBody>
       </Table>
+    </Card>
+  );
+}
+
+const COMPANY_COLUMN = [{ key: 'company', label: 'This company', target: 'this company' }];
+
+/**
+ * Pages and buttons for this company only: SAMPLEDGE can switch a single page or button off for one company while the
+ * rest of the module stays on. A button goes with its page, and a page with its module.
+ */
+function PartsCard({ tenantId, access, canManage, setFlash }: { tenantId: string; access: WorkspaceAccess; canManage: boolean; setFlash: (f: Flash) => void }) {
+  const { pending, run } = useSave(setFlash);
+  const rows = useMemo(() => {
+    const withParts = new Set(access.parts.map((p) => p.feature));
+    const byKey = new Map(access.parts.map((p) => [p.key, p]));
+    return [
+      ...access.features.filter((f) => withParts.has(f.key)).map((f) => ({
+        key: f.key, name: f.name, module: f.module, parent: null,
+        cells: { company: { on: f.effective, indicator: f.effective ? ('active' as const) : ('restricted' as const), restrictedBy: f.inPlan ? 'console' : 'plan', editable: false } },
+      })),
+      ...access.parts.map((p) => {
+        const module = access.features.find((f) => f.key === p.feature);
+        const page = p.page ? byKey.get(p.page) : undefined;
+        const above = !module?.effective || (page ? page.off || !page.effective : false);
+        const cell = above
+          ? { on: false, indicator: 'restricted' as const, restrictedBy: 'module', editable: false }
+          : p.off
+            ? { on: false, indicator: 'inactive' as const, setBy: 'console', editable: canManage }
+            : p.effective
+              ? { on: true, indicator: 'active' as const, editable: canManage }
+              : { on: false, indicator: 'restricted' as const, restrictedBy: 'console', editable: false };
+        return {
+          key: p.key, name: page ? `${p.name} (on ${page.name})` : p.name, module: module?.module ?? '', parent: p.feature,
+          kind: p.kind, audience: p.audience, cells: { company: cell },
+        };
+      }),
+    ];
+  }, [access, canManage]);
+  return (
+    <Card>
+      <CardHeader
+        title="Pages and buttons"
+        description="Switch a single page or button off for this company while the rest of its module stays on. The Super Workspace and HR Workspace cannot switch it back on. A button goes with its page."
+      />
+      <CardBody>
+        <FeatureSwitchBoard rows={rows} columns={COMPANY_COLUMN} busy={pending || !canManage}
+          onChange={(key, _c, on) => run(() => switchModulesAction(tenantId, [{ key, state: on ? 'plan' : 'off' }]))} />
+      </CardBody>
     </Card>
   );
 }

@@ -303,12 +303,26 @@ export class AuthService {
       const tenant = await tx.collection('tenants').findOne({});
       const membership = await tx.collection('memberships').findOne({ id: actor.membershipId });
       const roleIds = (await tx.collection('role_assignments').find({ membership_id: actor.membershipId })).map((a) => a.role_id);
-      const roles = (await tx.collection('roles').find({ id: { $in: roleIds } }, { sort: { name: 1 } })).map((r) => ({ key: r.key as string, name: r.name as string }));
+      const roles = (await tx.collection('roles').find({ id: { $in: roleIds }, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] }, is_system: true }, { sort: { name: 1 } })).map((r) => ({ key: r.key as string, name: r.name as string }));
       const subject = await this.authz.subject(tx);
       const ent = await this.entitlements.current(tx);
       const controls = await tx.collection('tenant_access_controls').findOne({});
-      const employee = await tx.collection('employees').findOne({ membership_id: actor.membershipId }, { projection: { _id: 1, photo_updated_at: 1 } });
-      return { user, tenant, membership, roles, subject, ent, employee, disabledPermissions: (controls?.disabled_permissions as string[]) ?? [] };
+      const employee = await tx.collection('employees').findOne({ membership_id: actor.membershipId }, { projection: { _id: 1, photo_updated_at: 1, hr_workspace_id: 1 } });
+      // Levels: HR Workspaces this person runs (a limited grant names them), and whether they run the company.
+      const hrIds = [...new Set(subject.grants.flatMap((g) => g.constraints.hrWorkspaceIds ?? []))];
+      const spaces = await tx.collection('hr_workspaces').find({ id: { $in: [...hrIds, ...(employee?.hr_workspace_id ? [employee.hr_workspace_id] : [])] }, status: { $ne: 'archived' } }, { projection: { name: 1, status: 1 }, sort: { name: 1 } });
+      // The access level: Super Workspace, HR Workspace for the whole company, or HR Workspace for named HR Workspaces.
+      const isSuper = subject.grants.some((g) => g.roleKey === 'super_workspace');
+      const companyHr = !isSuper && subject.grants.some((g) => g.roleKey === 'hr_workspace' && !g.constraints.hrWorkspaceIds?.length);
+      const own = employee?.hr_workspace_id ? spaces.find((w) => w.id === employee.hr_workspace_id) : undefined;
+      const levels = {
+        super: isSuper,
+        hrWorkspaces: spaces.filter((w) => hrIds.includes(w.id as string)).map((w) => ({ id: w.id as string, name: w.name as string, status: w.status as string })),
+        companyHr,
+        employee: Boolean(employee),
+        ownHrWorkspace: own ? { id: own.id as string, name: own.name as string } : null,
+      };
+      return { user, tenant, membership, roles, subject, ent, employee, levels, disabledPermissions: (controls?.disabled_permissions as string[]) ?? [] };
     });
     // Workspace switcher: only this user's own active workspaces.
     const tenants = (await this.db.platform((tx) => activeMembershipsOf(tx, actor.userId))).map((m) => ({ id: m.tenant_id, name: m.name, slug: m.slug }));
@@ -326,6 +340,7 @@ export class AuthService {
       client: actor.client ?? 'web',
       tenants,
       employee: data.employee ? { id: data.employee.id, photoUpdatedAt: data.employee.photo_updated_at?.toISOString() ?? null } : null,
+      levels: data.levels,
     };
   }
 

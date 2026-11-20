@@ -100,7 +100,7 @@ export async function unlockAdminAction(id: string) {
 }
 
 export async function switchModulesAction(id: string, changes: { key: string; state: 'plan' | 'on' | 'off' }[]) {
-  const r = await act(() => api(`/platform/tenants/${id}/access/modules`, { method: 'PUT', body: { changes } }), changes.length === 1 ? 'Module updated.' : `${changes.length} modules updated.`);
+  const r = await act(() => api(`/platform/tenants/${id}/access/modules`, { method: 'PUT', body: { changes } }), changes.length === 1 ? (changes[0]!.key.includes('.') ? 'Page or button updated.' : 'Module updated.') : `${changes.length} modules updated.`);
   revalidatePath(`/tenants/${id}/access`);
   return r;
 }

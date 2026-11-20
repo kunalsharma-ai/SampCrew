@@ -163,9 +163,9 @@ export class HelpdeskController {
 
   @Put('cases/:id/assignee')
   @RequirePermission('helpdesk:manage')
-  @Doc({ summary: 'Assign or unassign a case', body: caseAssignInput })
+  @Doc({ summary: 'Assign or unassign a case, with other handlers who share it', body: caseAssignInput })
   assign(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(caseAssignInput)) body: z.infer<typeof caseAssignInput>) {
-    return this.helpdesk.assign(id, body.assigneeMembershipId);
+    return this.helpdesk.assign(id, body.assigneeMembershipId, body.collaboratorMembershipIds);
   }
 
   @Put('cases/:id/priority')

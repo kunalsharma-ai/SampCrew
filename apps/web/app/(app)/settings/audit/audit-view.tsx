@@ -46,7 +46,7 @@ export function AuditView({ page, query, hasCursor, canExport }: { page: Page<Au
         </div>
         <div className="flex flex-wrap gap-2">
           {canExport
-            ? <a className={buttonClass('secondary', 'sm')} href={`/audit-export?${new URLSearchParams(Object.entries(query).filter(([, v]) => v))}`} download data-testid="audit-export">Download CSV</a>
+            ? <a className={buttonClass('secondary', 'sm')} href={`/audit-export?${new URLSearchParams(Object.entries(query).filter(([, v]) => v))}`} download data-testid="audit-export" data-feature="core_hr.audit_export">Download CSV</a>
             : <span className="self-center text-xs text-fg-subtle">CSV export is in plans with Audit log export</span>}
           <Button variant="secondary" size="sm" loading={pending} onClick={() => start(async () => {
             const r = await verifyAuditAction();

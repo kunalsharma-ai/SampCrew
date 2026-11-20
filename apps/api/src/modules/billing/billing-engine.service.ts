@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { permissionHolderIds } from '../../platform/authz/authz.service';
 import {
   billingMath as bm,
   billingSettingsInput,
@@ -160,9 +161,7 @@ export class BillingEngine {
 
   /** People who can manage billing in a workspace (active members whose role has billing:manage). */
   async billingAdmins(tx: PlatformTx, tenantId: string): Promise<string[]> {
-    const roleIds = await tx.collection('role_permissions').distinct<string>('role_id', { tenant_id: tenantId, permission: 'billing:manage' });
-    const members = await tx.collection('role_assignments').distinct<string>('membership_id', { tenant_id: tenantId, role_id: { $in: roleIds } });
-    return (await tx.collection('memberships').find({ tenant_id: tenantId, id: { $in: members }, status: 'active' }, { projection: { _id: 1 } })).map((m) => m.id as string);
+    return permissionHolderIds(tx, 'billing:manage', { tenantId });
   }
 
   async notifyAdmins(tx: PlatformTx, tenantId: string, kind: string, title: string, body: string, email = true) {

@@ -25,7 +25,7 @@ export function CardHeader({ title, description, action, className, help }: { ti
 }
 
 export function CardBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-5 pb-5', className)} {...props} />;
+  return <div className={cn('crew-card-body px-5 pb-5', className)} {...props} />;
 }
 
 /** A page heading. An "i" icon explains the page when the app's help content has an entry for this route. */

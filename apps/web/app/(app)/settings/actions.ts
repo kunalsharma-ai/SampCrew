@@ -36,17 +36,6 @@ export async function revokeSessionAction(id: string) {
   return r;
 }
 
-export async function saveRoleAction(id: string | null, body: { key?: string; name: string; description?: string; grants: { permission: string; scope: string }[] }) {
-  const r = await act(() => api(id ? `/roles/${id}` : '/roles', { method: id ? 'PUT' : 'POST', body: id ? { name: body.name, description: body.description, grants: body.grants } : body }));
-  revalidatePath('/settings/roles');
-  return r;
-}
-
-export async function deleteRoleAction(id: string) {
-  const r = await act(() => api(`/roles/${id}`, { method: 'DELETE' }));
-  revalidatePath('/settings/roles');
-  return r;
-}
 
 export async function verifyAuditAction() {
   return act(() => api<{ checked: number; intact: boolean; firstBrokenSeq: number | null; verifiedAt: string }>('/audit-events/verify'));

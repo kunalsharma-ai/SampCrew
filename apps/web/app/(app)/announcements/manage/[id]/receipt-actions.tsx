@@ -17,7 +17,7 @@ export function ReceiptActions({ a }: { a: Announcement & { canRemind: boolean; 
       <div className="flex flex-wrap gap-2">
         {a.status !== 'archived' && <Link className={buttonClass('secondary', 'sm')} href={`/announcements/manage/${a.id}/edit`}>Edit</Link>}
         {a.status === 'published' && <Link className={buttonClass('ghost', 'sm')} href={`/announcements/${a.id}`}>See it as employees do</Link>}
-        {a.status === 'draft' && <Button size="sm" loading={pending} onClick={() => confirm(`Publish "${a.title}" now and notify ${a.audienceLabel}?`) && run(() => publishAnnouncementAction(a.id))}>Publish now</Button>}
+        {a.status === 'draft' && <Button data-feature="announcements.publish" size="sm" loading={pending} onClick={() => confirm(`Publish "${a.title}" now and notify ${a.audienceLabel}?`) && run(() => publishAnnouncementAction(a.id))}>Publish now</Button>}
         {a.status === 'scheduled' && <Button size="sm" variant="secondary" loading={pending} onClick={() => run(() => unscheduleAnnouncementAction(a.id))}>Unschedule</Button>}
         {a.status === 'published' && a.requiresAck && (
           <Button size="sm" variant="secondary" loading={pending} disabled={!a.canRemind} title={a.canRemind ? undefined : 'You can remind people once an hour'} onClick={() => run(() => remindAnnouncementAction(a.id))}>Remind those who have not acknowledged</Button>

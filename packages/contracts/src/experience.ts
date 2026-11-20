@@ -11,6 +11,7 @@ import { z } from 'zod';
 // ---------------------------------------------------------------------------------------------------------------
 
 export const THEME_PRESET_KEYS = [
+  'workspace', 'command', 'executive', 'people', 'everyday',
   'midnight', 'aurora', 'pearl', 'graphite', 'oceanic', 'emerald', 'amethyst', 'sunset', 'arctic', 'copper', 'rose', 'monochrome', 'cyber',
 ] as const;
 export type ThemePresetKey = (typeof THEME_PRESET_KEYS)[number];
@@ -27,7 +28,36 @@ export interface ThemePreset {
 
 const preset = (key: ThemePresetKey, name: string, description: string, light: ModeSeed, dark: ModeSeed): ThemePreset => ({ key, name, description, light, dark });
 
+/**
+ * The four products' own design systems, one per level. "workspace" (the default) is not a palette of its own: it
+ * shows each person the design of their level, so the Console, Super, HR and Employee Workspace stay recognisable.
+ */
+export const DESIGN_LEVELS = ['console', 'super', 'hr', 'employee'] as const;
+export type DesignLevel = (typeof DESIGN_LEVELS)[number];
+export const LEVEL_PRESET: Record<DesignLevel, Exclude<ThemePresetKey, 'workspace'>> = { console: 'command', super: 'executive', hr: 'people', employee: 'everyday' };
+export const DESIGN_LEVEL_NAME: Record<DesignLevel, string> = {
+  console: 'Command Center', super: 'Executive', hr: 'People Studio', employee: 'Everyday',
+};
+/** The level whose design a signed-in person sees (see workspaceLevelLabel for the same rule in words). */
+export function designLevelOf(levels: { super: boolean; companyHr: boolean; hrWorkspaces: unknown[] } | null | undefined): Exclude<DesignLevel, 'console'> {
+  if (!levels) return 'employee';
+  if (levels.super) return 'super';
+  return levels.companyHr || levels.hrWorkspaces.length ? 'hr' : 'employee';
+}
+
 export const THEME_PRESETS: readonly ThemePreset[] = [
+  preset('command', 'Command Center', 'Console: deep navy, graphite, electric blue and cyan',
+    { primary: '#1d4ed8', secondary: '#0e7490', tertiary: '#0891b2', neutral: { bg: '#eef2f8', surface: '#ffffff', fg: '#0a1124' } },
+    { primary: '#3b82f6', secondary: '#22d3ee', tertiary: '#06b6d4', neutral: { bg: '#050a16', surface: '#0b1426', fg: '#e2ebff' } }),
+  preset('executive', 'Executive', 'Super Workspace: emerald, dark teal, warm ivory and gold',
+    { primary: '#047857', secondary: '#a16207', tertiary: '#115e59', neutral: { bg: '#faf7ef', surface: '#fffdf8', fg: '#10231c' } },
+    { primary: '#34d399', secondary: '#e3b341', tertiary: '#2dd4bf', neutral: { bg: '#04120e', surface: '#0a1d18', fg: '#f3efe2' } }),
+  preset('people', 'People Studio', 'HR Workspace: violet, coral, soft lavender and warm neutrals',
+    { primary: '#7c3aed', secondary: '#e2554b', tertiary: '#a78bfa', neutral: { bg: '#f8f5fb', surface: '#ffffff', fg: '#221634' } },
+    { primary: '#a78bfa', secondary: '#fb8a7e', tertiary: '#c4b5fd', neutral: { bg: '#100b1c', surface: '#1a1229', fg: '#f4eefb' } }),
+  preset('everyday', 'Everyday', 'Employee Workspace: warm backgrounds, indigo, orange and fresh mint',
+    { primary: '#4338ca', secondary: '#ea580c', tertiary: '#0d9488', neutral: { bg: '#fdf8f2', surface: '#ffffff', fg: '#1c1a33' } },
+    { primary: '#818cf8', secondary: '#fb923c', tertiary: '#2dd4bf', neutral: { bg: '#110f1c', surface: '#1b1829', fg: '#f6f1ea' } }),
   preset('midnight', 'Midnight Intelligence', 'Navy, violet and electric blue',
     { primary: '#5b4cf0', secondary: '#2563eb', tertiary: '#0891b2', neutral: { bg: '#f5f6fc', surface: '#ffffff', fg: '#0d1230' } },
     { primary: '#8b7dff', secondary: '#4f8dff', tertiary: '#22d3ee', neutral: { bg: '#070b1a', surface: '#0e1430', fg: '#e8ecff' } }),
@@ -69,7 +99,16 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
     { primary: '#e879f9', secondary: '#a78bfa', tertiary: '#22d3ee', neutral: { bg: '#0a0618', surface: '#150d2c', fg: '#f5efff' } }),
 ];
 
-export const presetByKey = (key: string): ThemePreset => THEME_PRESETS.find((p) => p.key === key) ?? THEME_PRESETS[0]!;
+/** The palette for a preset key; "workspace" stands for the design of the given level (Employee Workspace if none). */
+export const presetByKey = (key: string, level: DesignLevel = 'employee'): ThemePreset =>
+  THEME_PRESETS.find((p) => p.key === (key === 'workspace' ? LEVEL_PRESET[level] : key)) ?? THEME_PRESETS.find((p) => p.key === 'midnight')!;
+/**
+ * What the Themes panels offer: the workspace design first (drawn in the viewer's level palette), then every palette.
+ */
+export function presetChoices(level: DesignLevel = 'employee'): ThemePreset[] {
+  const own = presetByKey('workspace', level);
+  return [{ ...own, key: 'workspace', name: 'Workspace design', description: `Follows your level (now ${DESIGN_LEVEL_NAME[level]})` }, ...THEME_PRESETS];
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Appearance preferences
@@ -100,7 +139,7 @@ export const appearanceSchema = z.object({
 });
 export type Appearance = z.infer<typeof appearanceSchema>;
 export const DEFAULT_APPEARANCE: Appearance = {
-  preset: 'midnight', mode: 'system', primary: null, secondary: null, accent: null, contrast: 'standard', density: 'comfortable', motion: 'balanced',
+  preset: 'workspace', mode: 'system', primary: null, secondary: null, accent: null, contrast: 'standard', density: 'comfortable', motion: 'balanced',
   radius: 'default', fontSize: 'default', sidebar: 'expanded', sidebarStyle: 'glass', tableDensity: 'comfortable', chartPalette: 'theme', focusMode: false,
   style: 'neon', backdrop: 'aurora',
 };
@@ -229,8 +268,8 @@ const STATUS = {
 };
 const COLORBLIND = ['#0072b2', '#e69f00', '#009e73', '#cc79a7', '#56b4e9'];
 
-export function buildTheme(a: Pick<Appearance, 'preset' | 'primary' | 'secondary' | 'accent' | 'contrast' | 'chartPalette'>, mode: 'light' | 'dark'): ThemeTokens {
-  const seed = presetByKey(a.preset)[mode];
+export function buildTheme(a: Pick<Appearance, 'preset' | 'primary' | 'secondary' | 'accent' | 'contrast' | 'chartPalette'>, mode: 'light' | 'dark', level: DesignLevel = 'employee'): ThemeTokens {
+  const seed = presetByKey(a.preset, level)[mode];
   const dark = mode === 'dark';
   const high = a.contrast === 'high';
   const { bg, surface } = seed.neutral;
@@ -292,12 +331,28 @@ const declarations = (t: ThemeTokens) => THEME_TOKENS.map((k) => `--${k}:${t[k]}
  */
 export function themeStylesheet(a: Appearance): string {
   // More specific than @crew/ui's built-in :root[data-theme] palette, which it replaces.
-  const R = 'html:root[data-preset]';
+  const one = (R: string, level?: DesignLevel) => {
+    const light = declarations(buildTheme(a, 'light', level));
+    const dark = declarations(buildTheme(a, 'dark', level));
+    if (a.mode === 'light') return `${R}{color-scheme:light;${light}}`;
+    if (a.mode === 'dark') return `${R}{color-scheme:dark;${dark}}`;
+    return `${R}{color-scheme:light;${light}}@media (prefers-color-scheme: dark){${R}{color-scheme:dark;${dark}}}`;
+  };
+  if (a.preset !== 'workspace') return one('html:root[data-preset]');
+  // The workspace design: each level's palette, picked by data-level on <html> (set by the signed-in shell).
+  return one('html:root[data-preset]') + DESIGN_LEVELS.filter((l) => l !== 'employee').map((l) => one(`html:root[data-preset][data-level="${l}"]`, l)).join('');
+}
+
+/**
+ * One level's palette for an app without member appearance settings (the Console): light by default, dark from the
+ * operating system unless data-theme="light", or pinned with data-theme="dark".
+ */
+export function levelStylesheet(level: DesignLevel): string {
+  const a = { ...DEFAULT_APPEARANCE, preset: LEVEL_PRESET[level] };
+  const R = `html:root[data-level="${level}"]`;
   const light = declarations(buildTheme(a, 'light'));
   const dark = declarations(buildTheme(a, 'dark'));
-  if (a.mode === 'light') return `${R}{color-scheme:light;${light}}`;
-  if (a.mode === 'dark') return `${R}{color-scheme:dark;${dark}}`;
-  return `${R}{color-scheme:light;${light}}@media (prefers-color-scheme: dark){${R}{color-scheme:dark;${dark}}}`;
+  return `${R}{color-scheme:light;${light}}@media (prefers-color-scheme: dark){${R}:not([data-theme="light"]){color-scheme:dark;${dark}}}${R}[data-theme="dark"]{color-scheme:dark;${dark}}`;
 }
 
 /** Attributes for <html>, so the first paint already has the right density, motion and shape. */

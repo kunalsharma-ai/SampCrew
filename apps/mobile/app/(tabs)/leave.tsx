@@ -7,7 +7,7 @@ import { type DayMark, MonthCalendar, monthBounds } from '../../src/ui/calendar'
 import { Badge, Button, Card, CardTitle, Empty, errorText, fmt, ListItem, Meter, Notice, Row, Screen, Text, Tile, TileGrid, Title, useLoad, useReloadOnFocus } from '../../src/ui';
 
 export default function Leave() {
-  const { api } = useSession();
+  const { api, hasFeature } = useSession();
   const router = useRouter();
   const { data, error, loading, reload } = useLoad(async () => {
     const [b, r] = await Promise.all([api.get<{ year: number; balances: Balance[] }>('/leave/balances'), api.get<LeaveRequest[]>('/leave/requests')]);
@@ -103,7 +103,7 @@ export default function Leave() {
               right={
                 <Row>
                   <Badge tone={s.tone}>{s.label}</Badge>
-                  {r.status === 'pending' && <Button title="Cancel" kind="secondary" onPress={() => cancel(r.id)} />}
+                  {r.status === 'pending' && hasFeature('leave.cancel') && <Button title="Cancel" kind="secondary" onPress={() => cancel(r.id)} />}
                 </Row>
               }
             />

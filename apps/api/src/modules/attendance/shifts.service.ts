@@ -58,7 +58,7 @@ export class ShiftsService implements OnModuleInit {
       permission: 'attendance:approve',
       configurePermission: 'attendance:configure',
       defaultSteps: [{ type: 'manager' }],
-      fallbackRole: 'hr_admin',
+      fallbackRole: 'hr_workspace',
       label: 'Shift swap',
       link: () => '/shifts',
       attributes: async (tx, id) => {

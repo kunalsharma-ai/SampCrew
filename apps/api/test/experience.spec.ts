@@ -57,7 +57,7 @@ describe('workspace experience', () => {
   describe('preferences', () => {
     it('starts every member on the default appearance', async () => {
       const p = ok(await as('asha').get('/me/preferences'));
-      expect(p.appearance).toMatchObject({ preset: 'midnight', mode: 'system', density: 'comfortable', motion: 'balanced', focusMode: false });
+      expect(p.appearance).toMatchObject({ preset: 'workspace', mode: 'system', density: 'comfortable', motion: 'balanced', focusMode: false });
       expect(p.favourites).toEqual([]);
       expect(p.dashboard.order[0]).toBe('attention');
     });
@@ -77,14 +77,14 @@ describe('workspace experience', () => {
     });
 
     it('keeps each member’s preferences to themselves, within and across workspaces', async () => {
-      expect(ok(await as('sam').get('/me/preferences')).appearance.preset).toBe('midnight');
-      expect(ok(await as('stranger').get('/me/preferences')).appearance.preset).toBe('midnight');
+      expect(ok(await as('sam').get('/me/preferences')).appearance.preset).toBe('workspace');
+      expect(ok(await as('stranger').get('/me/preferences')).appearance.preset).toBe('workspace');
       const rows = await pool.find('member_preferences', { membership_id: people.asha!.membershipId });
       expect(rows.map((r) => ({ tenant_id: r.tenant_id }))).toEqual([{ tenant_id: t.id }]);
     });
 
     it('resets to the default appearance', async () => {
-      expect(ok(await as('asha').post('/me/preferences/appearance/reset')).appearance.preset).toBe('midnight');
+      expect(ok(await as('asha').post('/me/preferences/appearance/reset')).appearance.preset).toBe('workspace');
     });
 
     it('stores favourites in order, without duplicates, and only for pages inside SampCrew', async () => {

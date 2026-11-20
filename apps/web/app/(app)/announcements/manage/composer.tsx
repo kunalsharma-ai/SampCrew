@@ -25,8 +25,10 @@ const toLocal = (iso: string | null) => {
  * Writing or editing an announcement: who it is for, category and priority, rich text, files, acknowledgement,
  * pinning and expiry; then save a draft, publish now or schedule. A published one is edited as a new version.
  */
-export function AnnouncementComposer({ a, options, knownNames, entities, locations }: {
+export function AnnouncementComposer({ a, options, knownNames, entities, locations, initialGroup }: {
   a: Announcement | null;
+  /** A new announcement started from Communication > Groups goes to that group. */
+  initialGroup?: string;
   options: AudienceOptions;
   knownNames: Record<string, string>;
   entities: LegalEntity[];
@@ -35,7 +37,7 @@ export function AnnouncementComposer({ a, options, knownNames, entities, locatio
   const router = useRouter();
   const published = a?.status === 'published';
   // Older announcements were addressed to one department; they open with that department chosen.
-  const [audience, setAudience] = useState<AudienceInput>(a?.audience ?? (a && (a.departmentId || a.legalEntityId || a.locationId) ? { ...EMPTY_AUDIENCE, departmentIds: a.departmentId ? [a.departmentId] : [], all: !a.departmentId } : a ? { ...EMPTY_AUDIENCE, all: true } : EMPTY_AUDIENCE));
+  const [audience, setAudience] = useState<AudienceInput>(a?.audience ?? (a && (a.departmentId || a.legalEntityId || a.locationId) ? { ...EMPTY_AUDIENCE, departmentIds: a.departmentId ? [a.departmentId] : [], all: !a.departmentId } : a ? { ...EMPTY_AUDIENCE, all: true } : initialGroup ? { ...EMPTY_AUDIENCE, groupIds: [initialGroup] } : EMPTY_AUDIENCE));
   const [title, setTitle] = useState(a?.title ?? '');
   const [html, setHtml] = useState(a ? (a.html ?? textToHtml(a.body)) : '');
   const [category, setCategory] = useState<AnnouncementCategory>(a?.category ?? 'general');
@@ -163,7 +165,7 @@ export function AnnouncementComposer({ a, options, knownNames, entities, locatio
           ) : (
             <>
               <Button variant="secondary" loading={pending} onClick={save} disabled={!title.trim()}>Save draft</Button>
-              <Button loading={pending} onClick={publish} disabled={!title.trim()} data-testid="announcement-publish">
+              <Button loading={pending} onClick={publish} disabled={!title.trim()} data-testid="announcement-publish" data-feature="announcements.publish">
                 {later ? <><CalendarClock className="size-3.5" /> Schedule</> : <><Send className="size-3.5" /> Publish now</>}
               </Button>
             </>

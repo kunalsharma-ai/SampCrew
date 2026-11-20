@@ -1,6 +1,6 @@
 'use client';
 import {
-  DEFAULT_APPEARANCE, PALETTE_SWATCHES, THEME_PRESETS, THEME_TEMPLATES, buildTheme,
+  DEFAULT_APPEARANCE, PALETTE_SWATCHES, THEME_TEMPLATES, buildTheme, presetChoices,
   type Appearance, type AppearancePatch, type ThemePresetKey,
 } from '@crew/contracts';
 import { Button, cn } from '@crew/ui';
@@ -8,6 +8,7 @@ import { Check, LayoutTemplate, Monitor, Moon, Palette, PanelLeft, Sun, X } from
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { applyAppearance } from '@/lib/appearance-client';
+import { useDesignLevel } from '@/lib/design-level';
 
 /**
  * Themes & Templates: a side panel to try a look on the live app before keeping it. Every pick previews at once;
@@ -24,7 +25,7 @@ const BACKDROPS: { key: Appearance['backdrop']; label: string }[] = [
 
 /** A small picture of a look, drawn from the palette it would produce, so it is accurate for every preset. */
 function Thumb({ a, mode, className }: { a: Appearance; mode: 'light' | 'dark'; className?: string }) {
-  const t = buildTheme(a, mode);
+  const t = buildTheme(a, mode, useDesignLevel());
   const neon = a.style === 'neon';
   const sky =
     a.backdrop === 'cosmos' ? `radial-gradient(circle at 20% 30%, ${t['glow-1']}55, transparent 55%), radial-gradient(1px 1px at 30% 40%, ${t.fg}88 50%, transparent 51%), radial-gradient(1px 1px at 70% 20%, ${t.fg}88 50%, transparent 51%), ${t.bg}`
@@ -85,6 +86,7 @@ function Segments<T extends string>({ label, value, options, onChange }: { label
 
 export function ThemePanel({ open, onClose, appearance, update }: { open: boolean; onClose: () => void; appearance: Appearance; update: Update }) {
   const [tab, setTab] = useState<Tab>('themes');
+  const level = useDesignLevel();
   const [draft, setDraft] = useState<Appearance>(appearance);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -177,7 +179,7 @@ export function ThemePanel({ open, onClose, appearance, update }: { open: boolea
             <>
               <Section title="Theme styles">
                 <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Theme style">
-                  {THEME_PRESETS.map((p) => (
+                  {presetChoices(level).map((p) => (
                     <Choice key={p.key} checked={draft.preset === p.key} label={p.name.split(' ')[0]!} onClick={() => stage({ preset: p.key as ThemePresetKey })}>
                       <Thumb a={{ ...draft, preset: p.key, primary: null }} mode={mode} className="h-14" />
                     </Choice>

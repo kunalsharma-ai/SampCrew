@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { password } from './auth';
 import { phoneNumber } from '../phone';
+import { setAccessRequest } from './access';
 import { email, name } from './common';
 
 /** Calendar date as YYYY-MM-DD (no time zone; dates are local to the employee's entity). */
@@ -30,7 +31,7 @@ export const attendanceRegistrationInput = z.object({
 });
 
 /** Create a SampCrew login for an employee who has none. */
-export const employeeLoginInput = z.object({ mode: z.enum(['invite', 'password']), initialPassword: password.optional() })
+export const employeeLoginInput = z.object({ mode: z.enum(['invite', 'password']), initialPassword: password.optional(), access: setAccessRequest.optional() })
   .refine((v) => !v.initialPassword || v.mode === 'password', { message: 'A temporary password is only used when creating the login now', path: ['initialPassword'] });
 
 /**
@@ -143,6 +144,8 @@ export const createEmployeeInput = placementInput
      */
     loginMode: z.enum(LOGIN_MODES).optional(),
     initialPassword: password.optional(),
+    /** The workspace access the new login gets (Employee Workspace when left out). Needs a login. */
+    access: setAccessRequest.optional(),
     /** Link to an existing workspace member instead of inviting. */
     membershipId: z.uuid().optional(),
     /** Attendance registration: their usual shift and the enrolment number(s) they punch with on attendance machines. */
@@ -162,6 +165,11 @@ export const createEmployeeInput = placementInput
     openingLeaveBalances: z.array(openingLeaveBalance).max(30).optional(),
     /** Company assets handed to them now (laptop, ID card...). Each must be available; they are asked to acknowledge it. */
     assetIds: z.array(z.uuid()).max(20).optional(),
+    /**
+     * The HR Workspace that looks after them. Null: the company's central group (Super Workspace only). Left out, an
+     * HR Workspace admin's own HR Workspace (when they run exactly one), or the central group.
+     */
+    hrWorkspaceId: z.uuid().nullable().optional(),
   })
   .refine((v) => !v.workEmail || !v.personalEmail || v.workEmail !== v.personalEmail, { message: 'Use their work email here, not their personal email', path: ['workEmail'] })
   .superRefine((v, ctx) => { const m = dateOfBirthError(v.dateOfBirth, v.dateOfJoining); if (m) ctx.addIssue({ code: 'custom', message: m, path: ['dateOfBirth'] }); })
@@ -172,7 +180,8 @@ export const createEmployeeInput = placementInput
   .refine((v) => new Set((v.openingLeaveBalances ?? []).map((b) => b.leaveTypeId)).size === (v.openingLeaveBalances ?? []).length, { message: 'Each leave type can have one opening balance', path: ['openingLeaveBalances'] })
   .refine((v) => !(v.inviteToCrew || v.loginMode === 'invite' || v.loginMode === 'password') || !!v.workEmail, { message: 'A work email is needed to give this person a SampCrew login', path: ['workEmail'] })
   .refine((v) => !((v.inviteToCrew || (v.loginMode && v.loginMode !== 'none')) && v.membershipId), { message: 'Choose either a new login or an existing member', path: ['membershipId'] })
-  .refine((v) => !v.initialPassword || v.loginMode === 'password', { message: 'A temporary password is only used when creating the login now', path: ['initialPassword'] });
+  .refine((v) => !v.initialPassword || v.loginMode === 'password', { message: 'A temporary password is only used when creating the login now', path: ['initialPassword'] })
+  .refine((v) => !v.access || v.access.level === 'employee' || v.inviteToCrew || v.loginMode === 'invite' || v.loginMode === 'password', { message: 'Workspace access needs a SampCrew login: choose an invitation or a temporary password', path: ['access'] });
 export type CreateEmployeeInput = z.infer<typeof createEmployeeInput>;
 
 /** Fields HR may change on the profile. Placement changes go through lifecycle actions so history is kept. */
@@ -233,11 +242,13 @@ export const employeeListQuery = z.object({
 export const EMPLOYEE_SORTS = ['name', 'code', 'joined', 'department', 'location', 'status'] as const;
 
 /** Columns the directory can show and export. */
-export const EMPLOYEE_COLUMNS_CATALOGUE = ['name', 'code', 'designation', 'department', 'location', 'entity', 'manager', 'workEmail', 'type', 'joined', 'status'] as const;
+export const EMPLOYEE_COLUMNS_CATALOGUE = ['name', 'code', 'designation', 'department', 'location', 'entity', 'manager', 'workEmail', 'type', 'joined', 'status', 'access', 'workspace'] as const;
 export type EmployeeColumn = (typeof EMPLOYEE_COLUMNS_CATALOGUE)[number];
+/** Exported when no columns are chosen (the columns before workspace access and assigned workspace were added). */
+const DEFAULT_EXPORT_COLUMNS: EmployeeColumn[] = ['name', 'code', 'designation', 'department', 'location', 'entity', 'manager', 'workEmail', 'type', 'joined', 'status'];
 export const employeeExportQuery = employeeListQuery.omit({ cursor: true, limit: true }).extend({
   columns: z.string().max(400).optional().transform((v, ctx) => {
-    if (!v) return [...EMPLOYEE_COLUMNS_CATALOGUE];
+    if (!v) return [...DEFAULT_EXPORT_COLUMNS];
     const cols = v.split(',').map((c) => c.trim()).filter(Boolean);
     const bad = cols.filter((c) => !(EMPLOYEE_COLUMNS_CATALOGUE as readonly string[]).includes(c));
     if (bad.length || !cols.length) { ctx.addIssue({ code: 'custom', message: `Unknown column ${bad.join(', ')}` }); return z.NEVER; }

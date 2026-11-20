@@ -11,11 +11,11 @@ import { hashPassword, sha256 } from '../src/platform/auth/crypto';
 import type { AppConfig } from '../src/platform/config/config';
 import { MongoService, type PlatformTx, type TenantTx } from '../src/platform/database/mongo.service';
 import { PlatformIntegrationsService } from '../src/platform/integrations/platform-integrations.service';
-import type { PlatformIntegrationKey } from '@crew/contracts';
+import { LEVEL_ROLE_KEY, mapLegacyAccess, SYSTEM_ROLES, type PlatformIntegrationKey, type Scope } from '@crew/contracts';
 
 export const PASSWORD = 'Correct-Horse-42!';
 let cachedHash: string | undefined;
-const passwordHash = async () => (cachedHash ??= await hashPassword(PASSWORD));
+export const passwordHash = async () => (cachedHash ??= await hashPassword(PASSWORD));
 
 /**
  * Saves an installation-wide integration the way the Console does (encrypted, audited). Integrations live only in the
@@ -137,9 +137,10 @@ export async function addMember(
       manager_membership_id: opts.managerId ?? null,
       joined_at: new Date(),
     });
-    for (const key of ['employee', ...(opts.roles ?? [])]) {
-      const role = await tx.collection('roles').findOne({ tenant_id: tenant.id, key });
-      if (role) await tx.collection('role_assignments').insert({ tenant_id: tenant.id, membership_id: m.id, role_id: role.id, constraints: key === 'employee' ? {} : (opts.constraints ?? {}) });
+    // Tests name the roles of the time before the four access levels: they map to a level as the migration does.
+    for (const { key, constraints } of accessRows(opts.roles ?? [], opts.constraints ?? {}, { legalEntityId: (m.legal_entity_id as string) ?? null, departmentId: opts.departmentId ?? null })) {
+      const role = await tx.collection('roles').findOne({ tenant_id: tenant.id, key, is_system: true });
+      if (role) await tx.collection('role_assignments').insert({ tenant_id: tenant.id, membership_id: m.id, role_id: role.id, constraints });
     }
     return { email, membershipId: m.id as string, userId: u.id as string };
   });
@@ -187,4 +188,16 @@ export async function expectHiddenFrom(db: TestDb, owner: TestTenant, viewer: Te
     expect(await db.tenant(viewer.id, (tx) => tx.collection(table).count({ id: { $in: ids } })), table).toBe(0);
   }
   return held;
+}
+
+/** The level assignments a list of role keys (old or new) gives: Employee Workspace plus the level they map to. */
+export function accessRows(roles: string[], constraints: Record<string, unknown>, member: { legalEntityId: string | null; departmentId: string | null }) {
+  const legacy = roles.map((key) => {
+    const tpl = SYSTEM_ROLES.find((r) => r.key === key);
+    return { key, isSystem: true, grants: Object.entries(tpl?.grants ?? {}).map(([permission, scope]) => ({ permission, scope: scope as Scope })), constraints };
+  });
+  const mapped = mapLegacyAccess(legacy, member);
+  const rows: { key: string; constraints: Record<string, unknown> }[] = [{ key: 'employee_workspace', constraints: {} }];
+  if (mapped.level !== 'employee') rows.push({ key: LEVEL_ROLE_KEY[mapped.level], constraints: mapped.constraints as Record<string, unknown> });
+  return rows;
 }

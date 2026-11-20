@@ -32,8 +32,9 @@ export async function statusAction(id: string, status: string, message?: string)
   return r;
 }
 
-export async function assignAction(id: string, assigneeMembershipId: string | null) {
-  const r = await act(() => api(`/helpdesk/cases/${id}/assignee`, { method: 'PUT', body: { assigneeMembershipId } }), assigneeMembershipId ? 'Case assigned.' : 'Case unassigned.');
+export async function assignAction(id: string, assigneeMembershipId: string | null, collaboratorMembershipIds?: string[]) {
+  const done = collaboratorMembershipIds ? 'Handlers updated.' : assigneeMembershipId ? 'Case assigned.' : 'Case unassigned.';
+  const r = await act(() => api(`/helpdesk/cases/${id}/assignee`, { method: 'PUT', body: { assigneeMembershipId, ...(collaboratorMembershipIds ? { collaboratorMembershipIds } : {}) } }), done);
   refresh(`/helpdesk/${id}`, '/helpdesk/queue');
   return r;
 }

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
-  BUILT_IN_APPROVAL_CATEGORIES, approvalStatusMessage, categorizeApproval, type ApprovalCategoryDef, type ApprovalCategoryInput, type ApprovalMeta, type ApprovalView,
+  BUILT_IN_APPROVAL_CATEGORIES, approvalStatusMessage, categorizeApproval, levelRoleKeyFor, type ApprovalCategoryDef, type ApprovalCategoryInput, type ApprovalMeta, type ApprovalView,
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService, loadSubject } from '../../platform/authz/authz.service';
@@ -117,7 +117,7 @@ export class ApprovalsService {
     const resolved: { kind: StepDef['type']; membershipId: string | null; role: string | null }[] = [];
     const manager = await managerOf(subject.manager_id);
     for (const d of defs) {
-      if (d.type === 'role') resolved.push({ kind: 'role', membershipId: null, role: d.role });
+      if (d.type === 'role') resolved.push({ kind: 'role', membershipId: null, role: levelRoleKeyFor(d.role) });
       else {
         const person = d.type === 'manager' ? manager : await managerOf(manager?.manager_id ?? null);
         // Unresolvable or self-approval steps are dropped; the fallback below guarantees someone else decides.
@@ -126,7 +126,7 @@ export class ApprovalsService {
         }
       }
     }
-    if (!resolved.length) resolved.push({ kind: 'role', membershipId: null, role: h.fallbackRole });
+    if (!resolved.length) resolved.push({ kind: 'role', membershipId: null, role: levelRoleKeyFor(h.fallbackRole) });
 
     const req = await tx.collection('approval_requests').insert({
       resource_type: input.resourceType,
@@ -174,9 +174,9 @@ export class ApprovalsService {
     return rows.map((r) => ({ key: r.key, label: r.label, description: r.description, icon: r.icon, color: r.color, rule: r.rule, builtIn: false }));
   }
 
-  /** Active owners of the workspace. */
+  /** Active Super Workspace people of the company. */
   private async owners(tx: TenantTx): Promise<string[]> {
-    const role = await tx.collection('roles').findOne({ key: 'tenant_owner' });
+    const role = await tx.collection('roles').findOne({ key: 'super_workspace', is_system: true });
     if (!role) return [];
     const ids = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: role.id });
     return (await tx.collection('memberships').find({ id: { $in: ids }, status: 'active' }, { projection: { _id: 1 } })).map((m) => m.id as string);
@@ -244,7 +244,9 @@ export class ApprovalsService {
     const h = this.handler(req.resource_type);
     const attrs = await h.attributes(tx, req.resource_id);
     const eligible = async (role: string) => {
-      const roleRow = await tx.collection('roles').findOne({ key: role });
+      // Steps saved before the four access levels name an old role: it means the level that role became.
+      const level = levelRoleKeyFor(role);
+      const roleRow = await tx.collection('roles').findOne({ key: level, is_system: true });
       const holderIds = roleRow ? await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: roleRow.id }) : [];
       const holders = (await tx.collection('memberships').find({ id: { $in: holderIds }, status: 'active' }, { projection: { user_id: 1 } })).map((m) => ({
         membership_id: m.id as string,
@@ -256,13 +258,14 @@ export class ApprovalsService {
         // MFA is checked when they decide; here we only need to know whether the record is in their scope.
         const s = await loadSubject(tx, holder.membership_id, holder.user_id, true);
         if (s.employeeId && s.employeeId === req.subject_employee_id) continue;
-        if (can(s, h.permission, attrs).allowed) out.push(holder.membership_id);
+        // They decide as someone on that level: what their Employee Workspace gives them (their own team) does not count.
+        if (can({ ...s, grants: s.grants.filter((g) => g.roleKey === level) }, h.permission, attrs).allowed) out.push(holder.membership_id);
       }
       return out;
     };
     const out = await eligible(step.approver_role_key!);
-    // When nobody in the role can act (e.g. the only HR admin is the requester), workspace owners decide.
-    return out.length || step.approver_role_key === 'tenant_owner' ? out : eligible('tenant_owner');
+    // When nobody on the level can act (e.g. the only HR Workspace person is the requester), Super Workspace decides.
+    return out.length || levelRoleKeyFor(step.approver_role_key!) === 'super_workspace' ? out : eligible('super_workspace');
   }
 
   private async notifyApprovers(tx: TenantTx, requestId: string): Promise<string[]> {
@@ -437,8 +440,10 @@ export class ApprovalsService {
     const h = this.handler(resourceType);
     await this.authz.require(h.configurePermission);
     return this.db.tenant(async (tx) => {
-      for (const s of steps) {
-        if (s.type === 'role' && !(await tx.collection('roles').exists({ key: s.role }))) throw Errors.badRequest('unknown_role', `There is no role ${s.role}`);
+      // A step names an access level (HR Workspace or Super Workspace); an old role name is saved as the level it became.
+      steps = steps.map((st) => (st.type === 'role' ? { ...st, role: levelRoleKeyFor(st.role) } : st));
+      for (const st of steps) {
+        if (st.type === 'role' && st.role === 'employee_workspace') throw Errors.badRequest('unknown_role', 'Choose HR Workspace or Super Workspace for an approval step: everyone has Employee Workspace');
       }
       const before = await this.steps(tx, resourceType);
       await tx.collection('approval_policies').upsert({ resource_type: resourceType }, { resource_type: resourceType, steps }, { $set: { steps } });

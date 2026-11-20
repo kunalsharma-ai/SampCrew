@@ -262,7 +262,7 @@ describe('Phase 11 hardening', () => {
       expect(g.status, JSON.stringify(g.body)).toBe(201);
       expect(g.body).toMatchObject({ displayName: 'Payroll team', externalId: 'okta-g1', members: [{ value: people.worker.membershipId, display: people.worker.email }], meta: { resourceType: 'Group' } });
       groups.payroll = g.body.id;
-      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual']);
+      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee_workspace:manual']);
       expect((await scim(tokens.scim).post('/Groups', { displayName: 'payroll TEAM' })).status).toBe(409);
       const bad = await scim(tokens.scim).post('/Groups', { displayName: 'Ghosts', members: [{ value: '00000000-0000-4000-8000-000000000000' }] });
       expect(bad.status).toBe(400);
@@ -276,24 +276,29 @@ describe('Phase 11 hardening', () => {
       expect((await scim(tokens.mobScim).get('/Groups')).body.totalResults).toBe(0);
     });
 
-    it('lets owners map a group to a role, never the owner role, and grants it to members', async () => {
+    it('lets owners map a group to an access level, never Super Workspace, and gives it to members', async () => {
       const list = ok(await as('owner').get('/security/scim/groups'));
       expect(list).toEqual([expect.objectContaining({ id: groups.payroll, displayName: 'Payroll team', roleId: null, memberCount: 1 })]);
+      fails(await as('owner').put(`/security/scim/groups/${groups.payroll}/role`).send({ roleId: await roleId(ent, 'super_workspace') }), 400, 'role_not_mappable');
       fails(await as('owner').put(`/security/scim/groups/${groups.payroll}/role`).send({ roleId: await roleId(ent, 'tenant_owner') }), 400, 'role_not_mappable');
-      fails(await as('owner').put(`/security/scim/groups/${groups.payroll}/role`).send({ roleId: await roleId(mob, 'payroll_admin') }), 404);
+      fails(await as('owner').put(`/security/scim/groups/${groups.payroll}/role`).send({ roleId: await roleId(mob, 'hr_workspace') }), 404);
+      // An old role (here Payroll Admin) gives HR Workspace with exactly what that role could do.
       const mapped = ok(await as('owner').put(`/security/scim/groups/${groups.payroll}/role`).send({ roleId: await roleId(ent, 'payroll_admin') }));
-      expect(mapped[0], JSON.stringify(mapped)).toMatchObject({ roleKey: 'payroll_admin' });
-      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual', 'payroll_admin:scim']);
+      expect(mapped[0], JSON.stringify(mapped)).toMatchObject({ roleKey: 'hr_workspace' });
+      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee_workspace:manual', 'hr_workspace:scim']);
+      const given = (await pool.one('role_assignments', { membership_id: people.worker.membershipId, source: 'scim' }))!;
+      expect(given.constraints.grants).toMatchObject({ 'payroll:run': 'tenant' });
+      expect(given.constraints.grants['payroll:approve']).toBeUndefined();
       expect(await pool.count('audit_events', { tenant_id: ent.id, action: 'scim_group.role_mapped' })).toBe(1);
     });
 
-    it('follows membership changes the way providers send them, and keeps roles given by hand', async () => {
-      // The manager already holds payroll_admin by hand, then joins the group.
-      await pool.insert('role_assignments', { tenant_id: ent.id, membership_id: people.manager.membershipId, role_id: await roleId(ent, 'payroll_admin') });
+    it('follows membership changes the way providers send them, and keeps access given by hand', async () => {
+      // The manager already has HR Workspace by hand, then joins the group: the access given by hand stays.
+      ok(await as('owner').put(`/members/${people.manager.membershipId}/access`).send({ level: 'hr', areas: ['Payroll'] }));
       const add = await scim(tokens.scim).patch(`/Groups/${groups.payroll}`, { schemas: [PATCH], Operations: [{ op: 'add', path: 'members', value: [{ value: people.manager.membershipId }] }] });
       expect(add.status, JSON.stringify(add.body)).toBe(200);
       expect(add.body.members.map((m: { value: string }) => m.value).sort()).toEqual([people.worker.membershipId, people.manager.membershipId].sort());
-      // A second group grants the same role to the worker.
+      // A second group gives the same level to the worker.
       const g2 = await scim(tokens.scim).post('/Groups', { displayName: 'Finance', members: [{ value: people.worker.membershipId }] });
       groups.finance = g2.body.id;
       ok(await as('owner').put(`/security/scim/groups/${groups.finance}/role`).send({ roleId: await roleId(ent, 'payroll_admin') }));
@@ -303,28 +308,30 @@ describe('Phase 11 hardening', () => {
         expect(r.status, JSON.stringify(r.body)).toBe(200);
       }
       // Still in Finance, so the worker keeps it; the manager keeps the one given by hand.
-      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual', 'payroll_admin:scim']);
-      expect(await rolesOf(people.manager.membershipId)).toEqual(['department_manager:manual', 'employee:manual', 'payroll_admin:manual']);
-      // Editing roles by hand in SampCrew leaves the group's role in place.
-      ok(await as('owner').put(`/members/${people.worker.membershipId}/roles`).send({ assignments: [{ roleKey: 'employee' }, { roleKey: 'recruiter' }] }));
-      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual', 'payroll_admin:scim', 'recruiter:manual']);
+      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee_workspace:manual', 'hr_workspace:scim']);
+      expect(await rolesOf(people.manager.membershipId)).toEqual(['employee_workspace:manual', 'hr_workspace:manual']);
+      // Access a group gives is changed at the identity provider, not by hand in SampCrew.
+      fails(await as('owner').put(`/members/${people.worker.membershipId}/access`).send({ level: 'hr', areas: ['Recruitment'] }), 409, 'access_from_group');
       // Replacing the member list (PUT) and renaming.
       const put = await scim(tokens.scim).put(`/Groups/${groups.finance}`, { displayName: 'Finance and payroll', members: [] });
       expect(put.body).toMatchObject({ displayName: 'Finance and payroll', members: [] });
-      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual', 'recruiter:manual']);
+      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee_workspace:manual']);
     });
 
-    it('removes the roles a deleted or unmapped group granted', async () => {
+    it('removes the access a deleted or remapped group gave', async () => {
       await scim(tokens.scim).patch(`/Groups/${groups.finance}`, { schemas: [PATCH], Operations: [{ op: 'add', value: { members: [{ value: people.worker.membershipId }] } }] });
-      expect(await rolesOf(people.worker.membershipId)).toContain('payroll_admin:scim');
+      expect(await rolesOf(people.worker.membershipId)).toContain('hr_workspace:scim');
+      // Remapped to the old Auditor role: still HR Workspace, now view-only of what an auditor could see.
       ok(await as('owner').put(`/security/scim/groups/${groups.finance}/role`).send({ roleId: await roleId(ent, 'auditor') }));
-      expect(await rolesOf(people.worker.membershipId)).toEqual(['auditor:scim', 'employee:manual', 'recruiter:manual']);
+      const given = (await pool.one('role_assignments', { membership_id: people.worker.membershipId, source: 'scim' }))!;
+      expect(Object.keys(given.constraints.grants)).toContain('audit:read');
+      expect(given.constraints.grants['payroll:run']).toBeUndefined();
       expect((await scim(tokens.scim).del(`/Groups/${groups.finance}`)).status).toBe(204);
-      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee:manual', 'recruiter:manual']);
+      expect(await rolesOf(people.worker.membershipId)).toEqual(['employee_workspace:manual']);
       const log = await pool.find('scim_events', { tenant_id: ent.id, path: /^\/Groups/ }, { sort: { created_at: 1 } });
       expect(log.map((x) => x.method)).toEqual(expect.arrayContaining(['POST', 'PATCH', 'PUT', 'DELETE']));
       const changed = await pool.count('audit_events', { tenant_id: ent.id, action: 'membership.roles_changed', 'metadata.via': 'scim_group' });
-      expect(changed).toBeGreaterThanOrEqual(5);
+      expect(changed).toBeGreaterThanOrEqual(4);
     });
   });
   describe('erasure reaches free text, and the retention schedule', () => {

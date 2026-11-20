@@ -13,14 +13,16 @@ import {
   type roleGrantsInput,
   type Scope,
   SYSTEM_ROLES,
+  ACCESS_LEVEL_ROLES,
   type workspaceModulesInput,
 } from '@crew/contracts';
 import type { z } from 'zod';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
-import { countBy, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
+import { levelCounts } from '../members/access';
 import { validateGrants } from '../roles/roles.service';
 
 /**
@@ -90,9 +92,11 @@ export class HrAdminService {
       await this.authz.require('roles:read', undefined, tx);
       const e = await loadEntitlements(tx);
       const disabled = new Set<string>(((await tx.collection('tenant_access_controls').findOne({}))?.disabled_permissions ?? []) as string[]);
-      const roles = await tx.collection('roles').find({}, { sort: { is_system: -1, name: 1 } });
+      // What each access level can do in this company. Old roles kept for rollback are not shown.
+      const order = ACCESS_LEVEL_ROLES as readonly string[];
+      const roles = (await tx.collection('roles').find({ is_system: true, key: { $in: [...ACCESS_LEVEL_ROLES] } })).sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
       const ids = roles.map((r) => r.id as string);
-      const counts = await countBy(tx, 'role_assignments', 'role_id', ids);
+      const counts = await levelCounts(tx);
       const grants = new Map<string, Record<string, Scope>>();
       for (const rp of await tx.collection('role_permissions').find({ role_id: { $in: ids } })) {
         grants.set(rp.role_id, { ...(grants.get(rp.role_id) ?? {}), [rp.permission]: rp.scope });
@@ -140,8 +144,8 @@ export class HrAdminService {
     validateGrants(input.grants);
     return this.db.tenant(async (tx) => {
       await this.authz.require('roles:manage', undefined, tx);
-      const role = await tx.collection('roles').findOne({ id: roleId });
-      if (!role) throw Errors.notFound('Role');
+      const role = await tx.collection('roles').findOne({ id: roleId, is_system: true, key: { $in: [...ACCESS_LEVEL_ROLES] } });
+      if (!role) throw Errors.notFound('Access level');
       if (LOCKED_ROLE_KEYS.has(role.key)) throw Errors.badRequest('role_locked', `${role.name} always has every permission and cannot be changed`);
       const before = await this.grantsOf(tx, roleId);
       const after = Object.fromEntries(input.grants.map((g) => [g.permission, g.scope]));

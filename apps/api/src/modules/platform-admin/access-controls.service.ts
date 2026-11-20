@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import {
   BOOLEAN_FEATURES,
+  FEATURE_PARTS,
+  featurePart,
+  type FeaturePart,
   isCoreFeature,
   PERMISSION_MODULE_FEATURE,
   PERMISSIONS,
+  delegationPolicyInput,
   type FeatureSwitchState,
   type MemberAccessRow,
   type WorkspaceAccess,
@@ -12,6 +16,8 @@ import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
 import { ilike, MongoService as DatabaseService, type PlatformTx as Tx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
+import { HierarchyService } from '../hierarchy/hierarchy.service';
+import type { z } from 'zod';
 
 /**
  * Workspace access controls for the Super Admin Console: switch modules and permissions on or off for a whole
@@ -23,7 +29,72 @@ import { Errors } from '../../platform/http/errors';
  */
 @Injectable()
 export class AccessControlsService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly hierarchy: HierarchyService) {}
+
+  /**
+   * After the Console changes what a company holds, checks every HR Workspace and member against the new set and
+   * refreshes everyone's screens. Never fails the Console change itself: entitlements are recomputed on each request.
+   */
+  async recalculate(tenantId: string): Promise<void> {
+    try {
+      await this.db.tenant((tx) => this.hierarchy.recalculate(tx, { level: 'console', label: 'SAMPLEDGE Console' }), { tenantId });
+    } catch (err) {
+      console.warn(`hierarchy recalculation failed for ${tenantId}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** The company's delegation policy and its HR Workspaces, for the Console's Hierarchy tab. */
+  async delegation(tenantId: string) {
+    return this.db.platform(async (tx) => {
+      await this.requireTenant(tx, tenantId);
+      const controls = await tx.collection('tenant_access_controls').findOne({ tenant_id: tenantId });
+      const spaces = await tx.collection('hr_workspaces').find({ tenant_id: tenantId, status: { $ne: 'archived' } }, { sort: { name: 1 } });
+      const counts = new Map<string | null, number>();
+      for (const e of await tx.collection('employees').find({ tenant_id: tenantId, status: { $ne: 'exited' } }, { projection: { hr_workspace_id: 1 } })) {
+        const k = (e.hr_workspace_id as string | null) ?? null;
+        counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
+      const adminCounts = new Map<string, number>();
+      for (const a of await tx.collection('role_assignments').find({ tenant_id: tenantId, source: 'hr_workspace' }, { projection: { constraints: 1 } })) {
+        for (const id of (a.constraints?.hrWorkspaceIds ?? []) as string[]) adminCounts.set(id, (adminCounts.get(id) ?? 0) + 1);
+      }
+      return {
+        nonDelegableFeatures: ((controls?.non_delegable_features ?? []) as string[]).slice().sort(),
+        superMayCreateEmployees: (controls?.super_may_create_employees as boolean | undefined) ?? true,
+        central: { employees: counts.get(null) ?? 0 },
+        hrWorkspaces: spaces.map((w) => ({
+          id: w.id as string, name: w.name as string, code: (w.code ?? null) as string | null, kind: w.kind as string, status: w.status as string,
+          features: (w.features ?? []) as string[], maxEmployees: w.max_employees as number, version: (w.version ?? 1) as number,
+          employees: counts.get(w.id as string) ?? 0, admins: adminCounts.get(w.id as string) ?? 0,
+        })),
+      };
+    });
+  }
+
+  /** Console: which modules stay at company level, and whether the Super Workspace may create employees itself. */
+  async setDelegation(tenantId: string, input: z.infer<typeof delegationPolicyInput>) {
+    await this.db.platform(async (tx) => {
+      await this.requireTenant(tx, tenantId);
+      await this.ensureRow(tx, tenantId);
+      const controls = tx.collection('tenant_access_controls');
+      const row = await controls.findOne({ tenant_id: tenantId });
+      const before = { nonDelegableFeatures: ((row?.non_delegable_features ?? []) as string[]).slice().sort(), superMayCreateEmployees: (row?.super_may_create_employees as boolean | undefined) ?? true };
+      const after = { nonDelegableFeatures: input.nonDelegableFeatures, superMayCreateEmployees: input.superMayCreateEmployees ?? before.superMayCreateEmployees };
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
+      if (JSON.stringify(before.nonDelegableFeatures) !== JSON.stringify(after.nonDelegableFeatures)) changes.nonDelegableFeatures = { from: before.nonDelegableFeatures, to: after.nonDelegableFeatures };
+      if (before.superMayCreateEmployees !== after.superMayCreateEmployees) changes.superMayCreateEmployees = { from: before.superMayCreateEmployees, to: after.superMayCreateEmployees };
+      if (!Object.keys(changes).length) return;
+      await controls.updateOne({ tenant_id: tenantId }, { $set: { non_delegable_features: after.nonDelegableFeatures, super_may_create_employees: after.superMayCreateEmployees } });
+      const last = await tx.collection('config_versions').findOne({ tenant_id: tenantId, target_type: 'company', target_id: tenantId }, { sort: { version: -1 } });
+      await tx.collection('config_versions').insert({
+        tenant_id: tenantId, level: 'console', target_type: 'company', target_id: tenantId, version: ((last?.version as number | undefined) ?? 0) + 1,
+        action: 'delegation_policy', changes, actor_membership_id: null, actor_label: 'SAMPLEDGE Console',
+      });
+      await this.record(tx, tenantId, 'access.delegation_changed', 'tenant', tenantId, { ...changes, level: 'console' });
+    });
+    await this.recalculate(tenantId);
+    return this.delegation(tenantId);
+  }
 
   async workspace(tenantId: string): Promise<WorkspaceAccess> {
     return this.db.platform(async (tx) => {
@@ -46,7 +117,7 @@ export class AccessControlsService {
         if (!notSuspended.has(a.membership_id)) continue;
         for (const k of a.blocked_features) blocked.set(k, (blocked.get(k) ?? 0) + 1);
       }
-      const roleIds = await tx.collection('roles').distinct<string>('id', { tenant_id: tenantId });
+      const roleIds = await tx.collection('roles').distinct<string>('id', { tenant_id: tenantId, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] }, is_system: true });
       const rolePerms = await tx.collection<{ role_id: string; permission: string }>('role_permissions').find({ role_id: { $in: roleIds } });
       const assignments = await tx.collection<{ role_id: string; membership_id: string }>('role_assignments').find({ role_id: { $in: roleIds } });
       const holdersOf = new Map<string, { roles: Set<string>; members: Set<string> }>();
@@ -70,6 +141,16 @@ export class AccessControlsService {
         };
       });
       const effective = new Map(features.map((f) => [f.key, f.effective]));
+      // Pages and buttons: SAMPLEDGE's switch for this company, and whether the company has each one now.
+      const appOff = new Set(await tx.collection('platform_feature_states').distinct<string>('key', { state: { $in: ['off', 'pending'] } }));
+      const parts = (FEATURE_PARTS as readonly FeaturePart[]).map((p) => {
+        const off = overrides[p.key] === false;
+        const pageOn = !p.page || (overrides[p.page] !== false && !appOff.has(p.page));
+        return {
+          key: p.key, name: p.name, feature: p.feature, kind: p.kind ?? 'page', page: p.page ?? null, audience: p.audience, off,
+          effective: Boolean((effective as Map<string, boolean>).get(p.feature)) && !off && !appOff.has(p.key) && !appOff.has(p.feature) && pageOn,
+        };
+      });
       const permissions = PERMISSIONS.map((p) => {
         const feature = PERMISSION_MODULE_FEATURE[p.module] ?? null;
         const h = holders.find((x) => x.permission === p.key);
@@ -82,6 +163,7 @@ export class AccessControlsService {
       return {
         plan: sub ? { key: sub.plan_key, name: sub.plan_name, status: sub.status } : null,
         features,
+        parts,
         permissions,
         channels: {
           web: controls?.web_portal_enabled ?? true,
@@ -105,14 +187,23 @@ export class AccessControlsService {
       const before = { ...(sub.feature_overrides ?? {}) };
       const next = { ...before };
       for (const c of changes) {
+        // A page or button follows its module unless SAMPLEDGE switched it off for this company.
+        if (featurePart(c.key)) {
+          if (c.state === 'off') next[c.key] = false;
+          else delete next[c.key];
+          continue;
+        }
         if (isCoreFeature(c.key)) throw Errors.badRequest('core_feature', 'Core HR cannot be switched off.');
         if (c.state === 'plan') delete next[c.key];
         else next[c.key] = c.state === 'on';
       }
       await tx.collection('subscriptions').updateOne({ id: sub.id }, { $set: { feature_overrides: next } });
-      const diff = changes.map((c) => ({ module: c.key, from: stateOf(before[c.key]), to: c.state }));
+      const diff = changes.map((c) => (featurePart(c.key)
+        ? { part: c.key, from: before[c.key] === false ? 'off' : 'on', to: c.state === 'off' ? 'off' : 'on' }
+        : { module: c.key, from: stateOf(before[c.key]), to: c.state }));
       await this.record(tx, tenantId, 'access.modules_switched', 'subscription', sub.id, { modules: diff });
     });
+    await this.recalculate(tenantId);
     return this.workspace(tenantId);
   }
 
@@ -188,7 +279,8 @@ export class AccessControlsService {
       const page = rows.slice(q.offset, q.offset + q.limit);
       const ids = page.map((r) => r.m.id);
       const assignments = await tx.collection<{ membership_id: string; role_id: string }>('role_assignments').find({ membership_id: { $in: ids } });
-      const roleNames = new Map((await tx.collection<{ id: string; name: string }>('roles').find({ id: { $in: assignments.map((a) => a.role_id) } })).map((r) => [r.id, r.name]));
+      // The person's access level (old roles kept for rollback are not shown).
+      const roleNames = new Map((await tx.collection<{ id: string; name: string }>('roles').find({ id: { $in: assignments.map((a) => a.role_id) }, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] }, is_system: true })).map((r) => [r.id, r.name]));
       const access = new Map((await tx.collection<{ membership_id: string; blocked_features: string[] }>('member_feature_access').find({ membership_id: { $in: ids } })).map((a) => [a.membership_id, a.blocked_features]));
       const items: MemberAccessRow[] = page.map(({ m, u }) => ({
         membershipId: m.id, fullName: u.full_name, email: u.email, status: m.status,

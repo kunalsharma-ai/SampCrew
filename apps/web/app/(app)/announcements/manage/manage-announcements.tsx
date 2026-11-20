@@ -49,7 +49,7 @@ export function ManageAnnouncements({ items, deleted }: { items: Announcement[];
                 <TD className="tabular-nums">{a.requiresAck ? (a.status === 'draft' || a.status === 'scheduled' ? 'Asked' : `${a.ackCount} of ${a.audienceSize}`) : 'Not asked'}</TD>
                 <TD className="whitespace-nowrap text-right">
                   {!deleted && a.status !== 'archived' && <Link className={buttonClass('ghost', 'sm')} href={`/announcements/manage/${a.id}/edit`}>Edit</Link>}
-                  {a.status === 'draft' && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Publish "${a.title}" now and notify ${a.audienceLabel}?`) && run(() => publishAnnouncementAction(a.id))}>Publish</Button>}
+                  {a.status === 'draft' && <Button data-feature="announcements.publish" size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Publish "${a.title}" now and notify ${a.audienceLabel}?`) && run(() => publishAnnouncementAction(a.id))}>Publish</Button>}
                   {a.status === 'scheduled' && <Button size="sm" variant="ghost" loading={pending} onClick={() => run(() => unscheduleAnnouncementAction(a.id))}>Unschedule</Button>}
                   {a.status === 'published' && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Take it off the feed? Read receipts are kept.') && run(() => archiveAnnouncementAction(a.id))}>Archive</Button>}
                   {!deleted && (
