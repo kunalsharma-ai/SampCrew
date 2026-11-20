@@ -17,7 +17,7 @@ import {
 } from '@crew/contracts';
 import type { z } from 'zod';
 import { AuditService } from '../../platform/audit/audit.service';
-import { AuthzService } from '../../platform/authz/authz.service';
+import { AuthzService, permissionHolderIds } from '../../platform/authz/authz.service';
 import { hasPermission, type Subject } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, membershipUserNames, type TenantTx } from '../../platform/database/mongo.service';
@@ -73,9 +73,7 @@ export class AppraisalsService {
   /** Memberships that review appraisals in HR: the cycle's named reviewers, or everyone who runs appraisals. */
   private async hrReviewers(tx: TenantTx, cycle: Doc): Promise<string[]> {
     if (cycle.hr_reviewer_membership_ids?.length) return cycle.hr_reviewer_membership_ids;
-    const roleIds = await tx.collection('role_permissions').distinct<string>('role_id', { permission: 'performance:configure' });
-    const members = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: { $in: roleIds } });
-    return tx.collection('memberships').distinct<string>('id', { id: { $in: members }, status: 'active' });
+    return permissionHolderIds(tx, 'performance:configure');
   }
 
   // Forms --------------------------------------------------------------------------------------------------------

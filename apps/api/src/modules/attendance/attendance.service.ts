@@ -131,7 +131,7 @@ export class AttendanceService implements OnModuleInit {
       permission: 'attendance:approve',
       configurePermission: 'attendance:configure',
       defaultSteps: [{ type: 'manager' as const }],
-      fallbackRole: 'hr_admin',
+      fallbackRole: 'hr_workspace',
     };
     this.approvals.register('attendance_correction', {
       ...common,

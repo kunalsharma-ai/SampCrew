@@ -19,8 +19,8 @@ export interface Entitlements {
 }
 
 const KEY = Symbol('entitlements');
-/** Roles that run the whole company (the Super Workspace level) when not limited to HR Workspaces. */
-export const COMPANY_ADMIN_ROLES = new Set(['tenant_owner', 'org_admin', 'hr_admin']);
+/** Levels that work for the whole company (not inside one HR Workspace): Super Workspace, and HR Workspace when not limited to HR Workspaces. */
+export const COMPANY_ADMIN_ROLES = new Set(['super_workspace', 'hr_workspace']);
 const CORE = new Set<string>(FEATURES.filter((f) => 'core' in f && f.core).map((f) => f.key));
 
 /** Resolves which features and limits the current tenant's subscription grants. */
@@ -139,16 +139,18 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
  *  - a person in an HR Workspace (as its admin, or as one of its employees) gets only the modules the Super Workspace
  *    gave that HR Workspace (for an admin of several, any of them);
  *  - then the modules their HR Workspace admins (or the Super Workspace) withheld from them are removed.
- * Super Workspace administrators (Owner, Organization Admin) are not limited by an HR Workspace: they run the company.
+ * Super Workspace and company-wide HR Workspace people are not limited by an HR Workspace: they work for the whole company.
  * Computed on every request, so a change at any level applies at once, also to sessions that are already open.
  */
 export async function applyHierarchy(tx: TenantTx, membershipId: string, features: Set<string>, blocked: Entitlements['blocked']): Promise<void> {
-  const assignments = await tx.collection('role_assignments').find({ membership_id: membershipId });
-  if (assignments.length) {
-    const keyOf = new Map((await tx.collection('roles').find({ id: { $in: assignments.map((a) => a.role_id) } }, { projection: { key: 1 } })).map((r) => [r.id as string, r.key as string]));
-    // Company-wide administrators: Owner, Organization Admin, and an HR Admin not limited to HR Workspaces.
-    if (assignments.some((a) => COMPANY_ADMIN_ROLES.has(keyOf.get(a.role_id) ?? '') && !((a.constraints?.hrWorkspaceIds ?? []) as string[]).length)) return;
-  }
+  const held = await tx.collection('role_assignments').find({ membership_id: membershipId });
+  const keyOf = new Map(
+    (await tx.collection('roles').find({ id: { $in: held.map((a) => a.role_id) }, is_system: true, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] } }, { projection: { key: 1 } })).map((r) => [r.id as string, r.key as string]),
+  );
+  // Only the access levels count (old roles kept for rollback give nothing).
+  const assignments = held.filter((a) => keyOf.has(a.role_id as string));
+  // Company-wide: Super Workspace, and HR Workspace not limited to HR Workspaces.
+  if (assignments.some((a) => COMPANY_ADMIN_ROLES.has(keyOf.get(a.role_id) ?? '') && !((a.constraints?.hrWorkspaceIds ?? []) as string[]).length)) return;
   const administered = [...new Set(assignments.flatMap((a) => ((a.constraints?.hrWorkspaceIds ?? []) as string[])))];
   const employee = await tx.collection('employees').findOne({ membership_id: membershipId }, { projection: { hr_workspace_id: 1 } });
   const ids = administered.length ? administered : employee?.hr_workspace_id ? [employee.hr_workspace_id as string] : [];

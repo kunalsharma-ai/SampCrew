@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { type ArticleInput, type CaseInput, type CasePriority, type CaseStatus, type CategoryInput, caseRef, helpdeskMath } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
-import { AuthzService, loadSubject } from '../../platform/authz/authz.service';
+import { AuthzService, loadSubject, permissionHolders } from '../../platform/authz/authz.service';
 import { requestContext } from '../../platform/context/request-context';
 import { can, hasPermission, type Subject } from '../../platform/authz/policy';
 import { ilike, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
@@ -195,21 +195,7 @@ export class HelpdeskService {
 
   /** Active members holding `helpdesk:manage` through a role, once per scope they hold it with. */
   private async helpdeskMembers(tx: TenantTx, only?: string[]): Promise<Array<{ membershipId: string; scope: string }>> {
-    const perms = await tx.collection('role_permissions').find({ permission: 'helpdesk:manage' }, { projection: { role_id: 1, scope: 1 } });
-    const assignments = await tx.collection('role_assignments').find({ role_id: { $in: perms.map((p) => p.role_id) }, ...(only ? { membership_id: { $in: only } } : {}) }, { projection: { membership_id: 1, role_id: 1 } });
-    const active = new Set(await tx.collection('memberships').distinct<string>('id', { id: { $in: assignments.map((a) => a.membership_id) }, status: 'active' }));
-    const seen = new Set<string>();
-    const out: Array<{ membershipId: string; scope: string }> = [];
-    for (const a of assignments) {
-      if (!active.has(a.membership_id)) continue;
-      for (const p of perms.filter((x) => x.role_id === a.role_id)) {
-        const key = `${a.membership_id}:${p.scope}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ membershipId: a.membership_id, scope: p.scope });
-      }
-    }
-    return out;
+    return (await permissionHolders(tx, 'helpdesk:manage', { only })).map((h) => ({ membershipId: h.membershipId, scope: h.scope }));
   }
 
   private async setHandlers(tx: TenantTx, categoryId: string, ids: string[]) {

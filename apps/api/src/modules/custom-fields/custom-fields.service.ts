@@ -9,8 +9,7 @@ import {
   type customFieldUpdate,
   fieldKeyFromLabel,
   fieldValueText,
-  OPTION_TYPES,
-} from '@crew/contracts';
+  OPTION_TYPES, impliedLevelKeys, levelRoleKeyFor } from '@crew/contracts';
 import type { z } from 'zod';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -148,7 +147,7 @@ export class CustomFieldsService {
       const row = await tx.collection('custom_fields').insert({
         entity: input.entity, key, label: input.label, type: input.type, help_text: input.helpText ?? null, required: input.required, default_value: defaultValue,
         options: OPTION_TYPES.includes(input.type) ? input.options : [], position, section: input.section ?? null, enabled: input.enabled,
-        view_roles: input.viewRoles, edit_roles: input.editRoles, employee_editable: input.employeeEditable, config: input.config,
+        view_roles: asLevels(input.viewRoles), edit_roles: asLevels(input.editRoles), employee_editable: input.employeeEditable, config: input.config,
         created_by_membership_id: actorMembership(), updated_by_membership_id: actorMembership(),
       });
       await this.audit.record(tx, { action: 'custom_field.created', resourceType: 'custom_field', resourceId: row.id, changes: { after: definitionView(row) } });
@@ -182,8 +181,8 @@ export class CustomFieldsService {
       if (input.required !== undefined) set.required = input.required;
       if (input.section !== undefined) set.section = input.section;
       if (input.enabled !== undefined) set.enabled = input.enabled;
-      if (input.viewRoles !== undefined) set.view_roles = input.viewRoles;
-      if (input.editRoles !== undefined) set.edit_roles = input.editRoles;
+      if (input.viewRoles !== undefined) set.view_roles = asLevels(input.viewRoles);
+      if (input.editRoles !== undefined) set.edit_roles = asLevels(input.editRoles);
       if (input.employeeEditable !== undefined) set.employee_editable = input.employeeEditable;
       if (input.config !== undefined) set.config = input.config;
       set.options = OPTION_TYPES.includes(type) ? options : [];
@@ -247,8 +246,10 @@ export class CustomFieldsService {
   // Values
   // ---------------------------------------------------------------------------------------------------------
 
+  /** The access levels the person counts as (Super Workspace also counts as HR Workspace). */
   private roleKeys(s: Subject) {
-    return new Set(s.grants.map((g) => g.roleKey));
+    const keys = new Set(s.grants.map((g) => g.roleKey));
+    return new Set(impliedLevelKeys(keys.has('super_workspace') ? 'super' : keys.has('hr_workspace') ? 'hr' : 'employee'));
   }
 
   private async access(tx: TenantTx, entity: CustomFieldEntity, recordId: string) {
@@ -263,7 +264,7 @@ export class CustomFieldsService {
   }
 
   private visible(d: Doc, roles: Set<string>) {
-    return !d.view_roles?.length || d.view_roles.some((r: string) => roles.has(r));
+    return !d.view_roles?.length || d.view_roles.some((r: string) => roles.has(levelRoleKeyFor(r)));
   }
 
   private editable(d: Doc, a: { canEditRecord: boolean; isSelf: boolean; roles: Set<string> }) {
@@ -272,7 +273,7 @@ export class CustomFieldsService {
     if (a.isSelf && !a.canEditRecord) return !!d.employee_editable;
     if (a.isSelf && d.employee_editable) return true;
     if (!a.canEditRecord) return false;
-    return !d.edit_roles?.length || d.edit_roles.some((r: string) => a.roles.has(r));
+    return !d.edit_roles?.length || d.edit_roles.some((r: string) => a.roles.has(levelRoleKeyFor(r)));
   }
 
   /** The fields of one record with their values, as the record's page shows them. Archived fields appear only when they hold a value. */
@@ -389,4 +390,9 @@ export class CustomFieldsService {
       return rows.map((r) => ({ id: r.id as string, action: r.action as string, fieldId: r.resource_id ?? null, by: r.actor_label ?? null, at: r.created_at, changes: r.changes }));
     });
   }
+}
+
+/** Fields are shown or editable by access level; a role key from before the levels is saved as the level it became. */
+function asLevels(keys: string[]): string[] {
+  return [...new Set(keys.map(levelRoleKeyFor))].sort();
 }

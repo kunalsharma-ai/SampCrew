@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { getPermission, PERMISSIONS, type Scope } from '@crew/contracts';
+import { ACCESS_LEVEL_ROLES, getPermission, PERMISSIONS, type Scope } from '@crew/contracts';
 import type { z } from 'zod';
 import type { customRoleInput } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
@@ -21,7 +21,9 @@ export class RolesService {
 
   list() {
     return this.db.tenant(async (tx) => {
-      const roles = await tx.collection('roles').find({}, { sort: { is_system: -1, name: 1 } });
+      // Only the access levels are shown: old built-in and custom roles stay in the database for rollback, unused.
+      const order = ACCESS_LEVEL_ROLES as readonly string[];
+      const roles = (await tx.collection('roles').find({ is_system: true, key: { $in: [...ACCESS_LEVEL_ROLES] } })).sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
       const ids = roles.map((r) => r.id as string);
       const counts = await countBy(tx, 'role_assignments', 'role_id', ids);
       const grants = await grantsBy(tx, ids);
@@ -29,30 +31,15 @@ export class RolesService {
     });
   }
 
-  async create(input: RoleInput) {
+  /** Custom roles are retired: the four access levels replace them. Kept so old clients get a clear answer. */
+  async create(input: RoleInput): Promise<never> {
     validateGrants(input.grants);
-    return this.db.tenant(async (tx) => {
-      if (await tx.collection('roles').exists({ key: input.key })) throw Errors.conflict('role_exists', 'A role with this key already exists');
-      const role = await tx.collection('roles').insert({ key: input.key, name: input.name, description: input.description ?? null });
-      await this.writeGrants(tx, role.id, input.grants);
-      await this.audit.record(tx, { action: 'role.created', resourceType: 'role', resourceId: role.id, changes: { key: input.key, grants: input.grants } });
-      return this.get(tx, role.id);
-    });
+    throw retired();
   }
 
-  async update(id: string, input: Omit<RoleInput, 'key'>) {
+  async update(_id: string, input: Omit<RoleInput, 'key'>): Promise<never> {
     validateGrants(input.grants);
-    return this.db.tenant(async (tx) => {
-      const role = await tx.collection('roles').findOne({ id });
-      if (!role) throw Errors.notFound('Role');
-      if (role.is_system) throw Errors.badRequest('system_role', 'System roles cannot be edited. Duplicate it as a custom role instead.');
-      const before = await this.get(tx, id);
-      await tx.collection('roles').updateOne({ id }, { $set: { name: input.name, description: input.description ?? null } });
-      await tx.collection('role_permissions').delete({ role_id: id });
-      await this.writeGrants(tx, id, input.grants);
-      await this.audit.record(tx, { action: 'role.updated', resourceType: 'role', resourceId: id, changes: { grants: { from: before.grants, to: Object.fromEntries(input.grants.map((g) => [g.permission, g.scope])) } } });
-      return this.get(tx, id);
-    });
+    throw retired();
   }
 
   async remove(id: string) {
@@ -74,6 +61,11 @@ export class RolesService {
   private async writeGrants(tx: TenantTx, roleId: string, grants: RoleInput['grants']) {
     if (grants.length) await tx.collection('role_permissions').insertMany(grants.map((g) => ({ role_id: roleId, permission: g.permission, scope: g.scope })));
   }
+}
+
+/** Access is by the four access levels only, with areas and limits per person (People > Workspace access). */
+function retired() {
+  return Errors.badRequest('access_levels_only', 'SampCrew gives access by workspace level (Super, HR or Employee Workspace), not by custom roles. Choose a person\'s level and the areas they look after on People.');
 }
 
 function view(r: Record<string, unknown>, grants: Record<string, Scope> = {}) {

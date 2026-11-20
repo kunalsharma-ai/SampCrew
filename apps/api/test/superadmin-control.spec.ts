@@ -108,7 +108,7 @@ describe('Super Admin control of workspaces', () => {
       expect(res.status).toBe(200);
       const row = res.body.items.find((u: { email: string }) => u.email === rita.email);
       expect(row).toMatchObject({ fullName: 'Rita Recruiter', status: 'active', tenantId: t.id, mfaEnabled: false });
-      expect(row.roles).toContain('Recruiter');
+      expect(row.roles).toContain('HR Workspace');
       expect(row.liveSessions.web).toBeGreaterThan(0);
       expect(res.body.summary.active).toBeGreaterThanOrEqual(2);
       // Account details only: no HR fields.

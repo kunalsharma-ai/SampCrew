@@ -159,7 +159,7 @@ describe('Enterprise: single sign-on, SCIM provisioning and privacy requests', (
       const membership = (await pool.one('memberships', { id: mid }))!;
       const roleIds = (await pool.find('role_assignments', { membership_id: mid })).map((x) => x.role_id);
       const roles = (await pool.find('roles', { id: { $in: roleIds } })).map((x) => x.key);
-      expect({ status: membership.status, provisioned_by: membership.provisioned_by, roles }).toMatchObject({ status: 'active', provisioned_by: 'sso', roles: ['employee'] });
+      expect({ status: membership.status, provisioned_by: membership.provisioned_by, roles }).toMatchObject({ status: 'active', provisioned_by: 'sso', roles: ['employee_workspace'] });
     });
 
     it('can be required for members; owners keep a password as a way in', async () => {

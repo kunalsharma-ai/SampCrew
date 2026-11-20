@@ -257,7 +257,7 @@ export class SsoService {
       await tx.collection('sso_connections').updateOne({ id: c.id }, { $set: { status, enforced } });
       if (enforced && !c.enforced) {
         // Members (other than owners) signed in with a password are signed out, so their next sign-in goes through the provider.
-        const owner = await tx.collection('roles').findOne({ key: 'tenant_owner' });
+        const owner = await tx.collection('roles').findOne({ key: 'super_workspace', is_system: true });
         const ownerMemberships = owner ? (await tx.collection('role_assignments').find({ role_id: owner.id })).map((a) => a.membership_id) : [];
         const ownerUsers = (await tx.collection('memberships').find({ id: { $in: ownerMemberships } }, { projection: { user_id: 1 } })).map((m) => m.user_id);
         await tx.unscoped('sessions').update(
@@ -286,7 +286,7 @@ export class SsoService {
   /** Whether password sign-in is closed to this member of this workspace (single sign-on required, not an owner). */
   async passwordBlocked(tx: PlatformTx, tenantId: string, membershipId: string) {
     if (!(await tx.collection('sso_connections').exists({ tenant_id: tenantId, enforced: true }))) return false;
-    const owner = await tx.collection('roles').findOne({ tenant_id: tenantId, key: 'tenant_owner' });
+    const owner = await tx.collection('roles').findOne({ tenant_id: tenantId, key: 'super_workspace', is_system: true });
     return !(owner && (await tx.collection('role_assignments').exists({ membership_id: membershipId, role_id: owner.id })));
   }
 
@@ -522,7 +522,7 @@ export class SsoService {
       const userId = (u ?? (await tx.collection('users').insert({ email, full_name: name.slice(0, 160) }))).id as string;
       const entity = await tx.collection('legal_entities').findOne({ tenant_id: c.tenant_id, archived_at: null }, { sort: { created_at: 1 } });
       const membershipId = (await tx.collection('memberships').insert({ tenant_id: c.tenant_id, user_id: userId, status: 'active', legal_entity_id: entity?.id ?? null, provisioned_by: 'sso' })).id as string;
-      const employeeRole = await tx.collection('roles').findOne({ tenant_id: c.tenant_id, key: 'employee' });
+      const employeeRole = await tx.collection('roles').findOne({ tenant_id: c.tenant_id, key: 'employee_workspace', is_system: true });
       if (employeeRole) await tx.collection('role_assignments').insert({ tenant_id: c.tenant_id, membership_id: membershipId, role_id: employeeRole.id });
       await this.audit.record(tx, { tenantId: c.tenant_id, action: 'membership.provisioned', resourceType: 'membership', resourceId: membershipId, changes: { email }, metadata: { via: 'sso_jit' } });
       await this.outbox.publish(tx, c.tenant_id, 'membership.invited', { membershipId, email });

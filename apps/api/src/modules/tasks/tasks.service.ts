@@ -67,8 +67,8 @@ export class TasksService implements OnModuleInit {
     this.approvals.register('document_verification', {
       permission: 'tasks:hr',
       configurePermission: 'tasks:hr',
-      defaultSteps: [{ type: 'role', role: 'hr_admin' }],
-      fallbackRole: 'hr_admin',
+      defaultSteps: [{ type: 'role', role: 'hr_workspace' }],
+      fallbackRole: 'hr_workspace',
       label: 'Document verification',
       link: (taskId) => `/tasks/${taskId}`,
       attributes: async (tx, taskId) => {

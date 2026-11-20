@@ -303,7 +303,7 @@ export class AuthService {
       const tenant = await tx.collection('tenants').findOne({});
       const membership = await tx.collection('memberships').findOne({ id: actor.membershipId });
       const roleIds = (await tx.collection('role_assignments').find({ membership_id: actor.membershipId })).map((a) => a.role_id);
-      const roles = (await tx.collection('roles').find({ id: { $in: roleIds } }, { sort: { name: 1 } })).map((r) => ({ key: r.key as string, name: r.name as string }));
+      const roles = (await tx.collection('roles').find({ id: { $in: roleIds }, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] }, is_system: true }, { sort: { name: 1 } })).map((r) => ({ key: r.key as string, name: r.name as string }));
       const subject = await this.authz.subject(tx);
       const ent = await this.entitlements.current(tx);
       const controls = await tx.collection('tenant_access_controls').findOne({});
@@ -311,8 +311,9 @@ export class AuthService {
       // Levels: HR Workspaces this person runs (a limited grant names them), and whether they run the company.
       const hrIds = [...new Set(subject.grants.flatMap((g) => g.constraints.hrWorkspaceIds ?? []))];
       const spaces = await tx.collection('hr_workspaces').find({ id: { $in: [...hrIds, ...(employee?.hr_workspace_id ? [employee.hr_workspace_id] : [])] }, status: { $ne: 'archived' } }, { projection: { name: 1, status: 1 }, sort: { name: 1 } });
-      const isSuper = subject.grants.some((g) => g.permission === 'hierarchy:manage' && !g.constraints.hrWorkspaceIds?.length);
-      const companyHr = !isSuper && subject.grants.some((g) => g.permission === 'modules:assign' && !g.constraints.hrWorkspaceIds?.length);
+      // The access level: Super Workspace, HR Workspace for the whole company, or HR Workspace for named HR Workspaces.
+      const isSuper = subject.grants.some((g) => g.roleKey === 'super_workspace');
+      const companyHr = !isSuper && subject.grants.some((g) => g.roleKey === 'hr_workspace' && !g.constraints.hrWorkspaceIds?.length);
       const own = employee?.hr_workspace_id ? spaces.find((w) => w.id === employee.hr_workspace_id) : undefined;
       const levels = {
         super: isSuper,

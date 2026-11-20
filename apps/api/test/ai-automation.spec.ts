@@ -395,13 +395,15 @@ describe('AI copilots, Automation Studio and insights', () => {
       await runner.runDue();
       const done = ok(await as('hr').get(`/automation/runs/${r.id}`));
       expect(done.status).toBe('succeeded');
-      expect(done.steps.at(-1).detail).toBe('Notified 2 people: "Check documents for Della Test"');
+      // Everyone on HR Workspace who looks after Della: both HR admins and payroll (not the auditor, who cannot see her record).
+      expect(done.steps.at(-1).detail).toBe('Notified 3 people: "Check documents for Della Test"');
       ok(await as('hr').post(`/automation/workflows/${w.id}/archive`));
     });
 
     it('pauses itself when its owner loses permission, and keeps other workspaces out', async () => {
-      // Take the owner's HR role away; the next run notices.
-      const hrRole = (await pool.one('roles', { tenant_id: t.id, key: 'hr_admin' }))!;
+      // Take the owner's HR Workspace access away; the next run notices.
+      const hrRole = (await pool.one('roles', { tenant_id: t.id, key: 'hr_workspace' }))!;
+      const hrAccess = (await pool.one('role_assignments', { membership_id: people.hr.membershipId, role_id: hrRole.id }))!.constraints;
       await pool.delete('role_assignments', { membership_id: people.hr.membershipId, role_id: hrRole.id });
       const e = ok(await as('hr2').post('/employees').send({ legalEntityId: t.legalEntityId, firstName: 'Ravi', lastName: 'Test', dateOfJoining: '2024-01-01', probationMonths: 0, departmentId: ops, managerEmployeeId: people.manager.employeeId, onboardingTemplateId: null }), 201);
       await outbox.dispatchOnce();
@@ -411,7 +413,7 @@ describe('AI copilots, Automation Studio and insights', () => {
       expect(run.error).toContain('no longer has permission');
       const w = ok(await as('hr2').get(`/automation/workflows/${ids.wf}`));
       expect(w).toMatchObject({ status: 'paused', statusReason: 'The workflow owner no longer has permission to manage workflows, so the workflow was paused.' });
-      await pool.insert('role_assignments', { tenant_id: t.id, membership_id: people.hr.membershipId, role_id: hrRole.id });
+      await pool.insert('role_assignments', { tenant_id: t.id, membership_id: people.hr.membershipId, role_id: hrRole.id, constraints: hrAccess });
       fails(await as('otherOwner').get(`/automation/workflows/${ids.wf}`), 404);
       fails(await as('otherOwner').get(`/automation/runs/${ids.run}`), 404);
     });
@@ -424,7 +426,8 @@ describe('AI copilots, Automation Studio and insights', () => {
       ] }) });
       const d = ok(await as('hr').post('/automation/drafts').send({ description: 'When someone asks for five or more days of leave, tell HR.' }));
       expect(d.issues).toEqual([]);
-      expect(d.definition.steps[1]).toMatchObject({ type: 'notify', role: 'hr_admin', email: false });
+      // The AI named an old role: it is saved as the access level that role became.
+      expect(d.definition.steps[1]).toMatchObject({ type: 'notify', role: 'hr_workspace', email: false });
       expect(stub.requests.at(-1)!.body.system).toContain('"leave.days (number)"');
       const w = ok(await as('hr').post('/automation/workflows').send({ name: 'Long leave', definition: d.definition, aiInteractionId: d.interactionId }), 201);
       expect(w.versions[0].aiDrafted).toBe(true);

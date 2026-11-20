@@ -120,8 +120,8 @@ export class ProfileService implements OnModuleInit {
     this.approvals.register('profile_update', {
       permission: 'profiles:review',
       configurePermission: 'profiles:review',
-      defaultSteps: [{ type: 'role', role: 'hr_admin' }],
-      fallbackRole: 'hr_admin',
+      defaultSteps: [{ type: 'role', role: 'hr_workspace' }],
+      fallbackRole: 'hr_workspace',
       label: 'Profile update',
       link: (id) => `/profile/updates/${id}`,
       attributes: async (tx, id) => {

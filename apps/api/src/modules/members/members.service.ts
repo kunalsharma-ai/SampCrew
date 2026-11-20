@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { z } from 'zod';
-import type { assignRolesRequest, inviteMemberRequest, PaginationQuery, updateMemberRequest } from '@crew/contracts';
+import type { assignRolesRequest, inviteMemberRequest, MemberAccess, PaginationQuery, SetAccessRequest, updateMemberRequest } from '@crew/contracts';
+import { accessConstraints, accessFromRoleKeys, levelRoles, memberAccess, writeAccess } from './access';
 import { AuditService, diff } from '../../platform/audit/audit.service';
 import { hashPassword, randomToken, sha256 } from '../../platform/auth/crypto';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -40,7 +41,9 @@ export interface MemberView {
   joinedAt: Date | null;
   createdAt: Date;
   lastLoginAt: Date | null;
+  /** Their workspace access level (the only roles there are: Super, HR and Employee Workspace). */
   roles: { key: string; name: string; constraints: unknown }[];
+  access: MemberAccess;
 }
 
 /** Members as the API shows them: the membership with its person, placement, manager and roles (one query per table). */
@@ -55,7 +58,9 @@ export async function memberViews(tx: TenantTx, memberships: Row[]): Promise<Mem
   const locations = await names('locations', 'location_id');
   const managerUser = new Map(managers.map((m) => [m.id as string, users.get(m.user_id)]));
   const assignments = await tx.collection('role_assignments').find({ membership_id: { $in: memberships.map((m) => m.id) } });
-  const roles = byId(await tx.collection('roles').find({ id: { $in: [...new Set(assignments.map((a) => a.role_id))] } }));
+  // Old roles kept in the database for rollback are never shown.
+  const roles = byId(await tx.collection('roles').find({ id: { $in: [...new Set(assignments.map((a) => a.role_id))] }, is_system: true, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] } }));
+  const access = await memberAccess(tx, memberships.map((m) => m.id as string));
   return memberships.map((m) => {
     const u = users.get(m.user_id) ?? {};
     return {
@@ -81,6 +86,7 @@ export async function memberViews(tx: TenantTx, memberships: Row[]): Promise<Mem
         .filter((a) => a.membership_id === m.id && roles.has(a.role_id))
         .map((a) => ({ key: roles.get(a.role_id)!.key, name: roles.get(a.role_id)!.name, constraints: a.constraints ?? {} }))
         .sort((x, y) => x.name.localeCompare(y.name)),
+      access: access.get(m.id)!,
     };
   });
 }
@@ -149,9 +155,8 @@ export class MembersService {
     const token = randomToken(32);
     const count = await tx.collection('memberships').count({ status: { $ne: 'suspended' } });
     await this.entitlements.requireWithinLimit('max_employees', count, tx);
-    // Everyone gets the Employee self-service baseline in addition to the roles chosen.
-    const roles = await this.resolveRoles(tx, [...new Set(['employee', ...input.roleKeys])]);
-    await this.assertCanGrant(tx, roles.map((r) => r.key));
+    const legalEntityId0 = input.legalEntityId ?? null;
+    const access = await this.requestedAccess(tx, input, { legalEntityId: legalEntityId0, departmentId: input.departmentId ?? null });
 
     const legalEntityId = input.legalEntityId ?? (await tx.collection('legal_entities').findOne({ archived_at: null }, { sort: { created_at: 1 } }))?.id ?? null;
     // Identities are global: the user is found or created outside the workspace, in this same transaction.
@@ -170,10 +175,10 @@ export class MembersService {
       manager_membership_id: input.managerMembershipId ?? null,
       invited_by: actor.membershipId,
     });
-    await tx.collection('role_assignments').insertMany(roles.map((r) => ({ membership_id: membership.id, role_id: r.id, granted_by: actor.membershipId })));
+    await writeAccess(tx, membership.id, access.level, access.constraints, actor.membershipId);
     await tx.collection('invitations').insert({ membership_id: membership.id, email: input.email, token_hash: sha256(token), expires_at: inDays(INVITE_TTL_DAYS), invited_by: actor.membershipId });
     await this.queueInviteEmail(tx, input.email, token);
-    await this.audit.record(tx, { action: 'membership.invited', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, roles: input.roleKeys } });
+    await this.audit.record(tx, { action: 'membership.invited', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, access: { level: access.level, ...access.constraints } } });
     await this.outbox.publish(tx, actor.tenantId, 'membership.invited', { membershipId: membership.id, email: input.email });
     return { membershipId: membership.id, token };
   }
@@ -188,8 +193,7 @@ export class MembersService {
     const actor = requestContext.tenantActor();
     const count = await tx.collection('memberships').count({ status: { $ne: 'suspended' } });
     await this.entitlements.requireWithinLimit('max_employees', count, tx);
-    const roles = await this.resolveRoles(tx, [...new Set(['employee', ...input.roleKeys])]);
-    await this.assertCanGrant(tx, roles.map((r) => r.key));
+    const access = await this.requestedAccess(tx, input, { legalEntityId: input.legalEntityId ?? null, departmentId: input.departmentId ?? null });
     const legalEntityId = input.legalEntityId ?? (await tx.collection('legal_entities').findOne({ archived_at: null }, { sort: { created_at: 1 } }))?.id ?? null;
     const hash = await hashPassword(temporaryPassword);
     const users = tx.unscoped('users');
@@ -209,7 +213,7 @@ export class MembersService {
       invited_by: actor.membershipId,
       joined_at: new Date(),
     });
-    await tx.collection('role_assignments').insertMany(roles.map((r) => ({ membership_id: membership.id, role_id: r.id, granted_by: actor.membershipId })));
+    await writeAccess(tx, membership.id, access.level, access.constraints, actor.membershipId);
     const workspace = (await tx.collection('tenants').findOne({}))!;
     // The password itself is never emailed: HR hands it over in person.
     await this.notifications.queueEmail(
@@ -220,7 +224,7 @@ export class MembersService {
       `${actor.label} created your SampCrew login for ${workspace.name}.\n\nSign in at ${this.config.WEB_PUBLIC_URL}/login with this email and the temporary password HR gave you. You will choose your own password the first time you sign in.`,
       'login_created',
     );
-    await this.audit.record(tx, { action: 'membership.login_created', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, roles: input.roleKeys, temporaryPassword: true } });
+    await this.audit.record(tx, { action: 'membership.login_created', resourceType: 'membership', resourceId: membership.id, changes: { email: input.email, access: { level: access.level, ...access.constraints }, temporaryPassword: true } });
     await this.outbox.publish(tx, actor.tenantId, 'membership.created', { membershipId: membership.id, email: input.email });
     return { membershipId: membership.id };
   }
@@ -273,36 +277,47 @@ export class MembersService {
     });
   }
 
+  /**
+   * The role editor of the time before the four access levels: the roles sent are mapped to the level they became
+   * (see mapLegacyAccess), then saved as with setAccess.
+   */
   async setRoles(id: string, input: z.infer<typeof assignRolesRequest>) {
-    const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
       const member = await this.load(tx, id);
-      // A role editor sends back every role the person shows, including HR Workspace Admin held through an HR
-      // Workspace: that one is managed on the HR Workspace and stays as it is.
-      if (member.roles.some((r) => r.key === 'hr_workspace_admin')) input = { ...input, assignments: input.assignments.filter((a) => a.roleKey !== 'hr_workspace_admin') };
-      const roles = await this.resolveRoles(tx, input.assignments.map((a) => a.roleKey));
-      await this.assertCanGrant(tx, roles.map((r) => r.key));
-      const beforeKeys = member.roles.map((r) => r.key).sort();
-      if (beforeKeys.includes('tenant_owner') && !roles.some((r) => r.key === 'tenant_owner')) await this.assertNotLastOwner(tx, id);
-      if (id === actor.membershipId && beforeKeys.includes('tenant_owner') && !roles.some((r) => r.key === 'tenant_owner')) {
-        throw Errors.badRequest('cannot_demote_self', 'Ask another owner to remove your owner role');
+      // An editor sends back every role the person shows: HR Workspace access held through an HR Workspace is
+      // managed on the HR Workspace and stays as it is.
+      if (input.assignments.some((a) => a.roleKey === 'hr_workspace_admin')) {
+        if (!member.access.hrWorkspaces.length) throw Errors.badRequest('role_from_hr_workspace', 'HR Workspace access for one HR Workspace is given on the HR Workspace itself (Organization > HR Workspaces > Admins).');
+        input = { ...input, assignments: input.assignments.filter((a) => a.roleKey !== 'hr_workspace_admin') };
       }
-      // Roles that come from a provisioning group stay while the person is in the group; the identity provider
-      // manages those. Everything else is replaced by what was sent.
-      await tx.collection('role_assignments').delete({ membership_id: id, source: 'manual' });
-      for (const a of input.assignments) {
-        const role = roles.find((r) => r.key === a.roleKey)!;
-        const fields = { constraints: a.constraints ?? {}, granted_by: actor.membershipId };
-        await tx.collection('role_assignments').upsert({ membership_id: id, role_id: role.id }, { membership_id: id, role_id: role.id, ...fields }, { $set: fields });
+      const access = await accessFromRoleKeys(tx, input.assignments, { legalEntityId: member.legalEntityId, departmentId: member.departmentId });
+      if (access.level === 'employee' && member.access.hrWorkspaces.length && !input.assignments.some((a) => a.roleKey !== 'employee' && a.roleKey !== 'employee_workspace')) {
+        return member; // nothing changed but the HR Workspace access, which stays
       }
-      const after = await this.load(tx, id);
-      await this.audit.record(tx, {
-        action: 'membership.roles_changed', resourceType: 'membership', resourceId: id,
-        changes: { roles: { from: beforeKeys, to: input.assignments.map((a) => a.roleKey).sort() }, constraints: input.assignments.filter((a) => a.constraints) },
-      });
-      await this.outbox.publish(tx, actor.tenantId, 'membership.roles_changed', { membershipId: id });
-      return after;
+      return this.saveAccess(tx, member, access);
     });
+  }
+
+  /** Gives a person Super, HR or Employee Workspace access, with the limits chosen. */
+  async setAccess(id: string, input: SetAccessRequest) {
+    return this.db.tenant(async (tx) => this.saveAccess(tx, await this.load(tx, id), input));
+  }
+
+  private async saveAccess(tx: TenantTx, member: MemberView, input: SetAccessRequest) {
+    const actor = requestContext.tenantActor();
+    const constraints = await accessConstraints(tx, input);
+    await this.assertCanGive(tx, input.level, member.access.level);
+    if (member.access.level === 'super' && input.level !== 'super') {
+      if (member.id === actor.membershipId) throw Errors.badRequest('cannot_demote_self', 'Ask another Super Workspace person to change your access');
+      await this.assertNotLastOwner(tx, member.id);
+    }
+    await writeAccess(tx, member.id, input.level, constraints, actor.membershipId);
+    const after = await this.load(tx, member.id);
+    const { label: _a, fromGroup: _b, ...from } = member.access;
+    const { label: _c, fromGroup: _d, ...to } = after.access;
+    await this.audit.record(tx, { action: 'membership.access_changed', resourceType: 'membership', resourceId: member.id, changes: { access: { from, to } } });
+    await this.outbox.publish(tx, actor.tenantId, 'membership.roles_changed', { membershipId: member.id });
+    return after;
   }
 
   /** Re-issues an invitation link (previous links stop working). */
@@ -326,29 +341,30 @@ export class MembersService {
     return (await memberViews(tx, [m]))[0]!;
   }
 
-  private async resolveRoles(tx: TenantTx, keys: string[]) {
-    const roles = (await tx.collection('roles').find({ key: { $in: keys } })).map((r) => ({ id: r.id as string, key: r.key as string }));
-    const missing = keys.filter((k) => !roles.some((r) => r.key === k));
-    if (missing.length) throw Errors.badRequest('unknown_role', `Unknown role: ${missing.join(', ')}`);
-    return roles;
+  /** The access asked for when someone is added: `access`, or the level their role keys stand for. */
+  private async requestedAccess(tx: TenantTx, input: z.infer<typeof inviteMemberRequest>, member: { legalEntityId: string | null; departmentId: string | null }) {
+    const asked = input.access ?? (await accessFromRoleKeys(tx, (input.roleKeys ?? ['employee_workspace']).map((roleKey) => ({ roleKey })), member));
+    const constraints = await accessConstraints(tx, asked);
+    await this.assertCanGive(tx, asked.level, 'employee');
+    return { level: asked.level, constraints };
   }
 
-  /** Prevents privilege escalation: only owners can grant the owner role, and roles:manage is needed for anything else. */
-  private async assertCanGrant(tx: TenantTx, roleKeys: string[]) {
-    // HR Workspace Admin is given only by naming someone as an admin of an HR Workspace, which limits it to that HR
-    // Workspace's people. Granted here it would have no limit, so it is refused.
-    if (roleKeys.includes('hr_workspace_admin')) throw Errors.badRequest('role_from_hr_workspace', 'HR Workspace Admin is given on the HR Workspace itself (Organization > HR Workspaces > Admins).');
+  /**
+   * Prevents privilege escalation: only a Super Workspace person gives or takes away Super Workspace, and giving or
+   * changing HR Workspace needs roles:manage (Super Workspace). HR Workspace people add Employee Workspace people.
+   */
+  private async assertCanGive(tx: TenantTx, level: MemberAccess['level'], current: MemberAccess['level']) {
     const subject = await this.authz.subject(tx);
-    const isOwner = subject.grants.some((g) => g.roleKey === 'tenant_owner');
-    if (roleKeys.includes('tenant_owner') && !isOwner) throw Errors.forbidden('Only a workspace owner can grant the owner role');
-    if (roleKeys.some((k) => k !== 'employee')) await this.authz.require('roles:manage', undefined, tx);
+    const isSuper = subject.grants.some((g) => g.roleKey === 'super_workspace');
+    if ((level === 'super' || current === 'super') && !isSuper) throw Errors.forbidden('Only a Super Workspace person can give or change Super Workspace access');
+    if (level !== 'employee' || current !== 'employee') await this.authz.require('roles:manage', undefined, tx);
   }
 
   private async assertNotLastOwner(tx: TenantTx, membershipId: string) {
-    const owner = await tx.collection('roles').findOne({ key: 'tenant_owner' });
-    const holders = owner ? (await tx.collection('role_assignments').find({ role_id: owner.id })).map((a) => a.membership_id) : [];
+    const superId = (await levelRoles(tx)).get('super_workspace');
+    const holders = superId ? (await tx.collection('role_assignments').find({ role_id: superId })).map((a) => a.membership_id) : [];
     const owners = await tx.collection('memberships').find({ id: { $in: holders }, status: 'active' }, { projection: { _id: 1 } });
-    if (owners.length === 1 && owners[0]!.id === membershipId) throw Errors.conflict('last_owner', 'A workspace needs at least one active owner');
+    if (owners.length === 1 && owners[0]!.id === membershipId) throw Errors.conflict('last_owner', 'A company needs at least one active Super Workspace person');
   }
 }
 

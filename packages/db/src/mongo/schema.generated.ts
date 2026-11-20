@@ -5,6 +5,33 @@
 import type { TableSpec } from './schema';
 
 export const TABLES: Record<string, TableSpec> = {
+  access_level_migrations: {
+    // The move from the old built-in roles to the four access levels (Super, HR and Employee Workspace), one row per
+    // person or setting changed: what it was before (kept for rollback) and what it became. Written once per tenant.
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      after: {"default": {"json": {}}, "required": true, "type": "json"},
+      before: {"default": {"json": {}}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["membership", "approval_policy", "approval_step", "custom_field", "scim_group"], "required": true, "type": "string"},
+      // Plain-language notes on access the old roles gave that the new level does not.
+      notes: {"default": {"json": []}, "required": true, "type": "string[]"},
+      rolled_back_at: {"type": "timestamp"},
+      subject_id: {"required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "access_level_migrations_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "kind"}, {"col": "subject_id"}], "name": "access_level_migrations_subject"},
+    ],
+    checks: [],
+  },
   addons: {
     // The add-on catalogue SAMPLEDGE sells on top of plans (Console > Billing > Add-ons).
     access: "shared", grants: ["select"], touch: true,
@@ -5332,6 +5359,8 @@ export const TABLES: Record<string, TableSpec> = {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Limits on the level the group gives (see LevelConstraints in packages/contracts/src/roles.ts).
+      constraints: {"default": {"json": {}}, "required": true, "type": "json"},
       display_name: {"required": true, "type": "string"},
       external_id: {"type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},

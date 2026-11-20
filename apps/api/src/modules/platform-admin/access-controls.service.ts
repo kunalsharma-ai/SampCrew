@@ -114,7 +114,7 @@ export class AccessControlsService {
         if (!notSuspended.has(a.membership_id)) continue;
         for (const k of a.blocked_features) blocked.set(k, (blocked.get(k) ?? 0) + 1);
       }
-      const roleIds = await tx.collection('roles').distinct<string>('id', { tenant_id: tenantId });
+      const roleIds = await tx.collection('roles').distinct<string>('id', { tenant_id: tenantId, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] }, is_system: true });
       const rolePerms = await tx.collection<{ role_id: string; permission: string }>('role_permissions').find({ role_id: { $in: roleIds } });
       const assignments = await tx.collection<{ role_id: string; membership_id: string }>('role_assignments').find({ role_id: { $in: roleIds } });
       const holdersOf = new Map<string, { roles: Set<string>; members: Set<string> }>();
@@ -257,7 +257,8 @@ export class AccessControlsService {
       const page = rows.slice(q.offset, q.offset + q.limit);
       const ids = page.map((r) => r.m.id);
       const assignments = await tx.collection<{ membership_id: string; role_id: string }>('role_assignments').find({ membership_id: { $in: ids } });
-      const roleNames = new Map((await tx.collection<{ id: string; name: string }>('roles').find({ id: { $in: assignments.map((a) => a.role_id) } })).map((r) => [r.id, r.name]));
+      // The person's access level (old roles kept for rollback are not shown).
+      const roleNames = new Map((await tx.collection<{ id: string; name: string }>('roles').find({ id: { $in: assignments.map((a) => a.role_id) }, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] }, is_system: true })).map((r) => [r.id, r.name]));
       const access = new Map((await tx.collection<{ membership_id: string; blocked_features: string[] }>('member_feature_access').find({ membership_id: { $in: ids } })).map((a) => [a.membership_id, a.blocked_features]));
       const items: MemberAccessRow[] = page.map(({ m, u }) => ({
         membershipId: m.id, fullName: u.full_name, email: u.email, status: m.status,

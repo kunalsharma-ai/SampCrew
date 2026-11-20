@@ -1,4 +1,5 @@
 import { builtInStatutoryPacks, DEFAULT_LEAVE_TYPES, FEATURES, PLAN_TEMPLATES, SYSTEM_ROLES } from '@crew/contracts';
+import { applyAccessLevelsMongo } from './access-levels';
 import type { Row, Table } from './table';
 
 /** Anything that hands out unrestricted tables in one transaction (the API's PlatformTx, or a script's own). */
@@ -56,7 +57,7 @@ export async function provisionTenantMongo(tx: Tables, input: ProvisionTenantInp
     own({ user_id: userId, status: membershipStatus, legal_entity_id: legalEntityId, title: 'Owner', joined_at: membershipStatus === 'active' ? new Date() : null }),
   );
   const ownerMembershipId = m.id as string;
-  await t('role_assignments').insertMany(['tenant_owner', 'employee'].map((key) => own({ membership_id: ownerMembershipId, role_id: roleIds.get(key) })));
+  await t('role_assignments').insertMany(['super_workspace', 'employee_workspace'].map((key) => own({ membership_id: ownerMembershipId, role_id: roleIds.get(key) })));
 
   const plan = await t('plans').findOne({ key: input.plan.key });
   if (!plan) throw new Error(`Unknown plan ${input.plan.key}`);
@@ -221,6 +222,7 @@ export async function syncSystemRolesMongo(tx: Tables): Promise<{ rolesCreated: 
 export async function syncCatalogueMongo(tx: Tables): Promise<void> {
   await syncStatutoryPacksMongo(tx);
   await syncSystemRolesMongo(tx);
+  await applyAccessLevelsMongo(tx);
   const features = tx.collection('features');
   const plans = tx.collection('plans');
   const planFeatures = tx.collection('plan_features');

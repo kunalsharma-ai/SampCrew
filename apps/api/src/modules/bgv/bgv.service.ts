@@ -20,7 +20,7 @@ import {
 import type { z } from 'zod';
 import { AuditService } from '../../platform/audit/audit.service';
 import { decryptField, encryptField } from '../../platform/auth/crypto';
-import { AuthzService, loadSubject } from '../../platform/authz/authz.service';
+import { AuthzService, loadSubject, permissionHolderIds } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor, type ResourceAttributes } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
@@ -690,12 +690,7 @@ export class BgvService {
   async verifiers() {
     return this.db.tenant(async (tx) => {
       await this.authz.require('bgv:create', undefined, tx);
-      const perms = await tx.collection('role_permissions').find({ permission: 'bgv:edit' }, { projection: { role_id: 1 } });
-      const assignments = await tx.collection('role_assignments').find({ role_id: { $in: perms.map((p) => p.role_id) } }, { projection: { membership_id: 1 } });
-      const disabled = new Set<string>((await tx.collection('tenant_access_controls').findOne({}))?.disabled_permissions ?? []);
-      if (disabled.has('bgv:edit')) return [];
-      const ids = [...new Set(assignments.map((a) => a.membership_id as string))];
-      const active = await tx.collection('memberships').find({ id: { $in: ids }, status: 'active' }, { projection: { _id: 1 } });
+      const active = (await permissionHolderIds(tx, 'bgv:edit')).map((id) => ({ id }));
       const names = await membershipUserNames(tx, active.map((m) => m.id));
       return active.map((m) => ({ membershipId: m.id as string, name: names.get(m.id) ?? 'Member' })).sort((a, b) => a.name.localeCompare(b.name));
     });

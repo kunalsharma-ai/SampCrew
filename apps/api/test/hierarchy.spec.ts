@@ -76,8 +76,8 @@ describe('Delegation chain: Console > Super Workspace > HR Workspace > Employee'
     const state = (k: string) => d.body.modules.find((m: { key: string }) => m.key === k)?.state;
     expect(state('leave')).toBe('granted');
     expect(state('payroll')).toBe('available');
-    // The admin holds the HR Workspace Admin role, limited to this HR Workspace.
-    const role = await pool.one('roles', { tenant_id: t.id, key: 'hr_workspace_admin' });
+    // The admin holds HR Workspace access, limited to this HR Workspace.
+    const role = await pool.one('roles', { tenant_id: t.id, key: 'hr_workspace' });
     const a = await pool.one('role_assignments', { membership_id: hrAdmin.membershipId, role_id: role!.id });
     expect(a!.constraints.hrWorkspaceIds).toEqual([wsId]);
     expect(a!.source).toBe('hr_workspace');
@@ -223,7 +223,7 @@ describe('Delegation chain: Console > Super Workspace > HR Workspace > Employee'
     const r = await api(app, owner).post(`/hr-workspaces/${wsId}/status`).send({ status: 'archived', reason: 'Branch closed down' });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     expect((await pool.one('employees', { id: staffEmployee }))!.hr_workspace_id ?? null).toBeNull();
-    const role = await pool.one('roles', { tenant_id: t.id, key: 'hr_workspace_admin' });
+    const role = await pool.one('roles', { tenant_id: t.id, key: 'hr_workspace' });
     expect(await pool.count('role_assignments', { membership_id: hrAdmin.membershipId, role_id: role!.id })).toBe(0);
     expect((await api(app, (await login(app, hrAdmin.email)).accessToken).get('/hr-workspaces')).status).toBe(403);
   });

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { automation, STEP_TYPES, TRIGGER_EVENTS, type WorkflowDefinition, type WorkflowInput, type WorkflowStep, type WorkflowTestInput } from '@crew/contracts';
+import { automation, STEP_TYPES, TRIGGER_EVENTS, type WorkflowDefinition, type WorkflowInput, type WorkflowStep, type WorkflowTestInput, ACCESS_LEVEL_LABEL, ACCESS_LEVEL_ROLES, levelRoleKeyFor } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, type TenantTx as Tx } from '../../platform/database/mongo.service';
@@ -32,7 +32,8 @@ export class AutomationService {
       triggers: TRIGGER_EVENTS.map((key) => ({ key, label: automation.TRIGGERS[key].label, fields: automation.fieldsFor(key) })),
       steps: STEP_TYPES.map((key) => ({ key, label: automation.STEP_LABEL[key] })),
       ops: automation.CONDITION_OPS.map((key) => ({ key, label: automation.OP_LABEL[key] })),
-      roles: pick((await tx.collection('roles').find({})).sort((a, b) => Number(b.is_system) - Number(a.is_system) || byText('name')(a, b)), 'key', 'name') as { key: string; name: string }[],
+      // Recipients and approvers are chosen by access level, never by job title.
+      roles: ACCESS_LEVEL_ROLES.map((key) => ({ key, name: ACCESS_LEVEL_LABEL[key] })),
       courses: pick((await tx.collection('courses').find({ archived_at: null })).sort(byText('title')), 'id', 'title') as { id: string; title: string }[],
       slackConnections: pick((await tx.collection('integration_connections').find({ provider: 'slack', status: { $ne: 'disconnected' } })).sort(byText('name')), 'id', 'name', 'status'),
       webhookEndpoints: pick((await tx.collection('webhook_endpoints').find({})).sort(byText('name')), 'id', 'name', 'status'),
@@ -199,10 +200,11 @@ export class AutomationService {
       case 'notify': {
         let who = step.to === 'employee' ? 'the employee' : step.to === 'manager' ? "the employee's manager" : 'the chosen person';
         if (step.to === 'role') {
-          const roleIds = await tx.collection('roles').distinct<string>('id', { key: step.role });
+          const level = levelRoleKeyFor(step.role ?? '');
+          const roleIds = await tx.collection('roles').distinct<string>('id', { key: level, is_system: true });
           const holders = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: { $in: roleIds } });
           const n = await tx.collection('memberships').count({ id: { $in: holders }, status: 'active' });
-          who = `${n} ${n === 1 ? 'person' : 'people'} with the ${step.role} role`;
+          who = `${n} ${n === 1 ? 'person' : 'people'} with ${ACCESS_LEVEL_LABEL[level]} access`;
         }
         return { status: 'simulated', detail: `Would notify ${who}${step.email ? ' by email too' : ''}: "${automation.render(step.title, ctx)}"` };
       }

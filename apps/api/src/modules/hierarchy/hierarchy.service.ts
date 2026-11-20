@@ -33,7 +33,8 @@ type Doc = Record<string, any>;
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : '');
 const CORE = new Set(BOOLEAN_FEATURES.filter((f) => isCoreFeature(f.key)).map((f) => f.key as string));
 const sameSet = (a: string[], b: string[]) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
-export const HR_WORKSPACE_ADMIN_ROLE = 'hr_workspace_admin';
+/** An HR Workspace's admins hold the HR Workspace level limited to it (constraints.hrWorkspaceIds). */
+export const HR_WORKSPACE_ADMIN_ROLE = 'hr_workspace';
 
 const attrsOfEmployee = (e: Doc) => employeeAttrs({ id: e.id, membershipId: e.membership_id ?? null, legalEntityId: e.current_legal_entity_id ?? null, departmentId: e.current_department_id ?? null, locationId: e.current_location_id ?? null });
 
@@ -132,7 +133,7 @@ export class HierarchyService {
   }
 
   private async adminsOf(tx: TenantTx, ids: string[]): Promise<Map<string, string[]>> {
-    const role = await tx.collection('roles').findOne({ key: HR_WORKSPACE_ADMIN_ROLE });
+    const role = await tx.collection('roles').findOne({ key: HR_WORKSPACE_ADMIN_ROLE, is_system: true });
     const out = new Map<string, string[]>(ids.map((id) => [id, []]));
     if (!role) return out;
     const rows = await tx.collection('role_assignments').find({ role_id: role.id, 'constraints.hrWorkspaceIds': { $in: ids } });
@@ -298,11 +299,18 @@ export class HierarchyService {
     return ids;
   }
 
-  /** Gives a person the HR Workspace Admin role for one more HR Workspace (one assignment holds all of theirs). */
+  /** Gives a person HR Workspace access for one more HR Workspace (one assignment holds all of theirs). */
   private async addAdmin(tx: TenantTx, membershipId: string, hrWorkspaceId: string) {
-    const role = await tx.collection('roles').findOne({ key: HR_WORKSPACE_ADMIN_ROLE });
-    if (!role) throw Errors.conflict('role_missing', 'The HR Workspace Admin role is missing. Run the database migration.');
+    const role = await tx.collection('roles').findOne({ key: HR_WORKSPACE_ADMIN_ROLE, is_system: true });
+    if (!role) throw Errors.conflict('role_missing', 'The HR Workspace access level is missing. Run the database migration.');
     const a = await tx.collection('role_assignments').findOne({ membership_id: membershipId, role_id: role.id });
+    const superRole = await tx.collection('roles').findOne({ key: 'super_workspace', is_system: true });
+    if (superRole && (await tx.collection('role_assignments').exists({ membership_id: membershipId, role_id: superRole.id }))) {
+      throw Errors.badRequest('already_super', 'This person has Super Workspace access, which already covers every HR Workspace.');
+    }
+    if (a && !((a.constraints?.hrWorkspaceIds ?? []) as string[]).length) {
+      throw Errors.badRequest('already_company_hr', 'This person has HR Workspace access for the whole company, which already covers every HR Workspace. Limit it to HR Workspaces on People first.');
+    }
     if (!a) {
       const s = await this.authz.subject(tx);
       await tx.collection('role_assignments').insert({ membership_id: membershipId, role_id: role.id, constraints: { hrWorkspaceIds: [hrWorkspaceId] }, source: 'hr_workspace', granted_by: s.membershipId });
@@ -313,10 +321,11 @@ export class HierarchyService {
   }
 
   private async removeAdmin(tx: TenantTx, membershipId: string, hrWorkspaceId: string) {
-    const role = await tx.collection('roles').findOne({ key: HR_WORKSPACE_ADMIN_ROLE });
+    const role = await tx.collection('roles').findOne({ key: HR_WORKSPACE_ADMIN_ROLE, is_system: true });
     if (!role) return;
     const a = await tx.collection('role_assignments').findOne({ membership_id: membershipId, role_id: role.id });
-    if (!a) return;
+    // Company-wide HR Workspace access is not an HR Workspace's to take away.
+    if (!a || !((a.constraints?.hrWorkspaceIds ?? []) as string[]).includes(hrWorkspaceId)) return;
     const ids = ((a.constraints?.hrWorkspaceIds ?? []) as string[]).filter((x) => x !== hrWorkspaceId);
     if (ids.length) await tx.collection('role_assignments').updateOne({ id: a.id }, { $set: { constraints: { ...(a.constraints ?? {}), hrWorkspaceIds: ids } } });
     else await tx.collection('role_assignments').delete({ id: a.id });

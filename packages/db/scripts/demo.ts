@@ -1,6 +1,6 @@
 import { DEFAULT_IN_STATUTORY, leaveMath, payrollEngine, startingStatutory } from '@crew/contracts';
 import type { ClientSession, Db, MongoClient } from 'mongodb';
-import { appendAuditEvent, linkAuditChain, provisionTenantMongo, Table, type Row } from '../src/mongo';
+import { appendAuditEvent, applyAccessLevelsMongo, linkAuditChain, provisionTenantMongo, Table, type Row } from '../src/mongo';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -150,6 +150,9 @@ async function seed(db: Db, session: ClientSession, passwordHash: string): Promi
   await seedHelpdesk(ws, { tid, manufacturingId: manufacturing, membershipByEmail });
   await seedAiAutomation(ws, { membershipByEmail });
   await seedLenses(ws, { membershipByEmail });
+  // The demo people are written with the roles of the time before the four access levels, then moved the same way
+  // every existing workspace was: so the demo also shows the migration's result.
+  await applyAccessLevelsMongo(unscoped);
 
   await appendAuditEvent(db, session, {
     tenant_id: tid, actor_type: 'system', actor_id: null, actor_label: 'demo seed', action: 'tenant.created', resource_type: 'tenant', resource_id: tid,
@@ -807,7 +810,7 @@ async function seedAiAutomation(ws: Workspace, c: { membershipByEmail: Map<strin
     steps: [
       { id: 'condition_1', type: 'condition', field: 'leave.type', op: 'eq', value: 'Sick leave' },
       { id: 'condition_2', type: 'condition', field: 'leave.days', op: 'gte', value: 3 },
-      { id: 'notify_1', type: 'notify', to: 'role', role: 'hr_admin', title: '{{employee.name}} asked for {{leave.days}} days of sick leave', body: 'Consider checking in with {{employee.name}} ({{employee.department}}) to see whether they need any support.', email: false },
+      { id: 'notify_1', type: 'notify', to: 'role', role: 'hr_workspace', title: '{{employee.name}} asked for {{leave.days}} days of sick leave', body: 'Consider checking in with {{employee.name}} ({{employee.department}}) to see whether they need any support.', email: false },
     ],
   };
   const w = await ws.insert('workflows', {
@@ -822,7 +825,7 @@ async function seedAiAutomation(ws: Workspace, c: { membershipByEmail: Map<strin
   const trace = [
     ['condition_1', 'condition', 'Met: leave.type is "Sick leave"'],
     ['condition_2', 'condition', 'Met: leave.days is "4"'],
-    ['notify_1', 'notify', 'Would notify 2 people with the hr_admin role: "Sample Employee asked for 4 days of sick leave"'],
+    ['notify_1', 'notify', 'Would notify the people with HR Workspace access: "Sample Employee asked for 4 days of sick leave"'],
   ];
   await ws.insertMany('workflow_step_runs', trace.map(([id, type, detail], i) => ({ run_id: run, step_index: i, step_id: id, type, status: type === 'condition' ? 'succeeded' : 'simulated', detail })));
   await ws.set('workflows', { id: w }, { status: 'active', active_version_id: v });

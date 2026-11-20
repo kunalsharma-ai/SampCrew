@@ -240,7 +240,7 @@ export class LeaveService implements OnModuleInit {
       permission: 'leave:approve',
       configurePermission: 'leave:configure',
       defaultSteps: [{ type: 'manager' }],
-      fallbackRole: 'hr_admin',
+      fallbackRole: 'hr_workspace',
       label: 'Leave request',
       link: () => '/leave',
       attributes: async (tx, id) => {

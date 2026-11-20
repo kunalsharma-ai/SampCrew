@@ -49,8 +49,8 @@ export class OffersService implements OnModuleInit {
     this.approvals.register('offer', {
       permission: 'offers:approve',
       configurePermission: 'recruitment:configure',
-      defaultSteps: [{ type: 'role', role: 'hr_admin' }],
-      fallbackRole: 'tenant_owner',
+      defaultSteps: [{ type: 'role', role: 'hr_workspace' }],
+      fallbackRole: 'super_workspace',
       label: 'Offer',
       link: (id) => `/recruitment/offers/${id}`,
       attributes: async (tx, id) => reqAttrs((await loadApplication(tx, (await this.load(tx, id)).application_id)).req),

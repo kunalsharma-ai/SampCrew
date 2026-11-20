@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { automation, TRIGGER_EVENTS, webhookBody, type TriggerEvent, type WorkflowDefinition, type WorkflowStep } from '@crew/contracts';
+import { automation, TRIGGER_EVENTS, webhookBody, type TriggerEvent, type WorkflowDefinition, type WorkflowStep, levelRoleKeyFor } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { loadSubject } from '../../platform/authz/authz.service';
-import { hasPermission } from '../../platform/authz/policy';
+import { can, hasPermission } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext, type TenantActor } from '../../platform/context/request-context';
 import { membershipUserNames, MongoService as DatabaseService, type TenantTx as Tx } from '../../platform/database/mongo.service';
@@ -35,9 +35,9 @@ interface WorkflowRow { id: string; name: string; status: string; owner_membersh
 /** PostgreSQL's md5(text)::uuid: a stable id from a text. */
 const md5Uuid = (text: string) => createHash('md5').update(text).digest('hex').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
 
-/** Members holding a role (by key) whose membership is active. */
+/** Active members on an access level (a role key saved before the levels means the level it became). */
 async function activeHolders(tx: Tx, roleKey: string): Promise<string[]> {
-  const roleIds = await tx.collection('roles').distinct<string>('id', { key: roleKey });
+  const roleIds = await tx.collection('roles').distinct<string>('id', { key: levelRoleKeyFor(roleKey), is_system: true });
   const holders = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: { $in: roleIds } });
   return tx.collection('memberships').distinct<string>('id', { id: { $in: holders }, status: 'active' });
 }
@@ -85,7 +85,7 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
       permission: 'employees:read',
       configurePermission: 'automation:manage',
       defaultSteps: [{ type: 'manager' }],
-      fallbackRole: 'hr_admin',
+      fallbackRole: 'hr_workspace',
       label: 'Workflow approval',
       link: () => '/approvals',
       attributes: async (tx, id) => {
@@ -377,8 +377,19 @@ export class WorkflowRunnerService implements OnModuleInit, OnApplicationBootstr
         const e = await talentEmployee(tx, employeeId);
         return [step.to === 'employee' ? e.membership_id : e.manager_membership_id].filter((x): x is string => !!x);
       }
-      case 'role':
-        return activeHolders(tx, step.role!);
+      case 'role': {
+        const holders = await activeHolders(tx, step.role!);
+        if (!employeeId) return holders;
+        // About an employee: only the people on that level who look after them (an HR Workspace admin hears
+        // about their own HR Workspace's people, not everyone's).
+        const e = await tx.collection('employees').findOne({ id: employeeId });
+        if (!e) return [];
+        const attrs = { employeeId, membershipId: e.membership_id ?? null, legalEntityId: e.legal_entity_id ?? null, departmentId: e.department_id ?? null, locationId: e.location_id ?? null };
+        const users = new Map((await tx.collection('memberships').find({ id: { $in: holders } }, { projection: { user_id: 1 } })).map((m) => [m.id as string, m.user_id as string]));
+        const out: string[] = [];
+        for (const id of holders) if (can(await loadSubject(tx, id, users.get(id)!, true), 'employees:read', attrs).allowed) out.push(id);
+        return out;
+      }
       case 'member':
         return step.membershipId ? [step.membershipId] : [];
     }

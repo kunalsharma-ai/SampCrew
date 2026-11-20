@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { ChatMessageInput, ChatMessageView, CommFile, ConversationInput, ConversationView, MessageDelivery } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
-import { AuthzService } from '../../platform/authz/authz.service';
+import { AuthzService, permissionHolderIds } from '../../platform/authz/authz.service';
 import { hasPermission, type Subject } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
 import { ilike, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
@@ -27,9 +27,7 @@ export async function fileViews(tx: TenantTx, ids: string[]): Promise<Map<string
 
 /** Active members holding `helpdesk:manage`: the HR team that answers employees' messages to HR. */
 export async function hrTeam(tx: TenantTx): Promise<string[]> {
-  const perms = await tx.collection('role_permissions').find({ permission: 'helpdesk:manage' }, { projection: { role_id: 1 } });
-  const ids = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: { $in: perms.map((p) => p.role_id) } });
-  return tx.collection('memberships').distinct<string>('id', { id: { $in: ids }, status: 'active' });
+  return permissionHolderIds(tx, 'helpdesk:manage');
 }
 
 /**

@@ -205,8 +205,8 @@ export function applyScimGroupPatch(ops: ScimPatchInput['Operations']) {
   return out;
 }
 
-/** Roles a provisioning group may grant: never the owner role, which only an owner can give in SampCrew. */
-export const SCIM_UNMAPPABLE_ROLES = ['tenant_owner'] as const;
+/** Levels a provisioning group may not grant: Super Workspace, which only a Super Workspace person can give in SampCrew. */
+export const SCIM_UNMAPPABLE_ROLES = ['super_workspace'] as const;
 export const scimGroupRoleInput = z.object({ roleId: z.uuid().nullable() });
 
 // Privacy requests ---------------------------------------------------------------------------------------------------

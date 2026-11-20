@@ -244,24 +244,25 @@ describe('HR workspace: verification, assets, custom fields, admin and import', 
       expect(await pool.count('audit_events', { tenant_id: t.id, action: 'workspace.modules_changed' })).toBe(2);
     });
 
-    it('changes a built-in role, never the owner, and resets it to its defaults', async () => {
+    it('changes what an access level can do, never Super Workspace, and resets it to its defaults', async () => {
       const matrix = await api(app, owner).get('/hr-admin/permissions');
       expect(matrix.status).toBe(200);
       expect(matrix.body.actions.map((a: { label: string }) => a.label)).toEqual(['View', 'Create', 'Edit', 'Delete', 'Approve', 'Export', 'Manage']);
       const roles = matrix.body.roles as { id: string; key: string; grants: Record<string, string>; locked: boolean }[];
-      expect(roles.map((r) => r.key)).toEqual(expect.arrayContaining(['hr_executive', 'reporting_manager']));
-      const ownerRole = roles.find((r) => r.key === 'tenant_owner')!;
+      // Only the access levels are listed: the old built-in roles are kept for rollback but never shown.
+      expect(roles.map((r) => r.key)).toEqual(['super_workspace', 'hr_workspace', 'employee_workspace']);
+      const ownerRole = roles.find((r) => r.key === 'super_workspace')!;
       expect(ownerRole.locked).toBe(true);
       expect((await api(app, owner).put(`/hr-admin/roles/${ownerRole.id}/permissions`).send({ grants: [] })).status).toBe(400);
 
-      const exec = roles.find((r) => r.key === 'hr_executive')!;
+      const exec = roles.find((r) => r.key === 'employee_workspace')!;
       const defaults = exec.grants;
       expect(defaults['bgv:approve']).toBeUndefined();
       const grants = [...Object.entries(defaults).map(([permission, scope]) => ({ permission, scope })), { permission: 'bgv:approve', scope: 'tenant' }];
       const saved = await api(app, owner).put(`/hr-admin/roles/${exec.id}/permissions`).send({ grants });
       expect(saved.status, JSON.stringify(saved.body)).toBe(200);
       expect(saved.body.grants['bgv:approve']).toBe('tenant');
-      const changed = (await api(app, owner).get('/hr-admin/permissions')).body.roles.find((r: { key: string }) => r.key === 'hr_executive');
+      const changed = (await api(app, owner).get('/hr-admin/permissions')).body.roles.find((r: { key: string }) => r.key === 'employee_workspace');
       expect(changed.customised).toBe(true);
 
       const reset = await api(app, owner).post(`/hr-admin/roles/${exec.id}/reset`);

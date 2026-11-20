@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Scope } from '@crew/contracts';
+import { ACCESS_LEVEL_ROLES, EMPLOYEE_SELF_GRANTS, levelGrantAllowed, levelGrantScope, type Scope } from '@crew/contracts';
 import { requestContext } from '../context/request-context';
 import { MongoService as DatabaseService, type TenantTx } from '../database/mongo.service';
 import { Errors } from '../http/errors';
@@ -47,15 +47,24 @@ export async function loadSubject(tx: TenantTx, membershipId: string, userId: st
 
   // Permissions SAMPLEDGE switched off for the workspace have no effect, whatever the member's roles say.
   const disabled = new Set<string>((await tx.collection('tenant_access_controls').findOne({}))?.disabled_permissions ?? []);
-  const assignments = await tx.collection('role_assignments').find({ membership_id: membershipId });
-  const roleIds = [...new Set(assignments.map((a) => a.role_id as string))];
-  const roles = new Map((await tx.collection('roles').find({ id: { $in: roleIds } })).map((r) => [r.id as string, r.key as string]));
+  // Only the four access levels give access (Super, HR and Employee Workspace; Console Admin is the Console's own).
+  // Old built-in and custom roles may still be in the database for rollback: they give nothing.
+  const held = await tx.collection('role_assignments').find({ membership_id: membershipId });
+  const roles = new Map(
+    (await tx.collection('roles').find({ id: { $in: [...new Set(held.map((a) => a.role_id as string))] }, is_system: true, key: { $in: [...ACCESS_LEVEL_ROLES] } })).map((r) => [r.id as string, r.key as string]),
+  );
+  const assignments = held.filter((a) => roles.has(a.role_id as string));
+  const roleIds = [...roles.keys()];
   const permissions = await tx.collection('role_permissions').find({ role_id: { $in: roleIds } });
   const grants: Grant[] = [];
   for (const a of assignments) {
+    const limited = roles.get(a.role_id) !== 'employee_workspace';
     for (const rp of permissions) {
       if (rp.role_id !== a.role_id || disabled.has(rp.permission)) continue;
-      grants.push({ permission: rp.permission, scope: rp.scope as Scope, roleKey: roles.get(a.role_id)!, constraints: a.constraints ?? {} });
+      // Super and HR Workspace may be limited to some areas or actions, or to what the person had before the levels.
+      const scope = limited ? levelGrantScope(rp.permission, rp.scope as Scope, a.constraints) : (rp.scope as Scope);
+      if (!scope) continue;
+      grants.push({ permission: rp.permission, scope, roleKey: roles.get(a.role_id)!, constraints: a.constraints ?? {} });
     }
   }
 
@@ -92,6 +101,16 @@ export async function loadSubject(tx: TenantTx, membershipId: string, userId: st
 
   const reports = await descendants(tx, 'memberships', 'manager_membership_id', membershipId);
   const reportEmployees = m.employee_id ? await descendants(tx, 'employees', 'current_manager_employee_id', m.employee_id) : new Set<string>();
+  // Employee Workspace's team part applies only to people someone reports to; everyone else has their own records.
+  if (!reports.size && !reportEmployees.size) {
+    for (let i = grants.length - 1; i >= 0; i--) {
+      const g = grants[i]!;
+      if (g.roleKey !== 'employee_workspace') continue;
+      const own = EMPLOYEE_SELF_GRANTS[g.permission as keyof typeof EMPLOYEE_SELF_GRANTS];
+      if (!own) grants.splice(i, 1);
+      else grants[i] = { ...g, scope: own };
+    }
+  }
 
   const departments = await tx.collection('departments').find({}, { projection: { _id: 1, parent_id: 1 } });
   const children = new Map<string, string[]>();
@@ -137,4 +156,42 @@ export async function descendants(tx: TenantTx, table: string, parentField: stri
     frontier = next;
   }
   return out;
+}
+
+/**
+ * Active members holding a permission through their access level, once per scope, with the limits of the assignment
+ * (areas and view-only included). For finding who to notify or who can pick up work: the policy engine still checks
+ * each record when they act.
+ */
+export async function permissionHolders(
+  tx: { collection: TenantTx['collection'] },
+  permission: string,
+  opts: { tenantId?: string; only?: string[] } = {},
+): Promise<{ membershipId: string; scope: Scope; constraints: Record<string, unknown> }[]> {
+  const t = opts.tenantId ? { tenant_id: opts.tenantId } : {};
+  const disabled = new Set<string>((await tx.collection('tenant_access_controls').findOne({ ...t }))?.disabled_permissions ?? []);
+  if (disabled.has(permission)) return [];
+  const levels = new Map((await tx.collection('roles').find({ ...t, is_system: true, key: { $in: [...ACCESS_LEVEL_ROLES] } }, { projection: { key: 1 } })).map((r) => [r.id as string, r.key as string]));
+  const perms = await tx.collection('role_permissions').find({ ...t, permission, role_id: { $in: [...levels.keys()] } }, { projection: { role_id: 1, scope: 1 } });
+  const assignments = await tx.collection('role_assignments').find({ ...t, role_id: { $in: perms.map((p) => p.role_id) }, ...(opts.only ? { membership_id: { $in: opts.only } } : {}) });
+  const active = new Set(await tx.collection('memberships').distinct<string>('id', { ...t, id: { $in: assignments.map((a) => a.membership_id) }, status: 'active' }));
+  const seen = new Set<string>();
+  const out: { membershipId: string; scope: Scope; constraints: Record<string, unknown> }[] = [];
+  for (const a of assignments) {
+    if (!active.has(a.membership_id)) continue;
+    for (const p of perms.filter((x) => x.role_id === a.role_id)) {
+      const scope = levels.get(a.role_id) === 'employee_workspace' ? (p.scope as Scope) : levelGrantScope(permission, p.scope as Scope, a.constraints);
+      if (!scope) continue;
+      const key = `${a.membership_id}:${scope}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ membershipId: a.membership_id as string, scope, constraints: (a.constraints ?? {}) as Record<string, unknown> });
+    }
+  }
+  return out;
+}
+
+/** The distinct active members holding a permission (see permissionHolders). */
+export async function permissionHolderIds(tx: { collection: TenantTx['collection'] }, permission: string, opts: { tenantId?: string; only?: string[] } = {}): Promise<string[]> {
+  return [...new Set((await permissionHolders(tx, permission, opts)).map((h) => h.membershipId))];
 }

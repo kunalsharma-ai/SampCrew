@@ -453,7 +453,7 @@ export class PlatformService {
         };
         const recentAudit = (await tx.collection('audit_events').find({}, { sort: { chain_seq: -1 }, limit: 25 }))
           .map((e) => ({ action: e.action, actorLabel: e.actor_label ?? null, createdAt: e.created_at }));
-        const roleRows = await tx.collection<{ id: string; name: string }>('roles').find({}, { projection: { name: 1 } });
+        const roleRows = await tx.collection<{ id: string; name: string }>('roles').find({ key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] }, is_system: true }, { projection: { name: 1 } });
         const held = await countBy(tx, 'role_assignments', 'role_id', roleRows.map((r) => r.id));
         const byName = new Map<string, number>();
         for (const r of roleRows) byName.set(r.name, (byName.get(r.name) ?? 0) + (held.get(r.id) ?? 0));

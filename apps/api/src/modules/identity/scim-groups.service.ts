@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { applyScimGroupPatch, parseScimFilter, SCIM_GROUP_SCHEMA, SCIM_LIST_SCHEMA, SCIM_UNMAPPABLE_ROLES, type ScimGroupInput, type ScimPatchInput } from '@crew/contracts';
+import { applyScimGroupPatch, levelRoleKeyFor, parseScimFilter, SCIM_GROUP_SCHEMA, SCIM_LIST_SCHEMA, SCIM_UNMAPPABLE_ROLES, type ScimGroupInput, type ScimPatchInput } from '@crew/contracts';
+import { accessFromRoleKeys } from '../members/access';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
 import { countBy, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
@@ -12,6 +13,7 @@ interface GroupRow {
   display_name: string;
   external_id: string | null;
   role_id: string | null;
+  constraints?: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
 }
@@ -90,16 +92,16 @@ export class ScimGroupsService {
   private async syncRoles(tx: TenantTx, membershipIds: string[]) {
     if (!membershipIds.length) return [];
     const links = await tx.collection('scim_group_members').find({ membership_id: { $in: membershipIds } });
-    const groupRole = new Map(
-      (await tx.collection('scim_groups').find({ id: { $in: [...new Set(links.map((l) => l.group_id))] }, role_id: { $ne: null } })).map((g) => [g.id as string, g.role_id as string]),
-    );
+    const groups = await tx.collection('scim_groups').find({ id: { $in: [...new Set(links.map((l) => l.group_id))] }, role_id: { $ne: null } });
+    const groupRole = new Map(groups.map((g) => [g.id as string, g.role_id as string]));
+    const limitsOf = new Map(groups.map((g) => [g.role_id as string, (g.constraints ?? {}) as Record<string, unknown>]));
     // What each person should hold through their groups.
     const wanted = new Set(links.filter((l) => groupRole.has(l.group_id)).map((l) => `${l.membership_id}:${groupRole.get(l.group_id)}`));
     const current = await tx.collection('role_assignments').find({ membership_id: { $in: membershipIds } });
     const held = new Set(current.map((a) => `${a.membership_id}:${a.role_id}`));
     const addedPairs = [...wanted].filter((k) => !held.has(k)).map((k) => k.split(':') as [string, string]);
     const removedRows = current.filter((a) => a.source === 'scim' && !wanted.has(`${a.membership_id}:${a.role_id}`));
-    if (addedPairs.length) await tx.collection('role_assignments').insertMany(addedPairs.map(([membership_id, role_id]) => ({ membership_id, role_id, source: 'scim' })));
+    if (addedPairs.length) await tx.collection('role_assignments').insertMany(addedPairs.map(([membership_id, role_id]) => ({ membership_id, role_id, source: 'scim', constraints: limitsOf.get(role_id) ?? {} })));
     if (removedRows.length) await tx.collection('role_assignments').delete({ id: { $in: removedRows.map((a) => a.id) } });
     const roleKeys = new Map(
       (await tx.collection('roles').find({ id: { $in: [...new Set([...addedPairs.map((p) => p[1]), ...removedRows.map((a) => a.role_id as string)])] } })).map((r) => [r.id as string, r.key as string]),
@@ -245,24 +247,35 @@ export class ScimGroupsService {
     return this.db.tenant(async (tx) => {
       const g = await tx.collection<GroupRow>('scim_groups').findOne({ id: groupId });
       if (!g) throw Errors.notFound('Provisioning group');
+      // A group gives an access level. An old role (before the four access levels) gives the level it became, with
+      // the same limits a person moved from that role got.
       let role: { id: string; key: string; name: string } | null = null;
+      let constraints: Record<string, unknown> = {};
       if (roleId) {
         const r = await tx.collection('roles').findOne({ id: roleId });
-        role = r ? { id: r.id, key: r.key, name: r.name } : null;
-        if (!role) throw Errors.notFound('Role');
-        if ((SCIM_UNMAPPABLE_ROLES as readonly string[]).includes(role.key)) {
-          throw Errors.badRequest('role_not_mappable', 'A provisioning group cannot grant the owner role. Owners are added by another owner in SampCrew.');
+        if (!r) throw Errors.notFound('Role');
+        const levelKey = levelRoleKeyFor(r.key as string);
+        if ((SCIM_UNMAPPABLE_ROLES as readonly string[]).includes(levelKey)) {
+          throw Errors.badRequest('role_not_mappable', 'A provisioning group cannot give Super Workspace access. A Super Workspace person gives it in SampCrew.');
+        }
+        const level = (await tx.collection('roles').findOne({ key: levelKey, is_system: true }))!;
+        role = { id: level.id, key: level.key, name: level.name };
+        if (levelKey === 'hr_workspace' && r.key !== 'hr_workspace') {
+          const { level: _l, ...limits } = await accessFromRoleKeys(tx, [{ roleKey: r.key as string }], { legalEntityId: null, departmentId: null });
+          constraints = limits;
         }
       }
-      if ((g.role_id ?? null) === (role?.id ?? null)) return this.overview(tx);
-      await tx.collection('scim_groups').updateOne({ id: g.id }, { $set: { role_id: role?.id ?? null } });
+      if ((g.role_id ?? null) === (role?.id ?? null) && JSON.stringify(g.constraints ?? {}) === JSON.stringify(constraints)) return this.overview(tx);
+      await tx.collection('scim_groups').updateOne({ id: g.id }, { $set: { role_id: role?.id ?? null, constraints } });
       const members = await this.memberships(tx, g.id);
+      if (role) await tx.collection('role_assignments').update({ membership_id: { $in: members }, role_id: role.id, source: 'scim' }, { $set: { constraints } });
       const changed = await this.syncRoles(tx, members);
       await this.audit.record(tx, {
         action: 'scim_group.role_mapped', resourceType: 'scim_group', resourceId: g.id,
-        changes: { displayName: g.display_name, role: role?.key ?? null, previousRoleId: g.role_id, membersChanged: changed.length },
+        changes: { displayName: g.display_name, role: role?.key ?? null, constraints, previousRoleId: g.role_id, membersChanged: changed.length },
       });
       return this.overview(tx);
     });
   }
+
 }

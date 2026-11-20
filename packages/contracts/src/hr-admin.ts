@@ -20,7 +20,7 @@ export const roleGrantsInput = z.object({
 }).strict();
 
 /** Roles that keep their defaults: the owner always has everything, so a workspace can never lock itself out. */
-export const LOCKED_ROLE_KEYS = new Set(['tenant_owner']);
+export const LOCKED_ROLE_KEYS = new Set(['super_workspace']);
 
 // ------------------------------------------------------------------------------------------------------------
 // Bulk import of existing employees

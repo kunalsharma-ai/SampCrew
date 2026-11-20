@@ -1,4 +1,5 @@
 import { BlockList, isIP } from 'node:net';
+import { permissionHolderIds } from '../../platform/authz/authz.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 import { createHash } from 'node:crypto';
@@ -610,9 +611,7 @@ export class DevicesService {
       let alerted = 0;
       for (const d of devices) {
         if (deviceStatus(d) !== 'offline') continue;
-        const roles = await tx.collection('role_permissions').distinct<string>('role_id', { permission: 'devices:manage' });
-        const assigned = await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: { $in: roles } });
-        const holders = (await tx.collection('memberships').find({ id: { $in: assigned }, status: 'active' }, { projection: { _id: 1 } })).map((m) => ({ membership_id: m.id as string }));
+        const holders = (await permissionHolderIds(tx, 'devices:manage')).map((id) => ({ membership_id: id }));
         await this.notifications.notify(tx, {
           membershipIds: holders.map((h) => h.membership_id), kind: 'device.offline', title: `Attendance device offline: ${d.name}`,
           body: `Last heard from at ${d.last_seen_at!.toISOString()}. Punches made on it are kept on the device and arrive when it reconnects.`,

@@ -757,7 +757,7 @@ export class EmployeesService {
     const placement = {
       email: e.workEmail,
       fullName: `${e.firstName} ${e.lastName}`.trim(),
-      roleKeys: ['employee'],
+      roleKeys: ['employee_workspace'],
       legalEntityId: e.legalEntityId ?? undefined,
       departmentId: e.departmentId,
       locationId: e.locationId,
@@ -812,7 +812,7 @@ export class EmployeesService {
     await this.authz.require('employees:read', employeeAttrs(e), tx);
     if (!e.membershipId) throw Errors.notFound('SampCrew login');
     const membership = (await tx.collection('memberships').findOne({ id: e.membershipId }))!;
-    const ownerRole = await tx.collection('roles').findOne({ key: 'tenant_owner' });
+    const ownerRole = await tx.collection('roles').findOne({ key: 'super_workspace', is_system: true });
     const owner = !!ownerRole && (await tx.collection('role_assignments').exists({ membership_id: e.membershipId, role_id: ownerRole.id }));
     return { e, m: { user_id: membership.user_id as string, status: membership.status as string, owner } };
   }
@@ -853,7 +853,7 @@ export class EmployeesService {
       if (m.user_id === actor.userId) throw Errors.badRequest('own_login', 'Change your own password and sessions under Settings, Security.');
       if (m.owner) {
         const s = await this.authz.subject(tx);
-        if (!s.grants.some((g) => g.roleKey === 'tenant_owner')) throw Errors.forbidden('Only a workspace owner can change another owner\'s login');
+        if (!s.grants.some((g) => g.roleKey === 'super_workspace')) throw Errors.forbidden('Only a Super Workspace person can change the login of another Super Workspace person');
       }
       if (m.status === 'invited' && input.action !== 'sign_out') throw Errors.badRequest('not_joined', 'This person has not accepted their invitation yet.');
       // The account, its password and its sessions are global records; they change in this same transaction.
