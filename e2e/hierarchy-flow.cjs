@@ -133,7 +133,7 @@ const NAME = `Pune Branch ${stamp}`;
     await see(sup, 'HR Workspaces you run');
     await see(sup, NAME);
     if (await sup.getByRole('button', { name: 'New HR Workspace' }).count()) throw new Error('An HR Workspace admin can create HR Workspaces');
-    await sup.getByText(NAME).first().click();
+    await sup.getByRole('link', { name: new RegExp(NAME) }).first().click();
     await see(sup, 'Modules for this HR Workspace');
     if (await sup.getByRole('button', { name: 'Save modules' }).count()) throw new Error('An HR Workspace admin can change its modules');
     await sup.getByRole('tab', { name: 'People' }).click();
