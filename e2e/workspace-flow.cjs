@@ -9,6 +9,8 @@
  *    profile shows the account number masked, never in full.
  * 4. She opens Appraisal and sees the self-appraisal HR launched for her.
  * 5. HR sees last month's attendance reward winners, downloads them to Excel and moves between months.
+ * 6. HR makes "Always on time" pay a bonus, grants it to last month's winners (each is told; payroll pays it with
+ *    the next run), and takes one grant back with a reason.
  * Fails on any browser error.
  */
 const { chromium } = require('playwright');
@@ -146,6 +148,43 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
     await hr.waitForURL(/winners=\d{4}-\d{2}/);
     await hr.getByTestId('winners-month').waitFor();
     ok(`HR sees last month's reward winners (${winners.rules.map((r) => `${r.name}: ${r.winners.length}`).join(', ')}) and moves between months`);
+
+    // 6. A reward that pays: a bonus for "Always on time", granted to last month's winners.
+    await hr.goto(`${BASE}/settings/attendance`);
+    const onTime = hr.locator('li', { hasText: 'Always on time' }).first();
+    await onTime.getByRole('button', { name: 'Edit' }).click();
+    const dialog = hr.locator('dialog[open]', { hasText: 'Edit reward' });
+    await dialog.getByLabel('Payout').selectOption('bonus');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await dialog.getByText('Enter the bonus amount').waitFor();
+    await dialog.getByLabel(/Bonus amount/).fill('500');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    await onTime.getByText(/Bonus INR 500 in payroll/).waitFor();
+    const before = (await api(hrT, 'GET', '/workspace/reward-winners')).rules.find((r) => r.name === 'Always on time');
+    assert(before.payout?.type === 'bonus' && before.toGrant === before.winners.length, 'the rule pays a bonus and nobody has it yet');
+    const section = hr.getByRole('region', { name: 'Always on time winners' });
+    await section.getByText('Pays a bonus of INR 500.00').waitFor();
+    if (before.winners.length) {
+      await section.getByRole('button', { name: `Grant to ${before.winners.length}` }).click();
+      const confirm = hr.locator('dialog[open]', { hasText: 'Grant Always on time' });
+      await confirm.getByText(/a bonus of INR 500\.00/).waitFor();
+      await confirm.getByRole('button', { name: 'Grant' }).click();
+      await section.getByText(`Granted to ${before.winners.length} ${before.winners.length === 1 ? 'winner' : 'winners'}`).waitFor();
+      await section.getByText('In next payroll').first().waitFor();
+      assert((await section.getByText('In next payroll').count()) === before.winners.length, 'every winner is marked as in the next payroll');
+      // Take one back, with a reason.
+      const first = before.winners[0];
+      await section.getByRole('row', { name: new RegExp(first.name) }).getByRole('button', { name: 'Take back' }).click();
+      const back = hr.locator('dialog[open]', { hasText: `Take back ${first.name}'s reward` });
+      await back.getByLabel('Reason').fill('Punched in by a colleague on one day');
+      await back.getByRole('button', { name: 'Take back' }).click();
+      await section.getByRole('row', { name: new RegExp(first.name) }).getByText('Taken back').waitFor();
+      const after = (await api(hrT, 'GET', '/workspace/reward-winners')).rules.find((r) => r.name === 'Always on time');
+      const st = after.winners.map((w) => w.grant?.status);
+      assert(st.filter((x) => x === 'revoked').length === 1 && st.filter((x) => x === 'granted').length === before.winners.length - 1, `grants recorded: ${st.join(',')}`);
+    }
+    ok(`HR sets a INR 500 bonus on "Always on time", grants it to ${before.winners.length} winners and takes one back with a reason`);
 
     assert(errs.length === 0, `no browser errors:\n${errs.join('\n')}`);
     ok('no browser errors');

@@ -8,6 +8,8 @@ import { z } from 'zod';
 export const REWARD_KINDS = ['perfect_attendance', 'punctuality'] as const;
 export type RewardKind = (typeof REWARD_KINDS)[number];
 export const REWARD_ICONS = ['trophy', 'medal', 'star', 'clock'] as const;
+export const REWARD_PAYOUT_TYPES = ['none', 'bonus', 'leave_credit'] as const;
+export type RewardPayoutType = (typeof REWARD_PAYOUT_TYPES)[number];
 
 export const rewardRuleInput = z.object({
   name: z.string().trim().min(1).max(80),
@@ -23,8 +25,30 @@ export const rewardRuleInput = z.object({
   allowHalfDays: z.boolean().default(false),
   /** A month counts only when the person had at least this many working days in it (new joiners, long leave). */
   minWorkingDays: z.number().int().min(1).max(31).default(10),
+  /**
+   * What a winner receives when HR grants the reward: nothing (recognition only), a bonus earning in the next payroll
+   * run (an amount in the workspace currency) or extra days of one leave type, credited at once.
+   */
+  payoutType: z.enum(REWARD_PAYOUT_TYPES).default('none'),
+  payoutAmount: z.string().trim().regex(/^\d{1,9}(\.\d{1,2})?$/, 'Use an amount like 500 or 1250.50').nullable().default(null),
+  payoutLeaveTypeId: z.uuid().nullable().default(null),
+  payoutDays: z.string().trim().regex(/^\d{1,2}(\.(0|00|5|50))?$/, 'Use whole or half days, like 1 or 0.5').nullable().default(null),
+}).superRefine((r, ctx) => {
+  if (r.payoutType === 'bonus' && !(Number(r.payoutAmount) > 0)) ctx.addIssue({ code: 'custom', path: ['payoutAmount'], message: 'Enter the bonus amount' });
+  if (r.payoutType === 'leave_credit') {
+    if (!r.payoutLeaveTypeId) ctx.addIssue({ code: 'custom', path: ['payoutLeaveTypeId'], message: 'Choose the leave type to credit' });
+    if (!(Number(r.payoutDays) > 0)) ctx.addIssue({ code: 'custom', path: ['payoutDays'], message: 'Enter the days to credit' });
+  }
 });
 export type RewardRuleInput = z.infer<typeof rewardRuleInput>;
+
+/** HR grants a month's winners their payout: every winner of every paying rule, or one rule, or chosen people. */
+export const rewardGrantInput = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/, 'Use a month like 2026-11'),
+  ruleId: z.uuid().optional(),
+  employeeIds: z.array(z.uuid()).min(1).max(5000).optional(),
+});
+export const rewardRevokeInput = z.object({ reason: z.string().trim().min(3, 'Say why the reward is taken back (at least 3 characters)').max(300) });
 
 export const rewardMonthQuery = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/, 'Use a month like 2026-11').optional() });
 
@@ -44,7 +68,7 @@ export interface RewardDay {
  * Evaluates one rule over a month's days. `complete` says whether the month is over; an open month can only be on
  * track or missed. Pure, so the API and the tests share it.
  */
-export function evaluateReward(rule: RewardRuleInput, days: RewardDay[], complete: boolean): { status: RewardStatus; done: number; total: number; reason: string | null } {
+export function evaluateReward(rule: Pick<RewardRuleInput, 'kind' | 'maxLateDays' | 'excusedLeaveTypeIds' | 'allowHalfDays' | 'minWorkingDays'>, days: RewardDay[], complete: boolean): { status: RewardStatus; done: number; total: number; reason: string | null } {
   const working = days.filter((d) => d.dayType === 'working' && d.status !== 'not_joined' && d.status !== 'in_progress');
   const excused = new Set(rule.excusedLeaveTypeIds);
   const isExcusedLeave = (d: RewardDay) => (d.status === 'on_leave' || d.status === 'half_day_leave') && !!d.leaveTypeId && excused.has(d.leaveTypeId);
@@ -75,6 +99,6 @@ export function evaluateReward(rule: RewardRuleInput, days: RewardDay[], complet
 
 /** The two rules most companies start with. */
 export const DEFAULT_REWARD_RULES: RewardRuleInput[] = [
-  { name: 'Perfect attendance', kind: 'perfect_attendance', description: 'Present on every working day of the month. Sick leave does not count against you.', icon: 'trophy', active: true, maxLateDays: 2, excusedLeaveTypeIds: [], allowHalfDays: false, minWorkingDays: 15 },
-  { name: 'Always on time', kind: 'punctuality', description: 'Never late in the month.', icon: 'clock', active: true, maxLateDays: 0, excusedLeaveTypeIds: [], allowHalfDays: true, minWorkingDays: 10 },
+  { name: 'Perfect attendance', kind: 'perfect_attendance', description: 'Present on every working day of the month. Sick leave does not count against you.', icon: 'trophy', active: true, maxLateDays: 2, excusedLeaveTypeIds: [], allowHalfDays: false, minWorkingDays: 15, payoutType: 'none', payoutAmount: null, payoutLeaveTypeId: null, payoutDays: null },
+  { name: 'Always on time', kind: 'punctuality', description: 'Never late in the month.', icon: 'clock', active: true, maxLateDays: 0, excusedLeaveTypeIds: [], allowHalfDays: true, minWorkingDays: 10, payoutType: 'none', payoutAmount: null, payoutLeaveTypeId: null, payoutDays: null },
 ];

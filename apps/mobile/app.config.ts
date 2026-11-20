@@ -4,6 +4,12 @@ import type { ExpoConfig } from 'expo/config';
  * The API address is set per build with EXPO_PUBLIC_CREW_API_URL (for example https://api.example.com).
  * Push needs an Expo project id (EAS_PROJECT_ID); without it the app runs and says push is not set up.
  */
+// A store build must know its API: EAS reads EXPO_PUBLIC_CREW_API_URL from the project's environment variables
+// (eas env:create). Without it the app would talk to localhost, so the build stops here instead.
+if (process.env.EAS_BUILD && !process.env.EXPO_PUBLIC_CREW_API_URL) {
+  throw new Error('Set EXPO_PUBLIC_CREW_API_URL for this EAS environment (eas env:create), for example https://api.example.com');
+}
+
 const config: ExpoConfig = {
   name: 'SampCrew',
   slug: 'crew',
@@ -25,15 +31,18 @@ const config: ExpoConfig = {
     adaptiveIcon: { foregroundImage: './assets/adaptive-icon.png', backgroundColor: '#FFFFFF' },
     package: process.env.CREW_ANDROID_PACKAGE ?? 'com.sampledge.crew',
     permissions: ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'USE_BIOMETRIC', 'USE_FINGERPRINT'],
-    blockedPermissions: ['ACCESS_BACKGROUND_LOCATION'],
+    // Never asked for: background location, drawing over other apps, and the microphone (photos only).
+    blockedPermissions: ['ACCESS_BACKGROUND_LOCATION', 'SYSTEM_ALERT_WINDOW', 'RECORD_AUDIO'],
   },
   web: { bundler: 'metro', output: 'single', favicon: './assets/favicon.png', name: 'SampCrew', shortName: 'SampCrew', description: 'People, simplified.' },
   plugins: [
     'expo-router',
     ['expo-splash-screen', { image: './assets/splash-icon.png', imageWidth: 180, resizeMode: 'contain', backgroundColor: '#FFFFFF', dark: { image: './assets/splash-icon.png', backgroundColor: '#0B1020' } }],
     'expo-secure-store',
+    'expo-system-ui',
     ['expo-local-authentication', { faceIDPermission: 'SampCrew uses Face ID to unlock the app.' }],
-    ['expo-location', { locationWhenInUsePermission: 'SampCrew checks your location when you punch in or out, if your workplace requires it.' }],
+    // Location only while the app is open, so the "always" and motion purpose strings are left out (App Review asks about unused ones).
+    ['expo-location', { locationWhenInUsePermission: 'SampCrew checks your location when you punch in or out, if your workplace requires it.', locationAlwaysAndWhenInUsePermission: false, locationAlwaysPermission: false, motionUsagePermission: false }],
     'expo-notifications',
     ['expo-image-picker', { photosPermission: 'SampCrew lets you choose a profile photo from your photos.', cameraPermission: 'SampCrew lets you take a profile photo with your camera.', microphonePermission: false }],
   ],

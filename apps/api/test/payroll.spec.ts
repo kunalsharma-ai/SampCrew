@@ -262,6 +262,25 @@ describe('payroll', () => {
       expect(run.net).toBe('51937.84');
     });
 
+    it('pays an attendance reward bonus HR granted as an earning, and lets it go when the grant is taken back', async () => {
+      const ruleId = (await pool.insert('attendance_reward_rules', { tenant_id: t.id, name: 'Perfect attendance', kind: 'perfect_attendance', payout_type: 'bonus', payout_amount: '750' })).id;
+      const grant = await pool.insert('attendance_reward_grants', {
+        tenant_id: t.id, rule_id: ruleId, rule_name: 'Perfect attendance', employee_id: people.asha.employeeId, month: '2026-08', payout_type: 'bonus', amount: '750', currency: 'INR', status: 'granted',
+      });
+      ok(await as('payroll').post(`/payroll/runs/${runId}/compute`));
+      let run = ok(await as('payroll').get(`/payroll/runs/${runId}`));
+      const asha = run.items.find((i: { name: string }) => i.name === 'Asha Rao');
+      expect(asha.net).toBe('42933.34');
+      const detail = ok(await as('payroll').get(`/payroll/runs/${runId}/items/${asha.id}`));
+      expect(detail.lines.find((l: { name: string }) => l.name === 'Reward: Perfect attendance (2026-08)')).toMatchObject({ amount: '750.00' });
+      expect((await pool.one('attendance_reward_grants', { id: grant.id }))!.payroll_run_id).toBe(runId);
+      // Taken back before payroll is finalised: the next compute leaves it out.
+      await pool.update('attendance_reward_grants', { id: grant.id }, { $set: { status: 'revoked', payroll_run_id: null } });
+      ok(await as('payroll').post(`/payroll/runs/${runId}/compute`));
+      run = ok(await as('payroll').get(`/payroll/runs/${runId}`));
+      expect(run.net).toBe('51937.84');
+    });
+
     it('is approved by someone other than the preparer, then frozen', async () => {
       ok(await as('payroll').post(`/payroll/runs/${runId}/submit`));
       expect((await as('payroll').post(`/payroll/runs/${runId}/compute`)).status).toBe(409);

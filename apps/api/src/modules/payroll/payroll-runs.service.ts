@@ -263,6 +263,8 @@ export class PayrollRunsService implements OnModuleInit {
     );
     await items.delete({ run_id: r.id });
     await claimsTable.update({ payroll_run_id: r.id, status: 'approved' }, { $set: { payroll_run_id: null } });
+    const rewardGrants = tx.collection('attendance_reward_grants');
+    await rewardGrants.update({ payroll_run_id: r.id, status: 'granted' }, { $set: { payroll_run_id: null } });
 
     const emps = await this.inPeriod(tx, r.legal_entity_id, period.start, period.end);
     const regions = await fieldById(tx, 'locations', emps.map((e) => e.current_location_id), 'region');
@@ -309,6 +311,11 @@ export class PayrollRunsService implements OnModuleInit {
         kind: a.kind as 'earning' | 'deduction', label: a.label as string, amount: a.amount as string, taxable: a.taxable as boolean,
       }));
       const held = prior?.status === 'on_hold';
+      // Attendance reward bonuses HR has granted and no run has paid yet (Settings, Attendance, Reward winners).
+      const rewards = held
+        ? []
+        : await rewardGrants.find({ employee_id: p.id, payout_type: 'bonus', status: 'granted', payroll_run_id: null, currency: r.currency, month: { $lte: period.start.slice(0, 7) } }, { sort: { month: 1, created_at: 1 } });
+      for (const g of rewards) adjustments.push({ kind: 'earning', label: `Reward: ${g.rule_name} (${g.month})`.slice(0, 60), amount: g.amount as string, taxable: true });
       const claims = held
         ? []
         : (await claimsTable.find({ employee_id: p.id, status: 'approved', payroll_run_id: null, currency: r.currency, spent_on: { $lte: period.end } }, { sort: { spent_on: 1 } })).map((c) => {
@@ -345,9 +352,10 @@ export class PayrollRunsService implements OnModuleInit {
         lop_override_reason: prior?.lop_override ? prior.lop_override_reason : null, paid_days: out.paidDays, gross: out.gross, deductions: out.deductions,
         reimbursements: out.reimbursements, net: out.net, employer_contributions: out.employerContributions, taxable: out.taxableThisMonth, tds, regional_tax: out.regionalTax,
         lines: out.lines, explanation, warnings: [...warnings, ...out.warnings],
-        inputs: { lop, ytd, salaryId: salary.id, statutorySettingsId: statutory.id, expenseClaimIds: claims.map((c) => c.id), penaltyIds: pen.penalties.map((x) => x.id) },
+        inputs: { lop, ytd, salaryId: salary.id, statutorySettingsId: statutory.id, expenseClaimIds: claims.map((c) => c.id), rewardGrantIds: rewards.map((g) => g.id), penaltyIds: pen.penalties.map((x) => x.id) },
       });
       if (claims.length) await claimsTable.update({ id: { $in: claims.map((c) => c.id) } }, { $set: { payroll_run_id: r.id } });
+      if (rewards.length) await rewardGrants.update({ id: { $in: rewards.map((g) => g.id) } }, { $set: { payroll_run_id: r.id } });
     }
     const included = await items.find({ run_id: r.id, status: 'included' });
     const totals = {
@@ -457,6 +465,10 @@ export class PayrollRunsService implements OnModuleInit {
     const claimIds = await claims.distinct<string>('id', { payroll_run_id: id, status: 'approved', employee_id: { $in: paidEmployees } });
     await claims.update({ payroll_run_id: id, status: 'approved', id: { $nin: claimIds } }, { $set: { payroll_run_id: null } });
     if (claimIds.length) await claims.update({ id: { $in: claimIds } }, { $set: { status: 'paid', paid_at: new Date() } });
+    // Reward bonuses of people paid in this run are paid; those of anyone held go back for the next run.
+    const grants = tx.collection('attendance_reward_grants');
+    await grants.update({ payroll_run_id: id, status: 'granted', employee_id: { $nin: paidEmployees } }, { $set: { payroll_run_id: null } });
+    await grants.update({ payroll_run_id: id, status: 'granted' }, { $set: { status: 'paid', paid_at: new Date() } });
     await tx.collection('payroll_runs').updateOne({ id }, { $set: { status: 'finalised', finalised_at: new Date(), status_note: null } });
     await this.audit.record(tx, { action: 'payroll_run.finalised', resourceType: 'payroll_run', resourceId: id, metadata: { attendanceLockId: lockId, expenseClaimsPaid: claimIds.length } });
     await this.outbox.publish(tx, tx.tenantId, 'payroll.run_finalised', { runId: id, legalEntityId: r.legal_entity_id, periodStart: String(r.period_start).slice(0, 10), periodEnd: String(r.period_end).slice(0, 10) });
@@ -475,6 +487,7 @@ export class PayrollRunsService implements OnModuleInit {
       if (!['draft', 'computed', 'pending_approval'].includes(r.status)) throw Errors.conflict('run_closed', `This run is ${r.status}`);
       if (r.status === 'pending_approval' && r.approval_request_id) await this.approvals.cancel(tx, r.approval_request_id);
       await tx.collection('expense_claims').update({ payroll_run_id: id, status: 'approved' }, { $set: { payroll_run_id: null } });
+      await tx.collection('attendance_reward_grants').update({ payroll_run_id: id, status: 'granted' }, { $set: { payroll_run_id: null } });
       await tx.collection('payroll_runs').updateOne({ id }, { $set: { status: 'cancelled', status_note: reason } });
       await this.audit.record(tx, { action: 'payroll_run.cancelled', resourceType: 'payroll_run', resourceId: id, metadata: { reason } });
       return { status: 'cancelled' };

@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res } from '@nestjs/common';
-import { rewardMonthQuery, rewardRuleInput, type RewardRuleInput } from '@crew/contracts';
+import { rewardGrantInput, rewardMonthQuery, rewardRevokeInput, rewardRuleInput, type RewardRuleInput } from '@crew/contracts';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { RequireFeature } from '../../platform/authz/decorators';
@@ -70,6 +70,20 @@ export class WorkspaceController {
   async winnersExport(@Query(new ZodPipe(rewardMonthQuery)) q: z.infer<typeof rewardMonthQuery>, @Res() res: Response) {
     const w = await this.workspace.winnerRows(q.month);
     sendFile(res, { fileName: `attendance-rewards-${w.month}.xlsx`, content: toXlsx('Attendance rewards', w.rows) }, 'xlsx');
+  }
+
+  @Post('reward-winners/grant')
+  @RequireFeature('attendance_basic')
+  @Doc({ summary: 'Grant a finished month’s winners their payout: a bonus in the next payroll run or leave days credited now (attendance:configure)', body: rewardGrantInput })
+  grant(@Body(new ZodPipe(rewardGrantInput)) body: z.infer<typeof rewardGrantInput>) {
+    return this.workspace.grant(body);
+  }
+
+  @Post('reward-grants/:id/revoke')
+  @RequireFeature('attendance_basic')
+  @Doc({ summary: 'Take a granted reward back, with a reason (not once its bonus is paid)', body: rewardRevokeInput })
+  revoke(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(rewardRevokeInput)) body: z.infer<typeof rewardRevokeInput>) {
+    return this.workspace.revoke(id, body.reason);
   }
 
   @Get('calendar')

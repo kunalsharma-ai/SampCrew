@@ -1327,6 +1327,52 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((correction_window_days >= 0) AND (correction_window_days <= 366)))",
     ],
   },
+  attendance_reward_grants: {
+    // A reward HR has turned into a real benefit for one winner and month: a bonus that the next payroll run of the
+    // employee's legal entity pays as an earning (payroll_run_id while a run holds it, status paid once finalised),
+    // or leave days credited at once to the leave ledger (accrual_key RWD:<grant id>). One per rule, employee and
+    // month. The payout is copied from the rule when granted, so later rule changes never alter a grant.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      amount: {"scale": 2, "type": "decimal"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      currency: {"type": "string"},
+      days: {"scale": 2, "type": "decimal"},
+      employee_id: {"required": true, "type": "uuid"},
+      granted_by: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      leave_type_id: {"type": "uuid"},
+      month: {"required": true, "type": "string"},
+      paid_at: {"type": "timestamp"},
+      payout_type: {"enum": ["bonus", "leave_credit"], "required": true, "type": "string"},
+      payroll_run_id: {"type": "uuid"},
+      revoke_reason: {"type": "string"},
+      revoked_at: {"type": "timestamp"},
+      revoked_by: {"type": "uuid"},
+      rule_id: {"required": true, "type": "uuid"},
+      rule_name: {"required": true, "type": "string"},
+      status: {"enum": ["granted", "credited", "paid", "revoked"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "attendance_reward_grants_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "attendance_reward_grants_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "rule_id"}, {"col": "employee_id"}, {"col": "month"}], "name": "attendance_reward_grants_once"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "leave_type_id"], "onDelete": "no_action", "ref": "leave_types", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "status"}], "name": "attendance_reward_grants_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "payroll_run_id"}], "name": "attendance_reward_grants_run"},
+    ],
+    checks: [
+      "CHECK ((length(revoke_reason) <= 300))",
+    ],
+  },
   attendance_reward_rules: {
     // Attendance rewards HR sets (see packages/contracts/src/rewards.ts): perfect attendance and punctuality.
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
@@ -1342,6 +1388,12 @@ export const TABLES: Record<string, TableSpec> = {
       max_late_days: {"default": 0, "required": true, "type": "int"},
       min_working_days: {"default": 10, "required": true, "type": "int"},
       name: {"required": true, "type": "string"},
+      // What a winner receives when HR grants the reward: nothing (recognition only), a bonus line in the next
+      // payroll run (amount in the workspace currency) or extra days of one leave type.
+      payout_amount: {"scale": 2, "type": "decimal"},
+      payout_days: {"scale": 2, "type": "decimal"},
+      payout_leave_type_id: {"type": "uuid"},
+      payout_type: {"default": "none", "enum": ["none", "bonus", "leave_credit"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
     },

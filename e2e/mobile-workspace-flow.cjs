@@ -14,6 +14,8 @@
  * 4. She scores every question, writes her answers, saves a draft and submits; the appraisal moves to her manager.
  * 5. She asks to change her mobile number; it waits for HR, HR approves it and her profile shows the new number.
  * 6. She changes her address, bank account and skills; HR approves each and the account number shows masked.
+ * 7. Her manager evaluates the appraisal on the phone; HR sets an approved percentage, finalises and shares it; she
+ *    sees the result.
  * Fails on any browser error.
  */
 const http = require('node:http');
@@ -235,6 +237,63 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     assert(bankText.includes(account.slice(-4)) && !bankText.includes(account), 'the new account shows masked');
     await p.getByTestId('profile-skills').getByText('Line balancing, Kaizen').waitFor();
     ok('changes address, bank account (typed twice, shown masked) and skills; HR approves each');
+
+    // 7. Her manager evaluates on the phone, HR finalises and shares it on the phone, and she sees the result.
+    // SHOTS_DIR=<folder> also saves screenshots of the review screens (for PRs and docs).
+    const snap = (q, name, full = false) => (process.env.SHOTS_DIR ? q.screenshot({ path: `${process.env.SHOTS_DIR}/${name}.png`, fullPage: full }) : null);
+    const phone = async (email) => {
+      const c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: process.env.SHOTS_DIR ? 2 : 1 });
+      const q = await c.newPage();
+      q.on('pageerror', (e) => errs.push(`${email} PAGEERROR ${e.message}`));
+      await signIn(q, email);
+      return q;
+    };
+    const mgr = await phone('supervisor@demo.crew.local');
+    await mgr.goto(APP + '/appraisal');
+    const teamCard = mgr.getByTestId('appraisal-team');
+    await teamCard.waitFor();
+    await snap(mgr, 'phone-manager-appraisals');
+    await teamCard.getByText(new RegExp(`Mobile appraisal ${run}`)).first().click();
+    await mgr.getByTestId('appraisal-actions').waitFor();
+    await mgr.getByText(/Employee: 4/).first().waitFor();
+    const mRadios = mgr.getByRole('radio', { name: '3', exact: true });
+    const mn = await mRadios.count();
+    assert(mn >= 5, `manager score choices shown (${mn})`);
+    for (let i = 0; i < mn; i++) await mRadios.nth(i).click();
+    for (const box of await mgr.locator('textarea').all()) if (!(await box.inputValue())) await box.fill('Reliable on line 2; next year, lead the changeover training.');
+    await mgr.getByText('Every required question is answered.').waitFor();
+    await snap(mgr, 'phone-manager-evaluation');
+    await mgr.getByTestId('appraisal-submit').click();
+    await mgr.getByText('Evaluation submitted. HR has been told.').waitFor();
+    ok('her manager scores each question next to her own scores and submits the evaluation on the phone');
+
+    const hrp = await phone('hr.admin@demo.crew.local');
+    await hrp.goto(APP + '/appraisal');
+    const hrCard = hrp.getByTestId('appraisal-hr');
+    await hrCard.waitFor();
+    await snap(hrp, 'phone-hr-appraisals');
+    await hrCard.getByText('Neha Deshmukh').first().click();
+    await hrp.getByTestId('appraisal-final-percent').waitFor();
+    await hrp.getByText(/Manager: 3/).first().waitFor();
+    await hrp.getByLabel('Approved %').fill('72');
+    await hrp.getByTestId('appraisal-save').click();
+    await hrp.getByText('Say why the approved percentage differs from the calculated one.').waitFor();
+    await hrp.getByLabel('Reason for the change').fill('Calibrated with the Assembly line results');
+    await hrp.getByTestId('appraisal-final-percent').scrollIntoViewIfNeeded();
+    await snap(hrp, 'phone-hr-final-percent', false);
+    for (const box of await hrp.locator('textarea').all()) if (!(await box.inputValue())) await box.fill('Agreed with the manager.');
+    await hrp.getByTestId('appraisal-submit').click();
+    await hrp.getByText('Finalised. Share the result when you are ready.').waitFor();
+    await hrp.getByTestId('appraisal-share').click();
+    await hrp.getByText('Result shared. The employee has been told.').waitFor();
+    await snap(hrp, 'phone-hr-shared', false);
+    ok('HR records an approved 72% with a reason, finalises and shares the result on the phone');
+
+    await p.goto(APP + '/appraisal');
+    await p.getByTestId('appraisal-list').getByText(`Mobile appraisal ${run}`).click();
+    await p.getByTestId('appraisal-result').waitFor();
+    assert((await p.getByTestId('appraisal-final').innerText()).includes('72%'), 'she sees the approved 72%');
+    ok('she sees her shared result, 72%');
 
     assert(errs.length === 0, `no browser errors:\n${errs.join('\n')}`);
     ok('no browser errors');

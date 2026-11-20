@@ -1308,7 +1308,7 @@ export const WEB_HELP: HelpContent = {
       },
     },
     '/settings/attendance': {
-      sections: { 'Attendance rewards': { what: 'The monthly rewards employees see on Home, such as perfect attendance and always on time.', how: 'Add the standard rules or your own: late days allowed, working days needed, and which leave types never break a reward (sick leave by default).' }, 'Reward winners': { what: 'Who earned each active reward in a finished month, worked out from the same attendance days people see.', how: 'Move between months with the arrows and download the list to Excel, for example to hand out certificates or add a bonus in payroll.' } },
+      sections: { 'Attendance rewards': { what: 'The monthly rewards employees see on Home, such as perfect attendance and always on time.', how: 'Add the standard rules or your own: late days allowed, working days needed, which leave types never break a reward (sick leave by default), and what winners get: recognition only, a bonus in payroll or extra leave days.' }, 'Reward winners': { what: 'Who earned each active reward in a finished month, worked out from the same attendance days people see, and whether each winner has been given the payout.', how: 'Grant pays every winner who lacks it: a bonus joins their next payroll run, leave is credited now, and each winner is told. Take a grant back with a reason until its bonus is paid. Use the arrows for other months, or download to Excel.' } },
     },
     '/settings/signature': {
       sections: { Preview: { what: 'Your signature exactly as Outlook will show it, and how your computers keep it up to date.', how: 'Save to send it to your computers. "Sync my computers" makes them install it again.' } },

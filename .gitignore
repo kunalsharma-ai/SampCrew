@@ -24,3 +24,7 @@ infra/stack/.env.smoke
 infra/stack/smoke-logs.txt
 infra/stack/offsite.env
 infra/stack/backups/
+
+# Native folders made by `expo prebuild` (EAS generates them on its build servers; never commit them)
+apps/mobile/android/
+apps/mobile/ios/

@@ -69,6 +69,10 @@ export const taskTone = (s: string): 'danger' | 'ok' | 'info' | 'warn' | 'neutra
   s === 'overdue' ? 'danger' : s === 'completed' ? 'ok' : s === 'pending_review' ? 'info' : s === 'new' || s === 'reopened' ? 'warn' : 'neutral';
 
 /** Appraisal stages in the words employees see. */
+/** Appraisal stages as a manager or HR sees them. */
+export const reviewStage: Record<string, string> = {
+  draft: 'Not started', self: 'Self-appraisal open', manager: 'Waiting for the manager', hr: 'Waiting for HR', finalized: 'Finalised, not shared yet', published: 'Result shared', closed: 'Closed',
+};
 export const appraisalStage: Record<string, string> = {
   draft: 'Not started', self: 'Your self-appraisal', manager: 'With your manager', hr: 'With HR', finalized: 'Finalised, not shared yet', published: 'Result shared', closed: 'Closed',
 };
