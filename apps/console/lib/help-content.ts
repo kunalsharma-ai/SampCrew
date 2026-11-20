@@ -118,6 +118,7 @@ export const CONSOLE_HELP: HelpContent = {
   },
 
   sections: {
+    'Workspace hierarchy': { what: 'This company’s four levels: Console Admin (SAMPLEDGE), Super Workspace, HR Workspace and Employee Workspace, with how many people hold each.', where: 'People are counted once, at their highest level. Names are shown only for Super Workspace.' },
     'Country packs': { what: 'Every country with ready-made starting values, whether it is offered, and whether it was changed in Console.', how: 'Open one to edit it, or add a country below the list.' },
     'Pack settings': { what: 'The contributions, income tax bands and regional taxes of one country pack.', how: 'Change the values and save. Workspaces see them the next time they open statutory settings for an entity there.' },
     Backups: { what: 'The last daily archive (copied off-site or not) and how far back the database can be restored to any second.', how: 'Red means the last backup or its off-site copy failed: check the backup service logs today.' },

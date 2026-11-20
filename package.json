@@ -17,6 +17,7 @@
     "db:seed": "pnpm --filter @crew/db seed",
     "db:reset": "pnpm --filter @crew/db reset",
     "db:admin": "pnpm --silent --filter @crew/db admin",
+    "db:access-levels": "pnpm --silent --filter @crew/db access-levels",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",

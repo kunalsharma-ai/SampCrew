@@ -1112,6 +1112,8 @@ export const WEB_HELP: HelpContent = {
     'Recalculate days': { what: 'Re-applies the rules to past days after a rule change.' },
     'Pipeline stages': { what: 'The stages candidates move through, shared by every job.' },
     Roles: { what: 'Roles in your workspace and what each can do.' },
+    'Access levels': { what: 'Super Workspace, HR Workspace and Employee Workspace, and how many people hold each (each person once, at their highest level).', how: 'Pick one to see what it may do. Console Admin is SAMPLEDGE’s own level, in the Console.' },
+    'Workspace access': { what: 'What one access level may do in each module.', how: 'Pick a level, tick what it may do and save. Limits for one person are set under Logins & access.' },
     'Two-step verification': { what: 'A code from an authenticator app needed at sign-in, on top of your password.', how: 'Turn it on and scan the QR code with your app.' },
     Password: { what: 'Change your password.' },
     "Where you're signed in": { what: 'Browsers and devices signed in to your account.', how: 'Sign out any you do not recognise.' },

@@ -28,9 +28,10 @@ describe('redact', () => {
 describe('workflow definitions', () => {
   const base = { trigger: { event: 'employee.created' }, steps: [{ id: 'notify_hr', type: 'notify', to: 'role', role: 'hr_admin', title: 'Welcome {{employee.name}}' }] };
   it('accepts a valid definition and fills defaults', () => {
-    const v = validateDefinition(base, ['hr_admin']);
+    // Workspaces now hold the access levels; an old role key in a definition means the level it became.
+    const v = validateDefinition(base, ['super_workspace', 'hr_workspace', 'employee_workspace']);
     expect(v.ok).toBe(true);
-    if (v.ok) expect(v.definition.steps[0]).toMatchObject({ email: false, body: '' });
+    if (v.ok) expect(v.definition.steps[0]).toMatchObject({ email: false, body: '', role: 'hr_workspace' });
   });
   it('reports unknown fields, placeholders, roles and bad operators', () => {
     const v = validateDefinition({
