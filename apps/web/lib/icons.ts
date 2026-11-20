@@ -2,7 +2,8 @@ import {
   Activity, AlarmClock, Award, Banknote, BarChart3, Bell, BookOpen, Bot, Briefcase, Building, Building2, CalendarClock, CalendarDays, CalendarRange, Check, ClipboardList, Clock,
   Contact, CreditCard, FileStack, FileText, Fingerprint, GraduationCap, Handshake, Headset, Heart, Home, Inbox, KeyRound, Landmark, LifeBuoy, ListChecks,
   LockKeyhole, Mail, Megaphone, MessageSquare, MessagesSquare, Orbit, Palette, Plug, Receipt, ScrollText, Settings, Shield, SlidersHorizontal, Sparkles, Tags,
-  Target, Timer, TrendingDown, Upload, Laptop, ShieldCheck, TextCursorInput, LayoutGrid, UserCheck, UserPlus, Users, UserSearch, UsersRound, UserX, Wallet, Workflow, X, type LucideIcon, Network } from 'lucide-react';
+  Target, Timer, TrendingDown, Upload, Laptop, ShieldCheck, TextCursorInput, LayoutGrid, UserCheck, UserPlus, Users, UserSearch, UsersRound, UserX, Wallet, Workflow, X, type LucideIcon, Network, ToggleRight
+} from 'lucide-react';
 
 /** Icon names used by navigation, quick actions and overview tiles, so the API and nav can name icons as strings. */
 export const ICONS: Record<string, LucideIcon> = {
@@ -18,5 +19,5 @@ export const ICONS: Record<string, LucideIcon> = {
   'lock-keyhole': LockKeyhole, mail: Mail, 'user-x': UserX, palette: Palette, 'user-plus': UserPlus,
   handshake: Handshake, 'building-office': Building, 'file-stack': FileStack, orbit: Orbit, tags: Tags,
   check: Check, x: X, bell: Bell, award: Award, 'user-check': UserCheck,
-  upload: Upload, laptop: Laptop, 'shield-check': ShieldCheck, 'text-cursor-input': TextCursorInput, 'layout-grid': LayoutGrid, network: Network,
+  upload: Upload, laptop: Laptop, 'shield-check': ShieldCheck, 'text-cursor-input': TextCursorInput, 'layout-grid': LayoutGrid, network: Network, 'toggle-right': ToggleRight,
 };

@@ -11620,6 +11620,111 @@
         }
       }
     },
+    "/api/v1/hr-admin/features": {
+      "get": {
+        "tags": [
+          "HrAdmin"
+        ],
+        "summary": "Feature management: every module and page for the company, the HR Workspace level and the Employee Workspace level",
+        "description": "Requires permission `tenant:read`.",
+        "operationId": "HrAdmin_features",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "HrAdmin"
+        ],
+        "summary": "Switch modules or pages on or off for the company, the HR Workspace level or the Employee Workspace level",
+        "description": "Requires permission `modules:manage`.",
+        "operationId": "HrAdmin_setFeatures",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "changes": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "target": {
+                          "type": "string",
+                          "enum": [
+                            "company",
+                            "hr",
+                            "employee"
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "target",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "changes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/hr-admin/modules": {
       "get": {
         "tags": [
@@ -12400,6 +12505,116 @@
                 },
                 "required": [
                   "modules"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hr-workspaces/employee-features": {
+      "get": {
+        "tags": [
+          "Hierarchy"
+        ],
+        "summary": "Employee Workspace features of the central group or one HR Workspace, with what the Super Workspace allows",
+        "description": "Requires permission `modules:assign`.",
+        "operationId": "Hierarchy_employeeFeatures",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Hierarchy"
+        ],
+        "summary": "Switch Employee Workspace features on or off for the central group or one HR Workspace (within what the Super Workspace allows)",
+        "description": "Requires permission `modules:assign`.",
+        "operationId": "Hierarchy_setEmployeeFeatures",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": "central"
+                      },
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    ]
+                  },
+                  "changes": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "scope",
+                  "changes"
                 ],
                 "additionalProperties": false
               }
@@ -50187,6 +50402,110 @@
                   "fullName",
                   "email",
                   "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/features": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Feature management: every module and page of the application with its state (active, off, pending)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_featureList",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Switch modules or pages on or off for the whole application, or release a pending one",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_setFeatureStates",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "changes": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "off"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "changes"
                 ],
                 "additionalProperties": false
               }

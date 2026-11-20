@@ -7,10 +7,10 @@ import { gradient, glow, screenHelp, useTheme } from '../../src/ui';
 export default function TabsLayout() {
   const t = useTheme();
   const { hasFeature, can, queue } = useSession();
-  const attendance = hasFeature('attendance_basic') && can('attendance:punch');
-  const leave = hasFeature('leave');
+  const attendance = hasFeature('attendance_basic.mine') && can('attendance:punch');
+  const leave = hasFeature('leave.requests');
   const handler = can('helpdesk:manage');
-  const helpdesk = hasFeature('helpdesk') && (can('helpdesk:use') || handler);
+  const helpdesk = hasFeature('helpdesk.communication') && (can('helpdesk:use') || handler);
   // Neon: a night tab bar in every mode (like the Web Portal's sidebar), the current tab's icon in a gradient pill.
   const glyph = (g: string) =>
     function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {

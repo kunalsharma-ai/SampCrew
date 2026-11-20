@@ -130,6 +130,23 @@ Tenant (customer account, billing unit, isolation boundary)
 6. **Jobs**: every job payload carries `tenantId`; the worker opens a tenant-scoped transaction before touching data.
 7. **Search/analytics**: every index document carries `tenant_id`; queries are always filtered server-side.
 
+## 2.4.1 Feature management by level
+
+Every module (`FEATURES`) and every page or sub-area of it (`FEATURE_PARTS` in `packages/contracts/src/feature-parts.ts`) has one key, and each level can only narrow what the level above left on. `loadEntitlements` works it out on every request, in this order:
+
+| Step | Who | Where it is stored | Reason sent to the apps |
+|---|---|---|---|
+| Plan, add-ons, deal, per-company switch | Console | `plan_features`, `subscriptions.feature_overrides` | `not_in_plan`, `workspace_off` |
+| Whole application: active, off or pending | Console > Feature management | `platform_feature_states` | `platform_off` |
+| Whole company | Super Workspace | `workspace_modules.disabled_features` | `admin_off` |
+| HR Workspace level / Employee Workspace level | Super Workspace | `workspace_modules.hr_level_off`, `employee_level_off` | `level_off` |
+| HR Workspace's modules | Super Workspace | `hr_workspaces.features` | `hr_workspace_off` |
+| Employee Workspace in the central group / in one HR Workspace | HR Workspace | `workspace_modules.employee_level_off_by_hr`, `hr_workspaces.employee_off_features` | `hr_level_off` |
+| One person | HR Workspace or Super Workspace | `member_module_assignments`, `member_feature_access` | `hr_member_off`, `member_blocked` |
+| One app (web or mobile) | Console | `tenant_access_controls` | `channel_off` |
+
+A page is on only while its module is on. The API refuses a module's routes (`@RequireFeature`) and the routes only one page uses (`FEATURE_PARTS[].api`, checked in `AuthGuard`); the Web Portal hides switched-off pages from the menu and shows "switched off" on their address (`FeatureGate`); the mobile app checks the page keys. Switching off never deletes records. Every change is audited (`platform.features_switched`, `workspace.features_changed`, `employee_features.changed`, refused attempts as `delegation.denied`). A key added to `FEATURE_PARTS` or `FEATURES` later is written as `pending` by the catalogue sync and stays off until SAMPLEDGE activates it in the Console.
+
 ## 2.5 Events, workflows and integrations
 
 - **Transactional outbox**: domain events are written in the same transaction as the change, then dispatched by a worker to in-process subscribers, the automation engine, webhooks and the warehouse. At-least-once delivery, consumers are idempotent.

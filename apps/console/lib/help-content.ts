@@ -79,6 +79,12 @@ export const CONSOLE_HELP: HelpContent = {
       how: 'Switch machine brands on or off, and pause a single machine with a reason shown to the workspace.',
       where: 'For support and operations.',
     },
+    '/features': {
+      title: 'Feature management',
+      what: 'Every module of SampCrew with each of its pages, and whether it is active, switched off or pending for the whole application.',
+      how: 'Switch a module or page off to take it from every company and every level at once; switch it on to give it back. Activate pending features when they are ready.',
+      where: 'Records are never deleted. Each change is in the platform audit log. For one company only, use its Access tab.',
+    },
     '/plans': {
       title: 'Plans & pricing',
       what: 'Every plan SampCrew sells: the modules and limits it includes, its per-seat prices, and requests from workspace admins.',

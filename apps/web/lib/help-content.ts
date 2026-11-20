@@ -892,10 +892,16 @@ export const WEB_HELP: HelpContent = {
       how: 'Download the template, fill in one row per person, then check the file. Fix any rows marked with problems and import.',
       where: 'For people who can create employees. Nobody gets a login until you send one.',
     },
+    '/employee-features': {
+      title: 'Employee features',
+      what: 'Which modules and pages Employee Workspace people get, for the central group or for each HR Workspace you run, within what the Super Workspace allows.',
+      how: 'Pick the group, then switch a module or one of its pages off or on. Restricted ones are switched off above you and cannot be switched on here.',
+      where: 'For HR Workspace and Super Workspace people. Changes apply on each person’s next page; records are never deleted.',
+    },
     '/settings/hr-admin': {
       title: 'Super Workspace Admin',
-      what: 'One place to switch modules on or off for your workspace, set what each access level can do and reach every module\'s settings.',
-      how: 'Use the tabs: Modules, Permissions and Settings. Changes apply when you save and are kept in the audit trail.',
+      what: 'One place to decide which modules and pages the company, the HR Workspace level and the Employee Workspace level get, what each access level can do, and every module\'s settings.',
+      how: 'Use the tabs: Feature management, Module access, Access levels and Module settings. Changes apply at once and are kept in the audit trail.',
       where: 'For workspace admins. Nobody gets access unless an admin grants it.',
     },
     '/settings/custom-fields': {
@@ -907,6 +913,7 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    'Feature management': { what: 'Each module and page for the whole company, the HR Workspace level and the Employee Workspace level, with Active, Inherited, Inactive and Restricted labels.', how: 'Open a module to see its pages. Switching off asks first; records are kept and come back when you switch it on.' },
     'How access flows': { what: 'SAMPLEDGE decides what the company holds, the company gives each HR Workspace a part, and HR Workspace admins give each person a part of theirs.' },
     'Your HR Workspaces': { what: 'Every active HR Workspace with its people, modules and admins.', how: 'Open one to change it. The central group card lists the people the company runs itself.' },
     'HR Workspaces you run': { what: 'The HR Workspaces you are an admin of.' },

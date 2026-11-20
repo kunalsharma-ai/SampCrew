@@ -19,13 +19,13 @@ function partOfDay(timeZone: string | undefined): string {
 export default function Home() {
   const { api, me, hasFeature, can, queue } = useSession();
   const router = useRouter();
-  const attendance = hasFeature('attendance_basic') && can('attendance:punch');
-  const hasNews = hasFeature('announcements') && can('announcements:read');
-  const leave = hasFeature('leave');
-  const helpdesk = hasFeature('helpdesk') && can('helpdesk:use');
+  const attendance = hasFeature('attendance_basic.mine') && can('attendance:punch');
+  const hasNews = hasFeature('announcements.read') && can('announcements:read');
+  const leave = hasFeature('leave.requests');
+  const helpdesk = hasFeature('helpdesk.communication') && can('helpdesk:use');
   const isEmployee = !!me?.employee;
-  const tasks = isEmployee && hasFeature('core_hr');
-  const appraisal = isEmployee && hasFeature('performance');
+  const tasks = isEmployee && hasFeature('core_hr.tasks');
+  const appraisal = isEmployee && hasFeature('performance.my_appraisal');
   const rewards = isEmployee && hasFeature('attendance_basic');
   const { data, error, loading, reload } = useLoad(async () => {
     const [today, inbox, notes, news, balances, taskCounts, appraisals, myRewards] = await Promise.all([

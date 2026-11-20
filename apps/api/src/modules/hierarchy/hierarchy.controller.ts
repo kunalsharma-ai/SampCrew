@@ -9,11 +9,14 @@ import {
   hrWorkspaceStatusInput,
   hrWorkspaceUpdate,
   memberModulesInput,
+  employeeFeaturesInput,
+  employeeFeaturesQuery,
 } from '@crew/contracts';
 import { z } from 'zod';
 import { RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { FeatureLevelsService } from './feature-levels.service';
 import { HierarchyService } from './hierarchy.service';
 
 const historyQuery = z.object({ hrWorkspaceId: z.uuid().optional(), limit: z.coerce.number().int().min(1).max(500).default(100) });
@@ -27,7 +30,7 @@ const centralAssign = hrWorkspaceAssignInput;
  */
 @Controller('hr-workspaces')
 export class HierarchyController {
-  constructor(private readonly hierarchy: HierarchyService) {}
+  constructor(private readonly hierarchy: HierarchyService, private readonly levels: FeatureLevelsService) {}
 
   @Get('overview')
   @RequirePermission('hierarchy:read')
@@ -90,6 +93,20 @@ export class HierarchyController {
   @Doc({ summary: 'Choose which of their HR Workspace’s modules one employee gets', body: memberModulesInput })
   memberModules(@Param('employeeId', UuidPipe) employeeId: string, @Body(new ZodPipe(memberModulesInput)) body: z.infer<typeof memberModulesInput>) {
     return this.hierarchy.setMemberModules(employeeId, body.modules, body.version);
+  }
+
+  @Get('employee-features')
+  @RequirePermission('modules:assign')
+  @Doc({ summary: 'Employee Workspace features of the central group or one HR Workspace, with what the Super Workspace allows' })
+  employeeFeatures(@Query(new ZodPipe(employeeFeaturesQuery)) q: z.infer<typeof employeeFeaturesQuery>) {
+    return this.levels.employeeFeatures(q.scope);
+  }
+
+  @Put('employee-features')
+  @RequirePermission('modules:assign')
+  @Doc({ summary: 'Switch Employee Workspace features on or off for the central group or one HR Workspace (within what the Super Workspace allows)', body: employeeFeaturesInput })
+  setEmployeeFeatures(@Body(new ZodPipe(employeeFeaturesInput)) body: z.infer<typeof employeeFeaturesInput>) {
+    return this.levels.setEmployeeFeatures(body.scope, body.changes);
   }
 
   @Get(':id')

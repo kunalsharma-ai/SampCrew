@@ -213,6 +213,14 @@ jobs:
           node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
           pnpm e2e:access
+      - name: Feature management at every level (Console, Super Workspace, HR Workspace, Employee Workspace)
+        # Enrols console admin and owner MFA, so it needs a fresh database; Web Portal and Console are still running.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
+          pnpm e2e:features
       - name: Plans decide features (Console plan builder, Web Portal gating, Enterprise request)
         # Enrols console admin and owner MFA, so it needs a fresh database.
         run: |

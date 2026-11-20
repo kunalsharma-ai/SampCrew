@@ -13,7 +13,7 @@ import { Avatar, Badge, Button, Card, CardTitle, Choice, DemoBanner, Empty, erro
 export default function Me() {
   const { api, me, device, setDevice, signOut, can, hasFeature, refreshMe } = useSession();
   const router = useRouter();
-  const payslips = hasFeature('payroll') && can('payslips:read');
+  const payslips = hasFeature('payroll.payslips') && can('payslips:read');
   const { data, error, reload, loading } = useLoad(() => (payslips ? api.get<PayslipRow[]>('/payslips?mine=true') : Promise.resolve([])), [api, payslips]);
   useReloadOnFocus(reload);
   const [bio, setBio] = useState<{ support: BiometricSupport; on: boolean } | null>(null);
@@ -123,7 +123,7 @@ export default function Me() {
           <CardTitle>My work</CardTitle>
           <ListItem title="My profile" subtitle="Personal details, contacts, bank and ID" onPress={() => router.push('/profile')} testID="me-profile" />
           <ListItem title="My tasks" subtitle="From HR and your manager" onPress={() => router.push('/tasks')} testID="me-tasks" />
-          {hasFeature('performance') && <ListItem title="Appraisal" subtitle="Self-appraisal and results" onPress={() => router.push('/appraisal')} testID="me-appraisal" />}
+          {hasFeature('performance.my_appraisal') && <ListItem title="Appraisal" subtitle="Self-appraisal and results" onPress={() => router.push('/appraisal')} testID="me-appraisal" />}
         </Card>
       )}
 

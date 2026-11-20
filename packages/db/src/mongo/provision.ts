@@ -1,4 +1,4 @@
-import { builtInStatutoryPacks, DEFAULT_LEAVE_TYPES, FEATURES, PLAN_TEMPLATES, SYSTEM_ROLES } from '@crew/contracts';
+import { builtInStatutoryPacks, DEFAULT_LEAVE_TYPES, FEATURES, PLAN_TEMPLATES, SWITCHABLE_FEATURE_KEYS, SYSTEM_ROLES } from '@crew/contracts';
 import { applyAccessLevelsMongo } from './access-levels';
 import type { Row, Table } from './table';
 
@@ -219,6 +219,20 @@ export async function syncSystemRolesMongo(tx: Tables): Promise<{ rolesCreated: 
 }
 
 /** MongoDB version of syncCatalogue (../catalogue.ts): the feature catalogue, default plans and statutory packs, safe on every deploy. */
+/**
+ * Console > Feature management. The first sync records every module and part as active (what companies already use
+ * stays on). After that, a module or part added to the code is written as pending: it stays off for every company
+ * until SAMPLEDGE activates it in the Console.
+ */
+export async function syncFeatureStatesMongo(tx: Tables): Promise<void> {
+  const states = tx.collection('platform_feature_states');
+  const known = new Set((await states.find({}, { projection: { key: 1 } })).map((r) => r.key as string));
+  const first = known.size === 0;
+  for (const key of SWITCHABLE_FEATURE_KEYS) {
+    if (!known.has(key)) await states.insert({ key, state: first ? 'active' : 'pending', updated_by: 'catalogue' });
+  }
+}
+
 export async function syncCatalogueMongo(tx: Tables): Promise<void> {
   await syncStatutoryPacksMongo(tx);
   await syncSystemRolesMongo(tx);
@@ -232,6 +246,7 @@ export async function syncCatalogueMongo(tx: Tables): Promise<void> {
     const row = { key: f.key, name: f.name, module: f.module, kind: f.kind, unit: 'unit' in f ? f.unit : null };
     await features.upsert({ key: f.key }, row, { $set: { name: row.name, module: row.module, kind: row.kind, unit: row.unit } });
   }
+  await syncFeatureStatesMongo(tx);
   for (const p of PLAN_TEMPLATES) {
     const existing = await plans.findOne({ key: p.key });
     if (existing?.customised_at) {

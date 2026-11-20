@@ -1,15 +1,17 @@
 'use client';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Select, Switch, Table, TBody, TD, TH, THead, TR, cn } from '@crew/ui';
+import type { FeatureLevelRow } from '@crew/contracts';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, FeatureSwitchBoard, Select, Switch, Table, TBody, TD, TH, THead, TR, cn } from '@crew/ui';
 import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import { useMfaRetry } from '@/components/mfa-step-up';
 import type { Me } from '@/lib/types';
-import { resetRoleAction, setModulesAction, setRoleGrantsAction } from './actions';
+import { resetRoleAction, setFeatureLevelsAction, setModulesAction, setRoleGrantsAction } from './actions';
 import type { Matrix, MatrixRole, ModuleRow } from './types';
 
 const TABS = [
+  { key: 'features', label: 'Feature management' },
   { key: 'modules', label: 'Module access' },
   { key: 'permissions', label: 'Access levels' },
   { key: 'settings', label: 'Module settings' },
@@ -35,9 +37,9 @@ const SETTINGS: { href: string; label: string; about: string; permission: string
   { href: '/settings/audit', label: 'Audit trail', about: 'Every change made in the workspace, with who made it.', permission: 'audit:read' },
 ];
 
-export function AdminHub({ me, modules, matrix, tab, roleId }: { me: Me; modules: ModuleRow[] | null; matrix: Matrix | null; tab: string; roleId?: string }) {
+export function AdminHub({ me, modules, matrix, features, tab, roleId }: { me: Me; modules: ModuleRow[] | null; matrix: Matrix | null; features: FeatureLevelRow[] | null; tab: string; roleId?: string }) {
   const router = useRouter();
-  const tabs = TABS.filter((t) => (t.key === 'modules' ? modules : t.key === 'permissions' ? matrix : true));
+  const tabs = TABS.filter((t) => (t.key === 'features' ? features && me.permissions['modules:manage'] : t.key === 'modules' ? modules : t.key === 'permissions' ? matrix : true));
   const active = tabs.some((t) => t.key === tab) ? tab : tabs[0]!.key;
   return (
     <div className="grid gap-6">
@@ -47,10 +49,53 @@ export function AdminHub({ me, modules, matrix, tab, roleId }: { me: Me; modules
             className={cn('-mb-px border-b-2 px-3 py-2 text-sm', active === t.key ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg')}>{t.label}</button>
         ))}
       </div>
+      {active === 'features' && features && <Features rows={features} />}
       {active === 'modules' && modules && <Modules rows={modules} canManage={Boolean(me.permissions['modules:manage'])} />}
       {active === 'permissions' && matrix && <Permissions matrix={matrix} roleId={roleId} canManage={Boolean(me.permissions['roles:manage'])} />}
       {active === 'settings' && <SettingsLinks me={me} />}
     </div>
+  );
+}
+
+const LEVEL_COLUMNS = [
+  { key: 'company', label: 'Whole company', target: 'the whole company (every level)' },
+  { key: 'hr', label: 'HR Workspace level', target: 'everyone with HR Workspace access' },
+  { key: 'employee', label: 'Employee Workspace level', target: 'everyone with Employee Workspace access' },
+];
+
+/**
+ * Feature management for the Super Workspace: each module and page, for the whole company and separately for the HR
+ * Workspace and Employee Workspace levels. What SAMPLEDGE or the plan switched off shows as Restricted and cannot be
+ * switched on here; an Employee Workspace switch made here is locked for HR Workspace.
+ */
+function Features({ rows }: { rows: FeatureLevelRow[] }) {
+  const [list, setList] = useState(rows);
+  const [flash, setFlash] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
+  const [pending, start] = useTransition();
+  const withMfa = useMfaRetry();
+  const change = (key: string, target: string, enabled: boolean) => start(async () => {
+    const name = list.find((r) => r.key === key)?.name ?? key;
+    const res = await withMfa(() => setFeatureLevelsAction([{ key, target: target as 'company' | 'hr' | 'employee', enabled }]));
+    if (res.ok && res.data) setList(res.data.items);
+    setFlash({ tone: res.ok ? 'success' : 'danger', text: res.ok ? `${name}: ${res.message}` : res.message });
+  });
+  const board = list.map((r) => ({ key: r.key, name: r.name, module: r.module, parent: r.parent, audience: r.audience, cells: { company: r.company, hr: r.hr, employee: r.employee } }));
+  return (
+    <Card>
+      <CardHeader
+        title="Feature management"
+        description="Decide which modules and pages your company uses, and which of them reach the HR Workspace level and the Employee Workspace level. Super Workspace always keeps everything the company has. HR Workspace can switch Employee Workspace features off within what you leave on; what you switch off for Employee Workspace here, HR Workspace cannot switch back on."
+      />
+      <CardBody>
+        <FeatureSwitchBoard
+          rows={board}
+          columns={LEVEL_COLUMNS}
+          busy={pending}
+          onChange={change}
+          intro={flash ? <Alert tone={flash.tone}>{flash.text}</Alert> : <p className="text-xs text-fg-subtle">Active: on. Inherited: follows the whole-company switch. Inactive: switched off at this level, you can switch it back on. Restricted: switched off higher up (SAMPLEDGE, the plan, or the whole-company switch). Hover a label to see who switched it.</p>}
+        />
+      </CardBody>
+    </Card>
   );
 }
 

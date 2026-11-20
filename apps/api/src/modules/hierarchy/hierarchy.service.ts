@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   BOOLEAN_FEATURES,
   isCoreFeature,
+  isFeaturePart,
   UNLIMITED,
   type ConfigVersionRow,
   type DelegatedModule,
@@ -89,7 +90,8 @@ export class HierarchyService {
     const e = await loadEntitlements(tx);
     const controls = await tx.collection('tenant_access_controls').findOne({});
     const nonDelegable = ((controls?.non_delegable_features ?? []) as string[]).filter((k) => !CORE.has(k));
-    const features = [...e.features].sort();
+    // Modules only: pages and sub-areas (FEATURE_PARTS) follow their module and are switched in Feature management.
+    const features = [...e.features].filter((k) => !isFeaturePart(k)).sort();
     return {
       features,
       delegable: features.filter((k) => !nonDelegable.includes(k)),

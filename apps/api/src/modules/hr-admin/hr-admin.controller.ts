@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Put, Query, Res, UploadedFile as File, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
-import { roleGrantsInput, workspaceModulesInput } from '@crew/contracts';
+import { featureLevelsInput, roleGrantsInput, workspaceModulesInput } from '@crew/contracts';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { RequirePermission } from '../../platform/authz/decorators';
@@ -10,6 +10,7 @@ import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import type { UploadedFile } from '../../platform/storage/uploads';
 import { EmployeeImportService } from './employee-import.service';
+import { FeatureLevelsService } from '../hierarchy/feature-levels.service';
 import { HrAdminService } from './hr-admin.service';
 
 const importQuery = z.object({ dryRun: z.enum(['true', 'false']).default('true').transform((v) => v === 'true') });
@@ -17,7 +18,21 @@ const importQuery = z.object({ dryRun: z.enum(['true', 'false']).default('true')
 /** HR Workspace Admin: module access and the role and permission matrix. */
 @Controller('hr-admin')
 export class HrAdminController {
-  constructor(private readonly admin: HrAdminService) {}
+  constructor(private readonly admin: HrAdminService, private readonly levels: FeatureLevelsService) {}
+
+  @Get('features')
+  @RequirePermission('tenant:read')
+  @Doc({ summary: 'Feature management: every module and page for the company, the HR Workspace level and the Employee Workspace level' })
+  features() {
+    return this.levels.matrix();
+  }
+
+  @Put('features')
+  @RequirePermission('modules:manage')
+  @Doc({ summary: 'Switch modules or pages on or off for the company, the HR Workspace level or the Employee Workspace level', body: featureLevelsInput })
+  setFeatures(@Body(new ZodPipe(featureLevelsInput)) body: z.infer<typeof featureLevelsInput>) {
+    return this.levels.setLevels(body.changes);
+  }
 
   @Get('modules')
   @RequirePermission('tenant:read')

@@ -1,6 +1,6 @@
 import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { API_KEY_PREFIX, PLATFORM_ROLE_CAPABILITIES, type PlatformRole } from '@crew/contracts';
+import { API_KEY_PREFIX, partForApiPath, PLATFORM_ROLE_CAPABILITIES, type PlatformRole } from '@crew/contracts';
 import type { Request } from 'express';
 import { AuditService } from '../audit/audit.service';
 import { AuthzService } from '../authz/authz.service';
@@ -115,6 +115,7 @@ export class AuthGuard implements CanActivate {
 
     const feature = this.meta<string>(FEATURE_KEY, ctx);
     if (feature) await this.entitlements.requireFeature(feature);
+    await this.requirePart(req);
 
     const permission = this.meta<string>(PERMISSION_KEY, ctx);
     if (permission) {
@@ -145,8 +146,18 @@ export class AuthGuard implements CanActivate {
     if (await this.db.platform((tx) => tx.collection('subscriptions').exists({ tenant_id: key.tenantId, locked_at: { $ne: null } }))) this.readOnly(req, ctx);
     const feature = this.meta<string>(FEATURE_KEY, ctx);
     if (feature) await this.entitlements.requireFeature(feature);
+    await this.requirePart(req);
     await this.authz.require(permission);
     return true;
+  }
+
+  /**
+   * Feature management below the module: a route that belongs to one page or sub-area (FEATURE_PARTS `api`) is closed
+   * while any level switched that part off, also when called directly.
+   */
+  private async requirePart(req: Request) {
+    const part = partForApiPath((req.path ?? '').replace(/^.*?\/api\/v\d+\//, ''));
+    if (part) await this.entitlements.requireFeature(part.key);
   }
 
   /** While a workspace is read-only for an unpaid invoice, only reads (and billing, sign-out, own security) go through. */

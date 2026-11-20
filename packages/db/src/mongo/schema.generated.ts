@@ -2521,6 +2521,8 @@ export const TABLES: Record<string, TableSpec> = {
       created_by_membership_id: {"type": "uuid"},
       department_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
       description: {"default": "", "required": true, "type": "string"},
+      // Switched off for Employee Workspace people of this HR Workspace by its admins (within its own features).
+      employee_off_features: {"default": {"json": []}, "required": true, "type": "string[]"},
       features: {"default": {"json": []}, "required": true, "type": "string[]"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       kind: {"default": "department", "enum": ["department", "branch", "region", "business_unit", "other"], "required": true, "type": "string"},
@@ -4639,6 +4641,28 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((trial_days >= 0) AND (trial_days <= 90)))",
     ],
   },
+  platform_feature_states: {
+    // Console > Feature management: whether each module or part (FEATURE_PARTS) is released for the whole application.
+    // "off" and "pending" take it away from every company whatever its plan; records are kept. A feature missing here
+    // is active. New features are written as "pending" by the catalogue sync until SAMPLEDGE activates them.
+    access: "shared", grants: ["select"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      reason: {"type": "string"},
+      state: {"default": "active", "enum": ["active", "off", "pending"], "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "platform_feature_states_pkey", "primary": true},
+      {"cols": [{"col": "key"}], "name": "platform_feature_states_key"},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [],
+  },
   platform_admins: {
     access: "platform", grants: [], touch: true,
     columns: {
@@ -6518,6 +6542,12 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       disabled_features: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Switched off by the Super Workspace for everyone at Employee Workspace level (HR Workspace cannot switch them on).
+      employee_level_off: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Switched off for Employee Workspace in the central group by company-wide HR Workspace people.
+      employee_level_off_by_hr: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Switched off by the Super Workspace for everyone at HR Workspace level.
+      hr_level_off: {"default": {"json": []}, "required": true, "type": "string[]"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       key: {"default": "workspace", "enum": ["workspace"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},

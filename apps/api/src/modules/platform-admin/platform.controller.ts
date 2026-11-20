@@ -4,6 +4,7 @@ import {
   firstAdminRequest,
   email,
   featureSwitchUpdate,
+  platformFeaturesInput,
   integrationTestExtras,
   PLATFORM_INTEGRATION_KEYS,
   type PlatformIntegrationKey,
@@ -47,6 +48,7 @@ import { FirstRunService } from './first-run.service';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformService } from './platform.service';
 import { AccessControlsService } from './access-controls.service';
+import { PlatformFeaturesService } from './platform-features.service';
 import { PlansService } from './plans.service';
 import { StatutoryPacksService } from './statutory-packs.service';
 import { TenantControlService } from './tenant-control.service';
@@ -180,7 +182,22 @@ export class PlatformController {
     private readonly control: TenantControlService,
     private readonly plansService: PlansService,
     private readonly statutoryPacksService: StatutoryPacksService,
+    private readonly features: PlatformFeaturesService,
   ) {}
+
+  @PlatformRealm('tenants:read')
+  @Get('features')
+  @Doc({ summary: 'Feature management: every module and page of the application with its state (active, off, pending)' })
+  featureList() {
+    return this.features.list();
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('features')
+  @Doc({ summary: 'Switch modules or pages on or off for the whole application, or release a pending one', body: platformFeaturesInput })
+  setFeatureStates(@Body(new ZodPipe(platformFeaturesInput)) body: z.infer<typeof platformFeaturesInput>) {
+    return this.features.set(body);
+  }
 
   @PlatformRealm('access:manage')
   @Put('tenants/:id/access/apps')

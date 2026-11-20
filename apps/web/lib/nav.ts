@@ -1,3 +1,4 @@
+import { partForWebPath } from '@crew/contracts';
 import type { Me } from './types';
 
 export interface NavItem {
@@ -53,6 +54,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
       { href: '/hr-workspaces', label: 'HR Workspaces', icon: 'network', permission: 'hierarchy:read' },
+      { href: '/employee-features', label: 'Employee features', icon: 'toggle-right', permission: 'modules:assign' },
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
       { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
@@ -218,6 +220,9 @@ export function visibleNav(me: Me): NavGroup[] {
     ...g,
     items: g.items.flatMap((i): NavItem[] => {
       if (!allowed(i)) return [];
+      // Feature management: a page switched off at any level (Console, Super Workspace, HR Workspace) leaves the menu.
+      const part = partForWebPath(i.href);
+      if (part && me.features.includes(part.feature) && !me.features.includes(part.key)) return [];
       if (!i.feature || me.features.includes(i.feature)) return [i];
       if (!upsell || upsell.has(i.feature) || NOT_SOLD.has(i.feature)) return [];
       upsell.add(i.feature);

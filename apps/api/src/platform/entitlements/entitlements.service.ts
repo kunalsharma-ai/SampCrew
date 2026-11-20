@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { FEATURES, UNLIMITED, type FeatureBlockReason, type FeatureDefinition } from '@crew/contracts';
+import { FEATURE_PARTS, FEATURES, featurePart, moduleOfFeature, UNLIMITED, type FeatureBlockReason, type FeatureDefinition } from '@crew/contracts';
 import { requestContext } from '../context/request-context';
 import { MongoService as DatabaseService, type TenantTx } from '../database/mongo.service';
 import { Errors } from '../http/errors';
@@ -42,11 +42,17 @@ export class EntitlementsService {
     return e;
   }
 
-  async requireFeature(feature: string, tx?: TenantTx) {
+  async requireFeature(feature: string, tx?: TenantTx): Promise<void> {
     const e = await this.current(tx);
     if (!e.features.has(feature)) {
-      const name = FEATURES.find((f) => f.key === feature)?.name ?? feature;
+      const part = featurePart(feature);
+      // A page whose module is unavailable answers with the module's reason.
+      if (part && !e.features.has(part.feature)) return this.requireFeature(part.feature, tx);
+      const name = part?.name ?? FEATURES.find((f) => f.key === feature)?.name ?? feature;
       const reason = e.blocked[feature];
+      if (reason === 'platform_off') throw Errors.featureOffByPlatform(name);
+      if (reason === 'level_off') throw Errors.featureOffForLevel(name);
+      if (reason === 'hr_level_off') throw Errors.featureOffForEmployees(name);
       if (reason === 'workspace_off') throw Errors.featureSwitchedOff(name);
       if (reason === 'admin_off') throw Errors.featureSwitchedOffByAdmin(name);
       if (reason === 'member_blocked') throw Errors.featureNotForMember(name);
@@ -113,12 +119,21 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
       }
     } else if (typeof value === 'number') limits[key] = value;
   }
+  // Pages and sub-areas (FEATURE_PARTS) come with their module; each level below can still switch one off.
+  for (const p of FEATURE_PARTS) if (features.has(p.feature)) features.add(p.key);
+  // Console > Feature management: switched off, or not yet released, for the whole application. Beats every plan,
+  // add-on, deal and per-company override; the records stay.
+  const released = await tx.collection('platform_feature_states').find({ state: { $in: ['off', 'pending'] } }, { projection: { key: 1 } });
+  for (const r of released) {
+    const key = r.key as string;
+    if (!CORE.has(key) && features.delete(key)) blocked[key] = 'platform_off';
+  }
   // Modules the workspace's own administrators switched off in HR Workspace Admin (within what the plan includes).
   const own = await tx.collection('workspace_modules').findOne({ key: 'workspace' });
   for (const key of (own?.disabled_features ?? []) as string[]) {
     if (!CORE.has(key) && features.delete(key)) blocked[key] = 'admin_off';
   }
-  if (membershipId) await applyHierarchy(tx, membershipId, features, blocked);
+  if (membershipId) await applyHierarchy(tx, membershipId, features, blocked, own);
   if (membershipId) {
     const member = await tx.collection('member_feature_access').findOne({ membership_id: membershipId });
     for (const key of member?.blocked_features ?? []) {
@@ -131,8 +146,17 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
       if (!CORE.has(key) && features.delete(key)) blocked[key] = 'channel_off';
     }
   }
+  // A part never outlives its module, and a part of an unavailable module says why.
+  for (const p of FEATURE_PARTS) {
+    if (features.has(p.feature)) continue;
+    features.delete(p.key);
+    if (!blocked[p.key] && blocked[p.feature]) blocked[p.key] = 'module_off';
+  }
   return { planKey: plan.key, status: sub.status, features, limits, trialEndsOn: sub.trial_ends_on ?? null, blocked, overage, locked: Boolean(sub.locked_at) };
 }
+
+/** The level a person works at, from their access levels: the highest one counts. */
+export type WorkLevel = 'super' | 'hr' | 'employee';
 
 /**
  * The Super > HR > Employee part of the chain, applied after the company's own modules are known:
@@ -142,33 +166,51 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
  * Super Workspace and company-wide HR Workspace people are not limited by an HR Workspace: they work for the whole company.
  * Computed on every request, so a change at any level applies at once, also to sessions that are already open.
  */
-export async function applyHierarchy(tx: TenantTx, membershipId: string, features: Set<string>, blocked: Entitlements['blocked']): Promise<void> {
+export async function applyHierarchy(tx: TenantTx, membershipId: string, features: Set<string>, blocked: Entitlements['blocked'], company?: Record<string, unknown> | null): Promise<void> {
   const held = await tx.collection('role_assignments').find({ membership_id: membershipId });
   const keyOf = new Map(
     (await tx.collection('roles').find({ id: { $in: held.map((a) => a.role_id) }, is_system: true, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] } }, { projection: { key: 1 } })).map((r) => [r.id as string, r.key as string]),
   );
   // Only the access levels count (old roles kept for rollback give nothing).
   const assignments = held.filter((a) => keyOf.has(a.role_id as string));
+  const level: WorkLevel = assignments.some((a) => keyOf.get(a.role_id) === 'super_workspace') ? 'super' : assignments.some((a) => keyOf.get(a.role_id) === 'hr_workspace') ? 'hr' : 'employee';
+  const own = company === undefined ? await tx.collection('workspace_modules').findOne({ key: 'workspace' }) : company;
+  const drop = (keys: unknown, reason: Entitlements['blocked'][string]) => {
+    for (const key of (keys ?? []) as string[]) if (!CORE.has(key) && features.delete(key)) blocked[key] = reason;
+  };
+  // Feature management by level: the Super Workspace's switches for the HR Workspace and Employee Workspace levels,
+  // and for Employee Workspace also what company-wide HR switched off for the central group.
+  if (level === 'hr') drop(own?.hr_level_off, 'level_off');
+  let employeeLevel = false;
+  if (level === 'employee') {
+    drop(own?.employee_level_off, 'level_off');
+    employeeLevel = true;
+  }
   // Company-wide: Super Workspace, and HR Workspace not limited to HR Workspaces.
   if (assignments.some((a) => COMPANY_ADMIN_ROLES.has(keyOf.get(a.role_id) ?? '') && !((a.constraints?.hrWorkspaceIds ?? []) as string[]).length)) return;
   const administered = [...new Set(assignments.flatMap((a) => ((a.constraints?.hrWorkspaceIds ?? []) as string[])))];
   const employee = await tx.collection('employees').findOne({ membership_id: membershipId }, { projection: { hr_workspace_id: 1 } });
   const ids = administered.length ? administered : employee?.hr_workspace_id ? [employee.hr_workspace_id as string] : [];
+  // Employee Workspace people of the central group: what company-wide HR switched off for them.
+  if (employeeLevel && !ids.length) drop(own?.employee_level_off_by_hr, 'hr_level_off');
   if (ids.length) {
-    const spaces = await tx.collection('hr_workspaces').find({ id: { $in: ids }, status: { $in: ['active', 'suspended'] } }, { projection: { features: 1 } });
+    const spaces = await tx.collection('hr_workspaces').find({ id: { $in: ids }, status: { $in: ['active', 'suspended'] } }, { projection: { features: 1, employee_off_features: 1 } });
     // The Console may keep some of the company's modules at company level: they never reach an HR Workspace.
     const controls = await tx.collection('tenant_access_controls').findOne({}, { projection: { non_delegable_features: 1 } });
     const kept = new Set((controls?.non_delegable_features ?? []) as string[]);
     const given = new Set(spaces.flatMap((w) => (w.features ?? []) as string[]).filter((k) => !kept.has(k)));
     for (const key of [...features]) {
-      if (!CORE.has(key) && !given.has(key)) {
+      const module = moduleOfFeature(key);
+      if (!CORE.has(module) && !given.has(module)) {
         features.delete(key);
         blocked[key] = 'hr_workspace_off';
       }
     }
+    // Employee Workspace people of an HR Workspace: what its admins switched off for Employee Workspace.
+    if (employeeLevel) for (const w of spaces) drop(w.employee_off_features, 'hr_level_off');
   }
-  const own = await tx.collection('member_module_assignments').findOne({ membership_id: membershipId }, { projection: { withheld_features: 1 } });
-  for (const key of (own?.withheld_features ?? []) as string[]) {
+  const mine = await tx.collection('member_module_assignments').findOne({ membership_id: membershipId }, { projection: { withheld_features: 1 } });
+  for (const key of (mine?.withheld_features ?? []) as string[]) {
     if (!CORE.has(key) && features.delete(key)) blocked[key] = 'hr_member_off';
   }
 }

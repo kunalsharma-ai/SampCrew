@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { email, name, slug, countryCode, currencyCode, timezone } from './common';
+import type { FeatureBlockReason } from '../access';
 
 
 /** 12+ characters, at least three of: lowercase, uppercase, digit, symbol. */
@@ -81,7 +82,7 @@ export interface MeResponse {
    * Modules the plan includes that SAMPLEDGE switched off for the workspace (workspace_off), for this member
    * (member_blocked) or in the app this session uses (channel_off).
    */
-  featureBlocks: Record<string, 'workspace_off' | 'member_blocked' | 'channel_off' | 'admin_off' | 'hr_workspace_off' | 'hr_member_off'>;
+  featureBlocks: Record<string, Exclude<FeatureBlockReason, 'not_in_plan'>>;
   /** The app this session was opened in. */
   client: 'web' | 'mobile' | 'api';
   /** Permissions SAMPLEDGE switched off for the whole workspace: no role can grant them. */

@@ -34,6 +34,31 @@ const REASONS: Record<string, { title: string; description: string; icon: React.
     description: 'SAMPLEDGE has switched the Web Portal off for your workspace. Use the SampCrew mobile app, or ask your workspace owner to contact SAMPLEDGE support.',
     icon: <Lock className="size-6" />,
   },
+  feature_off_by_platform: {
+    title: 'This is switched off for now',
+    description: 'SAMPLEDGE has switched this module or page off for every workspace for now. Nothing was deleted; it comes back when it is switched on again.',
+    icon: <Lock className="size-6" />,
+  },
+  feature_switched_off: {
+    title: 'This is switched off in your workspace',
+    description: 'Your company’s Super Workspace switched this module or page off. Nothing was deleted; it comes back when they switch it on again.',
+    icon: <Lock className="size-6" />,
+  },
+  feature_off_for_level: {
+    title: 'This is switched off for your access level',
+    description: 'Your company’s Super Workspace switched this off for your workspace access level. Ask them if you need it for your work.',
+    icon: <Lock className="size-6" />,
+  },
+  feature_off_for_employees: {
+    title: 'This is switched off for Employee Workspace',
+    description: 'Your HR team switched this off for Employee Workspace. Ask them if you need it for your work.',
+    icon: <Lock className="size-6" />,
+  },
+  feature_not_for_hr_workspace: {
+    title: 'This is not given to your HR Workspace',
+    description: 'Your company’s Super Workspace has not given this module to your HR Workspace. Ask them if you need it.',
+    icon: <Lock className="size-6" />,
+  },
   feature_not_for_member: {
     title: 'This module is not available to you',
     description: 'Your access to this module has been turned off for your account. Ask your workspace administrator if you need it for your work.',

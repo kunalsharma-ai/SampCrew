@@ -39,7 +39,15 @@ export type FeatureBlockReason = 'not_in_plan' | 'workspace_off' | 'member_block
   /** The person's HR Workspace was not given the module by the Super Workspace. */
   | 'hr_workspace_off'
   /** The person's HR Workspace admins (or the Super Workspace) did not give the module to them. */
-  | 'hr_member_off';
+  | 'hr_member_off'
+  /** SAMPLEDGE switched the feature off (or has not yet released it) for the whole application, in the Console. */
+  | 'platform_off'
+  /** The Super Workspace switched the feature off for the person's level (HR Workspace or Employee Workspace). */
+  | 'level_off'
+  /** HR Workspace switched the feature off for Employee Workspace (for the central group or one HR Workspace). */
+  | 'hr_level_off'
+  /** The module the page belongs to is unavailable. */
+  | 'module_off';
 
 /** The two apps people use SampCrew through. API keys and integrations are not affected by app switches. */
 export const APP_CHANNELS = ['web', 'mobile'] as const;

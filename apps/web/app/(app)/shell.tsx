@@ -27,6 +27,7 @@ import { IqPanel } from './iq-panel';
 import { ThemePanel } from './theme-panel';
 import { logoutAction, switchTenantAction } from './shell-actions';
 import { NotificationBell } from '@/components/notification-bell';
+import { FeatureGate } from '@/components/feature-gate';
 
 export { ICONS };
 
@@ -244,7 +245,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               <HeaderUser me={me} />
             </div>
           </header>
-          <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+          <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></main>
         </div>
         {hasIq && <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />}
         <ThemePanel open={themesOpen} onClose={() => setThemesOpen(false)} appearance={appearance} update={update} />
