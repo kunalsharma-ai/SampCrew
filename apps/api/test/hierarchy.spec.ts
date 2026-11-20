@@ -141,6 +141,9 @@ describe('Delegation chain: Console > Super Workspace > HR Workspace > Employee'
     expect(members.status).toBe(200);
     expect(members.body.items.map((m: { employeeId: string }) => m.employeeId)).toEqual([staffEmployee]);
     expect(members.body.items[0].modules).toEqual(expect.arrayContaining(['leave', 'attendance_basic']));
+    const d = await api(app, owner).get(`/hr-workspaces/${wsId}`);
+    expect(d.body.employees).toBe(1);
+    expect(d.body.admins[0]).toMatchObject({ name: 'Hari Branch', email: hrAdmin.email });
   });
 
   it('gives an employee only a subset of their HR Workspace modules', async () => {

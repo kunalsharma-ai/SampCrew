@@ -148,17 +148,16 @@ export class HierarchyService {
 
   private async summaries(tx: TenantTx, rows: Doc[]): Promise<HrWorkspaceSummary[]> {
     const ids = rows.map((r) => r.id as string);
-    const counts = new Map(
-      (await tx.collection('employees').aggregate<{ _id: string; n: number }>([
-        { $match: { hr_workspace_id: { $in: ids }, status: { $ne: 'exited' } } },
-        { $group: { _id: '$hr_workspace_id', n: { $sum: 1 } } },
-      ])).map((r) => [r._id, r.n]),
-    );
+    const counts = new Map<string, number>();
+    for (const e of await tx.collection('employees').find({ hr_workspace_id: { $in: ids }, status: { $ne: 'exited' } }, { projection: { hr_workspace_id: 1 } })) {
+      counts.set(e.hr_workspace_id as string, (counts.get(e.hr_workspace_id as string) ?? 0) + 1);
+    }
     const admins = await this.adminsOf(tx, ids);
     const allAdmins = [...admins.values()].flat();
     const names = await memberNames(tx, allAdmins);
-    const memberships = await tx.collection('memberships').find({ id: { $in: allAdmins } }, { projection: { email: 1 } });
-    const emails = new Map(memberships.map((m) => [m.id as string, (m.email as string | undefined) ?? null]));
+    const memberships = await tx.collection('memberships').find({ id: { $in: allAdmins } }, { projection: { user_id: 1 } });
+    const users = new Map((await (await tx.users()).find({ id: { $in: memberships.map((m) => m.user_id) } }, { projection: { email: 1 } })).map((u) => [u.id as string, u.email as string]));
+    const emails = new Map(memberships.map((m) => [m.id as string, users.get(m.user_id as string) ?? null]));
     return rows.map((w) => ({
       id: w.id, name: w.name, code: w.code ?? null, kind: w.kind, description: w.description ?? '', status: w.status,
       features: (w.features ?? []) as string[], maxEmployees: w.max_employees ?? UNLIMITED,
