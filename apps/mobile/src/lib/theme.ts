@@ -1,4 +1,4 @@
-import { type Appearance, buildTheme, DEFAULT_APPEARANCE, ensureContrast, mix, normaliseAppearance } from '@crew/contracts';
+import { type Appearance, buildTheme, DEFAULT_APPEARANCE, type DesignLevel, ensureContrast, mix, normaliseAppearance } from '@crew/contracts';
 
 /** The colours the app's components use. */
 export interface MobileTheme {
@@ -29,8 +29,10 @@ export interface MobileTheme {
   gradient: [string, string];
   /** The theme's raw brand colours, used only for background glows (never behind text). */
   glow: [string, string, string];
-  /** Corner radius of cards, from the member's corner setting. */
+  /** Corner radius of cards, from the member's corner setting (each level's own when left at the default). */
   radius: number;
+  /** The night panel behind the tab bar: each level's own (see nightFor). */
+  night: Night;
 }
 
 /** Neon KPI tile colours: the same pairs as the Web Portal; white text reads at 4.5:1 or more on every stop. */
@@ -46,6 +48,19 @@ export type TileTone = keyof typeof NEON_TILES;
 
 /** The night panel behind the tab bar in the neon style, in every mode (like the Web Portal's sidebar). */
 export const NIGHT = { bg: '#140e33', fg: '#f6f3ff', muted: '#c9c1f2', border: 'rgba(255,255,255,0.12)' } as const;
+export type Night = { bg: string; fg: string; muted: string; border: string };
+/** Each level's night panel, matching its Web Portal sidebar (Executive, People Studio, Everyday). */
+const LEVEL_NIGHT: Record<DesignLevel, Night> = {
+  console: { bg: '#0b1426', fg: '#eef4ff', muted: '#a9bde3', border: 'rgba(34,211,238,0.25)' },
+  super: { bg: '#0c2620', fg: '#f5f1e4', muted: '#b9cfc1', border: 'rgba(227,179,65,0.35)' },
+  hr: { bg: '#261548', fg: '#f6f3ff', muted: '#cdc2f2', border: 'rgba(255,255,255,0.12)' },
+  employee: { bg: '#1e1b4b', fg: '#f6f3ff', muted: '#c4c1ef', border: 'rgba(255,255,255,0.12)' },
+};
+const LEVEL_RADIUS: Record<DesignLevel, number> = { console: 10, super: 14, hr: 20, employee: 22 };
+/** The night panel for a level when the workspace design is on, else the classic one. */
+export function nightFor(a: Pick<Appearance, 'preset'>, level: DesignLevel): Night {
+  return a.preset === 'workspace' ? LEVEL_NIGHT[level] : NIGHT;
+}
 
 /** Whether the neon look applies: the neon style, unless high contrast or focus mode asks for plain surfaces. */
 export function neonOn(a: Pick<Appearance, 'style' | 'contrast' | 'focusMode'>): boolean {
@@ -68,9 +83,9 @@ export function resolveMode(a: Pick<Appearance, 'mode'>, scheme: string | null |
  * The app palette for a member's saved appearance. It is built by the same theme engine as the Web Portal (preset,
  * custom colours, high contrast), so a theme chosen on either one looks the same on both.
  */
-export function mobileTheme(a: Appearance, scheme: string | null | undefined): MobileTheme {
+export function mobileTheme(a: Appearance, scheme: string | null | undefined, level: DesignLevel = 'employee'): MobileTheme {
   const mode = resolveMode(a, scheme);
-  const t = buildTheme(a, mode);
+  const t = buildTheme(a, mode, level);
   return {
     mode,
     bg: t.bg,
@@ -92,7 +107,8 @@ export function mobileTheme(a: Appearance, scheme: string | null | undefined): M
     glass: neonOn(a) ? alpha(t.surface, 0.9) : t.surface,
     gradient: [t.accent, ensureContrast(mix(t.accent, t.ember, 0.45), t['accent-fg'], 4.5, t['accent-fg'] === '#ffffff' ? '#000000' : '#ffffff')],
     glow: [t['glow-1'], t['glow-2'], t['glow-3']],
-    radius: a.radius === 'sharp' ? 8 : a.radius === 'round' ? 22 : 16,
+    radius: a.radius === 'sharp' ? 8 : a.radius === 'round' ? 22 : a.preset === 'workspace' ? LEVEL_RADIUS[level] : 16,
+    night: nightFor(a, level),
   };
 }
 

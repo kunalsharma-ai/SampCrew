@@ -92,7 +92,7 @@ export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; childr
           <CrewLogo subtitle="Console" height={30} />
           <Badge tone="ember" className="ml-auto">Internal</Badge>
         </header>
-        <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><div key={pathname} className="crew-page">{children}</div></main>
       </div>
     </div>
     </HelpProvider>

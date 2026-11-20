@@ -97,7 +97,7 @@ function leaveDay() {
 
     // 3. Theme Studio: changes apply live, persist, and follow the member to another browser.
     await sup.goto(BASE + '/settings/appearance');
-    expect((await html(sup, 'data-preset')) === 'midnight', 'default preset should be Midnight Intelligence');
+    expect((await html(sup, 'data-preset')) === 'workspace', 'default preset should be the workspace design');
     await sup.evaluate(() => { window.__sameDocument = true; });
     await sup.getByRole('radiogroup', { name: 'Theme preset' }).getByRole('radio', { name: 'Emerald Command' }).click();
     await waitForHtml(sup, 'data-preset', 'emerald');
@@ -183,7 +183,7 @@ function leaveDay() {
     // Leave the supervisor on the default appearance for the flows that follow.
     await sup.goto(BASE + '/settings/appearance');
     await sup.getByRole('button', { name: 'Reset to default' }).click();
-    await waitForHtml(sup, 'data-preset', 'midnight');
+    await waitForHtml(sup, 'data-preset', 'workspace');
 
     if (errs.length) throw new Error('browser errors:\n' + errs.join('\n'));
     console.log('experience flow: all checks passed');

@@ -1,4 +1,4 @@
-import { buildTheme, DEFAULT_APPEARANCE, THEME_PRESETS, THEME_TEMPLATES, workspaceLevelLabel } from '@crew/contracts';
+import { buildTheme, DEFAULT_APPEARANCE, designLevelOf, presetChoices, THEME_TEMPLATES, workspaceLevelLabel } from '@crew/contracts';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, View } from 'react-native';
@@ -179,6 +179,7 @@ export default function Me() {
  */
 function AppearanceCard({ onMessage }: { onMessage: (m: { tone: 'ok' | 'warn' | 'danger'; text: string }) => void }) {
   const { appearance, theme, update } = useAppearance();
+  const { me } = useSession();
   const save = (patch: Parameters<typeof update>[0], done: string) =>
     update(patch).then(() => onMessage({ tone: 'ok', text: done }), (e) => onMessage({ tone: 'danger', text: errorText(e) }));
   return (
@@ -247,9 +248,9 @@ function AppearanceCard({ onMessage }: { onMessage: (m: { tone: 'ok' | 'warn' | 
       />
       <Text size={13} weight="600">Theme</Text>
       <View accessibilityRole="radiogroup" accessibilityLabel="Theme" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {THEME_PRESETS.map((p) => {
+        {presetChoices(designLevelOf(me?.levels)).map((p) => {
           const on = p.key === appearance.preset;
-          const swatch = buildTheme({ ...DEFAULT_APPEARANCE, preset: p.key }, theme.mode);
+          const swatch = buildTheme({ ...DEFAULT_APPEARANCE, preset: p.key }, theme.mode, designLevelOf(me?.levels));
           return (
             <Pressable
               key={p.key}

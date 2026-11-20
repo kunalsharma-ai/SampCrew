@@ -119,10 +119,10 @@ const shown = (t) => (t.value === null ? '–' : t.unit === 'percent' ? `${Math.
     await panel.getByRole('radio', { name: 'Gradient' }).click();
     await waitForHtml(p, 'data-backdrop', 'gradient');
     await panel.getByRole('button', { name: 'Close without applying' }).click();
-    await waitForHtml(p, 'data-preset', 'midnight');
+    await waitForHtml(p, 'data-preset', 'workspace');
     await waitForHtml(p, 'data-backdrop', 'aurora');
     const untouched = (await api(token, 'GET', '/me/preferences')).body.appearance;
-    expect(untouched.preset === 'midnight' && untouched.backdrop === 'aurora', 'closing without applying must not save anything');
+    expect(untouched.preset === 'workspace' && untouched.backdrop === 'aurora', 'closing without applying must not save anything');
     ok('Themes & Templates previews a theme live and closing it unapplied puts the saved look back');
 
     // 4. Apply a background, then a template; both persist.

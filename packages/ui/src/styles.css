@@ -503,3 +503,139 @@
 input[data-calendar]::-webkit-calendar-picker-indicator {
   display: none;
 }
+
+/* ===============================================================================================================
+ * The four products' design systems, one per level, chosen by data-level on <html>:
+ *   console  Command Center  (SampCrew Console)    deep navy and graphite, electric blue and cyan; precise and technical
+ *   super    Executive       (Super Workspace)     emerald, dark teal, warm ivory and gold; calm and corporate
+ *   hr       People Studio   (HR Workspace)        violet, coral and soft lavender; warm and energetic
+ *   employee Everyday        (Employee Workspace)  warm backgrounds, indigo, orange and mint; friendly and light
+ * Colours come from the theme stylesheet (preset "workspace" or the Console's levelStylesheet). Here: shape, type,
+ * the sidebar, the backdrop and each product's own motion. A shape or palette the member chose still wins, and reduced
+ * motion or focus mode turns every animation off (see the base layer and data-motion above).
+ * =============================================================================================================== */
+
+/* Shape: each product's corner radius, unless the member picked Sharp or Round. */
+:root[data-level="console"][data-radius="default"] { --radius-scale: 0.6; }
+:root[data-level="super"][data-radius="default"] { --radius-scale: 0.85; }
+:root[data-level="hr"][data-radius="default"] { --radius-scale: 1.25; }
+:root[data-level="employee"][data-radius="default"] { --radius-scale: 1.45; }
+
+/* Sidebar: each product's own night panel. */
+:root[data-style="neon"][data-level="console"] .crew-sidebar {
+  --surface: #0d1830; --surface-raised: #13213d; --fg-muted: #c9d6f2; --fg-subtle: #9fb1d6;
+  background:
+    linear-gradient(90deg, rgb(34 211 238 / 0.06) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(rgb(34 211 238 / 0.06) 1px, transparent 1px) 0 0 / 24px 24px,
+    radial-gradient(16rem 12rem at 0% 0%, rgb(59 130 246 / 0.35), transparent 70%),
+    linear-gradient(180deg, #0b1426, #050a16);
+  box-shadow: inset -1px 0 0 rgb(34 211 238 / 0.25);
+}
+:root[data-style="neon"][data-level="super"] .crew-sidebar {
+  --surface: #0f2a22; --surface-raised: #15352b; --fg-muted: #d8e6dc; --fg-subtle: #b2c8ba;
+  background:
+    radial-gradient(18rem 14rem at 0% 0%, rgb(52 211 153 / 0.28), transparent 70%),
+    radial-gradient(14rem 12rem at 100% 100%, rgb(227 179 65 / 0.22), transparent 70%),
+    linear-gradient(180deg, #0c2620, #061713);
+  box-shadow: inset -1px 0 0 rgb(227 179 65 / 0.35);
+}
+:root[data-style="neon"][data-level="hr"] .crew-sidebar {
+  --surface: #23153f; --surface-raised: #2c1a4f;
+  background:
+    radial-gradient(18rem 14rem at 0% 0%, rgb(167 139 250 / 0.42), transparent 70%),
+    radial-gradient(16rem 16rem at 100% 100%, rgb(251 138 126 / 0.34), transparent 70%),
+    linear-gradient(180deg, #261548, #150c2c);
+}
+:root[data-style="neon"][data-level="employee"] .crew-sidebar {
+  --surface: #1f1c4d; --surface-raised: #27235c; --fg-muted: #dcdaf7; --fg-subtle: #b9b6e6;
+  background:
+    radial-gradient(18rem 14rem at 0% 0%, rgb(129 140 248 / 0.4), transparent 70%),
+    radial-gradient(16rem 14rem at 100% 100%, rgb(251 146 60 / 0.3), transparent 70%),
+    linear-gradient(180deg, #1e1b4b, #12102f);
+}
+
+/* Page titles: a mark of each product. */
+:root[data-level="console"] .crew-page-title { font-family: var(--font-mono); font-weight: 600; letter-spacing: -0.035em; }
+:root[data-level="super"] .crew-page-title { position: relative; padding-bottom: 0.4rem; }
+:root[data-level="super"] .crew-page-title::after {
+  content: ""; position: absolute; left: 0; bottom: 0; width: 2.75rem; height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--ember), color-mix(in srgb, var(--ember) 30%, transparent));
+}
+:root[data-level="hr"]:not([data-contrast="high"]) .crew-page-title {
+  background: linear-gradient(100deg, var(--accent), var(--ember)); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+:root[data-level="employee"] .crew-page-title { font-weight: 800; letter-spacing: -0.025em; }
+
+/* Numbers line up in the Console's data-heavy screens. */
+:root[data-level="console"] .crew-tile, :root[data-level="console"] table { font-variant-numeric: tabular-nums; }
+
+/* Cards: how each product answers the pointer. */
+:root[data-level="console"] .crew-card { transition: border-color 160ms linear, box-shadow 160ms linear; }
+:root[data-level="console"] .crew-card:hover { border-color: color-mix(in srgb, var(--glow-2) 45%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--glow-2) 18%, transparent), 0 14px 30px -22px var(--glow-2); }
+:root[data-level="super"] .crew-card { transition: transform 260ms var(--ease-out-expo), box-shadow 260ms var(--ease-out-expo); }
+:root[data-level="super"] .crew-card:hover { box-shadow: 0 22px 44px -26px color-mix(in srgb, var(--glow-1) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--ember) 22%, transparent); }
+:root[data-level="hr"] .crew-tile, :root[data-level="employee"] .crew-tile { transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+:root[data-level="hr"] .crew-tile:hover { transform: translateY(-3px) rotate(-0.4deg); }
+:root[data-level="employee"] .crew-tile:hover { transform: translateY(-4px) scale(1.01); }
+:root[data-level="employee"] .crew-btn-primary:active, :root[data-level="hr"] .crew-btn-primary:active { transform: scale(0.96); }
+:root[data-level="employee"] .crew-btn-primary { transition: transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 140ms; }
+
+/* Backdrops: each product's own art in place of the aurora ridges (other backdrops stay as the member chose). */
+:root[data-style="neon"][data-backdrop="aurora"][data-level] .crew-ambient::after { display: none; }
+:root[data-style="neon"][data-backdrop="aurora"][data-level="console"] .crew-ambient::before {
+  height: 100%;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--glow-2) 9%, transparent) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(color-mix(in srgb, var(--glow-2) 9%, transparent) 1px, transparent 1px) 0 0 / 44px 44px;
+  -webkit-mask: radial-gradient(80rem 40rem at 50% 0%, #000, transparent 75%);
+  mask: radial-gradient(80rem 40rem at 50% 0%, #000, transparent 75%);
+}
+:root[data-style="neon"][data-backdrop="aurora"][data-level="super"] .crew-ambient::before {
+  height: 34rem;
+  background:
+    radial-gradient(40rem 22rem at 85% 0%, color-mix(in srgb, var(--glow-2) 22%, transparent), transparent 70%),
+    linear-gradient(160deg, color-mix(in srgb, var(--glow-1) 16%, transparent), transparent 55%);
+}
+:root[data-style="neon"][data-backdrop="aurora"][data-level="hr"] .crew-ambient::before {
+  height: 100%;
+  background:
+    radial-gradient(28rem 22rem at 12% 8%, color-mix(in srgb, var(--glow-1) 24%, transparent), transparent 70%),
+    radial-gradient(24rem 20rem at 88% 18%, color-mix(in srgb, var(--glow-2) 22%, transparent), transparent 70%),
+    radial-gradient(30rem 22rem at 60% 100%, color-mix(in srgb, var(--glow-3) 20%, transparent), transparent 70%);
+}
+:root[data-style="neon"][data-backdrop="aurora"][data-level="employee"] .crew-ambient::before {
+  height: 30rem;
+  background:
+    radial-gradient(34rem 20rem at 100% 0%, color-mix(in srgb, var(--glow-2) 24%, transparent), transparent 70%),
+    radial-gradient(30rem 20rem at 0% 0%, color-mix(in srgb, var(--glow-1) 18%, transparent), transparent 70%);
+}
+
+/* Page entrance: every product moves in its own way. "backwards" so nothing stays transformed afterwards (a
+   transformed parent would change how fixed dialogs inside the page are placed). */
+:root[data-level="console"] .crew-page { animation: crew-scan 280ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+:root[data-level="super"] .crew-page { animation: crew-rise 460ms var(--ease-out-expo) backwards; }
+:root[data-level="hr"] .crew-page { animation: crew-bloom 420ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards; }
+:root[data-level="employee"] .crew-page { animation: crew-slide 380ms cubic-bezier(0.34, 1.3, 0.64, 1) backwards; }
+/* People Studio and Everyday bring their cards in one after another. */
+:root[data-level="hr"] .crew-page .crew-card, :root[data-level="employee"] .crew-page .crew-card { animation: crew-rise 420ms var(--ease-out-expo) backwards; }
+:root[data-level="hr"] .crew-page .crew-card:nth-child(2), :root[data-level="employee"] .crew-page .crew-card:nth-child(2) { animation-delay: 50ms; }
+:root[data-level="hr"] .crew-page .crew-card:nth-child(3), :root[data-level="employee"] .crew-page .crew-card:nth-child(3) { animation-delay: 100ms; }
+:root[data-level="hr"] .crew-page .crew-card:nth-child(n+4), :root[data-level="employee"] .crew-page .crew-card:nth-child(n+4) { animation-delay: 150ms; }
+
+@keyframes crew-scan {
+  from { opacity: 0; clip-path: inset(0 0 100% 0); }
+  60% { opacity: 1; }
+  to { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+@keyframes crew-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes crew-bloom {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes crew-slide {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}

@@ -1,7 +1,6 @@
 import { Tabs } from 'expo-router';
 import { type ColorValue, Text, View } from 'react-native';
 import { useSession } from '../../src/lib/session';
-import { NIGHT } from '../../src/lib/theme';
 import { gradient, glow, screenHelp, useTheme } from '../../src/ui';
 
 export default function TabsLayout() {
@@ -22,7 +21,7 @@ export default function TabsLayout() {
       );
     };
   const bar = t.neon
-    ? { tabBarStyle: { backgroundColor: NIGHT.bg, borderTopColor: NIGHT.border, height: 64, paddingTop: 6, paddingBottom: 8 }, tabBarActiveTintColor: NIGHT.fg, tabBarInactiveTintColor: NIGHT.muted }
+    ? { tabBarStyle: { backgroundColor: t.night.bg, borderTopColor: t.night.border, height: 64, paddingTop: 6, paddingBottom: 8 }, tabBarActiveTintColor: t.night.fg, tabBarInactiveTintColor: t.night.muted }
     : { tabBarStyle: { backgroundColor: t.card, borderTopColor: t.border }, tabBarActiveTintColor: t.accent, tabBarInactiveTintColor: t.muted };
   return (
     <Tabs

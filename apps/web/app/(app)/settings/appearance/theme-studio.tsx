@@ -1,9 +1,10 @@
 'use client';
-import { DEFAULT_APPEARANCE, THEME_PRESETS, buildTheme, contrast, type Appearance, type AppearancePatch, type ThemePreset } from '@crew/contracts';
+import { DEFAULT_APPEARANCE, buildTheme, contrast, presetByKey, presetChoices, type Appearance, type AppearancePatch, type ThemePreset } from '@crew/contracts';
 import { Badge, Button, Card, CardBody, CardHeader, cn } from '@crew/ui';
 import { Check, Monitor, Moon, RotateCcw, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useExperience } from '../../shell';
+import { useDesignLevel } from '@/lib/design-level';
 
 type Option<T extends string> = { value: T; label: string; hint?: string };
 
@@ -41,7 +42,7 @@ function Toggle({ label, checked, onChange, describe }: { label: string; checked
 
 /** A small rendering of the app in a preset's own colours, so every card previews itself regardless of the current theme. */
 function PresetCard({ p, mode, selected, onPick }: { p: ThemePreset; mode: 'light' | 'dark'; selected: boolean; onPick: () => void }) {
-  const t = buildTheme({ ...DEFAULT_APPEARANCE, preset: p.key }, mode);
+  const t = buildTheme({ ...DEFAULT_APPEARANCE, preset: p.key }, mode, useDesignLevel());
   return (
     <button type="button" role="radio" aria-checked={selected} aria-label={p.name} onClick={onPick}
       className={cn('group overflow-hidden rounded-xl border text-left transition-shadow', selected ? 'border-accent ring-2 ring-accent' : 'border-border hover:shadow-pop')}>
@@ -101,8 +102,9 @@ export function ThemeStudio() {
     return () => m.removeEventListener('change', on);
   }, []);
   const mode = a.mode === 'system' ? (systemDark ? 'dark' : 'light') : a.mode;
-  const seed = THEME_PRESETS.find((p) => p.key === a.preset)![mode];
-  const live = buildTheme(a, mode);
+  const level = useDesignLevel();
+  const seed = presetByKey(a.preset, level)[mode];
+  const live = buildTheme(a, mode, level);
 
   const set = async (patch: AppearancePatch) => {
     const r = await update(patch);
@@ -114,7 +116,7 @@ export function ThemeStudio() {
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="flex flex-col gap-6">
         <Card>
-          <CardHeader title="Theme" description="Thirteen presets, each with a light and a dark palette checked for readable contrast." action={
+          <CardHeader title="Theme" description="Your workspace design, the other level designs and thirteen presets, each with a light and a dark palette checked for readable contrast." action={
             <div className="inline-flex gap-1 rounded-lg bg-bg-subtle p-1" role="radiogroup" aria-label="Colour mode">
               {([['light', 'Light', Sun], ['dark', 'Dark', Moon], ['system', 'System', Monitor]] as const).map(([m, label, Icon]) => (
                 <button key={m} type="button" role="radio" aria-checked={a.mode === m} onClick={() => void set({ mode: m })} className={cn('flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium', a.mode === m ? 'bg-surface text-fg shadow-card' : 'text-fg-muted hover:text-fg')}>
@@ -125,7 +127,7 @@ export function ThemeStudio() {
           } />
           <CardBody className="pt-1">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" role="radiogroup" aria-label="Theme preset">
-              {THEME_PRESETS.map((p) => <PresetCard key={p.key} p={p} mode={mode} selected={a.preset === p.key} onPick={() => void set({ preset: p.key })} />)}
+              {presetChoices(level).map((p) => <PresetCard key={p.key} p={p} mode={mode} selected={a.preset === p.key} onPick={() => void set({ preset: p.key })} />)}
             </div>
           </CardBody>
         </Card>
@@ -187,7 +189,7 @@ export function ThemeStudio() {
           </CardBody>
         </Card>
         <Button variant="secondary" onClick={() => void reset().then((r) => setMessage(r.ok ? { ok: true, text: 'Reset' } : { ok: false, text: r.message ?? 'Could not reset' }))}><RotateCcw className="size-4" /> Reset to default</Button>
-        <p className="text-xs text-fg-subtle">Default: Midnight Intelligence, Neon style with the Aurora background, system mode, comfortable density, balanced motion.</p>
+        <p className="text-xs text-fg-subtle">Default: Workspace design (your level's own palette), Neon style with the Aurora background, system mode, comfortable density, balanced motion.</p>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 'use client';
-import { DEFAULT_APPEARANCE, THEME_PRESETS, buildTheme, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
+import { DEFAULT_APPEARANCE, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
 import { AutoHelp, Avatar, Badge, CrewLogo, Dialog, HelpProvider, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronDown, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
@@ -28,6 +28,7 @@ import { ThemePanel } from './theme-panel';
 import { logoutAction, switchTenantAction } from './shell-actions';
 import { NotificationBell } from '@/components/notification-bell';
 import { FeatureGate } from '@/components/feature-gate';
+import { useDesignLevel } from '@/lib/design-level';
 
 export { ICONS };
 
@@ -155,6 +156,12 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   const allHrefs = allItems.map((i) => i.href);
 
   useEffect(() => setMobileOpen(false), [pathname]);
+  // Each level has its own design system (colours, shape, motion): see data-level in @crew/ui styles.css.
+  const designLevel = designLevelOf(me.levels);
+  useEffect(() => {
+    document.documentElement.dataset.level = designLevel;
+    return () => { delete document.documentElement.dataset.level; };
+  }, [designLevel]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -245,7 +252,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               <HeaderUser me={me} />
             </div>
           </header>
-          <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></main>
+          <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><div key={pathname} className="crew-page"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></div></main>
         </div>
         {hasIq && <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />}
         <ThemePanel open={themesOpen} onClose={() => setThemesOpen(false)} appearance={appearance} update={update} />
@@ -543,7 +550,7 @@ function QuickCreate({ actions }: { actions: QuickAction[] }) {
 
 /** Swatch showing a preset's own colours, independent of the current theme. */
 export function PresetSwatch({ preset, mode, size = 'sm' }: { preset: string; mode: 'light' | 'dark'; size?: 'sm' | 'lg' }) {
-  const t = buildTheme({ ...DEFAULT_APPEARANCE, preset: preset as Appearance['preset'] }, mode);
+  const t = buildTheme({ ...DEFAULT_APPEARANCE, preset: preset as Appearance['preset'] }, mode, useDesignLevel());
   return (
     <span className={cn('relative inline-flex overflow-hidden rounded-full border border-border', size === 'sm' ? 'size-5' : 'size-8')} style={{ background: t.bg }} aria-hidden>
       <span className="absolute inset-0" style={{ background: `conic-gradient(from 200deg, ${t['glow-1']}, ${t['glow-2']}, ${t['glow-3']}, ${t['glow-1']})`, clipPath: 'polygon(50% 0, 100% 0, 100% 100%, 50% 100%)' }} />
@@ -553,6 +560,7 @@ export function PresetSwatch({ preset, mode, size = 'sm' }: { preset: string; mo
 
 function ThemeMenu() {
   const { appearance, update, openThemes } = useExperience();
+  const designLevel = useDesignLevel();
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ModeIcon = appearance.mode === 'light' ? Sun : appearance.mode === 'dark' ? Moon : Monitor;
@@ -574,7 +582,7 @@ function ThemeMenu() {
         </div>
         <div className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle">Theme</div>
         <div className="mb-3 grid grid-cols-6 gap-1.5" role="radiogroup" aria-label="Theme preset">
-          {THEME_PRESETS.map((p) => (
+          {presetChoices(designLevel).map((p) => (
             <button key={p.key} role="radio" aria-checked={appearance.preset === p.key} aria-label={p.name} title={p.name} onClick={() => void update({ preset: p.key })} className={cn('flex items-center justify-center rounded-lg p-1 ring-offset-2 ring-offset-surface-raised', appearance.preset === p.key ? 'ring-2 ring-accent' : 'hover:bg-bg-subtle')}>
               <PresetSwatch preset={p.key} mode={swatchMode} size="lg" />
             </button>
@@ -604,6 +612,7 @@ interface PaletteItem { id: string; section: string; label: string; detail?: str
 function CommandPalette({ open, onClose, nav, me, quick, workflows }: { open: boolean; onClose: () => void; nav: NavGroup[]; me: Me; quick: QuickAction[]; workflows: QuickAction[] }) {
   const router = useRouter();
   const { appearance, update, recents } = useExperience();
+  const designLevel = useDesignLevel();
   const [q, setQ] = useState('');
   const [index, setIndex] = useState(0);
   const [hits, setHits] = useState<Awaited<ReturnType<typeof paletteSearchAction>>>([]);
@@ -644,7 +653,7 @@ function CommandPalette({ open, onClose, nav, me, quick, workflows }: { open: bo
       { id: 't-dark', section: 'Appearance', label: 'Switch to dark mode', icon: Moon, run: () => { void update({ mode: 'dark' }); onClose(); } },
       { id: 't-light', section: 'Appearance', label: 'Switch to light mode', icon: Sun, run: () => { void update({ mode: 'light' }); onClose(); } },
       { id: 't-focus', section: 'Appearance', label: appearance.focusMode ? 'Turn focus mode off' : 'Turn focus mode on', icon: Focus, run: () => { void update({ focusMode: !appearance.focusMode }); onClose(); } },
-      ...THEME_PRESETS.map((p) => ({ id: `t-${p.key}`, section: 'Appearance', label: `Theme: ${p.name}`, detail: p.description, icon: Palette, run: () => { void update({ preset: p.key }); onClose(); } })),
+      ...presetChoices(designLevel).map((p) => ({ id: `t-${p.key}`, section: 'Appearance', label: `Theme: ${p.name}`, detail: p.description, icon: Palette, run: () => { void update({ preset: p.key }); onClose(); } })),
     ];
     if (term) for (const c of themeCmds) if (match(c.label, c.detail, 'theme appearance')) out.push(c);
     return out;

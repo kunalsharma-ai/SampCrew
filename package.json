@@ -58,6 +58,7 @@
     "e2e:hardening": "node e2e/hardening-flow.cjs",
     "e2e:access": "node e2e/access-flow.cjs",
     "e2e:features": "node e2e/feature-flow.cjs",
+    "e2e:design": "node e2e/design-flow.cjs",
     "e2e:plans": "node e2e/plans-flow.cjs",
     "e2e:platform-integrations": "node e2e/platform-integrations-flow.cjs",
     "e2e:billing": "node e2e/billing-flow.cjs",

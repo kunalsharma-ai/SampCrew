@@ -1,4 +1,4 @@
-import { type Appearance, type AppearancePatch, DEFAULT_APPEARANCE, type MemberPreferences } from '@crew/contracts';
+import { type Appearance, type AppearancePatch, DEFAULT_APPEARANCE, designLevelOf, type MemberPreferences } from '@crew/contracts';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import { useSession } from './session';
@@ -63,7 +63,9 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     }
   }, [api]);
 
-  const value = useMemo(() => ({ appearance, theme: mobileTheme(appearance, scheme), update }), [appearance, scheme, update]);
+  // Each level has its own design (Executive, People Studio, Everyday) while the workspace design is chosen.
+  const level = designLevelOf(me?.levels);
+  const value = useMemo(() => ({ appearance, theme: mobileTheme(appearance, scheme, level), update }), [appearance, scheme, level, update]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
