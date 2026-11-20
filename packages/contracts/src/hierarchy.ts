@@ -183,3 +183,15 @@ export interface HierarchyOverview {
   hrWorkspaces: HrWorkspaceSummary[];
   levels: { super: boolean; hrWorkspaceIds: string[] };
 }
+
+/**
+ * The level name a signed-in person is shown under their name ("Super Workspace", "HR Workspace" or "Employee
+ * Workspace"), never a job title or role name. An HR Workspace admin of exactly one HR Workspace also sees its name.
+ */
+export function workspaceLevelLabel(levels: { super: boolean; companyHr: boolean; hrWorkspaces: { name: string }[] } | null | undefined, opts: { withName?: boolean } = {}): string {
+  if (!levels) return PLATFORM_LEVEL_LABEL.employee;
+  if (levels.super) return PLATFORM_LEVEL_LABEL.super;
+  if (levels.hrWorkspaces.length === 1 && opts.withName) return `${PLATFORM_LEVEL_LABEL.hr} · ${levels.hrWorkspaces[0]!.name}`;
+  if (levels.hrWorkspaces.length || levels.companyHr) return PLATFORM_LEVEL_LABEL.hr;
+  return PLATFORM_LEVEL_LABEL.employee;
+}

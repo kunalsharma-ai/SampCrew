@@ -41,7 +41,7 @@ export function AdminHub({ me, modules, matrix, tab, roleId }: { me: Me; modules
   const active = tabs.some((t) => t.key === tab) ? tab : tabs[0]!.key;
   return (
     <div className="grid gap-6">
-      <div role="tablist" aria-label="HR Workspace Admin" className="flex flex-wrap gap-1 border-b border-border">
+      <div role="tablist" aria-label="Super Workspace Admin" className="flex flex-wrap gap-1 border-b border-border">
         {tabs.map((t) => (
           <button key={t.key} role="tab" aria-selected={active === t.key} type="button" onClick={() => router.push(`/settings/hr-admin?tab=${t.key}`)}
             className={cn('-mb-px border-b-2 px-3 py-2 text-sm', active === t.key ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg')}>{t.label}</button>

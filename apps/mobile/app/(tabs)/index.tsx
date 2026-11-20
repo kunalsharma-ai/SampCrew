@@ -1,3 +1,4 @@
+import { workspaceLevelLabel } from '@crew/contracts';
 import { useRouter } from 'expo-router';
 import { useSession } from '../../src/lib/session';
 import type { Announcement, AppraisalBrief, Balance, InboxItem, MyRewards, Notification, TaskCounts, Today } from '../../src/lib/types';
@@ -42,7 +43,7 @@ export default function Home() {
   useReloadOnFocus(reload);
 
   const firstName = me?.user.fullName.split(' ')[0] ?? '';
-  const role = me?.membership.roles[0]?.name;
+  const role = me ? workspaceLevelLabel(me.levels, { withName: true }) : undefined;
   const toAck = data?.news.filter((a) => a.requiresAck && !a.acknowledgedAt).length ?? 0;
   const leaveDays = data?.balances?.reduce((sum, b) => sum + Number(b.available), 0);
   const day = data?.today?.day;

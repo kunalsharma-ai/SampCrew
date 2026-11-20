@@ -893,7 +893,7 @@ export const WEB_HELP: HelpContent = {
       where: 'For people who can create employees. Nobody gets a login until you send one.',
     },
     '/settings/hr-admin': {
-      title: 'HR Workspace Admin',
+      title: 'Super Workspace Admin',
       what: 'One place to switch modules on or off for your workspace, set what each role can do and reach every module\'s settings.',
       how: 'Use the tabs: Modules, Permissions and Settings. Changes apply when you save and are kept in the audit trail.',
       where: 'For workspace admins. Nobody gets access unless an admin grants it.',

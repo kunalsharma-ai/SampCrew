@@ -1,5 +1,5 @@
 'use client';
-import { DEFAULT_APPEARANCE, THEME_PRESETS, buildTheme, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
+import { DEFAULT_APPEARANCE, THEME_PRESETS, buildTheme, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
 import { AutoHelp, Avatar, Badge, CrewLogo, Dialog, HelpProvider, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronDown, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
@@ -380,13 +380,13 @@ function UpgradeCard({ me }: { me: Me }) {
 
 /** Greeting chip on the right of the top bar (wide screens); opens the member's account menu. */
 function HeaderUser({ me }: { me: Me }) {
-  const role = me.membership.roles.find((r) => r.key !== 'employee') ?? me.membership.roles[0];
+  const level = workspaceLevelLabel(me.levels);
   return (
     <AccountMenu me={me} wrapperClassName="ml-1 hidden shrink-0 xl:block" buttonClassName="flex items-center whitespace-nowrap gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-bg-subtle" testId="account-menu-header">
       <Avatar name={me.user.fullName} size={32} src={me.employee ? photoUrl(me.employee) : null} />
       <span className="flex flex-col text-left leading-tight">
         <span className="text-[0.8125rem] font-semibold">Hi, {me.user.fullName.split(' ')[0]}</span>
-        <span className="text-[0.6875rem] text-fg-subtle">{role?.name}</span>
+        <span className="text-[0.6875rem] text-fg-subtle">{level}</span>
       </span>
     </AccountMenu>
   );
@@ -477,14 +477,14 @@ function TenantSwitcher({ me }: { me: Me }) {
 
 function UserMenu({ me, rail }: { me: Me; rail: boolean }) {
   const [pending, start] = useTransition();
-  const primaryRole = me.membership.roles.find((r) => r.key !== 'employee') ?? me.membership.roles[0];
+  const level = workspaceLevelLabel(me.levels, { withName: true });
   return (
     <div className={cn('flex items-center gap-2.5 rounded-lg border border-border px-2.5 py-2', rail && 'flex-col border-0 px-0')}>
       <AccountMenu me={me} up wrapperClassName="shrink-0" buttonClassName="block rounded-full" testId="account-menu-sidebar"><Avatar name={me.user.fullName} size={30} src={me.employee ? photoUrl(me.employee) : null} /></AccountMenu>
       {!rail && (
         <div className="min-w-0 flex-1">
           <div className="truncate text-[0.8125rem] font-medium">{me.user.fullName}</div>
-          <div className="truncate text-[0.6875rem] text-fg-subtle">{primaryRole?.name}</div>
+          <div className="truncate text-[0.6875rem] text-fg-subtle" title={level}>{level}</div>
         </div>
       )}
       <button onClick={() => start(() => logoutAction())} disabled={pending} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Sign out" title="Sign out">

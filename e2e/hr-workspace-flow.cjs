@@ -6,7 +6,7 @@
  *   pnpm dev:api & pnpm dev:web &
  *   node e2e/hr-workspace-flow.cjs
  *
- * 1. The owner switches Assets off in HR Workspace Admin (it leaves the menu and its page refuses), then back on, and
+ * 1. The owner switches Assets off in Super Workspace Admin (it leaves the menu and its page refuses), then back on, and
  *    opens the role matrix for HR Executive.
  * 2. HR registers a laptop and assigns it to Neha; Neha acknowledges it on My assets; HR sees the acknowledgement.
  * 3. HR adds an agency, starts a verification for Neha, verifies the identity check, shares a file and sends the case
@@ -110,7 +110,7 @@ async function run(b) {
   // 1. Module access and the role matrix.
   const owner = await signIn(b, 'owner@demo.crew.local');
   await owner.goto(BASE + '/settings/hr-admin');
-  await owner.getByRole('heading', { name: 'HR Workspace Admin' }).first().waitFor({ timeout: 10000 }).catch((e) => fail(owner, e));
+  await owner.getByRole('heading', { name: 'Super Workspace Admin' }).first().waitFor({ timeout: 10000 }).catch((e) => fail(owner, e));
   const assetsSwitch = owner.getByRole('switch', { name: /^Asset inventory.* on$/ });
   if ((await assetsSwitch.getAttribute('aria-checked')) !== 'true') {
     await assetsSwitch.click();

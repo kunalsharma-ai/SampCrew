@@ -1,4 +1,4 @@
-import { buildTheme, DEFAULT_APPEARANCE, THEME_PRESETS, THEME_TEMPLATES } from '@crew/contracts';
+import { buildTheme, DEFAULT_APPEARANCE, THEME_PRESETS, THEME_TEMPLATES, workspaceLevelLabel } from '@crew/contracts';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, View } from 'react-native';
@@ -101,7 +101,7 @@ export default function Me() {
         <Avatar name={me?.user.fullName ?? ''} size={60} uri={photo} testID="me-photo" />
         <View style={{ flex: 1, gap: 2 }}>
           <Title>{me?.user.fullName ?? 'Me'}</Title>
-          <Text muted size={14}>{me?.membership.roles.map((r) => r.name).join(', ') || me?.user.email || ''}</Text>
+          <Text muted size={14}>{me ? workspaceLevelLabel(me.levels, { withName: true }) : ''}</Text>
         </View>
       </Row>
       <Text muted size={14}>{`${me?.user.email ?? ''} · ${me?.tenant.name ?? ''}`}</Text>

@@ -629,7 +629,7 @@ function AccessWidget({ roles, access, plan }: { roles: { key: string; name: str
   const [all, setAll] = useState(false);
   return (
     <Card className="h-full">
-      <CardHeader title="Your access" description="What your roles let you do in this workspace, and for whom." action={<ShieldCheck className="size-5 text-accent" />} />
+      <CardHeader title="Your access" description="Your workspace level, what it lets you do, and for whom." action={<ShieldCheck className="size-5 text-accent" />} />
       <CardBody>
         <div className="mb-4 flex flex-wrap gap-1.5">{roles.map((r) => <Badge key={r.key} tone="accent">{r.name}</Badge>)}</div>
         {access.length ? (
