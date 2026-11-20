@@ -11,3 +11,5 @@ export * from './components/help';
 export { helpKey, matchRoute, resolveHelp, routeScore, allHelpEntries } from './help-resolve';
 export * from './components/statutory-fields';
 export * from './components/feature-switches';
+export * from './components/password-reset';
+export * from './components/password-reset-list';

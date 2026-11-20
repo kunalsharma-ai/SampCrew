@@ -15,6 +15,7 @@ const NAV: (NavItem & { cap?: string })[] = [
   { href: '/statutory-packs', label: 'Payroll country packs', icon: 'globe', cap: 'tenants:read' },
   { href: '/integrations', label: 'Integrations', icon: 'plug', cap: 'health:read' },
   { href: '/health', label: 'System health', icon: 'activity', cap: 'health:read' },
+  { href: '/password-resets', label: 'Password resets', icon: 'key', cap: 'audit:read' },
   { href: '/audit', label: 'Platform audit', icon: 'scroll', cap: 'audit:read' },
   { href: '/admins', label: 'Console admins', icon: 'shield', cap: 'admins:manage' },
 ];

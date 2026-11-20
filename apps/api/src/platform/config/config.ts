@@ -19,6 +19,12 @@ const schema = z.object({
   /** Directory for uploaded files when using the local storage driver. */
   STORAGE_DIR: z.string().default('./.data/files'),
   API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
+  /**
+   * The Console's public address, for links in Console emails (a Console admin's password reset). When it is not set,
+   * the Console host from CREW_CONSOLE_ADDRESS is used over https, else http://localhost:3001.
+   */
+  CONSOLE_PUBLIC_URL: optional(z.string().url()),
+  CREW_CONSOLE_ADDRESS: optional(z.string().max(253)),
   /** Set to true to stop background loops (outbox, email, daily HR jobs), e.g. in tests. */
   CREW_DISABLE_DISPATCHER: z.enum(['true', 'false']).default('false'),
   /** The Expo push service. Only tests point it elsewhere; push itself is set up in Console > Integrations. */
@@ -44,7 +50,9 @@ const schema = z.object({
     .refine((v) => v.split(',').map((k) => k.trim()).filter(Boolean).every((k) => Buffer.from(k, 'base64').length === 32), 'FIELD_ENCRYPTION_KEYS_PREVIOUS must hold 32-byte base64 keys, comma-separated'),
 });
 
-export type AppConfig = z.infer<typeof schema> & {
+export type AppConfig = Omit<z.infer<typeof schema>, 'CONSOLE_PUBLIC_URL'> & {
+  /** Always filled in (see the schema). */
+  CONSOLE_PUBLIC_URL: string;
   /**
    * The sign-in token signing keys. They are not settings: the API creates them once and keeps them in the database
    * (instance-secrets.ts), and fills them in here before it starts serving.
@@ -81,6 +89,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   cached = {
     ...parsed.data,
+    CONSOLE_PUBLIC_URL: (parsed.data.CONSOLE_PUBLIC_URL ?? (parsed.data.CREW_CONSOLE_ADDRESS ? `https://${parsed.data.CREW_CONSOLE_ADDRESS}` : 'http://localhost:3001')).replace(/\/+$/, ''),
     JWT_ACCESS_SECRET: '',
     JWT_PLATFORM_SECRET: '',
     isProductionLike: parsed.data.CREW_ENV === 'production' || parsed.data.CREW_ENV === 'staging',

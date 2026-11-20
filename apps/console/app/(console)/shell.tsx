@@ -9,7 +9,7 @@ import type { Admin } from '@/lib/types';
 import { logoutAction } from '../auth-actions';
 
 export interface NavItem { href: string; label: string; icon: string }
-const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight };
+const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound };
 const ROLE_LABEL: Record<Admin['role'], string> = { super_admin: 'Super admin', support: 'Support', billing_ops: 'Billing operations', viewer: 'Viewer' };
 
 export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; children: React.ReactNode }) {

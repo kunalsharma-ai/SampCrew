@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 const ACCESS = 'crew_console_at';
 const REFRESH = 'crew_console_rt';
-const PUBLIC = ['/healthz', '/login', '/setup'];
+const PUBLIC = ['/healthz', '/login', '/setup', '/forgot-password', '/reset-password'];
 const API_URL = process.env.CREW_API_URL ?? 'http://localhost:4000';
 const secure = process.env.SESSION_COOKIE_SECURE !== 'false';
 

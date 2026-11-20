@@ -119,3 +119,77 @@ export const firstAdminRequest = z.object({
   password,
 }).strict();
 export type FirstAdminRequest = z.infer<typeof firstAdminRequest>;
+
+// ---------------------------------------------------------------------------
+// Forgot password (every level: Console, Super, HR and Employee Workspace; web and phone app)
+// ---------------------------------------------------------------------------
+
+/** How long a reset link or code works. */
+export const PASSWORD_RESET_TTL_MINUTES = 30;
+
+export const passwordResetRequest = z.object({ email });
+
+export const passwordResetCheck = z.object({ token: z.string().min(20).max(200) });
+
+/** A new password with either the emailed link (token) or the 6-digit code from the same email and the address. */
+export const passwordResetComplete = z
+  .object({
+    token: z.string().min(20).max(200).optional(),
+    email: email.optional(),
+    code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code from the email').optional(),
+    newPassword: password,
+  })
+  .refine((v) => Boolean(v.token) || (Boolean(v.email) && Boolean(v.code)), { message: 'Open the link in the email, or enter your email and the 6-digit code', path: ['code'] });
+export type PasswordResetComplete = z.infer<typeof passwordResetComplete>;
+
+export const PASSWORD_RESET_LEVELS = ['console', 'super', 'hr', 'employee'] as const;
+export type PasswordResetLevel = (typeof PASSWORD_RESET_LEVELS)[number];
+export const PASSWORD_RESET_LEVEL_LABEL: Record<PasswordResetLevel, string> = { console: 'Console Admin', super: 'Super Workspace', hr: 'HR Workspace', employee: 'Employee Workspace' };
+
+/** As shown in the lists: "expired" is a pending request whose time ran out. */
+export const PASSWORD_RESET_STATUSES = ['pending', 'completed', 'expired', 'replaced', 'locked', 'no_account', 'inactive', 'limited'] as const;
+export type PasswordResetStatus = (typeof PASSWORD_RESET_STATUSES)[number];
+export const PASSWORD_RESET_STATUS_LABEL: Record<PasswordResetStatus, string> = {
+  pending: 'Email sent, not used yet',
+  completed: 'Password changed',
+  expired: 'Expired unused',
+  replaced: 'Replaced by a newer request',
+  locked: 'Stopped after wrong codes',
+  no_account: 'No account with this email',
+  inactive: 'Account not active',
+  limited: 'Too many requests',
+};
+
+export const passwordResetsQuery = z.object({
+  level: z.enum(PASSWORD_RESET_LEVELS).optional(),
+  status: z.enum(PASSWORD_RESET_STATUSES).optional(),
+  q: z.string().trim().max(100).optional(),
+  tenantId: z.uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).max(100_000).default(0),
+});
+
+export interface PasswordResetRow {
+  id: string;
+  email: string;
+  fullName: string | null;
+  level: PasswordResetLevel | null;
+  workspaces: { id: string; name: string; level: PasswordResetLevel }[];
+  status: PasswordResetStatus;
+  /** What happened to the email: queued, sent, failed, skipped (email not set up in Console > Integrations); null when none was sent. */
+  delivery: 'queued' | 'sent' | 'failed' | 'skipped' | 'cancelled' | null;
+  deliveryError: string | null;
+  client: 'web' | 'mobile' | 'api' | 'console';
+  ip: string | null;
+  requestedAt: string;
+  expiresAt: string;
+  completedAt: string | null;
+  sessionsRevoked: number;
+}
+
+export interface PasswordResetList {
+  items: PasswordResetRow[];
+  total: number;
+  /** Counts over the last 30 days, for the summary tiles. */
+  summary: { requested: number; completed: number; pending: number; failedDelivery: number };
+}

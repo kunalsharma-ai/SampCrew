@@ -742,6 +742,12 @@ export const WEB_HELP: HelpContent = {
       how: 'Fill in the details, upload a PNG or JPEG logo and save. The table shows who has the signature installed.',
       where: 'For people who manage the organisation.',
     },
+    '/settings/password-resets': {
+      title: 'Password resets',
+      what: 'Everyone in your company who used Forgot password, on the web or the phone app, and what happened next.',
+      how: 'Filter by level or status. "Email not set up" means SAMPLEDGE has not set up email delivery yet; the person cannot reset until it is.',
+      where: 'For the Super Workspace.',
+    },
     '/settings/security': {
       title: 'Security',
       what: 'Your two-step verification, password and where you are signed in.',
