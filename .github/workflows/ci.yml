@@ -186,8 +186,11 @@ jobs:
           pnpm e2e:hardening
       - name: Backup and restore drill
         # mongodump and mongorestore come from the mongo:8.0 container that runs the database, so they always match
-        # the server; the archive is streamed through stdin and stdout.
+        # the server; the archive is streamed through stdin and stdout. The API is stopped first: its background jobs
+        # (scheduled announcements, reminders, live events) write while it runs, so document counts taken after
+        # the dump would not match the copy.
         run: |
+          pkill -f "dist/main.js" || true
           mkdir -p "$RUNNER_TEMP/mongo-tools"
           for t in mongodump mongorestore; do
             printf '#!/bin/sh\nexec docker exec -i mongo %s "$@"\n' "$t" > "$RUNNER_TEMP/mongo-tools/$t"
