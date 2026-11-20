@@ -11,7 +11,7 @@ import type { Matrix, MatrixRole, ModuleRow } from './types';
 
 const TABS = [
   { key: 'modules', label: 'Module access' },
-  { key: 'permissions', label: 'Roles & permissions' },
+  { key: 'permissions', label: 'Access levels' },
   { key: 'settings', label: 'Module settings' },
 ];
 const SCOPE_LABEL: Record<string, string> = { own: 'Own records', team: 'Their team', department: 'Their department', entity: 'Their legal entity', tenant: 'Whole workspace' };
@@ -89,14 +89,14 @@ function Modules({ rows, canManage }: { rows: ModuleRow[]; canManage: boolean })
 
 function Permissions({ matrix, roleId, canManage }: { matrix: Matrix; roleId?: string; canManage: boolean }) {
   const router = useRouter();
-  const role = matrix.roles.find((r) => r.id === roleId) ?? matrix.roles.find((r) => r.key === 'hr_admin') ?? matrix.roles[0]!;
+  const role = matrix.roles.find((r) => r.id === roleId) ?? matrix.roles.find((r) => r.key === 'hr_workspace') ?? matrix.roles[0]!;
   return (
     <div className="grid gap-6">
       <Card>
-        <CardHeader title="Roles" description="Pick a role to see and change what it may do. A member's access is the sum of their roles; department-level access is set per person under Logins & access." />
+        <CardHeader title="Workspace access" description="Pick an access level to see and change what it may do. Limits for one person (HR Workspaces, entities, departments, areas) are set under Logins & access." />
         <CardBody className="flex flex-wrap items-end gap-3">
-          <Select aria-label="Role" value={role.id} onChange={(e) => router.push(`/settings/hr-admin?tab=permissions&role=${e.target.value}`)} className="w-72">
-            {matrix.roles.map((r) => <option key={r.id} value={r.id}>{r.name}{r.isSystem ? '' : ' (custom)'} · {r.memberCount} {r.memberCount === 1 ? 'member' : 'members'}</option>)}
+          <Select aria-label="Access level" value={role.id} onChange={(e) => router.push(`/settings/hr-admin?tab=permissions&role=${e.target.value}`)} className="w-72">
+            {matrix.roles.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.memberCount} {r.memberCount === 1 ? 'person' : 'people'}</option>)}
           </Select>
           {role.description && <p className="text-[0.8125rem] text-fg-muted">{role.description}</p>}
         </CardBody>

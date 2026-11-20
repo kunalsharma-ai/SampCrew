@@ -35,6 +35,11 @@ export interface MemberAccess {
   areas: string[];
   viewAreas: string[];
   auditTrail: boolean;
+  /**
+   * The exact access kept from before the four levels (migrated people only), by area and the actions in it. Saving
+   * new areas replaces it.
+   */
+  keptAccess: { area: string; actions: string[] }[];
   /** Given by a provisioning group (SCIM): the identity provider manages it. */
   fromGroup: boolean;
 }

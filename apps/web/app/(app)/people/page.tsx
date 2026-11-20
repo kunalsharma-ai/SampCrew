@@ -2,7 +2,7 @@ import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load, loadOptional } from '@/lib/api';
 import { can } from '@/lib/nav';
-import type { Department, LegalEntity, Location, Me, Member, Page, Role } from '@/lib/types';
+import type { Department, LegalEntity, Location, Me, Member, Page } from '@/lib/types';
 import { PeopleView } from './people-view';
 
 export const metadata: Metadata = { title: 'People' };
@@ -14,9 +14,9 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   if (sp.status && ['active', 'invited', 'suspended'].includes(sp.status)) qs.set('status', sp.status);
   if (sp.cursor) qs.set('cursor', sp.cursor);
   const me = await load<Me>('/me');
-  const [members, roles, departments, entities, locations] = await Promise.all([
+  const [members, hrWorkspaces, departments, entities, locations] = await Promise.all([
     load<Page<Member>>(`/members?${qs}`),
-    loadOptional<Role[]>('/roles'),
+    can(me, 'hierarchy:read') ? loadOptional<{ items: { id: string; name: string }[] }>('/hr-workspaces?status=active') : null,
     loadOptional<Department[]>('/org/departments'),
     loadOptional<LegalEntity[]>('/org/legal-entities'),
     loadOptional<Location[]>('/org/locations'),
@@ -25,12 +25,12 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   const scopeNote = scope === 'tenant' ? 'Everyone in the workspace.' : scope === 'entity' ? 'People in your legal entity.' : scope === 'department' ? 'People in your department.' : scope === 'team' ? 'You and the people who report to you.' : 'Only you.';
   return (
     <>
-      <PageHeader title="Logins & access" description={`SampCrew logins and what each person can access. Employee records live under Employees. Showing: ${scopeNote}`} />
+      <PageHeader title="Logins & access" description={`SampCrew logins and each person’s workspace access: Super Workspace, HR Workspace or Employee Workspace. Employee records live under Employees. Showing: ${scopeNote}`} />
       <PeopleView
         me={me}
         page={members}
         query={{ q: sp.q ?? '', status: sp.status ?? '' }}
-        roles={roles ?? []}
+        hrWorkspaces={hrWorkspaces?.items ?? []}
         departments={departments ?? []}
         entities={entities ?? []}
         locations={locations ?? []}

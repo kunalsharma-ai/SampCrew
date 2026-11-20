@@ -1,5 +1,6 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import {
+  ACCESS_LEVEL_LABEL,
   dateOfBirthError,
   EDUCATION_LEVEL_LABELS,
   mask,
@@ -25,7 +26,7 @@ import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { EMPLOYEE_FIELDS, employeeAttrs } from './employee-attrs';
-import { displayName, fieldById } from './employee-view';
+import { accessLevels, displayName, fieldById } from './employee-view';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Doc = Record<string, any>;
@@ -260,6 +261,8 @@ export class ProfileService implements OnModuleInit {
         e.current_manager_employee_id ? tx.collection('employees').findOne({ id: e.current_manager_employee_id }) : null,
         e.default_shift_id ? tx.collection('shift_templates').findOne({ id: e.default_shift_id }) : null,
       ]);
+      const [space, levels] = await Promise.all([fieldById(tx, 'hr_workspaces', [e.hr_workspace_id]), accessLevels(tx, [e.membership_id])]);
+      const level = e.membership_id ? (levels.get(e.membership_id) ?? 'employee') : null;
       const calendars = await tx.collection('holiday_calendars').find({ $or: [...(e.current_location_id ? [{ location_id: e.current_location_id }] : []), ...(e.current_legal_entity_id ? [{ location_id: null, legal_entity_id: e.current_legal_entity_id }] : []), { is_default: true }] });
       const cal = calendars.find((c) => e.current_location_id && c.location_id === e.current_location_id) ?? calendars.find((c) => !c.location_id && c.legal_entity_id === e.current_legal_entity_id) ?? calendars.find((c) => c.is_default);
       const offs = ((cal?.weekly_offs as number[] | undefined) ?? [0, 6]).map(Number);
@@ -271,6 +274,8 @@ export class ProfileService implements OnModuleInit {
         company: entity ? { name: entity.legal_name ?? entity.name, address: entity.address ? (typeof entity.address === 'string' ? entity.address : addressLine(entity.address)) : null } : null,
         shift: shift ? { name: shift.name, start: shift.start_time, end: shift.end_time } : null,
         workingDays: DAYS.filter((_, i) => !offs.includes(i)),
+        workspaceAccess: level ? ACCESS_LEVEL_LABEL[`${level}_workspace` as keyof typeof ACCESS_LEVEL_LABEL] : null,
+        assignedWorkspace: space.get(e.hr_workspace_id) ?? 'Central group',
       };
 
       const identityDocs = p.identity_documents ?? {};

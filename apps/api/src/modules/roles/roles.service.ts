@@ -3,8 +3,9 @@ import { ACCESS_LEVEL_ROLES, getPermission, PERMISSIONS, type Scope } from '@cre
 import type { z } from 'zod';
 import type { customRoleInput } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
-import { countBy, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
+import { levelCounts } from '../members/access';
 
 type RoleInput = z.infer<typeof customRoleInput>;
 
@@ -25,7 +26,7 @@ export class RolesService {
       const order = ACCESS_LEVEL_ROLES as readonly string[];
       const roles = (await tx.collection('roles').find({ is_system: true, key: { $in: [...ACCESS_LEVEL_ROLES] } })).sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
       const ids = roles.map((r) => r.id as string);
-      const counts = await countBy(tx, 'role_assignments', 'role_id', ids);
+      const counts = await levelCounts(tx);
       const grants = await grantsBy(tx, ids);
       return roles.map((r) => ({ ...view(r, grants.get(r.id)), memberCount: counts.get(r.id) ?? 0 }));
     });

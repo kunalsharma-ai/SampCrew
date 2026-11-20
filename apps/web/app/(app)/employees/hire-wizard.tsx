@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Department, Designation, Employee, LegalEntity, Location, OnboardingTemplate } from '@/lib/types';
+import type { SetAccessRequest } from '@crew/contracts';
+import { AccessEditor, accessBody, LEVEL_OPTIONS } from '@/components/access-editor';
 import type { Structure } from '../payroll/types';
 import { type DeviceOption, EnrolmentRows, LoginModeChoice, OwnPassword, type ShiftOption } from './[id]/profile-extras';
 import { completeHireAction, createDepartmentAction, createLocationAction, createShiftAction, type DraftData, duplicateCheckAction, saveHireDraftAction } from './actions';
@@ -86,6 +88,8 @@ interface Props {
    * choices (only for company-wide admins); null hides the choice (the company has no HR Workspaces).
    */
   hrWorkspaces?: { options: { id: string; name: string }[]; central: boolean } | null;
+  /** Giving workspace access with the login; null: the login gets Employee Workspace access. */
+  accessChoice?: { canGiveSuper: boolean; hrWorkspaces: { id: string; name: string }[] } | null;
 }
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
@@ -103,6 +107,7 @@ export function HireWizard(p: Props) {
     onboardingTemplateId: p.templates.find((t) => t.isDefault)?.id ?? '', loginMode: 'none', joinedAs: 'new_joiner',
   });
   const [v, setV] = useState<DraftData>(blank);
+  const [access, setAccess] = useState<SetAccessRequest>({ level: 'employee' });
   const [step, setStep] = useState(0);
   const [reached, setReached] = useState(0);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -326,6 +331,7 @@ export function HireWizard(p: Props) {
       if (Object.keys(e).length) { setErrors(e); setStep(Math.min(...Object.keys(e).map((k) => FIELD_STEP[k] ?? s))); return; }
     }
     const employee: Record<string, unknown> = { loginMode, probationMonths: Number(v.probationMonths ?? 6) };
+    if (loginMode !== 'none' && access.level !== 'employee') employee.access = accessBody(access);
     if (loginMode === 'password' && ownPassword) employee.initialPassword = password;
     if (str(v.defaultShiftId)) employee.defaultShiftId = str(v.defaultShiftId);
     const enrol = enrolments.filter((x) => x.deviceUserId.trim()).map((x) => ({ deviceUserId: x.deviceUserId.trim(), deviceId: x.deviceId || null }));
@@ -817,6 +823,13 @@ export function HireWizard(p: Props) {
               {loginMode === 'password' && <div className="mt-3"><OwnPassword own={ownPassword} setOwn={setOwnPassword} password={password} setPassword={(x) => { setPassword(x); setErrors((e) => ({ ...e, initialPassword: '' })); }} error={errors.initialPassword} /></div>}
               {errors.workEmail && <p className="mt-1 text-xs text-danger">{errors.workEmail} <button type="button" className="text-accent hover:underline" onClick={() => setStep(0)}>Add it</button></p>}
             </div>
+            {p.accessChoice && loginMode !== 'none' ? (
+              <div className="rounded-lg border border-border p-4 sm:col-span-2" data-testid="hire-access">
+                <AccessEditor value={access} onChange={setAccess} canGiveSuper={p.accessChoice.canGiveSuper} hrWorkspaces={p.accessChoice.hrWorkspaces} entities={p.entities} departments={p.departments} />
+              </div>
+            ) : (
+              <p className="text-xs text-fg-muted sm:col-span-2">{loginMode === 'none' ? 'Workspace access comes with a login. Without one, they are an employee record only.' : 'Their login gets Employee Workspace access. A Super Workspace person can give more under Logins & access.'}</p>
+            )}
             <Field label="Onboarding checklist" className="sm:col-span-2">
               {(f) => (
                 <Select {...f} name="onboardingTemplateId" value={str(v.onboardingTemplateId)} onChange={(e) => set('onboardingTemplateId', e.target.value)}>
@@ -850,6 +863,7 @@ export function HireWizard(p: Props) {
             <Summary label="Photo" value={photo ? photo.name : 'None'} onEdit={() => setStep(0)} />
             {p.canAttendance && <Summary label="Attendance" value={`${shift ? shift.name : 'Location default shift'} · ${enrolments.filter((x) => x.deviceUserId.trim()).map((x) => x.deviceUserId.trim()).join(', ') || 'no machine enrolment'}`} onEdit={() => setStep(5)} />}
             <Summary label="Onboarding" value={template} onEdit={() => setStep(5)} />
+            {loginMode !== 'none' && <Summary label="Workspace access" value={LEVEL_OPTIONS.find((l) => l.value === access.level)?.label ?? 'Employee Workspace'} onEdit={() => setStep(5)} />}
             <Summary label="SampCrew login" value={loginMode === 'invite' ? `Invitation to ${str(v.workEmail)}` : loginMode === 'password' ? `Created now for ${str(v.workEmail)} with a temporary password` : 'No login for now'} onEdit={() => setStep(5)} />
             {checkedKey === dupKey && matches === null && <p className="flex items-center gap-1.5 text-success sm:col-span-2"><Check className="size-3.5" /> No existing record matches this person.</p>}
             {checkedKey === dupKey && matches && (

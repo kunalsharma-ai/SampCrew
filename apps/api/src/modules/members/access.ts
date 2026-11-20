@@ -1,4 +1,4 @@
-import { ACCESS_AREAS, ACCESS_LEVEL_LABEL, ACCESS_LEVEL_ROLES, LEVEL_ROLE_KEY, mapLegacyAccess, SYSTEM_ROLES, type LegacyAssignment, type LevelConstraints, type MemberAccess, type Scope, type SetAccessRequest } from '@crew/contracts';
+import { ACCESS_AREAS, areasOfGrants, ACCESS_LEVEL_LABEL, ACCESS_LEVEL_ROLES, LEVEL_ROLE_KEY, mapLegacyAccess, SYSTEM_ROLES, type LegacyAssignment, type LevelConstraints, type MemberAccess, type Scope, type SetAccessRequest } from '@crew/contracts';
 import type { TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 
@@ -35,6 +35,7 @@ export async function memberAccess(tx: TenantTx, membershipIds: string[]): Promi
       areas: c.areas ?? [],
       viewAreas: c.viewAreas ?? [],
       auditTrail: Boolean(c.auditTrail),
+      keptAccess: c.grants ? areasOfGrants(c.grants) : [],
       fromGroup: top?.source === 'scim',
     });
   }
@@ -112,4 +113,21 @@ export async function writeAccess(tx: TenantTx, membershipId: string, level: Mem
   }
   const fields = { constraints, granted_by: grantedBy, source: 'manual' };
   await tx.collection('role_assignments').upsert({ membership_id: membershipId, role_id: roleId }, { membership_id: membershipId, role_id: roleId, ...fields }, { $set: fields });
+}
+
+/**
+ * How many people hold each level, counting each person once at their highest level (a Super Workspace person also
+ * holds Employee Workspace, but counts as Super Workspace). Suspended logins are left out.
+ */
+export async function levelCounts(tx: TenantTx): Promise<Map<string, number>> {
+  const ids = await levelRoles(tx);
+  const members = (await tx.collection('memberships').find({ status: { $ne: 'suspended' } }, { projection: { id: 1 } })).map((m) => m.id as string);
+  const rows = await tx.collection('role_assignments').find({ membership_id: { $in: members }, role_id: { $in: [ids.get('super_workspace'), ids.get('hr_workspace')].filter(Boolean) } }, { projection: { membership_id: 1, role_id: 1 } });
+  const superSet = new Set(rows.filter((r) => r.role_id === ids.get('super_workspace')).map((r) => r.membership_id as string));
+  const hrSet = new Set(rows.filter((r) => r.role_id === ids.get('hr_workspace') && !superSet.has(r.membership_id)).map((r) => r.membership_id as string));
+  const out = new Map<string, number>();
+  if (ids.get('super_workspace')) out.set(ids.get('super_workspace')!, superSet.size);
+  if (ids.get('hr_workspace')) out.set(ids.get('hr_workspace')!, hrSet.size);
+  if (ids.get('employee_workspace')) out.set(ids.get('employee_workspace')!, members.length - superSet.size - hrSet.size);
+  return out;
 }

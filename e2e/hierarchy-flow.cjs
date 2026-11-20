@@ -151,8 +151,8 @@ const NAME = `Pune Branch ${stamp}`;
     await owner.waitForURL((u) => u.pathname === '/hr-workspaces', { timeout: 15000 }).catch((e) => fail(owner, e));
     const centralAfter = await db.collection('employees').countDocuments({ hr_workspace_id: null, status: { $ne: 'exited' } });
     if (centralAfter !== centralBefore) throw new Error(`central group had ${centralBefore}, now ${centralAfter}`);
-    const role = await db.collection('roles').findOne({ tenant_id: ws.tenant_id, key: 'hr_workspace_admin' });
-    if (await db.collection('role_assignments').countDocuments({ role_id: role._id })) throw new Error('the admin kept the HR Workspace Admin role');
+    const role = await db.collection('roles').findOne({ tenant_id: ws.tenant_id, key: 'hr_workspace', is_system: true });
+    if (await db.collection('role_assignments').countDocuments({ role_id: role._id, 'constraints.hrWorkspaceIds': ws._id })) throw new Error('the admin kept HR Workspace access to the archived HR Workspace');
     ok('archiving moves its people back to the central group and ends its admins’ access');
 
     if (errs.length) throw new Error(`browser errors:\n${errs.join('\n')}`);

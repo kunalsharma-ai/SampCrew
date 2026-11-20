@@ -110,6 +110,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         shifts={shifts}
         devices={devices}
         hrWorkspaces={hrWorkspaces}
+        accessChoice={can(me, 'roles:manage') ? { canGiveSuper: me.levels.super, hrWorkspaces: spaces?.items.map((w) => ({ id: w.id, name: w.name })) ?? [] } : null}
         canManageOrg={canManageOrg}
         canAttendance={canAttendance}
         canConfigureShifts={canAttendance && can(me, 'attendance:configure')}

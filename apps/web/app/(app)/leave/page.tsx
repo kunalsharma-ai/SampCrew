@@ -1,6 +1,6 @@
 import { Alert, Card, CardHeader, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
-import { ApiError, api, load } from '@/lib/api';
+import { ApiError, api, load, loadOptional } from '@/lib/api';
 import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
 import type { LeaveBalance, LeaveCalendarData, LeaveRequest, Me } from '@/lib/types';
@@ -37,10 +37,11 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
   const year = sp.year && /^\d{4}$/.test(sp.year) ? Number(sp.year) : Number(today.slice(0, 4));
   const { from, to } = yearView ? { from: `${year}-01-01`, to: `${year}-12-31` } : monthRange(month);
   const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-  const [requests, away, calendar] = await Promise.all([
+  const [requests, away, calendar, leaveFields] = await Promise.all([
     load<LeaveRequest[]>('/leave/requests?scope=mine&limit=100'),
     scope && scope !== 'own' ? load<LeaveRequest[]>(`/leave/away?from=${today}&to=${in30}`) : Promise.resolve(null),
     load<LeaveCalendarData>(`/leave/calendar?from=${from}&to=${to}`),
+    loadOptional<{ id: string; enabled: boolean }[]>('/custom-fields?entity=leave_request'),
   ]);
   const sent = sp.sent ? requests.find((r) => r.id === sp.sent) : undefined;
   const canApply = can(me, 'leave:request') && balances.balances.length > 0;
@@ -78,7 +79,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
         {yearView ? <LeaveYear data={calendar} year={year} today={today} /> : <LeaveCalendar data={calendar} month={month} today={today} canApply={canApply} />}
         <Card>
           <CardHeader title="My requests" description="A request waiting for approval can be changed or cancelled. Approved leave that has not started can be changed too: the change goes for approval and replaces it once approved." />
-          <MyRequests requests={requests} balances={balances.balances} />
+          <MyRequests requests={requests} balances={balances.balances} hasFields={Boolean(leaveFields?.some((f) => f.enabled))} />
         </Card>
         {away && <TeamAway rows={away} />}
       </div>

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
-import { ADULT_AGE, ageOn, catalogueDesignation, dateOfBirthError, isMinorOn, PHOTO_MAX_BYTES, PHOTO_TYPES, phoneError } from '@crew/contracts';
+import { ADULT_AGE, ageOn, catalogueDesignation, dateOfBirthError, isMinorOn, PHOTO_MAX_BYTES, PHOTO_TYPES, phoneError, type SetAccessRequest } from '@crew/contracts';
 import type {
   attendanceRegistrationInput,
   confirmInput,
@@ -58,6 +58,7 @@ const SORT_KEYS: Record<z.infer<typeof employeeListQuery>['sort'], (e: EmployeeR
 const EXPORT_HEADERS: Record<EmployeeColumn, string> = {
   name: 'Name', code: 'Employee code', designation: 'Designation', department: 'Department', location: 'Location', entity: 'Legal entity',
   manager: 'Manager', workEmail: 'Work email', type: 'Employment type', joined: 'Date of joining', status: 'Status',
+  access: 'Workspace access', workspace: 'Assigned workspace',
 };
 function exportValue(r: EmployeeRow, c: EmployeeColumn): unknown {
   switch (c) {
@@ -72,6 +73,8 @@ function exportValue(r: EmployeeRow, c: EmployeeColumn): unknown {
     case 'type': return r.employmentType;
     case 'joined': return r.dateOfJoining;
     case 'status': return r.status;
+    case 'access': return r.accessLabel ?? '';
+    case 'workspace': return r.hrWorkspaceName ?? 'Central group';
   }
 }
 
@@ -692,7 +695,7 @@ export class EmployeesService {
       if (input.membershipId) {
         await this.linkMembership(tx, row.id, input.membershipId);
       } else if (loginMode !== 'none' && input.workEmail) {
-        const login = await this.giveLogin(tx, row.id, loginMode, input.initialPassword);
+        const login = await this.giveLogin(tx, row.id, loginMode, input.initialPassword, input.access);
         inviteToken = login.inviteToken;
         temporaryPassword = login.temporaryPassword;
       }
@@ -746,11 +749,11 @@ export class EmployeesService {
   }
 
   /**
-   * Gives an employee a SampCrew login with the Employee baseline role, placed like their job record: an emailed
+   * Gives an employee a SampCrew login with Employee Workspace access (or the access HR chose), placed like their job record: an emailed
    * invitation, or a login that works now with a temporary password. A password SampCrew generates is returned once,
    * so HR can hand it over; one HR typed is not echoed back.
    */
-  private async giveLogin(tx: TenantTx, employeeId: string, mode: 'invite' | 'password', typedPassword?: string) {
+  private async giveLogin(tx: TenantTx, employeeId: string, mode: 'invite' | 'password', typedPassword?: string, access?: SetAccessRequest) {
     const e = await this.load(tx, employeeId);
     if (!e.workEmail) throw Errors.badRequest('work_email_required', 'Add a work email first: it is the sign-in name');
     const manager = e.managerEmployeeId ? await tx.collection('employees').findOne({ id: e.managerEmployeeId }) : undefined;
@@ -758,6 +761,7 @@ export class EmployeesService {
       email: e.workEmail,
       fullName: `${e.firstName} ${e.lastName}`.trim(),
       roleKeys: ['employee_workspace'],
+      ...(access ? { access } : {}),
       legalEntityId: e.legalEntityId ?? undefined,
       departmentId: e.departmentId,
       locationId: e.locationId,
@@ -793,7 +797,7 @@ export class EmployeesService {
       await this.authz.require('users:manage', { legalEntityId: e.legalEntityId, departmentId: e.departmentId, locationId: e.locationId }, tx);
       if (e.membershipId) throw Errors.conflict('already_linked', 'This employee already has a SampCrew login');
       if (e.status === 'exited') throw Errors.conflict('employee_exited', 'This person has left; they cannot be given a login');
-      const r = await this.giveLogin(tx, id, input.mode, input.initialPassword);
+      const r = await this.giveLogin(tx, id, input.mode, input.initialPassword, input.access);
       inviteToken = r.inviteToken;
       temporaryPassword = r.temporaryPassword;
       await this.audit.record(tx, { action: 'employee.login_created', resourceType: 'employee', resourceId: id, metadata: { mode: input.mode } });

@@ -77,7 +77,7 @@ const agent = (token) => ({
     watch(hr, 'hr');
     await signIn(hr, 'hr.admin@demo.crew.local');
     await hr.goto(BASE + '/settings/signature/company');
-    await hr.getByRole('heading', { name: 'Company email signature' }).waitFor();
+    await hr.locator('a[aria-current=page]', { hasText: 'Company signature' }).waitFor();
     await hr.getByLabel('Company name').fill(`Northwind Demo ${stamp}`);
     await hr.getByLabel('Website').fill('https://northwind.example');
     await hr.getByLabel('Disclaimer').fill('Confidential: for the named recipient only.');

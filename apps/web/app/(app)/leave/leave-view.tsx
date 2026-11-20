@@ -7,6 +7,7 @@ import { useEffect, useState, useTransition } from 'react';
 import type { LeaveBalance, LeaveRequest } from '@/lib/types';
 import { RequestsTable } from '../employees/[id]/tabs';
 import { addDefaultLeaveTypesAction, cancelLeaveAction, modifyLeaveAction, type Preview, previewLeaveAction, previewModifyLeaveAction, requestLeaveAction } from './actions';
+import { RecordFieldsButton } from '@/components/custom-fields-card';
 
 export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
   const [open, setOpen, prefill] = useCreateParam('leave', ['date']);
@@ -132,7 +133,7 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
   );
 }
 
-export function MyRequests({ requests, balances }: { requests: LeaveRequest[]; balances: LeaveBalance[] }) {
+export function MyRequests({ requests, balances, hasFields }: { requests: LeaveRequest[]; balances: LeaveBalance[]; hasFields?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +155,7 @@ export function MyRequests({ requests, balances }: { requests: LeaveRequest[]; b
               {r.replacesRequestId && <span className="text-xs text-fg-muted" data-testid="leave-change-note">Change to {replaces ? `${replaces.leaveTypeName} ${replaces.startDate}` : 'approved leave'}</span>}
               {!!r.modifications?.length && <span className="text-xs text-fg-muted" title={r.modifications.map((m) => `Was ${m.leaveTypeName ?? ''} ${m.startDate} to ${m.endDate} (${m.days})`).join('\n')}>Changed {r.modifications.length}×</span>}
               {changeWaiting.has(r.id) && <span className="text-xs text-warning">Change waiting for approval</span>}
+              {hasFields && <RecordFieldsButton entity="leave_request" recordId={r.id} />}
               {open && !changeWaiting.has(r.id) && <Button size="sm" variant="ghost" disabled={pending} onClick={() => setChanging(r)}>Change</Button>}
               {open && (
                 <Button size="sm" variant="ghost" disabled={pending} onClick={() => {

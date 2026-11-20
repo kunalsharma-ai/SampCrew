@@ -70,7 +70,7 @@ export const WEB_HELP: HelpContent = {
       where: 'For HR compliance, data protection officers and auditors.',
     },
     Administration: {
-      what: 'Workspace-wide setup: roles and permissions, single sign-on, integrations, plan and billing, workspace settings and support access.',
+      what: 'Workspace-wide setup: access levels, single sign-on, integrations, plan and billing, workspace settings and support access.',
       how: 'Change these rarely and carefully; every change is recorded in the audit trail.',
       where: 'For workspace owners and admins.',
     },
@@ -367,7 +367,7 @@ export const WEB_HELP: HelpContent = {
     '/people': {
       title: 'Logins & access',
       what: 'Who can sign in to SampCrew and what each person can do. Employee records live under Employees.',
-      how: 'Invite a colleague, change their roles and scope, or suspend a login. Changes apply at their next request.',
+      how: 'Invite a colleague, choose their workspace access and its limits, or suspend a login. Changes apply at their next request.',
       where: 'For workspace owners and admins.',
     },
     '/setup': {
@@ -659,10 +659,10 @@ export const WEB_HELP: HelpContent = {
       where: 'For auditors, admins and compliance.',
     },
     '/settings/roles': {
-      title: 'Roles & permissions',
-      what: 'Roles bundle permissions; each permission is granted at a scope (own, team, department, entity or whole organization).',
-      how: 'Use the built-in roles or create your own, then give roles to people under Logins & access.',
-      where: 'For workspace owners and admins.',
+      title: 'Workspace access levels',
+      what: 'What Super Workspace, HR Workspace and Employee Workspace may do. Each permission applies at a scope (own, team, department, entity or the whole company).',
+      how: 'Give each person a level under Logins & access, and limit an HR Workspace person to HR Workspaces, entities, departments or areas there.',
+      where: 'For Super Workspace people.',
     },
     '/settings/single-sign-on': {
       title: 'Single sign-on and provisioning',
@@ -894,7 +894,7 @@ export const WEB_HELP: HelpContent = {
     },
     '/settings/hr-admin': {
       title: 'Super Workspace Admin',
-      what: 'One place to switch modules on or off for your workspace, set what each role can do and reach every module\'s settings.',
+      what: 'One place to switch modules on or off for your workspace, set what each access level can do and reach every module\'s settings.',
       how: 'Use the tabs: Modules, Permissions and Settings. Changes apply when you save and are kept in the audit trail.',
       where: 'For workspace admins. Nobody gets access unless an admin grants it.',
     },
@@ -934,8 +934,8 @@ export const WEB_HELP: HelpContent = {
     'Approval categories': { what: 'The cards on the Approvals page. Built-in ones cover the usual requests; yours are checked first.', how: 'Add a category for some request types, leave types or expense categories.' },
     // HR Workspace Admin, assets and verification
     'Module access': { what: 'Every module in your plan and whether it is on for this workspace.', how: 'Switch a module off to hide it for everyone. Core modules are always on.' },
-    'Permission matrix': { what: 'What each role can do in each module: View, Create, Edit, Delete, Approve, Export and Manage.', how: 'Pick a role to change its permissions. Workspace Owner always has everything.' },
-    'Role permissions': { what: 'The permissions this role has, and for how much of the company each one applies.', how: 'Tick what the role may do, choose the scope and save. Built-in roles can be put back to their defaults.' },
+    'Permission matrix': { what: 'What each access level can do in each module: View, Create, Edit, Delete, Approve, Export and Manage.', how: 'Pick an access level to change its permissions. Super Workspace always has everything.' },
+    'Role permissions': { what: 'The permissions this access level has, and for how much of the company each one applies.', how: 'Tick what the level may do, choose the scope and save. It can be put back to its defaults.' },
     'Module settings': { what: 'Links to the settings page of every module you have.' },
     'Current holder': { what: 'Who has this asset now, since when and whether they acknowledged it.', how: 'Record the return when it comes back, with its condition.' },
     'Assignment history': { what: 'Everyone who held this asset, with dates, condition and acknowledgement.' },
@@ -972,7 +972,7 @@ export const WEB_HELP: HelpContent = {
     'Ask HR': { what: 'Your open questions to HR.', how: 'Open one to read the reply or ask a new question.' },
     'HR helpdesk': { what: 'Questions from employees that HR still has to answer, and those assigned to you.', how: 'Open the HR helpdesk to take, answer and resolve them.', where: 'Shown to the HR team instead of Ask HR.' },
     'Set up your workspace': { what: 'The steps left to get your workspace ready.', how: 'Do them in order; each one ticks off when done.', where: 'Shown to workspace owners until setup is complete.' },
-    'Your access': { what: 'The roles you hold and what they let you see.', where: 'Ask a workspace admin if you need more access.' },
+    'Your access': { what: 'Your workspace access (Super Workspace, HR Workspace or Employee Workspace) and what it lets you see.', where: 'Ask a Super Workspace person if you need more access.' },
 
     // Employee profile
     'Personal and contact details': { what: 'Name, contact details, date of birth, bank and ID details.', how: 'Edit and save. Sensitive fields are encrypted and only shown to people allowed to see them.' },
@@ -1118,7 +1118,7 @@ export const WEB_HELP: HelpContent = {
     'Mobile app': { what: 'Phones signed in to the SampCrew mobile app.', how: 'Remove a lost phone here.' },
     'Single sign-on': { what: 'Sign in through your identity provider.' },
     'User provisioning (SCIM 2.0)': { what: 'Lets your identity provider create, update and remove users automatically.' },
-    'Groups from your identity provider': { what: 'Maps identity provider groups to SampCrew roles.' },
+    'Groups from your identity provider': { what: 'Gives the members of an identity provider group HR Workspace or Employee Workspace access.' },
     'Retention schedule': { what: 'How long data is kept before it is deleted automatically.' },
     'Copy of their data': { what: 'The data export prepared for this request.' },
     'What erasure does': { what: 'What will be removed and what must be kept by law.' },
@@ -1194,7 +1194,8 @@ export const WEB_HELP: HelpContent = {
     'Who can see it': { what: 'Who can open this document.' },
     'Temporary password': { what: 'A one-time password to give the person. They must choose their own at first sign-in.' },
     Machine: { what: 'The attendance machine the person punches on.' },
-    'Limit admin roles to one legal entity': { what: 'Admin roles then apply to only that entity’s people.' },
+    'Workspace access': { what: 'Super Workspace, HR Workspace or Employee Workspace. Designations and departments never give access.' },
+    'HR Workspaces': { what: 'The HR Workspaces this person looks after. None ticked: the whole company.' },
     'Last working day': { what: 'The final day the person works. Access ends after it.' },
     'Resignation date': { what: 'The day the person handed in notice.' },
     'Confirmed on': { what: 'The date probation ended and the person was confirmed.' },

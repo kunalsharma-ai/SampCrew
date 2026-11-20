@@ -1,4 +1,6 @@
+import { ACCESS_LEVEL_LABEL } from '@crew/contracts';
 import type { TenantTx } from '../../platform/database/mongo.service';
+import { levelRoles } from '../members/access';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Doc = Record<string, any>;
@@ -63,6 +65,7 @@ export async function employeeViews(tx: TenantTx, docs: Doc[]): Promise<Employee
     employeeNames(tx, docs.map((e) => e.current_manager_employee_id)),
     fieldById(tx, 'memberships', docs.map((e) => e.membership_id), 'status'),
   ]);
+  const [spaces, levels] = await Promise.all([fieldById(tx, 'hr_workspaces', docs.map((e) => e.hr_workspace_id)), accessLevels(tx, docs.map((e) => e.membership_id))]);
   return docs.map((e) => ({
     id: e.id,
     employeeCode: e.employee_code,
@@ -101,7 +104,26 @@ export async function employeeViews(tx: TenantTx, docs: Doc[]): Promise<Employee
     createdAt: e.created_at,
     photoUpdatedAt: e.photo_updated_at ?? null,
     defaultShiftId: e.default_shift_id ?? null,
+    // The HR Workspace the person belongs to (null: the company's central group) and their workspace access.
+    hrWorkspaceId: e.hr_workspace_id ?? null,
+    hrWorkspaceName: spaces.get(e.hr_workspace_id) ?? null,
+    accessLevel: e.membership_id ? (levels.get(e.membership_id) ?? 'employee') : null,
+    accessLabel: e.membership_id ? ACCESS_LEVEL_LABEL[`${levels.get(e.membership_id) ?? 'employee'}_workspace` as keyof typeof ACCESS_LEVEL_LABEL] : null,
   }));
+}
+
+/** Each login's highest workspace access level: super, hr or employee (designations never count). */
+export async function accessLevels(tx: TenantTx, membershipIds: unknown[]): Promise<Map<string, 'super' | 'hr' | 'employee'>> {
+  const list = uniq(membershipIds);
+  if (!list.length) return new Map();
+  const ids = await levelRoles(tx);
+  const superId = ids.get('super_workspace');
+  const hrId = ids.get('hr_workspace');
+  const rows = await tx.collection('role_assignments').find({ membership_id: { $in: list }, role_id: { $in: [superId, hrId].filter(Boolean) } }, { projection: { membership_id: 1, role_id: 1 } });
+  const out = new Map<string, 'super' | 'hr' | 'employee'>(list.map((m) => [m, 'employee']));
+  for (const r of rows) if (r.role_id === hrId && out.get(r.membership_id) !== 'super') out.set(r.membership_id, 'hr');
+  for (const r of rows) if (r.role_id === superId) out.set(r.membership_id, 'super');
+  return out;
 }
 
 /**

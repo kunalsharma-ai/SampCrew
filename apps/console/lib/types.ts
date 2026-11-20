@@ -12,6 +12,13 @@ export interface TenantDetail {
   subscription: { plan: string; planName: string; status: string; billingCycle: string; seats: number; currency: string; unitPrice: string; trialEndsOn: string | null; currentPeriodEnd: string | null; currentPeriodStart: string | null; cancelAtPeriodEnd: boolean; featureOverrides: Record<string, boolean | number>; provider: string } | null;
   activeMembers: number; pendingInvites: number; legalEntities: number; lastActivityAt: string | null; aiCreditsThisMonth: number;
   supportAccess: { id: string; reason: string; status: string; durationMinutes: number; createdAt: string; expiresAt: string | null; requestedBy: string }[];
+  /** The company's four levels: Console Admin (SAMPLEDGE) > Super Workspace > HR Workspace > Employee Workspace. */
+  hierarchy?: {
+    consoleAdmin: string;
+    superWorkspace: { name: string; email: string }[];
+    hrWorkspaces: { id: string; name: string; status: string; admins: number; people: number }[];
+    counts: { super: number; hr: number; companyHr: number; employee: number };
+  };
 }
 
 export interface Page<T> { items: T[]; nextCursor: string | null }

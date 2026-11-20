@@ -19,9 +19,10 @@ import {
 import type { z } from 'zod';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
-import { countBy, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
+import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
+import { levelCounts } from '../members/access';
 import { validateGrants } from '../roles/roles.service';
 
 /**
@@ -95,7 +96,7 @@ export class HrAdminService {
       const order = ACCESS_LEVEL_ROLES as readonly string[];
       const roles = (await tx.collection('roles').find({ is_system: true, key: { $in: [...ACCESS_LEVEL_ROLES] } })).sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
       const ids = roles.map((r) => r.id as string);
-      const counts = await countBy(tx, 'role_assignments', 'role_id', ids);
+      const counts = await levelCounts(tx);
       const grants = new Map<string, Record<string, Scope>>();
       for (const rp of await tx.collection('role_permissions').find({ role_id: { $in: ids } })) {
         grants.set(rp.role_id, { ...(grants.get(rp.role_id) ?? {}), [rp.permission]: rp.scope });

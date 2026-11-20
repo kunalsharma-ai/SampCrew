@@ -179,7 +179,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
                   </>
                 )}
                 <dt className="text-fg-muted">Email domains</dt><dd>{c.domains.join(', ')}</dd>
-                <dt className="text-fg-muted">New people</dt><dd>{c.jitProvisioning ? 'Get an account with the Employee role on first sign-in (within your seat limit)' : 'Must be invited or provisioned first'}</dd>
+                <dt className="text-fg-muted">New people</dt><dd>{c.jitProvisioning ? 'Get an account with Employee Workspace access on first sign-in (within your seat limit)' : 'Must be invited or provisioned first'}</dd>
                 <dt className="text-fg-muted">Last test</dt><dd data-testid="sso-verified">{c.verifiedAt ? `Passed ${when(c.verifiedAt)} as ${c.verifiedEmail}` : 'Not tested yet'}</dd>
               </dl>
               <div><Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Change settings</Button></div>
@@ -216,7 +216,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
               <Field label="Email domains" hint="Comma-separated. People with these addresses are sent to your provider. A domain can belong to one workspace only." required>
                 {(p) => <Input {...p} name="domains" value={domains} onChange={(e) => setDomains(e.target.value)} placeholder="example.com" />}
               </Field>
-              <Checkbox label="Create accounts on first sign-in" description="Someone your provider signs in who has no SampCrew account yet gets one, with the Employee role only. Off: they must be invited or provisioned with SCIM first." checked={jit} onChange={(e) => setJit(e.target.checked)} />
+              <Checkbox label="Create accounts on first sign-in" description="Someone your provider signs in who has no SampCrew account yet gets one, with Employee Workspace access only. Off: they must be invited or provisioned with SCIM first." checked={jit} onChange={(e) => setJit(e.target.checked)} />
               {c && <Alert tone="warning">Changing the protocol, provider, client or certificate switches single sign-on off until a new test sign-in passes.</Alert>}
               <div className="flex gap-2">
                 <Button loading={pending} disabled={!valid} onClick={save}>{protocol === 'oidc' ? 'Save and check provider' : 'Save and check certificate'}</Button>
@@ -288,11 +288,11 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
       <Card>
         <CardHeader
           title="Groups from your identity provider"
-          description="Members of a group hold the role you choose while they are in the group. Your provider decides who is in each group; a group grants nothing until you pick a role here. The owner role cannot be granted by a group, and roles given by hand in SampCrew are never removed by a group."
+          description="Members of a group hold the workspace access you choose while they are in the group. Your provider decides who is in each group; a group gives nothing until you pick access here. Super Workspace cannot be given by a group, and access given by hand in SampCrew is never removed by a group."
         />
         {groups.length ? (
           <Table>
-            <THead><tr><TH>Group</TH><TH>Members</TH><TH>Grants role</TH></tr></THead>
+            <THead><tr><TH>Group</TH><TH>Members</TH><TH>Gives access</TH></tr></THead>
             <TBody>
               {groups.map((g) => (
                 <TR key={g.id} data-testid={`scim-group-${g.displayName}`}>
@@ -308,11 +308,11 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
                       disabled={pending}
                       onChange={(e) => {
                         const roleId = e.target.value || null;
-                        const label = roleId ? roles.find((r) => r.id === roleId)?.name : 'no role';
+                        const label = roleId ? `${roles.find((r) => r.id === roleId)?.name} access` : 'no access';
                         if (confirm(`Grant ${label} to the ${g.memberCount} members of ${g.displayName}? Changes apply at once.`)) run(() => mapScimGroupAction(g.id, roleId));
                       }}
                     >
-                      <option value="">No role</option>
+                      <option value="">No access</option>
                       {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </Select>
                   </TD>

@@ -128,7 +128,9 @@ export class PlatformService {
       const grantRows = await tx.collection<{ id: string; reason: string; status: string; duration_minutes: number; created_at: Date; expires_at: Date | null; platform_admin_id: string }>('support_access_grants')
         .find({ tenant_id: id }, { sort: { created_at: -1 }, limit: 20 });
       const emails = new Map((await tx.collection<{ id: string; email: string }>('platform_admins').find({ id: { $in: grantRows.map((g) => g.platform_admin_id) } })).map((a) => [a.id, a.email]));
+      const hierarchy = await this.hierarchyOf(tx, id);
       return {
+        hierarchy,
         id: t.id, name: t.name, slug: t.slug, status: t.status, statusReason: t.status_reason ?? null, region: t.region, countryCode: t.country_code, timezone: t.timezone, currency: t.currency,
         isDemo: t.is_demo, requireMfa: t.require_mfa, createdAt: t.created_at,
         subscription: {
@@ -146,6 +148,33 @@ export class PlatformService {
         })),
       };
     });
+  }
+
+  /**
+   * The company's four levels as the Console sees them: SAMPLEDGE runs it as Console Admin; who holds Super Workspace;
+   * its HR Workspaces and their admins; and how many people are on each level (each person once, at their highest).
+   * Names of Super Workspace people only (no HR data).
+   */
+  private async hierarchyOf(tx: PlatformTx, tenantId: string) {
+    const roles = await tx.collection<{ id: string; key: string }>('roles').find({ tenant_id: tenantId, is_system: true, key: { $in: ['super_workspace', 'hr_workspace', 'employee_workspace'] } }, { projection: { key: 1 } });
+    const idOf = new Map(roles.map((r) => [r.key, r.id]));
+    const live = await tx.collection<{ id: string; user_id: string }>('memberships').find({ tenant_id: tenantId, status: { $ne: 'suspended' } }, { projection: { user_id: 1 } });
+    const liveIds = live.map((m) => m.id);
+    const rows = await tx.collection<{ membership_id: string; role_id: string; constraints?: { hrWorkspaceIds?: string[] } }>('role_assignments')
+      .find({ tenant_id: tenantId, membership_id: { $in: liveIds }, role_id: { $in: [idOf.get('super_workspace'), idOf.get('hr_workspace')].filter(Boolean) } });
+    const supers = new Set(rows.filter((r) => r.role_id === idOf.get('super_workspace')).map((r) => r.membership_id));
+    const hrRows = rows.filter((r) => r.role_id === idOf.get('hr_workspace') && !supers.has(r.membership_id));
+    const hr = new Set(hrRows.map((r) => r.membership_id));
+    const userOf = new Map(live.map((m) => [m.id, m.user_id]));
+    const users = new Map((await tx.collection<{ id: string; full_name: string; email: string }>('users').find({ id: { $in: [...supers].map((m) => userOf.get(m)!) } }, { projection: { full_name: 1, email: 1 } })).map((u) => [u.id, u]));
+    const spaces = await tx.collection<{ id: string; name: string; status: string }>('hr_workspaces').find({ tenant_id: tenantId, status: { $ne: 'archived' } }, { projection: { name: 1, status: 1 }, sort: { name: 1 } });
+    const people = await countBy(tx, 'employees', 'hr_workspace_id', spaces.map((w) => w.id), { tenant_id: tenantId, status: { $ne: 'exited' } });
+    return {
+      consoleAdmin: 'SAMPLEDGE',
+      superWorkspace: [...supers].map((m) => users.get(userOf.get(m)!)).filter(Boolean).map((u) => ({ name: u!.full_name, email: u!.email })),
+      hrWorkspaces: spaces.map((w) => ({ id: w.id, name: w.name, status: w.status, admins: hrRows.filter((r) => r.constraints?.hrWorkspaceIds?.includes(w.id)).length, people: people.get(w.id) ?? 0 })),
+      counts: { super: supers.size, hr: hr.size, companyHr: hrRows.filter((r) => !r.constraints?.hrWorkspaceIds?.length).length, employee: liveIds.length - supers.size - hr.size },
+    };
   }
 
   /**
