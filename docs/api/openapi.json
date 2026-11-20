@@ -2922,7 +2922,7 @@
         "tags": [
           "Members"
         ],
-        "summary": "Invite a person and assign roles",
+        "summary": "Invite a person and give them workspace access",
         "description": "Requires permission `users:invite`.",
         "operationId": "Members_invite",
         "security": [
@@ -2947,6 +2947,9 @@
                     "maxLength": 160
                   },
                   "roleKeys": {
+                    "default": [
+                      "employee_workspace"
+                    ],
                     "minItems": 1,
                     "maxItems": 10,
                     "type": "array",
@@ -3003,12 +3006,76 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "access": {
+                    "type": "object",
+                    "properties": {
+                      "level": {
+                        "type": "string",
+                        "enum": [
+                          "super",
+                          "hr",
+                          "employee"
+                        ]
+                      },
+                      "hrWorkspaceIds": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "legalEntityIds": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "departmentIds": {
+                        "maxItems": 200,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "areas": {
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 60
+                        }
+                      },
+                      "viewAreas": {
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 60
+                        }
+                      },
+                      "auditTrail": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "level"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
                   "email",
-                  "fullName",
-                  "roleKeys"
+                  "fullName"
                 ]
               }
             }
@@ -3071,12 +3138,125 @@
         }
       }
     },
+    "/api/v1/members/{id}/access": {
+      "put": {
+        "tags": [
+          "Members"
+        ],
+        "summary": "Set workspace access: Super, HR or Employee Workspace, HR Workspace optionally limited to HR Workspaces, entities, departments and areas",
+        "description": "Requires permission `roles:manage`.",
+        "operationId": "Members_access",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string",
+                    "enum": [
+                      "super",
+                      "hr",
+                      "employee"
+                    ]
+                  },
+                  "hrWorkspaceIds": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "legalEntityIds": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "departmentIds": {
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "areas": {
+                    "maxItems": 40,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 2,
+                      "maxLength": 60
+                    }
+                  },
+                  "viewAreas": {
+                    "maxItems": 40,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 2,
+                      "maxLength": 60
+                    }
+                  },
+                  "auditTrail": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "level"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/members/{id}/roles": {
       "put": {
         "tags": [
           "Members"
         ],
-        "summary": "Replace role assignments, optionally constrained to entities, departments or locations",
+        "summary": "Set access from role keys (before the four access levels): the roles map to the level they became. Use PUT /members/{id}/access.",
         "description": "Requires permission `roles:manage`.",
         "operationId": "Members_roles",
         "security": [
@@ -5353,6 +5533,71 @@
                     "minLength": 12,
                     "maxLength": 200
                   },
+                  "access": {
+                    "type": "object",
+                    "properties": {
+                      "level": {
+                        "type": "string",
+                        "enum": [
+                          "super",
+                          "hr",
+                          "employee"
+                        ]
+                      },
+                      "hrWorkspaceIds": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "legalEntityIds": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "departmentIds": {
+                        "maxItems": 200,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "areas": {
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 60
+                        }
+                      },
+                      "viewAreas": {
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 60
+                        }
+                      },
+                      "auditTrail": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "level"
+                    ],
+                    "additionalProperties": false
+                  },
                   "membershipId": {
                     "type": "string",
                     "format": "uuid",
@@ -6612,6 +6857,71 @@
                     "type": "string",
                     "minLength": 12,
                     "maxLength": 200
+                  },
+                  "access": {
+                    "type": "object",
+                    "properties": {
+                      "level": {
+                        "type": "string",
+                        "enum": [
+                          "super",
+                          "hr",
+                          "employee"
+                        ]
+                      },
+                      "hrWorkspaceIds": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "legalEntityIds": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "departmentIds": {
+                        "maxItems": 200,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "areas": {
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 60
+                        }
+                      },
+                      "viewAreas": {
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 60
+                        }
+                      },
+                      "auditTrail": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "level"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
