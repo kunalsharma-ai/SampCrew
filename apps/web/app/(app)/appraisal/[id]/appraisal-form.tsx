@@ -251,7 +251,7 @@ export function AppraisalForm({ detail }: { detail: AppraisalDetail }) {
             {isHr && detail.stage !== 'self' && <Button variant="ghost" onClick={() => { setReopenStage(detail.stage === 'manager' ? 'self' : 'manager'); setConfirm('reopen'); }}>Reopen a stage</Button>}
             {editing && <Button variant="secondary" loading={pending && !confirm} onClick={() => run(() => saveAppraisalAction(detail.id, body()))}>Save draft</Button>}
             {editing && <Button disabled={missing > 0} onClick={() => setConfirm('submit')}>{submitLabel}</Button>}
-            {isHr && detail.stage === 'finalized' && <Button onClick={() => setConfirm('publish')}>Share result with employee</Button>}
+            {isHr && detail.stage === 'finalized' && <Button onClick={() => setConfirm('publish')} data-feature="performance.publish_appraisal">Share result with employee</Button>}
           </div>
         )}
       </div>

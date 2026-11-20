@@ -1,5 +1,5 @@
 'use client';
-import type { PlatformFeatureRow } from '@crew/contracts';
+import { isFeatureAction, type PlatformFeatureRow } from '@crew/contracts';
 import { Alert, Card, CardBody, FeatureSwitchBoard, Stat } from '@crew/ui';
 import { useState, useTransition } from 'react';
 import { setPlatformFeaturesAction } from './actions';
@@ -22,7 +22,7 @@ export function FeaturesView({ rows, counts, canEdit }: { rows: PlatformFeatureR
     setFlash({ tone: res.ok ? 'success' : 'danger', text: res.ok ? `${name}: ${res.message}` : res.message });
   });
   const board = list.map((r) => ({
-    key: r.key, name: r.name, module: r.module, parent: r.parent, audience: r.audience,
+    key: r.key, name: r.name, module: r.module, parent: r.parent, kind: isFeatureAction(r.key) ? ('action' as const) : ('page' as const), audience: r.audience,
     note: r.parent ? undefined : `${r.companies} ${r.companies === 1 ? 'company' : 'companies'} on a plan with it`,
     cells: {
       platform: r.core

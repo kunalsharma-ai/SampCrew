@@ -50,7 +50,7 @@ export function CasesView({ cases, agencies, verifiers, filters, can, startFor =
           </form>
           <div className="ml-auto flex flex-wrap gap-2">
             {can.manage && <Link className={buttonClass('secondary')} href="/verification/agencies">Agencies</Link>}
-            {can.export && <a className={buttonClass('secondary')} href={`/bgv-export?${exportQs}`}><Download className="size-3.5" aria-hidden /> Excel</a>}
+            {can.export && <a className={buttonClass('secondary')} href={`/bgv-export?${exportQs}`} data-feature="background_verification.export"><Download className="size-3.5" aria-hidden /> Excel</a>}
             {can.create && <Button onClick={() => setStarting(true)}><ShieldCheck className="size-4" aria-hidden /> Start verification</Button>}
           </div>
         </CardBody>

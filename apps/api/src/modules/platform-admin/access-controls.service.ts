@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import {
   BOOLEAN_FEATURES,
+  FEATURE_PARTS,
+  featurePart,
+  type FeaturePart,
   isCoreFeature,
   PERMISSION_MODULE_FEATURE,
   PERMISSIONS,
@@ -138,6 +141,16 @@ export class AccessControlsService {
         };
       });
       const effective = new Map(features.map((f) => [f.key, f.effective]));
+      // Pages and buttons: SAMPLEDGE's switch for this company, and whether the company has each one now.
+      const appOff = new Set(await tx.collection('platform_feature_states').distinct<string>('key', { state: { $in: ['off', 'pending'] } }));
+      const parts = (FEATURE_PARTS as readonly FeaturePart[]).map((p) => {
+        const off = overrides[p.key] === false;
+        const pageOn = !p.page || (overrides[p.page] !== false && !appOff.has(p.page));
+        return {
+          key: p.key, name: p.name, feature: p.feature, kind: p.kind ?? 'page', page: p.page ?? null, audience: p.audience, off,
+          effective: Boolean((effective as Map<string, boolean>).get(p.feature)) && !off && !appOff.has(p.key) && !appOff.has(p.feature) && pageOn,
+        };
+      });
       const permissions = PERMISSIONS.map((p) => {
         const feature = PERMISSION_MODULE_FEATURE[p.module] ?? null;
         const h = holders.find((x) => x.permission === p.key);
@@ -150,6 +163,7 @@ export class AccessControlsService {
       return {
         plan: sub ? { key: sub.plan_key, name: sub.plan_name, status: sub.status } : null,
         features,
+        parts,
         permissions,
         channels: {
           web: controls?.web_portal_enabled ?? true,
@@ -173,12 +187,20 @@ export class AccessControlsService {
       const before = { ...(sub.feature_overrides ?? {}) };
       const next = { ...before };
       for (const c of changes) {
+        // A page or button follows its module unless SAMPLEDGE switched it off for this company.
+        if (featurePart(c.key)) {
+          if (c.state === 'off') next[c.key] = false;
+          else delete next[c.key];
+          continue;
+        }
         if (isCoreFeature(c.key)) throw Errors.badRequest('core_feature', 'Core HR cannot be switched off.');
         if (c.state === 'plan') delete next[c.key];
         else next[c.key] = c.state === 'on';
       }
       await tx.collection('subscriptions').updateOne({ id: sub.id }, { $set: { feature_overrides: next } });
-      const diff = changes.map((c) => ({ module: c.key, from: stateOf(before[c.key]), to: c.state }));
+      const diff = changes.map((c) => (featurePart(c.key)
+        ? { part: c.key, from: before[c.key] === false ? 'off' : 'on', to: c.state === 'off' ? 'off' : 'on' }
+        : { module: c.key, from: stateOf(before[c.key]), to: c.state }));
       await this.record(tx, tenantId, 'access.modules_switched', 'subscription', sub.id, { modules: diff });
     });
     await this.recalculate(tenantId);

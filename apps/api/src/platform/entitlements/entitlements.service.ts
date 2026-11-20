@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { FEATURE_PARTS, FEATURES, featurePart, moduleOfFeature, UNLIMITED, type FeatureBlockReason, type FeatureDefinition } from '@crew/contracts';
+import { FEATURE_PARTS, FEATURES, featurePart, type FeaturePart, moduleOfFeature, UNLIMITED, type FeatureBlockReason, type FeatureDefinition } from '@crew/contracts';
 import { requestContext } from '../context/request-context';
 import { MongoService as DatabaseService, type TenantTx } from '../database/mongo.service';
 import { Errors } from '../http/errors';
@@ -46,8 +46,9 @@ export class EntitlementsService {
     const e = await this.current(tx);
     if (!e.features.has(feature)) {
       const part = featurePart(feature);
-      // A page whose module is unavailable answers with the module's reason.
+      // A page whose module is unavailable answers with the module's reason; a button, with its page's.
       if (part && !e.features.has(part.feature)) return this.requireFeature(part.feature, tx);
+      if (part?.page && !e.features.has(part.page)) return this.requireFeature(part.page, tx);
       const name = part?.name ?? FEATURES.find((f) => f.key === feature)?.name ?? feature;
       const reason = e.blocked[feature];
       if (reason === 'platform_off') throw Errors.featureOffByPlatform(name);
@@ -119,8 +120,12 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
       }
     } else if (typeof value === 'number') limits[key] = value;
   }
-  // Pages and sub-areas (FEATURE_PARTS) come with their module; each level below can still switch one off.
+  // Pages and buttons (FEATURE_PARTS) come with their module; each level below can still switch one off.
   for (const p of FEATURE_PARTS) if (features.has(p.feature)) features.add(p.key);
+  // A page or button SAMPLEDGE switched off for this company only (Console > Workspace > Features & permissions).
+  for (const [key, value] of Object.entries(sub.feature_overrides ?? {})) {
+    if (value === false && featurePart(key) && features.delete(key)) blocked[key] = 'workspace_off';
+  }
   // Console > Feature management: switched off, or not yet released, for the whole application. Beats every plan,
   // add-on, deal and per-company override; the records stay.
   const released = await tx.collection('platform_feature_states').find({ state: { $in: ['off', 'pending'] } }, { projection: { key: 1 } });
@@ -146,11 +151,13 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
       if (!CORE.has(key) && features.delete(key)) blocked[key] = 'channel_off';
     }
   }
-  // A part never outlives its module, and a part of an unavailable module says why.
-  for (const p of FEATURE_PARTS) {
-    if (features.has(p.feature)) continue;
+  // A part never outlives its module, a button never outlives its page, and each says why. (Pages come before the
+  // buttons in FEATURE_PARTS, so a page is settled before the buttons on it.)
+  for (const p of FEATURE_PARTS as readonly FeaturePart[]) {
+    const parent = !features.has(p.feature) ? p.feature : p.page && !features.has(p.page) ? p.page : null;
+    if (!parent) continue;
     features.delete(p.key);
-    if (!blocked[p.key] && blocked[p.feature]) blocked[p.key] = 'module_off';
+    if (!blocked[p.key] && blocked[parent]) blocked[p.key] = 'module_off';
   }
   return { planKey: plan.key, status: sub.status, features, limits, trialEndsOn: sub.trial_ends_on ?? null, blocked, overage, locked: Boolean(sub.locked_at) };
 }

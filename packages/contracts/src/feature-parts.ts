@@ -19,7 +19,14 @@ export interface FeaturePart {
   /** Who mostly uses it, shown as a hint next to the switch. */
   audience: 'employee' | 'hr' | 'admin';
   web: readonly string[];
+  /** API routes; a `*` segment stands for any one path segment (an id), as in payroll/runs/(id)/bank-file.csv. */
   api?: readonly string[];
+  /** A button (an action on a page) rather than a page. Its API routes close while it is off, and it disappears. */
+  kind?: 'page' | 'action';
+  /** For a button: the page it sits on. The button is off whenever that page is off. */
+  page?: string;
+  /** For a button: the HTTP methods it uses (default: every method). */
+  methods?: readonly ('GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE')[];
 }
 
 export const FEATURE_PARTS = [
@@ -94,6 +101,26 @@ export const FEATURE_PARTS = [
   // Administration
   { key: 'sso.settings', feature: 'sso', name: 'Single sign-on settings', audience: 'admin', web: ['/settings/single-sign-on'] },
   { key: 'integrations_advanced.settings', feature: 'integrations_advanced', name: 'Integrations', audience: 'admin', web: ['/settings/integrations'] },
+
+  // Buttons: single actions on a page that can be switched on their own. Each one's API routes are refused while it
+  // is off, and the Web Portal hides it (data-feature on the button).
+  { key: 'core_hr.people_export', feature: 'core_hr', kind: 'action', name: 'Export the employee list', audience: 'hr', web: [], api: ['employees/export.csv', 'employees/export.xlsx'], methods: ['GET'] },
+  { key: 'core_hr.audit_export', feature: 'core_hr', kind: 'action', page: 'core_hr.audit', name: 'Export the audit trail', audience: 'admin', web: [], api: ['audit-events/export.csv'], methods: ['GET'] },
+  { key: 'leave.cancel', feature: 'leave', kind: 'action', page: 'leave.requests', name: 'Cancel a leave request', audience: 'employee', web: [], api: ['leave/requests/*/cancel'], methods: ['POST'] },
+  { key: 'attendance_basic.web_punch', feature: 'attendance_basic', kind: 'action', page: 'attendance_basic.mine', name: 'Clock in and out on the web', audience: 'employee', web: [], api: ['attendance/punch'], methods: ['POST'] },
+  { key: 'attendance_basic.corrections', feature: 'attendance_basic', kind: 'action', page: 'attendance_basic.mine', name: 'Fix punches (correction requests)', audience: 'employee', web: [], api: ['attendance/corrections'], methods: ['POST'] },
+  { key: 'shift_scheduling.publish_roster', feature: 'shift_scheduling', kind: 'action', page: 'shift_scheduling.shifts', name: 'Publish a roster', audience: 'hr', web: [], api: ['shifts/rosters/*/publish'], methods: ['POST'] },
+  { key: 'payroll.register_export', feature: 'payroll', kind: 'action', page: 'payroll.runs', name: 'Download the payroll register', audience: 'hr', web: [], api: ['payroll/runs/*/register.csv', 'payroll/runs/*/register.xlsx'], methods: ['GET'] },
+  { key: 'payroll.bank_file', feature: 'payroll', kind: 'action', page: 'payroll.runs', name: 'Download the bank file', audience: 'hr', web: [], api: ['payroll/runs/*/bank-file.csv'], methods: ['GET'] },
+  { key: 'payroll.cancel_run', feature: 'payroll', kind: 'action', page: 'payroll.runs', name: 'Cancel a payroll run', audience: 'hr', web: [], api: ['payroll/runs/*/cancel'], methods: ['POST'] },
+  { key: 'recruitment.candidates_export', feature: 'recruitment', kind: 'action', page: 'recruitment.candidates', name: 'Export candidates', audience: 'hr', web: [], api: ['recruitment/candidates/export.csv', 'recruitment/candidates/export.xlsx'], methods: ['GET'] },
+  { key: 'recruitment.bulk_add', feature: 'recruitment', kind: 'action', page: 'recruitment.jobs', name: 'Add candidates to a job in bulk', audience: 'hr', web: [], api: ['recruitment/requisitions/*/applications/bulk'], methods: ['POST'] },
+  { key: 'staffing_bids.send', feature: 'staffing_bids', kind: 'action', page: 'staffing_bids.bids', name: 'Email a bid to the client', audience: 'hr', web: [], api: ['staffing/bids/*/send'], methods: ['POST'] },
+  { key: 'staffing_bids.proposal_pdf', feature: 'staffing_bids', kind: 'action', page: 'staffing_bids.bids', name: 'Proposal PDF', audience: 'hr', web: [], api: ['staffing/bids/*/proposal.pdf', 'staffing/bids/*/signed.pdf'], methods: ['GET'] },
+  { key: 'performance.publish_appraisal', feature: 'performance', kind: 'action', page: 'performance.reviews', name: 'Share an appraisal with the employee', audience: 'hr', web: [], api: ['appraisals/*/publish'], methods: ['POST'] },
+  { key: 'announcements.publish', feature: 'announcements', kind: 'action', page: 'announcements.manage', name: 'Publish an announcement', audience: 'hr', web: [], api: ['announcements/*/publish'], methods: ['POST'] },
+  { key: 'background_verification.export', feature: 'background_verification', kind: 'action', page: 'background_verification.cases', name: 'Export verification cases', audience: 'hr', web: [], api: ['bgv/cases/export.xlsx'], methods: ['GET'] },
+  { key: 'helpdesk.send_email', feature: 'helpdesk', kind: 'action', page: 'helpdesk.communication', name: 'Send an email to employees', audience: 'hr', web: [], api: ['communication/emails/send', 'communication/emails/*/send'], methods: ['POST'] },
 ] as const satisfies readonly FeaturePart[];
 
 export type FeaturePartKey = (typeof FEATURE_PARTS)[number]['key'];
@@ -111,16 +138,34 @@ export const moduleOfFeature = (key: string) => PART_BY_KEY.get(key)?.feature ??
 export const isSwitchableFeature = (key: string) => MODULE_KEYS.has(key) || PART_BY_KEY.has(key);
 export const SWITCHABLE_FEATURE_KEYS: readonly string[] = [...MODULE_KEYS, ...PARTS.map((p) => p.key)];
 export const partsOfModule = (module: string) => PARTS.filter((p) => p.feature === module);
+/** What a key sits under: its module, and for a button also its page (outermost first). Empty for a module. */
+export const ancestorsOf = (key: string): string[] => {
+  const p = PART_BY_KEY.get(key);
+  return p ? [p.feature, ...(p.page ? [p.page] : [])] : [];
+};
+/** Whether a key is a button (an action on a page) rather than a page. */
+export const isFeatureAction = (key: string) => PART_BY_KEY.get(key)?.kind === 'action';
+/** Every button key, for the apps to hide the ones switched off. */
+export const FEATURE_ACTION_KEYS: readonly string[] = PARTS.filter((p) => p.kind === 'action').map((p) => p.key);
 
 const normalise = (path: string) => (path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path);
 const under = (path: string, prefix: string) => path === prefix || path.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`);
 
-function longest(path: string, pick: (p: FeaturePart) => readonly string[] | undefined): FeaturePart | undefined {
+/** Prefix match by segment, where a "*" segment in the pattern matches any one segment (an id). */
+function matches(path: string, prefix: string) {
+  if (!prefix.includes('*')) return under(path, prefix);
+  const a = path.split('/');
+  const b = prefix.split('/');
+  return a.length >= b.length && b.every((seg, i) => seg === '*' ? a[i]!.length > 0 : seg === a[i]);
+}
+
+function longest(path: string, pick: (p: FeaturePart) => readonly string[] | undefined, method?: string): FeaturePart | undefined {
   let best: FeaturePart | undefined;
   let size = -1;
   for (const p of PARTS) {
+    if (method && p.methods && !(p.methods as readonly string[]).includes(method.toUpperCase())) continue;
     for (const prefix of pick(p) ?? []) {
-      if (under(path, prefix) && prefix.length > size) {
+      if (matches(path, prefix) && prefix.length > size) {
         best = p;
         size = prefix.length;
       }
@@ -132,8 +177,11 @@ function longest(path: string, pick: (p: FeaturePart) => readonly string[] | und
 /** The part a page of the web app belongs to (for example /payroll/salaries/123 → payroll.salaries), if any. */
 export const partForWebPath = (path: string) => longest(normalise(path.split('?')[0] ?? '/'), (p) => p.web);
 
-/** The part an API route belongs to, given the path after /api/v1/ (for example "employees/import/preview"). */
-export const partForApiPath = (path: string) => longest(normalise((path.split('?')[0] ?? '').replace(/^\/+/, '')), (p) => p.api);
+/**
+ * The part (page or button) an API route belongs to, given the path after /api/v1/ (for example "employees/import/
+ * preview") and, for buttons limited to some methods, the request's method.
+ */
+export const partForApiPath = (path: string, method?: string) => longest(normalise((path.split('?')[0] ?? '').replace(/^\/+/, '')), (p) => p.api, method);
 
 /** The states a feature has in the Console for the whole application. */
 export const PLATFORM_FEATURE_STATES = ['active', 'off', 'pending'] as const;

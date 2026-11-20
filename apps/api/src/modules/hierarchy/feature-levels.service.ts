@@ -5,6 +5,7 @@ import {
   featurePart,
   isCoreFeature,
   isPlannedFeature,
+  ancestorsOf,
   moduleOfFeature,
   type EmployeeFeatureRow,
   type EmployeeFeatureScope,
@@ -35,7 +36,7 @@ function catalogue(): { key: string; name: string; module: string; parent: strin
 
 const list = (v: unknown) => new Set((v ?? []) as string[]);
 /** Off here: the key itself, or (for a part) its module. */
-const offIn = (set: Set<string>, key: string): 'self' | 'module' | null => (set.has(key) ? 'self' : featurePart(key) && set.has(moduleOfFeature(key)) ? 'module' : null);
+const offIn = (set: Set<string>, key: string): 'self' | 'module' | null => (set.has(key) ? 'self' : ancestorsOf(key).some((k) => set.has(k)) ? 'module' : null);
 
 /**
  * Feature management by level, below the Console:
@@ -78,7 +79,8 @@ export class FeatureLevelsService {
         const set = c.target === 'company' ? lists.company : c.target === 'hr' ? lists.hr : lists.employee;
         if (c.enabled) {
           if (c.target !== 'company' && offIn(lists.company, c.key)) throw Errors.forbiddenCode('feature_restricted', `${this.nameOf(c.key)} is switched off for the whole company. Switch it on for the company first.`, { key: c.key });
-          if (featurePart(c.key) && set.has(moduleOfFeature(c.key))) throw Errors.forbiddenCode('feature_restricted', `The ${this.nameOf(moduleOfFeature(c.key))} module is switched off here. Switch the module on first.`, { key: c.key });
+          const parentOff = ancestorsOf(c.key).find((k) => set.has(k));
+          if (parentOff) throw Errors.forbiddenCode('feature_restricted', `${this.nameOf(parentOff)} is switched off here. Switch it on first.`, { key: c.key });
           set.delete(c.key);
           // The Super Workspace decides over HR Workspace: switching on for Employee Workspace also lifts HR's switch.
           if (c.target === 'employee') lists.employeeByHr.delete(c.key);
@@ -105,7 +107,7 @@ export class FeatureLevelsService {
     if (e.features.has(key) || isCoreFeature(key)) return null;
     const reasonOf = (k: string) => e.blocked[k];
     const module = moduleOfFeature(key);
-    for (const k of featurePart(key) ? [module, key] : [key]) {
+    for (const k of [...ancestorsOf(key), key]) {
       const r = reasonOf(k);
       if (r === 'platform_off' || r === 'workspace_off') return 'console';
     }

@@ -63,7 +63,7 @@ export function TodayCard({ today }: { today: AttendanceToday }) {
         {today.locked && <Alert tone="info">Today is in a period locked for payroll, so punching is paused. Ask HR if this is unexpected.</Alert>}
         <div className="flex flex-wrap items-center gap-3">
           {today.allowed.web ? (
-            <Button size="lg" onClick={punch} loading={pending} disabled={today.locked}>
+            <Button size="lg" onClick={punch} loading={pending} disabled={today.locked} data-feature="attendance_basic.web_punch">
               {next === 'in' ? <LogIn className="size-4" /> : <LogOut className="size-4" />} Punch {next}
             </Button>
           ) : (
@@ -151,7 +151,7 @@ export function MonthView({ data, month, own, canClaimFor }: { data: AttendanceM
                     </TD>
                     <TD className="text-right whitespace-nowrap">
                       {canAct && fixable && !pendingCorrection.has(d.workDate) && d.status !== 'in_progress' && (
-                        <Button size="sm" variant="ghost" onClick={() => setCorrecting(d)}>Fix punches</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setCorrecting(d)} data-feature="attendance_basic.corrections">Fix punches</Button>
                       )}
                       {pendingCorrection.has(d.workDate) && <Badge tone="warning">Correction pending</Badge>}
                       {canAct && d.overtimeMinutes > 0 && d.approvedOvertimeMinutes === 0 && !otClaim && (

@@ -158,7 +158,7 @@ export function MyRequests({ requests, balances, hasFields }: { requests: LeaveR
               {hasFields && <RecordFieldsButton entity="leave_request" recordId={r.id} />}
               {open && !changeWaiting.has(r.id) && <Button size="sm" variant="ghost" disabled={pending} onClick={() => setChanging(r)}>Change</Button>}
               {open && (
-                <Button size="sm" variant="ghost" disabled={pending} onClick={() => {
+                <Button size="sm" variant="ghost" data-feature="leave.cancel" disabled={pending} onClick={() => {
                   const reason = prompt('Cancel this request? Add a reason (optional):');
                   if (reason === null) return;
                   start(async () => { const res = await cancelLeaveAction(r.id, reason || undefined); if (res.ok) router.refresh(); else setError(res.message); });

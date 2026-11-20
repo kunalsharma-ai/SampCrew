@@ -181,6 +181,67 @@ describe('Feature management by level', () => {
     expect(await pool.count('audit_events', { tenant_id: t.id, action: 'delegation.denied', resource_type: 'employee_features' })).toBe(3); // with HR's refused switch-on above
   });
 
+  it('Super Workspace switches one button off: the page stays, the button and its route go', async () => {
+    const id = '00000000-0000-4000-8000-000000000000';
+    expect(await features(staffToken)).toContain('leave.cancel');
+    expect((await row('leave.cancel')).company).toMatchObject({ on: true, indicator: 'active', editable: true });
+    expect((await setLevel('leave.cancel', 'company', false)).status).toBe(200);
+    const f = await features(staffToken);
+    expect(f).toContain('leave.requests');
+    expect(f).not.toContain('leave.cancel');
+    const refused = await api(app, staffToken).post(`/leave/requests/${id}/cancel`).send({ reason: 'Plans changed' });
+    expect(refused.status).toBe(403);
+    expect(refused.body.error.code).toBe('feature_switched_off');
+    // Other calls on the same page still work.
+    expect((await api(app, staffToken).get('/leave/requests')).status).toBe(200);
+    expect((await row('leave.cancel')).employee).toMatchObject({ indicator: 'restricted', restrictedBy: 'company' });
+    expect((await setLevel('leave.cancel', 'company', true)).status).toBe(200);
+    const back = await api(app, staffToken).post(`/leave/requests/${id}/cancel`).send({ reason: 'Plans changed' });
+    expect(back.body.error?.code).not.toBe('feature_switched_off');
+  });
+
+  it('a button goes with its page, and cannot be switched on while its page is off', async () => {
+    expect((await setLevel('leave.requests', 'employee', false)).status).toBe(200);
+    expect(await features(staffToken)).not.toContain('leave.cancel');
+    expect(await features(hrToken)).toContain('leave.cancel');
+    expect((await row('leave.cancel')).employee).toMatchObject({ on: false, indicator: 'restricted', editable: false });
+    const tryOn = await setLevel('leave.cancel', 'employee', true);
+    expect(tryOn.status).toBe(403);
+    expect(tryOn.body.error.code).toBe('feature_restricted');
+    expect((await setLevel('leave.requests', 'employee', true)).status).toBe(200);
+    expect(await features(staffToken)).toContain('leave.cancel');
+  });
+
+  it('the Console switches a page or button off for one company only, and the Super Workspace cannot switch it back on', async () => {
+    const access = async () => (await api(app, consoleToken).get(`/platform/tenants/${t.id}/access`)).body as { parts: { key: string; off: boolean; effective: boolean; kind: string; page: string | null }[] };
+    const part = async (key: string) => (await access()).parts.find((p) => p.key === key)!;
+    expect(await part('core_hr.people_export')).toMatchObject({ kind: 'action', off: false, effective: true });
+    expect(await part('leave.cancel')).toMatchObject({ kind: 'action', page: 'leave.requests' });
+    expect((await api(app, owner).get('/employees/export.csv')).status).toBe(200);
+
+    const off = await api(app, consoleToken).put(`/platform/tenants/${t.id}/access/modules`).send({ changes: [{ key: 'core_hr.people_export', state: 'off' }, { key: 'staffing_bids.templates', state: 'off' }] });
+    expect(off.status, JSON.stringify(off.body)).toBe(200);
+    expect(await part('core_hr.people_export')).toMatchObject({ off: true, effective: false });
+    for (const token of [owner, hrToken]) expect(await features(token)).not.toContain('core_hr.people_export');
+    expect(await features(owner)).not.toContain('staffing_bids.templates');
+    expect(await features(owner)).toContain('staffing_bids.bids');
+    const refused = await api(app, owner).get('/employees/export.csv');
+    expect(refused.status).toBe(403);
+    expect((await row('core_hr.people_export')).company).toMatchObject({ on: false, indicator: 'restricted', restrictedBy: 'console', editable: false });
+    const tryOn = await setLevel('core_hr.people_export', 'company', true);
+    expect(tryOn.status).toBe(403);
+    expect(tryOn.body.error.code).toBe('feature_restricted');
+    expect(await pool.count('audit_events', { tenant_id: t.id, action: 'access.modules_switched' })).toBeGreaterThanOrEqual(1);
+
+    const on = await api(app, consoleToken).put(`/platform/tenants/${t.id}/access/modules`).send({ changes: [{ key: 'core_hr.people_export', state: 'plan' }, { key: 'staffing_bids.templates', state: 'on' }] });
+    expect(on.status).toBe(200);
+    expect(await part('core_hr.people_export')).toMatchObject({ off: false, effective: true });
+    expect(await features(owner)).toEqual(expect.arrayContaining(['core_hr.people_export', 'staffing_bids.templates']));
+    expect((await api(app, owner).get('/employees/export.csv')).status).toBe(200);
+    const sub = await pool.one('subscriptions', { tenant_id: t.id });
+    expect(Object.keys(sub?.feature_overrides ?? {})).not.toContain('core_hr.people_export');
+  });
+
   it('every level change is audited with its old and new lists, and switching off deletes nothing', async () => {
     const changes = await pool.count('audit_events', { tenant_id: t.id, action: 'workspace.features_changed' });
     expect(changes).toBeGreaterThanOrEqual(6);

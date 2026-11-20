@@ -22,8 +22,10 @@ export interface SwitchRow {
   key: string;
   name: string;
   module: string;
-  /** Null for a module, the module key for one of its pages. */
+  /** Null for a module, the module key for one of its pages or buttons. */
   parent: string | null;
+  /** A page (default) or a button on a page. */
+  kind?: 'page' | 'action';
   audience?: 'employee' | 'hr' | 'admin' | null;
   cells: Record<string, SwitchCell>;
   /** Extra text under the name (for example how many companies use it). */
@@ -49,9 +51,10 @@ const RESTRICTED_BY: Record<string, string> = {
   plan: 'Not in the plan',
   company: 'Switched off for the whole company',
   super: 'Switched off by the Super Workspace',
-  hr_workspace: 'Its module is switched off here',
+  hr_workspace: 'Its module or page is switched off here',
+  module: 'Its module or page is off for this company',
 };
-const SET_BY: Record<string, string> = { super: 'Switched off by the Super Workspace', hr: 'Switched off by HR Workspace' };
+const SET_BY: Record<string, string> = { super: 'Switched off by the Super Workspace', hr: 'Switched off by HR Workspace', console: 'Switched off by SAMPLEDGE for this company' };
 const AUDIENCE: Record<string, string> = { employee: 'Employees', hr: 'HR', admin: 'Admins' };
 
 export function IndicatorBadge({ cell }: { cell: SwitchCell }) {
@@ -101,7 +104,7 @@ export function FeatureSwitchBoard({ rows, columns, onChange, busy, intro }: {
           : <span className="w-5" aria-hidden />)}
         <div className="min-w-0">
           <p className={cn('truncate text-sm', depth === 0 ? 'font-medium' : '')} title={r.name}>{r.name}</p>
-          <p className="truncate text-xs text-fg-subtle">{depth === 0 ? r.module : r.audience ? `Page · for ${AUDIENCE[r.audience]}` : 'Page'}{r.note ? <> · {r.note}</> : null}</p>
+          <p className="truncate text-xs text-fg-subtle">{depth === 0 ? r.module : `${r.kind === 'action' ? 'Button' : 'Page'}${r.audience ? ` · for ${AUDIENCE[r.audience]}` : ''}`}{r.note ? <> · {r.note}</> : null}</p>
         </div>
       </div>
       {columns.map((c) => {
@@ -157,7 +160,7 @@ export function FeatureSwitchBoard({ rows, columns, onChange, busy, intro }: {
       >
         {confirm && (
           <Alert tone="warning">
-            {confirm.row.parent ? 'This page' : 'This module and every page in it'} disappears at once for everyone it applies to, also in sessions that are open, and its routes are refused on the server. Nothing is deleted: its records come back when you switch it on again. The change is written to the audit trail.
+            {confirm.row.kind === 'action' ? 'This button' : confirm.row.parent ? 'This page and its buttons' : 'This module and every page in it'} disappears at once for everyone it applies to, also in sessions that are open, and its routes are refused on the server. Nothing is deleted: its records come back when you switch it on again. The change is written to the audit trail.
           </Alert>
         )}
       </Dialog>

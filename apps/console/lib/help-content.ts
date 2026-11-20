@@ -153,6 +153,7 @@ export const CONSOLE_HELP: HelpContent = {
     'Support access': { what: 'Time-limited access the customer gave Sampledge to see their HR data.', how: 'Only the customer can grant it. You see when it ends.' },
     'Subscription history': { what: 'Every change to the subscription, who made it and why.' },
     Modules: { what: 'Modules this workspace can use. Switching one off hides it everywhere for everyone.' },
+    'Pages and buttons': { what: 'Switch one page or one button off for this workspace only, while the rest of its module stays on.', how: 'Open a module to see its pages and buttons. The Super Workspace and HR Workspace cannot switch back on what you switched off here.' },
     'Modules in each app': { what: 'Switch a module off in the web portal or the mobile app only.' },
     'Module access per person': { what: 'Take a module away from one person, whatever their roles allow.' },
     Events: { what: 'Events from the workspace’s audit trail.', how: 'Open an event to see what changed.' },

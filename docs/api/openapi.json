@@ -22838,6 +22838,11 @@
                   "preset": {
                     "type": "string",
                     "enum": [
+                      "workspace",
+                      "command",
+                      "executive",
+                      "people",
+                      "everyday",
                       "midnight",
                       "aurora",
                       "pearl",

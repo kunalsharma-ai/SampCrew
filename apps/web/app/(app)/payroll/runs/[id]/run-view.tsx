@@ -32,14 +32,14 @@ export function RunView({ run, people }: { run: PayrollRunDetail; people: { id: 
           description={run.computedAt ? `Last computed ${new Date(run.computedAt).toLocaleString()}${run.createdBy ? ` · prepared by ${run.createdBy}` : ''}` : 'Not computed yet'}
           action={
             <div className="flex flex-wrap gap-2">
-              {computed && <a className={buttonClass('secondary', 'sm')} href={`/payroll-files/${run.id}/register`}><Download className="size-3.5" /> Register (CSV)</a>}
-              {computed && <a className={buttonClass('secondary', 'sm')} href={`/payroll-files/${run.id}/register-xlsx`}><Download className="size-3.5" /> Register (Excel)</a>}
-              {run.can.exportBankFile && <a className={buttonClass('secondary', 'sm')} href={`/payroll-files/${run.id}/bank-file`}><Download className="size-3.5" /> Bank file (CSV)</a>}
+              {computed && <a className={buttonClass('secondary', 'sm')} href={`/payroll-files/${run.id}/register`} data-feature="payroll.register_export"><Download className="size-3.5" /> Register (CSV)</a>}
+              {computed && <a className={buttonClass('secondary', 'sm')} href={`/payroll-files/${run.id}/register-xlsx`} data-feature="payroll.register_export"><Download className="size-3.5" /> Register (Excel)</a>}
+              {run.can.exportBankFile && <a className={buttonClass('secondary', 'sm')} href={`/payroll-files/${run.id}/bank-file`} data-feature="payroll.bank_file"><Download className="size-3.5" /> Bank file (CSV)</a>}
               {editable && <Button size="sm" variant={s === 'draft' ? 'primary' : 'secondary'} loading={pending} onClick={() => go(() => computeRunAction(run.id))}>{s === 'draft' ? 'Compute payroll' : 'Recompute'}</Button>}
               {run.can.submit && <Button size="sm" loading={pending} onClick={() => confirm(`Send payroll for approval? Net pay ${money(run.net)} for ${run.employeeCount} employee(s).`) && go(() => submitRunAction(run.id))}>Send for approval</Button>}
               {s === 'pending_approval' && run.can.cancel && <Button size="sm" variant="secondary" loading={pending} onClick={() => go(() => withdrawRunAction(run.id))}>Withdraw</Button>}
               {run.can.cancel && (
-                <Button size="sm" variant="ghost" loading={pending} onClick={() => {
+                <Button size="sm" variant="ghost" loading={pending} data-feature="payroll.cancel_run" onClick={() => {
                   const reason = prompt('Cancel this payroll run? Reason:');
                   if (reason && reason.trim().length >= 3) go(() => cancelRunAction(run.id, reason.trim()));
                 }}>Cancel run</Button>

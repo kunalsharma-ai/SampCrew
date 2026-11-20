@@ -70,7 +70,7 @@ export function RosterEditor({ roster, shifts }: { roster: RosterGrid; shifts: S
             })))}>Save {Object.keys(changes).length || ''} change{Object.keys(changes).length === 1 ? '' : 's'}</Button>
             {roster.status === 'draft' && (
               <>
-                <Button variant="secondary" loading={pending} disabled={Object.keys(changes).length > 0} onClick={() => { if (confirm('Publish this roster? Its shifts apply and everyone on it is notified.')) run(() => publishRosterAction(roster.id)); }}>Publish</Button>
+                <Button data-feature="shift_scheduling.publish_roster" variant="secondary" loading={pending} disabled={Object.keys(changes).length > 0} onClick={() => { if (confirm('Publish this roster? Its shifts apply and everyone on it is notified.')) run(() => publishRosterAction(roster.id)); }}>Publish</Button>
                 <Button variant="ghost" loading={pending} onClick={() => { if (confirm('Delete this draft roster?')) run(() => deleteRosterAction(roster.id), () => router.push('/shifts')); }}>Delete draft</Button>
               </>
             )}

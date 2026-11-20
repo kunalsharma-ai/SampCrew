@@ -57,7 +57,7 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
           <div className="flex flex-wrap gap-2">
             {bid.can.edit && <Link href={`/staffing/bids/${bid.id}/edit`} className={buttonClass('secondary')}><Pencil className="size-4" /> Edit</Link>}
             {bid.can.submit && <Button onClick={() => run(() => bidAction(bid.id, 'submit'))} loading={pending}><Check className="size-4" /> Submit for approval</Button>}
-            {bid.can.send && <Button onClick={() => setSendOpen(true)}><Send className="size-4" /> {bid.status === 'sent' ? 'Send again' : 'Send proposal'}</Button>}
+            {bid.can.send && <Button onClick={() => setSendOpen(true)} data-feature="staffing_bids.send"><Send className="size-4" /> {bid.status === 'sent' ? 'Send again' : 'Send proposal'}</Button>}
             {bid.can.decide && <Button variant="secondary" onClick={() => setOutcome('won')}><Trophy className="size-4" /> Mark won</Button>}
             {bid.can.decide && <Button variant="secondary" onClick={() => setOutcome('lost')}>Mark lost</Button>}
             {bid.can.withdraw && <Button variant="ghost" onClick={() => setOutcome('withdrawn')}><Undo2 className="size-4" /> Withdraw</Button>}
@@ -79,7 +79,7 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
               </p>
               {bid.acceptance.reason && <p className="mt-1">“{bid.acceptance.reason}”</p>}
             </div>
-            {bid.acceptance.hasSignedPdf && <a href={`/staffing-pdf/${bid.id}?signed=1`} target="_blank" rel="noreferrer" className={buttonClass('secondary', 'sm')}><Download className="size-3.5" /> Signed copy</a>}
+            {bid.acceptance.hasSignedPdf && <a data-feature="staffing_bids.proposal_pdf" href={`/staffing-pdf/${bid.id}?signed=1`} target="_blank" rel="noreferrer" className={buttonClass('secondary', 'sm')}><Download className="size-3.5" /> Signed copy</a>}
           </div>
         </Card>
       )}
@@ -203,7 +203,7 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
                     <li key={v.id} className="flex items-center gap-2">
                       <Clock className="size-3.5 text-fg-subtle" />
                       <span className="flex-1">Version {v.version} {v.event} {dt(v.createdAt)}{v.createdBy ? ` by ${v.createdBy}` : ''} · {money(v.pricing.contractRevenue)}</span>
-                      {v.hasPdf && <a href={`/staffing-pdf/${bid.id}?version=${v.id}`} target="_blank" rel="noreferrer" className="text-accent hover:underline" aria-label={`PDF of version ${v.version}`}>PDF</a>}
+                      {v.hasPdf && <a data-feature="staffing_bids.proposal_pdf" href={`/staffing-pdf/${bid.id}?version=${v.id}`} target="_blank" rel="noreferrer" className="text-accent hover:underline" aria-label={`PDF of version ${v.version}`}>PDF</a>}
                     </li>
                   ))}
                 </ul>
@@ -216,9 +216,9 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
           <CardHeader
             title="Client proposal"
             description="What the client sees: roles, rates and totals, never costs or margins."
-            action={<a href={`/staffing-pdf/${bid.id}`} target="_blank" rel="noreferrer" className={buttonClass('secondary', 'sm')}><Download className="size-3.5" /> Open PDF</a>}
+            action={<a data-feature="staffing_bids.proposal_pdf" href={`/staffing-pdf/${bid.id}`} target="_blank" rel="noreferrer" className={buttonClass('secondary', 'sm')}><Download className="size-3.5" /> Open PDF</a>}
           />
-          <iframe key={pdfKey} title="Proposal preview" src={`/staffing-pdf/${bid.id}#view=FitH`} className="h-[36rem] w-full border-t border-border bg-bg-subtle" />
+          <iframe data-feature="staffing_bids.proposal_pdf" key={pdfKey} title="Proposal preview" src={`/staffing-pdf/${bid.id}#view=FitH`} className="h-[36rem] w-full border-t border-border bg-bg-subtle" />
         </Card>
       </div>
 

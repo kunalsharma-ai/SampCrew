@@ -1,5 +1,5 @@
 'use client';
-import type { EmployeeFeatureRow, EmployeeFeatureScope } from '@crew/contracts';
+import { isFeatureAction, type EmployeeFeatureRow, type EmployeeFeatureScope } from '@crew/contracts';
 import { Alert, Card, CardBody, CardHeader, FeatureSwitchBoard, Field, Select } from '@crew/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -36,7 +36,7 @@ export function EmployeeFeaturesView({ scopes, scope, rows }: { scopes: Employee
       />
       <CardBody>
         <FeatureSwitchBoard
-          rows={list.map((r) => ({ key: r.key, name: r.name, module: r.module, parent: r.parent, audience: r.audience, cells: { employee: r.cell } }))}
+          rows={list.map((r) => ({ key: r.key, name: r.name, module: r.module, parent: r.parent, kind: isFeatureAction(r.key) ? 'action' as const : 'page' as const, audience: r.audience, cells: { employee: r.cell } }))}
           columns={COLUMN}
           busy={pending}
           onChange={change}

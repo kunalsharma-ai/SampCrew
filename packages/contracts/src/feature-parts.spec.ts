@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FEATURE_PARTS, isSwitchableFeature, moduleOfFeature, partForApiPath, partForWebPath } from './feature-parts';
+import { ancestorsOf, FEATURE_ACTION_KEYS, FEATURE_PARTS, featurePart, isFeatureAction, isSwitchableFeature, moduleOfFeature, partForApiPath, partForWebPath } from './feature-parts';
 import { BOOLEAN_FEATURES } from './features';
 
 describe('feature parts', () => {
@@ -32,6 +32,37 @@ describe('feature parts', () => {
     expect(partForApiPath('/privacy/requests/1')?.key).toBe('core_hr.privacy');
     expect(partForApiPath('employees')).toBeUndefined();
     expect(partForApiPath('privacy/retention')).toBeUndefined();
+  });
+
+  it('buttons sit on a page of their own module, and match their routes by method with an id in the path', () => {
+    expect(FEATURE_ACTION_KEYS.length).toBeGreaterThanOrEqual(17);
+    for (const key of FEATURE_ACTION_KEYS) {
+      const p = featurePart(key)!;
+      expect(isFeatureAction(key)).toBe(true);
+      expect(p.methods?.length, key).toBeGreaterThan(0);
+      if (p.page) {
+        expect(featurePart(p.page)?.feature, key).toBe(p.feature);
+        expect(isFeatureAction(p.page)).toBe(false);
+        // Pages come first, so a page is settled before the buttons on it.
+        expect(FEATURE_PARTS.findIndex((x) => x.key === p.page)).toBeLessThan(FEATURE_PARTS.findIndex((x) => x.key === key));
+      }
+    }
+    expect(partForApiPath('payroll/runs/abc/cancel', 'POST')?.key).toBe('payroll.cancel_run');
+    expect(partForApiPath('payroll/runs/abc', 'GET')).toBeUndefined();
+    expect(partForApiPath('leave/requests/9/cancel', 'POST')?.key).toBe('leave.cancel');
+    expect(partForApiPath('leave/requests/9', 'GET')).toBeUndefined();
+    expect(partForApiPath('employees/export.csv', 'GET')?.key).toBe('core_hr.people_export');
+    expect(partForApiPath('employees/export.csv', 'POST')?.key).not.toBe('core_hr.people_export');
+    expect(partForApiPath('announcements/1/publish', 'POST')?.key).toBe('announcements.publish');
+    expect(partForApiPath('announcements//publish', 'POST')?.key).not.toBe('announcements.publish');
+  });
+
+  it('know what each key sits under', () => {
+    expect(ancestorsOf('leave')).toEqual([]);
+    expect(ancestorsOf('leave.requests')).toEqual(['leave']);
+    expect(ancestorsOf('leave.cancel')).toEqual(['leave', 'leave.requests']);
+    expect(ancestorsOf('core_hr.people_export')).toEqual(['core_hr']);
+    expect(isFeatureAction('leave.requests')).toBe(false);
   });
 
   it('cannot name a core module or an unknown key', () => {

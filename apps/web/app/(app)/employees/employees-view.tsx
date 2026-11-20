@@ -183,10 +183,10 @@ export function EmployeesView(props: Props) {
                 current={state}
                 onApply={(v) => router.push(v ? viewUrl(v.state, v.id) : '/employees?view=all')}
               />
-              <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}`} download>
+              <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}`} download data-feature="core_hr.people_export">
                 <Download className="size-3.5" /> Export CSV
               </a>
-              <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}&format=xlsx`} download>
+              <a className={buttonClass('secondary', 'sm')} href={`/employees-export?${exportQs}&format=xlsx`} download data-feature="core_hr.people_export">
                 <Download className="size-3.5" /> Export Excel
               </a>
               {canHire && (props.setupPending && props.canManageOrg

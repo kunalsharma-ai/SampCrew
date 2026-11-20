@@ -165,7 +165,7 @@ export function AnnouncementComposer({ a, options, knownNames, entities, locatio
           ) : (
             <>
               <Button variant="secondary" loading={pending} onClick={save} disabled={!title.trim()}>Save draft</Button>
-              <Button loading={pending} onClick={publish} disabled={!title.trim()} data-testid="announcement-publish">
+              <Button loading={pending} onClick={publish} disabled={!title.trim()} data-testid="announcement-publish" data-feature="announcements.publish">
                 {later ? <><CalendarClock className="size-3.5" /> Schedule</> : <><Send className="size-3.5" /> Publish now</>}
               </Button>
             </>

@@ -152,11 +152,11 @@ export class AuthGuard implements CanActivate {
   }
 
   /**
-   * Feature management below the module: a route that belongs to one page or sub-area (FEATURE_PARTS `api`) is closed
-   * while any level switched that part off, also when called directly.
+   * Feature management below the module: a route that belongs to one page or button (FEATURE_PARTS `api`) is closed
+   * while any level switched that page or button off, also when called directly.
    */
   private async requirePart(req: Request) {
-    const part = partForApiPath((req.path ?? '').replace(/^.*?\/api\/v\d+\//, ''));
+    const part = partForApiPath((req.path ?? '').replace(/^.*?\/api\/v\d+\//, ''), req.method);
     if (part) await this.entitlements.requireFeature(part.key);
   }
 

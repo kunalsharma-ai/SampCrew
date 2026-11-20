@@ -10,7 +10,10 @@
  *    switches Announcements off for Employee Workspace in the central group. The employee loses it, HR keeps it.
  * 4. The Console switches one page (Rate cards) off for the whole application: the owner loses that page only, and
  *    its address says SAMPLEDGE switched it off.
- * 5. Everything is switched back, and the employee has Expenses and Announcements again.
+ * 5. Super Workspace switches one button (Export the employee list) off: the People page stays, the export buttons go.
+ * 6. The Console switches one button (Cancel a leave request) off for this company only, under Workspace > Features &
+ *    permissions; Super Workspace sees it Restricted and cannot switch it on.
+ * 7. Everything is switched back, and the employee has Expenses and Announcements again.
  */
 const path = require('node:path');
 const { chromium } = require('playwright');
@@ -163,8 +166,53 @@ async function openModule(p, key) {
     expect(await owner.getByTestId('switch-staffing_bids.rate_cards-company').isDisabled(), 'Super Workspace cannot switch it on');
     ok('the Console switches Rate cards off for every company; Super Workspace sees it restricted');
 
-    // 5. Everything back.
+    // 5. Super Workspace: one button off, its page stays.
+    current = owner;
+    const exportButtons = () => owner.locator('[data-feature="core_hr.people_export"]');
+    await owner.goto(WEB + '/employees');
+    await exportButtons().first().waitFor({ timeout: 15000 });
+    expect(await exportButtons().first().isVisible(), 'the export button shows while it is on');
+    await owner.goto(WEB + '/settings/hr-admin?tab=features');
+    await openModule(owner, 'core_hr');
+    expect((await owner.getByTestId('feature-core_hr.people_export').textContent()).includes('Button'), 'the board lists the export as a button');
+    await flip(owner, 'switch-core_hr.people_export-company', false, { mfa: true });
+    await save(owner, 'feature-05-super-button-off');
+    await owner.goto(WEB + '/employees');
+    await exportButtons().first().waitFor({ state: 'attached', timeout: 15000 });
+    expect(await exportButtons().count() > 0 && !(await exportButtons().first().isVisible()), 'the export buttons are hidden when the button is off');
+    await owner.goto(WEB + '/settings/hr-admin?tab=features');
+    await openModule(owner, 'core_hr');
+    await flip(owner, 'switch-core_hr.people_export-company', true, { mfa: true });
+    await owner.goto(WEB + '/employees');
+    await exportButtons().first().waitFor({ state: 'visible', timeout: 15000 });
+    ok('Super Workspace switches one button off: the page stays, the button goes, and comes back');
+
+    // 6. Console: one button off for this company only.
     current = admin;
+    const tenant = await mongo.db().collection('tenants').findOne({ slug: 'demo-northwind' });
+    await admin.goto(`${CONSOLE}/tenants/${tenant._id ?? tenant.id}/access?tab=modules`);
+    await admin.getByRole('heading', { name: 'Pages and buttons' }).waitFor({ timeout: 15000 });
+    await openModule(admin, 'leave');
+    await flip(admin, 'switch-leave.cancel-company', false);
+    await save(admin, 'feature-06-console-company-button');
+    await emp.goto(WEB + '/leave');
+    const hidden = await emp.evaluate(() => [...document.querySelectorAll('style')].some((s) => s.textContent.includes('[data-feature="leave.cancel"]')));
+    expect(hidden, 'the employee portal hides Cancel on leave requests');
+    current = owner;
+    await owner.goto(WEB + '/settings/hr-admin?tab=features');
+    await openModule(owner, 'leave');
+    expect((await owner.getByTestId('feature-leave.cancel').textContent()).includes('Restricted'), 'Super Workspace sees the button Restricted');
+    expect(await owner.getByTestId('switch-leave.cancel-company').isDisabled(), 'Super Workspace cannot switch it on');
+    current = admin;
+    await flip(admin, 'switch-leave.cancel-company', true);
+    await emp.goto(WEB + '/leave');
+    expect(!(await emp.evaluate(() => [...document.querySelectorAll('style')].some((s) => s.textContent.includes('[data-feature="leave.cancel"]')))), 'Cancel is back for the employee');
+    ok('the Console switches one button off for this company only; Super Workspace sees it restricted');
+
+    // 7. Everything back.
+    current = admin;
+    await admin.goto(`${CONSOLE}/features`);
+    await openModule(admin, 'staffing_bids');
     await flip(admin, 'switch-staffing_bids.rate_cards-platform', true);
     current = hr;
     await hr.goto(WEB + '/employee-features');

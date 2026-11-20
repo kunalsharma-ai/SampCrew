@@ -1,5 +1,5 @@
 'use client';
-import { DEFAULT_APPEARANCE, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
+import { DEFAULT_APPEARANCE, FEATURE_ACTION_KEYS, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
 import { AutoHelp, Avatar, Badge, CrewLogo, Dialog, HelpProvider, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronDown, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
@@ -204,11 +204,16 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
+  // Feature management, buttons: a button switched off at any level (Console, Super Workspace, HR Workspace) leaves
+  // every page it is on. The server refuses its request too; this only keeps it out of sight.
+  const hiddenActions = useMemo(() => FEATURE_ACTION_KEYS.filter((k) => !me.features.includes(k)).map((k) => `[data-feature="${k}"]`).join(','), [me.features]);
+
   const sidebar = (rail: boolean) => <Sidebar me={me} nav={nav} counts={counts} rail={rail} pathname={pathname} allHrefs={allHrefs} onCollapse={() => void update({ sidebar: rail ? 'expanded' : 'collapsed' })} />;
 
   return (
     <HelpProvider content={WEB_HELP} pathname={pathname}>
     <ExperienceContext.Provider value={experience}>
+      {hiddenActions && <style>{`${hiddenActions}{display:none!important}`}</style>}
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:shadow-pop">Skip to content</a>
       <div className="flex min-h-dvh">
         <aside className={cn('crew-glass crew-sidebar sticky top-0 hidden h-dvh shrink-0 border-r border-border transition-[width] duration-200 lg:block', collapsed ? 'w-[4.5rem]' : 'w-64')}>{sidebar(collapsed)}</aside>

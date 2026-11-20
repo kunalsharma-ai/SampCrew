@@ -1,5 +1,5 @@
 'use client';
-import type { FeatureLevelRow } from '@crew/contracts';
+import { isFeatureAction, type FeatureLevelRow } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, FeatureSwitchBoard, Select, Switch, Table, TBody, TD, TH, THead, TR, cn } from '@crew/ui';
 import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
@@ -79,7 +79,7 @@ function Features({ rows }: { rows: FeatureLevelRow[] }) {
     if (res.ok && res.data) setList(res.data.items);
     setFlash({ tone: res.ok ? 'success' : 'danger', text: res.ok ? `${name}: ${res.message}` : res.message });
   });
-  const board = list.map((r) => ({ key: r.key, name: r.name, module: r.module, parent: r.parent, audience: r.audience, cells: { company: r.company, hr: r.hr, employee: r.employee } }));
+  const board = list.map((r) => ({ key: r.key, name: r.name, module: r.module, parent: r.parent, kind: isFeatureAction(r.key) ? 'action' as const : 'page' as const, audience: r.audience, cells: { company: r.company, hr: r.hr, employee: r.employee } }));
   return (
     <Card>
       <CardHeader
