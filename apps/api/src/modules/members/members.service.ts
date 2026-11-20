@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { z } from 'zod';
-import type { assignRolesRequest, inviteMemberRequest, MemberAccess, PaginationQuery, SetAccessRequest, updateMemberRequest } from '@crew/contracts';
+import type { assignRolesRequest, inviteMemberRequest, LevelConstraints, MemberAccess, PaginationQuery, SetAccessRequest, updateMemberRequest } from '@crew/contracts';
 import { accessConstraints, accessFromRoleKeys, levelRoles, memberAccess, writeAccess } from './access';
 import { AuditService, diff } from '../../platform/audit/audit.service';
 import { hashPassword, randomToken, sha256 } from '../../platform/auth/crypto';
@@ -294,7 +294,9 @@ export class MembersService {
       if (access.level === 'employee' && member.access.hrWorkspaces.length && !input.assignments.some((a) => a.roleKey !== 'employee' && a.roleKey !== 'employee_workspace')) {
         return member; // nothing changed but the HR Workspace access, which stays
       }
-      return this.saveAccess(tx, member, access);
+      // The exact permissions those roles gave (LevelConstraints.grants) are kept, so the old API never gives more.
+      const { grants, ...request } = access as SetAccessRequest & { grants?: LevelConstraints['grants'] };
+      return this.saveAccess(tx, member, request, grants);
     });
   }
 
@@ -303,9 +305,10 @@ export class MembersService {
     return this.db.tenant(async (tx) => this.saveAccess(tx, await this.load(tx, id), input));
   }
 
-  private async saveAccess(tx: TenantTx, member: MemberView, input: SetAccessRequest) {
+  private async saveAccess(tx: TenantTx, member: MemberView, input: SetAccessRequest, grants?: LevelConstraints['grants']) {
     const actor = requestContext.tenantActor();
     const constraints = await accessConstraints(tx, input);
+    if (grants && input.level !== 'employee') constraints.grants = grants;
     await this.assertCanGive(tx, input.level, member.access.level);
     if (member.access.level === 'super' && input.level !== 'super') {
       if (member.id === actor.membershipId) throw Errors.badRequest('cannot_demote_self', 'Ask another Super Workspace person to change your access');
@@ -344,7 +347,9 @@ export class MembersService {
   /** The access asked for when someone is added: `access`, or the level their role keys stand for. */
   private async requestedAccess(tx: TenantTx, input: z.infer<typeof inviteMemberRequest>, member: { legalEntityId: string | null; departmentId: string | null }) {
     const asked = input.access ?? (await accessFromRoleKeys(tx, (input.roleKeys ?? ['employee_workspace']).map((roleKey) => ({ roleKey })), member));
+    const { grants } = asked as SetAccessRequest & { grants?: LevelConstraints['grants'] };
     const constraints = await accessConstraints(tx, asked);
+    if (!input.access && grants && asked.level !== 'employee') constraints.grants = grants; // exactly what those roles gave
     await this.assertCanGive(tx, asked.level, 'employee');
     return { level: asked.level, constraints };
   }

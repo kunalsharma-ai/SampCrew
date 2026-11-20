@@ -38,6 +38,8 @@ describe('Four access levels replace the old roles', () => {
   };
   const subject = (who: Who) => pool.tenant(t.id, (tx) => loadSubject(tx as never, people[who]!.membershipId, people[who]!.userId, true));
   const allowed = async (who: Who, permission: string) => hasPermission(await subject(who), permission).allowed;
+  /** Allowed on other people's records too, not only on the person's own (everyone may update their own record). */
+  const beyondOwn = async (who: Who, permission: string) => { const d = hasPermission(await subject(who), permission); return d.allowed && d.via?.scope !== 'own'; };
   const levelsOf = async (who: Who) => {
     const ras = await pool.find('role_assignments', { membership_id: people[who]!.membershipId });
     const keys = new Map((await pool.find('roles', { id: { $in: ras.map((x) => x.role_id) } })).map((r) => [r.id, r.key as string]));
@@ -71,7 +73,7 @@ describe('Four access levels replace the old roles', () => {
     await pool.insert('role_permissions', { tenant_id: t.id, role_id: custom.id, permission: 'shifts:manage', scope: 'tenant' });
     people.planner = await legacyMember('Sol Planner', ['shift_planner']);
     await pool.insert('approval_policies', { tenant_id: t.id, resource_type: 'leave_request', steps: [{ type: 'manager' }, { type: 'role', role: 'hr_admin' }] });
-    await pool.insert('custom_fields', { tenant_id: t.id, entity: 'employee', key: 'blood_group', label: 'Blood group', type: 'text', view_roles: ['hr_admin', 'tenant_owner'], edit_roles: ['hr_admin'] });
+    await pool.insert('custom_fields', { tenant_id: t.id, entity: 'employee', key: 'blood_group', label: 'Blood group', type: 'short_text', view_roles: ['hr_admin', 'tenant_owner'], edit_roles: ['hr_admin'] });
     await pool.platform((tx) => mongo.applyAccessLevelsMongo(tx as never));
   });
   afterAll(async () => {
@@ -96,10 +98,10 @@ describe('Four access levels replace the old roles', () => {
     expect(await allowed('finance', 'payroll:approve')).toBe(true);
     expect(await allowed('finance', 'payroll:run')).toBe(false);
     // HR Admin looks after people, not pay; a recruiter only recruitment.
-    expect(await allowed('hr', 'employees:update')).toBe(true);
+    expect(await beyondOwn('hr', 'employees:update')).toBe(true);
     expect(await allowed('hr', 'payroll:run')).toBe(false);
     expect(await allowed('recruiter', 'candidates:manage')).toBe(true);
-    expect(await allowed('recruiter', 'employees:update')).toBe(false);
+    expect(await beyondOwn('recruiter', 'employees:update')).toBe(false);
     expect(await allowed('recruiter', 'recruitment:configure')).toBe(true);
     // The UK HR manager still reaches the UK entity only.
     const ukHr = await subject('ukHr');
@@ -134,7 +136,7 @@ describe('Four access levels replace the old roles', () => {
     // Someone writing an old role straight into the database gets nothing from it.
     const hrAdmin = (await pool.one('roles', { tenant_id: t.id, key: 'hr_admin' }))!;
     await pool.insert('role_assignments', { tenant_id: t.id, membership_id: people.plain.membershipId, role_id: hrAdmin.id, constraints: {} });
-    expect(await allowed('plain', 'employees:update')).toBe(false);
+    expect(await beyondOwn('plain', 'employees:update')).toBe(false);
     await pool.delete('role_assignments', { membership_id: people.plain.membershipId, role_id: hrAdmin.id });
   });
 
@@ -157,7 +159,7 @@ describe('Four access levels replace the old roles', () => {
     expect(set.body.access).toMatchObject({ level: 'hr', areas: ['Leave', 'Attendance'], viewAreas: ['People'] });
     expect(await allowed('plain', 'leave:approve')).toBe(true);
     expect(await allowed('plain', 'employees:read')).toBe(true);
-    expect(await allowed('plain', 'employees:update')).toBe(false);
+    expect(await beyondOwn('plain', 'employees:update')).toBe(false);
     expect(await allowed('plain', 'payroll:run')).toBe(false);
     expect(await pool.count('audit_events', { tenant_id: t.id, action: 'membership.access_changed', resource_id: people.plain.membershipId })).toBe(1);
     // Unknown areas are refused.
