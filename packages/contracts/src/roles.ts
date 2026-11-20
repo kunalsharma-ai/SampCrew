@@ -448,16 +448,21 @@ export function mapLegacyAccess(assignments: readonly LegacyAssignment[], _membe
   const top = classified.filter((c) => c.level !== 'employee');
   const constraints: LevelConstraints = {};
   if (!top.some((c) => c.a.key === 'tenant_owner')) {
-    // Exactly what their roles gave beyond Employee Workspace, at the widest scope any of them gave it.
+    // Exactly what their roles gave, at the widest scope any of them gave it. Everything is kept, not only what goes
+    // beyond Employee Workspace: someone with nobody reporting to them gets only the self-service part of it.
     const template = (level === 'super' ? SUPER_GRANTS : HR_WORKSPACE_GRANTS) as Record<string, Scope>;
+    const self = EMPLOYEE_SELF as Record<string, Scope>;
     const kept: Record<string, Scope> = {};
     for (const c of top) {
-      for (const g of c.extra) {
-        if (!template[g.permission]) { notes.push(`${c.a.key} gave ${g.permission}, which ${level === 'super' ? 'Super' : 'HR'} Workspace does not`); continue; }
+      for (const g of c.a.grants) {
+        if (!template[g.permission]) {
+          if (beyond(g)) notes.push(`${c.a.key} gave ${g.permission}, which ${level === 'super' ? 'Super' : 'HR'} Workspace does not`);
+          continue;
+        }
         if (!kept[g.permission] || SCOPE_RANK[g.scope] > SCOPE_RANK[kept[g.permission]!]) kept[g.permission] = g.scope;
       }
     }
-    const everything = Object.entries(template).every(([k, sc]) => (base[k] && SCOPE_RANK[base[k]!] >= SCOPE_RANK[sc]) || kept[k] === sc);
+    const everything = Object.entries(template).every(([k, sc]) => (self[k] && SCOPE_RANK[self[k]!] >= SCOPE_RANK[sc]) || (kept[k] && SCOPE_RANK[kept[k]!] >= SCOPE_RANK[sc]));
     if (!everything) constraints.grants = Object.fromEntries(Object.entries(kept).sort(([x], [y]) => x.localeCompare(y)));
   }
   // The records their roles were limited to (legal entities, departments, locations, HR Workspaces).

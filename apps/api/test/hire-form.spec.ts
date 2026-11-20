@@ -92,7 +92,9 @@ describe('create employee rules', () => {
     // A title nobody has heard of is fine too.
     const c = await post({ firstName: 'Desi', lastName: 'Three', designationName: 'Chief Happiness Officer' });
     expect(c.body.employee.designationName).toBe('Chief Happiness Officer');
-    expect((await api(app, hr).get('/designations')).body.map((d: { name: string }) => d.name)).toEqual(expect.arrayContaining(['Data Scientist', 'Chief Happiness Officer']));
+    const list = await api(app, hr).get('/designations');
+    expect(list.status, JSON.stringify(list.body)).toBe(200);
+    expect(list.body.map((d: { name: string }) => d.name)).toEqual(expect.arrayContaining(['Data Scientist', 'Chief Happiness Officer']));
   });
 
   it('adds someone already working here with their joining date, code, confirmation and leave balance', async () => {

@@ -15,7 +15,7 @@ export interface TenantDetail {
   /** The company's four levels: Console Admin (SAMPLEDGE) > Super Workspace > HR Workspace > Employee Workspace. */
   hierarchy?: {
     consoleAdmin: string;
-    superWorkspace: { name: string; email: string }[];
+    superWorkspace: { name: string }[];
     hrWorkspaces: { id: string; name: string; status: string; admins: number; people: number }[];
     counts: { super: number; hr: number; companyHr: number; employee: number };
   };

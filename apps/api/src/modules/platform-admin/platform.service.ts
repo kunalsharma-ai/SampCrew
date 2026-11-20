@@ -166,12 +166,12 @@ export class PlatformService {
     const hrRows = rows.filter((r) => r.role_id === idOf.get('hr_workspace') && !supers.has(r.membership_id));
     const hr = new Set(hrRows.map((r) => r.membership_id));
     const userOf = new Map(live.map((m) => [m.id, m.user_id]));
-    const users = new Map((await tx.collection<{ id: string; full_name: string; email: string }>('users').find({ id: { $in: [...supers].map((m) => userOf.get(m)!) } }, { projection: { full_name: 1, email: 1 } })).map((u) => [u.id, u]));
+    const users = new Map((await tx.collection<{ id: string; full_name: string }>('users').find({ id: { $in: [...supers].map((m) => userOf.get(m)!) } }, { projection: { full_name: 1 } })).map((u) => [u.id, u]));
     const spaces = await tx.collection<{ id: string; name: string; status: string }>('hr_workspaces').find({ tenant_id: tenantId, status: { $ne: 'archived' } }, { projection: { name: 1, status: 1 }, sort: { name: 1 } });
     const people = await countBy(tx, 'employees', 'hr_workspace_id', spaces.map((w) => w.id), { tenant_id: tenantId, status: { $ne: 'exited' } });
     return {
       consoleAdmin: 'SAMPLEDGE',
-      superWorkspace: [...supers].map((m) => users.get(userOf.get(m)!)).filter(Boolean).map((u) => ({ name: u!.full_name, email: u!.email })),
+      superWorkspace: [...supers].map((m) => users.get(userOf.get(m)!)).filter(Boolean).map((u) => ({ name: u!.full_name })),
       hrWorkspaces: spaces.map((w) => ({ id: w.id, name: w.name, status: w.status, admins: hrRows.filter((r) => r.constraints?.hrWorkspaceIds?.includes(w.id)).length, people: people.get(w.id) ?? 0 })),
       counts: { super: supers.size, hr: hr.size, companyHr: hrRows.filter((r) => !r.constraints?.hrWorkspaceIds?.length).length, employee: liveIds.length - supers.size - hr.size },
     };
