@@ -21,6 +21,7 @@ import {
   name,
   paginationQuery,
   password,
+  delegationPolicyInput,
   planCreate,
   planEntitlementsUpdate,
   planPriceUpdate,
@@ -283,6 +284,20 @@ export class PlatformController {
     return this.access.setFeatures(id, body.changes);
   }
 
+  @PlatformRealm('tenants:read')
+  @Get('tenants/:id/hierarchy')
+  @Doc({ summary: 'A company\'s delegation policy, central group and HR Workspaces (counts only, no HR records)' })
+  hierarchy(@Param('id', UuidPipe) id: string) {
+    return this.access.delegation(id);
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('tenants/:id/access/delegation')
+  @Doc({ summary: 'Keep modules at company level (not passed to HR Workspaces) and choose whether the Super Workspace may add employees itself', body: delegationPolicyInput })
+  setDelegation(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(delegationPolicyInput)) body: z.infer<typeof delegationPolicyInput>) {
+    return this.access.setDelegation(id, body);
+  }
+
   @PlatformRealm('access:manage')
   @Put('tenants/:id/access/permissions')
   @Doc({ summary: 'Switch permissions on or off for every role in a workspace', body: permissionSwitchUpdate })
@@ -342,8 +357,10 @@ export class PlatformController {
   @PlatformRealm('billing:manage')
   @Put('tenants/:id/subscription')
   @Doc({ summary: 'Override plan, status, seats, trial end or individual feature entitlements', body: subscriptionOverride })
-  subscription(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(subscriptionOverride)) body: z.infer<typeof subscriptionOverride>) {
-    return this.platform.overrideSubscription(id, body);
+  async subscription(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(subscriptionOverride)) body: z.infer<typeof subscriptionOverride>) {
+    const result = await this.platform.overrideSubscription(id, body);
+    await this.access.recalculate(id);
+    return result;
   }
 
   @PlatformRealm('support:request')

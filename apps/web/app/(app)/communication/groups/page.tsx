@@ -16,7 +16,7 @@ export default async function GroupsPage() {
   const [groups, chats] = await Promise.all([load<{ items: Group[] }>('/communication/groups'), load<ConversationList>('/communication/conversations')]);
   return (
     <>
-      <PageHeader title="Communication" description="Groups are your own lists of people. Send emails and announcements to a group as well as to departments and designations." />
+      <PageHeader title="Communication" description="Groups are your own lists of people. Chat with everyone in a group at once, or send it emails and announcements, as you can with departments and designations." />
       <CommTabs active="groups" isHr unread={chats.unread} />
       <GroupsView groups={groups.items} />
     </>

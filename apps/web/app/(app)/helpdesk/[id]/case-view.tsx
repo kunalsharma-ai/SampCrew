@@ -100,7 +100,7 @@ export function CaseView({ c, handlers, categories, aiDrafts }: { c: CaseDetail;
           <CardBody className="grid gap-3 text-[0.8125rem]">
             <Row label="Status"><Badge tone={STATUS_TONE[c.status]}>{labels[c.status]}</Badge></Row>
             <Row label="Priority"><Badge tone={PRIORITY_TONE[c.priority]}>{PRIORITY[c.priority]}</Badge></Row>
-            <Row label="Handled by">{c.assigneeName ?? 'Not assigned yet'}</Row>
+            <Row label="Handled by">{c.assigneeName ? [c.assigneeName, ...(c.collaborators ?? []).map((x) => x.name ?? 'Someone')].join(', ') : 'Not assigned yet'}</Row>
             {handler && (
               <>
                 <Row label="First reply"><Badge tone={TARGET_TONE[c.firstResponse]}>{TARGET[c.firstResponse]}</Badge>{c.firstResponseDueAt && !c.firstRespondedAt && <span className="text-xs text-fg-muted">due {dateTime(c.firstResponseDueAt)}</span>}</Row>
@@ -124,6 +124,20 @@ export function CaseView({ c, handlers, categories, aiDrafts }: { c: CaseDetail;
                   </Select>
                 )}
               </Field>
+              {c.assigneeMembershipId && handlers.length > 1 && (
+                <fieldset className="grid gap-1.5" data-testid="case-collaborators">
+                  <legend className="mb-1 text-[0.8125rem] font-medium">Also handling</legend>
+                  <p className="-mt-1 mb-1 text-xs text-fg-muted">People who work the case with the assignee. They see it under Assigned to me and get its replies.</p>
+                  {handlers.filter((h) => h.membershipId !== c.assigneeMembershipId).map((h) => {
+                    const shared = (c.collaborators ?? []).map((x) => x.membershipId);
+                    const on = shared.includes(h.membershipId);
+                    return (
+                      <Checkbox key={h.membershipId} label={h.name} checked={on} disabled={pending}
+                        onChange={() => run(() => assignAction(c.id, c.assigneeMembershipId, on ? shared.filter((m) => m !== h.membershipId) : [...shared, h.membershipId]))} />
+                    );
+                  })}
+                </fieldset>
+              )}
               <Field label="Priority">
                 {(p) => <Select {...p} value={c.priority} disabled={pending} onChange={(e) => run(() => priorityAction(c.id, e.target.value))}>{Object.entries(PRIORITY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>}
               </Field>
@@ -143,6 +157,8 @@ export function CaseView({ c, handlers, categories, aiDrafts }: { c: CaseDetail;
                   <span className="font-medium">{h.byName ?? 'SampCrew'}</span> {HISTORY[h.action] ?? h.action}
                   {h.action === 'status' && h.to ? `: ${STATUS[h.from ?? ''] ?? h.from} → ${STATUS[h.to] ?? h.to}` : ''}
                   {h.action === 'assigned' ? ` to ${h.toName ?? 'nobody'}` : ''}
+                  {h.action === 'collaborator_added' ? ` ${h.toName ?? 'someone'}` : ''}
+                  {h.action === 'collaborator_removed' ? ` ${h.fromName ?? 'someone'}` : ''}
                   {h.action === 'priority' && h.to ? `: ${PRIORITY[h.to] ?? h.to}` : ''}
                   <div className="text-fg-subtle">{dateTime(h.createdAt)}</div>
                 </li>

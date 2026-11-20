@@ -134,6 +134,16 @@ export class ProfileService implements OnModuleInit {
         const r = await tx.collection('profile_change_requests').findOne({ id });
         return r ? { section: PROFILE_SECTION_LABELS[r.section as ProfileSection], changes: r.changes, note: r.note ?? null } : null;
       },
+      // Proofs the employee attached (identity, address, education records), openable from Approvals. Only ids
+      // leave the update; each download is checked and audited by the documents module.
+      documents: async (tx, id) => {
+        const r = await tx.collection('profile_change_requests').findOne({ id });
+        if (!r) return [];
+        const data = r.new_data ?? (r.new_enc ? JSON.parse(this.dec(r.new_enc)!) : null) ?? {};
+        const docIds = [data.identityDocumentId, data.addressProofDocumentId, ...((data.records ?? []) as Doc[]).map((x) => x.documentId)].filter(Boolean);
+        const docs = docIds.length ? await tx.collection('employee_documents').find({ id: { $in: docIds }, archived_at: null }) : [];
+        return docs.map((d) => ({ name: `${d.title as string}${d.file_name ? ` (${d.file_name as string})` : ''}`, href: `/files/${d.id as string}` }));
+      },
       onApproved: (tx, req) => this.decided(tx, req.resource_id, req.id, 'approved'),
       onRejected: (tx, req) => this.decided(tx, req.resource_id, req.id, 'rejected'),
     });

@@ -55,6 +55,7 @@ export const FEATURES = [
   { key: 'enterprise_support', name: 'Enterprise support and SLA', module: 'Support', kind: 'boolean', phase: 1, planned: true },
   { key: 'max_employees', name: 'Employees included', module: 'Billing', kind: 'limit', phase: 1, unit: 'employees' },
   { key: 'max_legal_entities', name: 'Legal entities', module: 'Organization', kind: 'limit', phase: 1, unit: 'entities' },
+  { key: 'max_hr_workspaces', name: 'HR Workspaces', module: 'Organization', kind: 'limit', phase: 29, unit: 'HR Workspaces' },
   { key: 'ai_credits_monthly', name: 'AI credits per month', module: 'AI', kind: 'limit', phase: 8, unit: 'credits' },
   { key: 'storage_gb', name: 'Document storage', module: 'Documents', kind: 'limit', phase: 2, unit: 'GB' },
 ] as const satisfies readonly FeatureDefinition[];
@@ -92,24 +93,24 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = [
     key: 'starter', name: 'Starter', tagline: 'Core HR, employee records, basic attendance and leave', sortOrder: 1,
     prices: [{ currency: 'USD', monthly: '4.00', annualPerMonth: '3.20' }, { currency: 'INR', monthly: '149.00', annualPerMonth: '119.00' }],
     minimumSeats: 5, quoteOnly: false, features: STARTER,
-    limits: { max_employees: 100, max_legal_entities: 1, ai_credits_monthly: 0, storage_gb: 10 },
+    limits: { max_employees: 100, max_legal_entities: 1, max_hr_workspaces: 2, ai_credits_monthly: 0, storage_gb: 10 },
   },
   {
     key: 'professional', name: 'Professional', tagline: 'Recruitment, advanced attendance, shifts and automation', sortOrder: 2,
     prices: [{ currency: 'USD', monthly: '8.00', annualPerMonth: '6.40' }, { currency: 'INR', monthly: '299.00', annualPerMonth: '239.00' }],
     minimumSeats: 10, quoteOnly: false, features: PROFESSIONAL,
-    limits: { max_employees: 1000, max_legal_entities: 1, ai_credits_monthly: 500, storage_gb: 50 },
+    limits: { max_employees: 1000, max_legal_entities: 1, max_hr_workspaces: 10, ai_credits_monthly: 500, storage_gb: 50 },
   },
   {
     key: 'business', name: 'Business', tagline: 'Payroll, AI Copilot, analytics and advanced integrations', sortOrder: 3,
     prices: [{ currency: 'USD', monthly: '14.00', annualPerMonth: '11.20' }, { currency: 'INR', monthly: '499.00', annualPerMonth: '399.00' }],
     minimumSeats: 25, quoteOnly: false, features: BUSINESS,
-    limits: { max_employees: 5000, max_legal_entities: 10, ai_credits_monthly: 5000, storage_gb: 250 },
+    limits: { max_employees: 5000, max_legal_entities: 10, max_hr_workspaces: 50, ai_credits_monthly: 5000, storage_gb: 250 },
   },
   {
     key: 'enterprise', name: 'Enterprise', tagline: 'Global payroll, SSO, multi-country, custom workflows and enterprise support', sortOrder: 4,
     prices: [], minimumSeats: 250, quoteOnly: true, features: ENTERPRISE,
-    limits: { max_employees: UNLIMITED, max_legal_entities: UNLIMITED, ai_credits_monthly: 50000, storage_gb: 2000 },
+    limits: { max_employees: UNLIMITED, max_legal_entities: UNLIMITED, max_hr_workspaces: UNLIMITED, ai_credits_monthly: 50000, storage_gb: 2000 },
   },
 ];
 

@@ -862,6 +862,30 @@ export const WEB_HELP: HelpContent = {
       how: 'Pick a report and filters, then download it as Excel or PDF.',
       where: 'For people with Assets export access.',
     },
+    '/attendance/register': {
+      title: 'All employees attendance',
+      what: 'A month grid of everyone you look after: present, absent, leave, late and days off for each day, with totals per person.',
+      how: 'Pick the month, then filter by department, location or name. Open a person from Team attendance to correct a day.',
+      where: 'For HR and owners. You see the same people as in Employees.',
+    },
+    '/hr-workspaces': {
+      title: 'HR Workspaces',
+      what: 'The parts of the company that have their own HR admins, such as a branch or a department, with the modules each one holds and its people.',
+      how: 'Create an HR Workspace, give it a part of your modules and name its admins. Open one to change it or move people in and out.',
+      where: 'Super Workspace admins see them all; HR Workspace admins see only their own.',
+    },
+    '/hr-workspaces/[id]': {
+      title: 'HR Workspace',
+      what: 'One HR Workspace: its modules against the company’s, its people and the modules each one gets, its admins and its change history.',
+      how: 'Use the tabs. Locked modules are not held by the company, so they cannot be given here.',
+      where: 'Changes apply on each person’s next page and are kept in the history and the audit trail.',
+    },
+    '/hr-workspaces/central': {
+      title: 'Central group',
+      what: 'Employees the company runs itself, outside any HR Workspace. Everyone who joined before HR Workspaces existed is here.',
+      how: 'Tick people and move them into an HR Workspace. Their records and history go with them.',
+      where: 'For Super Workspace admins.',
+    },
     '/employees/import': {
       title: 'Import existing employees',
       what: 'Add many people who already work here at once from the Excel or CSV template, with leave balances and the assets they hold.',
@@ -883,6 +907,16 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    'How access flows': { what: 'SAMPLEDGE decides what the company holds, the company gives each HR Workspace a part, and HR Workspace admins give each person a part of theirs.' },
+    'Your HR Workspaces': { what: 'Every active HR Workspace with its people, modules and admins.', how: 'Open one to change it. The central group card lists the people the company runs itself.' },
+    'HR Workspaces you run': { what: 'The HR Workspaces you are an admin of.' },
+    'Modules for this HR Workspace': { what: 'Which of the company’s modules this HR Workspace may use and pass on to its people.', how: 'Tick modules and save. Locked ones are not in the plan or are kept at company level by SAMPLEDGE.' },
+    'Details and limits': { what: 'Name, kind, description and the most people it may hold.', how: 'Suspend to freeze changes, or archive to close it and move its people back to the central group.' },
+    'People in this HR Workspace': { what: 'Everyone this HR Workspace looks after and how many modules each one gets.', how: 'Press Modules to choose a person’s modules, or Move to send them to another HR Workspace.' },
+    'Admins of this HR Workspace': { what: 'The people who run this HR Workspace. They reach only its people and none of the company-wide settings.' },
+    'Change history': { what: 'Each change to modules, admins and limits, with the level that made it, before and after, and the version number.' },
+    'Moves in and out': { what: 'People who joined or left this HR Workspace, with the reason and who moved them.' },
+    'People in the central group': { what: 'Employees outside any HR Workspace.', how: 'Tick people, then move them into an HR Workspace.' },
     'Request details': { what: 'The request ID, its type, when and by whom it was submitted, its status and who decides it now.' },
     'Supporting documents': { what: 'Files attached to the request, such as a receipt. Opening one is recorded.' },
     'Your decision': { what: 'Approve or reject this request. Your remarks are shared with the person who asked.', how: 'Remarks are needed when you reject.' },

@@ -29,6 +29,7 @@ const FOUNDATION: Record<string, string> = {
   HolidayCalendarsController: 'Holiday calendars are shared by leave, attendance, shifts and payroll',
   MembersController: 'Workspace members and invitations (seat limit enforced in the service)',
   CustomFieldsController: 'Custom fields are part of HR Workspace Admin; a field on a module record checks that module in CustomFieldsService',
+  HierarchyController: 'Company structure: HR Workspaces and module delegation (the max_hr_workspaces limit is checked in HierarchyService)',
   HrAdminController: 'HR Workspace Admin: module switches (within the plan) and the role permission matrix',
   EmployeeImportController: 'Core HR (always included): adding existing employees; leave balances and assets check their modules',
   RolesController: 'Viewing roles; creating custom roles is the custom_roles module',

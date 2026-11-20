@@ -14,7 +14,7 @@ export interface EmailDetail extends EmailRow {
   recipients: { id: string; kind: 'to' | 'cc' | 'bcc'; address: string; name: string | null; employeeId: string | null; status: 'queued' | 'sent' | 'failed' | 'skipped'; error: string | null; sentAt: string | null }[];
 }
 export interface InboxEmail { id: string; subject: string; html: string; sentAt: string | null; sentByName: string | null; files: CommFile[] }
-export interface Group { id: string; name: string; description: string; updatedAt: string; members: { membershipId: string; name: string | null }[] }
+export interface Group { id: string; name: string; description: string; updatedAt: string; chatConversationId?: string | null; members: { membershipId: string; name: string | null }[] }
 
 export interface Dashboard {
   email: { sent30: number; recipients30: number; delivered30: number; failed30: number; drafts: number; deliveryRate: number | null };

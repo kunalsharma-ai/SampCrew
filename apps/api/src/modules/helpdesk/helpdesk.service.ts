@@ -24,6 +24,7 @@ interface CaseRow {
   priority: CasePriority;
   status: CaseStatus;
   assignee_membership_id: string | null;
+  collaborator_membership_ids?: string[] | null;
   first_responded_at: Date | null;
   resolved_at: Date | null;
   created_at: Date;
@@ -43,17 +44,22 @@ async function caseViews(tx: TenantTx, cases: Doc[]): Promise<Array<Record<strin
   const [emps, cats, assignees] = await Promise.all([
     employeeNames(tx, cases.map((c) => c.employee_id)),
     fieldById(tx, 'helpdesk_categories', cases.map((c) => c.category_id)),
-    memberNames(tx, cases.map((c) => c.assignee_membership_id)),
+    memberNames(tx, cases.flatMap((c) => [c.assignee_membership_id, ...((c.collaborator_membership_ids ?? []) as string[])])),
   ]);
   return cases.map((c) => ({
     id: c.id, number: c.number, employeeId: c.employee_id, employeeName: emps.get(c.employee_id)?.name ?? null, categoryId: c.category_id,
     categoryName: cats.get(c.category_id) ?? null, confidential: c.confidential, subject: c.subject, priority: c.priority, status: c.status,
     assigneeMembershipId: c.assignee_membership_id ?? null, assigneeName: c.assignee_membership_id ? (assignees.get(c.assignee_membership_id) ?? null) : null,
+    collaborators: ((c.collaborator_membership_ids ?? []) as string[]).map((m) => ({ membershipId: m, name: assignees.get(m) ?? null })),
     firstResponseDueAt: c.first_response_due_at ?? null, resolutionDueAt: c.resolution_due_at ?? null, firstRespondedAt: c.first_responded_at ?? null,
     resolvedAt: c.resolved_at ?? null, closedAt: c.closed_at ?? null, reopenedCount: c.reopened_count, satisfaction: c.satisfaction ?? null,
     satisfactionComment: c.satisfaction_comment ?? null, createdAt: c.created_at, updatedAt: c.updated_at,
   }));
 }
+
+/** Everyone working a case: the lead handler and the people sharing it. */
+const caseHandlers = (c: { assignee_membership_id: string | null; collaborator_membership_ids?: string[] | null }) =>
+  [...new Set([c.assignee_membership_id, ...(c.collaborator_membership_ids ?? [])].filter((m): m is string => !!m))];
 
 /** Matches the status filter of the case lists: 'active' is anything not closed. */
 const statusFilter = (status: string) => (status === 'all' ? {} : status === 'active' ? { status: { $ne: 'closed' } } : { status });
@@ -121,10 +127,10 @@ export class HelpdeskService {
   }
 
   /** Whether a subject may handle a case about this employee, in this category. */
-  private async mayHandle(tx: TenantTx, s: Subject, c: { employee_id: string; category_id: string; confidential: boolean; assignee_membership_id?: string | null }) {
+  private async mayHandle(tx: TenantTx, s: Subject, c: { employee_id: string; category_id: string; confidential: boolean; assignee_membership_id?: string | null; collaborator_membership_ids?: string[] | null }) {
     if (s.employeeId && s.employeeId === c.employee_id) return false;
     if (c.confidential) return (await this.handlersOf(tx, c.category_id)).includes(s.membershipId);
-    if (c.assignee_membership_id === s.membershipId && hasPermission(s, 'helpdesk:manage').allowed) return true;
+    if ((c.assignee_membership_id === s.membershipId || (c.collaborator_membership_ids ?? []).includes(s.membershipId)) && hasPermission(s, 'helpdesk:manage').allowed) return true;
     return can(s, 'helpdesk:manage', attrsOf(await talentEmployee(tx, c.employee_id))).allowed;
   }
 
@@ -317,7 +323,7 @@ export class HelpdeskService {
     return {
       $and: [
         { employee_id: { $ne: s.employeeId ?? null } },
-        { $or: [{ confidential: true, category_id: { $in: handled } }, { confidential: false, $or: [{ employee_id: { $in: inScope } }, { assignee_membership_id: s.membershipId }] }] },
+        { $or: [{ confidential: true, category_id: { $in: handled } }, { confidential: false, $or: [{ employee_id: { $in: inScope } }, { assignee_membership_id: s.membershipId }, { collaborator_membership_ids: s.membershipId }] }] },
       ],
     };
   }
@@ -332,7 +338,7 @@ export class HelpdeskService {
         return rows.map(decorate);
       }
       if (!hasPermission(s, 'helpdesk:manage').allowed) throw Errors.forbidden();
-      const assigned = q.assigned === 'me' ? { assignee_membership_id: s.membershipId } : q.assigned === 'unassigned' ? { assignee_membership_id: null } : {};
+      const assigned = q.assigned === 'me' ? { $or: [{ assignee_membership_id: s.membershipId }, { collaborator_membership_ids: s.membershipId }] } : q.assigned === 'unassigned' ? { assignee_membership_id: null } : {};
       const docs = await tx.collection('helpdesk_cases').find({ $and: [await this.queueFilter(tx, s), statusFilter(status), assigned] });
       let rows = await caseViews(tx, docs);
       if (q.q) {
@@ -410,10 +416,11 @@ export class HelpdeskService {
       const history = role === 'handler'
         ? await (async () => {
             const events = await tx.collection('helpdesk_events').find({ case_id: id }, { sort: { created_at: 1 } });
-            const names = await memberNames(tx, [...events.map((v) => v.by_membership_id), ...events.filter((v) => v.action === 'assigned').map((v) => v.to_value)]);
+            const names = await memberNames(tx, [...events.map((v) => v.by_membership_id), ...events.filter((v) => v.action === 'assigned' || v.action === 'collaborator_added').map((v) => v.to_value), ...events.filter((v) => v.action === 'collaborator_removed').map((v) => v.from_value)]);
             return events.map((v) => ({
               action: v.action, from: v.from_value ?? null, to: v.to_value ?? null, createdAt: v.created_at, byName: v.by_membership_id ? (names.get(v.by_membership_id) ?? null) : null,
-              toName: v.action === 'assigned' && v.to_value ? (names.get(v.to_value) ?? null) : null,
+              toName: (v.action === 'assigned' || v.action === 'collaborator_added') && v.to_value ? (names.get(v.to_value) ?? null) : null,
+              fromName: v.action === 'collaborator_removed' && v.from_value ? (names.get(v.from_value) ?? null) : null,
             }));
           })()
         : [];
@@ -483,7 +490,7 @@ export class HelpdeskService {
           await tx.collection('helpdesk_cases').updateOne({ id }, { $set: { status: 'in_progress' } });
           await this.event(tx, id, s.membershipId, 'status', c.status, 'in_progress');
         } else await tx.collection('helpdesk_cases').updateOne({ id }, { $set: { updated_at: new Date() } });
-        const to = c.assignee_membership_id ? [c.assignee_membership_id] : await this.caseWatchers(tx, c);
+        const to = c.assignee_membership_id ? caseHandlers(c) : await this.caseWatchers(tx, c);
         await this.notifications.notify(tx, { membershipIds: to, kind: 'helpdesk.reply', title: `New reply on ${ref}`, link: `/helpdesk/${id}` });
       }
       return { ok: true };
@@ -516,33 +523,46 @@ export class HelpdeskService {
         const title = status === 'resolved' ? `${ref} is resolved: confirm or reopen it` : status === 'waiting_on_employee' ? `HR needs more information on ${ref}` : `${ref} is now ${status.replace(/_/g, ' ')}`;
         await this.notifications.notify(tx, { membershipIds: [c.requester_membership_id], kind: 'helpdesk.status', title, link: `/helpdesk/${id}`, email: status === 'resolved' || status === 'waiting_on_employee' });
       } else {
-        const to = c.assignee_membership_id ? [c.assignee_membership_id] : await this.caseWatchers(tx, c);
+        const to = c.assignee_membership_id ? caseHandlers(c) : await this.caseWatchers(tx, c);
         await this.notifications.notify(tx, { membershipIds: to, kind: 'helpdesk.status', title: status === 'open' ? `${ref} was reopened` : `${ref} was confirmed and closed`, link: `/helpdesk/${id}` });
       }
       return { status };
     });
   }
 
-  async assign(id: string, assigneeMembershipId: string | null) {
+  async assign(id: string, assigneeMembershipId: string | null, collaboratorMembershipIds?: string[]) {
     return this.db.tenant(async (tx) => {
       const { c, role, s } = await this.load(tx, id);
       if (role !== 'handler') throw Errors.forbidden();
       if (c.status === 'closed') throw Errors.conflict('case_closed', 'This case is closed.');
-      if (assigneeMembershipId) {
-        const m = await tx.collection<{ user_id: string; employee_id: string | null }>('memberships').findOne({ id: assigneeMembershipId, status: 'active' });
+      // Unassigning clears the people sharing the case too; leaving the list out keeps it as it is.
+      const before = (c.collaborator_membership_ids ?? []) as string[];
+      const collaborators = !assigneeMembershipId ? [] : [...new Set(collaboratorMembershipIds ?? before)].filter((m) => m !== assigneeMembershipId);
+      const mayTake = async (membershipId: string) => {
+        const m = await tx.collection<{ user_id: string; employee_id: string | null }>('memberships').findOne({ id: membershipId, status: 'active' });
         if (!m) throw Errors.badRequest('unknown_assignee', 'Choose an active member');
-        const them = await loadSubject(tx, assigneeMembershipId, m.user_id, true);
-        if (!(await this.mayHandle(tx, them, { ...c, assignee_membership_id: null }))) {
+        const them = await loadSubject(tx, membershipId, m.user_id, true);
+        if (!(await this.mayHandle(tx, them, { ...c, assignee_membership_id: null, collaborator_membership_ids: [] }))) {
           throw Errors.badRequest('assignee_cannot_handle', c.confidential ? 'Only the handlers of this confidential category can take the case.' : 'This person cannot handle cases for this employee.');
         }
+      };
+      if (assigneeMembershipId) await mayTake(assigneeMembershipId);
+      for (const m of collaborators) if (!before.includes(m)) await mayTake(m);
+      await tx.collection('helpdesk_cases').updateOne({ id }, { $set: { assignee_membership_id: assigneeMembershipId, collaborator_membership_ids: collaborators } });
+      if (assigneeMembershipId !== c.assignee_membership_id) await this.event(tx, id, s.membershipId, 'assigned', c.assignee_membership_id, assigneeMembershipId);
+      const added = collaborators.filter((m) => !before.includes(m));
+      const removed = before.filter((m) => !collaborators.includes(m));
+      for (const m of added) await this.event(tx, id, s.membershipId, 'collaborator_added', null, m);
+      for (const m of removed) await this.event(tx, id, s.membershipId, 'collaborator_removed', m, null);
+      await this.audit.record(tx, {
+        action: 'helpdesk.case_assigned', resourceType: 'helpdesk_case', resourceId: id,
+        changes: { assignee: { from: c.assignee_membership_id, to: assigneeMembershipId }, ...(added.length || removed.length ? { sharedWith: { from: before, to: collaborators } } : {}) },
+      });
+      const told = [...(assigneeMembershipId && assigneeMembershipId !== c.assignee_membership_id ? [assigneeMembershipId] : []), ...added].filter((m) => m !== s.membershipId);
+      if (told.length) {
+        await this.notifications.notify(tx, { membershipIds: told, kind: 'helpdesk.assigned', title: `${caseRef(c.number)} was assigned to you`, link: `/helpdesk/${id}` });
       }
-      await tx.collection('helpdesk_cases').updateOne({ id }, { $set: { assignee_membership_id: assigneeMembershipId } });
-      await this.event(tx, id, s.membershipId, 'assigned', c.assignee_membership_id, assigneeMembershipId);
-      await this.audit.record(tx, { action: 'helpdesk.case_assigned', resourceType: 'helpdesk_case', resourceId: id, changes: { assignee: { from: c.assignee_membership_id, to: assigneeMembershipId } } });
-      if (assigneeMembershipId && assigneeMembershipId !== s.membershipId) {
-        await this.notifications.notify(tx, { membershipIds: [assigneeMembershipId], kind: 'helpdesk.assigned', title: `${caseRef(c.number)} was assigned to you`, link: `/helpdesk/${id}` });
-      }
-      return { assigneeMembershipId };
+      return { assigneeMembershipId, collaboratorMembershipIds: collaborators };
     });
   }
 

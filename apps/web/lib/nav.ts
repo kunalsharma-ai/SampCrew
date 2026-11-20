@@ -52,6 +52,7 @@ export const NAV: NavGroup[] = [
     label: 'Employee management',
     items: [
       { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
+      { href: '/hr-workspaces', label: 'HR Workspaces', icon: 'network', permission: 'hierarchy:read' },
       { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
       { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
@@ -83,6 +84,7 @@ export const NAV: NavGroup[] = [
   {
     label: 'Attendance & time',
     items: [
+      { href: '/attendance/register', label: 'All employees attendance', icon: 'calendar-range', permission: 'attendance:approve', feature: 'attendance_basic' },
       { href: '/attendance/team', label: 'Team attendance', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },
       { href: '/attendance/late', label: 'Late coming & penalties', icon: 'alarm-clock', permission: 'attendance:approve', feature: 'attendance_basic' },
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },

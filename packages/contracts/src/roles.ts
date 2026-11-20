@@ -77,6 +77,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'roles:read': 'tenant', 'roles:manage': 'tenant', 'audit:read': 'tenant', 'billing:read': 'tenant',
       'employees:read': 'tenant', 'integrations:manage': 'tenant', 'automation:manage': 'tenant', 'ai:configure': 'tenant',
       'reports:read': 'tenant', 'modules:manage': 'tenant', 'fields:manage': 'tenant',
+      'hierarchy:read': 'tenant', 'hierarchy:manage': 'tenant', 'employees:transfer': 'tenant', 'modules:assign': 'tenant',
     },
   },
   {
@@ -101,6 +102,25 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'fields:manage': 'tenant',
       'bgv:view': 'tenant', 'bgv:create': 'tenant', 'bgv:edit': 'tenant', 'bgv:delete': 'tenant', 'bgv:approve': 'tenant', 'bgv:export': 'tenant', 'bgv:manage': 'tenant',
       'assets:view': 'tenant', 'assets:create': 'tenant', 'assets:edit': 'tenant', 'assets:delete': 'tenant', 'assets:approve': 'tenant', 'assets:export': 'tenant', 'assets:manage': 'tenant',
+      'hierarchy:read': 'tenant', 'modules:assign': 'tenant',
+    },
+  },
+  {
+    key: 'hr_workspace_admin',
+    name: 'HR Workspace Admin',
+    description: 'Runs one or more HR Workspaces: their employees, attendance, leave, documents, tasks and requests, and which of the HR Workspace\'s modules each employee gets. Given by the Super Workspace when it names the admins of an HR Workspace, and limited to the people in it. No company-wide settings, roles, billing or payroll.',
+    grants: {
+      ...EMPLOYEE_SELF,
+      'org:read': 'tenant', 'users:read': 'tenant', 'users:invite': 'tenant', 'users:manage': 'tenant',
+      'employees:read': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant', 'employees:lifecycle': 'tenant',
+      'documents:read': 'tenant', 'documents:manage': 'tenant',
+      'leave:read': 'tenant', 'leave:approve': 'tenant',
+      'attendance:read': 'tenant', 'attendance:correct': 'tenant', 'attendance:approve': 'tenant', 'shifts:read': 'tenant', 'shifts:manage': 'tenant',
+      'performance:read': 'tenant', 'performance:manage': 'tenant', 'learning:read': 'tenant', 'learning:manage': 'tenant',
+      'helpdesk:manage': 'tenant', 'announcements:manage': 'tenant', 'reports:read': 'tenant',
+      'tasks:assign': 'tenant', 'tasks:hr': 'tenant', 'profiles:review': 'tenant',
+      'bgv:view': 'tenant', 'bgv:create': 'tenant', 'assets:view': 'tenant', 'assets:create': 'tenant', 'assets:edit': 'tenant', 'assets:approve': 'tenant',
+      'hierarchy:read': 'tenant', 'modules:assign': 'tenant',
     },
   },
   {

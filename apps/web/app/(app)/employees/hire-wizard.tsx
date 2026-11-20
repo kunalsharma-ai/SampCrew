@@ -27,7 +27,7 @@ const FIELD_STEP: Record<string, number> = {
   structureId: 3, annualCtc: 3, salaryFrom: 3,
   inviteToCrew: 5, loginMode: 5, initialPassword: 5, defaultShiftId: 5, attendanceEnrolments: 5, onboardingTemplateId: 5, membershipId: 5,
 };
-const EMPLOYEE_FIELDS = ['firstName', 'lastName', 'preferredName', 'workEmail', 'personalEmail', 'phone', 'dateOfBirth', 'gender', 'dateOfJoining', 'legalEntityId', 'employmentType', 'designationId', 'grade', 'departmentId', 'locationId', 'managerEmployeeId'];
+const EMPLOYEE_FIELDS = ['firstName', 'lastName', 'preferredName', 'workEmail', 'personalEmail', 'phone', 'dateOfBirth', 'gender', 'dateOfJoining', 'legalEntityId', 'employmentType', 'designationId', 'grade', 'departmentId', 'locationId', 'managerEmployeeId', 'hrWorkspaceId'];
 const CATEGORY_LABEL: Record<string, string> = { id_proof: 'ID proof', address_proof: 'Address proof', contract: 'Contract', offer_letter: 'Offer letter', policy: 'Policy', certificate: 'Certificate', tax: 'Tax', other: 'Other' };
 const TYPE_LABEL: Record<string, string> = { full_time: 'Full time', part_time: 'Part time', contract: 'Contract', intern: 'Intern', temporary: 'Temporary' };
 const MAX_UPLOAD = 10 * 1024 * 1024;
@@ -81,6 +81,11 @@ interface Props {
   leavePolicies?: LeavePolicyOption[] | null;
   /** Available assets, when this person may hand them over; null hides the picker. */
   availableAssets?: AssetOption[] | null;
+  /**
+   * HR Workspaces the new person can be added to. `central` is whether the company's central group is one of the
+   * choices (only for company-wide admins); null hides the choice (the company has no HR Workspaces).
+   */
+  hrWorkspaces?: { options: { id: string; name: string }[]; central: boolean } | null;
 }
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
@@ -94,7 +99,7 @@ export function HireWizard(p: Props) {
   const router = useRouter();
   const today = new Date().toISOString().slice(0, 10);
   const blank = (): DraftData => ({
-    dateOfJoining: today, legalEntityId: p.entities[0]?.id ?? '', employmentType: 'full_time', probationMonths: 6,
+    dateOfJoining: today, legalEntityId: p.entities[0]?.id ?? '', hrWorkspaceId: p.hrWorkspaces && !p.hrWorkspaces.central ? (p.hrWorkspaces.options[0]?.id ?? '') : '', employmentType: 'full_time', probationMonths: 6,
     onboardingTemplateId: p.templates.find((t) => t.isDefault)?.id ?? '', loginMode: 'none', joinedAs: 'new_joiner',
   });
   const [v, setV] = useState<DraftData>(blank);
@@ -610,6 +615,16 @@ export function HireWizard(p: Props) {
             <Field label="Legal entity" required error={errors.legalEntityId}>
               {(f) => <Select {...f} name="legalEntityId" value={entity} onChange={(e) => set('legalEntityId', e.target.value)}>{p.entities.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select>}
             </Field>
+            {p.hrWorkspaces && (p.hrWorkspaces.options.length > 0 || !p.hrWorkspaces.central) && (
+              <Field label="HR Workspace" hint="The department, branch or region that looks after this person. Its admins manage them, and they get only the modules it holds.">
+                {(f) => (
+                  <Select {...f} name="hrWorkspaceId" value={str(v.hrWorkspaceId)} onChange={(e) => set('hrWorkspaceId', e.target.value)}>
+                    {p.hrWorkspaces!.central && <option value="">Central group (run by the company)</option>}
+                    {p.hrWorkspaces!.options.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </Select>
+                )}
+              </Field>
+            )}
             <Field
               label="Designation"
               error={errors.designationName || errors.designationId}

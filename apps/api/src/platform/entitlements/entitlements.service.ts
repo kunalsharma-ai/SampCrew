@@ -19,6 +19,8 @@ export interface Entitlements {
 }
 
 const KEY = Symbol('entitlements');
+/** Roles that run the whole company (the Super Workspace level) when not limited to HR Workspaces. */
+export const COMPANY_ADMIN_ROLES = new Set(['tenant_owner', 'org_admin', 'hr_admin']);
 const CORE = new Set<string>(FEATURES.filter((f) => 'core' in f && f.core).map((f) => f.key));
 
 /** Resolves which features and limits the current tenant's subscription grants. */
@@ -48,6 +50,8 @@ export class EntitlementsService {
       if (reason === 'workspace_off') throw Errors.featureSwitchedOff(name);
       if (reason === 'admin_off') throw Errors.featureSwitchedOffByAdmin(name);
       if (reason === 'member_blocked') throw Errors.featureNotForMember(name);
+      if (reason === 'hr_workspace_off') throw Errors.featureNotForHrWorkspace(name);
+      if (reason === 'hr_member_off') throw Errors.featureNotForMember(name);
       if (reason === 'channel_off') throw Errors.featureOffInApp(name, (requestContext.get()?.actor as { client?: string } | undefined)?.client ?? 'web');
       throw Errors.featureNotInPlan(name);
     }
@@ -114,6 +118,7 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
   for (const key of (own?.disabled_features ?? []) as string[]) {
     if (!CORE.has(key) && features.delete(key)) blocked[key] = 'admin_off';
   }
+  if (membershipId) await applyHierarchy(tx, membershipId, features, blocked);
   if (membershipId) {
     const member = await tx.collection('member_feature_access').findOne({ membership_id: membershipId });
     for (const key of member?.blocked_features ?? []) {
@@ -127,4 +132,41 @@ export async function loadEntitlements(tx: TenantTx, membershipId?: string, clie
     }
   }
   return { planKey: plan.key, status: sub.status, features, limits, trialEndsOn: sub.trial_ends_on ?? null, blocked, overage, locked: Boolean(sub.locked_at) };
+}
+
+/**
+ * The Super > HR > Employee part of the chain, applied after the company's own modules are known:
+ *  - a person in an HR Workspace (as its admin, or as one of its employees) gets only the modules the Super Workspace
+ *    gave that HR Workspace (for an admin of several, any of them);
+ *  - then the modules their HR Workspace admins (or the Super Workspace) withheld from them are removed.
+ * Super Workspace administrators (Owner, Organization Admin) are not limited by an HR Workspace: they run the company.
+ * Computed on every request, so a change at any level applies at once, also to sessions that are already open.
+ */
+export async function applyHierarchy(tx: TenantTx, membershipId: string, features: Set<string>, blocked: Entitlements['blocked']): Promise<void> {
+  const assignments = await tx.collection('role_assignments').find({ membership_id: membershipId });
+  if (assignments.length) {
+    const keyOf = new Map((await tx.collection('roles').find({ id: { $in: assignments.map((a) => a.role_id) } }, { projection: { key: 1 } })).map((r) => [r.id as string, r.key as string]));
+    // Company-wide administrators: Owner, Organization Admin, and an HR Admin not limited to HR Workspaces.
+    if (assignments.some((a) => COMPANY_ADMIN_ROLES.has(keyOf.get(a.role_id) ?? '') && !((a.constraints?.hrWorkspaceIds ?? []) as string[]).length)) return;
+  }
+  const administered = [...new Set(assignments.flatMap((a) => ((a.constraints?.hrWorkspaceIds ?? []) as string[])))];
+  const employee = await tx.collection('employees').findOne({ membership_id: membershipId }, { projection: { hr_workspace_id: 1 } });
+  const ids = administered.length ? administered : employee?.hr_workspace_id ? [employee.hr_workspace_id as string] : [];
+  if (ids.length) {
+    const spaces = await tx.collection('hr_workspaces').find({ id: { $in: ids }, status: { $in: ['active', 'suspended'] } }, { projection: { features: 1 } });
+    // The Console may keep some of the company's modules at company level: they never reach an HR Workspace.
+    const controls = await tx.collection('tenant_access_controls').findOne({}, { projection: { non_delegable_features: 1 } });
+    const kept = new Set((controls?.non_delegable_features ?? []) as string[]);
+    const given = new Set(spaces.flatMap((w) => (w.features ?? []) as string[]).filter((k) => !kept.has(k)));
+    for (const key of [...features]) {
+      if (!CORE.has(key) && !given.has(key)) {
+        features.delete(key);
+        blocked[key] = 'hr_workspace_off';
+      }
+    }
+  }
+  const own = await tx.collection('member_module_assignments').findOne({ membership_id: membershipId }, { projection: { withheld_features: 1 } });
+  for (const key of (own?.withheld_features ?? []) as string[]) {
+    if (!CORE.has(key) && features.delete(key)) blocked[key] = 'hr_member_off';
+  }
 }

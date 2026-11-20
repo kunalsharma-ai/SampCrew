@@ -55,7 +55,11 @@ export const caseStatusInput = z.object({
   message: z.string().trim().max(5000).optional(),
 });
 
-export const caseAssignInput = z.object({ assigneeMembershipId: z.uuid().nullable() });
+/** The lead handler (assignee) and, optionally, other handlers who work the case with them. */
+export const caseAssignInput = z.object({
+  assigneeMembershipId: z.uuid().nullable(),
+  collaboratorMembershipIds: z.array(z.uuid()).max(10, 'At most 10 people can share a case').optional(),
+}).refine((v) => !v.collaboratorMembershipIds?.length || v.assigneeMembershipId, { message: 'Choose who leads the case first', path: ['assigneeMembershipId'] });
 export const casePriorityInput = z.object({ priority: z.enum(CASE_PRIORITIES) });
 export const caseCategoryInput = z.object({ categoryId: z.uuid() });
 

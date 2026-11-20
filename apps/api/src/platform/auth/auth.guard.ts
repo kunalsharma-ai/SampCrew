@@ -2,6 +2,7 @@ import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/com
 import { Reflector } from '@nestjs/core';
 import { API_KEY_PREFIX, PLATFORM_ROLE_CAPABILITIES, type PlatformRole } from '@crew/contracts';
 import type { Request } from 'express';
+import { AuditService } from '../audit/audit.service';
 import { AuthzService } from '../authz/authz.service';
 import { ALLOW_PENDING_PASSWORD_KEY, ALLOW_WHEN_LOCKED_KEY, ALLOW_WITHOUT_MFA_KEY, FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY } from '../authz/decorators';
 import { requestContext } from '../context/request-context';
@@ -31,7 +32,33 @@ export class AuthGuard implements CanActivate {
     private readonly entitlements: EntitlementsService,
     private readonly apiKeys: ApiKeysService,
     private readonly scimTokens: ScimService,
+    private readonly audit: AuditService,
   ) {}
+
+  /** The last time each person was recorded being refused a permission, so a retrying screen writes one entry a minute. */
+  private readonly deniedSeen = new Map<string, number>();
+
+  /**
+   * Records a refused change (POST, PUT, PATCH, DELETE) in the workspace's audit trail: who tried, which permission
+   * they lacked and which route, as the hierarchy rules ask (an HR Workspace admin trying to create an HR Workspace,
+   * an employee calling an admin route). Reads are not recorded. A failure to record never changes the answer.
+   */
+  private async recordDenied(req: Request, permission: string, error: unknown) {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return;
+    const code = (error as { code?: string; getResponse?: () => unknown })?.code ?? ((error as { getResponse?: () => { code?: string } })?.getResponse?.() as { code?: string } | undefined)?.code;
+    if (code !== 'forbidden') return;
+    const actor = requestContext.get()?.actor;
+    if (actor?.kind !== 'user') return;
+    const key = `${actor.membershipId}:${permission}:${req.method}:${req.route?.path ?? req.path}`;
+    const now = Date.now();
+    if ((this.deniedSeen.get(key) ?? 0) > now - 60_000) return;
+    this.deniedSeen.set(key, now);
+    if (this.deniedSeen.size > 5000) for (const [k, t] of this.deniedSeen) if (t < now - 60_000) this.deniedSeen.delete(k);
+    await this.db.tenant((tx) => this.audit.record(tx, {
+      action: 'authz.denied', resourceType: 'route', resourceId: null,
+      metadata: { permission, method: req.method, route: req.route?.path ?? req.path },
+    })).catch(() => undefined);
+  }
 
   private meta<T>(key: string, ctx: ExecutionContext): T | undefined {
     return this.reflector.getAllAndOverride<T>(key, [ctx.getHandler(), ctx.getClass()]);
@@ -90,7 +117,14 @@ export class AuthGuard implements CanActivate {
     if (feature) await this.entitlements.requireFeature(feature);
 
     const permission = this.meta<string>(PERMISSION_KEY, ctx);
-    if (permission) await this.authz.require(permission);
+    if (permission) {
+      try {
+        await this.authz.require(permission);
+      } catch (e) {
+        await this.recordDenied(req, permission, e);
+        throw e;
+      }
+    }
     return true;
   }
 

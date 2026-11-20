@@ -82,6 +82,13 @@ export class TasksService implements OnModuleInit {
         const d = t?.document_id ? await tx.collection('employee_documents').findOne({ id: t.document_id }) : undefined;
         return t ? { task: t.title, document: d?.title ?? null, fileName: d?.file_name ?? null, documentId: d?.id ?? null, submittedAt: t.submitted_at ?? null } : null;
       },
+      // The uploaded file itself, so the approver can open and download it from Approvals (the same signed,
+      // audited download the task page uses).
+      documents: async (tx, taskId) => {
+        const t = await tx.collection('employee_tasks').findOne({ id: taskId }, { projection: { document_id: 1 } });
+        const d = t?.document_id ? await tx.collection('employee_documents').findOne({ id: t.document_id }, { projection: { id: 1, title: 1, file_name: 1 } }) : undefined;
+        return d ? [{ name: (d.file_name as string | null) ?? (d.title as string | null) ?? 'Document', href: `/files/${d.id}` }] : [];
+      },
       onApproved: (tx, req) => this.documentDecided(tx, req.resource_id, req.id, 'verified'),
       onRejected: (tx, req) => this.documentDecided(tx, req.resource_id, req.id, 'rejected'),
     });

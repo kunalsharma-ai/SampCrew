@@ -6,7 +6,7 @@ import { MongoService as DatabaseService } from '../../platform/database/mongo.s
 import { Errors } from '../../platform/http/errors';
 import { memberNames } from '../employees/employee-view';
 import { describeAudience, resolveAudience } from './audience';
-import { hrTeam } from './chat.service';
+import { ChatService, hrTeam } from './chat.service';
 import { CommEmailService } from './email.service';
 
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
@@ -20,6 +20,7 @@ export class CommunicationService {
     private readonly authz: AuthzService,
     private readonly audit: AuditService,
     private readonly emails: CommEmailService,
+    private readonly chat: ChatService,
   ) {}
 
   groups() {
@@ -29,7 +30,7 @@ export class CommunicationService {
       const names = await memberNames(tx, rows.flatMap((g) => g.membership_ids as string[]));
       return {
         items: rows.map((g) => ({
-          id: g.id, name: g.name, description: g.description, updatedAt: iso(g.updated_at),
+          id: g.id, name: g.name, description: g.description, updatedAt: iso(g.updated_at), chatConversationId: g.chat_conversation_id ?? null,
           members: (g.membership_ids as string[]).filter((m) => active.has(m)).map((m) => ({ membershipId: m, name: names.get(m) ?? null })),
         })),
       };
@@ -48,6 +49,10 @@ export class CommunicationService {
       if (id) {
         const n = await tx.collection('comm_groups').update({ id, archived_at: null }, { $set: fields });
         if (!n) throw Errors.notFound('Group');
+        // People added to the group join its chat, when it has one.
+        const g = await tx.collection('comm_groups').findOne({ id });
+        const conv = g?.chat_conversation_id ? await tx.collection('chat_conversations').findOne({ id: g.chat_conversation_id, archived_at: null }) : undefined;
+        if (conv) await this.chat.syncGroupChat(tx, conv, ids);
       } else id = (await tx.collection('comm_groups').insert({ ...fields, created_by_membership_id: s.membershipId })).id as string;
       await this.audit.record(tx, { action: 'comm_group.saved', resourceType: 'comm_group', resourceId: id!, changes: { name: input.name, members: ids.length } });
       return { id };

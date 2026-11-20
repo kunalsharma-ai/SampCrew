@@ -25,6 +25,8 @@ import { CustomFieldsService } from './modules/custom-fields/custom-fields.servi
 import { EmployeeImportController, HrAdminController } from './modules/hr-admin/hr-admin.controller';
 import { EmployeeImportService } from './modules/hr-admin/employee-import.service';
 import { HrAdminService } from './modules/hr-admin/hr-admin.service';
+import { HierarchyController } from './modules/hierarchy/hierarchy.controller';
+import { HierarchyService } from './modules/hierarchy/hierarchy.service';
 import { EmployeesService } from './modules/employees/employees.service';
 import { HealthController } from './modules/health/health.controller';
 import { HrJobsService } from './modules/hr-jobs/hr-jobs.service';
@@ -181,6 +183,7 @@ export const CONTROLLERS = [
   CustomFieldsController,
   CustomFieldFilesController,
   HrAdminController,
+  HierarchyController,
   OnboardingController,
   TasksController,
   ProfileController,
@@ -307,6 +310,7 @@ export const CONTROLLERS = [
     BgvService,
     CustomFieldsService,
     HrAdminService,
+    HierarchyService,
     EmployeeImportService,
     DocumentsService,
     AttendanceDaysService,

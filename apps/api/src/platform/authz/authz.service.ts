@@ -3,7 +3,7 @@ import type { Scope } from '@crew/contracts';
 import { requestContext } from '../context/request-context';
 import { MongoService as DatabaseService, type TenantTx } from '../database/mongo.service';
 import { Errors } from '../http/errors';
-import { can, hasPermission, scopeFilter, type Grant, type ResourceAttributes, type Subject } from './policy';
+import { can, hasPermission, scopeFilter, type Grant, type HrWorkspacePeople, type ResourceAttributes, type Subject } from './policy';
 
 const SUBJECT_KEY = Symbol('authz.subject');
 
@@ -59,6 +59,37 @@ export async function loadSubject(tx: TenantTx, membershipId: string, userId: st
     }
   }
 
+  // HR Workspace Admins act only on the people of their HR Workspaces: resolve those once for the request.
+  const hrIds = [...new Set(assignments.flatMap((a) => ((a.constraints?.hrWorkspaceIds ?? []) as string[])))];
+  const hrPeople = new Map<string, { employees: string[]; memberships: string[] }>();
+  if (hrIds.length) {
+    const live = new Set(await tx.collection('hr_workspaces').distinct<string>('id', { id: { $in: hrIds }, status: 'active' }));
+    const people = await tx.collection('employees').find({ hr_workspace_id: { $in: [...live] } }, { projection: { _id: 1, hr_workspace_id: 1, membership_id: 1 } });
+    for (const id of live) hrPeople.set(id, { employees: [], memberships: [] });
+    for (const e of people) {
+      const bucket = hrPeople.get(e.hr_workspace_id as string)!;
+      bucket.employees.push(e.id as string);
+      if (e.membership_id) bucket.memberships.push(e.membership_id as string);
+    }
+  }
+  const hrCache = new Map<string, HrWorkspacePeople>();
+  const hrWorkspacePeople = (ids: string[]): HrWorkspacePeople => {
+    const key = [...ids].sort().join(',');
+    let v = hrCache.get(key);
+    if (!v) {
+      const employeeIds = new Set<string>();
+      const membershipIds = new Set<string>();
+      for (const id of ids) {
+        const b = hrPeople.get(id);
+        b?.employees.forEach((x) => employeeIds.add(x));
+        b?.memberships.forEach((x) => membershipIds.add(x));
+      }
+      v = { employeeIds, membershipIds };
+      hrCache.set(key, v);
+    }
+    return v;
+  };
+
   const reports = await descendants(tx, 'memberships', 'manager_membership_id', membershipId);
   const reportEmployees = m.employee_id ? await descendants(tx, 'employees', 'current_manager_employee_id', m.employee_id) : new Set<string>();
 
@@ -92,6 +123,7 @@ export async function loadSubject(tx: TenantTx, membershipId: string, userId: st
     departmentSubtree,
     grants,
     mfa,
+    hrWorkspacePeople,
   };
 }
 

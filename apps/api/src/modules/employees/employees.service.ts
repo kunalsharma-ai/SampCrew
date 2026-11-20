@@ -559,6 +559,52 @@ export class EmployeesService {
    * Hires an employee. `within` runs in the same transaction after the record exists, so a caller such as
    * recruitment can mark its own records (application hired, opening filled) atomically with the hire.
    */
+  /**
+   * employees:create, as the hierarchy gives it: company-wide HR checks the legal entity as before; an HR Workspace
+   * admin (a grant limited to HR Workspaces) may create people only into their own HR Workspaces (hrWorkspaceFor).
+   */
+  private async mayCreate(tx: TenantTx, legalEntityId: string) {
+    const s = await this.authz.subject(tx);
+    const grants = s.grants.filter((g) => g.permission === 'employees:create');
+    if (grants.some((g) => !g.constraints.hrWorkspaceIds?.length)) return this.authz.require('employees:create', { legalEntityId }, tx);
+    if (!grants.length) throw Errors.forbidden();
+  }
+
+  /**
+   * Where a new employee belongs. Following the hierarchy diagram, ownership is never left ambiguous: an HR Workspace
+   * admin adds people to an HR Workspace they run; the Super Workspace adds them to an HR Workspace or to the central
+   * group (unless the Console turned direct creation off). The HR Workspace's own employee limit applies.
+   */
+  private async hrWorkspaceFor(tx: TenantTx, wanted: string | null | undefined): Promise<string | null> {
+    const s = await this.authz.subject(tx);
+    const grants = s.grants.filter((g) => g.permission === 'employees:create');
+    const companyWide = grants.some((g) => !g.constraints.hrWorkspaceIds?.length);
+    const mine = [...new Set(grants.flatMap((g) => g.constraints.hrWorkspaceIds ?? []))];
+    let id: string | null;
+    if (companyWide) {
+      id = wanted ?? null;
+      if (id === null) {
+        const controls = await tx.collection('tenant_access_controls').findOne({});
+        if (controls?.super_may_create_employees === false) throw Errors.badRequest('hr_workspace_required', 'Choose the HR Workspace that will look after this person.');
+        return null;
+      }
+    } else {
+      const live = await tx.collection('hr_workspaces').distinct<string>('id', { id: { $in: mine }, status: 'active' });
+      if (wanted === undefined && live.length === 1) id = live[0]!;
+      else if (!wanted || !live.includes(wanted)) {
+        await this.db.tenant((t) => this.audit.record(t, { action: 'authz.denied', resourceType: 'employee', metadata: { permission: 'employees:create', reason: wanted === null ? 'central_group_is_super_only' : 'not_your_hr_workspace', hrWorkspaceId: wanted ?? null } })).catch(() => undefined);
+        throw wanted === undefined ? Errors.badRequest('hr_workspace_required', 'Choose which of your HR Workspaces this person joins.') : Errors.forbidden('You can add people only to the HR Workspaces you run.');
+      } else id = wanted;
+    }
+    const w = await tx.collection('hr_workspaces').findOne({ id });
+    if (!w || w.status !== 'active') throw Errors.badRequest('unknown_hr_workspace', 'Choose an active HR Workspace');
+    if ((w.max_employees ?? -1) !== -1) {
+      const n = await tx.collection('employees').count({ hr_workspace_id: id, status: { $ne: 'exited' } });
+      if (n + 1 > w.max_employees) throw Errors.limitReached(`employees in ${w.name as string}`, w.max_employees);
+    }
+    return id;
+  }
+
   async create(input: CreateEmployeeInput, within?: (tx: TenantTx, employeeId: string) => Promise<void>) {
     const actor = requestContext.tenantActor();
     let inviteToken: string | undefined;
@@ -570,7 +616,7 @@ export class EmployeesService {
     this.checkHireRules(input);
     // An existing employee may keep the code they already have; otherwise the next one in the series is reserved.
     const code = await this.db.tenant(async (tx) => {
-      await this.authz.require('employees:create', { legalEntityId: input.legalEntityId }, tx);
+      await this.mayCreate(tx, input.legalEntityId);
       if (input.employeeCode) {
         if (await tx.collection('employees').exists({ employee_code: input.employeeCode })) throw Errors.conflict('employee_code_taken', `Employee code ${input.employeeCode} is already used by someone else`);
         return input.employeeCode;
@@ -580,9 +626,10 @@ export class EmployeesService {
     const created = await this.db.tenant(async (tx) => {
       inviteToken = undefined;
       temporaryPassword = undefined;
-      await this.authz.require('employees:create', { legalEntityId: input.legalEntityId }, tx);
+      await this.mayCreate(tx, input.legalEntityId);
       const count = await tx.collection('employees').count({ status: { $ne: 'exited' } });
       await this.entitlements.requireWithinLimit('max_employees', count, tx);
+      const hrWorkspaceId = await this.hrWorkspaceFor(tx, input.hrWorkspaceId);
       await this.checkPlacement(tx, input, null);
       await this.checkPhoneForEntity(tx, input.phone, input.legalEntityId);
       const designationId = input.designationName ? await this.designationByName(tx, input.designationName) : (input.designationId ?? null);
@@ -621,6 +668,7 @@ export class EmployeesService {
           current_designation_id: designationId,
           current_manager_employee_id: input.managerEmployeeId ?? null,
           current_grade: input.grade ?? null,
+          hr_workspace_id: hrWorkspaceId,
         })
         .catch(uniqueAs('work_email_taken', 'Another current employee already uses this work email'))
         .catch(uniqueAs('employee_code_taken', 'This employee code is already used by someone else'));

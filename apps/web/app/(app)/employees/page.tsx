@@ -53,7 +53,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const canAttendance = me.features.includes('attendance_basic');
   const canOpenBalances = canHire && me.features.includes('leave') && can(me, 'leave:approve');
   const canHandOver = canHire && me.features.includes('asset_management') && can(me, 'assets:create');
-  const [page, departments, entities, locations, designations, managers, templates, drafts, structures, shifts, devices, policies, freeAssets] = await Promise.all([
+  const [page, departments, entities, locations, designations, managers, templates, drafts, structures, shifts, devices, policies, freeAssets, spaces] = await Promise.all([
     load<Page<Employee> & { total?: number }>(`/employees?${qs}`),
     loadOptional<Department[]>('/org/departments'),
     loadOptional<LegalEntity[]>('/org/legal-entities'),
@@ -67,7 +67,11 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     canHire && canAttendance && can(me, 'devices:manage') ? loadOptional<DeviceOption[]>('/attendance/devices') : null,
     canOpenBalances ? loadOptional<LeavePolicyOption[]>('/leave/policies') : null,
     canHandOver ? loadOptional<AssetList>('/assets?status=available&limit=500') : null,
+    canHire && can(me, 'hierarchy:read') ? loadOptional<{ items: { id: string; name: string }[] }>('/hr-workspaces?status=active') : null,
   ]);
+  // Company-wide admins choose the central group or an HR Workspace; an HR Workspace admin only their own.
+  const centralChoice = me.levels.super || me.levels.companyHr;
+  const hrWorkspaces = spaces && (spaces.items.length || !centralChoice) ? { options: spaces.items.map((w) => ({ id: w.id, name: w.name })), central: centralChoice } : null;
   // A new workspace finishes company setup before its first hire; admins are sent there from Add employee.
   const setupPending = !me.tenant.setupCompletedAt;
   const canManageOrg = can(me, 'org:manage');
@@ -105,6 +109,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         canDocs={canDocs}
         shifts={shifts}
         devices={devices}
+        hrWorkspaces={hrWorkspaces}
         canManageOrg={canManageOrg}
         canAttendance={canAttendance}
         canConfigureShifts={canAttendance && can(me, 'attendance:configure')}

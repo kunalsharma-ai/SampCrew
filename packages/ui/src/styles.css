@@ -224,6 +224,10 @@
 }
 
 @layer components {
+  /* A card body that opens the card (no CardHeader above it) gets the same top padding as its sides, so a form's first
+     label never touches the card's edge. In the components layer, so a page's own pt-* / p-0 still wins. */
+  .crew-card > .crew-card-body:first-child { padding-top: 1.25rem; }
+
   /* Glass: translucent surface for the shell. Falls back to solid where backdrop-filter is unavailable. */
   .crew-glass {
     background: color-mix(in srgb, var(--surface) 78%, transparent);

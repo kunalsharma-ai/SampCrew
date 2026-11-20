@@ -277,6 +277,9 @@ export class MembersService {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
       const member = await this.load(tx, id);
+      // A role editor sends back every role the person shows, including HR Workspace Admin held through an HR
+      // Workspace: that one is managed on the HR Workspace and stays as it is.
+      if (member.roles.some((r) => r.key === 'hr_workspace_admin')) input = { ...input, assignments: input.assignments.filter((a) => a.roleKey !== 'hr_workspace_admin') };
       const roles = await this.resolveRoles(tx, input.assignments.map((a) => a.roleKey));
       await this.assertCanGrant(tx, roles.map((r) => r.key));
       const beforeKeys = member.roles.map((r) => r.key).sort();
@@ -332,6 +335,9 @@ export class MembersService {
 
   /** Prevents privilege escalation: only owners can grant the owner role, and roles:manage is needed for anything else. */
   private async assertCanGrant(tx: TenantTx, roleKeys: string[]) {
+    // HR Workspace Admin is given only by naming someone as an admin of an HR Workspace, which limits it to that HR
+    // Workspace's people. Granted here it would have no limit, so it is refused.
+    if (roleKeys.includes('hr_workspace_admin')) throw Errors.badRequest('role_from_hr_workspace', 'HR Workspace Admin is given on the HR Workspace itself (Organization > HR Workspaces > Admins).');
     const subject = await this.authz.subject(tx);
     const isOwner = subject.grants.some((g) => g.roleKey === 'tenant_owner');
     if (roleKeys.includes('tenant_owner') && !isOwner) throw Errors.forbidden('Only a workspace owner can grant the owner role');

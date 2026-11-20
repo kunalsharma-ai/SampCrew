@@ -81,7 +81,7 @@ export interface MeResponse {
    * Modules the plan includes that SAMPLEDGE switched off for the workspace (workspace_off), for this member
    * (member_blocked) or in the app this session uses (channel_off).
    */
-  featureBlocks: Record<string, 'workspace_off' | 'member_blocked' | 'channel_off' | 'admin_off'>;
+  featureBlocks: Record<string, 'workspace_off' | 'member_blocked' | 'channel_off' | 'admin_off' | 'hr_workspace_off' | 'hr_member_off'>;
   /** The app this session was opened in. */
   client: 'web' | 'mobile' | 'api';
   /** Permissions SAMPLEDGE switched off for the whole workspace: no role can grant them. */
@@ -92,6 +92,19 @@ export interface MeResponse {
   tenants: { id: string; name: string; slug: string }[];
   /** This person's own employee record in the workspace, if their login is linked to one, for their photo. */
   employee: { id: string; photoUpdatedAt: string | null } | null;
+  /**
+   * The levels of the company this person works at, which decide the products they can switch between: the Super
+   * Workspace (company-wide administrators), the HR Workspaces they run, and their own Employee Workspace.
+   */
+  levels: {
+    super: boolean;
+    hrWorkspaces: { id: string; name: string; status: string }[];
+    /** Company-wide HR (an HR Admin not limited to HR Workspaces) also works at the HR level, for the central group. */
+    companyHr: boolean;
+    employee: boolean;
+    /** The HR Workspace looking after this person's own employee record (null: the central group). */
+    ownHrWorkspace: { id: string; name: string } | null;
+  };
 }
 
 /**

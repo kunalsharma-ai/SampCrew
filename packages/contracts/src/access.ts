@@ -35,7 +35,11 @@ export const memberAccessQuery = z.object({
 });
 
 /** Why a module is unavailable to the current member; returned by /me so the apps can explain it. */
-export type FeatureBlockReason = 'not_in_plan' | 'workspace_off' | 'member_blocked' | 'channel_off' | 'admin_off';
+export type FeatureBlockReason = 'not_in_plan' | 'workspace_off' | 'member_blocked' | 'channel_off' | 'admin_off'
+  /** The person's HR Workspace was not given the module by the Super Workspace. */
+  | 'hr_workspace_off'
+  /** The person's HR Workspace admins (or the Super Workspace) did not give the module to them. */
+  | 'hr_member_off';
 
 /** The two apps people use SampCrew through. API keys and integrations are not affected by app switches. */
 export const APP_CHANNELS = ['web', 'mobile'] as const;

@@ -162,6 +162,11 @@ export const createEmployeeInput = placementInput
     openingLeaveBalances: z.array(openingLeaveBalance).max(30).optional(),
     /** Company assets handed to them now (laptop, ID card...). Each must be available; they are asked to acknowledge it. */
     assetIds: z.array(z.uuid()).max(20).optional(),
+    /**
+     * The HR Workspace that looks after them. Null: the company's central group (Super Workspace only). Left out, an
+     * HR Workspace admin's own HR Workspace (when they run exactly one), or the central group.
+     */
+    hrWorkspaceId: z.uuid().nullable().optional(),
   })
   .refine((v) => !v.workEmail || !v.personalEmail || v.workEmail !== v.personalEmail, { message: 'Use their work email here, not their personal email', path: ['workEmail'] })
   .superRefine((v, ctx) => { const m = dateOfBirthError(v.dateOfBirth, v.dateOfJoining); if (m) ctx.addIssue({ code: 'custom', message: m, path: ['dateOfBirth'] }); })

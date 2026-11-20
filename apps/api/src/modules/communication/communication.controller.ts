@@ -246,6 +246,13 @@ export class CommunicationController {
     return this.comm.saveGroup(id, body);
   }
 
+  @Post('groups/:id/chat')
+  @RequirePermission('helpdesk:manage')
+  @Doc({ summary: "Open the group's chat (made with the group's members the first time)" })
+  groupChat(@Param('id', UuidPipe) id: string) {
+    return this.chat.groupChat(id);
+  }
+
   @Delete('groups/:id')
   @RequirePermission('helpdesk:manage')
   @Doc({ summary: 'Remove a group' })

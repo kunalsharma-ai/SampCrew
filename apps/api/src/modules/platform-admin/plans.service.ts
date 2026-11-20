@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { FEATURES, isCoreFeature, LIMIT_KEYS, type PlanCreate, type PlanEntitlementsUpdate, type PlanUpdate } from '@crew/contracts';
+import { AccessControlsService } from './access-controls.service';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, type PlatformTx as Tx } from '../../platform/database/mongo.service';
@@ -26,6 +27,7 @@ export class PlansService {
     private readonly db: DatabaseService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationService,
+    private readonly access: AccessControlsService,
   ) {}
 
   list() {
@@ -111,7 +113,7 @@ export class PlansService {
    * Takes effect on the next request of every workspace on the plan.
    */
   async setEntitlements(key: string, input: PlanEntitlementsUpdate) {
-    return this.db.platform(async (tx) => {
+    const result = await this.db.platform(async (tx) => {
       const plan = await this.plan(tx, key);
       const unknown = input.features.filter((f) => !BOOLEAN_KEYS.has(f));
       if (unknown.length) throw Errors.badRequest('unknown_feature', `Unknown module: ${unknown.join(', ')}`);
@@ -134,6 +136,8 @@ export class PlansService {
       }
       await tx.collection('plans').updateOne({ id: plan.id }, { $set: { customised_at: new Date(), customised_by_admin_id: requestContext.platformActor().adminId } });
       const affected = await tx.collection('subscriptions').count({ plan_id: plan.id, status: { $in: LIVE } });
+      const changed = added.length || removed.length || Object.keys(limitChanges).length;
+      const tenantsOn = changed ? await tx.collection('subscriptions').distinct<string>('tenant_id', { plan_id: plan.id, status: { $in: LIVE } }) : [];
       await this.audit.record(tx, {
         tenantId: null, action: 'platform.plan_entitlements_changed', resourceType: 'plan', resourceId: key,
         changes: { added, removed, limits: limitChanges }, metadata: { workspaces: affected },
@@ -145,8 +149,11 @@ export class PlansService {
           await this.audit.record(tx, { tenantId: t.tenant_id, action: 'subscription.plan_contents_changed', resourceType: 'subscription', resourceId: t.tenant_id, changes: { plan: key, added, removed, limits: limitChanges } });
         }
       }
-      return { ok: true, added, removed, workspaces: affected };
+      return { ok: true, added, removed, workspaces: affected, tenantIds: tenantsOn };
     });
+    // Every HR Workspace in those companies is checked against what the plan now gives.
+    for (const t of result.tenantIds) await this.access.recalculate(t);
+    return { ok: result.ok, added: result.added, removed: result.removed, workspaces: result.workspaces };
   }
 
   async setArchived(key: string, archived: boolean) {

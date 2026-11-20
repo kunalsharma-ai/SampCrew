@@ -2,6 +2,7 @@ export * from './permissions';
 export * from './roles';
 export * from './features';
 export * from './access';
+export * from './hierarchy';
 export * from './schemas/common';
 export * from './phone';
 export * from './schemas/auth';

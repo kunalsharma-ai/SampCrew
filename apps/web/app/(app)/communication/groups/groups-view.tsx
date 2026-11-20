@@ -1,15 +1,15 @@
 'use client';
 import { Alert, Badge, Button, Card, Dialog, EmptyState, Field, Input } from '@crew/ui';
-import { Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { MessagesSquare, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { archiveGroupAction, saveGroupAction } from '../actions';
+import { archiveGroupAction, groupChatAction, saveGroupAction } from '../actions';
 import { PeoplePicker } from '../people-picker';
 import type { Group } from '../types';
 
 type Editing = { id: string | null; name: string; description: string; members: { membershipId: string; name: string | null }[] };
 
-/** HR's own lists of people, used as an audience for emails and announcements. */
+/** HR's own lists of people: an audience for emails and announcements, and a group chat with everyone on the list. */
 export function GroupsView({ groups }: { groups: Group[] }) {
   const router = useRouter();
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -41,6 +41,14 @@ export function GroupsView({ groups }: { groups: Group[] }) {
                 </div>
               </div>
               <p className="mt-2 text-xs text-fg-muted">{g.members.length} {g.members.length === 1 ? 'person' : 'people'}: {g.members.slice(0, 5).map((m) => m.name ?? 'Unnamed').join(', ')}{g.members.length > 5 ? ' and others' : ''}</p>
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                <Button size="sm" variant="secondary" disabled={pending} data-testid="group-chat"
+                  onClick={() => start(async () => { const r = await groupChatAction(g.id); if (r.ok && r.data) router.push(`/communication/chat/${r.data.id}`); else if (!r.ok) setMsg({ tone: 'danger', text: r.message }); })}>
+                  <MessagesSquare className="size-3.5" /> {g.chatConversationId ? 'Open group chat' : 'Start group chat'}
+                </Button>
+                <a className="inline-flex items-center rounded-md px-2 text-xs font-medium text-accent hover:underline" href={`/communication/emails/new?group=${g.id}`}>Email this group</a>
+                <a className="inline-flex items-center rounded-md px-2 text-xs font-medium text-accent hover:underline" href={`/announcements/manage/new?group=${g.id}`}>Announce to it</a>
+              </div>
             </Card>
           ))}
         </div>

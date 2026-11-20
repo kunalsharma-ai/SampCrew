@@ -87,6 +87,14 @@ export async function saveGroupAction(id: string | null, body: { name: string; d
   return r;
 }
 
+/** Opens the group's chat (made the first time) and returns its id, so the page can go straight to it. */
+export async function groupChatAction(id: string) {
+  const r = await act(() => api<{ id: string; created: boolean }>(`/communication/groups/${id}/chat`, { method: 'POST' }), 'Group chat opened.');
+  revalidatePath('/communication/groups');
+  revalidatePath('/communication/chat');
+  return r;
+}
+
 export async function archiveGroupAction(id: string) {
   const r = await act(() => api(`/communication/groups/${id}`, { method: 'DELETE' }), 'Group removed.');
   revalidatePath('/communication/groups');

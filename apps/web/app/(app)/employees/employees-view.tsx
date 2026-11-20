@@ -66,6 +66,7 @@ interface Props {
   devices: DeviceOption[] | null;
   leavePolicies: LeavePolicyOption[] | null;
   availableAssets: AssetOption[] | null;
+  hrWorkspaces: { options: { id: string; name: string }[]; central: boolean } | null;
   canManageOrg: boolean;
   canAttendance: boolean;
   canConfigureShifts: boolean;
