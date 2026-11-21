@@ -34,11 +34,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   if (!me.tenant.setupCompletedAt && can(me, 'org:manage') && !(await cookies()).get('crew_setup_later')) redirect('/setup');
 
   const level = designLevelOf(me.levels);
-  const seesWorkforce = level !== 'employee' && (me.permissions['employees:read'] ?? 'own') !== 'own';
+  // Anyone who looks after more than their own record: HR Workspace admins, the Super Workspace, and managers (their team).
+  const seesWorkforce = (me.permissions['employees:read'] ?? 'own') !== 'own';
+  const workforceTab = seesWorkforce ? [{ key: 'workforce', label: level === 'super' ? 'Workforce' : level === 'hr' ? 'My workforce' : 'My team' }] : [];
+  const myDay = me.employee ? [{ key: 'me', label: 'My day' }] : [];
+  // A manager at the Employee Workspace level starts on their own day, with their team one tab away.
   const views = [
     ...(level === 'super' && me.levels?.super ? [{ key: 'organization', label: 'Organization' }] : []),
-    ...(seesWorkforce ? [{ key: 'workforce', label: level === 'super' ? 'Workforce' : 'My workforce' }] : []),
-    ...(me.employee ? [{ key: 'me', label: 'My day' }] : []),
+    ...(level === 'employee' ? [...myDay, ...workforceTab] : [...workforceTab, ...myDay]),
   ];
   const fallback = sp.hrWorkspace && views.some((v) => v.key === 'workforce') ? 'workforce' : (views[0]?.key ?? 'me');
   const view = views.some((v) => v.key === sp.view) ? sp.view! : fallback;

@@ -41,14 +41,18 @@ const OFF = new Set(['holiday', 'weekly_off', 'not_joined']);
 /** Beyond the member's own record: a manager, HR or Super Workspace view rather than self-service. */
 const wide = (s: Subject, permission: string) => grantsFor(s, permission).some((g) => g.scope !== 'own');
 const isSuper = (s: Subject) => s.grants.some((g) => g.roleKey === 'super_workspace');
-/** HR Workspaces named on the subject's limited grants; null when a grant covers the whole company. */
+/**
+ * HR Workspaces named on the subject's grants; null when a grant covers the whole company (or a legal entity) with no
+ * HR Workspace limit. A manager's team or department grant covers no HR Workspace, so it adds none.
+ */
 function hrWorkspacesOf(s: Subject, permission: string): string[] | null {
   // A person's grant over their own record (every employee has one) says nothing about whom they look after.
   const grants = grantsFor(s, permission).filter((g) => g.scope !== 'own');
-  if (!grants.length) return [];
-  if (grants.some((g) => !g.constraints.hrWorkspaceIds?.length)) return null;
+  if (grants.some((g) => (g.scope === 'tenant' || g.scope === 'entity') && !g.constraints.hrWorkspaceIds?.length)) return null;
   return [...new Set(grants.flatMap((g) => g.constraints.hrWorkspaceIds ?? []))];
 }
+/** How a person without HR Workspace grants is told whom the workforce view covers. */
+const narrowLabel = (s: Subject, permission: string) => (grantsFor(s, permission).some((g) => g.scope === 'department') ? 'Your department' : 'Your team');
 
 /** Audit actions an employee sees in Recent activity, with how they read. */
 const ACTIVITY: [RegExp, string, string | null][] = [
@@ -295,7 +299,7 @@ export class HomeService {
     ]);
     const label = isSuper(s) && allowed === null
       ? (q.hrWorkspaceId ? (q.hrWorkspaceId === 'central' ? 'Central group' : spaces.find((w) => w.id === q.hrWorkspaceId)!.name) : 'Whole company')
-      : allowed?.length ? (spaces.length === 1 ? spaces[0]!.name : `${spaces.length} HR Workspaces`) : allowed === null ? 'Whole company' : 'Your team';
+      : allowed?.length ? (spaces.length === 1 ? spaces[0]!.name : `${spaces.length} HR Workspaces`) : allowed === null ? 'Whole company' : narrowLabel(s, wide(s, 'employees:read') ? 'employees:read' : 'attendance:read');
     return {
       people, label, spaces,
       options: {
