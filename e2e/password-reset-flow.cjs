@@ -198,9 +198,11 @@ function serveMobile() {
       await m.getByTestId('forgot-confirm-password').fill(NEW_PASSWORD);
       await shot(m, '07-phone-enter-code');
       await m.getByTestId('forgot-save').click();
+      // "login-info" already shows the "code sent" note, so wait for the code form to close instead.
+      await m.getByTestId('forgot-save').waitFor({ state: 'detached', timeout: 20000 });
       await m.getByTestId('login-info').waitFor();
       await shot(m, '08-phone-password-changed');
-      await m.getByLabel('Password').fill(NEW_PASSWORD);
+      await m.getByLabel('Password', { exact: true }).fill(NEW_PASSWORD);
       await m.getByRole('button', { name: 'Sign in', exact: true }).click();
       await m.waitForURL((u) => u.pathname !== '/login', { timeout: 20000 });
       const row = await db.collection('password_resets').findOne({ email: phoneEmail, status: 'completed' });

@@ -239,10 +239,11 @@ function MonthCalendar({ calendar }: { calendar: MyCalendar }) {
                 onClick={() => setSelected(d.date)}
                 className={cn(
                   'flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg text-sm tabular transition-colors motion-reduce:transition-none',
-                  d.dayType === 'weekly_off' && 'text-fg-subtle',
-                  d.dayType === 'holiday' && 'bg-success/10 text-success',
                   isToday && 'ring-2 ring-accent',
-                  selected === d.date ? 'bg-accent text-accent-fg' : 'hover:bg-bg-subtle',
+                  // cn does not merge classes, so the selected colours must not sit next to the day-type ones.
+                  selected === d.date
+                    ? 'bg-accent text-accent-fg'
+                    : cn('hover:bg-bg-subtle', d.dayType === 'weekly_off' && 'text-fg-subtle', d.dayType === 'holiday' && 'bg-success/10 text-success'),
                 )}
               >
                 {n}
