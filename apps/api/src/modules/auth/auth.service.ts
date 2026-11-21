@@ -353,25 +353,44 @@ export class AuthService {
     return rows.map((r) => ({ id: r.id, client: r.client, ip: r.ip ?? null, userAgent: r.user_agent ?? null, createdAt: r.created_at, expiresAt: r.expires_at, current: r.id === actor.sessionId }));
   }
 
-  /** Recent sign-ins (sessions opened) in this workspace, newest first. Never includes tokens. */
+  /**
+   * Recent sign-ins in this workspace, newest first. Each sign-in is one session family (a refresh replaces the row
+   * but not the sign-in), so the time is when the person signed in and the status is that of its latest row. Never
+   * includes tokens.
+   */
   async signIns() {
     const actor = requestContext.tenantActor();
     const now = new Date();
     const rows = await this.db.platform((tx) =>
-      tx.collection('sessions').find({ user_id: actor.userId, tenant_id: actor.tenantId }, { sort: { created_at: -1 }, limit: 20, projection: { id: 1, client: 1, ip: 1, user_agent: 1, created_at: 1, expires_at: 1, revoked_at: 1, revoked_reason: 1, mfa: 1 } }),
+      tx.collection('sessions').find(
+        { user_id: actor.userId, tenant_id: actor.tenantId },
+        { sort: { created_at: -1 }, limit: 400, projection: { id: 1, family_id: 1, client: 1, ip: 1, user_agent: 1, created_at: 1, expires_at: 1, revoked_at: 1, revoked_reason: 1 } },
+      ),
     );
-    const list = rows.map((r) => ({
-      id: r.id as string,
-      client: r.client as string,
-      ip: (r.ip as string | null) ?? null,
-      userAgent: (r.user_agent as string | null) ?? null,
-      at: r.created_at as Date,
-      current: r.id === actor.sessionId,
-      status: r.revoked_at ? 'signed_out' : (r.expires_at as Date) <= now ? 'expired' : 'active',
-      endedAt: (r.revoked_at as Date | null) ?? null,
-    }));
-    // The previous sign-in: the latest one other than this session.
-    return { current: list.find((r) => r.current)?.at ?? null, previous: list.find((r) => !r.current)?.at ?? null, signIns: list };
+    const currentFamily = (rows.find((r) => r.id === actor.sessionId)?.family_id as string | undefined) ?? actor.sessionId;
+    const families = new Map<string, Record<string, unknown>[]>();
+    for (const r of rows) {
+      const key = (r.family_id as string | undefined) ?? (r.id as string);
+      families.set(key, [...(families.get(key) ?? []), r]);
+    }
+    const list = [...families.entries()].slice(0, 20).map(([family, group]) => {
+      const latest = group[0]!;
+      const first = group[group.length - 1]!;
+      const ended = latest.revoked_at && latest.revoked_reason !== 'rotated' ? (latest.revoked_at as Date) : null;
+      return {
+        id: family,
+        client: latest.client as string,
+        ip: (first.ip as string | null) ?? null,
+        userAgent: (first.user_agent as string | null) ?? null,
+        at: first.created_at as Date,
+        current: family === currentFamily,
+        status: latest.revoked_at ? 'signed_out' : (latest.expires_at as Date) <= now ? 'expired' : 'active',
+        endedAt: ended,
+      };
+    });
+    const current = list.find((r) => r.current) ?? null;
+    // The previous sign-in: the latest one other than this one.
+    return { current, previous: list.find((r) => !r.current) ?? null, signIns: list };
   }
 
   async signOutOthers() {

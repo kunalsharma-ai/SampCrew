@@ -8,6 +8,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { appRoute } from '../src/lib/format';
 import { configureForeground } from '../src/lib/push';
 import { AppearanceProvider, useAppearanceTheme } from '../src/lib/appearance';
+import { BadgesProvider } from '../src/lib/badges';
+import { MobileAppProvider } from '../src/lib/mobile-app';
 import { API_URL, SessionProvider, useSession } from '../src/lib/session';
 import { hostOf } from '../src/lib/startup';
 import { screenHelp, useTheme } from '../src/ui';
@@ -114,6 +116,17 @@ function Gate() {
       <Stack.Screen name="appraisal/index" options={{ title: 'Appraisal', ...screenHelp('appraisal') }} />
       <Stack.Screen name="appraisal/[id]" options={{ title: 'Appraisal', ...screenHelp('appraisal.form') }} />
       <Stack.Screen name="profile" options={{ title: 'My profile', ...screenHelp('profile') }} />
+      <Stack.Screen name="chat/[id]" options={{ title: 'Conversation', ...screenHelp('chat.conversation') }} />
+      <Stack.Screen name="chat/new" options={{ title: 'New conversation', ...screenHelp('chat.new') }} />
+      <Stack.Screen name="email/[id]" options={{ title: 'Email', ...screenHelp('email.read') }} />
+      <Stack.Screen name="email/compose" options={{ title: 'New email', ...screenHelp('email.compose') }} />
+      <Stack.Screen name="attendance/history" options={{ title: 'Attendance history', ...screenHelp('attendance.history') }} />
+      <Stack.Screen name="attendance/team" options={{ title: 'Team attendance', ...screenHelp('attendance.team') }} />
+      <Stack.Screen name="announcements/index" options={{ title: 'Announcements', ...screenHelp('announcements') }} />
+      <Stack.Screen name="payslips/index" options={{ title: 'Payslips', ...screenHelp('payslips') }} />
+      <Stack.Screen name="directory" options={{ title: 'Directory', ...screenHelp('directory') }} />
+      <Stack.Screen name="sessions" options={{ title: 'Login and sessions', ...screenHelp('sessions') }} />
+      <Stack.Screen name="search" options={{ title: 'Search', ...screenHelp('search') }} />
     </Stack>
   );
 }
@@ -128,8 +141,12 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <SessionProvider>
         <AppearanceProvider>
-          <ThemedStatusBar />
-          <Gate />
+          <MobileAppProvider>
+            <BadgesProvider>
+              <ThemedStatusBar />
+              <Gate />
+            </BadgesProvider>
+          </MobileAppProvider>
         </AppearanceProvider>
       </SessionProvider>
     </SafeAreaProvider>

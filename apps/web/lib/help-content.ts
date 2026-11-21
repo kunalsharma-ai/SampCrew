@@ -154,6 +154,12 @@ export const WEB_HELP: HelpContent = {
       how: 'Filter by category, unread or priority, search, mark read or unread, and open a notice to go to its record.',
       where: 'Also reachable from the bell. Change what you are told about in Notification settings.',
     },
+    '/settings/mobile-app': {
+      title: 'Mobile app',
+      what: 'Decide what the one SampCrew mobile app shows to Super Workspace, HR Workspace and Employee Workspace people: modules, features, menu, quick actions and home cards.',
+      how: 'Switch modules and features, choose levels and menu places, preview each level, save a draft, then publish. Restore an older version from History.',
+      where: 'Phones follow the published version within a minute. Hiding never deletes data and never changes the Web Portal.',
+    },
     '/settings/notifications': {
       title: 'Notification settings',
       what: 'What you are told about in SampCrew and by email, per category, and whether new notices make a sound or a pop-up.',
@@ -1280,6 +1286,15 @@ export const WEB_HELP: HelpContent = {
   },
 
   routes: {
+    '/settings/mobile-app': {
+      sections: {
+        Preview: { what: 'A read-only phone showing what a level gets from your draft: bottom bar, More menu, quick actions and home cards.', how: 'Pick Super, HR or Employee. Each person’s own permissions can hide more on their phone.' },
+        'Welcome line': { what: 'A short line under the greeting on every home screen.', how: 'Type it, save the draft and publish. Leave it empty for none.' },
+        'Quick actions': { what: 'The big buttons at the top of the phone’s home screen.', how: 'Switch them on, choose levels and order. Up to 8 show; each needs its module on.' },
+        'Home widgets': { what: 'The cards on the phone’s home screen, such as today’s attendance or leave balance.', how: 'Switch them on, choose levels and order. Up to 10 show.' },
+        'Published versions': { what: 'Every mobile app configuration you published, who did and what changed.', how: 'Restore one to publish it again as a new version.' },
+      },
+    },
     '/tasks': {
       sections: {
         'HR tasks': { what: 'Tasks HR gave you that are still open or waiting for review.', how: 'Open one to work on it. Document tasks are done once HR verifies your upload.' },

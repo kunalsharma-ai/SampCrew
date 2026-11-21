@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -18,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '../lib/api';
 import { useAppearanceTheme } from '../lib/appearance';
+import { useAppStale } from '../lib/mobile-app';
 import { alpha, type MobileTheme, NEON_TILES, type TileTone } from '../lib/theme';
 import { money } from '../lib/format';
 import type { HelpKey } from '../lib/help';
@@ -110,9 +112,15 @@ const STARS: [number, number, number][] = [
 /** Scrollable screen with pull-to-refresh. */
 export function Screen({ children, onRefresh, refreshing = false }: { children: ReactNode; onRefresh?: () => void; refreshing?: boolean }) {
   const t = useTheme();
+  const offline = useAppStale();
   return (
     <SafeAreaView edges={['left', 'right']} style={{ flex: 1, backgroundColor: t.bg }}>
       <Backdrop />
+      {offline && (
+        <View testID="network-banner" accessibilityRole="alert" style={{ backgroundColor: t.warnBg, paddingHorizontal: 14, paddingVertical: 8 }}>
+          <RNText style={{ color: t.warn, fontSize: 13 }}>Offline. Showing what was last loaded; punches you make are kept on this phone and sent later.</RNText>
+        </View>
+      )}
       <ScrollView
         contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
@@ -176,6 +184,14 @@ export function Hero({ eyebrow, title, subtitle, chip, testID }: { eyebrow?: str
   );
 }
 
+/** An icon by Ionicons name ("time", "mail"), or a text glyph for the older call sites ("◷"). */
+function Glyph({ icon, color, size }: { icon: string; color: string; size: number }) {
+  if (/^[a-z0-9-]+$/.test(icon) && icon in Ionicons.glyphMap) {
+    return <Ionicons name={icon as keyof typeof Ionicons.glyphMap} size={size} color={color} accessibilityElementsHidden importantForAccessibility="no" aria-hidden />;
+  }
+  return <RNText aria-hidden style={{ color, fontSize: size }}>{icon}</RNText>;
+}
+
 /**
  * A KPI tile. Neon: a saturated gradient with white text (every stop checked at 4.5:1). Classic: a plain card with a
  * tinted value. Tappable when it leads somewhere; the visible label is part of its accessible name.
@@ -190,7 +206,7 @@ export function Tile({ value, label, hint, tone, icon, onPress, testID }: { valu
       <Row style={{ gap: 10 }}>
         {icon ? (
           <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: t.neon ? 'rgba(255,255,255,0.18)' : alpha(c1, 0.12) }}>
-            <RNText style={{ color: t.neon ? '#ffffff' : c1, fontSize: 16 }}>{icon}</RNText>
+            <Glyph icon={icon} color={t.neon ? '#ffffff' : c1} size={17} />
           </View>
         ) : null}
         <RNText style={{ flexShrink: 1, color: t.neon ? fg : c1, fontSize: value.length > 7 ? 19 : 26, fontWeight: '800', letterSpacing: -0.5 }} numberOfLines={2}>{value}</RNText>
@@ -239,13 +255,13 @@ export function QuickActions({ actions }: { actions: { label: string; icon: stri
   const t = useTheme();
   if (!actions.length) return null;
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }} accessibilityRole="toolbar" accessibilityLabel="Quick actions">
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 14 }} accessibilityRole="toolbar" accessibilityLabel="Quick actions">
       {actions.map((a) => {
         const [c1, c2] = NEON_TILES[a.tone];
         return (
-          <Pressable key={a.label} testID={a.testID} accessibilityRole="button" accessibilityLabel={a.label} onPress={a.onPress} style={({ pressed }) => ({ flex: 1, alignItems: 'center', gap: 6, opacity: pressed ? 0.7 : 1 })}>
+          <Pressable key={a.label} testID={a.testID} accessibilityRole="button" accessibilityLabel={a.label} onPress={a.onPress} style={({ pressed }) => ({ width: actions.length < 4 ? `${100 / actions.length}%` : '25%', alignItems: 'center', gap: 6, paddingHorizontal: 2, opacity: pressed ? 0.7 : 1 })}>
             <View style={[{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' }, t.neon ? { ...gradient(`linear-gradient(135deg, ${c1}, ${c2})`, c1), ...glow(c1, 0.5, 8, 18) } : { backgroundColor: alpha(c1, 0.12) }]}>
-              <RNText style={{ color: t.neon ? '#ffffff' : c1, fontSize: 20 }}>{a.icon}</RNText>
+              <Glyph icon={a.icon} color={t.neon ? '#ffffff' : c1} size={21} />
             </View>
             <Text size={12} weight="600" style={{ textAlign: 'center' }} numberOfLines={2}>{a.label}</Text>
           </Pressable>
@@ -433,20 +449,25 @@ export function errorText(e: unknown) {
  * Loads data from the API for a screen. Keeps the last good data when a reload fails (for example offline)
  * and reports the error alongside it.
  */
-export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []) {
-  const [data, setData] = useState<T | null>(null);
+export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = [], initial?: T | null) {
+  const [data, setData] = useState<T | null>(initial ?? null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // A screen that was left must not be updated by a request that finishes later.
+  const alive = useRef(true);
+  useEffect(() => () => void (alive.current = false), []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const run = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await load());
+      const v = await load();
+      if (!alive.current) return;
+      setData(v);
       setError(null);
     } catch (e) {
-      setError(errorText(e));
+      if (alive.current) setError(errorText(e));
     } finally {
-      setLoading(false);
+      if (alive.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

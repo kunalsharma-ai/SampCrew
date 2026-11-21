@@ -6,8 +6,9 @@ import { caseStatus, caseStatusHandler, moveLabel, target } from '../../src/lib/
 import { useSession } from '../../src/lib/session';
 import type { CaseDetail } from '../../src/lib/types';
 import { Badge, Button, Card, Choice, Field, fmt, Loading, Notice, Row, Screen, Text, useLoad, useTheme, CardTitle } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
-export default function CaseScreen() {
+function CaseScreenBody() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api } = useSession();
   const t = useTheme();
@@ -120,5 +121,13 @@ export default function CaseScreen() {
       )}
       {c.satisfaction !== null && <Text muted size={13}>{`Rated ${c.satisfaction} out of 5.`}</Text>}
     </Screen>
+  );
+}
+
+export default function CaseScreen() {
+  return (
+    <ModuleGate module="help" feature="cases">
+      <CaseScreenBody />
+    </ModuleGate>
   );
 }

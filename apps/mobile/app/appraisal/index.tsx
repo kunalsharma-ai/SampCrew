@@ -3,9 +3,10 @@ import { appraisalStage, reviewStage } from '../../src/lib/labels';
 import { useSession } from '../../src/lib/session';
 import type { AppraisalBrief, AppraisalReviewRow } from '../../src/lib/types';
 import { Badge, Card, CardTitle, Empty, fmt, ListItem, Loading, Meter, Notice, Screen, Text, useLoad, useReloadOnFocus } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
 /** My appraisals (the current one first, with what I need to do), then the ones I review as a manager or HR. */
-export default function AppraisalsScreen() {
+function AppraisalsScreenBody() {
   const { api } = useSession();
   const router = useRouter();
   const { data, error, loading, reload } = useLoad(() => api.get<AppraisalBrief[]>('/appraisals/mine'), [api]);
@@ -61,5 +62,13 @@ export default function AppraisalsScreen() {
       {team.length > 0 && reviewList(team, 'manager', 'appraisal-team', 'My team', 'appraisal.team', '')}
       {reviews.data?.isHr && reviewList(hr, 'hr', 'appraisal-hr', 'HR review', 'appraisal.hr', 'Appraisals reach HR after the manager submits.')}
     </Screen>
+  );
+}
+
+export default function AppraisalsScreen() {
+  return (
+    <ModuleGate module="appraisal">
+      <AppraisalsScreenBody />
+    </ModuleGate>
   );
 }

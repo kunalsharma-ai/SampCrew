@@ -151,6 +151,7 @@ export const NAV: NavGroup[] = [
     label: 'Administration',
     items: [
       { href: '/settings/hr-admin', label: 'Super Workspace Admin', icon: 'layout-grid', permission: 'tenant:read' },
+      { href: '/settings/mobile-app', label: 'Mobile app', icon: 'smartphone', permission: 'mobileapp:manage', superOnly: true },
       { href: '/settings/roles', label: 'Access levels', icon: 'shield', permission: 'roles:read' },
       { href: '/settings/custom-fields', label: 'Custom fields', icon: 'text-cursor-input', permission: 'fields:manage' },
       { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },

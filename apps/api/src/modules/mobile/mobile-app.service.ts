@@ -11,6 +11,7 @@ import { MongoService as DatabaseService, type TenantTx } from '../../platform/d
 import { EntitlementsService, loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { mobileLevelOf, publishedMobileConfig } from '../../platform/entitlements/mobile-access';
 import { Errors } from '../../platform/http/errors';
+import { MailerService } from '../../platform/notify/mailer.service';
 
 const USAGE_DAYS = 30;
 const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : null);
@@ -28,18 +29,21 @@ export class MobileAppService {
     private readonly audit: AuditService,
     private readonly authz: AuthzService,
     private readonly entitlements: EntitlementsService,
+    private readonly mailer: MailerService,
   ) {}
 
   /** The app for the signed-in person: both layers applied. The phone asks for this on start, on return and every minute. */
   async mine(knownVersion?: number) {
     const actor = requestContext.tenantActor();
+    // Whether email can be sent at all, so the phone shows a setup state instead of an empty inbox. Never the settings.
+    const email = await this.mailer.isConfigured().catch(() => false);
     return this.db.tenant(async (tx) => {
       const pub = await publishedMobileConfig(tx);
       const level = await mobileLevelOf(tx, actor.membershipId);
       const ent = await this.entitlements.current(tx);
       const perms = effectivePermissions(await this.authz.subject(tx));
       const app = resolveMobileApp({ ...pub, level, features: ent.features, can: (p) => Boolean(perms[p]) });
-      return { ...app, unchanged: knownVersion !== undefined && knownVersion === pub.version };
+      return { ...app, setup: { email }, unchanged: knownVersion !== undefined && knownVersion === pub.version };
     });
   }
 

@@ -128,7 +128,17 @@ async function signIn(p, email, { code } = {}) {
   }
 }
 
-const tab = (p, name) => p.getByRole('tab', { name }).or(p.getByRole('link', { name })).first().click();
+/**
+ * Opens a module from the bottom bar, or from More when the Super Workspace placed it there (the default bar holds
+ * Attendance, Chat and Documents; Leave and Ask HR are in More).
+ */
+const tab = async (p, name, moreName = name) => {
+  const named = (n) => new RegExp(`^\\W*${n}$`);
+  const inBar = p.getByRole('tab', { name: named(name) });
+  if (await inBar.isVisible().catch(() => false)) return inBar.click();
+  await p.getByRole('tab', { name: named('More') }).click();
+  await p.getByTestId('more-list').getByRole('link', { name: moreName, exact: true }).click();
+};
 
 const shot = async (p, e) => {
   await p.screenshot({ path: process.env.SHOT ?? '/tmp/mobile-fail.png', fullPage: true }).catch(() => {});
@@ -240,7 +250,7 @@ function futureWeekday(taken) {
     ok('the QA lead sees the leave approved');
 
     // 4. Helpdesk conversation.
-    await tab(p, 'Ask HR');
+    await tab(p, 'Ask HR', 'Help and support');
     await p.getByTestId('new-case').click();
     await p.getByRole('radio', { name: 'Pay and payslips' }).click();
     const subject = `Mobile e2e ${Date.now()}: shift allowance missing`;

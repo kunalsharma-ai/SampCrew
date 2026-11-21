@@ -6,6 +6,7 @@ export interface Punch {
   source: string;
   geofence: string | null;
   flags?: string[];
+  purpose?: 'work' | 'break' | null;
 }
 export interface Today {
   employeeId: string;
@@ -15,6 +16,8 @@ export interface Today {
   dayType: string;
   holidayName: string | null;
   nextDirection: 'in' | 'out';
+  /** Working, on a break, checked out, or not started today. */
+  state?: 'working' | 'on_break' | 'checked_out' | 'not_started';
   punches: Punch[];
   day: { status: string; workedMinutes: number; explanation: string[]; flags: string[] } | null;
   policy?: { requireLocation?: boolean; geofence?: string };
@@ -183,3 +186,106 @@ export interface MyProfile {
 }
 export interface RewardResult { id: string; name: string; kind: string; description: string | null; icon: string; status: 'earned' | 'on_track' | 'missed' | 'not_eligible'; done: number; total: number; reason: string | null }
 export interface MyRewards { month: string; complete: boolean; rewards: RewardResult[] }
+
+export interface AttendanceDay {
+  workDate: string;
+  status: string;
+  firstIn: string | null;
+  lastOut: string | null;
+  workedMinutes: number;
+  breakMinutes: number;
+  lateMinutes: number;
+  overtimeMinutes: number;
+  shiftName: string | null;
+}
+export interface AttendanceRange {
+  from: string;
+  to: string;
+  summary: { present: number; halfDay: number; absent: number; missingPunch: number; onLeave: number; late: number; workedMinutes: number; overtimeMinutes: number };
+  days: AttendanceDay[];
+}
+export interface TeamAttendance {
+  date: string;
+  summary: Record<string, number>;
+  rows: (AttendanceDay & { employeeId: string; employeeName: string; employeeCode: string; department: string | null; location: string | null })[];
+}
+
+export interface CommFile { id: string; name: string; type: string; size: number; href: string }
+export interface Conversation {
+  id: string;
+  kind: 'direct' | 'group' | 'department' | 'hr';
+  title: string;
+  subtitle: string | null;
+  memberCount: number;
+  lastMessage: { body: string; senderName: string | null; at: string } | null;
+  unread: number;
+  muted: boolean;
+  updatedAt: string;
+}
+export interface ChatMessage {
+  id: string;
+  senderMembershipId: string | null;
+  senderName: string | null;
+  body: string;
+  files: CommFile[];
+  createdAt: string;
+  deleted: boolean;
+  delivery: 'sent' | 'delivered' | 'read' | null;
+  system: boolean;
+}
+export interface ConversationDetail { conversation: Conversation & { asHr: boolean }; messages: ChatMessage[]; hasOlder: boolean }
+export interface Person { membershipId: string; name: string; department: string | null; designation: string | null }
+
+export interface InboxEmail { id: string; subject: string; html: string; sentAt: string | null; sentByName: string | null; files: CommFile[] }
+export interface SentEmail {
+  id: string;
+  subject: string;
+  status: 'draft' | 'sending' | 'sent' | 'partly_failed' | 'failed';
+  preview: string;
+  audienceLabel: string;
+  recipientCount: number | null;
+  sentCount: number | null;
+  failedCount: number | null;
+  updatedAt: string | null;
+  sentAt: string | null;
+}
+
+export interface EmployeeDocument {
+  id: string;
+  category: string;
+  title: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+  uploadedBy: string | null;
+  verificationStatus: string | null;
+}
+
+export interface LearningAssignment {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  format: string | null;
+  contentUrl: string | null;
+  durationMinutes: number | null;
+  pathTitle: string | null;
+  dueOn: string | null;
+  status: string;
+  startedAt: string | null;
+  completedOn: string | null;
+  overdue: boolean;
+  expired: boolean;
+}
+export interface Course {
+  id: string;
+  title: string;
+  description?: string | null;
+  format?: string | null;
+  durationMinutes?: number | null;
+  selfEnrol?: boolean;
+  myStatus: string | null;
+}
+
+export interface SignIn { id: string; client: string; ip: string | null; userAgent: string | null; at: string; current: boolean; status: 'active' | 'signed_out' | 'expired'; endedAt: string | null }
+export interface SignIns { current: SignIn | null; previous: SignIn | null; signIns: SignIn[] }

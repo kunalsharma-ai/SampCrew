@@ -69,6 +69,8 @@ export interface MobileModuleDef {
   /** Other modules this one needs. */
   requires?: readonly string[];
   defaultPlacement: MobilePlacement;
+  /** Whether the module can sit in the bottom bar (it has a main screen of its own there). */
+  tabbable?: boolean;
   defaultLevels?: Levels;
   features: readonly MobileFeatureDef[];
 }
@@ -80,7 +82,7 @@ export const MOBILE_MODULES = [
     features: [{ key: 'search', name: 'Search', description: 'Search people, messages, documents, learning and announcements the person can see.' }],
   },
   {
-    key: 'attendance', name: 'Attendance', icon: 'time', route: '/attendance', entitlement: 'attendance_basic.mine', permissionsAny: ['attendance:punch', 'attendance:read'], defaultPlacement: 'tab',
+    key: 'attendance', tabbable: true, name: 'Attendance', icon: 'time', route: '/attendance', entitlement: 'attendance_basic.mine', permissionsAny: ['attendance:punch', 'attendance:read'], defaultPlacement: 'tab',
     description: 'Check in and out (also offline), breaks, today’s hours, the month calendar and history.',
     features: [
       { key: 'punch', name: 'Check in and out', description: 'Record attendance from the phone, with the workplace’s location rules.', permissionsAny: ['attendance:punch'] },
@@ -93,7 +95,7 @@ export const MOBILE_MODULES = [
     ],
   },
   {
-    key: 'leave', name: 'Leave', icon: 'sunny', route: '/leave', entitlement: 'leave.requests', permissionsAny: ['leave:request', 'leave:read'], defaultPlacement: 'more',
+    key: 'leave', tabbable: true, name: 'Leave', icon: 'sunny', route: '/leave', entitlement: 'leave.requests', permissionsAny: ['leave:request', 'leave:read'], defaultPlacement: 'more',
     description: 'Balances and quotas, apply, track and cancel requests, and the leave calendar.',
     features: [
       { key: 'balance', name: 'Leave balance and quota', description: 'Entitlement, used, pending and available days for each leave type.' },
@@ -105,7 +107,7 @@ export const MOBILE_MODULES = [
     ],
   },
   {
-    key: 'chat', name: 'Chat', icon: 'chatbubbles', route: '/chat', entitlement: 'helpdesk.communication', permissionsAny: ['helpdesk:use'], defaultPlacement: 'tab',
+    key: 'chat', tabbable: true, name: 'Chat', icon: 'chatbubbles', route: '/chat', entitlement: 'helpdesk.communication', permissionsAny: ['helpdesk:use'], defaultPlacement: 'tab',
     description: 'One-to-one and group conversations with colleagues, with unread counts, read receipts and files.',
     features: [
       { key: 'direct', name: 'One-to-one messages', description: 'Message a colleague the person is allowed to reach.' },
@@ -115,7 +117,7 @@ export const MOBILE_MODULES = [
     ],
   },
   {
-    key: 'email', name: 'Email', icon: 'mail', route: '/email', entitlement: 'helpdesk.communication', permissionsAny: ['helpdesk:use'], defaultPlacement: 'more',
+    key: 'email', tabbable: true, name: 'Email', icon: 'mail', route: '/email', entitlement: 'helpdesk.communication', permissionsAny: ['helpdesk:use'], defaultPlacement: 'more',
     description: 'Work email sent through SampCrew: the inbox for everyone, and sent, drafts and compose for HR.',
     features: [
       { key: 'inbox', name: 'Inbox', description: 'Emails from HR the person was sent.' },
@@ -124,7 +126,7 @@ export const MOBILE_MODULES = [
     ],
   },
   {
-    key: 'documents', name: 'Documents', icon: 'document-text', route: '/documents', entitlement: 'documents', permissionsAny: ['documents:read'], defaultPlacement: 'tab',
+    key: 'documents', tabbable: true, name: 'Documents', icon: 'document-text', route: '/documents', entitlement: 'documents', permissionsAny: ['documents:read'], defaultPlacement: 'tab',
     description: 'The person’s own documents by category, with preview, download and upload where allowed.',
     features: [
       { key: 'mine', name: 'My documents', description: 'Personal and employment documents on the person’s own record.' },
@@ -133,7 +135,7 @@ export const MOBILE_MODULES = [
     ],
   },
   {
-    key: 'learning', name: 'Learning', icon: 'school', route: '/learning', entitlement: 'learning.mine', permissionsAny: ['learning:read'], defaultPlacement: 'more',
+    key: 'learning', tabbable: true, name: 'Learning', icon: 'school', route: '/learning', entitlement: 'learning.mine', permissionsAny: ['learning:read'], defaultPlacement: 'more',
     description: 'Assigned courses with due dates and progress, the course library, and completion.',
     features: [
       { key: 'assigned', name: 'My learning', description: 'Assigned and pending courses, due dates and status.' },
@@ -172,7 +174,7 @@ export const MOBILE_MODULES = [
     features: [{ key: 'mine', name: 'My payslips', description: 'Published payslips, month by month.' }],
   },
   {
-    key: 'help', name: 'Help and support', icon: 'help-buoy', route: '/help', entitlement: 'helpdesk.communication', permissionsAny: ['helpdesk:use'], defaultPlacement: 'more',
+    key: 'help', tabbable: true, name: 'Help and support', icon: 'help-buoy', route: '/helpdesk', entitlement: 'helpdesk.communication', permissionsAny: ['helpdesk:use'], defaultPlacement: 'more',
     description: 'Help articles and Ask HR cases.',
     features: [
       { key: 'articles', name: 'Help articles', description: 'Answers HR published.' },
@@ -185,7 +187,7 @@ export const MOBILE_MODULES = [
     features: [{ key: 'browse', name: 'Browse and search', description: 'Search colleagues by name, department or designation.' }],
   },
   {
-    key: 'profile', name: 'My profile', icon: 'person-circle', route: '/profile', entitlement: null, locked: true, defaultPlacement: 'more',
+    key: 'profile', tabbable: true, name: 'My profile', icon: 'person-circle', route: '/me', entitlement: null, locked: true, defaultPlacement: 'more',
     description: 'Own details, photo, change requests, appearance and notification settings, and sign-out.',
     features: [{ key: 'edit', name: 'Change requests', description: 'Ask HR to change own details.' }],
   },
@@ -219,10 +221,11 @@ export const MOBILE_QUICK_ACTIONS = [
   { key: 'email.open', name: 'Email', icon: 'mail', feature: 'email.inbox', route: '/email' },
   { key: 'learning.open', name: 'Learning', icon: 'school', feature: 'learning.assigned', route: '/learning' },
   { key: 'documents.open', name: 'Documents', icon: 'document-text', feature: 'documents.mine', route: '/documents' },
-  { key: 'approvals.open', name: 'Approvals', icon: 'checkmark-done', feature: 'approvals.decide', route: '/approvals', levels: ADMINS },
+  { key: 'approvals.open', name: 'Approvals', icon: 'checkmark-done', feature: 'approvals.decide', route: '/approvals' },
   { key: 'attendance.team', name: 'Team attendance', icon: 'people', feature: 'attendance.team', route: '/attendance/team', levels: ADMINS },
   { key: 'tasks.open', name: 'Tasks', icon: 'list', feature: 'tasks.mine', route: '/tasks' },
   { key: 'help.ask', name: 'Ask HR', icon: 'help-buoy', feature: 'help.cases', route: '/helpdesk/new' },
+  { key: 'search.open', name: 'Search', icon: 'search', feature: 'home.search', route: '/search' },
 ] as const satisfies readonly MobileShortcutDef[];
 
 export const MOBILE_WIDGETS = [
@@ -231,7 +234,7 @@ export const MOBILE_WIDGETS = [
   { key: 'attendance.team', name: 'Company attendance today', icon: 'people', feature: 'attendance.team', route: '/attendance/team', levels: ADMINS },
   { key: 'leave.balance', name: 'Leave balance', icon: 'pie-chart', feature: 'leave.balance', route: '/leave' },
   { key: 'leave.pending', name: 'Pending leave requests', icon: 'hourglass', feature: 'leave.history', route: '/leave' },
-  { key: 'approvals.pending', name: 'Waiting for my decision', icon: 'checkmark-done', feature: 'approvals.decide', route: '/approvals', levels: ADMINS },
+  { key: 'approvals.pending', name: 'Waiting for my decision', icon: 'checkmark-done', feature: 'approvals.decide', route: '/approvals' },
   { key: 'chat.recent', name: 'Recent messages', icon: 'chatbubbles', feature: 'chat.direct', route: '/chat' },
   { key: 'notifications.unread', name: 'Unread notifications', icon: 'notifications', feature: 'notifications.center', route: '/notifications' },
   { key: 'learning.assigned', name: 'Assigned learning', icon: 'school', feature: 'learning.assigned', route: '/learning' },
@@ -302,6 +305,9 @@ export const MOBILE_ROUTES: readonly MobileRoute[] = [
   { path: 'helpdesk/cases', owners: ['help.cases'] },
   { path: 'helpdesk', owners: ['help'] },
   { path: 'employees', methods: ['GET'], owners: ['directory'] },
+  // The person's own record and photos stay open with the profile, which is always on.
+  { path: 'employees/me', owners: ['profile'] },
+  { path: 'employees/*/photo', owners: ['profile'] },
   { path: 'me/sessions', owners: ['sessions'] },
   { path: 'me/sign-ins', owners: ['sessions.history'] },
 ];
@@ -425,6 +431,7 @@ export function validateMobileConfig(config: MobileAppConfig, available?: { feat
   const issues: MobileConfigIssue[] = [];
   for (const level of MOBILE_LEVELS) {
     const tabs = MODULES.filter((m) => m.key !== 'home' && config.modules[m.key]?.enabled && config.modules[m.key]?.levels[level] && config.modules[m.key]?.placement === 'tab');
+    for (const m of tabs) if (!m.tabbable) issues.push({ severity: 'error', module: m.key, message: `${m.name} cannot sit in the bottom bar. Put it in More.` });
     if (tabs.length > MOBILE_MAX_TABS) {
       issues.push({ severity: 'error', message: `${MOBILE_LEVEL_LABEL[level]}: the bottom bar holds ${MOBILE_MAX_TABS} modules besides Home and More, and ${tabs.length} are placed there (${tabs.map((m) => m.name).join(', ')}). Move some to More.` });
     }
@@ -503,6 +510,8 @@ export interface ResolvedMobileApp {
   more: string[];
   quickActions: ResolvedMobileShortcut[];
   widgets: ResolvedMobileShortcut[];
+  /** What the company has set up that a module needs (true or false only, never the settings themselves). */
+  setup?: { email: boolean };
 }
 
 /**
@@ -542,7 +551,7 @@ export function resolveMobileApp(args: {
       .slice(0, max)
       .map((d) => ({ key: d.key, name: d.name, icon: d.icon, route: d.route, module: d.feature.split('.')[0]! }));
   const rest = modules.filter((m) => m.key !== 'home');
-  const tabs = rest.filter((m) => m.placement === 'tab').slice(0, MOBILE_MAX_TABS).map((m) => m.key);
+  const tabs = rest.filter((m) => m.placement === 'tab' && mobileModule(m.key)?.tabbable).slice(0, MOBILE_MAX_TABS).map((m) => m.key);
   return {
     version: args.version,
     publishedAt: args.publishedAt,
