@@ -41,6 +41,7 @@
     "e2e:workspace": "node e2e/workspace-flow.cjs",
     "e2e:helpdesk": "node e2e/helpdesk-flow.cjs",
     "e2e:notifications": "node e2e/notifications-flow.cjs",
+    "e2e:home": "node e2e/home-flow.cjs",
     "e2e:communication": "node e2e/communication-flow.cjs",
     "e2e:leave": "node e2e/leave-flow.cjs",
     "e2e:ai": "node e2e/ai-flow.cjs",

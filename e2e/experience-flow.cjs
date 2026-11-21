@@ -86,7 +86,7 @@ function leaveDay() {
     const attention = sup.getByRole('region', { name: 'Needs your attention' });
     const item = attention.getByRole('listitem').filter({ hasText: `Neha Deshmukh: Casual leave, ${day}` });
     await item.waitFor();
-    const approvals = sup.getByRole('link', { name: /^Pending approvals [1-9]/ });
+    const approvals = sup.getByRole('link', { name: /^Approval inbox, [1-9]/ });
     await approvals.waitFor();
     await item.getByRole('button', { name: /^Approve:/ }).click();
     await item.getByText('Approved', { exact: true }).waitFor({ timeout: 10000 });
@@ -164,7 +164,7 @@ function leaveDay() {
     await sup.getByRole('button', { name: 'Customize' }).click();
     for (let i = 0; i < 12; i++) {
       const up = sup.getByRole('button', { name: 'Move Personal notes up' });
-      const before = await sup.locator('section[aria-label]:not([data-testid="my-day"], [data-testid="my-day"] *)').first().getAttribute('aria-label');
+      const before = await sup.getByTestId('more-for-you').locator('section[aria-label]').first().getAttribute('aria-label');
       if (before === 'Personal notes') break;
       await up.click();
     }
@@ -175,7 +175,7 @@ function leaveDay() {
     await sup.getByRole('textbox', { name: 'Your notes' }).fill(note);
     await sup.getByText(/^Saved \d/).waitFor({ timeout: 10000 });
     await sup.reload();
-    expect((await sup.locator('section[aria-label]:not([data-testid="my-day"], [data-testid="my-day"] *)').first().getAttribute('aria-label')) === 'Personal notes', 'widget order lost on reload');
+    expect((await sup.getByTestId('more-for-you').locator('section[aria-label]').first().getAttribute('aria-label')) === 'Personal notes', 'widget order lost on reload');
     expect((await sup.getByRole('region', { name: 'Your access' }).count()) === 0, 'hidden widget shown after reload');
     expect((await sup.getByRole('textbox', { name: 'Your notes' }).inputValue()) === note, 'notes lost on reload');
     ok('Home widgets reordered and hidden, notes autosaved, all kept after a reload');

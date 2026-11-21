@@ -50,8 +50,13 @@ const watch = (p) => {
   await admin.fill('input[name=code]', authenticator.generate(secret));
   await admin.click('text=Turn on and continue');
   await admin.waitForURL(`${CONSOLE}/`);
+  await admin.getByRole('heading', { name: 'Platform overview' }).waitFor();
+  for (const id of ['home-customers', 'home-hr-workspaces', 'home-users', 'home-new', 'console-alerts', 'console-activity']) await admin.getByTestId(id).first().waitFor();
+  // The Console Home shows counts only: no employee of any customer workspace is named on it.
+  const homeText = await admin.locator('main').innerText();
+  if (/Neha Deshmukh|Ravi|employee code/i.test(homeText)) throw new Error('Console Home shows employee-level information');
   await shot(admin, 'console-overview');
-  ok('MFA enrolled, overview loads');
+  ok('MFA enrolled, the platform overview loads with alerts and activity and no employee details');
 
   for (const path of ['/tenants', '/plans', '/statutory-packs', '/integrations', '/health', '/audit', '/admins']) {
     const r = await admin.goto(CONSOLE + path);

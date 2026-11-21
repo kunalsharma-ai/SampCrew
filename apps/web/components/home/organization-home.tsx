@@ -3,6 +3,7 @@ import { ATTENTION_LABEL, type OrganizationHome, type WorkforceTrend, type Works
 import { Card, CardHeader, cn } from '@crew/ui';
 import { AlarmClock, Building2, GraduationCap, Network, Plane, TriangleAlert, UserCheck, Users, UserX, Workflow } from 'lucide-react';
 import Link from 'next/link';
+import { RecentNotifications } from '@/components/notifications-widget';
 import type { QuickAction } from '@/lib/nav';
 import { ActionCenter, LEVEL_STYLE, Progress, SectionError, StatCard, relative } from './ui';
 import { CommunicationCard, QuickActionsCard, TrendCard } from './workforce-home';
@@ -140,7 +141,10 @@ export function OrganizationHomeView({ o, trend, trendDays, actions }: { o: Orga
           </Card>
         </div>
       </div>
-      <QuickActionsCard actions={actions} title="Super Workspace quick actions" />
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+        <RecentNotifications limit={5} />
+        <QuickActionsCard actions={actions} title="Super Workspace quick actions" />
+      </div>
       <p className="text-[0.6875rem] text-fg-subtle" suppressHydrationWarning><GraduationCap className="mr-1 inline size-3" aria-hidden />{v.activeLearning} learning assignments open · {v.pendingActions} pending HR actions · updated {relative(o.generatedAt)}</p>
     </section>
   );

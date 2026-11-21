@@ -162,6 +162,8 @@ export function HomeDashboard(props: {
           </div>
           <div className="flex items-center gap-2">{saved && !editing && <span className="text-xs text-fg-subtle" role="status">{saved}</span>}{!editing && <Button variant="secondary" size="sm" onClick={openThemes}><Palette className="size-3.5" /> Themes</Button>}{customize}</div>
         </div>
+        {d && d.kpis.length > 0 && <KpiStrip kpis={d.kpis} />}
+        {d && <Spotlight d={d} actions={props.actions} openAssistant={openAssistant} recruiter={!!props.recruiter} />}
         {editing && <p className="mb-3 text-[0.8125rem] text-fg-muted">Drag widgets to reorder them, or use the arrow buttons. Hidden widgets stay here while you edit.</p>}
         <div className="grid gap-5 xl:grid-cols-2">{visible.map((w) => widget(w))}</div>
       </section>

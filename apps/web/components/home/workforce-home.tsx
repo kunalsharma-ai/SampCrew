@@ -7,6 +7,7 @@ import {
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTransition } from 'react';
+import { RecentNotifications } from '@/components/notifications-widget';
 import { ICONS } from '@/lib/icons';
 import type { QuickAction } from '@/lib/nav';
 import { ActionCenter, DailyBars, Empty, Progress, relative, SectionError, shortDate, StatCard } from './ui';
@@ -319,7 +320,10 @@ export function WorkforceHomeView({ w, trend, trendDays, actions, base, extraPar
           </div>
         </>
       )}
-      <QuickActionsCard actions={actions} />
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+        <RecentNotifications limit={5} />
+        <QuickActionsCard actions={actions} />
+      </div>
       <p className="text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>Updated {relative(w.generatedAt)}. Figures refresh when approvals, leave or notifications change, and every minute.</p>
     </section>
   );

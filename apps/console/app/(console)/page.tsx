@@ -10,6 +10,7 @@ interface Metrics {
   subscriptions: { plan: string; status: string; tenants: number; seats: number }[];
   mrrByCurrency: { currency: string; mrr: string }[];
   note: string;
+  trialsEnding: { id: string; name: string; trialEndsOn: string }[];
 }
 
 const money = (v: string, c: string) => new Intl.NumberFormat('en', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(Number(v));
@@ -119,6 +120,21 @@ export default async function Overview() {
               ))}
             </ul>
           </Card>
+          {m && (
+            <Card>
+              <CardHeader title="Trials ending within 7 days" />
+              {m.trialsEnding.length === 0 ? <CardBody className="text-sm text-fg-muted">None.</CardBody> : (
+                <ul className="divide-y divide-border border-t border-border" data-testid="console-trials">
+                  {m.trialsEnding.map((t) => (
+                    <li key={t.id} className="flex items-center justify-between px-5 py-2 text-[13px]">
+                      <Link href={`/tenants/${t.id}`} className="font-medium hover:underline">{t.name}</Link>
+                      <span className="text-fg-subtle tabular">{t.trialEndsOn}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          )}
         </div>
       </div>
 
