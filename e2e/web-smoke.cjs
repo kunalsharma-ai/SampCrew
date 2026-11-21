@@ -118,7 +118,10 @@ async function memberFlow(secret) {
   await p.click('text=Invite people');
   await p.fill('input[name=fullName]', 'Smoke Recruiter');
   await p.fill('dialog input[name=email]', `smoke.recruiter.${Date.now()}@demo.crew.local`);
-  await p.check('input[name=roles][value=recruiter]');
+  // Access levels replaced the old role checkboxes: an invite starts at Employee Workspace.
+  const level = p.locator('dialog select:has(option[value=employee])').first();
+  await level.waitFor();
+  if ((await level.inputValue()) !== 'employee') throw new Error('an invite should start at Employee Workspace');
   await p.click('text=Send invitation');
   const link = await p.locator('code', { hasText: 'accept-invite' }).textContent({ timeout: 8000 });
   console.log('invite link shown (dev only):', link.slice(0, 50) + '...');
@@ -133,8 +136,8 @@ async function memberFlow(secret) {
   const nav = await q.locator('aside nav a, aside a').allTextContents();
   console.log('invitee nav:', nav.filter(Boolean).join(' | '));
   const r = await q.goto(BASE + '/settings/billing');
-  if (!q.url().includes('/no-access')) throw new Error('recruiter reached billing: ' + q.url());
-  console.log('recruiter blocked from billing: OK');
+  if (!q.url().includes('/no-access')) throw new Error('an Employee Workspace member reached billing: ' + q.url());
+  console.log('Employee Workspace member blocked from billing: OK');
   console.log('errors:', errs.join('\n') || 'none');
   await b.close();
   if (errs.length) throw new Error('browser errors:\n' + errs.join('\n'));
