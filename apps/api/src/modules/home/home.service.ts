@@ -203,7 +203,7 @@ export class HomeService {
         inProgress: rest.learning.filter((a) => a.status === 'in_progress').length,
         completed, overdue: overdue.length,
         completion: pct(completed, rest.learning.length),
-        items: open.slice(0, 4).map((a) => ({ id: a.id, title: rest.courses.get(a.course_id) ?? 'Course', status: a.status, dueOn: a.due_on ?? null, overdue: Boolean(a.due_on && a.due_on < today) })),
+        items: open.slice(0, 4).map((a) => ({ id: a.id, title: rest.courses.get(a.course_id) ?? 'Course', status: a.status, dueOn: a.due_on ?? null, overdue: Boolean(a.due_on && a.due_on < today), progress: typeof a.progress_percent === 'number' ? a.progress_percent : null })),
       };
       if (overdue.length) actions.push({ key: 'learning-overdue', level: 'warning', count: overdue.length, title: `${plural(overdue.length, 'course')} overdue`, detail: rest.courses.get(overdue[0]!.course_id) ?? null, href: '/learning', cta: 'Continue learning' });
       const fresh = open.filter((a) => a.status === 'assigned' && !(a.due_on && a.due_on < today));
@@ -350,7 +350,7 @@ export class HomeService {
         const leave = may('leave', 'leave:read') ? await tx.collection('leave_requests').find({ employee_id: { $in: list }, $or: [{ status: 'pending' }, { end_date: { $gte: `${month}-01` }, start_date: { $lte: addDays(date, 14) } }, { status: { $in: ['approved', 'rejected'] }, updated_at: { $gte: new Date(`${month}-01T00:00:00Z`) } }] }, { limit: 3000 }) : null;
         const types = leave ? await tx.collection('leave_types').find({ id: { $in: [...new Set(leave.map((r) => r.leave_type_id))] } }, { projection: { name: 1, kind: 1 } }) : [];
         const monthDays = att ? await tx.collection('attendance_days').find({ employee_id: { $in: list }, work_date: { $gte: `${month}-01`, $lte: date } }, { projection: { employee_id: 1, status: 1, late_minutes: 1, work_date: 1 } }) : [];
-        const learning = features.has('learning') && wide(s, 'learning:read') ? await tx.collection('course_assignments').find({ employee_id: { $in: list }, status: { $ne: 'cancelled' } }, { projection: { status: 1, due_on: 1 } }) : null;
+        const learning = features.has('learning') && wide(s, 'learning:read') ? await tx.collection('course_assignments').find({ employee_id: { $in: list }, status: { $ne: 'cancelled' } }, { projection: { status: 1, due_on: 1, score_percent: 1 } }) : null;
         const corrections = att && hasPermission(s, 'attendance:approve').allowed ? await tx.collection('attendance_corrections').count({ employee_id: { $in: list }, status: 'pending' }) : 0;
         const profileUpdates = hasPermission(s, 'profiles:review').allowed ? await tx.collection('profile_change_requests').count({ employee_id: { $in: list }, status: 'pending' }) : 0;
         const missingYesterday = att ? await tx.collection('attendance_days').count({ employee_id: { $in: list }, work_date: addDays(date, -1), status: 'missing_punch' }) : 0;
@@ -419,7 +419,9 @@ export class HomeService {
           const l = data.learning;
           const completed = l.filter((a) => a.status === 'completed').length;
           const overdue = l.filter((a) => ['assigned', 'in_progress'].includes(a.status) && a.due_on && a.due_on < date).length;
-          return { assigned: l.length, completed, inProgress: l.filter((a) => a.status === 'in_progress').length, overdue, completion: pct(completed, l.length), canManage: wide(s, 'learning:manage') };
+          const scored = l.filter((a) => typeof a.score_percent === 'number');
+          const averageScore = scored.length ? Math.round((scored.reduce((t, a) => t + a.score_percent, 0) / scored.length) * 10) / 10 : null;
+          return { assigned: l.length, completed, inProgress: l.filter((a) => a.status === 'in_progress').length, overdue, completion: pct(completed, l.length), averageScore, canManage: wide(s, 'learning:manage') };
         })()
       : null;
     if (learning?.overdue) actions.push({ key: 'learning-overdue', level: 'warning', count: learning.overdue, title: `${plural(learning.overdue, 'course')} overdue`, detail: null, href: '/learning?view=team&status=overdue', cta: 'View progress' });

@@ -551,7 +551,7 @@ export class AttendanceService implements OnModuleInit {
         dayType: plan.dayType,
         holidayName: plan.holidayName,
         nextDirection: last && last.direction !== 'out' ? 'out' : 'in',
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), flags: p.risk_flags })),
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), note: p.note ?? null, flags: p.risk_flags })),
         day: await this.dayRow(tx, e.id, date),
         allowed: { web: policy.web_punch, mobile: policy.mobile_punch, qr: policy.qr_punch },
         geofence: { mode: policy.geofence_mode, configured: Boolean(e.fence), radiusM: e.fence?.radiusM ?? null },

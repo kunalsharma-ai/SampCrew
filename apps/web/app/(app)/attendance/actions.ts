@@ -15,7 +15,7 @@ const refresh = (...paths: string[]) => {
   for (const p of ['/attendance', '/approvals', ...paths]) revalidatePath(p);
 };
 
-export async function punchAction(body: { latitude?: number; longitude?: number; accuracyM?: number; direction?: 'in' | 'out' }) {
+export async function punchAction(body: { latitude?: number; longitude?: number; accuracyM?: number; direction?: 'in' | 'out'; note?: string }) {
   const r = await act(
     () => api<{ punch: { direction: string; geofence: string; distanceM: number | null }; duplicate: boolean }>('/attendance/punch', {
       method: 'POST',

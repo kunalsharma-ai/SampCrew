@@ -104,7 +104,7 @@ export interface EmployeeHome {
     assigned: number; inProgress: number; completed: number; overdue: number;
     /** Completed out of everything assigned, 0 to 100. */
     completion: number | null;
-    items: { id: string; title: string; status: string; dueOn: string | null; overdue: boolean }[];
+    items: { id: string; title: string; status: string; dueOn: string | null; overdue: boolean; /** 0 to 100 where the course tracks it. */ progress: number | null }[];
   } | null;
   announcements: {
     unread: number;
@@ -143,7 +143,7 @@ export interface WorkforceHome {
     incompleteProfiles: number;
     pendingProfileUpdates: number;
   };
-  learning: { assigned: number; completed: number; inProgress: number; overdue: number; completion: number | null; canManage: boolean } | null;
+  learning: { assigned: number; completed: number; inProgress: number; overdue: number; completion: number | null; /** Mean of scored assessments, where courses score them. */ averageScore: number | null; canManage: boolean } | null;
   communication: { unreadChats: number; awaitingHr: number | null; announcements: { id: string; title: string; publishedAt: string | null; priority: string }[] } | null;
 }
 
