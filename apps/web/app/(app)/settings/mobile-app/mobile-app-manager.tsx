@@ -374,7 +374,7 @@ function HistoryList({ versions, current, onRestore }: { versions: MobileAppVers
                   {v.note && <div className="mt-0.5 text-[0.8125rem]">{v.note}</div>}
                   <div className="mt-1.5"><ChangeList items={v.changes} empty="No changes listed." /></div>
                 </div>
-                <div>{v.version !== current && <Button size="sm" variant="secondary" onClick={() => onRestore(v)}>Restore</Button>}</div>
+                <div>{v.version !== current && <Button size="sm" variant="secondary" onClick={() => onRestore(v)} data-testid={`restore-${v.version}`}>Restore</Button>}</div>
               </li>
             ))}
           </ol>

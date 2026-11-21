@@ -116,7 +116,8 @@ export class MobileAppService {
       }
       return this.publishVersion(tx, draft, before, input.note, null, actor.membershipId);
     });
-    return { ...(await this.overview()), published: out };
+    const o = await this.overview();
+    return { ...o, published: { ...o.published, changes: out.changes } };
   }
 
   /** Restores an old version: it is published again as a new version (the history keeps both). */
@@ -130,7 +131,8 @@ export class MobileAppService {
       if (errors.length) throw Errors.badRequest('mobile_config_invalid', errors.map((e) => e.message).join(' '));
       return this.publishVersion(tx, config, (await publishedMobileConfig(tx)).config, note || `Restored version ${version}`, version, actor.membershipId);
     });
-    return { ...(await this.overview()), published: out };
+    const o = await this.overview();
+    return { ...o, published: { ...o.published, changes: out.changes } };
   }
 
   async versions() {
