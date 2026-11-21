@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, HttpCode, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
   acceptInviteRequest,
@@ -15,14 +15,19 @@ import {
   initialPasswordRequest,
   ssoStartInput,
   switchTenantRequest,
+  passwordResetCheck,
+  passwordResetComplete,
+  passwordResetRequest,
+  passwordResetsQuery,
 } from '@crew/contracts';
 import type { Request } from 'express';
 import type { z } from 'zod';
-import { AllowWithoutMfa, Public, AllowWhenLocked } from '../../platform/authz/decorators';
+import { AllowWithoutMfa, Public, AllowWhenLocked, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { SsoService } from '../identity/sso.service';
 import { AuthService } from './auth.service';
+import { PasswordResetService } from './password-reset.service';
 
 const clientOf = (req: Request) => {
   const c = req.headers['x-crew-client'];
@@ -35,7 +40,35 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly sso: SsoService,
+    private readonly resets: PasswordResetService,
   ) {}
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('password-reset/request')
+  @HttpCode(200)
+  @Doc({ summary: 'Forgot password: emails a single-use reset link and a 6-digit code (30 minutes) to the account with this email. The answer is the same whether or not an account exists.', body: passwordResetRequest })
+  passwordResetRequest(@Body(new ZodPipe(passwordResetRequest)) body: z.infer<typeof passwordResetRequest>, @Req() req: Request) {
+    return this.resets.request('user', body.email, clientOf(req));
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('password-reset/check')
+  @HttpCode(200)
+  @Doc({ summary: 'Whether a reset link still works (for the reset page)', body: passwordResetCheck })
+  passwordResetCheck(@Body(new ZodPipe(passwordResetCheck)) body: z.infer<typeof passwordResetCheck>) {
+    return this.resets.check('user', body.token);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('password-reset/complete')
+  @HttpCode(200)
+  @Doc({ summary: 'Set a new password with the reset link (token) or the email and 6-digit code; signs out every session', body: passwordResetComplete })
+  passwordResetComplete(@Body(new ZodPipe(passwordResetComplete)) body: z.infer<typeof passwordResetComplete>) {
+    return this.resets.complete('user', body);
+  }
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
@@ -222,5 +255,18 @@ export class MeController {
   @Doc({ summary: 'Change password; signs out other sessions', body: changePasswordRequest })
   async password(@Body(new ZodPipe(changePasswordRequest)) body: z.infer<typeof changePasswordRequest>) {
     await this.auth.changePassword(body.currentPassword, body.newPassword);
+  }
+}
+
+/** Super Workspace: password resets by the company's own people, newest first. */
+@Controller('password-resets')
+export class PasswordResetsController {
+  constructor(private readonly resets: PasswordResetService) {}
+
+  @Get()
+  @RequirePermission('users:read')
+  @Doc({ summary: 'Super Workspace: "forgot password" requests and completed resets by the people of this company (HR Workspace and Employee Workspace included)', query: passwordResetsQuery })
+  list(@Query(new ZodPipe(passwordResetsQuery)) q: z.infer<typeof passwordResetsQuery>) {
+    return this.resets.workspaceList(q);
   }
 }

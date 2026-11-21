@@ -52,3 +52,13 @@ export async function logoutAction() {
   await clearSession();
   redirect('/login');
 }
+
+/** Console forgot password: emails a link and a 6-digit code. Same answer whether or not the admin exists. */
+export async function requestPasswordResetAction(email: string) {
+  return act(() => api<{ message: string }>('/platform/auth/password-reset/request', { method: 'POST', body: { email }, auth: false }));
+}
+
+/** Sets a new Console password with the emailed link, or the email and the 6-digit code. Two-step sign-in still follows. */
+export async function completePasswordResetAction(input: { token?: string; email?: string; code?: string; newPassword: string }) {
+  return act(() => api<{ message: string }>('/platform/auth/password-reset/complete', { method: 'POST', body: input, auth: false }));
+}

@@ -192,9 +192,9 @@ describe('Phase 12 production readiness', () => {
       'GET /auth/invitations/:token', 'GET /auth/sso/saml/metadata', 'GET /files/:id', 'GET /files/comm/:id', 'GET /files/receipts/:id', 'GET /files/resumes/:id',
       'GET /health/live', 'GET /health/ready', 'GET /iclock/cdata', 'GET /iclock/getrequest', 'GET /kiosk/qr',
       'GET /public/careers/:site', 'GET /public/careers/:site/jobs/:job', 'GET /public/proposals/:token', 'GET /public/proposals/:token/proposal.pdf',
-      'POST /auth/initial-password', 'POST /auth/invitations/accept', 'POST /auth/login', 'POST /auth/mfa/verify', 'POST /auth/refresh', 'POST /auth/select-tenant', 'POST /auth/signup',
+      'POST /auth/initial-password', 'POST /auth/invitations/accept', 'POST /auth/login', 'POST /auth/password-reset/request', 'POST /auth/password-reset/check', 'POST /auth/password-reset/complete', 'POST /auth/mfa/verify', 'POST /auth/refresh', 'POST /auth/select-tenant', 'POST /auth/signup',
       'POST /auth/sso/callback', 'POST /auth/sso/exchange', 'POST /auth/sso/saml/callback', 'POST /auth/sso/start',
-      'POST /device-api/heartbeat', 'POST /device-api/punches', 'POST /iclock/cdata', 'POST /iclock/devicecmd', 'POST /platform/auth/login', 'POST /platform/auth/refresh', 'GET /platform/setup', 'POST /platform/setup/first-admin',
+      'POST /device-api/heartbeat', 'POST /device-api/punches', 'POST /iclock/cdata', 'POST /iclock/devicecmd', 'POST /platform/auth/login', 'POST /platform/auth/refresh', 'POST /platform/auth/password-reset/request', 'POST /platform/auth/password-reset/check', 'POST /platform/auth/password-reset/complete', 'GET /platform/setup', 'POST /platform/setup/first-admin',
       'POST /public/careers/:site/jobs/:job/apply', 'POST /public/proposals/:token/accept', 'POST /public/proposals/:token/decline',
       'GET /signature-agent/images/:kind', 'POST /signature-agent/report', 'POST /signature-agent/sync',
       // Razorpay and Stripe webhooks: refused unless signed with the webhook secret saved in Console > Integrations.

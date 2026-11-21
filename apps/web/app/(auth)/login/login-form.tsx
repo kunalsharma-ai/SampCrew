@@ -180,6 +180,9 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
       <Field label="Password" error={fieldErrors.password} required>
         {(p) => <Input {...p} name="password" type="password" autoComplete="current-password" required />}
       </Field>
+      <div className="-mt-3 text-right">
+        <Link href="/forgot-password" className="text-[0.8125rem] font-medium text-accent hover:underline" data-testid="forgot-password-link">Forgot password?</Link>
+      </div>
       {workspace && <input type="hidden" name="tenantSlug" value={workspace} />}
       <Button type="submit" size="lg" loading={pending}>Sign in</Button>
       <Button type="button" variant="secondary" size="lg" disabled={pending} onClick={() => { setError(null); setStep({ kind: 'sso', email: '' }); }}>Sign in with single sign-on</Button>

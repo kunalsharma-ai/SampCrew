@@ -13,6 +13,8 @@ export interface NavItem {
   feature?: string;
   /** Hidden when the user holds this permission (for example Ask HR is hidden from the HR team, who answer it). */
   hiddenWith?: string;
+  /** Only for the Super Workspace level. */
+  superOnly?: boolean;
   /** Shown to billing admins when the plan lacks the feature: the link opens Plan & billing to upgrade. */
   locked?: boolean;
 }
@@ -142,6 +144,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/privacy', label: 'Privacy requests', icon: 'user-x', permission: 'privacy:manage' },
       { href: '/settings/audit', label: 'Audit trail', icon: 'scroll', permission: 'audit:read' },
+      { href: '/settings/password-resets', label: 'Password resets', icon: 'key', permission: 'users:read', superOnly: true },
     ],
   },
   {
@@ -213,7 +216,7 @@ export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: st
 
 export function visibleNav(me: Me): NavGroup[] {
   const allowed = (i: NavItem) =>
-    (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && !(i.hiddenWith && me.permissions[i.hiddenWith]);
+    (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && !(i.hiddenWith && me.permissions[i.hiddenWith]) && !(i.superOnly && !me.levels?.super);
   // A billing admin also sees each module the plan lacks once, with a lock, so they know it exists and can upgrade.
   const upsell = me.permissions['billing:manage'] ? new Set<string>() : null;
   return NAV.map((g) => ({

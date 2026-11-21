@@ -5,7 +5,8 @@ import { SharedRateLimitStorage } from './platform/http/rate-limit-storage';
 import { ApprovalsController } from './modules/approvals/approvals.controller';
 import { ApprovalsService } from './modules/approvals/approvals.service';
 import { AuditController } from './modules/audit/audit.controller';
-import { AuthController, MeController } from './modules/auth/auth.controller';
+import { AuthController, MeController, PasswordResetsController } from './modules/auth/auth.controller';
+import { PasswordResetService } from './modules/auth/password-reset.service';
 import { AuthService } from './modules/auth/auth.service';
 import { BillingController, BillingWebhooksController } from './modules/billing/billing.controller';
 import { BillingService } from './modules/billing/billing.service';
@@ -160,6 +161,7 @@ import { StorageService } from './platform/storage/storage.service';
 export const CONTROLLERS = [
   HealthController,
   AuthController,
+  PasswordResetsController,
   MeController,
   TenancyController,
   SupportAccessController,
@@ -271,6 +273,7 @@ export const CONTROLLERS = [
     AuthzService,
     EntitlementsService,
     AuthService,
+    PasswordResetService,
     OrganizationService,
     MembersService,
     RolesService,

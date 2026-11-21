@@ -61,6 +61,9 @@ export function LoginForm({ next, expired, addressProblem }: { next: string; exp
       {error && <Alert tone="danger">{error}</Alert>}
       <Field label="Email" required>{(p) => <Input {...p} name="email" type="email" autoComplete="username" required autoFocus />}</Field>
       <Field label="Password" required>{(p) => <Input {...p} name="password" type="password" autoComplete="current-password" required />}</Field>
+      <div className="-mt-2 text-right">
+        <a href="/forgot-password" className="text-[13px] font-medium text-accent hover:underline" data-testid="forgot-password-link">Forgot password?</a>
+      </div>
       <Button type="submit" loading={pending}>Sign in</Button>
     </form>
   );

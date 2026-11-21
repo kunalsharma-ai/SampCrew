@@ -17,6 +17,7 @@ import { FEATURE_KEY, PUBLIC_KEY, REALM_KEY } from '../src/platform/authz/decora
 const FOUNDATION: Record<string, string> = {
   AuthController: 'Sign-in, sign-out, invitations and workspace switching',
   MeController: 'The signed-in person, their sessions, password and two-step verification',
+  PasswordResetsController: 'Super Workspace record of forgot-password resets, a security baseline like the audit trail',
   ApprovalsController: 'One inbox for approvals raised by the modules; each item is created by a gated module',
   AuditController: 'Viewing and verifying the audit trail is a security baseline (the CSV export is the audit_export module)',
   BillingController: 'Plan & billing: where an admin buys or changes the subscription',

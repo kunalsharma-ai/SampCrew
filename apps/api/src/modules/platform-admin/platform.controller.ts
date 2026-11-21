@@ -1,6 +1,10 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
+  passwordResetCheck,
+  passwordResetComplete,
+  passwordResetRequest,
+  passwordResetsQuery,
   firstAdminRequest,
   email,
   featureSwitchUpdate,
@@ -46,6 +50,7 @@ import { IdNumberPipe, UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { FirstRunService } from './first-run.service';
 import { PlatformAuthService } from './platform-auth.service';
+import { PasswordResetService } from '../auth/password-reset.service';
 import { PlatformService } from './platform.service';
 import { AccessControlsService } from './access-controls.service';
 import { PlatformFeaturesService } from './platform-features.service';
@@ -110,7 +115,34 @@ export class PlatformSetupController {
 
 @Controller('platform/auth')
 export class PlatformAuthController {
-  constructor(private readonly auth: PlatformAuthService) {}
+  constructor(private readonly auth: PlatformAuthService, private readonly resets: PasswordResetService) {}
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('password-reset/request')
+  @HttpCode(200)
+  @Doc({ summary: 'Console forgot password: emails a single-use reset link and a 6-digit code (30 minutes). The answer is the same whether or not the admin exists.', body: passwordResetRequest })
+  passwordResetRequest(@Body(new ZodPipe(passwordResetRequest)) body: z.infer<typeof passwordResetRequest>) {
+    return this.resets.request('platform_admin', body.email, 'console');
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('password-reset/check')
+  @HttpCode(200)
+  @Doc({ summary: 'Whether a Console reset link still works', body: passwordResetCheck })
+  passwordResetCheck(@Body(new ZodPipe(passwordResetCheck)) body: z.infer<typeof passwordResetCheck>) {
+    return this.resets.check('platform_admin', body.token);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('password-reset/complete')
+  @HttpCode(200)
+  @Doc({ summary: 'Set a new Console password with the reset link or code; signs out every Console session. Two-step verification is still asked at sign-in.', body: passwordResetComplete })
+  passwordResetComplete(@Body(new ZodPipe(passwordResetComplete)) body: z.infer<typeof passwordResetComplete>) {
+    return this.resets.complete('platform_admin', body);
+  }
 
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
@@ -183,6 +215,7 @@ export class PlatformController {
     private readonly plansService: PlansService,
     private readonly statutoryPacksService: StatutoryPacksService,
     private readonly features: PlatformFeaturesService,
+    private readonly resets: PasswordResetService,
   ) {}
 
   @PlatformRealm('tenants:read')
@@ -503,6 +536,13 @@ export class PlatformController {
   @Doc({ summary: 'System health: API, database, migrations, outbox backlog, audit chain' })
   health() {
     return this.platform.health();
+  }
+
+  @PlatformRealm('audit:read')
+  @Get('password-resets')
+  @Doc({ summary: 'Forgot-password requests and completed resets at every level (Console Admin, Super, HR and Employee Workspace), newest first', query: passwordResetsQuery })
+  passwordResets(@Query(new ZodPipe(passwordResetsQuery)) q: z.infer<typeof passwordResetsQuery>) {
+    return this.resets.platformList(q);
   }
 
   @PlatformRealm('audit:read')

@@ -64,3 +64,13 @@ export async function acceptInviteAction(input: { token: string; fullName: strin
   await setSession(r.data!);
   redirect('/?welcome=1');
 }
+
+/** Forgot password: emails a link and a 6-digit code. The answer is the same whether or not the account exists. */
+export async function requestPasswordResetAction(email: string) {
+  return act(() => api<{ message: string }>('/auth/password-reset/request', { method: 'POST', body: { email }, auth: false }));
+}
+
+/** Sets the new password with the emailed link, or with the email and the 6-digit code. */
+export async function completePasswordResetAction(input: { token?: string; email?: string; code?: string; newPassword: string }) {
+  return act(() => api<{ message: string }>('/auth/password-reset/complete', { method: 'POST', body: input, auth: false }));
+}

@@ -109,6 +109,12 @@ export const CONSOLE_HELP: HelpContent = {
       how: 'Refresh the page to update. Investigate anything red before customers notice.',
       where: 'For engineers and operations.',
     },
+    '/password-resets': {
+      title: 'Password resets',
+      what: 'Every Forgot password request at every level: Console Admin, Super, HR and Employee Workspace.',
+      how: 'Filter by level or status. Email not delivered? Check Integrations > Email. Requests for unknown emails show here only.',
+      where: 'For security reviews and support.',
+    },
     '/audit': {
       title: 'Platform audit',
       what: 'Actions by Sampledge staff and the platform itself, newest first.',

@@ -10,8 +10,12 @@ import { Button, Card, Field, ListItem, Notice, Screen, Text, useTheme } from '.
  * Or single sign-on: the work email picks the workspace's identity provider, which opens in the system browser.
  */
 export default function Login() {
-  const { signIn, signInWithSso, verifyMfa, setInitialPassword, chooseWorkspace, notice } = useSession();
+  const { api, signIn, signInWithSso, verifyMfa, setInitialPassword, chooseWorkspace, notice } = useSession();
   const [sso, setSso] = useState(false);
+  /** Forgot password: ask for the email, then the 6-digit code from it with a new password. */
+  const [forgot, setForgot] = useState<null | 'email' | 'code'>(null);
+  const [resetCode, setResetCode] = useState('');
+  const [info, setInfo] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [workspace, setWorkspace] = useState('');
@@ -51,6 +55,49 @@ export default function Login() {
     void run(() => signIn(email.trim().toLowerCase(), password, workspace.trim() || undefined));
   };
 
+  /** Any of the forgot-password calls: shows the API's own message, or a plain one when offline. */
+  const runReset = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    setFieldErrors({});
+    try {
+      await fn();
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setError(e.status === 429 ? 'Too many attempts. Wait a minute and try again.' : e.message);
+        setFieldErrors(e.fieldErrors);
+      } else setError('Could not reach SampCrew. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const requestReset = () => {
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) return setFieldErrors({ email: 'Enter your work email' });
+    void runReset(async () => {
+      const r = await api.publicRequest<{ message: string }>('POST', '/auth/password-reset/request', { email: email.trim().toLowerCase() });
+      setInfo(r.message);
+      setForgot('code');
+    });
+  };
+
+  const completeReset = () => {
+    const errs: Record<string, string> = {};
+    if (!/^\d{6}$/.test(resetCode)) errs.code = 'Enter the 6-digit code from the email';
+    if (!newPassword) errs.newPassword = 'Choose a new password';
+    else if (newPassword !== confirmPassword) errs.confirmPassword = 'The two passwords do not match';
+    if (Object.keys(errs).length) return setFieldErrors(errs);
+    void runReset(async () => {
+      const r = await api.publicRequest<{ message: string }>('POST', '/auth/password-reset/complete', { email: email.trim().toLowerCase(), code: resetCode, newPassword });
+      setForgot(null);
+      setResetCode('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPassword('');
+      setInfo(r.message);
+    });
+  };
+
   const submitSso = () => {
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) return setFieldErrors({ email: 'Enter your work email' });
     void run(() => signInWithSso(email.trim().toLowerCase()));
@@ -70,8 +117,30 @@ export default function Login() {
           </Notice>
         )}
         {error && <Notice tone="danger" testID="login-error">{error}</Notice>}
+        {info && !error && <Notice tone="info" testID="login-info">{info}</Notice>}
         <Card>
-          {!step && sso && (
+          {!step && forgot === 'email' && (
+            <>
+              <Text weight="600">Forgot your password?</Text>
+              <Text muted size={14}>Enter the email you sign in with. We email you a 6-digit code (and a link for the web) to choose a new password.</Text>
+              <Field label="Work email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="username" error={fieldErrors.email} onSubmitEditing={requestReset} testID="forgot-email" />
+              <Button title="Send code" onPress={requestReset} busy={busy} testID="forgot-send" />
+              <Button title="Back to sign in" kind="secondary" onPress={() => { setForgot(null); setError(null); setInfo(null); }} />
+            </>
+          )}
+          {!step && forgot === 'code' && (
+            <>
+              <Text weight="600">Enter your code</Text>
+              <Text muted size={14}>Type the 6-digit code from the email to {email.trim()} and choose a new password. It works for 30 minutes.</Text>
+              <Field label="6-digit code" value={resetCode} onChangeText={(v) => setResetCode(v.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode" error={fieldErrors.code} testID="forgot-code" />
+              <Field label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoComplete="new-password" textContentType="newPassword" hint="12+ characters with three of: lowercase, uppercase, numbers, symbols" error={fieldErrors.newPassword} testID="forgot-new-password" />
+              <Field label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoComplete="new-password" textContentType="newPassword" error={fieldErrors.confirmPassword} testID="forgot-confirm-password" />
+              <Button title="Save new password" onPress={completeReset} busy={busy} testID="forgot-save" />
+              <Button title="Send a new code" kind="secondary" onPress={requestReset} disabled={busy} />
+              <Button title="Back to sign in" kind="secondary" onPress={() => { setForgot(null); setError(null); setInfo(null); }} />
+            </>
+          )}
+          {!step && !forgot && sso && (
             <>
               <Text weight="600">Single sign-on</Text>
               <Text muted size={14}>Your work email takes you to your organisation&apos;s sign-in page. You come back here when it is done.</Text>
@@ -80,12 +149,13 @@ export default function Login() {
               <Button title="Use a password instead" kind="secondary" onPress={() => { setSso(false); setError(null); }} />
             </>
           )}
-          {!step && !sso && (
+          {!step && !forgot && !sso && (
             <>
               <Field label="Work email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="username" error={fieldErrors.email} />
               <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" textContentType="password" error={fieldErrors.password} onSubmitEditing={submitPassword} />
               <Field label="Workspace (optional)" help="field.workspace" value={workspace} onChangeText={setWorkspace} autoCapitalize="none" hint="Only needed if your account is in more than one workspace." error={fieldErrors.tenantSlug} />
               <Button title="Sign in" onPress={submitPassword} busy={busy} />
+              <Button title="Forgot password?" kind="secondary" onPress={() => { setForgot('email'); setError(null); setInfo(null); setFieldErrors({}); }} testID="forgot-start" />
               <Button title="Sign in with single sign-on" kind="secondary" onPress={() => { setSso(true); setError(null); }} testID="sso-start" />
             </>
           )}

@@ -4663,6 +4663,52 @@ export const TABLES: Record<string, TableSpec> = {
     indexes: [],
     checks: [],
   },
+  password_resets: {
+    // "Forgot password" by email, for every level: a person in a workspace (Super, HR or Employee Workspace, web or
+    // phone) or a SAMPLEDGE Console admin. One row per request, kept as the record the Console (all of them) and each
+    // Super Workspace (its own people) read. Only hashes of the link token and the 6-digit code are stored.
+    access: "platform", grants: [],
+    columns: {
+      // Who asked: a workspace sign-in (users) or a Console admin (platform_admins).
+      account_kind: {"enum": ["user", "platform_admin"], "required": true, "type": "string"},
+      client: {"enum": ["web", "mobile", "api", "console"], "required": true, "type": "string"},
+      code_attempts: {"default": 0, "required": true, "type": "int"},
+      code_hash: {"type": "string"},
+      completed_at: {"type": "timestamp"},
+      completed_ip: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // The email typed on the forgot-password screen (also when no account has it).
+      email: {"required": true, "type": "citext"},
+      email_message_id: {"type": "uuid"},
+      expires_at: {"required": true, "type": "timestamp"},
+      full_name: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      ip: {"type": "string"},
+      // Highest level the person holds: console, super, hr or employee (null when no account matched).
+      level: {"enum": ["console", "super", "hr", "employee"], "type": "string"},
+      sessions_revoked: {"default": 0, "required": true, "type": "int"},
+      // pending: email sent, waiting; completed: new password set; replaced: a newer request took over;
+      // locked: too many wrong codes; no_account / inactive / limited: nothing was emailed.
+      status: {"default": "pending", "enum": ["pending", "completed", "replaced", "locked", "no_account", "inactive", "limited"], "required": true, "type": "string"},
+      subject_id: {"type": "uuid"},
+      // The workspaces the person belongs to, with their level in each, so a Super Workspace sees its own people's resets.
+      tenant_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      tenants: {"default": {"json": []}, "required": true, "type": "json"},
+      token_hash: {"type": "string"},
+      user_agent: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "password_resets_pkey", "primary": true},
+    ],
+    fks: [],
+    indexes: [
+      {"cols": [{"col": "account_kind"}, {"col": "subject_id"}, {"col": "created_at", "desc": true}], "name": "password_resets_subject"},
+      {"cols": [{"col": "tenant_ids"}, {"col": "created_at", "desc": true}], "name": "password_resets_tenant"},
+      {"cols": [{"col": "created_at", "desc": true}], "name": "password_resets_created"},
+      {"cols": [{"col": "token_hash"}], "name": "password_resets_token"},
+    ],
+    checks: [],
+  },
   platform_admins: {
     access: "platform", grants: [], touch: true,
     columns: {
