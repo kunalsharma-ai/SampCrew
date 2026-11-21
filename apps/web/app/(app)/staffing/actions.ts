@@ -1,6 +1,7 @@
 'use server';
 import type { BidInput, BidSendInput, BidTemplateInput, ClientInput, RateCard, RateCardInput } from '@crew/contracts';
 import { revalidatePath } from 'next/cache';
+import { addTypedMasterValue } from '@/components/master-data-actions';
 import { act, api } from '@/lib/api';
 import type { Bid, BidTemplate, Client } from './types';
 
@@ -11,6 +12,7 @@ const refresh = (id?: string) => {
 
 export async function saveClientAction(id: string | null, values: ClientInput) {
   const r = await act(() => api<Client>(id ? `/staffing/clients/${id}` : '/staffing/clients', { method: id ? 'PUT' : 'POST', body: values }), id ? 'Client saved' : 'Client added');
+  if (r.ok && values.industry) await addTypedMasterValue('industry', values.industry);
   revalidatePath('/staffing/clients');
   return r;
 }

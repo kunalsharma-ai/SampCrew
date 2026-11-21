@@ -11,9 +11,9 @@ const config: NextConfig = {
   poweredByHeader: false,
   ...(standalone ? { output: 'standalone' as const, outputFileTracingRoot: join(__dirname, '../..') } : {}),
   reactStrictMode: true,
-  // Uploads go through server actions: employee documents up to 10 MB and CVs up to 5 MB, plus form overhead.
-  // The API enforces the real per-file limits.
-  experimental: { serverActions: { bodySizeLimit: '11mb' } },
+  // Uploads go through server actions: employee documents up to 10 MB, CVs up to 5 MB and data import files up to
+  // 20 MB, plus form overhead. The API enforces the real per-file limits.
+  experimental: { serverActions: { bodySizeLimit: '21mb' } },
   async headers() {
     return [
       {

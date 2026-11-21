@@ -892,11 +892,23 @@ export const WEB_HELP: HelpContent = {
       how: 'Tick people and move them into an HR Workspace. Their records and history go with them.',
       where: 'For Super Workspace admins.',
     },
-    '/employees/import': {
-      title: 'Import existing employees',
-      what: 'Add many people who already work here at once from the Excel or CSV template, with leave balances and the assets they hold.',
-      how: 'Download the template, fill in one row per person, then check the file. Fix any rows marked with problems and import.',
-      where: 'For people who can create employees. Nobody gets a login until you send one.',
+    '/imports': {
+      title: 'Data import',
+      what: 'Bring employees, candidates, clients, contacts, departments, job titles and other lists in from Excel or CSV, with the history of every import.',
+      how: 'Choose what to import, download its template or use your own file, then follow the steps. Nothing is saved until you press Import.',
+      where: 'For Super Workspace and HR Workspace people with import access. The Employee Workspace never imports.',
+    },
+    '/imports/new': {
+      title: 'Upload a file',
+      what: 'The first step of an import: the Excel (.xlsx) or CSV file whose first row holds the column headings.',
+      how: 'Drop the file or click to choose it. Old .xls files must be saved as .xlsx or CSV first.',
+      where: 'Up to 20 MB and 20,000 rows. The file is checked before anything is saved.',
+    },
+    '/imports/[id]': {
+      title: 'Import',
+      what: 'One import: match its columns, check every row, decide what happens to records you already have, import, then download the report.',
+      how: 'Confirm each suggested match, create a field for a new column or ignore it, then check. Rows with errors are left out until fixed.',
+      where: 'Only the person who started an import can run it. Each row is saved on its own, so a failure never leaves half a record.',
     },
     '/employee-features': {
       title: 'Employee features',
@@ -910,6 +922,12 @@ export const WEB_HELP: HelpContent = {
       how: 'Use the tabs: Feature management, Module access, Access levels and Module settings. Changes apply at once and are kept in the audit trail.',
       where: 'For workspace admins. Nobody gets access unless an admin grants it.',
     },
+    '/settings/master-data': {
+      title: 'Master data',
+      what: 'The ready-made lists behind SampCrew’s dropdowns: industries, departments, job titles, job roles, skills, education, candidate sources and more.',
+      how: 'Pick a list, then add your own values, add ready-made ones from the library, rename, group or disable them. Values in use are disabled, never deleted.',
+      where: 'Everyone with structure access can see the lists. Changing them needs master data access (departments: structure access).',
+    },
     '/settings/custom-fields': {
       title: 'Custom fields',
       what: 'Your own fields on employees, assets, verification cases, candidates and leave requests, in 14 types.',
@@ -919,6 +937,16 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    'Employee data permissions': { what: 'What this HR Workspace may do with employee data: view, edit, create, import, export and manage fields. Off here means off for everyone in it.', how: 'Switch one off and its admins lose it at once. A switch can only take away access a role gives, never add it.' },
+    'What do you want to import?': { what: 'Each kind of record you can import, with its template. A kind you may not import says why.', how: 'Press Import to start, or Template for an Excel file with the columns and an instructions sheet.' },
+    'Import history': { what: 'Every import with who ran it, when, its status and how many rows were added, updated or not imported.', how: 'Open one to see its rows or download its report.' },
+    'Upload your file': { what: 'The spreadsheet to import. Its first row must hold the column headings.', how: 'Drop an .xlsx or CSV file, or download the template first.' },
+    'Match your columns': { what: 'Each column of your file and the SampCrew field it fills. Sure matches are made for you; likely ones wait for you to confirm.', how: 'For a new column, create a field (its type is suggested from the values) or ignore it.' },
+    'Records you already have': { what: 'How SampCrew finds a record that is already there (by employee ID, email or phone) and whether to skip, update, add anyway or ask for each row.' },
+    'Check every row': { what: 'Every row with the problems the check found, each with a suggested correction, and the existing record it matches.', how: 'Use the filters to see only problems. Decide each match, or all of them at once.' },
+    'Importing': { what: 'The import running in the background, row by row.', how: 'You can leave the page: a notification tells you when it finishes. Stopping keeps the rows already imported.' },
+    'Import finished': { what: 'What the import added, updated, skipped and could not import.', how: 'Download the report: it has every problem with a suggested correction and the rows to fix.' },
+    'What happened to each row': { what: 'Each row of the file and what the import did with it, with a link to the record.' },
     'Feature management': { what: 'Each module and page for the whole company, the HR Workspace level and the Employee Workspace level, with Active, Inherited, Inactive and Restricted labels.', how: 'Open a module to see its pages. Switching off asks first; records are kept and come back when you switch it on.' },
     'How access flows': { what: 'SAMPLEDGE decides what the company holds, the company gives each HR Workspace a part, and HR Workspace admins give each person a part of theirs.' },
     'Your HR Workspaces': { what: 'Every active HR Workspace with its people, modules and admins.', how: 'Open one to change it. The central group card lists the people the company runs itself.' },
