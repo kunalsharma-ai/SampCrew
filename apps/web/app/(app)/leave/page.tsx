@@ -64,7 +64,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
           <Alert tone={sent.status === 'pending' ? 'info' : 'success'} title="Leave request sent">
             <span data-testid="leave-sent">
               {sent.status === 'pending'
-                ? `Your ${sent.leaveTypeName.toLowerCase()} request (${sent.days} days from ${sent.startDate}) (${sent.reference ?? ''}) went to ${sent.approvalRouteLabel ?? 'approval'} and is waiting${sent.waitingOn ? ` for ${sent.waitingOn}` : ''}. You will get a notification when it is decided.`
+                ? `Your ${sent.leaveTypeName} request ${sent.reference ?? ''} (${sent.days} days from ${sent.startDate}) went to ${sent.approvalRouteLabel ?? 'approval'} and is waiting for approval${sent.waitingOn ? ` from ${sent.waitingOn}` : ''}. You will get a notification when it is decided.`
                 : `Your ${sent.leaveTypeName.toLowerCase()} request is ${sent.status}.`}
             </span>
           </Alert>

@@ -145,11 +145,12 @@ async function web(b) {
   assert((await openBubble(p).count()) === 0, 'Tab out of the bubble did not close it');
   ok('keyboard: Enter or Space opens with focus inside, Escape returns focus, Tab moves on');
 
-  // Section help (Leave settings) uses the page-independent section text.
-  await p.goto(WEB + '/settings/leave');
+  // Section help (Leave management reports) uses the page-independent section text.
+  await p.goto(WEB + '/leave/manage?tab=reports');
   const section = p.locator('main').getByRole('button', { name: 'More about this section', exact: true });
-  assert((await section.count()) >= 3, `expected section icons on Leave settings, found ${await section.count()}`);
-  ok(`section icons on Leave settings (${await section.count()})`);
+  await section.first().waitFor();
+  assert((await section.count()) >= 3, `expected section icons on Leave management reports, found ${await section.count()}`);
+  ok(`section icons on Leave management reports (${await section.count()})`);
 
   // 4. Field help inside a modal dialog.
   await p.goto(WEB + '/leave?create=leave');
