@@ -43,8 +43,8 @@ export const FEATURE_PARTS = [
   { key: 'onboarding.checklists', feature: 'onboarding', name: 'Onboarding checklists', audience: 'hr', web: ['/settings/onboarding'] },
   // Leave
   { key: 'leave.requests', feature: 'leave', name: 'My leave and requests', audience: 'employee', web: ['/leave'] },
-  { key: 'leave.balances', feature: 'leave', name: 'Leave balances (team view)', audience: 'hr', web: ['/leave/balances'] },
-  { key: 'leave.settings', feature: 'leave', name: 'Leave settings', audience: 'admin', web: ['/settings/leave'] },
+  { key: 'leave.balances', feature: 'leave', name: 'Leave management (HR Workspace and Super Workspace)', audience: 'hr', web: ['/leave/manage', '/leave/balances'] },
+  { key: 'leave.settings', feature: 'leave', name: 'Holidays and leave rules', audience: 'admin', web: ['/settings/leave'] },
   // Attendance
   { key: 'attendance_basic.mine', feature: 'attendance_basic', name: 'My attendance', audience: 'employee', web: ['/attendance'] },
   { key: 'attendance_basic.register', feature: 'attendance_basic', name: 'All employees attendance', audience: 'hr', web: ['/attendance/register'] },
