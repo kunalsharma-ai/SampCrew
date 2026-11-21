@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { mongo } from '@crew/db';
 import type { z } from 'zod';
 import { ATTENTION_RANK, type AttentionLevel, type HomeAction, type PlatformHome, type platformCreateTenantRequest } from '@crew/contracts';
-import { humanAction } from '../home/home.service';
+import { actorName, humanAction } from '../home/home.service';
 import { AuditService } from '../../platform/audit/audit.service';
 import { hashPassword, randomToken, sha256 } from '../../platform/auth/crypto';
 import { requestContext } from '../../platform/context/request-context';
@@ -514,7 +514,8 @@ export class PlatformService {
           integrations: health.integrations,
         },
         alerts,
-        activity: events.map((e) => ({ at: (e.created_at as Date).toISOString(), action: e.action as string, title: humanAction(e.action as string), workspace: e.tenant_id ? (names.get(e.tenant_id) ?? null) : null, actor: (e.actor_label as string | null) ?? null, level: levelOf(e.action as string) })),
+        activity: events.map((e) => ({ at: (e.created_at as Date).toISOString(), action: e.action as string, title: humanAction(e.action as string), workspace: e.tenant_id ? (names.get(e.tenant_id) ?? null) : null, // People inside a customer workspace are not named on the Console Home; platform admins and the system are.
+        actor: e.tenant_id ? null : actorName(e.actor_label), level: levelOf(e.action as string) })),
         signups: Array.from({ length: 30 }, (_, i) => {
           const day = isoDay(new Date(Date.parse(today) - (29 - i) * DAY));
           return { day, count: tenants.filter((t) => isoDay(t.created_at) === day).length };

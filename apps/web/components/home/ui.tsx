@@ -75,7 +75,7 @@ export function ActionCenter({ actions, title = 'Action required', description, 
       {actions.length === 0 ? (
         <Empty icon={<PartyPopper className="size-5" />} title="No pending actions" text="You're all caught up." />
       ) : (
-        <ul className="grid gap-1.5 px-3 pb-3">
+        <ul className="grid grid-cols-1 gap-1.5 px-3 pb-3">
           {shown.map((a) => (
             <li key={a.key}>
               <Link href={a.href} className="group flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-bg-subtle" data-testid={`action-${a.key}`}>
@@ -99,7 +99,7 @@ export function ActionCenter({ actions, title = 'Action required', description, 
 
 export function Empty({ icon, title, text, action }: { icon?: ReactNode; title: string; text?: string; action?: ReactNode }) {
   return (
-    <div className="grid place-items-center gap-1 px-5 pb-6 pt-2 text-center">
+    <div className="grid grid-cols-1 place-items-center gap-1 px-5 pb-6 pt-2 text-center">
       {icon && <span className="mb-1 grid size-10 place-items-center rounded-full bg-success-subtle text-success" aria-hidden>{icon}</span>}
       <div className="text-[0.8125rem] font-medium">{title}</div>
       {text && <div className="text-[0.75rem] text-fg-subtle">{text}</div>}
@@ -127,7 +127,7 @@ export function SectionSkeleton({ rows = 3, className }: { rows?: number; classN
   return (
     <Card className={cn('p-5', className)} aria-busy="true" aria-label="Loading">
       <Skeleton className="mb-4 h-4 w-40" />
-      <div className="grid gap-3">{Array.from({ length: rows }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+      <div className="grid grid-cols-1 gap-3">{Array.from({ length: rows }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
     </Card>
   );
 }

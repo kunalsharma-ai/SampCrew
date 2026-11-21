@@ -34,14 +34,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   if (!me.tenant.setupCompletedAt && can(me, 'org:manage') && !(await cookies()).get('crew_setup_later')) redirect('/setup');
 
   const level = designLevelOf(me.levels);
-  // Anyone who looks after more than their own record: HR Workspace admins, the Super Workspace, and managers (their team).
-  const seesWorkforce = (me.permissions['employees:read'] ?? 'own') !== 'own';
-  const workforceTab = seesWorkforce ? [{ key: 'workforce', label: level === 'super' ? 'Workforce' : level === 'hr' ? 'My workforce' : 'My team' }] : [];
-  const myDay = me.employee ? [{ key: 'me', label: 'My day' }] : [];
-  // A manager at the Employee Workspace level starts on their own day, with their team one tab away.
+  // The Super Workspace and HR Workspaces look after a workforce; an Employee Workspace (managers included) sees their own day.
+  const seesWorkforce = level !== 'employee' && (me.permissions['employees:read'] ?? 'own') !== 'own';
   const views = [
     ...(level === 'super' && me.levels?.super ? [{ key: 'organization', label: 'Organization' }] : []),
-    ...(level === 'employee' ? [...myDay, ...workforceTab] : [...workforceTab, ...myDay]),
+    ...(seesWorkforce ? [{ key: 'workforce', label: level === 'super' ? 'Workforce' : 'My workforce' }] : []),
+    ...(me.employee ? [{ key: 'me', label: 'My day' }] : []),
   ];
   const fallback = sp.hrWorkspace && views.some((v) => v.key === 'workforce') ? 'workforce' : (views[0]?.key ?? 'me');
   const view = views.some((v) => v.key === sp.view) ? sp.view! : fallback;
@@ -55,7 +53,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <HomeRefresh poll={view !== 'me'} />
       <HomeHeader name={me.user.fullName} level={levelLabel} workspace={me.tenant.name} timeZone={me.tenant.timezone} renderedAt={renderedAt} />
       <ViewTabs current={view} tabs={views.map((v) => ({ ...v, href: v.key === fallback && !sp.hrWorkspace ? '/' : `/?view=${v.key}` }))} />
-      <Suspense key={`${view}:${JSON.stringify(sp)}`} fallback={<div className="grid gap-5"><StatSkeletonRow count={view === 'me' ? 4 : 8} /><SectionSkeleton rows={4} /><div className="grid gap-5 lg:grid-cols-2"><SectionSkeleton /><SectionSkeleton /></div></div>}>
+      <Suspense key={`${view}:${JSON.stringify(sp)}`} fallback={<div className="grid grid-cols-1 gap-5"><StatSkeletonRow count={view === 'me' ? 4 : 8} /><SectionSkeleton rows={4} /><div className="grid grid-cols-1 gap-5 lg:grid-cols-2"><SectionSkeleton /><SectionSkeleton /></div></div>}>
         {view === 'organization' && <OrganizationSection me={me} trendDays={trendDays} />}
         {view === 'workforce' && <WorkforceSection me={me} sp={sp} trendDays={trendDays} level={level === 'super' ? 'super' : 'hr'} />}
         {view === 'me' && <MySection me={me} month={sp.month} renderedAt={renderedAt} />}

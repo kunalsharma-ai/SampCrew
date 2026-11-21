@@ -11,7 +11,7 @@
  * 2. HR assigns Neha a course: without reloading, her menu marks Learning and Notifications unread, and the Learning
  *    page shows the notice at the top; marking it read clears the marker.
  * 3. Notification settings: desktop notifications and quiet hours save and stay saved.
- * 4. Her supervisor (team scope) starts on "My day" and has "My team": clicking a workforce card opens team attendance filtered the
+ * 4. Her supervisor (an Employee Workspace manager) has only their own day; HR (company HR Workspace) has "My workforce": clicking a workforce card opens team attendance filtered the
  *    same way. Neha cannot open the workforce view by URL.
  * 5. Super Workspace (the owner) sees the organization: a new HR Workspace appears in Workspace health, and its card
  *    opens the workforce view for that HR Workspace only.
@@ -154,22 +154,26 @@ async function waitPhase(p, want) {
     ok('an employee cannot open the workforce view by URL or API');
 
     // 4. Supervisor: My workforce, cards open the filtered team list.
+    // A manager at the Employee Workspace level has their own day only (Kunal's rule: they see only themselves).
     const sup = await signIn(b, 'supervisor@demo.crew.local');
     await sup.getByTestId('employee-home').waitFor();
-    await sup.getByRole('link', { name: 'My team' }).click();
-    await sup.getByTestId('workforce-home').waitFor();
-    expect((await sup.getByTestId('workforce-home').innerText()).includes('Your team'), 'the view says it covers the team');
-    await sup.getByTestId('wf-present').click();
-    await sup.waitForURL((u) => u.pathname === '/attendance/team' && u.searchParams.get('status') === 'present');
-    await sup.goto(BASE + '/?view=workforce');
-    await sup.getByTestId('wf-late').click();
-    await sup.waitForURL((u) => u.pathname === '/attendance/team' && u.searchParams.get('filter') === 'late');
-    await sup.getByTestId('team-filter-chip').waitFor();
+    expect((await sup.getByRole('navigation', { name: 'Home views' }).count()) === 0, 'an Employee Workspace manager has no workforce tab');
     const supT = await apiLogin('supervisor@demo.crew.local');
-    const central = await api(supT, 'GET', '/home/workforce?hrWorkspaceId=central');
-    expect(central.status === 404, `a manager cannot widen the view to the central group, got ${central.status}`);
+    expect((await api(supT, 'GET', '/home/workforce')).status === 403, 'the API refuses the workforce view to an Employee Workspace manager');
     expect((await api(supT, 'GET', '/home/organization')).status === 403, 'a manager cannot open the organization view');
-    ok('supervisor has My team; its cards open team attendance with the same filter, and the API keeps it to the team');
+    ok('an Employee Workspace manager sees their own day; the workforce and organization views are refused');
+
+    // HR Workspace (company HR): My workforce, cards open the filtered team list.
+    const hr = await signIn(b, 'hr.admin@demo.crew.local');
+    await hr.getByTestId('workforce-home').waitFor();
+    expect((await hr.getByTestId('home-level').innerText()).includes('HR Workspace'), 'the header names the HR Workspace level');
+    await hr.getByTestId('wf-present').click();
+    await hr.waitForURL((u) => u.pathname === '/attendance/team' && u.searchParams.get('status') === 'present');
+    await hr.goto(BASE + '/');
+    await hr.getByTestId('wf-late').click();
+    await hr.waitForURL((u) => u.pathname === '/attendance/team' && u.searchParams.get('filter') === 'late');
+    await hr.getByTestId('team-filter-chip').waitFor();
+    ok('HR Workspace sees My workforce; its cards open team attendance with the same filter');
 
     // 5. Super Workspace: a new HR Workspace in Workspace health, and its card opens that workspace's view.
     const ws = await must(ownerT, 'POST', '/hr-workspaces', { name: `Home flow branch ${run}`, kind: 'branch', features: ['leave', 'attendance_basic', 'learning'] });

@@ -112,8 +112,8 @@ export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; 
   const Icon = st.icon;
   return (
     <Card className="overflow-hidden" data-testid="attendance-hero">
-      <div className="grid gap-5 bg-gradient-to-br from-accent/15 via-transparent to-transparent p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="grid gap-2">
+      <div className="grid grid-cols-1 gap-5 bg-gradient-to-br from-accent/15 via-transparent to-transparent p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="grid grid-cols-1 gap-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Today&apos;s attendance</div>
           <div className="flex flex-wrap items-center gap-3">
             <span className={cn('inline-flex items-center gap-2 text-2xl font-bold tracking-tight', st.tone)} data-testid="attendance-phase" data-phase={phase}>
@@ -149,7 +149,7 @@ export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; 
           <Link className="text-right text-xs font-medium text-accent hover:underline" href="/attendance">Attendance details</Link>
         </div>
       </div>
-      <div className="grid gap-3 border-t border-border px-5 py-4">
+      <div className="grid grid-cols-1 gap-3 border-t border-border px-5 py-4">
         <div className="flex items-center justify-between text-xs text-fg-subtle"><span>Working hours</span><span className="font-semibold tabular text-fg" data-testid="hours-percent">{pct}%</span></div>
         <Progress value={pct} label="Today's working hours" barClass={pct >= 100 ? 'bg-success' : undefined} />
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
@@ -231,7 +231,7 @@ export function AttendanceCalendar({ home, events }: { home: EmployeeHome; event
           </div>
         }
       />
-      <div className="grid gap-3 px-5 pb-5">
+      <div className="grid grid-cols-1 gap-3 px-5 pb-5">
         <div className="grid grid-cols-7 gap-1 text-center text-[0.6875rem] font-medium text-fg-subtle" aria-hidden>{DOW.map((d) => <div key={d}>{d}</div>)}</div>
         <div className="grid grid-cols-7 gap-1" role="group" aria-label={title}>
           {Array.from({ length: lead }, (_, i) => <div key={`l${i}`} />)}
@@ -312,7 +312,7 @@ export function MonthSummary({ home }: { home: EmployeeHome }) {
   return (
     <Card data-testid="month-summary">
       <CardHeader title="This month" description={`${hm(s.workedMinutes) === '—' ? '0h' : hm(s.workedMinutes)} worked over ${counted} counted day${counted === 1 ? '' : 's'}`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/attendance">Details</Link>} />
-      <ul className="grid gap-2 px-5 pb-5">
+      <ul className="grid grid-cols-1 gap-2 px-5 pb-5">
         {items.map(([label, n, I, tone]) => (
           <li key={label} className="flex items-center gap-3">
             <span className={cn('grid size-7 place-items-center rounded-lg', tone)} aria-hidden><I className="size-3.5" /></span>
@@ -338,10 +338,12 @@ export function TodayStatus({ home, today }: { home: EmployeeHome; today: Attend
   return (
     <section aria-label="Today's status" className="grid grid-cols-4 gap-2 sm:grid-cols-8" data-testid="today-status">
       {opts.map(([k, label, I]) => {
-        const on = now === k || (k === 'late' && (today?.day?.lateMinutes ?? 0) > 0);
+        // A weekly off lights the Holiday card, named for what today is.
+        const off = k === 'holiday' && now === 'weekly_off';
+        const on = now === k || off || (k === 'late' && (today?.day?.lateMinutes ?? 0) > 0);
         return (
           <div key={k} aria-current={on ? 'true' : undefined} className={cn('flex flex-col items-center gap-1 rounded-xl border p-2 text-center text-[0.6875rem] transition-colors', on ? 'border-accent bg-accent-subtle font-semibold text-fg' : 'border-border bg-surface text-fg-subtle')}>
-            <I className={cn('size-4', on ? 'text-accent' : '')} aria-hidden />{label}{on && <span className="sr-only"> (today)</span>}
+            <I className={cn('size-4', on ? 'text-accent' : '')} aria-hidden />{off ? 'Weekly off' : label}{on && <span className="sr-only"> (today)</span>}
           </div>
         );
       })}
@@ -355,9 +357,9 @@ export function LeaveCard({ home, balances }: { home: EmployeeHome; balances: Le
   return (
     <Card data-testid="leave-card">
       <CardHeader title="Leave" description="Balance, requests waiting and leave coming up." action={<Link href="/leave?create=leave" className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-xs font-semibold text-accent-fg hover:opacity-90" data-testid="apply-leave">Apply leave</Link>} />
-      <div className="grid gap-4 px-5 pb-5">
+      <div className="grid grid-cols-1 gap-4 px-5 pb-5">
         {shown.length > 0 ? (
-          <ul className="grid gap-2">
+          <ul className="grid grid-cols-1 gap-2">
             {shown.map((b) => {
               const total = Number(b.accrued) + Number(b.carriedForward) + Number(b.adjusted) || Number(b.annualEntitlement) || 0;
               const used = Number(b.taken);
@@ -372,7 +374,7 @@ export function LeaveCard({ home, balances }: { home: EmployeeHome; balances: Le
           </ul>
         ) : <p className="text-[0.8125rem] text-fg-muted">No leave balances are tracked for you yet.</p>}
         {l && (l.pending.length > 0 || l.upcoming.length > 0) && (
-          <div className="grid gap-2 border-t border-border pt-3 text-[0.8125rem]">
+          <div className="grid grid-cols-1 gap-2 border-t border-border pt-3 text-[0.8125rem]">
             {l.pending.map((r) => <div key={r.id} className="flex items-center justify-between gap-2"><span>{r.type}: {shortDate(r.startDate)}{r.endDate !== r.startDate ? ` to ${shortDate(r.endDate)}` : ''}</span><Badge tone="warning">Waiting</Badge></div>)}
             {l.upcoming.map((r) => <div key={r.id} className="flex items-center justify-between gap-2"><span>{r.type}: {shortDate(r.startDate)}{r.endDate !== r.startDate ? ` to ${shortDate(r.endDate)}` : ''}</span><Badge tone="success">Approved</Badge></div>)}
           </div>
@@ -386,11 +388,11 @@ export function LearningCard({ learning }: { learning: NonNullable<EmployeeHome[
   return (
     <Card data-testid="learning-card">
       <CardHeader title="My learning" description={learning.completion === null ? 'Nothing assigned yet.' : `${learning.completed} completed, ${learning.inProgress} in progress, ${learning.assigned} not started`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/learning">All learning</Link>} />
-      <div className="grid gap-3 px-5 pb-5">
+      <div className="grid grid-cols-1 gap-3 px-5 pb-5">
         {learning.items.length === 0 ? <Empty icon={<GraduationCap className="size-5" />} title="No courses waiting" text="New learning shows here when it is assigned." /> : learning.items.map((i) => {
           const value = i.progress ?? (i.status === 'in_progress' ? 50 : 0);
           return (
-            <div key={i.id} className="grid gap-1.5">
+            <div key={i.id} className="grid grid-cols-1 gap-1.5">
               <div className="flex items-center justify-between gap-2 text-[0.8125rem]">
                 <span className="truncate font-medium">{i.title}</span>
                 {i.overdue ? <Badge tone="danger">Overdue</Badge> : i.dueOn ? <span className="shrink-0 text-[0.6875rem] text-fg-subtle">Due {shortDate(i.dueOn)}</span> : null}
@@ -413,7 +415,7 @@ export function Rewards({ rewards }: { rewards: MyRewards }) {
   return (
     <Card>
       <CardHeader title="Attendance rewards" description="Set by HR. Holidays and weekly offs never count, and sick leave does not break a reward." />
-      <ul className="grid gap-3 px-5 pb-5">
+      <ul className="grid grid-cols-1 gap-3 px-5 pb-5">
         {rewards.rewards.map((r) => {
           const Icon = REWARD_ICON[r.icon] ?? Trophy;
           const [label, tone] = REWARD_STATUS[r.status] ?? [r.status, 'neutral'];
@@ -491,24 +493,24 @@ export function EmployeeHomeView({ home, today, balances, rewards, calendar, ren
     if (nowMin >= toMin(today.shift.start)) actions.unshift({ key: 'check-in', level: 'warning', title: 'You have not checked in today', detail: `Your shift started at ${today.shift.start}.`, count: null, href: '/', cta: 'Check in' });
   }
   return (
-    <section data-testid="employee-home" aria-label="My day" className="grid gap-5 animate-fade-in">
+    <section data-testid="employee-home" aria-label="My day" className="grid grid-cols-1 gap-5 animate-fade-in">
       {today ? <AttendanceHero today={today} renderedAt={renderedAt} /> : null}
       {home && home.attendance && <TodayStatus home={home} today={today} />}
       {!home ? <SectionError title="My day" what="Your attendance, leave and learning" /> : (
         <>
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
             <ActionCenter actions={actions} title="Today's attention" description={actions.length ? undefined : 'Nothing needs you right now.'} />
             {home.attendance && <MonthSummary home={home} />}
           </div>
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {home.attendance ? <AttendanceCalendar home={home} events={calendar} /> : <div />}
-            <div className="grid content-start gap-5">
+            <div className="grid grid-cols-1 content-start gap-5">
               {rewards && <Rewards rewards={rewards} />}
               {(home.leave || balances) && <LeaveCard home={home} balances={balances} />}
               {home.learning && <LearningCard learning={home.learning} />}
             </div>
           </div>
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             {home.announcements && <AnnouncementsCard a={home.announcements} />}
             <RecentNotifications limit={5} />
             <ActivityCard items={home.activity} />

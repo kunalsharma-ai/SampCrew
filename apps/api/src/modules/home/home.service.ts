@@ -41,6 +41,8 @@ const OFF = new Set(['holiday', 'weekly_off', 'not_joined']);
 /** Beyond the member's own record: a manager, HR or Super Workspace view rather than self-service. */
 const wide = (s: Subject, permission: string) => grantsFor(s, permission).some((g) => g.scope !== 'own');
 const isSuper = (s: Subject) => s.grants.some((g) => g.roleKey === 'super_workspace');
+/** Super Workspace or HR Workspace: the levels that look after a workforce. A manager at the Employee Workspace level does not. */
+const hrLevel = (s: Subject) => s.grants.some((g) => g.roleKey === 'super_workspace' || g.roleKey === 'hr_workspace');
 /**
  * HR Workspaces named on the subject's grants; null when a grant covers the whole company (or a legal entity) with no
  * HR Workspace limit. A manager's team or department grant covers no HR Workspace, so it adds none.
@@ -277,7 +279,7 @@ export class HomeService {
    * grants name their HR Workspaces, a manager's cover their team), then department, location and HR Workspace.
    */
   private async workforce(tx: Tx, s: Subject, q: WorkforceHomeQuery, date: string) {
-    if (!wide(s, 'employees:read') && !wide(s, 'attendance:read')) throw Errors.forbidden('Home for HR needs access to more than your own record');
+    if (!hrLevel(s) || (!wide(s, 'employees:read') && !wide(s, 'attendance:read'))) throw Errors.forbidden('The workforce view is for the Super Workspace and HR Workspaces');
     const allowed = hrWorkspacesOf(s, 'employees:read');
     const spaces = await tx.collection('hr_workspaces').find({ status: { $ne: 'archived' }, ...(allowed === null ? {} : { id: { $in: allowed } }) }, { projection: { name: 1 }, sort: { name: 1 } });
     if (q.hrWorkspaceId && q.hrWorkspaceId !== 'central' && !spaces.some((w) => w.id === q.hrWorkspaceId)) throw Errors.notFound('HR Workspace');
@@ -587,7 +589,7 @@ export class HomeService {
       communication: {
         unreadChats: chats?.unread ?? 0,
         announcements: ((news ?? []) as Doc[]).map((a) => ({ id: a.id, title: a.title, publishedAt: iso(a.publishedAt), priority: a.priority ?? 'normal' })),
-        recentHrActivity: extra.events.map((e) => ({ at: iso(e.created_at)!, title: humanAction(e.action), actor: (e.actor_label as string | null) ?? null })),
+        recentHrActivity: extra.events.map((e) => ({ at: iso(e.created_at)!, title: humanAction(e.action), actor: actorName(e.actor_label) })),
       },
       targetRate: TARGET,
     };
@@ -596,6 +598,12 @@ export class HomeService {
 
 /** "leave_policy.updated" -> "Leave policy updated". */
 export function humanAction(action: string): string {
-  const s = action.replace(/[._]/g, ' ').trim();
+  const s = action.replace(/[._]/g, ' ').trim().replace(/\bhr workspace\b/gi, 'HR Workspace').replace(/\b(hr|mfa|sso|api|bgv)\b/gi, (m) => m.toUpperCase());
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** The name part of an audit actor label ("Aarav Mehta <owner@…>" reads "Aarav Mehta"): Home never shows addresses. */
+export function actorName(label: unknown): string | null {
+  if (typeof label !== 'string') return null;
+  return label.replace(/\s*<[^>]*>/g, '').replace(/\s+\S+@\S+$/, '').trim() || null;
 }

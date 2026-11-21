@@ -77,13 +77,13 @@ function LearningOverview({ l }: { l: OrganizationHome['learning'] }) {
   return (
     <Card data-testid="org-learning">
       <CardHeader title="Learning overview" description={l.assigned ? `${l.completion ?? 0}% of ${l.assigned} assignments completed, ${l.active} courses in use` : 'No learning assigned yet.'} action={<Link className="text-xs font-medium text-accent hover:underline" href="/learning?view=team">View progress</Link>} />
-      <div className="grid gap-3 px-5 pb-5">
+      <div className="grid grid-cols-1 gap-3 px-5 pb-5">
         <div className="grid grid-cols-3 gap-2 text-center text-[0.6875rem]">
           <div className="rounded-lg bg-bg-subtle p-2"><div className="text-lg font-bold tabular">{l.active}</div>Active modules</div>
           <div className="rounded-lg bg-bg-subtle p-2"><div className="text-lg font-bold tabular">{l.completed}</div>Completed</div>
           <Link href="/learning?view=team&status=overdue" className="rounded-lg bg-danger-subtle p-2 text-danger hover:ring-1 hover:ring-danger"><div className="text-lg font-bold tabular">{l.overdue}</div>Overdue</Link>
         </div>
-        <ul className="grid gap-2">
+        <ul className="grid grid-cols-1 gap-2">
           {l.byWorkspace.map((w) => (
             <li key={w.id} className="grid grid-cols-[minmax(0,9rem)_1fr_3rem] items-center gap-2 text-[0.8125rem]">
               <span className="truncate">{w.name}</span>
@@ -105,7 +105,7 @@ export function OrganizationHomeView({ o, trend, trendDays, actions }: { o: Orga
   if (!o) return <SectionError title="Organization overview" what="The organisation overview" />;
   const v = o.overview;
   return (
-    <section data-testid="organization-home" aria-label="Organisation" className="grid gap-5 animate-fade-in">
+    <section data-testid="organization-home" aria-label="Organisation" className="grid grid-cols-1 gap-5 animate-fade-in">
       <section aria-label="Organization overview" className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8" data-testid="org-overview">
         <StatCard label="HR Workspaces" value={v.hrWorkspaces} href="/hr-workspaces" icon={<Network className="size-4" />} tone="bg-accent-subtle text-accent" testId="org-hr-workspaces" />
         <StatCard label="Employee Workspaces" value={v.employeeWorkspaces} hint="People who sign in to SampCrew" href="/people" icon={<Building2 className="size-4" />} tone="bg-accent-subtle text-accent" testId="org-employee-workspaces" />
@@ -116,32 +116,32 @@ export function OrganizationHomeView({ o, trend, trendDays, actions }: { o: Orga
         <StatCard label="Late" value={v.late} level={v.late ? 'attention' : 'normal'} href="/attendance/team?filter=late" icon={<AlarmClock className="size-4" />} testId="org-late" />
         <StatCard label="Missing punch" value={v.missingPunch} level={v.missingPunch ? 'warning' : 'normal'} href="/attendance/team?status=missing_punch" icon={<TriangleAlert className="size-4" />} testId="org-missing" />
       </section>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
         <ActionCenter actions={o.alerts} title="Requires attention" description={o.alerts.length ? `${o.alerts.length} across your HR Workspaces · ${ATTENTION_LABEL.warning} items first` : 'Every HR Workspace is on track.'} testId="org-alerts" />
         <TrendCard trend={trend} days={trendDays} base="/?view=organization" title="Attendance trends" />
       </div>
       <Card data-testid="workspace-health">
         <CardHeader title="Workspace health" description={`Attendance target ${o.targetRate}%. Open an HR Workspace for its own dashboard.`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/hr-workspaces">Manage HR Workspaces</Link>} />
-        <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 px-5 pb-5 sm:grid-cols-2 xl:grid-cols-3">
           {o.workspaces.length === 0 ? <p className="text-[0.8125rem] text-fg-muted">No HR Workspaces yet. Create one to delegate a department, branch or region.</p> : o.workspaces.map((w) => <WorkspaceCard key={w.id} w={w} />)}
         </div>
       </Card>
       {o.workspaces.length > 1 && <Comparison list={o.workspaces} />}
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <LearningOverview l={o.learning} />
-        <div className="grid content-start gap-5">
+        <div className="grid grid-cols-1 content-start gap-5">
           <CommunicationCard c={o.communication} title="Communication overview" />
           <Card data-testid="hr-activity">
             <CardHeader title="Recent HR activity" description="Changes made across HR Workspaces." />
             {o.communication.recentHrActivity.length === 0 ? <p className="px-5 pb-5 text-[0.8125rem] text-fg-muted">Nothing recent.</p> : (
-              <ul className="grid gap-2 px-5 pb-5 text-[0.8125rem]">
+              <ul className="grid grid-cols-1 gap-2 px-5 pb-5 text-[0.8125rem]">
                 {o.communication.recentHrActivity.map((a, i) => <li key={i} className="flex items-center gap-2"><Workflow className="size-3.5 text-fg-subtle" aria-hidden /><span className="flex-1 truncate">{a.title}{a.actor ? <span className="text-fg-subtle"> · {a.actor}</span> : null}</span><span className="text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>{relative(a.at)}</span></li>)}
               </ul>
             )}
           </Card>
         </div>
       </div>
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <RecentNotifications limit={5} />
         <QuickActionsCard actions={actions} title="Super Workspace quick actions" />
       </div>

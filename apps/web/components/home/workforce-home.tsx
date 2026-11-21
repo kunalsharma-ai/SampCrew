@@ -30,27 +30,27 @@ function Filters({ w, extra }: { w: WorkforceHome; extra?: Record<string, string
   return (
     <form className={cn('flex flex-wrap items-end gap-2 text-[0.75rem]', pending && 'opacity-60')} aria-label="Filter the dashboard" data-testid="home-filters" onSubmit={(e) => e.preventDefault()}>
       {f.hrWorkspaces.length > 1 && (
-        <label className="grid gap-0.5"><span className="text-fg-subtle">HR Workspace</span>
+        <label className="grid grid-cols-1 gap-0.5"><span className="text-fg-subtle">HR Workspace</span>
           <select className={sel} value={f.applied.hrWorkspaceId ?? ''} onChange={(e) => set('hrWorkspace', e.target.value)} data-testid="filter-hr-workspace">
             <option value="">All</option>{f.hrWorkspaces.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </label>
       )}
       {f.departments.length > 0 && (
-        <label className="grid gap-0.5"><span className="text-fg-subtle">Department</span>
+        <label className="grid grid-cols-1 gap-0.5"><span className="text-fg-subtle">Department</span>
           <select className={sel} value={f.applied.departmentId ?? ''} onChange={(e) => set('department', e.target.value)} data-testid="filter-department">
             <option value="">All</option>{f.departments.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </label>
       )}
       {f.locations.length > 0 && (
-        <label className="grid gap-0.5"><span className="text-fg-subtle">Location</span>
+        <label className="grid grid-cols-1 gap-0.5"><span className="text-fg-subtle">Location</span>
           <select className={sel} value={f.applied.locationId ?? ''} onChange={(e) => set('location', e.target.value)}>
             <option value="">All</option>{f.locations.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </label>
       )}
-      <label className="grid gap-0.5"><span className="text-fg-subtle">Date</span>
+      <label className="grid grid-cols-1 gap-0.5"><span className="text-fg-subtle">Date</span>
         <input type="date" className={sel} value={w.date} onChange={(e) => set('date', e.target.value)} data-testid="filter-date" />
       </label>
     </form>
@@ -88,7 +88,7 @@ function AttendanceMonitor({ w }: { w: WorkforceHome }) {
   return (
     <Card data-testid="attendance-monitor">
       <CardHeader title="Attendance monitoring" description={`${t.workingNow} working now, ${t.earlyLeave} left early, ${t.late} late.`} action={<Link className="text-xs font-medium text-accent hover:underline" href={`/attendance/team?date=${w.date}`}>Team attendance</Link>} />
-      <div className="grid gap-4 px-5 pb-5">
+      <div className="grid grid-cols-1 gap-4 px-5 pb-5">
         <div className="flex h-3 overflow-hidden rounded-full bg-bg-subtle" role="img" aria-label={parts.map((p) => `${p[0]} ${p[1]}`).join(', ')}>
           {parts.map(([label, n, cls]) => n > 0 && <div key={label} className={cn('h-full', cls)} style={{ width: `${(n / total) * 100}%` }} title={`${label}: ${n}`} />)}
         </div>
@@ -122,7 +122,7 @@ export function TrendCard({ trend, days, base, title = 'Attendance trend' }: { t
           {[7, 14, 30].map((n) => <Link key={n} href={`${base}${join}trend=${n}`} scroll={false} aria-current={n === days ? 'true' : undefined} className={cn('rounded-md px-2 py-0.5', n === days ? 'bg-accent text-accent-fg' : 'hover:bg-bg-subtle')}>{n === 7 ? 'Week' : n === 14 ? '2 weeks' : 'Month'}</Link>)}
         </div>
       } />
-      <div className="grid gap-4 px-5 pb-5">
+      <div className="grid grid-cols-1 gap-4 px-5 pb-5">
         <DailyBars days={trend.days.map((d) => ({ date: d.date, value: d.rate, detail: d.rate === null ? 'nobody expected' : `${d.rate}% present (${d.present} of ${d.expected}), ${d.late} late, ${d.absent} absent` }))} label={`Daily attendance over ${days} days`} onPick={(d) => router.push(`/attendance/team?date=${d}`)} />
         <dl className="grid grid-cols-4 gap-2 text-center">
           {([['Late', sum('late'), 'text-warning'], ['Absent', sum('absent'), 'text-danger'], ['Leave days', sum('onLeave'), 'text-info'], ['Missing', sum('missingPunch'), 'text-danger']] as const).map(([l, v, c]) => (
@@ -171,7 +171,7 @@ function LeaveSummary({ l }: { l: NonNullable<WorkforceHome['leave']> }) {
   return (
     <Card data-testid="leave-summary">
       <CardHeader title="Leave management" description="Requests, who is away today and leave coming up." />
-      <div className="grid gap-4 px-5 pb-5">
+      <div className="grid grid-cols-1 gap-4 px-5 pb-5">
         <div className="grid grid-cols-3 gap-2 text-center">
           <Link href="/approvals?category=leave" className="rounded-lg bg-warning-subtle p-2 hover:ring-1 hover:ring-warning"><div className="text-xl font-bold tabular text-warning">{l.pending}</div><div className="text-[0.6875rem] text-fg-muted">Pending</div></Link>
           <div className="rounded-lg bg-success-subtle p-2"><div className="text-xl font-bold tabular text-success">{l.approvedThisMonth}</div><div className="text-[0.6875rem] text-fg-muted">Approved this month</div></div>
@@ -179,11 +179,11 @@ function LeaveSummary({ l }: { l: NonNullable<WorkforceHome['leave']> }) {
         </div>
         <div>
           <div className="mb-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-subtle">On leave today</div>
-          {l.onLeaveToday.length === 0 ? <p className="text-[0.8125rem] text-fg-muted">Nobody.</p> : <ul className="grid gap-1 text-[0.8125rem]">{l.onLeaveToday.map((p) => <li key={p.employeeId} className="flex justify-between gap-2"><span>{p.name}</span><span className="text-fg-subtle">{p.type}, back after {shortDate(p.until)}</span></li>)}</ul>}
+          {l.onLeaveToday.length === 0 ? <p className="text-[0.8125rem] text-fg-muted">Nobody.</p> : <ul className="grid grid-cols-1 gap-1 text-[0.8125rem]">{l.onLeaveToday.map((p) => <li key={p.employeeId} className="flex justify-between gap-2"><span>{p.name}</span><span className="text-fg-subtle">{p.type}, back after {shortDate(p.until)}</span></li>)}</ul>}
         </div>
         <div>
           <div className="mb-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-subtle">Next two weeks</div>
-          {l.upcoming.length === 0 ? <p className="text-[0.8125rem] text-fg-muted">No approved leave coming up.</p> : <ul className="grid gap-1 text-[0.8125rem]">{l.upcoming.map((p) => <li key={p.id} className="flex justify-between gap-2"><span>{p.name}</span><span className="text-fg-subtle">{p.type}, {shortDate(p.startDate)}{p.endDate !== p.startDate ? ` to ${shortDate(p.endDate)}` : ''}</span></li>)}</ul>}
+          {l.upcoming.length === 0 ? <p className="text-[0.8125rem] text-fg-muted">No approved leave coming up.</p> : <ul className="grid grid-cols-1 gap-1 text-[0.8125rem]">{l.upcoming.map((p) => <li key={p.id} className="flex justify-between gap-2"><span>{p.name}</span><span className="text-fg-subtle">{p.type}, {shortDate(p.startDate)}{p.endDate !== p.startDate ? ` to ${shortDate(p.endDate)}` : ''}</span></li>)}</ul>}
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/approvals?category=leave" className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg">Review requests</Link>
@@ -200,7 +200,7 @@ function EmployeeInsights({ w }: { w: WorkforceHome }) {
   return (
     <Card data-testid="employee-insights">
       <CardHeader title="Employee overview" description="New joiners and people who may need a word." />
-      <div className="grid gap-4 px-5 pb-5 text-[0.8125rem]">
+      <div className="grid grid-cols-1 gap-4 px-5 pb-5 text-[0.8125rem]">
         <div className="grid grid-cols-3 gap-2 text-center">
           <div className="rounded-lg bg-bg-subtle p-2"><div className="text-lg font-bold tabular">{p.newJoiners.length}</div><div className="text-[0.6875rem] text-fg-subtle">Joined in 30 days</div></div>
           <Link href="/employees" className="rounded-lg bg-bg-subtle p-2 hover:ring-1 hover:ring-accent"><div className="text-lg font-bold tabular">{p.incompleteProfiles}</div><div className="text-[0.6875rem] text-fg-subtle">Profiles missing phone or birth date</div></Link>
@@ -208,12 +208,12 @@ function EmployeeInsights({ w }: { w: WorkforceHome }) {
         </div>
         {p.newJoiners.length > 0 && (
           <div><div className="mb-1 flex items-center gap-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-subtle"><UserPlus className="size-3.5" aria-hidden />New joiners</div>
-            <ul className="grid gap-1">{p.newJoiners.map((j) => <li key={j.id}><Link href={`/employees/${j.id}`} className="flex justify-between gap-2 hover:underline"><span>{j.name}</span><span className="text-fg-subtle">{j.department ?? ''} · {shortDate(j.joinedOn)}</span></Link></li>)}</ul>
+            <ul className="grid grid-cols-1 gap-1">{p.newJoiners.map((j) => <li key={j.id}><Link href={`/employees/${j.id}`} className="flex justify-between gap-2 hover:underline"><span>{j.name}</span><span className="text-fg-subtle">{j.department ?? ''} · {shortDate(j.joinedOn)}</span></Link></li>)}</ul>
           </div>
         )}
         <div><div className="mb-1 flex items-center gap-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-subtle"><TriangleAlert className="size-3.5" aria-hidden />Attendance issues this month</div>
           {p.attendanceIssues.length === 0 ? <p className="text-fg-muted">No repeated late coming, absence or missing punches.</p> : (
-            <ul className="grid gap-1">{p.attendanceIssues.map((x) => <li key={x.id}><Link href={`/employees/${x.id}?tab=attendance`} className="flex justify-between gap-2 hover:underline"><span>{x.name}</span><span className="flex gap-1">{x.late > 0 && <Badge tone="warning">{x.late} late</Badge>}{x.absent > 0 && <Badge tone="danger">{x.absent} absent</Badge>}{x.missing > 0 && <Badge tone="danger">{x.missing} missing</Badge>}</span></Link></li>)}</ul>
+            <ul className="grid grid-cols-1 gap-1">{p.attendanceIssues.map((x) => <li key={x.id}><Link href={`/employees/${x.id}?tab=attendance`} className="flex justify-between gap-2 hover:underline"><span>{x.name}</span><span className="flex gap-1">{x.late > 0 && <Badge tone="warning">{x.late} late</Badge>}{x.absent > 0 && <Badge tone="danger">{x.absent} absent</Badge>}{x.missing > 0 && <Badge tone="danger">{x.missing} missing</Badge>}</span></Link></li>)}</ul>
           )}
         </div>
       </div>
@@ -225,7 +225,7 @@ export function LearningSummary({ l, title = 'Learning & development' }: { l: No
   return (
     <Card data-testid="learning-summary">
       <CardHeader title={title} description={l.assigned ? `${l.completion ?? 0}% of ${l.assigned} assignments completed` : 'No learning assigned yet.'} action={<Link className="text-xs font-medium text-accent hover:underline" href="/learning?view=team">View progress</Link>} />
-      <div className="grid gap-3 px-5 pb-5">
+      <div className="grid grid-cols-1 gap-3 px-5 pb-5">
         <Progress value={l.completion} label="Learning completion" barClass="bg-success" />
         <div className="grid grid-cols-4 gap-2 text-center text-[0.6875rem]">
           <div className="rounded-lg bg-bg-subtle p-2"><div className="text-lg font-bold tabular">{l.assigned}</div>Assigned</div>
@@ -248,12 +248,12 @@ export function CommunicationCard({ c, title = 'Communication' }: { c: { unreadC
   return (
     <Card data-testid="communication-card">
       <CardHeader title={title} description="Messages, questions for HR and the latest announcements." action={<Link className="text-xs font-medium text-accent hover:underline" href="/communication">Open</Link>} />
-      <div className="grid gap-3 px-5 pb-5 text-[0.8125rem]">
+      <div className="grid grid-cols-1 gap-3 px-5 pb-5 text-[0.8125rem]">
         <div className="grid grid-cols-2 gap-2 text-center">
           <Link href="/communication" className="rounded-lg bg-bg-subtle p-2 hover:ring-1 hover:ring-accent"><div className="text-lg font-bold tabular">{c.unreadChats}</div><div className="text-[0.6875rem] text-fg-subtle">Unread messages</div></Link>
           {c.awaitingHr !== undefined && c.awaitingHr !== null && <Link href="/communication" className="rounded-lg bg-bg-subtle p-2 hover:ring-1 hover:ring-accent"><div className="text-lg font-bold tabular">{c.awaitingHr}</div><div className="text-[0.6875rem] text-fg-subtle">Questions waiting for HR</div></Link>}
         </div>
-        {c.announcements.length > 0 ? <ul className="grid gap-1">{c.announcements.map((a) => <li key={a.id} className="flex items-center gap-2"><MessagesSquare className="size-3.5 text-fg-subtle" aria-hidden /><Link href="/announcements" className="flex-1 truncate hover:underline">{a.title}</Link><span className="shrink-0 text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>{relative(a.publishedAt)}</span></li>)}</ul> : <p className="text-fg-muted">No recent announcements.</p>}
+        {c.announcements.length > 0 ? <ul className="grid grid-cols-1 gap-1">{c.announcements.map((a) => <li key={a.id} className="flex items-center gap-2"><MessagesSquare className="size-3.5 text-fg-subtle" aria-hidden /><Link href="/announcements" className="flex-1 truncate hover:underline">{a.title}</Link><span className="shrink-0 text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>{relative(a.publishedAt)}</span></li>)}</ul> : <p className="text-fg-muted">No recent announcements.</p>}
       </div>
     </Card>
   );
@@ -269,7 +269,7 @@ export function QuickActionsCard({ actions, title = 'Quick actions' }: { actions
           const Icon = ICONS[a.icon] ?? CalendarClock;
           return (
             <Link key={a.key} href={a.href} className="group flex items-center gap-2 rounded-lg border border-border p-2.5 text-[0.8125rem] font-medium transition-colors hover:border-accent hover:bg-accent-subtle" data-testid={`qa-${a.key}`}>
-              <span className="grid size-7 place-items-center rounded-md bg-accent-subtle text-accent group-hover:bg-accent group-hover:text-accent-fg"><Icon className="size-3.5" aria-hidden /></span>{a.label}
+              <span className="grid grid-cols-1 size-7 place-items-center rounded-md bg-accent-subtle text-accent group-hover:bg-accent group-hover:text-accent-fg"><Icon className="size-3.5" aria-hidden /></span>{a.label}
             </Link>
           );
         })}
@@ -287,7 +287,7 @@ export function WorkforceHomeView({ w, trend, trendDays, actions, base, extraPar
 }) {
   if (!w) return <SectionError title="Workforce" what="Today's workforce" />;
   return (
-    <section data-testid="workforce-home" aria-label="Workforce" className="grid gap-5 animate-fade-in">
+    <section data-testid="workforce-home" aria-label="Workforce" className="grid grid-cols-1 gap-5 animate-fade-in">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Today&apos;s workforce</div>
@@ -300,27 +300,27 @@ export function WorkforceHomeView({ w, trend, trendDays, actions, base, extraPar
       ) : (
         <>
           <WorkforceCards w={w} />
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
             <ActionCenter actions={w.actions} title="HR action center" />
             {w.today ? <AttendanceMonitor w={w} /> : <div />}
           </div>
           {w.today && (
-            <div className="grid gap-5 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <TrendCard trend={trend} days={trendDays} base={base} />
               <WorkforceCalendar trend={trend} />
             </div>
           )}
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {w.leave && <LeaveSummary l={w.leave} />}
             <EmployeeInsights w={w} />
           </div>
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {w.learning && <LearningSummary l={w.learning} />}
             {w.communication && <CommunicationCard c={w.communication} />}
           </div>
         </>
       )}
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <RecentNotifications limit={5} />
         <QuickActionsCard actions={actions} />
       </div>

@@ -165,7 +165,7 @@ export function HomeDashboard(props: {
         {d && d.kpis.length > 0 && <KpiStrip kpis={d.kpis} />}
         {d && <Spotlight d={d} actions={props.actions} openAssistant={openAssistant} recruiter={!!props.recruiter} />}
         {editing && <p className="mb-3 text-[0.8125rem] text-fg-muted">Drag widgets to reorder them, or use the arrow buttons. Hidden widgets stay here while you edit.</p>}
-        <div className="grid gap-5 xl:grid-cols-2">{visible.map((w) => widget(w))}</div>
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">{visible.map((w) => widget(w))}</div>
       </section>
     );
   }
@@ -308,7 +308,7 @@ function Spotlight({ d, actions, openAssistant, recruiter }: { d: Dashboard; act
   return (
     <div className="mb-6 grid gap-5">
       {(trend.length > 1 || slices.length > 0) && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           {trend.length > 1 && head && (
             <ChartPanel title="Workforce overview" action={<span className="text-[0.75rem] text-fg-subtle">{head.value} now{typeof head.delta === 'number' ? `, ${head.delta >= 0 ? '+' : ''}${head.delta} in 6 months` : ''}</span>}>
               <LineChart points={trend} />
