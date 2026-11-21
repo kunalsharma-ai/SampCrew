@@ -60,7 +60,8 @@ Within the company, access combines **RBAC** (the level bundles permissions) wit
 | `leave:read` View leave balances and requests | 2 |  | A | A | T |
 | `leave:request` Apply for leave | 2 |  | O | O | O |
 | `leave:approve` Approve or reject leave | 2 |  | A | A | T |
-| `leave:configure` Configure leave types, policies and holidays | 2 |  | A | A | · |
+| `leave:configure` Create and change leave types, their policies and approval rules, holidays, and make types available to HR Workspaces (Super Workspace) | 2 |  | A | · | · |
+| `leave:allocate` Allocate leave types to employees (an HR Workspace only the types made available to it, for its own people) | 2 |  | A | A | · |
 | **Attendance** | | |  |  |  |
 | `attendance:read` View attendance records | 3 |  | A | A | T |
 | `attendance:punch` Record own attendance | 3 |  | O | O | O |

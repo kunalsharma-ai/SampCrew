@@ -128,7 +128,7 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
               {preview.routes.map((r) => (
                 <label key={r.route} className="flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-[0.8125rem]">
                   <input type="radio" name="approvalRoute" className="mt-0.5" value={r.route} checked={(form.route || preview.route) === r.route} onChange={() => setForm({ ...form, route: r.route })} />
-                  <span><span className="font-medium">{r.label}</span><span className="block text-xs text-fg-subtle">{r.reviewers.join(' and ')}</span></span>
+                  <span><span className="font-medium">{r.label}</span>{r.reviewers.join(' and ') !== r.label && <span className="block text-xs text-fg-subtle">{r.reviewers.join(' and ')}</span>}</span>
                 </label>
               ))}
             </fieldset>

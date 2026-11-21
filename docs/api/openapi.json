@@ -19569,12 +19569,26 @@
         "tags": [
           "Leave"
         ],
-        "summary": "Leave types",
+        "summary": "Leave types you can see: all (Super Workspace), those available to your HR Workspace, or those you hold",
         "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_types",
         "security": [
           {
             "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "includeArchived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -19597,7 +19611,7 @@
         "tags": [
           "Leave"
         ],
-        "summary": "Create a leave type",
+        "summary": "Create a leave type with its policy, eligibility and approval rules (Super Workspace)",
         "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_createType",
         "security": [
@@ -19625,6 +19639,19 @@
                   "description": {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  "category": {
+                    "default": "general",
+                    "type": "string",
+                    "enum": [
+                      "general",
+                      "medical",
+                      "family",
+                      "statutory",
+                      "special",
+                      "unpaid",
+                      "other"
+                    ]
                   },
                   "paid": {
                     "default": true,
@@ -19661,46 +19688,320 @@
                   "countsCalendarDays": {
                     "default": false,
                     "type": "boolean"
+                  },
+                  "effectiveFrom": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "active": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "hrAllocatable": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "eligibility": {
+                    "type": "object",
+                    "properties": {
+                      "employmentTypes": {
+                        "maxItems": 5,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "full_time",
+                            "part_time",
+                            "contract",
+                            "intern",
+                            "temporary"
+                          ]
+                        }
+                      },
+                      "departmentIds": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "designationIds": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "locationIds": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "legalEntityIds": {
+                        "maxItems": 100,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "groupIds": {
+                        "maxItems": 100,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "employeeIds": {
+                        "maxItems": 2000,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "policy": {
+                    "type": "object",
+                    "properties": {
+                      "accrualMethod": {
+                        "default": "annual_upfront",
+                        "type": "string",
+                        "enum": [
+                          "annual_upfront",
+                          "quarterly",
+                          "monthly",
+                          "granted",
+                          "none"
+                        ]
+                      },
+                      "annualEntitlement": {
+                        "type": [
+                          "number",
+                          "string"
+                        ]
+                      },
+                      "rounding": {
+                        "default": "half_day",
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "half_day"
+                        ]
+                      },
+                      "allowNegativeBalance": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "minNoticeDays": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 365
+                      },
+                      "minDaysPerRequest": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "maxDaysPerRequest": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "maxConsecutiveDays": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "allowMultiDay": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "allowCustomDuration": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "availableDuringProbation": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "carryForwardMax": {
+                        "type": [
+                          "number",
+                          "string"
+                        ]
+                      },
+                      "carriedExpiryMonths": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 12
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "documents": {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "default": "none",
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "optional",
+                              "required"
+                            ]
+                          },
+                          "requiredOverDays": {
+                            "type": [
+                              "number",
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "note": {
+                            "default": "",
+                            "type": "string",
+                            "maxLength": 300
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "approval": {
+                    "type": "object",
+                    "properties": {
+                      "routes": {
+                        "minItems": 1,
+                        "maxItems": 3,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "hr",
+                            "super",
+                            "both"
+                          ]
+                        }
+                      },
+                      "employeeChooses": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "order": {
+                        "default": "simultaneous",
+                        "type": "string",
+                        "enum": [
+                          "simultaneous",
+                          "sequential"
+                        ]
+                      },
+                      "managerFirst": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "hrWorkspaceId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "superApproverMembershipId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "superRequiredOverDays": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "escalation": {
+                        "default": {
+                          "enabled": false,
+                          "afterDays": 3
+                        },
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "afterDays": {
+                            "default": 3,
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 60
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "required": [
                   "code",
                   "name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "4XX": {
-            "description": "Error envelope",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/leave/types/defaults": {
-      "post": {
-        "tags": [
-          "Leave"
-        ],
-        "summary": "Add the standard leave types (casual, sick, earned, without pay) with workspace-wide policies; only when the workspace has no leave types yet",
-        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
-        "operationId": "Leave_addDefaultTypes",
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
         "responses": {
           "200": {
             "description": "Success"
@@ -19723,7 +20024,7 @@
         "tags": [
           "Leave"
         ],
-        "summary": "The standard leave type catalogue (maternity, paternity, bereavement, comp-off, optional holiday, work from home and more), marking the codes this workspace already uses",
+        "summary": "Leave type templates (Permanent, Casual and Sick Leave as starters, plus earned, maternity, paternity and more), marking the codes already used",
         "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_standardTypes",
         "security": [
@@ -19751,7 +20052,7 @@
         "tags": [
           "Leave"
         ],
-        "summary": "Add chosen types from the standard catalogue, each with a workspace-wide starting policy (codes already used are skipped)",
+        "summary": "Create leave types from chosen templates (codes already used are skipped; nothing is allocated)",
         "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_addStandardTypes",
         "security": [
@@ -19801,12 +20102,80 @@
         }
       }
     },
+    "/api/v1/leave/types/starter": {
+      "post": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Create the starter leave types: Permanent Leave (PL), Casual Leave (CL) and Sick Leave (SL), fully editable afterwards",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_addStarterTypes",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/leave/types/{id}": {
+      "get": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "One leave type with its policy, approval rules, allocations, creator and change history",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_type",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "tags": [
           "Leave"
         ],
-        "summary": "Update a leave type",
+        "summary": "Change a leave type (applies to new applications; refused when made on an older version)",
         "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_updateType",
         "security": [
@@ -19842,24 +20211,39 @@
                     "maxLength": 80
                   },
                   "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "category": {
                     "type": "string",
-                    "maxLength": 500
+                    "enum": [
+                      "general",
+                      "medical",
+                      "family",
+                      "statutory",
+                      "special",
+                      "unpaid",
+                      "other"
+                    ]
                   },
                   "paid": {
-                    "default": true,
                     "type": "boolean"
                   },
                   "allowHalfDay": {
-                    "default": true,
                     "type": "boolean"
                   },
                   "color": {
-                    "default": "#4f46e5",
                     "type": "string",
                     "pattern": "^#[0-9a-fA-F]{6}$"
                   },
                   "kind": {
-                    "default": "standard",
                     "type": "string",
                     "enum": [
                       "standard",
@@ -19869,7 +20253,6 @@
                     ]
                   },
                   "eligibleGender": {
-                    "default": "any",
                     "type": "string",
                     "enum": [
                       "any",
@@ -19878,10 +20261,316 @@
                     ]
                   },
                   "countsCalendarDays": {
-                    "default": false,
                     "type": "boolean"
+                  },
+                  "effectiveFrom": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "hrAllocatable": {
+                    "type": "boolean"
+                  },
+                  "eligibility": {
+                    "type": "object",
+                    "properties": {
+                      "employmentTypes": {
+                        "maxItems": 5,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "full_time",
+                            "part_time",
+                            "contract",
+                            "intern",
+                            "temporary"
+                          ]
+                        }
+                      },
+                      "departmentIds": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "designationIds": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "locationIds": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "legalEntityIds": {
+                        "maxItems": 100,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "groupIds": {
+                        "maxItems": 100,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "employeeIds": {
+                        "maxItems": 2000,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "policy": {
+                    "type": "object",
+                    "properties": {
+                      "accrualMethod": {
+                        "default": "annual_upfront",
+                        "type": "string",
+                        "enum": [
+                          "annual_upfront",
+                          "quarterly",
+                          "monthly",
+                          "granted",
+                          "none"
+                        ]
+                      },
+                      "annualEntitlement": {
+                        "type": [
+                          "number",
+                          "string"
+                        ]
+                      },
+                      "rounding": {
+                        "default": "half_day",
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "half_day"
+                        ]
+                      },
+                      "allowNegativeBalance": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "minNoticeDays": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 365
+                      },
+                      "minDaysPerRequest": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "maxDaysPerRequest": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "maxConsecutiveDays": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "allowMultiDay": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "allowCustomDuration": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "availableDuringProbation": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "carryForwardMax": {
+                        "type": [
+                          "number",
+                          "string"
+                        ]
+                      },
+                      "carriedExpiryMonths": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 12
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "documents": {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "default": "none",
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "optional",
+                              "required"
+                            ]
+                          },
+                          "requiredOverDays": {
+                            "type": [
+                              "number",
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "note": {
+                            "default": "",
+                            "type": "string",
+                            "maxLength": 300
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "approval": {
+                    "type": "object",
+                    "properties": {
+                      "routes": {
+                        "minItems": 1,
+                        "maxItems": 3,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "hr",
+                            "super",
+                            "both"
+                          ]
+                        }
+                      },
+                      "employeeChooses": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "order": {
+                        "default": "simultaneous",
+                        "type": "string",
+                        "enum": [
+                          "simultaneous",
+                          "sequential"
+                        ]
+                      },
+                      "managerFirst": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "hrWorkspaceId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "superApproverMembershipId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "superRequiredOverDays": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "escalation": {
+                        "default": {
+                          "enabled": false,
+                          "afterDays": 3
+                        },
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "afterDays": {
+                            "default": 3,
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 60
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 300
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -19906,9 +20595,9 @@
         "tags": [
           "Leave"
         ],
-        "summary": "Archive a leave type and deactivate its policies (history is kept)",
+        "summary": "Remove a leave type that was never used (a used type can only be deactivated)",
         "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
-        "operationId": "Leave_archiveType",
+        "operationId": "Leave_deleteType",
         "security": [
           {
             "bearer": []
@@ -19941,17 +20630,190 @@
         }
       }
     },
-    "/api/v1/leave/policies": {
+    "/api/v1/leave/types/{id}/status": {
+      "post": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Deactivate or reactivate a leave type, with a reason (records and balances are kept)",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_setTypeStatus",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "active",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/history": {
       "get": {
         "tags": [
           "Leave"
         ],
-        "summary": "Active leave policies",
-        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
-        "operationId": "Leave_policies",
+        "summary": "Who created, changed, deactivated or allocated leave types, and when",
+        "description": "Requires permission `leave:allocate`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_history",
         "security": [
           {
             "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "leaveTypeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/options": {
+      "get": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "What leave management chooses from, within your scope: departments, designations, locations, legal entities, groups, HR Workspaces, Super Workspace administrators and people",
+        "description": "Requires permission `leave:allocate`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_options",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/allocations": {
+      "get": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Allocations you can see: to employees, and types made available to HR Workspaces",
+        "description": "Requires permission `leave:allocate`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_allocations",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "leaveTypeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "includeRevoked",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -19974,9 +20836,9 @@
         "tags": [
           "Leave"
         ],
-        "summary": "Save the policy for a leave type and legal entity (replaces the active one)",
-        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
-        "operationId": "Leave_setPolicy",
+        "summary": "Allocate a leave type to employees, or (Super Workspace) make it available to an HR Workspace",
+        "description": "Requires permission `leave:allocate`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_allocate",
         "security": [
           {
             "bearer": []
@@ -19988,120 +20850,167 @@
             "application/json": {
               "schema": {
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "properties": {
-                  "leaveTypeId": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "legalEntityId": {
-                    "default": null,
-                    "anyOf": [
-                      {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "target": {
+                        "type": "string",
+                        "const": "employees"
+                      },
+                      "leaveTypeId": {
                         "type": "string",
                         "format": "uuid",
                         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                       },
-                      {
-                        "type": "null"
+                      "hrWorkspaceId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "criteria": {
+                        "type": "object",
+                        "properties": {
+                          "all": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "employmentTypes": {
+                            "maxItems": 5,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "full_time",
+                                "part_time",
+                                "contract",
+                                "intern",
+                                "temporary"
+                              ]
+                            }
+                          },
+                          "departmentIds": {
+                            "maxItems": 500,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "designationIds": {
+                            "maxItems": 500,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "locationIds": {
+                            "maxItems": 500,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "legalEntityIds": {
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "groupIds": {
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "employeeIds": {
+                            "maxItems": 2000,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "entitlementDays": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "note": {
+                        "default": "",
+                        "type": "string",
+                        "maxLength": 300
                       }
-                    ]
+                    },
+                    "required": [
+                      "target",
+                      "leaveTypeId",
+                      "criteria"
+                    ],
+                    "additionalProperties": false
                   },
-                  "departmentId": {
-                    "default": null,
-                    "anyOf": [
-                      {
+                  {
+                    "type": "object",
+                    "properties": {
+                      "target": {
+                        "type": "string",
+                        "const": "hr_workspace"
+                      },
+                      "leaveTypeId": {
                         "type": "string",
                         "format": "uuid",
                         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                       },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "designationId": {
-                    "default": null,
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "hrWorkspaceId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "locationId": {
-                    "default": null,
-                    "anyOf": [
-                      {
+                      "note": {
+                        "default": "",
                         "type": "string",
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                      },
-                      {
-                        "type": "null"
+                        "maxLength": 300
                       }
-                    ]
-                  },
-                  "accrualMethod": {
-                    "type": "string",
-                    "enum": [
-                      "annual_upfront",
-                      "monthly",
-                      "granted",
-                      "none"
-                    ]
-                  },
-                  "annualEntitlement": {
-                    "type": [
-                      "number",
-                      "string"
-                    ]
-                  },
-                  "carryForwardMax": {
-                    "type": [
-                      "number",
-                      "string"
-                    ]
-                  },
-                  "allowNegativeBalance": {
-                    "default": false,
-                    "type": "boolean"
-                  },
-                  "minNoticeDays": {
-                    "default": 0,
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 365
-                  },
-                  "maxConsecutiveDays": {
-                    "type": [
-                      "number",
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "availableDuringProbation": {
-                    "default": true,
-                    "type": "boolean"
-                  },
-                  "rounding": {
-                    "default": "half_day",
-                    "type": "string",
-                    "enum": [
-                      "none",
-                      "half_day"
-                    ]
+                    },
+                    "required": [
+                      "target",
+                      "leaveTypeId",
+                      "hrWorkspaceId"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "leaveTypeId",
-                  "accrualMethod",
-                  "annualEntitlement"
                 ]
               }
             }
@@ -20124,14 +21033,216 @@
         }
       }
     },
-    "/api/v1/leave/policies/{id}": {
-      "delete": {
+    "/api/v1/leave/allocations/preview": {
+      "post": {
         "tags": [
           "Leave"
         ],
-        "summary": "Deactivate a leave policy",
-        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
-        "operationId": "Leave_removePolicy",
+        "summary": "Who an allocation would reach, and who is left out and why (nothing is saved)",
+        "description": "Requires permission `leave:allocate`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_previewAllocation",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "target": {
+                        "type": "string",
+                        "const": "employees"
+                      },
+                      "leaveTypeId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "hrWorkspaceId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "criteria": {
+                        "type": "object",
+                        "properties": {
+                          "all": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "employmentTypes": {
+                            "maxItems": 5,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "full_time",
+                                "part_time",
+                                "contract",
+                                "intern",
+                                "temporary"
+                              ]
+                            }
+                          },
+                          "departmentIds": {
+                            "maxItems": 500,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "designationIds": {
+                            "maxItems": 500,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "locationIds": {
+                            "maxItems": 500,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "legalEntityIds": {
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "groupIds": {
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          },
+                          "employeeIds": {
+                            "maxItems": 2000,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            }
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "entitlementDays": {
+                        "type": [
+                          "number",
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "note": {
+                        "default": "",
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "required": [
+                      "target",
+                      "leaveTypeId",
+                      "criteria"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "target": {
+                        "type": "string",
+                        "const": "hr_workspace"
+                      },
+                      "leaveTypeId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "hrWorkspaceId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "note": {
+                        "default": "",
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "required": [
+                      "target",
+                      "leaveTypeId",
+                      "hrWorkspaceId"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/allocations/{id}/revoke": {
+      "post": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Withdraw an allocation, with a reason (leave already taken is kept)",
+        "description": "Requires permission `leave:allocate`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_revoke",
         "security": [
           {
             "bearer": []
@@ -20145,6 +21256,322 @@
             "schema": {
               "type": "string"
             }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/dashboard": {
+      "get": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Leave dashboard for the Super Workspace or an HR Workspace, within your scope",
+        "description": "Requires permission `leave:allocate`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_dashboard",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2200
+            }
+          },
+          {
+            "name": "hrWorkspaceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "departmentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "leaveTypeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/reports": {
+      "get": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Leave usage per person and type for a year, within your scope",
+        "description": "Requires permission `leave:allocate`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_report",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2200
+            }
+          },
+          {
+            "name": "hrWorkspaceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "departmentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "leaveTypeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/mine": {
+      "get": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Your leave dashboard: the types you hold with their rules, balances, upcoming and pending leave",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_mine",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/documents": {
+      "post": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Upload a supporting document for a leave application (multipart/form-data: file). Up to 10 MB.",
+        "description": "Requires permission `leave:request`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_uploadDocument",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/requests/{id}/documents/{fileId}/link": {
+      "post": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "A short-lived download link for a document on a leave request you can see",
+        "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_documentLink",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leave/escalations/run": {
+      "post": {
+        "tags": [
+          "Leave"
+        ],
+        "summary": "Escalate overdue leave approvals now (also runs automatically every hour)",
+        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
+        "operationId": "Leave_escalate",
+        "security": [
+          {
+            "bearer": []
           }
         ],
         "responses": {
@@ -20198,7 +21625,7 @@
           "Leave"
         ],
         "summary": "Create a holiday calendar",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:allocate`.",
         "operationId": "Leave_createCalendar",
         "security": [
           {
@@ -20292,7 +21719,7 @@
           "Leave"
         ],
         "summary": "Update a holiday calendar",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:allocate`.",
         "operationId": "Leave_updateCalendar",
         "security": [
           {
@@ -20394,7 +21821,7 @@
           "Leave"
         ],
         "summary": "Delete a holiday calendar",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:allocate`.",
         "operationId": "Leave_deleteCalendar",
         "security": [
           {
@@ -20434,7 +21861,7 @@
           "Leave"
         ],
         "summary": "Add a holiday",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:allocate`.",
         "operationId": "Leave_addHoliday",
         "security": [
           {
@@ -20505,7 +21932,7 @@
           "Leave"
         ],
         "summary": "Remove a holiday",
-        "description": "Requires permission `leave:configure`.",
+        "description": "Requires permission `leave:allocate`.",
         "operationId": "Leave_removeHoliday",
         "security": [
           {
@@ -20625,6 +22052,16 @@
           },
           {
             "name": "departmentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "hrWorkspaceId",
             "in": "query",
             "required": false,
             "schema": {
@@ -20778,6 +22215,24 @@
                     "type": "string",
                     "maxLength": 1000
                   },
+                  "approvalRoute": {
+                    "type": "string",
+                    "enum": [
+                      "hr",
+                      "super",
+                      "both"
+                    ]
+                  },
+                  "documentIds": {
+                    "default": [],
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
                   "employeeId": {
                     "type": "string",
                     "format": "uuid",
@@ -20866,6 +22321,24 @@
                     "type": "string",
                     "maxLength": 1000
                   },
+                  "approvalRoute": {
+                    "type": "string",
+                    "enum": [
+                      "hr",
+                      "super",
+                      "both"
+                    ]
+                  },
+                  "documentIds": {
+                    "default": [],
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
                   "employeeId": {
                     "type": "string",
                     "format": "uuid",
@@ -20901,7 +22374,7 @@
         "tags": [
           "Leave"
         ],
-        "summary": "Leave requests: yours by default, or every request you can see with scope=visible",
+        "summary": "Leave requests: yours by default, every request you can see with scope=visible, or those waiting on you with scope=review",
         "description": "Requires permission `leave:read`.\n\nRequires plan feature `leave`.",
         "operationId": "Leave_list",
         "security": [
@@ -20918,7 +22391,8 @@
               "type": "string",
               "enum": [
                 "mine",
-                "visible"
+                "visible",
+                "review"
               ]
             }
           },
@@ -20964,6 +22438,26 @@
               "type": "string",
               "format": "date",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "leaveTypeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "hrWorkspaceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           },
           {
@@ -21157,6 +22651,24 @@
                   "reason": {
                     "type": "string",
                     "maxLength": 1000
+                  },
+                  "approvalRoute": {
+                    "type": "string",
+                    "enum": [
+                      "hr",
+                      "super",
+                      "both"
+                    ]
+                  },
+                  "documentIds": {
+                    "default": [],
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
                   }
                 },
                 "required": [
@@ -21250,6 +22762,24 @@
                   "reason": {
                     "type": "string",
                     "maxLength": 1000
+                  },
+                  "approvalRoute": {
+                    "type": "string",
+                    "enum": [
+                      "hr",
+                      "super",
+                      "both"
+                    ]
+                  },
+                  "documentIds": {
+                    "default": [],
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
                   }
                 },
                 "required": [
@@ -21626,7 +23156,7 @@
           "LeavePenalties"
         ],
         "summary": "Set the same-day leave penalty: automatic or by the manager, and the days of pay deducted",
-        "description": "Requires permission `leave:configure`.\n\nRequires plan feature `leave`.",
+        "description": "Requires permission `leave:allocate`.\n\nRequires plan feature `leave`.",
         "operationId": "LeavePenalties_savePolicy",
         "security": [
           {
