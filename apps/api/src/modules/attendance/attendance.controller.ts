@@ -24,6 +24,7 @@ import {
   simulateInput,
   swapRequestInput,
   DAY_STATUSES,
+  ATTENDANCE_VIEW_FILTERS,
 } from '@crew/contracts';
 import { Throttle } from '@nestjs/throttler';
 import { z } from 'zod';
@@ -38,7 +39,7 @@ const range = z
   .object({ employeeId: z.uuid().optional(), from: isoDate, to: isoDate })
   .refine((v) => v.to >= v.from, { message: 'to is before from', path: ['to'] })
   .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, { message: 'Ask for at most 63 days at a time', path: ['to'] });
-const teamQuery = z.object({ date: isoDate, status: z.enum(DAY_STATUSES).optional(), departmentId: z.uuid().optional(), locationId: z.uuid().optional() });
+const teamQuery = z.object({ date: isoDate, status: z.enum(DAY_STATUSES).optional(), filter: z.enum(ATTENDANCE_VIEW_FILTERS).optional(), departmentId: z.uuid().optional(), locationId: z.uuid().optional() });
 const registerQuery = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM'), departmentId: z.uuid().optional(), locationId: z.uuid().optional(), q: z.string().trim().max(100).optional() });
 const listQuery = z.object({ scope: z.enum(['mine', 'visible']).default('mine'), status: z.enum(['pending', 'approved', 'rejected', 'cancelled']).optional() });
 const unlockInput = z.object({ reason: z.string().trim().min(3).max(300) });

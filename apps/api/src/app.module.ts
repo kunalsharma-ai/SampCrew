@@ -39,6 +39,8 @@ import { LeaveService } from './modules/leave/leave.service';
 import { MembersController } from './modules/members/members.controller';
 import { MembersService } from './modules/members/members.service';
 import { DashboardController, DashboardService } from './modules/experience/dashboard.controller';
+import { HomeController } from './modules/home/home.controller';
+import { HomeService } from './modules/home/home.service';
 import { OverviewController, OverviewService } from './modules/experience/overview.controller';
 import { PreferencesController } from './modules/experience/preferences.controller';
 import { ViewsController } from './modules/experience/views.controller';
@@ -209,6 +211,7 @@ export const CONTROLLERS = [
   UniverseController,
   LensesController,
   DashboardController,
+  HomeController,
   OverviewController,
   AttendanceController,
   KioskController,
@@ -296,6 +299,7 @@ export const CONTROLLERS = [
     StorageService,
     ApprovalsService,
     DashboardService,
+    HomeService,
     OverviewService,
     BidsService,
     ProposalsPublicService,

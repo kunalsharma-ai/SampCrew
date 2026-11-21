@@ -370,6 +370,13 @@ export class PlatformController {
   }
 
   @PlatformRealm('tenants:read')
+  @Get('home')
+  @Doc({ summary: 'Console Home: customers, workspaces and users (counts only), workspaces needing attention, system alerts and administrative activity' })
+  home() {
+    return this.platform.home();
+  }
+
+  @PlatformRealm('tenants:read')
   @Get('metrics')
   @Doc({ summary: 'Platform KPIs: tenants, subscriptions, MRR, trials ending, sign-ups' })
   metrics() {
