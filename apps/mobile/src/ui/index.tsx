@@ -17,7 +17,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ApiError } from '../lib/api';
+import { ApiError, lastChange } from '../lib/api';
 import { useAppearanceTheme } from '../lib/appearance';
 import { useAppStale } from '../lib/mobile-app';
 import { alpha, type MobileTheme, NEON_TILES, type TileTone } from '../lib/theme';
@@ -490,16 +490,26 @@ export const fmt = {
   month: (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
 };
 
-/** Reloads a screen's data when the person comes back to it (not on the first visit, which already loads). */
-export function useReloadOnFocus(reload: () => unknown) {
+/**
+ * Reloads a screen's data when the person comes back to it (not on the first visit, which already loads), unless it
+ * was loaded in the last few seconds and nothing was changed since: hopping between tabs does not ask the server for
+ * the same data again, while a screen still shows a change made elsewhere in the app at once. The
+ * latest reload function is kept in a ref, so a screen passing a new function on every render does not loop.
+ */
+export function useReloadOnFocus(reload: () => unknown, minAgeMs = 15_000) {
   const first = useRef(true);
+  const last = useRef(Date.now());
+  const latest = useRef(reload);
+  latest.current = reload;
   useFocusEffect(
     useCallback(() => {
       if (first.current) {
         first.current = false;
         return;
       }
-      void reload();
-    }, [reload]),
+      if (Date.now() - last.current < minAgeMs && lastChange.at < last.current) return;
+      last.current = Date.now();
+      void latest.current();
+    }, [minAgeMs]),
   );
 }

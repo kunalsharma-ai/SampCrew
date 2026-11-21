@@ -103,12 +103,9 @@ export function MobileAppProvider({ children }: { children: ReactNode }) {
     };
   }, [status, refresh, api]);
 
-  const value = useMemo<MobileAppState>(() => ({
-    app,
-    stale,
-    refresh,
-    has: (k) => appHas(app, k),
-    module: (k) => app?.modules.find((m) => m.key === k),
-  }), [app, stale, refresh]);
+  // Stable while the menu is the same, so screens can list them as effect dependencies without reloading.
+  const has = useCallback((k: string) => appHas(app, k), [app]);
+  const module = useCallback((k: string) => app?.modules.find((m) => m.key === k), [app]);
+  const value = useMemo<MobileAppState>(() => ({ app, stale, refresh, has, module }), [app, stale, refresh, has, module]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

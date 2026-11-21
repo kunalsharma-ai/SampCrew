@@ -443,6 +443,9 @@ function PublishDialog({ overview, config, unsaved, changes, errors, onClose, on
   );
 }
 
+/** The short names the app's bottom bar uses (the full names show in More). */
+const TAB_LABEL: Record<string, string> = { home: 'Home', help: 'Ask HR', profile: 'Me', attendance: 'Attendance', documents: 'Documents' };
+
 /** A phone-shaped, read-only picture of the app for the chosen level. */
 function PhonePreview({ app }: { app: ReturnType<typeof resolveMobileApp> }) {
   const byKey = new Map(app.modules.map((m) => [m.key, m]));
@@ -485,7 +488,7 @@ function PhonePreview({ app }: { app: ReturnType<typeof resolveMobileApp> }) {
         </div>
         <nav aria-label="Bottom bar" className="flex items-stretch justify-around border-t border-white/10 bg-[#16122e] px-1 py-1.5 text-white" data-testid="preview-tabs">
           {tabs.map((m) => (
-            <span key={m!.key} className="flex min-w-0 flex-1 flex-col items-center gap-0.5 text-[0.5625rem]"><Icon name={m!.icon} className="size-4" /><span className="w-full truncate text-center">{m!.key === 'home' ? 'Home' : m!.name}</span></span>
+            <span key={m!.key} className="flex min-w-0 flex-1 flex-col items-center gap-0.5 text-[0.5625rem]"><Icon name={m!.icon} className="size-4" /><span className="w-full truncate text-center">{TAB_LABEL[m!.key] ?? m!.name}</span></span>
           ))}
           <span className="flex min-w-0 flex-1 flex-col items-center gap-0.5 text-[0.5625rem]"><MoreHorizontal className="size-4" aria-hidden /><span>More</span></span>
         </nav>

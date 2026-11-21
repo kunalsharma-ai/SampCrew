@@ -45,6 +45,9 @@ export interface RawBody {
 }
 const isRaw = (b: unknown): b is RawBody => typeof b === 'object' && b !== null && (b as RawBody).bytes instanceof Uint8Array && typeof (b as RawBody).contentType === 'string';
 
+/** When the app last sent a change (any POST, PUT, DELETE or upload): screens coming back into view reload after it. */
+export const lastChange = { at: 0 };
+
 export class Api {
   private refreshing: Promise<boolean> | null = null;
   /** GETs in flight, so screens and widgets asking for the same thing at once share one request. */
@@ -146,6 +149,7 @@ export class Api {
   /** Forget cached answers (after a change, or on sign-out). */
   forget() {
     this.cache.clear();
+    lastChange.at = Date.now();
   }
   post<T>(path: string, body: unknown = {}, idempotencyKey?: string) {
     this.forget();
@@ -165,6 +169,7 @@ export class Api {
    * phone. Bytes work the same with every fetch the app can run on.
    */
   uploadFile<T>(method: 'POST' | 'PUT', path: string, file: { field: string; fileName: string; type: string; bytes: Uint8Array; fields?: Record<string, string> }) {
+    this.forget();
     return this.request<T>(method, path, multipart(file));
   }
 
