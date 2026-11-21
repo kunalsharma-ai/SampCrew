@@ -3780,7 +3780,7 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     fks: [
       {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
-      {"cols": ["tenant_id", "leave_type_id"], "onDelete": "no_action", "ref": "leave_types", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "leave_type_id"], "onDelete": "cascade", "ref": "leave_types", "refCols": ["tenant_id", "id"]},
     ],
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "leave_type_versions_recent"},

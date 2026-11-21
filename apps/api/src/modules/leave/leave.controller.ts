@@ -140,6 +140,14 @@ export class LeaveController {
 
   // Allocation (Super Workspace and HR Workspace) --------------------------------------------------------
 
+  @Get('options')
+  @RequireFeature('leave')
+  @RequirePermission('leave:allocate')
+  @Doc({ summary: 'What leave management chooses from, within your scope: departments, designations, locations, legal entities, groups, HR Workspaces, Super Workspace administrators and people' })
+  options() {
+    return this.leave.options();
+  }
+
   @Get('allocations')
   @RequireFeature('leave')
   @RequirePermission('leave:allocate')

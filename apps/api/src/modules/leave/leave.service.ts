@@ -422,7 +422,6 @@ export class LeaveService implements OnModuleInit {
         || (await tx.collection('leave_allocations').exists({ leave_type_id: id }));
       if (inUse) throw Errors.conflict('leave_type_in_use', `${t.name} has allocations, balances or applications. Deactivate it instead: its history stays.`);
       await this.audit.record(tx, { action: 'leave_type.deleted', resourceType: 'leave_type', resourceId: id, metadata: { code: t.code, name: t.name, byName: await this.actorName(tx) } });
-      await tx.collection('leave_type_versions').delete({ leave_type_id: id }).catch(() => undefined);
       await tx.collection('leave_types').deleteOne({ id });
     });
   }
@@ -459,6 +458,36 @@ export class LeaveService implements OnModuleInit {
   /** Leave type history: creation, every change, deactivation and every allocation, newest first. */
   history(q: z.infer<typeof leaveHistoryQuery>) {
     return this.db.tenant((tx) => this.historyRows(tx, q));
+  }
+
+  /**
+   * Everything the leave management screens choose from, within the caller's scope: departments, designations,
+   * locations, legal entities, employee groups, HR Workspaces, the Super Workspace administrators and the people.
+   */
+  options() {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      const level = this.levelOf(s);
+      const reach = this.hrReach(s);
+      const named = (rows: Doc[]) => rows.map((r) => ({ id: r.id as string, name: r.name as string }));
+      const people = await loadPeople(tx, { $and: [await this.authz.filter('leave:allocate', EMPLOYEE_FIELDS, tx), { status: { $ne: 'exited' } }] }, { sort: { first_name: 1, last_name: 1 }, limit: 5000 });
+      const role = await tx.collection('roles').findOne({ key: 'super_workspace', is_system: true });
+      const supers = role ? [...new Set((await tx.collection('role_assignments').find({ role_id: role.id })).map((a) => a.membership_id as string))] : [];
+      const superNames = await membershipUserNames(tx, supers);
+      const active = await tx.collection('memberships').find({ id: { $in: supers }, status: 'active' }, { projection: { _id: 1 } });
+      return {
+        level,
+        departments: named(await tx.collection('departments').find({}, { sort: { name: 1 }, projection: { name: 1 } })),
+        designations: named(await tx.collection('designations').find({}, { sort: { name: 1 }, projection: { name: 1 } })),
+        locations: named(await tx.collection('locations').find({}, { sort: { name: 1 }, projection: { name: 1 } })),
+        legalEntities: named(await tx.collection('legal_entities').find({}, { sort: { name: 1 }, projection: { name: 1 } })),
+        groups: named(await tx.collection('comm_groups').find({ archived_at: null }, { sort: { name: 1 }, projection: { name: 1 } })),
+        hrWorkspaces: named(await tx.collection('hr_workspaces').find(level === 'super' ? { status: 'active' } : { id: { $in: reach.hrWorkspaceIds }, status: 'active' }, { sort: { name: 1 }, projection: { name: 1 } })),
+        companyHr: level === 'super' || reach.company,
+        superAdmins: active.map((m) => ({ id: m.id as string, name: superNames.get(m.id) ?? 'Super Workspace administrator' })).sort((a, b) => cmp(a.name, b.name)),
+        employees: people.map((p) => ({ id: p.id, name: p.name, code: p.code, departmentId: p.department_id, designationId: p.designation_id, hrWorkspaceId: p.hr_workspace_id, employmentType: p.employment_type })),
+      };
+    });
   }
 
   // ---------------------------------------------------------------------------------------------------------

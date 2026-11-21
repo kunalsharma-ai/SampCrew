@@ -3,32 +3,35 @@ import type { Metadata } from 'next';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
 import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
-import type { LeaveBalance, LeaveCalendarData, LeaveRequest, Me } from '@/lib/types';
+import type { LeaveCalendarData, LeaveMine, LeaveRequest, Me } from '@/lib/types';
 import { BalanceCards } from '../employees/[id]/tabs';
 import { LeaveCalendar } from './leave-calendar';
 import { LeaveYear } from './leave-year';
 import { monthRange } from './month';
-import { AddDefaultLeaveTypes, ApplyLeave, MyRequests, TeamAway } from './leave-view';
+import { ApplyLeave, MyRequests, TeamAway } from './leave-view';
+import { MyLeaveTypes } from './my-types';
 
 export const metadata: Metadata = { title: 'Leave' };
 
 export default async function LeavePage({ searchParams }: { searchParams: Promise<{ month?: string; sent?: string; view?: string; year?: string }> }) {
   const sp = await searchParams;
   const me = await load<Me>('/me');
-  let balances: { year: number; balances: LeaveBalance[] } | null = null;
+  let mine: LeaveMine | null = null;
   try {
-    balances = await api('/leave/balances');
+    mine = await api<LeaveMine>('/leave/mine');
   } catch (e) {
-    if (!(e instanceof ApiError && e.code === 'no_employee_record')) return load<never>('/leave/balances');
+    if (!(e instanceof ApiError && e.code === 'no_employee_record')) return load<never>('/leave/mine');
   }
-  if (!balances) {
+  if (!mine) {
     return (
       <>
         <PageHeader title="Leave" />
-        <Alert tone="info" title="No employee record linked">Your login is not linked to an employee record yet, so there is no leave balance to show. Ask HR to link it from your employee profile.</Alert>
+        <Alert tone="info" title="No employee record linked">Your login is not linked to an employee record yet, so there is no leave balance to show. Ask your HR Workspace to link it from your employee profile.</Alert>
+        {can(me, 'leave:allocate') && <Alert tone="info" className="mt-4">Leave types, allocation and approvals are on <a className="underline" href="/leave/manage">Leave management</a>.</Alert>}
       </>
     );
   }
+  const balances = { year: mine.year, balances: mine.types };
   const scope = me.permissions['leave:read'];
   const today = new Date().toISOString().slice(0, 10);
   const month = sp.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month) ? sp.month : today.slice(0, 7);
@@ -47,35 +50,33 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
   const canApply = can(me, 'leave:request') && balances.balances.length > 0;
   return (
     <>
-      <PageHeader title="Leave" description={`Your balances for ${balances.year}, your leave calendar, requests and approvals.`} actions={can(me, 'leave:request') && <ApplyLeave balances={balances.balances} />} />
+      <PageHeader title="Leave" description={`Your balances for ${balances.year}, your leave types and their rules, your leave calendar and applications.`} actions={can(me, 'leave:request') && <ApplyLeave balances={balances.balances} />} />
       <ModuleOverview module="leave" actions={allowed(me, [
         { label: 'Apply leave', href: '/leave?create=leave', icon: 'calendar', permission: 'leave:request' },
         { label: 'Approve requests', href: '/approvals', icon: 'check', permission: 'leave:approve' },
         { label: 'Team balances', href: '/leave/balances', icon: 'users-round', permission: 'leave:approve' },
         { label: 'Team attendance', href: '/attendance/team?status=on_leave', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },
-        { label: 'Leave policy', href: '/settings/leave', icon: 'sliders', permission: 'leave:configure' },
+        { label: 'Leave management', href: '/leave/manage', icon: 'sliders', permission: 'leave:allocate' },
+        { label: 'Holidays and leave rules', href: '/settings/leave', icon: 'calendar', permission: 'leave:allocate' },
       ])} />
       <div className="grid gap-6">
         {sent && (
           <Alert tone={sent.status === 'pending' ? 'info' : 'success'} title="Leave request sent">
             <span data-testid="leave-sent">
               {sent.status === 'pending'
-                ? `Your ${sent.leaveTypeName.toLowerCase()} request (${sent.days} days from ${sent.startDate}) is waiting for approval${sent.waitingOn ? ` from ${sent.waitingOn}` : ''}. You will get a notification when it is decided.`
+                ? `Your ${sent.leaveTypeName.toLowerCase()} request (${sent.days} days from ${sent.startDate}) (${sent.reference ?? ''}) went to ${sent.approvalRouteLabel ?? 'approval'} and is waiting${sent.waitingOn ? ` for ${sent.waitingOn}` : ''}. You will get a notification when it is decided.`
                 : `Your ${sent.leaveTypeName.toLowerCase()} request is ${sent.status}.`}
             </span>
           </Alert>
         )}
         {balances.balances.length === 0 && (
-          can(me, 'leave:configure') ? (
-            <Alert tone="warning" title="No leave types are set up yet">
-              Employees cannot apply for leave until the workspace has leave types. Add the standard ones (casual, sick, earned and leave without pay) now and change them later on Leave settings.
-              <div className="mt-2"><AddDefaultLeaveTypes /></div>
-            </Alert>
-          ) : (
-            <Alert tone="warning" title="No leave types apply to you yet">You cannot apply for leave until HR sets up leave types and policies. Ask HR to add them on Leave settings.</Alert>
-          )
+          <Alert tone="warning" title="No leave types apply to you yet">
+            You cannot apply for leave until the Super Workspace or your HR Workspace allocates leave types to you.
+            {can(me, 'leave:allocate') && <> Allocate them on <a className="underline" href="/leave/manage?tab=allocation">Leave management</a>.</>}
+          </Alert>
         )}
         <BalanceCards balances={balances.balances} />
+        <MyLeaveTypes types={mine.types} />
         {yearView ? <LeaveYear data={calendar} year={year} today={today} /> : <LeaveCalendar data={calendar} month={month} today={today} canApply={canApply} />}
         <Card>
           <CardHeader title="My requests" description="A request waiting for approval can be changed or cancelled. Approved leave that has not started can be changed too: the change goes for approval and replaces it once approved." />

@@ -1,12 +1,12 @@
 'use client';
 import { useCreateParam } from '@/lib/use-create-param';
 import { Alert, Button, Card, CardHeader, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
-import { CalendarPlus } from 'lucide-react';
+import { CalendarPlus, Paperclip, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import type { LeaveBalance, LeaveRequest } from '@/lib/types';
 import { RequestsTable } from '../employees/[id]/tabs';
-import { addDefaultLeaveTypesAction, cancelLeaveAction, modifyLeaveAction, type Preview, previewLeaveAction, previewModifyLeaveAction, requestLeaveAction } from './actions';
+import { cancelLeaveAction, type LeaveRoute, modifyLeaveAction, type Preview, previewLeaveAction, previewModifyLeaveAction, requestLeaveAction, uploadLeaveDocumentAction } from './actions';
 import { RecordFieldsButton } from '@/components/custom-fields-card';
 
 export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
@@ -24,13 +24,14 @@ export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
 const formOf = (r: LeaveRequest) => ({
   leaveTypeId: r.leaveTypeId, startDate: r.startDate, endDate: r.endDate,
   startHalf: r.startDate === r.endDate && r.endHalf === 'first_half' ? 'first_half' : r.startHalf, endHalf: r.startDate === r.endDate ? 'full' : r.endHalf, reason: r.reason ?? '',
+  route: (r.approvalRoute ?? '') as LeaveRoute | '',
 });
 
 /** Applying for leave, or changing a request (change set): same fields, live preview, the server's rules. */
 function LeaveDialog({ balances, open, onClose, date, change }: { balances: LeaveBalance[]; open: boolean; onClose: () => void; date?: string; change?: LeaveRequest }) {
   const router = useRouter();
   const today = new Date().toISOString().slice(0, 10);
-  const [form, setForm] = useState(change ? formOf(change) : { leaveTypeId: balances[0]?.leaveTypeId ?? '', startDate: today, endDate: today, startHalf: 'full', endHalf: 'full', reason: '' });
+  const [form, setForm] = useState(change ? formOf(change) : { leaveTypeId: balances[0]?.leaveTypeId ?? '', startDate: today, endDate: today, startHalf: 'full', endHalf: 'full', reason: '', route: '' as LeaveRoute | '' });
   // A day chosen on the leave calendar starts the request on that day.
   useEffect(() => {
     if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setForm((f) => ({ ...f, startDate: date, endDate: date }));
@@ -39,6 +40,8 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [docs, setDocs] = useState<{ id: string; name: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
   const type = balances.find((b) => b.leaveTypeId === form.leaveTypeId);
   const single = form.startDate === form.endDate;
   const body = () => {
@@ -51,6 +54,8 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
       b.endHalf = form.endHalf;
     }
     if (form.reason.trim()) b.reason = form.reason.trim();
+    if (form.route) b.approvalRoute = form.route;
+    if (docs.length) b.documentIds = docs.map((d) => d.id);
     return b;
   };
 
@@ -63,7 +68,7 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, form.leaveTypeId, form.startDate, form.endDate, form.startHalf, form.endHalf]);
+  }, [open, form.leaveTypeId, form.startDate, form.endDate, form.startHalf, form.endHalf, form.route, docs.length]);
 
   const formId = change ? `leave-change-${change.id}` : 'leave-form';
   return (
@@ -71,7 +76,7 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
         open={open}
         onClose={onClose}
         title={change ? 'Change leave request' : 'Apply for leave'}
-        footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form={formId} loading={pending} disabled={!!previewError}>{change ? 'Send change' : 'Submit request'}</Button></>}
+        footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form={formId} loading={pending} disabled={!!previewError || uploading}>{change ? 'Send change' : 'Submit request'}</Button></>}
       >
         <form
           id={formId}
@@ -100,7 +105,7 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
           {error && <Alert tone="danger" className="sm:col-span-2">{error}</Alert>}
           <Field label="Leave type" className="sm:col-span-2">
             {(p) => (
-              <Select {...p} name="leaveTypeId" value={form.leaveTypeId} onChange={(e) => setForm({ ...form, leaveTypeId: e.target.value })}>
+              <Select {...p} name="leaveTypeId" value={form.leaveTypeId} onChange={(e) => setForm({ ...form, leaveTypeId: e.target.value, route: '' })}>
                 {balances.map((b) => <option key={b.leaveTypeId} value={b.leaveTypeId}>{b.name}{b.tracked ? ` (${b.available} available)` : ''}</option>)}
               </Select>
             )}
@@ -117,12 +122,48 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
               <Field label="Last day">{(p) => <Select {...p} name="endHalf" value={form.endHalf} onChange={(e) => setForm({ ...form, endHalf: e.target.value })}><option value="full">Full day</option><option value="first_half">Until the first half</option></Select>}</Field>
             </>
           ))}
+          {preview?.employeeChooses && preview.routes && preview.routes.length > 1 && (
+            <fieldset className="grid gap-2 sm:col-span-2" data-testid="leave-route-choice">
+              <legend className="mb-1 text-[0.8125rem] font-medium">Send it to</legend>
+              {preview.routes.map((r) => (
+                <label key={r.route} className="flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-[0.8125rem]">
+                  <input type="radio" name="approvalRoute" className="mt-0.5" value={r.route} checked={(form.route || preview.route) === r.route} onChange={() => setForm({ ...form, route: r.route })} />
+                  <span><span className="font-medium">{r.label}</span><span className="block text-xs text-fg-subtle">{r.reviewers.join(' and ')}</span></span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {preview?.documents && preview.documents.mode !== 'none' && (
+            <div className="grid gap-2 sm:col-span-2">
+              <span className="text-[0.8125rem] font-medium">Supporting document{preview.documents.required ? ' (required)' : ' (optional)'}</span>
+              {preview.documents.note && <span className="text-xs text-fg-subtle">{preview.documents.note}</span>}
+              {docs.map((d) => (
+                <span key={d.id} className="flex items-center gap-2 text-xs"><Paperclip className="size-3.5" />{d.name}
+                  <button type="button" aria-label={`Remove ${d.name}`} className="text-fg-subtle hover:text-danger" onClick={() => setDocs(docs.filter((x) => x.id !== d.id))}><X className="size-3.5" /></button>
+                </span>
+              ))}
+              {docs.length < 5 && (
+                <Input type="file" aria-label="Attach a document" data-testid="leave-document" disabled={uploading} accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!f) return;
+                  setUploading(true);
+                  const fd = new FormData();
+                  fd.append('file', f);
+                  const r = await uploadLeaveDocumentAction(fd);
+                  setUploading(false);
+                  if (r.ok) setDocs((d) => [...d, { id: r.data!.id, name: r.data!.name }]); else setError(r.message);
+                }} />
+              )}
+            </div>
+          )}
           <Field label="Reason" className="sm:col-span-2">{(p) => <Textarea {...p} name="reason" maxLength={1000} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />}</Field>
           <div className="sm:col-span-2" aria-live="polite">
             {previewError ? <Alert tone="warning">{previewError}</Alert> : preview && (
               <div className="rounded-lg border border-border bg-bg-subtle/60 px-4 py-3 text-[0.8125rem]">
                 <strong className="tabular-nums">{preview.days} working day{preview.days === '1.00' ? '' : 's'}</strong>
                 {preview.tracked && <> · balance after approval <strong className="tabular-nums">{preview.balanceAfter}</strong></>}
+                {preview.reviewers && preview.reviewers.length > 0 && <span className="block text-xs text-fg-muted" data-testid="leave-reviewers">Goes to {preview.reviewers.join(preview.order === 'sequential' ? ', then ' : ' and ')}{preview.managerFirst ? ', after your reporting manager' : ''}</span>}
                 {preview.holidaysInRange.length > 0 && <span className="block text-xs text-fg-subtle">Holidays in range are not counted: {preview.holidaysInRange.join(', ')}</span>}
                 {preview.warnings.map((w) => <span key={w} className="block text-xs text-warning">{w}</span>)}
               </div>
@@ -195,19 +236,5 @@ export function TeamAway({ rows }: { rows: LeaveRequest[] }) {
         </Table>
       ) : <EmptyState title="Nobody is away" />}
     </Card>
-  );
-}
-
-export function AddDefaultLeaveTypes() {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <>
-      {error && <span className="mb-2 block text-danger">{error}</span>}
-      <Button size="sm" loading={pending} onClick={() => start(async () => { const r = await addDefaultLeaveTypesAction(); if (r.ok) router.refresh(); else setError(r.message); })}>
-        Add standard leave types
-      </Button>
-    </>
   );
 }

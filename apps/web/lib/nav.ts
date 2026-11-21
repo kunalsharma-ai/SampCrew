@@ -95,7 +95,8 @@ export const NAV: NavGroup[] = [
       { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
       { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
       { href: '/leave/balances', label: 'Leave balances', icon: 'calendar-range', permission: 'leave:approve', feature: 'leave' },
-      { href: '/settings/leave', label: 'Leave settings', icon: 'sliders', permission: 'leave:configure', feature: 'leave' },
+      { href: '/leave/manage', label: 'Leave management', icon: 'sliders', permission: 'leave:allocate', feature: 'leave' },
+      { href: '/settings/leave', label: 'Holidays and leave rules', icon: 'calendar-range', permission: 'leave:allocate', feature: 'leave' },
     ],
   },
   {
