@@ -288,9 +288,32 @@ export const WEB_HELP: HelpContent = {
     },
     '/attendance': {
       title: 'Attendance',
-      what: 'Your punches and how each day was counted (present, half day, absent, leave or holiday), with correction requests.',
-      how: 'Punch in and out here or on the mobile app. If a punch is missing or wrong, request a correction for that day.',
-      where: 'For every employee. Managers open a team member’s attendance from Team attendance.',
+      what: 'Your own attendance first: working days, present, absent and leave, your attendance % and every day. Super and HR Workspace then see the attendance they look after.',
+      how: 'Pick a period (today, this week, this month, previous month or a range), punch in and out, fix a missing punch, or export to Excel.',
+      where: 'For everyone. Employee Workspace sees only its own attendance; the Super Workspace decides what each HR Workspace may see.',
+    },
+    '/attendance/employees': {
+      title: 'Employee Workspace attendance',
+      what: 'Each person you may see, with status today, present, absent and leave days and attendance % for the period, or one row per day.',
+      how: 'Filter by HR Workspace, status or name, sort by lowest attendance, switch to Date-wise, and export exactly what is on screen to Excel.',
+      where: 'For Super Workspace (everyone) and HR Workspace (the employees their access covers).',
+    },
+    '/attendance/hr-workspaces': {
+      title: 'HR Workspace attendance',
+      what: 'Every HR Workspace you may see, and the central group, with its people, who is in today and attendance % for the period.',
+      how: 'Open one for its people and trend. Export puts every HR Workspace in one Excel sheet.',
+      where: 'For the Super Workspace, and for HR Workspaces the Super Workspace allowed to see others.',
+    },
+    '/attendance/hr-workspaces/[id]': {
+      title: 'One HR Workspace',
+      what: 'One HR Workspace: its attendance %, today, the daily trend, its HR Workspace people and its employees.',
+      how: 'Open a person for their month, or export this HR Workspace to Excel.',
+    },
+    '/settings/attendance-access': {
+      title: 'Attendance permissions',
+      what: 'What each HR Workspace may see beyond its own employees, and whether it may export. No HR Workspace ever sees Super Workspace attendance.',
+      how: 'Turn on View other HR Workspace attendance and pick which ones, or all. Save each card. Changes apply from the next page they open.',
+      where: 'Super Workspace only. Every change is in the audit trail.',
     },
     '/attendance/day/[employeeId]/[date]': {
       title: 'Attendance day',
@@ -919,6 +942,14 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    'My attendance': { what: 'Your attendance in the period: working days, present, absent, leave, late days and your attendance %.', how: 'Attendance % is present days out of working days. Weekends, holidays and days not counted yet are left out.' },
+    'Attendance history': { what: 'Each of your days in the period, newest first, with check-in, check-out and hours.', how: 'Open a day to see its punches and how it was counted.' },
+    'Attendance trend': { what: 'One bar per day: the attendance % of everyone shown, green from 90%, amber from 75%, red below.' },
+    'Employee-wise attendance': { what: 'One row per person with period totals and status today.', how: 'Open a name for that person’s month.' },
+    'Date-wise attendance': { what: 'One row per person and day, with status, check-in and check-out times and hours worked.' },
+    'HR Workspace people': { what: 'The people who look after this HR Workspace and their own attendance.' },
+    'Employees': { what: 'Everyone placed in this HR Workspace that you may see, with period totals.' },
+    'Employee Workspace': { what: 'What every employee may do with attendance. They always see only their own.', how: 'Switch off to stop employees downloading their own attendance.' },
     'Feature management': { what: 'Each module and page for the whole company, the HR Workspace level and the Employee Workspace level, with Active, Inherited, Inactive and Restricted labels.', how: 'Open a module to see its pages. Switching off asks first; records are kept and come back when you switch it on.' },
     'How access flows': { what: 'SAMPLEDGE decides what the company holds, the company gives each HR Workspace a part, and HR Workspace admins give each person a part of theirs.' },
     'Your HR Workspaces': { what: 'Every active HR Workspace with its people, modules and admins.', how: 'Open one to change it. The central group card lists the people the company runs itself.' },
@@ -1280,6 +1311,11 @@ export const WEB_HELP: HelpContent = {
   },
 
   routes: {
+    '/attendance/hr-workspaces': {
+      sections: {
+        'HR Workspaces': { what: 'Each HR Workspace you may see, and the central group, with today’s numbers and attendance % for the period.', how: 'Open one for its people. Someone who looks after an HR Workspace is counted in it.' },
+      },
+    },
     '/tasks': {
       sections: {
         'HR tasks': { what: 'Tasks HR gave you that are still open or waiting for review.', how: 'Open one to work on it. Document tasks are done once HR verifies your upload.' },

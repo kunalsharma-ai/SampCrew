@@ -137,6 +137,15 @@ jobs:
           node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:late
+      - name: Attendance overview, Excel export and HR Workspace attendance permissions end-to-end flow
+        # On a fresh demo workspace: the flow creates two HR Workspaces and moves people into them, which changes
+        # who the other flows' HR and team views cover.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:attendance-overview
       - name: HR Workspace Admin, background verification, assets, custom fields and import end-to-end flow
         # On a fresh demo workspace: the flow adds employees, assets and a custom field that other flows do not expect.
         run: |

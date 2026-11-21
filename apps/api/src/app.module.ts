@@ -89,6 +89,9 @@ import { RolesService } from './modules/roles/roles.service';
 import { SupportAccessController, TenancyController } from './modules/tenancy/tenancy.controller';
 import { AttendanceController, DeviceApiController, DevicesController, KioskController, ShiftsController, ZkPushController } from './modules/attendance/attendance.controller';
 import { AttendanceDaysService } from './modules/attendance/attendance-days.service';
+import { AttendanceAccessService } from './modules/attendance/attendance-access.service';
+import { AttendanceOverviewController } from './modules/attendance/attendance-overview.controller';
+import { AttendanceOverviewService } from './modules/attendance/attendance-overview.service';
 import { AttendanceService } from './modules/attendance/attendance.service';
 import { DevicesService } from './modules/attendance/devices.service';
 import { ShiftsService } from './modules/attendance/shifts.service';
@@ -211,6 +214,7 @@ export const CONTROLLERS = [
   DashboardController,
   OverviewController,
   AttendanceController,
+  AttendanceOverviewController,
   KioskController,
   ShiftsController,
   DevicesController,
@@ -321,6 +325,8 @@ export const CONTROLLERS = [
     EmployeeImportService,
     DocumentsService,
     AttendanceDaysService,
+    AttendanceAccessService,
+    AttendanceOverviewService,
     DisciplineService,
     AttendanceService,
     ShiftsService,
