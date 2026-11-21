@@ -74,7 +74,7 @@ export const ACCESS_LEVEL_LABEL: Record<AccessLevelRole, string> = { super_works
 const SUPER_GRANTS = everything('tenant');
 
 const HR_WORKSPACE_EXCLUDED = new Set<string>([
-  'tenant:manage', 'roles:manage', 'billing:manage', 'hierarchy:manage', 'employees:transfer', 'modules:manage',
+  'tenant:manage', 'roles:manage', 'billing:manage', 'hierarchy:manage', 'employees:transfer', 'modules:manage', 'mobileapp:manage',
   'integrations:manage', 'security:manage', 'ai:configure', 'audit:export',
 ]);
 

@@ -353,6 +353,39 @@ export class AuthService {
     return rows.map((r) => ({ id: r.id, client: r.client, ip: r.ip ?? null, userAgent: r.user_agent ?? null, createdAt: r.created_at, expiresAt: r.expires_at, current: r.id === actor.sessionId }));
   }
 
+  /** Recent sign-ins (sessions opened) in this workspace, newest first. Never includes tokens. */
+  async signIns() {
+    const actor = requestContext.tenantActor();
+    const now = new Date();
+    const rows = await this.db.platform((tx) =>
+      tx.collection('sessions').find({ user_id: actor.userId, tenant_id: actor.tenantId }, { sort: { created_at: -1 }, limit: 20, projection: { id: 1, client: 1, ip: 1, user_agent: 1, created_at: 1, expires_at: 1, revoked_at: 1, revoked_reason: 1, mfa: 1 } }),
+    );
+    const list = rows.map((r) => ({
+      id: r.id as string,
+      client: r.client as string,
+      ip: (r.ip as string | null) ?? null,
+      userAgent: (r.user_agent as string | null) ?? null,
+      at: r.created_at as Date,
+      current: r.id === actor.sessionId,
+      status: r.revoked_at ? 'signed_out' : (r.expires_at as Date) <= now ? 'expired' : 'active',
+      endedAt: (r.revoked_at as Date | null) ?? null,
+    }));
+    // The previous sign-in: the latest one other than this session.
+    return { current: list.find((r) => r.current)?.at ?? null, previous: list.find((r) => !r.current)?.at ?? null, signIns: list };
+  }
+
+  async signOutOthers() {
+    const actor = requestContext.tenantActor();
+    return this.db.platform(async (tx) => {
+      const n = await tx.collection('sessions').update(
+        { user_id: actor.userId, tenant_id: actor.tenantId, revoked_at: null, id: { $ne: actor.sessionId } },
+        { $set: { revoked_at: new Date(), revoked_reason: 'user_signed_out_others' } },
+      );
+      await this.audit.record(tx, { tenantId: actor.tenantId, action: 'auth.other_sessions_revoked', resourceType: 'user', resourceId: actor.userId, metadata: { count: n } });
+      return { signedOut: n };
+    });
+  }
+
   async revokeSession(sessionId: string) {
     const actor = requestContext.tenantActor();
     await this.db.platform(async (tx) => {

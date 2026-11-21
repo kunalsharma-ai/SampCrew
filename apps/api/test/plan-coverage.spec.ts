@@ -46,6 +46,8 @@ const FOUNDATION: Record<string, string> = {
   SetupController: 'First-run setup wizard',
   TenancyController: 'Workspace settings',
   SupportAccessController: 'Approving SAMPLEDGE support access',
+  MobileAppController: 'The mobile app menu for the signed-in person; each module in it checks its own plan module',
+  MobileAppAdminController: 'Mobile app configuration (Super Workspace): it only hides modules on phones, within what the plan includes',
   AiController: 'AI governance (status, settings, usage, history) shared by the Copilot and IQ modules; the Copilot actions are gated',
 };
 

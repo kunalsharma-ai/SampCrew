@@ -117,6 +117,7 @@ import { CommFilesController, CommunicationController } from './modules/communic
 import { CommunicationService } from './modules/communication/communication.service';
 import { CommEmailService } from './modules/communication/email.service';
 import { CommFilesService } from './modules/communication/files.service';
+import { MobileAppAdminController, MobileAppController } from './modules/mobile/mobile-app.controller';
 import { MobileController } from './modules/mobile/mobile.controller';
 import { AiController } from './modules/ai/ai.controller';
 import { AiGatewayService } from './modules/ai/ai-gateway.service';
@@ -138,6 +139,7 @@ import { AutomationService } from './modules/automation/automation.service';
 import { WorkflowRunnerService } from './modules/automation/workflow-runner.service';
 import { InsightsController } from './modules/insights/insights.controller';
 import { InsightsService } from './modules/insights/insights.service';
+import { MobileAppService } from './modules/mobile/mobile-app.service';
 import { MobileService } from './modules/mobile/mobile.service';
 import { AuditService } from './platform/audit/audit.service';
 import { AuthGuard } from './platform/auth/auth.guard';
@@ -233,6 +235,8 @@ export const CONTROLLERS = [
   AnnouncementsController,
   CommunicationController,
   CommFilesController,
+  MobileAppController,
+  MobileAppAdminController,
   MobileController,
   AiController,
   AutomationController,
@@ -345,6 +349,7 @@ export const CONTROLLERS = [
     CommFilesService,
     CommunicationService,
     AnnouncementsService,
+    MobileAppService,
     MobileService,
     AiGatewayService,
     AiService,

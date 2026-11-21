@@ -26,6 +26,12 @@ export const syncPunch = z
     /** Per-device counter; with the device id it makes the punch idempotent. */
     sequence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     direction: z.enum(['in', 'out']).optional(),
+    /**
+     * 'break': an out punch that starts a break or the in punch that ends it (the attendance engine already counts the
+     * gap between them as break time). With a purpose the direction must follow the day's punches: no second check-in,
+     * no check-out while not checked in, no ending a break that was never started.
+     */
+    purpose: z.enum(['work', 'break']).optional(),
     capturedAt: z.iso.datetime({ offset: true }),
     capturedElapsedMs: z.number().min(0).optional(),
     capturedRunId: runId.optional(),
@@ -38,7 +44,8 @@ export const syncPunch = z
     offline: z.boolean().default(false),
     note: z.string().trim().max(300).optional(),
   })
-  .refine((v) => (v.latitude === undefined) === (v.longitude === undefined), { message: 'Send both latitude and longitude', path: ['longitude'] });
+  .refine((v) => (v.latitude === undefined) === (v.longitude === undefined), { message: 'Send both latitude and longitude', path: ['longitude'] })
+  .refine((v) => !v.purpose || v.direction, { message: 'Send the direction with a purpose', path: ['direction'] });
 
 export const punchSyncInput = z.object({
   deviceId: z.uuid(),

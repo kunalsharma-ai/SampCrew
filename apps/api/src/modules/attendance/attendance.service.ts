@@ -330,6 +330,21 @@ export class AttendanceService implements OnModuleInit {
           const win = await this.days.window(tx, e, workDate);
           const last = (await this.days.punches(tx, e.id, win.from, at)).at(-1);
           direction = last && last.direction !== 'out' ? 'out' : 'in';
+        } else if (p.purpose) {
+          // Newer apps say what the punch is for; then it must follow the day's punches.
+          const win = await this.days.window(tx, e, workDate);
+          const last = (await this.days.punches(tx, e.id, win.from, at)).at(-1);
+          const inside = Boolean(last && last.direction !== 'out');
+          const lastBreak = last?.purpose === 'break';
+          const why = direction === 'in' && inside ? ['already_in', 'You are already checked in.']
+            : direction === 'out' && !inside ? ['not_in', 'You are not checked in, so there is nothing to end.']
+            : p.purpose === 'break' && direction === 'in' && !(last && last.direction === 'out' && lastBreak) ? ['no_break', 'There is no break to end.']
+            : p.purpose === 'work' && direction === 'in' && last && last.direction === 'out' && lastBreak ? ['on_break', 'You are on a break. End the break instead.']
+            : null;
+          if (why) {
+            refuse(why[0]!, why[1]!);
+            continue;
+          }
         }
         const row = await tx.collection('attendance_events').insert({
           employee_id: e.id,
@@ -346,7 +361,7 @@ export class AttendanceService implements OnModuleInit {
           recorded_by_membership_id: actor.membershipId,
           note: p.note ?? null,
           remote_ip: ctx?.ip ?? null,
-          raw: { timeBasis: capture.basis, phoneTime: p.capturedAt, capturedElapsedMs: p.capturedElapsedMs ?? null, sentElapsedMs: input.sentElapsedMs ?? null, sameRun: p.capturedRunId !== undefined && p.capturedRunId === input.sentRunId },
+          raw: { ...(p.purpose ? { purpose: p.purpose } : {}), timeBasis: capture.basis, phoneTime: p.capturedAt, capturedElapsedMs: p.capturedElapsedMs ?? null, sentElapsedMs: input.sentElapsedMs ?? null, sameRun: p.capturedRunId !== undefined && p.capturedRunId === input.sentRunId },
           mobile_device_id: device.id,
           risk_flags: flags,
           arrived_after_lock: locked,
@@ -550,7 +565,9 @@ export class AttendanceService implements OnModuleInit {
         dayType: plan.dayType,
         holidayName: plan.holidayName,
         nextDirection: last && last.direction !== 'out' ? 'out' : 'in',
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), flags: p.risk_flags })),
+        // Working, on a break (the last punch was an out for a break) or not checked in.
+        state: last && last.direction !== 'out' ? 'working' : last && last.purpose === 'break' ? 'on_break' : last ? 'checked_out' : 'not_started',
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), flags: p.risk_flags, purpose: p.purpose })),
         day: await this.dayRow(tx, e.id, date),
         allowed: { web: policy.web_punch, mobile: policy.mobile_punch, qr: policy.qr_punch },
         geofence: { mode: policy.geofence_mode, configured: Boolean(e.fence), radiusM: e.fence?.radiusM ?? null },

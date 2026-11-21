@@ -4108,6 +4108,65 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((length(scim_external_id) <= 300))",
     ],
   },
+  mobile_app_config_versions: {
+    // Every mobile app configuration the Super Workspace published (Settings > Mobile app), kept for the history and
+    // to restore one. Insert-only: a restore publishes a new version copied from an old one.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      changes: {"default": {"json": []}, "required": true, "type": "json"},
+      config: {"required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      note: {"default": "", "required": true, "type": "string"},
+      published_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      published_by: {"type": "uuid"},
+      published_by_name: {"default": "", "required": true, "type": "string"},
+      restored_from: {"type": "int"},
+      tenant_id: {"required": true, "type": "uuid"},
+      version: {"required": true, "type": "int"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "mobile_app_config_versions_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "mobile_app_config_versions_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "version"}], "name": "mobile_app_config_versions_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK ((length(note) <= 300))",
+    ],
+  },
+  mobile_app_configs: {
+    // The company's mobile app configuration: the draft being edited and the published one phones follow (with its
+    // version). One per workspace. Only hides modules and features on phones; never grants access.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      draft: {"type": "json"},
+      draft_revision: {"default": 0, "required": true, "type": "int"},
+      draft_updated_at: {"type": "timestamp"},
+      draft_updated_by: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"default": "workspace", "required": true, "type": "string"},
+      published: {"type": "json"},
+      published_at: {"type": "timestamp"},
+      published_by: {"type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      version: {"default": 0, "required": true, "type": "int"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "mobile_app_configs_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "mobile_app_configs_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "mobile_app_configs_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
   mobile_devices: {
     access: "tenant", grants: ["insert", "select", "update"],
     columns: {
@@ -4147,11 +4206,34 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((length(push_token) <= 250))",
     ],
   },
+  mobile_module_usage: {
+    // Who used which mobile app module on which day (one row per person, module and day), so the Super Workspace is
+    // warned before hiding a module people use. Kept 90 days.
+    access: "tenant", grants: ["delete", "insert", "select"],
+    columns: {
+      day: {"required": true, "type": "date"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      membership_id: {"required": true, "type": "uuid"},
+      module: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "mobile_module_usage_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "module"}, {"col": "day"}, {"col": "membership_id"}], "name": "mobile_module_usage_once"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "day"}], "name": "mobile_module_usage_day"},
+    ],
+    checks: [],
+  },
   live_events: {
     // Short-lived events pushed to open browsers over /notifications/stream (new notices, chat messages, read
     // receipts). Written in the transaction that caused them, so only committed changes are pushed; every API server
     // watches this collection and forwards events to its own connected members. Rows older than an hour are deleted.
-    access: "tenant", grants: ["insert", "select", "delete"],
+    access: "tenant", grants: ["delete", "insert", "select"],
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       data: {"default": {"json": {}}, "required": true, "type": "json"},
