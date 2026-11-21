@@ -7,6 +7,8 @@ import { useRouter } from 'next/navigation';
 import { useMfaRetry } from '@/components/mfa-step-up';
 import { useState, useTransition, type ReactNode } from 'react';
 import type { ActionResult } from '@/lib/api';
+import type { Catalogue, DocRow, RequestRow } from '../../documents/types';
+import { DocumentTable, RequestDocumentButton, RequestTable } from '../../documents/ui';
 import type { Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, OnboardingTask } from '@/lib/types';
 import {
   archiveDocumentAction, jobChangeAction, lifecycleAction, saveSensitiveAction, sensitiveAction, taskStatusAction, updateEmployeeAction, uploadDocumentAction,
@@ -453,54 +455,49 @@ export function LeaveTab({ balances, requests }: { balances: { year: number; bal
 const CATEGORIES = [['id_proof', 'Identity proof'], ['address_proof', 'Address proof'], ['contract', 'Contract'], ['offer_letter', 'Offer letter'], ['policy', 'Policy acknowledgement'], ['certificate', 'Certificate'], ['tax', 'Tax'], ['other', 'Other']] as const;
 const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
-export function DocumentsTab({ e, documents }: { e: EmployeeProfile; documents: EmployeeDocument[] }) {
+export function DocumentsTab({ e, documents, requests, catalogue }: { e: EmployeeProfile; documents: DocRow[]; requests: RequestRow[]; catalogue: Catalogue | null }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const canUpload = e.can.manageDocuments || e.isSelf;
+  const openRequests = requests.filter((r) => !['completed', 'cancelled'].includes(r.status));
   return (
-    <Card>
-      <CardHeader
-        title="Documents"
-        description="PDF, images, Word or text files up to 10 MB. Downloads use short-lived links and are recorded in the audit trail."
-        action={canUpload && <Button size="sm" onClick={() => setOpen(true)}><Upload className="size-3.5" /> Upload</Button>}
-      />
-      {error && <div className="px-5"><Alert tone="danger">{error}</Alert></div>}
-      {documents.length ? (
-        <Table>
-          <THead><tr><TH>Title</TH><TH>Category</TH><TH>Size</TH><TH>Uploaded</TH><TH>Visibility</TH><TH /></tr></THead>
-          <TBody>
-            {documents.map((d) => (
-              <TR key={d.id}>
-                <TD><span className="flex items-center gap-2"><FileText className="size-4 text-fg-subtle" /><span><span className="block font-medium">{d.title}</span><span className="block text-xs text-fg-subtle">{d.fileName}</span></span></span></TD>
-                <TD className="text-fg-muted">{CATEGORIES.find(([k]) => k === d.category)?.[1] ?? d.category}</TD>
-                <TD className="tabular-nums text-fg-muted">{size(d.sizeBytes)}</TD>
-                <TD className="text-fg-muted">{new Date(d.createdAt).toLocaleDateString()}{d.uploadedBy && <span className="block text-xs">{d.uploadedBy}</span>}</TD>
-                <TD>{d.visibility === 'hr_only' ? <Badge tone="warning">HR only</Badge> : <Badge>Employee can see</Badge>}</TD>
-                <TD className="whitespace-nowrap text-right">
-                  <a className="inline-flex items-center gap-1 text-[0.8125rem] font-medium text-accent hover:underline" href={`/files/${d.id}`}><Download className="size-3.5" /> Download</a>
-                  {e.can.manageDocuments && (
-                    <button className="ml-3 text-[0.8125rem] text-fg-subtle hover:text-danger" disabled={pending} onClick={() => {
-                      if (!confirm(`Archive "${d.title}"? The file is kept for records but hidden from the profile.`)) return;
-                      start(async () => { const r = await archiveDocumentAction(e.id, d.id); if (r.ok) router.refresh(); else setError(r.message); });
-                    }}>Archive</button>
-                  )}
-                </TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
-      ) : <EmptyState icon={<FileText className="size-5" />} title="No documents yet" />}
+    <div className="grid gap-5">
+      {(openRequests.length > 0 || catalogue) && (
+        <Card>
+          <CardHeader
+            title="Document requests"
+            description={e.isSelf ? 'Documents HR Workspace or Super Workspace asked you for. Open one to upload the file.' : 'Open requests to this employee, with who asked and the deadline.'}
+            action={catalogue && <RequestDocumentButton catalogue={catalogue} preset={{ target: 'employee', employeeIds: [e.id], employeeName: e.displayName }} />}
+          />
+          <RequestTable rows={openRequests} empty={catalogue ? 'Use "Request document" to ask this employee for a document. They get a task and a notification.' : undefined} />
+        </Card>
+      )}
+      <Card>
+        <CardHeader
+          title="Documents"
+          description="Every document in this profile with its status, who asked for it and who verified it. Files open through short-lived links and every view is recorded."
+          action={canUpload && <Button size="sm" variant="secondary" onClick={() => setOpen(true)}><Upload className="size-3.5" /> Upload</Button>}
+        />
+        {error && <div className="px-5"><Alert tone="danger">{error}</Alert></div>}
+        <DocumentTable rows={documents} filterable empty={e.isSelf ? 'Documents you upload or are asked for appear here.' : 'Documents uploaded to this profile appear here.'}
+          rowAction={e.can.manageDocuments ? (d) => (
+            <button className="text-xs text-fg-subtle hover:text-danger" disabled={pending} onClick={() => {
+              if (!confirm(`Archive "${d.title}"? The file is kept for records but hidden from the profile.`)) return;
+              start(async () => { const r = await archiveDocumentAction(e.id, d.id); if (r.ok) router.refresh(); else setError(r.message); });
+            }}>Archive</button>
+          ) : undefined} />
+      </Card>
       <ActionDialog open={open} onClose={() => setOpen(false)} title="Upload document" submit="Upload" run={(f) => uploadDocumentAction(e.id, f)}>
         <Field label="Title" required>{(p) => <Input {...p} name="title" required maxLength={200} />}</Field>
         <Field label="Category" required>{(p) => <Select {...p} name="category" defaultValue="other">{CATEGORIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>}</Field>
         {e.can.manageDocuments ? (
           <Field label="Who can see it">{(p) => <Select {...p} name="visibility" defaultValue="employee"><option value="employee">The employee and HR</option><option value="hr_only">HR only</option></Select>}</Field>
         ) : <input type="hidden" name="visibility" value="employee" />}
-        <Field label="File" required>{(p) => <Input {...p} type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx" className="py-1.5" />}</Field>
+        <Field label="File" required hint="PDF, images, Word, Excel or text, up to 10 MB.">{(p) => <Input {...p} type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.doc,.docx,.xls,.xlsx" className="py-1.5" />}</Field>
       </ActionDialog>
-    </Card>
+    </div>
   );
 }
 

@@ -283,6 +283,8 @@ export interface WorkTask {
   displayStatus: WorkTask['status'] | 'overdue'; overdue: boolean; isNew: boolean; dueOn: string | null; assignedAt: string; assignedBy: string | null; assignedByMe: boolean;
   employeeId: string; employeeName: string | null; employeeCode: string | null; departmentName: string | null; employeeRemarks: string | null; reviewerRemarks: string | null;
   submittedAt: string | null; completedAt: string | null; acknowledgedAt: string | null; isMine: boolean; verificationRequestId: string | null;
+  /** Set when the task comes from a document request (Documents); the request page has the full workflow. */
+  requestId?: string | null; requestStatus?: string | null;
   document: null | { spec: { category: string; formats: string[]; maxMb: number }; id: string | null; title?: string; fileName?: string; sizeBytes?: number; contentType?: string; verificationStatus?: 'pending' | 'verified' | 'rejected' | null; verificationRemarks?: string | null; verifiedAt?: string | null };
   history: { at: string; by: string | null; action: string; status: string | null; remarks: string | null }[];
 }
