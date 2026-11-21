@@ -276,6 +276,9 @@ export interface LearningAssignment {
   completedOn: string | null;
   overdue: boolean;
   expired: boolean;
+  /** Present once the learning modules work is merged; tracked progress and quiz score. */
+  progressPercent?: number | null;
+  scorePercent?: number | null;
 }
 export interface Course {
   id: string;

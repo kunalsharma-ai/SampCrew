@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { useMobileApp } from '../../src/lib/mobile-app';
 import { openUrl } from '../../src/lib/open';
+import { ApiError } from '../../src/lib/api';
 import { useSession } from '../../src/lib/session';
 import type { Course, LearningAssignment } from '../../src/lib/types';
 import { Badge, Button, Card, Choice, errorText, fmt, Meter, Notice, Screen, Text, Tile, TileGrid, useLoad, useReloadOnFocus } from '../../src/ui';
@@ -33,7 +34,9 @@ function Learning() {
       await mine.reload();
       if (view === 'library') await library.reload();
     } catch (e) {
-      setMsg({ tone: 'danger', text: errorText(e) });
+      // A module with videos, quizzes or assignments is tracked item by item, so it is finished in the Web Portal's player.
+      const inModule = e instanceof ApiError && e.code === 'complete_in_module';
+      setMsg({ tone: 'danger', text: inModule ? 'This course has videos, quizzes or assignments that are tracked one by one. Finish it in the Web Portal under Learning.' : errorText(e) });
     } finally {
       setBusy(null);
     }
@@ -67,7 +70,7 @@ function Learning() {
                 <Icon3D name="school" tone="green" size={44} />
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text weight="700">{a.courseTitle}</Text>
-                  <Text muted size={13}>{[a.pathTitle, a.durationMinutes ? `${a.durationMinutes} min` : null, a.dueOn ? `due ${fmt.date(a.dueOn)}` : null].filter(Boolean).join(' · ') || 'No due date'}</Text>
+                  <Text muted size={13}>{[a.pathTitle, a.durationMinutes ? `${a.durationMinutes} min` : null, a.dueOn ? `due ${fmt.date(a.dueOn)}` : null, a.progressPercent ? `${a.progressPercent}% done` : null, a.scorePercent != null ? `score ${a.scorePercent}%` : null].filter(Boolean).join(' · ') || 'No due date'}</Text>
                 </View>
                 <Badge tone={a.overdue ? 'danger' : STATUS[a.status]?.tone}>{a.overdue ? 'Overdue' : (STATUS[a.status]?.label ?? a.status)}</Badge>
               </View>

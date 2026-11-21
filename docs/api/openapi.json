@@ -1162,6 +1162,64 @@
         }
       }
     },
+    "/api/v1/me/sign-ins": {
+      "get": {
+        "tags": [
+          "Me"
+        ],
+        "summary": "Your recent sign-ins in this workspace (newest first): when, which app, device and whether the session is still open; the previous successful sign-in",
+        "operationId": "Me_signIns",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/sessions/sign-out-others": {
+      "post": {
+        "tags": [
+          "Me"
+        ],
+        "summary": "Sign out every other session of this account in this workspace (this one stays signed in)",
+        "operationId": "Me_signOutOthers",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/sessions/{id}": {
       "delete": {
         "tags": [
@@ -45230,6 +45288,586 @@
         }
       }
     },
+    "/api/v1/mobile/app": {
+      "get": {
+        "tags": [
+          "MobileApp"
+        ],
+        "summary": "The mobile app for me: the modules, menu, quick actions and home widgets the Super Workspace published for my level, limited by my own access",
+        "description": "Pass `since` (the version the phone has) to learn cheaply whether anything changed (`unchanged: true`).",
+        "operationId": "MobileApp_mine",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-app": {
+      "get": {
+        "tags": [
+          "MobileAppAdmin"
+        ],
+        "summary": "Mobile app configuration: published version, draft with its checks and changes, module counts and recent phone use",
+        "description": "Requires permission `mobileapp:manage`.",
+        "operationId": "MobileAppAdmin_overview",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-app/draft": {
+      "put": {
+        "tags": [
+          "MobileAppAdmin"
+        ],
+        "summary": "Save the draft configuration (phones keep the published one until you publish)",
+        "description": "Requires permission `mobileapp:manage`.",
+        "operationId": "MobileAppAdmin_saveDraft",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "modules": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "levels": {
+                              "type": "object",
+                              "properties": {
+                                "super": {
+                                  "type": "boolean"
+                                },
+                                "hr": {
+                                  "type": "boolean"
+                                },
+                                "employee": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "super",
+                                "hr",
+                                "employee"
+                              ]
+                            },
+                            "placement": {
+                              "type": "string",
+                              "enum": [
+                                "tab",
+                                "more"
+                              ]
+                            },
+                            "order": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 999
+                            },
+                            "features": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string",
+                                "maxLength": 40
+                              },
+                              "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                  "enabled": {
+                                    "type": "boolean"
+                                  },
+                                  "levels": {
+                                    "type": "object",
+                                    "properties": {
+                                      "super": {
+                                        "type": "boolean"
+                                      },
+                                      "hr": {
+                                        "type": "boolean"
+                                      },
+                                      "employee": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "super",
+                                      "hr",
+                                      "employee"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "enabled",
+                                  "levels"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "levels",
+                            "placement",
+                            "order",
+                            "features"
+                          ]
+                        }
+                      },
+                      "quickActions": {
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "levels": {
+                              "type": "object",
+                              "properties": {
+                                "super": {
+                                  "type": "boolean"
+                                },
+                                "hr": {
+                                  "type": "boolean"
+                                },
+                                "employee": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "super",
+                                "hr",
+                                "employee"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "maxLength": 60
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "levels",
+                            "key"
+                          ]
+                        }
+                      },
+                      "widgets": {
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "levels": {
+                              "type": "object",
+                              "properties": {
+                                "super": {
+                                  "type": "boolean"
+                                },
+                                "hr": {
+                                  "type": "boolean"
+                                },
+                                "employee": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "super",
+                                "hr",
+                                "employee"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "maxLength": 60
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "levels",
+                            "key"
+                          ]
+                        }
+                      },
+                      "welcome": {
+                        "default": "",
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "modules",
+                      "quickActions",
+                      "widgets"
+                    ]
+                  }
+                },
+                "required": [
+                  "config"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-app/draft/discard": {
+      "post": {
+        "tags": [
+          "MobileAppAdmin"
+        ],
+        "summary": "Throw the draft away and go back to the published configuration",
+        "description": "Requires permission `mobileapp:manage`.",
+        "operationId": "MobileAppAdmin_discard",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-app/publish": {
+      "post": {
+        "tags": [
+          "MobileAppAdmin"
+        ],
+        "summary": "Publish the draft as a new version: every phone follows it within a minute. Refused if the checks fail, or (until confirmed) if it hides modules people use.",
+        "description": "Requires permission `mobileapp:manage`.",
+        "operationId": "MobileAppAdmin_publish",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "draftRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "confirmHidingInUse": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "draftRevision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-app/versions": {
+      "get": {
+        "tags": [
+          "MobileAppAdmin"
+        ],
+        "summary": "Every published version: number, when, who, note and what changed",
+        "description": "Requires permission `mobileapp:manage`.",
+        "operationId": "MobileAppAdmin_versions",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-app/versions/{version}": {
+      "get": {
+        "tags": [
+          "MobileAppAdmin"
+        ],
+        "summary": "One published version with its full configuration",
+        "description": "Requires permission `mobileapp:manage`.",
+        "operationId": "MobileAppAdmin_version",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-app/versions/{version}/restore": {
+      "post": {
+        "tags": [
+          "MobileAppAdmin"
+        ],
+        "summary": "Publish an old version again (as a new version; the history keeps both)",
+        "description": "Requires permission `mobileapp:manage`.",
+        "operationId": "MobileAppAdmin_restore",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-app/preview": {
+      "get": {
+        "tags": [
+          "MobileAppAdmin"
+        ],
+        "summary": "Read-only preview of the app for a level (draft or published), with the company modules and no individual permissions",
+        "description": "Requires permission `mobileapp:manage`.",
+        "operationId": "MobileAppAdmin_preview",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "super",
+                "hr",
+                "employee"
+              ]
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "draft",
+              "type": "string",
+              "enum": [
+                "draft",
+                "published"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/mobile/devices": {
       "post": {
         "tags": [
@@ -45494,6 +46132,13 @@
                           "enum": [
                             "in",
                             "out"
+                          ]
+                        },
+                        "purpose": {
+                          "type": "string",
+                          "enum": [
+                            "work",
+                            "break"
                           ]
                         },
                         "capturedAt": {
