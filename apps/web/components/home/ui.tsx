@@ -1,6 +1,6 @@
 'use client';
 import { ATTENTION_LABEL, type AttentionLevel, type HomeAction } from '@crew/contracts';
-import { Card, CardHeader, Skeleton, cn } from '@crew/ui';
+import { AutoHelp, Card, CardHeader, Skeleton, cn } from '@crew/ui';
 import { AlertOctagon, AlertTriangle, ArrowRight, BellRing, CheckCircle2, Info, PartyPopper, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -147,7 +147,7 @@ export function DailyBars({ days, label, height = 120, onPick }: {
   const max = Math.max(100, ...days.map((d) => d.value ?? 0));
   return (
     <figure className="m-0">
-      <div className="flex items-end gap-[3px]" style={{ height }} role="img" aria-label={label}>
+      <div className="flex items-end gap-[3px]" style={{ height }} role="group" aria-label={label}>
         {days.map((d) => {
           const h = d.value === null ? 4 : Math.max(4, (d.value / max) * height);
           const tone = d.value === null ? 'bg-bg-subtle' : d.value >= 90 ? 'bg-success' : d.value >= 75 ? 'bg-accent' : 'bg-warning';
@@ -186,7 +186,10 @@ export function HomeHeader({ name, level, workspace, timeZone, renderedAt, child
   return (
     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between animate-fade-in" data-testid="home-header">
       <div className="min-w-0">
-        <h1 id="home-title" className="crew-hero-title text-2xl font-semibold tracking-tight text-fg"><span aria-hidden>👋 </span>{greeting}, <span className="crew-gradient-text">{name}</span></h1>
+        <div className="flex items-center gap-1.5">
+          <h1 id="home-title" className="crew-hero-title text-2xl font-semibold tracking-tight text-fg"><span aria-hidden>👋 </span>{greeting}, <span className="crew-gradient-text">{name}</span></h1>
+          <AutoHelp kind="page" describedBy="home-title" />
+        </div>
         <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-fg-muted">
           <span className="font-medium text-fg" data-testid="home-level">{level}</span>
           <span aria-hidden>•</span><span>{workspace}</span>
