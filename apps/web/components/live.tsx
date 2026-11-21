@@ -1,11 +1,11 @@
 'use client';
-import { shouldPlaySound, type NotificationPreferences, type NotificationView } from '@crew/contracts';
+import { inQuietHours, shouldPlaySound, type NotificationPreferences, type NotificationView } from '@crew/contracts';
 import { cn } from '@crew/ui';
 import { X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { armAudioUnlock, playNotificationSound } from '@/lib/notification-sound';
-import { markNotificationReadAction } from '@/app/(app)/shell-actions';
+import { markNotificationReadAction, notificationCountsAction } from '@/app/(app)/shell-actions';
 import { deliveredAction } from '@/app/(app)/communication/actions';
 
 type Handler = (data: any) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -18,6 +18,8 @@ interface Live {
   connected: boolean;
   /** A new notice arrived in the last few seconds (the bell animates). */
   pulse: boolean;
+  /** Unread notices per category (the menu marks Leave, Attendance, Learning ... with them). */
+  byCategory: Record<string, number>;
   prefs: NotificationPreferences | null;
   setPrefs: (p: NotificationPreferences) => void;
   setUnread: (n: number) => void;
@@ -66,6 +68,29 @@ export function useRefreshOn(types: string[]) {
 
 interface Toast { id: string; n: NotificationView }
 
+/** Whether the person's quiet hours are on now (urgent notices still sound and show). */
+export function quietNow(p: NotificationPreferences | null, priority: NotificationView['priority']): boolean {
+  if (!p?.quiet || priority === 'urgent') return false;
+  const d = new Date();
+  return inQuietHours(p.quiet, d.getHours() * 60 + d.getMinutes());
+}
+
+/** A system notification (outside the browser tab) while the tab is in the background, if the person turned them on. */
+function desktopNotice(p: NotificationPreferences | null, n: NotificationView, open: (n: NotificationView) => void) {
+  if (!p?.desktop || typeof window === 'undefined' || !('Notification' in window)) return;
+  if (Notification.permission !== 'granted' || document.visibilityState === 'visible') return;
+  try {
+    const sys = new Notification(n.title, { body: n.body ?? undefined, tag: n.id, icon: '/icon.svg' });
+    sys.onclick = () => {
+      window.focus();
+      open(n);
+      sys.close();
+    };
+  } catch {
+    // Some browsers only allow system notifications from a service worker; the bell still has it.
+  }
+}
+
 /** Whether a notice's link is the page open now, or a page under it (/approvals/123 while on /approvals). */
 function onPage(link: string | null): boolean {
   if (!link || typeof window === 'undefined') return false;
@@ -79,7 +104,7 @@ function onPage(link: string | null): boolean {
  * Notification Center, chat and approvals all update from it without reloading. Sounds and pop-ups follow the
  * person's preferences; a sound never plays on page load, only for notices arriving while the page is open.
  */
-export function LiveProvider({ initial, prefs: initialPrefs, children }: { initial: { unread: number; items: NotificationView[] } | null; prefs: NotificationPreferences | null; children: React.ReactNode }) {
+export function LiveProvider({ initial, byCategory: initialByCategory, prefs: initialPrefs, children }: { initial: { unread: number; items: NotificationView[] } | null; byCategory?: Record<string, number> | null; prefs: NotificationPreferences | null; children: React.ReactNode }) {
   const router = useRouter();
   const [unread, setUnread] = useState(initial?.unread ?? 0);
   const [items, setItems] = useState<NotificationView[]>(initial?.items ?? []);
@@ -87,6 +112,20 @@ export function LiveProvider({ initial, prefs: initialPrefs, children }: { initi
   const [pulse, setPulse] = useState(false);
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(initialPrefs);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [byCategory, setByCategory] = useState<Record<string, number>>(initialByCategory ?? {});
+  const openRef = useRef<(n: NotificationView) => void>(() => undefined);
+  const countsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The per-category counts come from the server, at most once a second however many notices arrive.
+  const refreshCounts = useCallback(() => {
+    if (countsTimer.current) return;
+    countsTimer.current = setTimeout(() => {
+      countsTimer.current = null;
+      void notificationCountsAction().then((c) => c && setByCategory(c)).catch(() => undefined);
+    }, 1000);
+  }, []);
+  useEffect(() => {
+    if (initialByCategory) setByCategory(initialByCategory);
+  }, [initialByCategory]);
   const handlers = useRef(new Map<string, Set<Handler>>());
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
@@ -143,11 +182,14 @@ export function LiveProvider({ initial, prefs: initialPrefs, children }: { initi
         const p = prefsRef.current;
         // No sound or pop-up for what you just did yourself, or for news about the page you are looking at (it
         // updates on its own); the bell still counts it.
-        const quiet = d.self || onPage(d.notification.link);
+        // Quiet hours hold back sound, pop-ups and system notifications too (urgent ones still come through).
+        const quiet = d.self || onPage(d.notification.link) || quietNow(p, d.notification.priority);
         if (!quiet && p && shouldPlaySound(p.sound, d.notification.priority)) playNotificationSound(d.notification.priority, p.sound.volume);
         if (!quiet && (!p || p.toasts)) {
           setToasts((cur) => [{ id: `${d.notification.id}:${Date.now()}`, n: d.notification }, ...cur.filter((x) => x.n.id !== d.notification.id)].slice(0, 3));
         }
+        if (!quiet) desktopNotice(p, d.notification, openRef.current);
+        refreshCounts();
         emit('notification', d);
       });
       // What this person may use changed at a level above them (Console, Super Workspace or HR Workspace): reload the
@@ -156,7 +198,10 @@ export function LiveProvider({ initial, prefs: initialPrefs, children }: { initi
       for (const type of ['notifications.read', 'chat.message', 'chat.read', 'chat.updated', 'approvals.changed', 'announcements.changed', 'leave.changed']) {
         es.addEventListener(type, (e) => {
           const d = JSON.parse((e as MessageEvent).data);
-          if (type === 'notifications.read' && typeof d.unread === 'number') setUnread(d.unread);
+          if (type === 'notifications.read') {
+            if (typeof d.unread === 'number') setUnread(d.unread);
+            refreshCounts();
+          }
           // A chat message reached this browser: tell the sender it was delivered (at most every few seconds).
           if (type === 'chat.message' && Date.now() - lastDelivered > 3000) {
             lastDelivered = Date.now();
@@ -182,27 +227,32 @@ export function LiveProvider({ initial, prefs: initialPrefs, children }: { initi
       if (fallback) clearInterval(fallback);
       if (retry) clearTimeout(retry);
     };
-  }, [emit, router]);
+  }, [emit, router, refreshCounts]);
 
   const markRead = useCallback((id: string) => {
     setItems((cur) => cur.map((x) => (x.id === id && !x.readAt ? { ...x, readAt: new Date().toISOString() } : x)));
   }, []);
   const markAllRead = useCallback(() => {
     setUnread(0);
+    setByCategory({});
     setItems((cur) => cur.map((x) => (x.readAt ? x : { ...x, readAt: new Date().toISOString() })));
   }, []);
 
-  const value = useMemo<Live>(() => ({ unread, items, connected, pulse, prefs, setPrefs, setUnread, markRead, markAllRead, on }), [unread, items, connected, pulse, prefs, markRead, markAllRead, on]);
+  const value = useMemo<Live>(() => ({ unread, items, connected, pulse, byCategory, prefs, setPrefs, setUnread, markRead, markAllRead, on }), [unread, items, connected, pulse, byCategory, prefs, markRead, markAllRead, on]);
+
+  const openNotice = useCallback((n: NotificationView) => {
+    setToasts((cur) => cur.filter((t) => t.n.id !== n.id));
+    void markNotificationReadAction(n.id);
+    markRead(n.id);
+    refreshCounts();
+    if (n.link) router.push(n.link);
+  }, [markRead, refreshCounts, router]);
+  openRef.current = openNotice;
 
   return (
     <LiveContext.Provider value={value}>
       {children}
-      <Toasts toasts={toasts} dismiss={(id) => setToasts((cur) => cur.filter((t) => t.id !== id))} open={(n) => {
-        setToasts((cur) => cur.filter((t) => t.n.id !== n.id));
-        void markNotificationReadAction(n.id);
-        markRead(n.id);
-        if (n.link) router.push(n.link);
-      }} />
+      <Toasts toasts={toasts} dismiss={(id) => setToasts((cur) => cur.filter((t) => t.id !== id))} open={openNotice} />
     </LiveContext.Provider>
   );
 }

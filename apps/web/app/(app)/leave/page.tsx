@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { Alert, Card, CardHeader, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
@@ -55,6 +56,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
         { label: 'Team attendance', href: '/attendance/team?status=on_leave', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },
         { label: 'Leave policy', href: '/settings/leave', icon: 'sliders', permission: 'leave:configure' },
       ])} />
+      <ModuleNotices category="leave" label="Leave" />
       <div className="grid gap-6">
         {sent && (
           <Alert tone={sent.status === 'pending' ? 'info' : 'success'} title="Leave request sent">

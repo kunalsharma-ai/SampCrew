@@ -965,6 +965,8 @@ export const WEB_HELP: HelpContent = {
     'What you are told about': { what: 'Each category of notification, in SampCrew and by email.', how: 'Switch a category off to stop it. Approvals and workspace notices always show in SampCrew.' },
     Sound: { what: 'A short, quiet tone for new notices while SampCrew is open. It never plays when a page loads.', how: 'Switch it on, set the volume and which notices make a sound, and try the preview.' },
     'Pop-ups': { what: 'A small pop-up in the corner when a notice arrives while SampCrew is open.' },
+    'Desktop notifications': { what: 'A system notification on your computer for notices that arrive while SampCrew is in a background tab.', how: 'Switch it on and allow notifications when the browser asks.' },
+    'Quiet hours': { what: 'Hours when no sound, pop-up or desktop notification is played. Notices still wait in the bell; urgent ones still come through.' },
     'Approval categories': { what: 'The cards on the Approvals page. Built-in ones cover the usual requests; yours are checked first.', how: 'Add a category for some request types, leave types or expense categories.' },
     // HR Workspace Admin, assets and verification
     'Module access': { what: 'Every module in your plan and whether it is on for this workspace.', how: 'Switch a module off to hide it for everyone. Core modules are always on.' },

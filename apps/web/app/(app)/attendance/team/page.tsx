@@ -1,5 +1,6 @@
+import { ATTENDANCE_VIEW_FILTERS, ATTENDANCE_VIEW_LABEL, type AttendanceViewFilter } from '@crew/contracts';
 import { Card, CardHeader, EmptyState, PageHeader, Stat, StatusPill, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
-import { Users } from 'lucide-react';
+import { Users, X } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load, loadOptional } from '@/lib/api';
@@ -10,11 +11,14 @@ export const metadata: Metadata = { title: 'Team attendance' };
 
 const time = (iso: string | null, tz = 'UTC') => (iso ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz }).format(new Date(iso)) : '—');
 
-export default async function TeamAttendancePage({ searchParams }: { searchParams: Promise<{ date?: string; status?: string; departmentId?: string; locationId?: string }> }) {
+export default async function TeamAttendancePage({ searchParams }: { searchParams: Promise<{ date?: string; status?: string; departmentId?: string; locationId?: string; filter?: string }> }) {
   const sp = await searchParams;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? '') ? sp.date! : new Date().toISOString().slice(0, 10);
   const qs = new URLSearchParams({ date });
   for (const k of ['status', 'departmentId', 'locationId'] as const) if (sp[k]) qs.set(k, sp[k]!);
+  // A view opened from Home (late, left early, working now, not in yet, from home).
+  const filter = (ATTENDANCE_VIEW_FILTERS as readonly string[]).includes(sp.filter ?? '') ? (sp.filter as AttendanceViewFilter) : undefined;
+  if (filter) qs.set('filter', filter);
   const [data, departments, locations] = await Promise.all([
     load<{ date: string; summary: Record<string, number>; rows: AttendanceDay[] }>(`/attendance/team?${qs}`),
     loadOptional<Department[]>('/org/departments'),
@@ -23,7 +27,7 @@ export default async function TeamAttendancePage({ searchParams }: { searchParam
   const tzOf = new Map((locations ?? []).map((l) => [l.name, l.timezone]));
   const s = data.summary;
   const link = (patch: Record<string, string | undefined>) => {
-    const p = new URLSearchParams({ date, ...(sp.departmentId ? { departmentId: sp.departmentId } : {}), ...(sp.locationId ? { locationId: sp.locationId } : {}), ...(sp.status ? { status: sp.status } : {}) });
+    const p = new URLSearchParams({ date, ...(sp.departmentId ? { departmentId: sp.departmentId } : {}), ...(sp.locationId ? { locationId: sp.locationId } : {}), ...(sp.status ? { status: sp.status } : {}), ...(filter ? { filter } : {}) });
     for (const [k, v] of Object.entries(patch)) (v ? p.set(k, v) : p.delete(k));
     return `?${p}`;
   };
@@ -63,7 +67,13 @@ export default async function TeamAttendancePage({ searchParams }: { searchParam
             </select>
           </label>
         )}
+        {filter && <input type="hidden" name="filter" value={filter} />}
         <button className="h-9 rounded-md border border-border px-3 font-medium hover:bg-bg-subtle" type="submit">Show</button>
+        {filter && (
+          <Link href={link({ filter: undefined })} data-testid="team-filter-chip" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-accent-subtle px-3 text-[0.8125rem] font-medium text-accent hover:underline" aria-label={`Showing ${ATTENDANCE_VIEW_LABEL[filter]}. Remove this filter`}>
+            {ATTENDANCE_VIEW_LABEL[filter]}<X className="size-3.5" aria-hidden />
+          </Link>
+        )}
       </form>
       <Card>
         <CardHeader title={`${data.rows.length} ${data.rows.length === 1 ? 'person' : 'people'}`} />

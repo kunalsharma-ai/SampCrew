@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const chatsOn = me.features.includes('helpdesk') && Boolean(me.permissions['helpdesk:use']);
   const newsOn = me.features.includes('announcements') && Boolean(me.permissions['announcements:read']);
   // Everything the shell needs is fetched together, so each page waits for one round of requests.
-  const [notifications, prefs, inbox, cookieAppearance, helpdesk, notificationPrefs, taskCounts, chats, news] = await Promise.all([
+  const [notifications, prefs, inbox, cookieAppearance, helpdesk, notificationPrefs, taskCounts, chats, news, noticeSummary] = await Promise.all([
     loadOptional<Notifications & { items: NotificationView[] }>('/notifications?limit=15'),
     loadOptional<MemberPreferences>('/me/preferences'),
     loadOptional<unknown[]>('/approvals/inbox'),
@@ -28,7 +28,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     loadOptional<TaskCounts>('/tasks/counts'),
     chatsOn ? loadOptional<{ unread: number }>('/communication/unread') : Promise.resolve(null),
     newsOn ? loadOptional<{ total: number }>('/announcements/unread') : Promise.resolve(null),
+    loadOptional<{ categories: { category: string; unread: number }[] }>('/notifications/summary'),
   ]);
+  // Unread notices per category: the menu marks the matching module (Leave, Attendance, Learning ...) with them.
+  const byCategory = noticeSummary ? Object.fromEntries(noticeSummary.categories.filter((c) => c.unread > 0).map((c) => [c.category, c.unread])) : null;
   const counts: Record<string, number> = {};
   if (inbox?.length) counts['/approvals'] = inbox.length;
   // Questions from employees that HR still has to answer, on the HR helpdesk menu item.
@@ -55,7 +58,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       )}
       <MfaStepUpProvider mfaEnabled={me.user.mfaEnabled}>
-        <LiveProvider initial={notifications ? { unread: notifications.unread, items: notifications.items } : null} prefs={notificationPrefs}>
+        <LiveProvider initial={notifications ? { unread: notifications.unread, items: notifications.items } : null} byCategory={byCategory} prefs={notificationPrefs}>
         <Shell me={me} nav={visibleNav(me)} notifications={notifications} prefs={prefs} cookieAppearance={cookieAppearance} counts={counts} quick={quickActions(me)} workflows={workflowActions(me)}>
           {children}
         </Shell>

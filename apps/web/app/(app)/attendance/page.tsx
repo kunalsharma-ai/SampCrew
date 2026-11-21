@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { Alert, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -62,6 +63,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         { label: 'Attendance settings', href: '/settings/attendance', icon: 'timer', permission: 'attendance:configure' },
         { label: 'Devices', href: '/settings/devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
       ])} />}
+      {own && <ModuleNotices category="attendance" label="Attendance" />}
       <div className="grid gap-6">
         {today && <TodayCard today={today} />}
         {late && <LateSummary data={late} own={own} />}
