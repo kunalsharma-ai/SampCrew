@@ -69,9 +69,16 @@ npx eas-cli@27.7.2 submit --platform all --profile production  # upload the late
 
 ## Checking a change before building
 
+EAS uploads the repository without any `dist/` folders. The phone app reads `@crew/contracts` straight from its
+TypeScript source through the `react-native` field in `packages/contracts/package.json`, so no package build is needed
+on the build server. If the app starts importing another `@crew/*` package, give that package the same field.
+
+
 ```bash
 pnpm --filter @crew/mobile typecheck && pnpm --filter @crew/mobile test
 cd apps/mobile && EXPO_PUBLIC_CREW_API_URL=https://api.example.com npx expo export --platform android --platform ios --output-dir /tmp/native-check
+# the exact step EAS runs for Android (works from a clean clone with no dist folders):
+cd apps/mobile && EXPO_PUBLIC_CREW_API_URL=https://api.example.com npx expo export:embed --eager --platform android --dev false
 ```
 
 The export compiles the same JavaScript the phones run. `npx expo prebuild --no-install` shows the native projects
