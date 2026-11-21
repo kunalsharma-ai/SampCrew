@@ -150,15 +150,15 @@ async function writeReview(p, rating, label) {
   await arjun.locator('text=/Acknowledged .*Thanks, agreed/').waitFor({ timeout: 10000 }).catch((e) => shot(arjun, e));
   ok('operator read the final rating and anonymous peer feedback, and acknowledged');
 
-  // 6. Learning: self-enrol and complete.
-  await arjun.goto(BASE + '/learning?view=catalogue');
-  await arjun.locator('li', { hasText: 'Lean basics' }).locator('button:has-text("Enrol")').click();
-  await arjun.locator('li', { hasText: 'Lean basics' }).locator('text=In your learning').waitFor({ timeout: 10000 }).catch((e) => shot(arjun, e));
-  await arjun.goto(BASE + '/learning');
-  const lean = arjun.locator('tr', { hasText: 'Lean basics' });
-  await lean.locator('button:has-text("Mark complete")').click();
-  await lean.locator('text=/Completed \\d{4}-\\d{2}-\\d{2}/').waitFor({ timeout: 10000 }).catch((e) => shot(arjun, e));
-  ok('operator enrolled in a course and completed it');
+  // 6. Learning: self-enrol from the learning library and complete the module in the player.
+  await arjun.goto(BASE + '/learning?tab=library');
+  await arjun.getByTestId('library-item').filter({ hasText: 'Lean basics' }).getByRole('button', { name: 'Enrol' }).click();
+  await arjun.locator('text=Enrolled. It is in your learning now.').waitFor({ timeout: 10000 }).catch((e) => shot(arjun, e));
+  await arjun.goto(BASE + '/learning?tab=in_progress');
+  await arjun.getByTestId('my-learning-item').filter({ hasText: 'Lean basics' }).getByTestId('open-learning').click();
+  await arjun.getByTestId('mark-complete').click();
+  await arjun.locator('text=/^Completed \\d+ \\w+ \\d{4}/').waitFor({ timeout: 10000 }).catch((e) => shot(arjun, e));
+  ok('operator enrolled in a module and completed it');
 
   // 7. Survey.
   await arjun.goto(BASE + '/surveys');
@@ -218,11 +218,11 @@ async function writeReview(p, rating, label) {
   await arjun.locator('text=Covered my changeover at short notice').waitFor({ timeout: 10000 }).catch((e) => shot(arjun, e));
   ok('operator recognised a colleague for a company value');
 
-  for (const path of ['/goals?view=team', '/reviews?view=feedback', '/learning?view=team', '/learning/catalogue', '/surveys/manage', '/recognition', '/reviews/cycles']) {
+  for (const path of ['/goals?view=team', '/reviews?view=feedback', '/learning/manage', '/learning/manage/library', '/learning/catalogue', '/surveys/manage', '/recognition', '/reviews/cycles']) {
     await hr.goto(BASE + path);
     await hr.waitForLoadState('networkidle');
   }
-  for (const path of ['/goals?view=team', '/reviews?view=team', '/learning?view=team']) {
+  for (const path of ['/goals?view=team', '/reviews?view=team', '/learning']) {
     await sup.goto(BASE + path);
     await sup.waitForLoadState('networkidle');
   }

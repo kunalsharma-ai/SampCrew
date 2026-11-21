@@ -199,8 +199,8 @@ describe('Phase 12 production readiness', () => {
       'GET /signature-agent/images/:kind', 'POST /signature-agent/report', 'POST /signature-agent/sync',
       // Razorpay and Stripe webhooks: refused unless signed with the webhook secret saved in Console > Integrations.
       'POST /billing/webhooks/:provider',
-      // Signed, expiring download links for verification, asset and custom field files (like GET /files/:id).
-      'GET /files/bgv/:id', 'GET /files/assets/:id', 'GET /files/fields/:id',
+      // Signed, expiring download links for verification, asset, custom field and learning files (like GET /files/:id).
+      'GET /files/bgv/:id', 'GET /files/assets/:id', 'GET /files/fields/:id', 'GET /files/learning/:id',
       // A verification agency's private link: the token is checked against an unrevoked, unexpired link, rate limited.
       'GET /bgv-portal/:token', 'GET /bgv-portal/:token/files/:fileId', 'POST /bgv-portal/:token/findings', 'POST /bgv-portal/:token/report',
     ];

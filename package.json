@@ -32,6 +32,7 @@
     "e2e:attendance": "node e2e/attendance-flow.cjs",
     "e2e:late": "node e2e/late-flow.cjs",
     "e2e:hr-workspace": "node e2e/hr-workspace-flow.cjs",
+    "e2e:learning": "node e2e/learning-flow.cjs",
     "e2e:recruitment": "node e2e/recruitment-flow.cjs",
     "e2e:payroll": "node e2e/payroll-flow.cjs",
     "e2e:payroll-countries": "node e2e/payroll-countries-flow.cjs",

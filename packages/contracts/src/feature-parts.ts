@@ -75,8 +75,9 @@ export const FEATURE_PARTS = [
   { key: 'performance.cycles', feature: 'performance', name: 'Review cycles', audience: 'admin', web: ['/reviews/cycles'] },
   { key: 'performance.my_appraisal', feature: 'performance', name: 'My appraisal', audience: 'employee', web: ['/appraisal'], api: ['appraisals/mine'] },
   { key: 'performance.appraisal_setup', feature: 'performance', name: 'Appraisal forms and cycles', audience: 'admin', web: ['/settings/appraisals'] },
-  { key: 'learning.mine', feature: 'learning', name: 'My learning', audience: 'employee', web: ['/learning'] },
-  { key: 'learning.catalogue', feature: 'learning', name: 'Course catalogue', audience: 'admin', web: ['/learning/catalogue'] },
+  { key: 'learning.mine', feature: 'learning', name: 'My learning', audience: 'employee', web: ['/learning'], api: ['learning/my'] },
+  { key: 'learning.manage', feature: 'learning', name: 'Learning management', audience: 'hr', web: ['/learning/manage'], api: ['learning/dashboard', 'learning/reports', 'learning/reviews', 'learning/permissions', 'learning/learners', 'learning/enrolments'] },
+  { key: 'learning.catalogue', feature: 'learning', name: 'Learning paths', audience: 'admin', web: ['/learning/catalogue'] },
   // Engagement and communication
   { key: 'engagement.recognition', feature: 'engagement', name: 'Recognition', audience: 'employee', web: ['/recognition'] },
   { key: 'engagement.surveys', feature: 'engagement', name: 'Surveys', audience: 'employee', web: ['/surveys'] },

@@ -5,7 +5,13 @@
  * adds the nonce to its own scripts when it sees it in the request's CSP header). No inline event handlers, no
  * `javascript:` URLs, no scripts from any other site. Styles still allow 'unsafe-inline' (React style attributes and
  * the saved theme's stylesheet); CSS cannot run code. Development adds 'unsafe-eval' for hot reload.
+ *
+ * Learning modules can play audio and video linked from any https site (media cannot run code) and embed the
+ * privacy-enhanced YouTube and Vimeo players. Nothing else may be framed.
  */
+/** The only outside players a learning module may embed (see embedUrl in learning.ts). */
+export const LEARNING_EMBED_ORIGINS = ['https://www.youtube-nocookie.com', 'https://player.vimeo.com'] as const;
+
 export function contentSecurityPolicy(opts: { nonce: string; dev?: boolean; frameAncestors: "'self'" | "'none'" }): string {
   if (!/^[A-Za-z0-9+/=_-]{16,}$/.test(opts.nonce)) throw new Error('CSP nonce must be at least 16 base64 characters');
   return [
@@ -15,7 +21,8 @@ export function contentSecurityPolicy(opts: { nonce: string; dev?: boolean; fram
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "connect-src 'self'",
-    "frame-src 'self'",
+    "media-src 'self' blob: https:",
+    `frame-src 'self' ${LEARNING_EMBED_ORIGINS.join(' ')}`,
     `frame-ancestors ${opts.frameAncestors}`,
     "object-src 'none'",
     "base-uri 'self'",

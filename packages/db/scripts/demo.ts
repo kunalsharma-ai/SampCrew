@@ -1,4 +1,4 @@
-import { DEFAULT_IN_STATUTORY, leaveMath, payrollEngine, startingStatutory } from '@crew/contracts';
+import { DEFAULT_IN_STATUTORY, leaveMath, legacyCourseBlocks, payrollEngine, startingStatutory } from '@crew/contracts';
 import type { ClientSession, Db, MongoClient } from 'mongodb';
 import { appendAuditEvent, applyAccessLevelsMongo, linkAuditChain, provisionTenantMongo, Table, type Row } from '../src/mongo';
 
@@ -684,11 +684,20 @@ async function seedTalent(ws: Workspace, c: { assemblyId: string; manufacturingI
   }
 
   // Learning -----------------------------------------------------------------------------------------------------
-  const course = (title: string, format: string, minutes: number, validity: number | null, category: string, selfEnrol: boolean, description: string) =>
-    ws.insert('courses', {
-      title, description: `${description} (demo data, no content link)`, format, duration_minutes: minutes, validity_months: validity, category, self_enrol: selfEnrol,
-      created_by_membership_id: m('hr.admin@demo.crew.local'),
+  // Simple one-item learning modules, published as version 1 (learners work through a published version).
+  const versionOf = new Map<string, string>();
+  const course = async (title: string, format: string, minutes: number, validity: number | null, category: string, selfEnrol: boolean, description: string) => {
+    const desc = `${description} (demo data, no content link)`;
+    const blocks = legacyCourseBlocks({ title, description: desc, format, duration_minutes: minutes });
+    const id = await ws.insert('courses', {
+      title, description: desc, short_description: description, format, duration_minutes: minutes, validity_months: validity, category, self_enrol: selfEnrol,
+      created_by_membership_id: m('hr.admin@demo.crew.local'), status: 'published', blocks, version: 1, creator_level: 'super', creator_name: 'HR team', published_at: new Date(),
     });
+    const v = await ws.insert('learning_module_versions', { course_id: id, version: 1, title, description: desc, duration_minutes: minutes, blocks, note: 'First version' });
+    await ws.set('courses', { id }, { published_version_id: v });
+    versionOf.set(id, v);
+    return id;
+  };
   const forklift = await course('Forklift safety refresher', 'document', 45, 12, 'Safety', false, 'Annual refresher on safe forklift operation in the plant');
   const drill = await course('Fire drill and evacuation', 'classroom', 60, 12, 'Safety', false, 'Practical drill on the shop floor');
   await course('Lean basics: 5S on the line', 'online', 90, null, 'Operations', true, 'Sort, set in order, shine, standardise, sustain');
@@ -698,12 +707,12 @@ async function seedTalent(ws: Workspace, c: { assemblyId: string; manufacturingI
   const due = isoDay(new Date(Date.now() + 14 * DAY));
   for (const who of [arjun, neha]) {
     for (const courseId of [forklift, drill]) {
-      await ws.insert('course_assignments', { employee_id: who, course_id: courseId, path_id: path, source: 'assigned', assigned_by_membership_id: m('supervisor@demo.crew.local'), due_on: due });
+      await ws.insert('course_assignments', { employee_id: who, course_id: courseId, path_id: path, source: 'assigned', assigned_by_membership_id: m('supervisor@demo.crew.local'), due_on: due, version: 1, version_id: versionOf.get(courseId) });
     }
   }
   const completedOn = addDays(today, -4);
   await ws.set('course_assignments', { employee_id: neha, course_id: forklift }, {
-    status: 'completed', started_at: ago(5 * DAY), completed_on: completedOn, completion_note: 'Demo data',
+    status: 'completed', started_at: ago(5 * DAY), completed_on: completedOn, completed_at: ago(4 * DAY), completion_note: 'Demo data', progress: { course: { done: true } }, progress_percent: 100,
     completed_by_membership_id: m('operator2@demo.crew.local'), expires_on: addMonths(completedOn, 12),
   });
 

@@ -12,8 +12,9 @@ const config: NextConfig = {
   ...(standalone ? { output: 'standalone' as const, outputFileTracingRoot: join(__dirname, '../..') } : {}),
   reactStrictMode: true,
   // Uploads go through server actions: employee documents up to 10 MB and CVs up to 5 MB, plus form overhead.
-  // The API enforces the real per-file limits.
-  experimental: { serverActions: { bodySizeLimit: '11mb' } },
+  // Learning videos and audio (up to 50 MB) go through the /learning-upload route, so requests passing the
+  // middleware may be that large. The API enforces the real per-file limits.
+  experimental: { serverActions: { bodySizeLimit: '11mb' }, middlewareClientMaxBodySize: '52mb' },
   async headers() {
     return [
       {

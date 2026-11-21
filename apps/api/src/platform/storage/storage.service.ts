@@ -10,7 +10,7 @@ import { Errors } from '../http/errors';
 import { PlatformIntegrationsService } from '../integrations/platform-integrations.service';
 import { scanWithClamd } from './malware-scan';
 
-export type FileLinkKind = 'files' | 'resumes' | 'receipts' | 'comm' | 'bgv' | 'assets' | 'fields';
+export type FileLinkKind = 'files' | 'resumes' | 'receipts' | 'comm' | 'bgv' | 'assets' | 'fields' | 'learning';
 
 /**
  * File storage. The local driver writes under STORAGE_DIR and is meant for development and single-node
@@ -74,9 +74,11 @@ export class StorageService {
     await writeFile(p, data, { flag: 'wx' });
   }
 
-  async open(key: string): Promise<{ stream: Readable; size: number }> {
+  /** Opens a stored file, or one byte range of it (inclusive, as in an HTTP Range header) for media players. */
+  async open(key: string, range?: { start: number; end?: number }): Promise<{ stream: Readable; size: number }> {
     const p = this.path(key);
     const s = await stat(p);
+    if (range) return { stream: createReadStream(p, { start: range.start, end: Math.min(range.end ?? s.size - 1, s.size - 1) }), size: s.size };
     return { stream: createReadStream(p), size: s.size };
   }
 

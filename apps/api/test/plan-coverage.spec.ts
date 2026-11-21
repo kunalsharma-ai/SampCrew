@@ -80,6 +80,7 @@ const PUBLIC_CHECKED_IN_SERVICE: Record<string, string> = {
   BgvEmployeeController: 'signed, expiring links issued by a gated module',
   AssetsEmployeeController: 'signed, expiring links issued by a gated module',
   CustomFieldFilesController: 'signed, expiring links issued by a gated module',
+  LearningFilesController: 'signed, expiring links issued by a gated module (learning)',
   BillingWebhooksController: 'none (payment confirmations from Razorpay and Stripe, signed with the webhook secret)',
 };
 

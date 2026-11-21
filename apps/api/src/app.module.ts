@@ -107,6 +107,10 @@ import { SalariesService } from './modules/payroll/salaries.service';
 import { EngagementService } from './modules/talent/engagement.service';
 import { GoalsService } from './modules/talent/goals.service';
 import { LearningService } from './modules/talent/learning.service';
+import { LearnerService } from './modules/learning/learner.service';
+import { LearningReportsService } from './modules/learning/learning-reports.service';
+import { LearningFilesController, LmsController } from './modules/learning/lms.controller';
+import { LmsService } from './modules/learning/lms.service';
 import { ReviewsService } from './modules/talent/reviews.service';
 import { EngagementController, GoalsController, LearningController, ReviewsController, TalentPeopleController } from './modules/talent/talent.controller';
 import { AnnouncementsService } from './modules/helpdesk/announcements.service';
@@ -233,6 +237,8 @@ export const CONTROLLERS = [
   AnnouncementsController,
   CommunicationController,
   CommFilesController,
+  LmsController,
+  LearningFilesController,
   MobileController,
   AiController,
   AutomationController,
@@ -338,6 +344,9 @@ export const CONTROLLERS = [
     GoalsService,
     ReviewsService,
     LearningService,
+    LmsService,
+    LearnerService,
+    LearningReportsService,
     EngagementService,
     HelpdeskService,
     ChatService,
