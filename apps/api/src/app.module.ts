@@ -25,6 +25,11 @@ import { CustomFieldFilesController, CustomFieldsController } from './modules/cu
 import { CustomFieldsService } from './modules/custom-fields/custom-fields.service';
 import { EmployeeImportController, HrAdminController } from './modules/hr-admin/hr-admin.controller';
 import { EmployeeImportService } from './modules/hr-admin/employee-import.service';
+import { DataImportController, EmployeeBulkController } from './modules/data-import/data-import.controller';
+import { EmployeeBulkService } from './modules/data-import/employee-bulk.service';
+import { DataImportService } from './modules/data-import/data-import.service';
+import { MasterDataController } from './modules/master-data/master-data.controller';
+import { MasterDataService } from './modules/master-data/master-data.service';
 import { HrAdminService } from './modules/hr-admin/hr-admin.service';
 import { HierarchyController } from './modules/hierarchy/hierarchy.controller';
 import { HierarchyService } from './modules/hierarchy/hierarchy.service';
@@ -178,6 +183,9 @@ export const CONTROLLERS = [
   DesignationsController,
   // Before EmployeesController, so /employees/import is not read as an employee id.
   EmployeeImportController,
+  DataImportController,
+  EmployeeBulkController,
+  MasterDataController,
   EmployeesController,
   AssetsController,
   AssetsEmployeeController,
@@ -319,6 +327,9 @@ export const CONTROLLERS = [
     HierarchyService,
     FeatureLevelsService,
     EmployeeImportService,
+    DataImportService,
+    EmployeeBulkService,
+    MasterDataService,
     DocumentsService,
     AttendanceDaysService,
     DisciplineService,

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
-import { ADULT_AGE, ageOn, catalogueDesignation, dateOfBirthError, isMinorOn, PHOTO_MAX_BYTES, PHOTO_TYPES, phoneError, type SetAccessRequest } from '@crew/contracts';
+import { ADULT_AGE, ageOn, catalogueDesignation, dateOfBirthError, fieldValueText, isMinorOn, PHOTO_MAX_BYTES, PHOTO_TYPES, phoneError, type SetAccessRequest } from '@crew/contracts';
 import type {
   attendanceRegistrationInput,
   confirmInput,
@@ -33,6 +33,7 @@ import { decodeCursor, page } from '../../platform/http/pagination';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
 import { DevicesService } from '../attendance/devices.service';
+import { definitionView, withListOptions } from '../custom-fields/custom-fields.service';
 import { LeaveService } from '../leave/leave.service';
 import { MembersService } from '../members/members.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
@@ -183,24 +184,50 @@ export class EmployeesService {
   // ---------------------------------------------------------------------------------------------------------
 
   /** The directory: people the caller may see that match the filters, as views, in the chosen order. */
-  private async directory(tx: TenantTx, q: ListQuery): Promise<EmployeeRow[]> {
-    const filter: Record<string, unknown> = { ...(await this.authz.filter('employees:read', EMPLOYEE_FIELDS, tx)) };
+  private async directory(tx: TenantTx, q: ListQuery, permission: 'employees:read' | 'employees:export' = 'employees:read'): Promise<EmployeeRow[]> {
+    const filter: Record<string, unknown> = { ...(await this.authz.filter(permission, EMPLOYEE_FIELDS, tx)) };
     const and: Record<string, unknown>[] = [filter];
     if (q.status) and.push({ status: q.status });
     else if (q.includeExited !== 'true') and.push({ status: { $ne: 'exited' } });
     if (q.departmentId) and.push({ current_department_id: q.departmentId });
     if (q.legalEntityId) and.push({ current_legal_entity_id: q.legalEntityId });
+    if (q.importId) {
+      // Added by the import, or updated by it (its rows name the records).
+      const touched = await tx.collection('import_job_rows').distinct<string>('record_id', { job_id: q.importId, status: { $in: ['imported', 'updated'] } });
+      and.push({ $or: [{ source_import_id: q.importId }, { id: { $in: touched.filter(Boolean) } }] });
+    }
     let rows = await employeeViews(tx, await tx.collection('employees').find({ $and: and }));
     if (q.q) {
       const needle = q.q.toLowerCase();
+      const extra = await this.searchableText(tx, rows.map((e) => e.id));
       rows = rows.filter((e) =>
-        [`${e.firstName} ${e.lastName}`, e.preferredName ?? '', e.employeeCode, e.workEmail ?? ''].some((v) => String(v).toLowerCase().includes(needle)),
+        [`${e.firstName} ${e.lastName}`, e.preferredName ?? '', e.employeeCode, e.workEmail ?? '', ...(extra.get(e.id) ?? [])].some((v) => String(v).toLowerCase().includes(needle)),
       );
     }
     // Ordered on (sort key, id), in either direction, which is also the keyset for pagination.
     const key = SORT_KEYS[q.sort];
     const sign = q.dir === 'desc' ? -1 : 1;
     return rows.sort((a, b) => sign * (cmp(key(a), key(b)) || cmp(a.id, b.id)));
+  }
+
+  /** Values of custom fields marked searchable that the caller may see, per employee, as text. */
+  private async searchableText(tx: TenantTx, ids: string[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    const defs = await tx.collection('custom_fields').find({ entity: 'employee', searchable: true, enabled: true, archived_at: null });
+    if (!defs.length || !ids.length) return out;
+    const s = await this.authz.subject(tx);
+    const roles = new Set(s.grants.map((g) => g.roleKey));
+    const seen = (await withListOptions(tx, defs)).filter((d) => !d.view_roles?.length || d.view_roles.some((r: string) => roles.has(r)));
+    if (!seen.length) return out;
+    const byId = new Map(seen.map((d) => [d.id as string, d]));
+    for (let i = 0; i < ids.length; i += 5000) {
+      for (const v of await tx.collection('custom_field_values').find({ field_id: { $in: [...byId.keys()] }, record_id: { $in: ids.slice(i, i + 5000) } }, { projection: { field_id: 1, record_id: 1, value: 1 } })) {
+        const d = byId.get(v.field_id)!;
+        const text = fieldValueText(definitionView(d), v.value);
+        if (text) out.set(v.record_id, [...(out.get(v.record_id) ?? []), text]);
+      }
+    }
+    return out;
   }
 
   async list(q: z.infer<typeof employeeListQuery>) {
@@ -222,7 +249,8 @@ export class EmployeesService {
   /** The directory as CSV with the chosen columns, same scope and filters as the list. Audited. */
   async exportCsv(q: z.infer<typeof employeeExportQuery>, format: 'csv' | 'xlsx' = 'csv') {
     return this.db.tenant(async (tx) => {
-      const rows = await this.directory(tx, q);
+      // Only the people the caller may export (an HR Workspace can have export switched off by the Super Workspace).
+      const rows = await this.directory(tx, q, 'employees:export');
       if (rows.length > 20000) throw Errors.badRequest('export_too_large', 'More than 20,000 people match. Narrow the filters and export again.');
       const cell = (v: unknown) => {
         let t = v === null || v === undefined ? '' : String(v);
@@ -1136,7 +1164,12 @@ export class EmployeesService {
   // ---------------------------------------------------------------------------------------------------------
 
   async update(id: string, input: z.infer<typeof updateEmployeeInput>) {
-    return this.db.tenant(async (tx) => {
+    return this.db.tenant((tx) => this.updateIn(tx, id, input));
+  }
+
+  /** update() inside a transaction the caller holds (a data import updates a record and its other parts together). */
+  async updateIn(tx: TenantTx, id: string, input: z.infer<typeof updateEmployeeInput>) {
+    {
       const before = await this.load(tx, id);
       await this.authz.require('employees:update', employeeAttrs(before), tx);
       const s = await this.authz.subject(tx);
@@ -1169,7 +1202,7 @@ export class EmployeesService {
         await this.outbox.publish(tx, requestContext.tenantActor().tenantId, 'employee.changed', { employeeId: id, fields: Object.keys(changes) });
       }
       return after;
-    });
+    }
   }
 
   /** Bank, tax and national ID details. Decrypting them needs MFA, and every view is audited. */
@@ -1231,8 +1264,13 @@ export class EmployeesService {
 
   /** Transfer, promotion, manager change or correction, effective on a date (today, past or future). */
   async changeJob(id: string, input: z.infer<typeof transferInput>) {
+    return this.db.tenant((tx) => this.changeJobIn(tx, id, input));
+  }
+
+  /** changeJob() inside a transaction the caller holds. */
+  async changeJobIn(tx: TenantTx, id: string, input: z.infer<typeof transferInput>) {
     const actor = requestContext.tenantActor();
-    return this.db.tenant(async (tx) => {
+    {
       const e = await this.load(tx, id);
       await this.authz.require('employees:lifecycle', employeeAttrs(e), tx);
       if (e.status === 'exited') throw Errors.conflict('employee_exited', 'This person has left. Rehire them first.');
@@ -1304,7 +1342,7 @@ export class EmployeesService {
         link: `/employees/${id}`,
       });
       return after;
-    });
+    }
   }
 
   async confirm(id: string, input: z.infer<typeof confirmInput>) {

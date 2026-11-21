@@ -8,7 +8,7 @@ import { checkPhone } from './phone';
  * too; values that no longer fit are shown as they were and must be corrected before the record is saved again.
  */
 
-export const CUSTOM_FIELD_ENTITIES = ['employee', 'asset', 'bgv_case', 'candidate', 'leave_request'] as const;
+export const CUSTOM_FIELD_ENTITIES = ['employee', 'asset', 'bgv_case', 'candidate', 'leave_request', 'client'] as const;
 export type CustomFieldEntity = (typeof CUSTOM_FIELD_ENTITIES)[number];
 export const CUSTOM_FIELD_ENTITY_LABEL: Record<CustomFieldEntity, string> = {
   employee: 'Employee profile',
@@ -16,14 +16,15 @@ export const CUSTOM_FIELD_ENTITY_LABEL: Record<CustomFieldEntity, string> = {
   bgv_case: 'Background verification',
   candidate: 'Candidates (recruitment)',
   leave_request: 'Leave requests',
+  client: 'Clients (staffing bids)',
 };
 
 export const CUSTOM_FIELD_TYPES = [
-  'short_text', 'long_text', 'number', 'date', 'datetime', 'dropdown', 'multi_select', 'radio', 'checkbox', 'email', 'phone', 'file', 'currency', 'url',
+  'short_text', 'long_text', 'number', 'decimal', 'date', 'datetime', 'dropdown', 'multi_select', 'radio', 'checkbox', 'yes_no', 'email', 'phone', 'file', 'currency', 'url',
 ] as const;
 export type CustomFieldType = (typeof CUSTOM_FIELD_TYPES)[number];
 export const CUSTOM_FIELD_TYPE_LABEL: Record<CustomFieldType, string> = {
-  short_text: 'Short text', long_text: 'Long text', number: 'Number', date: 'Date', datetime: 'Date and time', dropdown: 'Dropdown',
+  short_text: 'Short text', long_text: 'Long text', number: 'Number', decimal: 'Decimal', yes_no: 'Yes / No', date: 'Date', datetime: 'Date and time', dropdown: 'Dropdown',
   multi_select: 'Multi-select', radio: 'Radio buttons', checkbox: 'Checkbox', email: 'Email', phone: 'Phone number', file: 'File upload',
   currency: 'Currency', url: 'URL',
 };
@@ -56,7 +57,11 @@ export interface CustomFieldDefinition {
   editRoles: string[];
   /** Employee profile fields only: the employee can fill it in on their own profile. */
   employeeEditable: boolean;
-  config: { min?: number; max?: number; maxLength?: number; currency?: string };
+  /** Found by the search on the record's list (employees: the Employees search box). */
+  searchable: boolean;
+  /** Offered as a target when importing a spreadsheet. */
+  importable: boolean;
+  config: { min?: number; max?: number; maxLength?: number; currency?: string; decimals?: number; masterList?: string };
 }
 
 const option = z.object({
@@ -79,16 +84,21 @@ const definitionBase = z.object({
   viewRoles: roleKeys.default([]),
   editRoles: roleKeys.default([]),
   employeeEditable: z.boolean().default(false),
+  searchable: z.boolean().default(false),
+  importable: z.boolean().default(true),
   config: z.object({
     min: z.number().finite().optional(),
     max: z.number().finite().optional(),
     maxLength: z.number().int().min(1).max(10000).optional(),
     currency: z.string().regex(/^[A-Z]{3}$/).optional(),
+    decimals: z.number().int().min(1).max(6).optional(),
+    /** Dropdown, radio and multi-select only: the options are a Master data list, kept up to date there. */
+    masterList: z.enum(['industry', 'job_role', 'skill', 'education', 'candidate_source', 'seniority_level', 'department', 'job_title']).optional(),
   }).strict().default({}),
 });
 
-const optionsRule = (v: { type: CustomFieldType; options: { value: string }[] }) =>
-  !OPTION_TYPES.includes(v.type) || v.options.length > 0;
+const optionsRule = (v: { type: CustomFieldType; options: { value: string }[]; config?: { masterList?: string } }) =>
+  !OPTION_TYPES.includes(v.type) || v.options.length > 0 || !!v.config?.masterList;
 const uniqueOptions = (v: { options: { value: string }[] }) => new Set(v.options.map((o) => o.value)).size === v.options.length;
 
 export const customFieldInput = definitionBase.extend({
@@ -100,7 +110,7 @@ export const customFieldInput = definitionBase.extend({
   .refine(uniqueOptions, { message: 'Two options have the same value', path: ['options'] });
 
 export const customFieldUpdate = definitionBase.partial().strict()
-  .refine((v) => !v.type || !v.options || optionsRule({ type: v.type, options: v.options }), { message: 'Add at least one option', path: ['options'] })
+  .refine((v) => !v.type || !v.options || optionsRule({ type: v.type, options: v.options, config: v.config }), { message: 'Add at least one option', path: ['options'] })
   .refine((v) => !v.options || uniqueOptions({ options: v.options }), { message: 'Two options have the same value', path: ['options'] });
 
 export const customFieldReorder = z.object({
@@ -131,6 +141,13 @@ export function checkFieldValue(def: Pick<CustomFieldDefinition, 'type' | 'requi
     if (def.required && !v) return { ok: false, error: `${def.label} must be ticked` };
     return { ok: true, value: v };
   }
+  if (def.type === 'yes_no') {
+    const t = typeof raw === 'string' ? raw.trim().toLowerCase() : raw;
+    if (t === true || t === 'yes' || t === 'y' || t === 'true' || t === 1 || t === '1') return { ok: true, value: 'yes' };
+    if (t === false || t === 'no' || t === 'n' || t === 'false' || t === 0 || t === '0') return { ok: true, value: 'no' };
+    if (isEmpty(raw)) return def.required ? { ok: false, error: `${def.label} is required` } : { ok: true, value: null };
+    return { ok: false, error: 'Choose Yes or No' };
+  }
   if (isEmpty(raw)) return def.required ? { ok: false, error: `${def.label} is required` } : { ok: true, value: null };
   const str = typeof raw === 'string' ? raw.trim() : raw;
   const live = new Set(def.options.filter((o) => !o.archived).map((o) => o.value));
@@ -143,6 +160,16 @@ export function checkFieldValue(def: Pick<CustomFieldDefinition, 'type' | 'requi
       const limit = max ?? (def.type === 'short_text' ? 200 : 5000);
       if (str.length > limit) return { ok: false, error: `At most ${limit} characters` };
       return { ok: true, value: str };
+    }
+    case 'decimal': {
+      const n = typeof str === 'number' ? str : Number(String(str).replace(/,/g, ''));
+      if (!Number.isFinite(n)) return { ok: false, error: 'Enter a number' };
+      const places = def.config.decimals ?? 2;
+      const f = 10 ** places;
+      if (Math.abs(Math.round(n * f) - n * f) > 1e-6) return { ok: false, error: `At most ${places} decimal${places === 1 ? '' : 's'}` };
+      if (def.config.min !== undefined && n < def.config.min) return { ok: false, error: `At least ${def.config.min}` };
+      if (def.config.max !== undefined && n > def.config.max) return { ok: false, error: `At most ${def.config.max}` };
+      return { ok: true, value: Math.round(n * f) / f };
     }
     case 'number':
     case 'currency': {
@@ -201,6 +228,7 @@ export function fieldValueText(def: Pick<CustomFieldDefinition, 'type' | 'option
   const label = (x: unknown) => def.options.find((o) => o.value === x)?.label ?? String(x);
   switch (def.type) {
     case 'checkbox': return v ? 'Yes' : 'No';
+    case 'yes_no': return v === 'yes' ? 'Yes' : v === 'no' ? 'No' : String(v);
     case 'dropdown': case 'radio': return label(v);
     case 'multi_select': return Array.isArray(v) ? v.map(label).join(', ') : label(v);
     case 'currency': return `${def.config.currency ? `${def.config.currency} ` : ''}${typeof v === 'number' ? v.toFixed(2) : String(v)}`;

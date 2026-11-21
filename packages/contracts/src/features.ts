@@ -46,6 +46,7 @@ export const FEATURES = [
   { key: 'crew_iq', name: 'SampCrew IQ in-app assistant', module: 'AI', kind: 'boolean', phase: 11 },
   { key: 'workforce_universe', name: 'Workforce Universe, skills and scenario planning', module: 'Analytics', kind: 'boolean', phase: 11 },
   { key: 'staffing_bids', name: 'Staffing bids, clients, rate cards and proposals', module: 'Staffing bids', kind: 'boolean', phase: 11 },
+  { key: 'data_import', name: 'Data import from Excel and CSV (employees, candidates, clients and more)', module: 'Data import', kind: 'boolean', phase: 30 },
   { key: 'integrations_advanced', name: 'Advanced integrations and webhooks', module: 'Integrations', kind: 'boolean', phase: 9 },
   { key: 'global_payroll', name: 'Global payroll provider integrations', module: 'Payroll', kind: 'boolean', phase: 9, planned: true },
   { key: 'multi_entity', name: 'Multiple legal entities and countries', module: 'Organization', kind: 'boolean', phase: 1 },
@@ -83,7 +84,7 @@ export interface PlanTemplate {
   limits: Record<LimitFeatureKey, number>;
 }
 
-const STARTER: BooleanFeatureKey[] = ['core_hr', 'leave', 'self_service', 'documents', 'onboarding', 'attendance_basic', 'helpdesk', 'announcements', 'email_signatures', 'crew_iq', 'workforce_universe', 'background_verification', 'asset_management'];
+const STARTER: BooleanFeatureKey[] = ['core_hr', 'leave', 'self_service', 'documents', 'onboarding', 'attendance_basic', 'helpdesk', 'announcements', 'email_signatures', 'crew_iq', 'workforce_universe', 'background_verification', 'asset_management', 'data_import'];
 const PROFESSIONAL: BooleanFeatureKey[] = [...STARTER, 'recruitment', 'staffing_bids', 'attendance_advanced', 'shift_scheduling', 'automation', 'custom_roles'];
 const BUSINESS: BooleanFeatureKey[] = [...PROFESSIONAL, 'payroll', 'expenses', 'performance', 'learning', 'engagement', 'ai_copilot', 'workforce_analytics', 'integrations_advanced', 'multi_entity', 'audit_export'];
 const ENTERPRISE: BooleanFeatureKey[] = [...BUSINESS, 'global_payroll', 'sso', 'enterprise_support'];
@@ -140,7 +141,14 @@ export const PERMISSION_MODULE_FEATURE: Record<string, BooleanFeatureKey> = {
   'Staffing bids': 'staffing_bids',
   'Background verification': 'background_verification',
   Assets: 'asset_management',
+  'Data import': 'data_import',
 };
+
+/**
+ * Modules for administrators only: never switched on for the Employee Workspace level, at any level, whatever a
+ * screen sends. Employee Workspace has no import rights at all (the permissions are not in its level either).
+ */
+export const ADMIN_ONLY_FEATURES: ReadonlySet<string> = new Set(['data_import']);
 
 export const BOOLEAN_FEATURES = FEATURES.filter((f) => f.kind === 'boolean') as readonly Extract<(typeof FEATURES)[number], { kind: 'boolean' }>[];
 

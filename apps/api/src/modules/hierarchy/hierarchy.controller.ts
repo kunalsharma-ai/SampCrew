@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import {
+  hrWorkspacePermissionsInput,
   employeeTransferInput,
   hrWorkspaceAdminsInput,
   hrWorkspaceAssignInput,
@@ -121,6 +122,12 @@ export class HierarchyController {
   @Doc({ summary: 'Change an HR Workspace (name, modules, limits); refused when made on an older version', body: hrWorkspaceUpdate })
   update(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(hrWorkspaceUpdate)) body: z.infer<typeof hrWorkspaceUpdate>) {
     return this.hierarchy.update(id, body);
+  }
+
+  @Put(':id/permissions')
+  @Doc({ summary: 'Super Workspace: switch what this HR Workspace’s admins may do with employee data (edit, create, import, export, custom fields). Refused, and audited, for anyone else.', body: hrWorkspacePermissionsInput })
+  setPermissions(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(hrWorkspacePermissionsInput)) body: z.infer<typeof hrWorkspacePermissionsInput>) {
+    return this.hierarchy.setPermissions(id, body);
   }
 
   @Post(':id/status')

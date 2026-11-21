@@ -260,8 +260,13 @@ export class CandidatesService {
   }
 
   async create(input: CandidateInput) {
+    return this.db.tenant((tx) => this.createIn(tx, input));
+  }
+
+  /** create() inside a transaction the caller holds (a data import writes the candidate and its fields together). */
+  async createIn(tx: TenantTx, input: CandidateInput, extra: { sourceImportId?: string } = {}) {
     const actor = requestContext.tenantActor();
-    return this.db.tenant(async (tx) => {
+    {
       if (input.requisitionId) {
         const r = await loadRequisition(tx, input.requisitionId);
         await this.authz.require('candidates:manage', reqAttrs(r), tx);
@@ -279,16 +284,22 @@ export class CandidatesService {
           current_title: input.currentTitle ?? null, current_company: input.currentCompany ?? null, profile_url: input.profileUrl ?? null, source: input.source,
           source_detail: input.sourceDetail ?? null, referred_by_membership_id: input.referredByMembershipId ?? null, tags: input.tags,
           consent_basis: 'recruiter_confirmed', created_by_membership_id: actor.membershipId,
+          ...(extra.sourceImportId ? { source_import_id: extra.sourceImportId } : {}),
         })
         .catch(uniqueAs('candidate_exists', 'A candidate with this email already exists'));
-      await this.audit.record(tx, { action: 'candidate.created', resourceType: 'candidate', resourceId: row.id, metadata: { source: input.source, basis: 'recruiter_confirmed' } });
+      await this.audit.record(tx, { action: 'candidate.created', resourceType: 'candidate', resourceId: row.id, metadata: { source: input.source, basis: 'recruiter_confirmed', ...(extra.sourceImportId ? { importId: extra.sourceImportId } : {}) } });
       if (input.requisitionId) await this.applyIn(tx, row.id, input.requisitionId, input.source);
       return { id: row.id as string };
-    });
+    }
   }
 
   async update(id: string, patch: z.infer<typeof candidatePatch>) {
-    return this.db.tenant(async (tx) => {
+    return this.db.tenant((tx) => this.updateIn(tx, id, patch));
+  }
+
+  /** update() inside a transaction the caller holds. */
+  async updateIn(tx: TenantTx, id: string, patch: z.infer<typeof candidatePatch>) {
+    {
       const c = await this.requireCandidate(tx, id, 'candidates:manage');
       if (c.anonymized_at) throw Errors.conflict('candidate_erased', 'This candidate’s details were erased');
       const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
@@ -297,7 +308,7 @@ export class CandidatesService {
       await tx.collection('candidates').updateOne({ id }, { $set: set }).catch(uniqueAs('candidate_exists', 'Another candidate already uses this email'));
       await this.audit.record(tx, { action: 'candidate.updated', resourceType: 'candidate', resourceId: id, changes: Object.fromEntries(entries) });
       return { id };
-    });
+    }
   }
 
   /** Adds an existing candidate to a requisition (in its first stage). */

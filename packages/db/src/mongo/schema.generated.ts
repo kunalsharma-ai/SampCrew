@@ -1826,6 +1826,8 @@ export const TABLES: Record<string, TableSpec> = {
   candidates: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
     columns: {
+      // The data import that created it, if any.
+      source_import_id: {"type": "uuid"},
       anonymized_at: {"type": "timestamp"},
       consent_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       consent_basis: {"enum": ["candidate_consent", "recruiter_confirmed"], "required": true, "type": "string"},
@@ -1898,9 +1900,47 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((retention_days >= 30) AND (retention_days <= 1825)))",
     ],
   },
+  client_contacts: {
+    // People at a client (staffing bids): added by hand or imported. Never deleted while bids may mention them: archived.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      archived_at: {"type": "timestamp"},
+      client_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      email: {"type": "citext"},
+      first_name: {"required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      is_primary: {"default": false, "required": true, "type": "bool"},
+      job_title: {"type": "string"},
+      last_name: {"default": "", "required": true, "type": "string"},
+      notes: {"type": "string"},
+      phone: {"type": "string"},
+      source_import_id: {"type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "client_contacts_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "client_contacts_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "client_id"}, {"col": "email", "fold": "lower"}], "name": "client_contacts_email", "where": [{"col": "email", "op": "notnull"}, {"col": "archived_at", "op": "null"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "client_id"], "onDelete": "cascade", "ref": "clients", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "client_contacts_client", "cols": [{"col": "tenant_id"}, {"col": "client_id"}]},
+    ],
+    checks: [
+      "CHECK (((length(first_name) >= 1) AND (length(first_name) <= 80)))",
+    ],
+  },
   clients: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
     columns: {
+      // The data import that created it, if any.
+      source_import_id: {"type": "uuid"},
       address: {"type": "string"},
       archived_at: {"type": "timestamp"},
       contact_email: {"type": "citext"},
@@ -2073,6 +2113,8 @@ export const TABLES: Record<string, TableSpec> = {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
     columns: {
       archived_at: {"type": "timestamp"},
+      // The function it belongs to (Master data > Job titles), such as Technology or Sales.
+      category: {"type": "string"},
       code: {"type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
@@ -2524,6 +2566,8 @@ export const TABLES: Record<string, TableSpec> = {
       // Switched off for Employee Workspace people of this HR Workspace by its admins (within its own features).
       employee_off_features: {"default": {"json": []}, "required": true, "type": "string[]"},
       features: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Employee-data permissions the Super Workspace switched off for this HR Workspace's admins (HR_WORKSPACE_PERMISSION_SWITCHES).
+      permissions_off: {"default": {"json": []}, "required": true, "type": "string[]"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       kind: {"default": "department", "enum": ["department", "branch", "region", "business_unit", "other"], "required": true, "type": "string"},
       location_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
@@ -2639,6 +2683,8 @@ export const TABLES: Record<string, TableSpec> = {
   employees: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true, triggers: ["employees_no_manager_cycle", "employees_sync_membership"],
     columns: {
+      // The data import that created it, if any.
+      source_import_id: {"type": "uuid"},
       confirmation_date: {"type": "date"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       current_department_id: {"type": "uuid"},
@@ -3239,6 +3285,89 @@ export const TABLES: Record<string, TableSpec> = {
     fks: [],
     indexes: [],
     checks: [],
+  },
+  import_job_rows: {
+    // One spreadsheet row of a data import: its cells as uploaded, what validation found and what the import did.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      cells: {"default": {"json": []}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      decision: {"enum": ["skip", "update", "create"], "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      issues: {"default": {"json": []}, "required": true, "type": "json"},
+      job_id: {"required": true, "type": "uuid"},
+      // The existing record it matches: {recordId, label, by}.
+      match: {"type": "json"},
+      record_id: {"type": "uuid"},
+      record_label: {"type": "string"},
+      row: {"required": true, "type": "int"},
+      status: {"default": "pending", "enum": ["pending", "valid", "warning", "error", "duplicate", "imported", "updated", "skipped", "failed"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "import_job_rows_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "import_job_rows_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "job_id"}, {"col": "row"}], "name": "import_job_rows_row"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "job_id"], "onDelete": "cascade", "ref": "import_jobs", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"name": "import_job_rows_status", "cols": [{"col": "tenant_id"}, {"col": "job_id"}, {"col": "status"}]},
+    ],
+    checks: [],
+  },
+  import_jobs: {
+    // A data import (packages/contracts/src/data-import.ts): the file as read, the column mapping, the options, the
+    // counts and who ran it. Kept as the import history; its rows are in import_job_rows.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_label: {"type": "string"},
+      created_by_membership_id: {"required": true, "type": "uuid"},
+      // Custom fields made from columns of this file: [{key, label, column}].
+      created_fields: {"default": {"json": []}, "required": true, "type": "json"},
+      error: {"type": "string"},
+      file_name: {"required": true, "type": "string"},
+      file_sha256: {"required": true, "type": "string"},
+      file_size: {"required": true, "type": "int"},
+      finished_at: {"type": "timestamp"},
+      headers: {"default": {"json": []}, "required": true, "type": "json"},
+      // Updated while rows are imported; an import whose heartbeat stopped can carry on.
+      heartbeat_at: {"type": "timestamp"},
+      // The HR Workspaces of the person who ran it when they work only for those (history is shown to them).
+      hr_workspace_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      mapping: {"default": {"json": []}, "required": true, "type": "json"},
+      number: {"required": true, "type": "int"},
+      options: {"default": {"json": {}}, "required": true, "type": "json"},
+      progress_done: {"default": 0, "required": true, "type": "int"},
+      row_count: {"default": 0, "required": true, "type": "int"},
+      sample: {"default": {"json": []}, "required": true, "type": "json"},
+      started_at: {"type": "timestamp"},
+      status: {"default": "mapping", "enum": ["mapping", "validated", "importing", "completed", "completed_with_errors", "failed", "cancelled", "interrupted"], "required": true, "type": "string"},
+      summary: {"default": {"json": {}}, "required": true, "type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      type: {"enum": ["employees", "candidates", "clients", "contacts", "departments", "job_titles", "master_values"], "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      validated_at: {"type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "import_jobs_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "import_jobs_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "number"}], "name": "import_jobs_number"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"name": "import_jobs_created", "cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}]},
+    ],
+    checks: [
+      "CHECK (((length(file_name) >= 1) AND (length(file_name) <= 255)))",
+    ],
   },
   instance_secrets: {
     // This installation's own signing keys (sign-in tokens for the Web Portal, mobile app and Console), created
@@ -4008,6 +4137,44 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((geofence_radius_m >= 25) AND (geofence_radius_m <= 5000)))",
       "CHECK (((latitude IS NULL) = (longitude IS NULL)))",
       "CHECK (((geofence_radius_m IS NULL) OR (latitude IS NOT NULL)))",
+    ],
+  },
+  master_values: {
+    // Master data lists kept as values (packages/contracts/src/master-data.ts): industries, job roles, skills,
+    // education, candidate sources and seniority levels. Seeded from the library on first use; never deleted while a
+    // record may hold the value: disabled instead (disabled_at).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      category: {"type": "string"},
+      code: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      disabled_at: {"type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Stable: records store the key, so renaming a value keeps every record that holds it.
+      key: {"required": true, "type": "string"},
+      label: {"required": true, "type": "string"},
+      level: {"type": "int"},
+      list: {"enum": ["industry", "job_role", "education", "candidate_source", "seniority_level"], "required": true, "type": "string"},
+      origin: {"default": "custom", "enum": ["library", "custom"], "required": true, "type": "string"},
+      position: {"default": 0, "required": true, "type": "int"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "master_values_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "master_values_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "list"}, {"col": "key"}], "name": "master_values_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "list"}, {"col": "label", "fold": "lower"}], "name": "master_values_label"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"name": "master_values_list", "cols": [{"col": "tenant_id"}, {"col": "list"}, {"col": "position"}]},
+    ],
+    checks: [
+      "CHECK (((length(label) >= 1) AND (length(label) <= 120)))",
     ],
   },
   member_feature_access: {
@@ -5759,6 +5926,8 @@ export const TABLES: Record<string, TableSpec> = {
   skills: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
+      // Disabled in Master data: no longer offered in dropdowns and imports; people who hold it keep it.
+      archived_at: {"type": "timestamp"},
       category: {"type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
@@ -6625,17 +6794,21 @@ export const TABLES: Record<string, TableSpec> = {
       edit_roles: {"default": {"json": []}, "required": true, "type": "string[]"},
       employee_editable: {"default": false, "required": true, "type": "bool"},
       enabled: {"default": true, "required": true, "type": "bool"},
-      entity: {"enum": ["employee", "asset", "bgv_case", "candidate", "leave_request"], "required": true, "type": "string"},
+      entity: {"enum": ["employee", "asset", "bgv_case", "candidate", "leave_request", "client"], "required": true, "type": "string"},
       help_text: {"type": "string"},
+      // Offered as a target when importing a spreadsheet (data import).
+      importable: {"default": true, "required": true, "type": "bool"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       key: {"required": true, "type": "string"},
       label: {"required": true, "type": "string"},
       options: {"default": {"json": []}, "required": true, "type": "json"},
       position: {"default": 0, "required": true, "type": "int"},
       required: {"default": false, "required": true, "type": "bool"},
+      // Found by the search box of the record's list.
+      searchable: {"default": false, "required": true, "type": "bool"},
       section: {"type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
-      type: {"enum": ["short_text", "long_text", "number", "date", "datetime", "dropdown", "multi_select", "radio", "checkbox", "email", "phone", "file", "currency", "url"], "required": true, "type": "string"},
+      type: {"enum": ["short_text", "long_text", "number", "decimal", "date", "datetime", "dropdown", "multi_select", "radio", "checkbox", "yes_no", "email", "phone", "file", "currency", "url"], "required": true, "type": "string"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       updated_by_membership_id: {"type": "uuid"},
       view_roles: {"default": {"json": []}, "required": true, "type": "string[]"},
