@@ -5,6 +5,7 @@
   "description": "Shared API contracts: zod schemas, permission catalogue, role templates, feature catalogue",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "react-native": "src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
