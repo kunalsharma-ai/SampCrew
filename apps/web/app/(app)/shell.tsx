@@ -252,6 +252,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               </Link>
               <Link href="/tasks" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="My tasks" title="My tasks"><ListChecks className="size-4" /></Link>
               {me.permissions['leave:request'] && me.features.includes('leave') && <Link href="/leave" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="Leave calendar" title="Leave calendar"><CalendarDays className="size-4" /></Link>}
+              {!(me.features.includes('core_hr') && !me.features.includes('core_hr.help_centre')) && <Link href="/help" className="rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg" aria-label="Help & Support" title="Help & Support" data-testid="header-help"><LifeBuoy className="size-4" /></Link>}
               {notifications && <NotificationBell />}
               <ThemeMenu />
               <HeaderUser me={me} />

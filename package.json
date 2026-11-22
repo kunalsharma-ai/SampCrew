@@ -43,6 +43,7 @@
     "e2e:notifications": "node e2e/notifications-flow.cjs",
     "e2e:communication": "node e2e/communication-flow.cjs",
     "e2e:support-chat": "node e2e/support-chat-flow.cjs",
+    "e2e:help-centre": "node e2e/help-centre-flow.cjs",
     "e2e:leave": "node e2e/leave-flow.cjs",
     "e2e:ai": "node e2e/ai-flow.cjs",
     "e2e:integrations": "node e2e/integrations-flow.cjs",

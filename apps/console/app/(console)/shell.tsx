@@ -1,6 +1,6 @@
 'use client';
 import { Avatar, Badge, CrewLogo, HelpProvider, cn } from '@crew/ui';
-import { Activity, Building2, Fingerprint, Gauge, Globe, Headset, KeyRound, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon, ToggleRight } from 'lucide-react';
+import { Activity, BookOpen, Building2, LifeBuoy, Ticket, Fingerprint, Gauge, Globe, Headset, KeyRound, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon, ToggleRight } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
@@ -10,7 +10,7 @@ import { logoutAction } from '../auth-actions';
 import { LiveRefresh } from '@/components/live-refresh';
 
 export interface NavItem { href: string; label: string; icon: string; badge?: number }
-const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound, headset: Headset };
+const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound, headset: Headset, ticket: Ticket, book: BookOpen, lifebuoy: LifeBuoy };
 const ROLE_LABEL: Record<Admin['role'], string> = { super_admin: 'Super admin', support: 'Support', billing_ops: 'Billing operations', viewer: 'Viewer' };
 
 export function Shell({ me, nav, live, children }: { me: Admin; nav: NavItem[]; live?: boolean; children: React.ReactNode }) {

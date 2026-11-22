@@ -82,6 +82,53 @@ export const WEB_HELP: HelpContent = {
   },
 
   pages: {
+    '/help': {
+      title: 'Help & Support',
+      what: 'Guides, FAQs, tutorials and quick starts for the features you can use, plus Raise a Query.',
+      how: 'Search by feature, question or error message, open a category, or use the quick buttons. Articles you open appear under Recently viewed.',
+      where: 'What you see depends on your level (Super, HR or Employee Workspace), your company\'s features and your permissions.',
+    },
+    '/help/search': {
+      title: 'Search help',
+      what: 'Help articles that match your words: feature and module names, questions and error messages.',
+      how: 'Filter by kind (FAQs, guides, tutorials, troubleshooting, quick starts). Open one to read it.',
+    },
+    '/help/categories/[key]': {
+      title: 'Help category',
+      what: 'The articles and topics in one help category, grouped by kind.',
+      how: 'Open an article, or a topic for its own articles. Still stuck? Raise a query at the bottom.',
+    },
+    '/help/articles/[slug]': {
+      title: 'Help article',
+      what: 'One help article: the answer, or numbered steps you can tick off as you go.',
+      how: 'Use Go to this page or a step\'s Open to jump there, mark steps done (saved for you) and say whether it helped.',
+    },
+    '/help/queries': {
+      title: 'My queries',
+      what: 'The queries you raised, with their ticket IDs and statuses: Open, In Progress, Awaiting User Response, Resolved and Closed.',
+      how: 'Open one to read replies and answer. You are notified of every reply.',
+    },
+    '/help/queries/new': {
+      title: 'Raise a Query',
+      what: 'Ask for help: choose a category (or Other), add a subject, a description, the page and any screenshots.',
+      how: 'Submit to get a ticket ID. Your contact details come from your account.',
+      where: 'It goes to your HR Workspace; an HR Workspace\'s goes to the Super Workspace; a Super Workspace\'s goes to SampCrew Support.',
+    },
+    '/help/queries/[id]': {
+      title: 'Query',
+      what: 'One query: what you asked, the replies and its status.',
+      how: 'Reply with more information, close it when it is sorted, reopen a resolved one within the allowed days, and rate the answer.',
+    },
+    '/help/inbox': {
+      title: 'Queries inbox',
+      what: 'Queries from the people you look after: an HR Workspace answers its employees, the Super Workspace answers HR Workspaces and company-wide employees.',
+      how: 'Filter by status, assigned to you or unassigned, or search by ticket ID, subject or person. Open one to answer it.',
+    },
+    '/help/inbox/[id]': {
+      title: 'Answer a query',
+      what: 'One query you handle, with the conversation and internal notes only handlers see.',
+      how: 'Reply (it moves to Awaiting User Response), add a note, assign it, change the status or escalate it to the level above.',
+    },
     '/': {
       title: 'Home',
       what: 'Your dashboard: clock in and out, your hours, leave balances, attendance this month, rewards, your calendar and tasks, then what needs you today, key numbers, announcements and shortcuts.',

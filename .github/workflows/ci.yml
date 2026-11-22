@@ -246,6 +246,14 @@ jobs:
           node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
           pnpm e2e:support-chat
+      - name: Help & Support at every level (guides, Raise a Query, HR Workspace inbox, SampCrew Support, Console content)
+        # On a fresh demo workspace: the flow signs three demo people in without MFA and adds its own Console Admin.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
+          pnpm e2e:help-centre
       - name: Plans decide features (Console plan builder, Web Portal gating, Enterprise request)
         # Enrols console admin and owner MFA, so it needs a fresh database.
         run: |

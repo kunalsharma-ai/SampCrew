@@ -114,6 +114,13 @@ function Gate() {
       <Stack.Screen name="appraisal/index" options={{ title: 'Appraisal', ...screenHelp('appraisal') }} />
       <Stack.Screen name="appraisal/[id]" options={{ title: 'Appraisal', ...screenHelp('appraisal.form') }} />
       <Stack.Screen name="profile" options={{ title: 'My profile', ...screenHelp('profile') }} />
+      <Stack.Screen name="help/index" options={{ title: 'Help & Support', ...screenHelp('help') }} />
+      <Stack.Screen name="help/search" options={{ title: 'Search help', ...screenHelp('help.search') }} />
+      <Stack.Screen name="help/category/[key]" options={{ title: 'Help category', ...screenHelp('help.category') }} />
+      <Stack.Screen name="help/article/[slug]" options={{ title: 'Help article', ...screenHelp('help.article') }} />
+      <Stack.Screen name="help/ask" options={{ title: 'Raise a Query', ...screenHelp('help.ask') }} />
+      <Stack.Screen name="help/queries/index" options={{ title: 'My queries', ...screenHelp('help.queries') }} />
+      <Stack.Screen name="help/queries/[id]" options={{ title: 'Query', ...screenHelp('help.query') }} />
     </Stack>
   );
 }
