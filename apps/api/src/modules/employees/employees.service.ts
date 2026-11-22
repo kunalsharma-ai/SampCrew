@@ -1,3 +1,4 @@
+import { WorkspaceLimitsService } from '../workspace-limits/workspace-limits.service';
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
 import { ADULT_AGE, ageOn, catalogueDesignation, dateOfBirthError, isMinorOn, PHOTO_MAX_BYTES, PHOTO_TYPES, phoneError, type SetAccessRequest } from '@crew/contracts';
@@ -120,6 +121,7 @@ export class EmployeesService {
     private readonly leave: LeaveService,
     private readonly storage: StorageService,
     private readonly devices: DevicesService,
+    private readonly limits: WorkspaceLimitsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -886,7 +888,11 @@ export class EmployeesService {
           const u = (await users.findOne({ id: m.user_id }))!;
           const locked = !!u.locked_until && u.locked_until > new Date();
           if (m.status !== 'suspended' && !locked) throw Errors.badRequest('not_locked', 'This login is not locked.');
-          if (m.status === 'suspended') await tx.collection('memberships').updateOne({ id: e.membershipId }, { $set: { status: 'active' } });
+          if (m.status === 'suspended') {
+            // An unlocked login takes an Employee Workspace place again.
+            await this.limits.require(tx, 'employee', 1, { membershipId: e.membershipId, reason: 'unlocked' });
+            await tx.collection('memberships').updateOne({ id: e.membershipId }, { $set: { status: 'active' } });
+          }
           // A lock after too many wrong passwords is cleared too. An account SAMPLEDGE locked stays locked.
           if (locked) await users.updateOne({ id: m.user_id }, { $set: { failed_login_count: 0, locked_until: null } });
           detail = { accountLockedBySampledge: u.status === 'locked' };

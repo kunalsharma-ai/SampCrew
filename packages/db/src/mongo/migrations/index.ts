@@ -12,3 +12,11 @@ import { m0040LeaveRebuild } from './0040_leave_rebuild';
 
 /** Every MongoDB migration, in order. Append new ones; never edit or reorder one that has shipped. */
 export const MONGO_MIGRATIONS: MongoMigration[] = [m0001Foundation, m0002PlatformAdminPasswordChange, m0020EmployeeWorkspacePermissions, m0030NotificationCenter, m0031ApprovalCategories, m0032AnnouncementsUpgrade, m0033LeaveUpgrade, m0034RewardPayouts, m0035FeatureManagement, m0040LeaveRebuild];
+import { m0110CandidateCrm } from './0110_candidate_crm';
+
+/** Every MongoDB migration, in order. Append new ones; never edit or reorder one that has shipped. */
+export const MONGO_MIGRATIONS: MongoMigration[] = [m0001Foundation, m0002PlatformAdminPasswordChange, m0020EmployeeWorkspacePermissions, m0030NotificationCenter, m0031ApprovalCategories, m0032AnnouncementsUpgrade, m0033LeaveUpgrade, m0034RewardPayouts, m0035FeatureManagement, m0110CandidateCrm];
+import { m0130WorkspaceLimits } from './0130_workspace_limits';
+
+/** Every MongoDB migration, in order. Append new ones; never edit or reorder one that has shipped. */
+export const MONGO_MIGRATIONS: MongoMigration[] = [m0001Foundation, m0002PlatformAdminPasswordChange, m0020EmployeeWorkspacePermissions, m0030NotificationCenter, m0031ApprovalCategories, m0032AnnouncementsUpgrade, m0033LeaveUpgrade, m0034RewardPayouts, m0035FeatureManagement, m0130WorkspaceLimits];

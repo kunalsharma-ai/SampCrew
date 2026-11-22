@@ -377,7 +377,7 @@ export function appearanceAttributes(a: Appearance): Record<string, string> {
 // Saved table views
 // ---------------------------------------------------------------------------------------------------------------
 
-export const VIEW_PAGES = ['employees', 'candidates'] as const;
+export const VIEW_PAGES = ['employees', 'candidates', 'candidate_crm'] as const;
 export type ViewPage = (typeof VIEW_PAGES)[number];
 export const MAX_VIEWS_PER_PAGE = 20;
 

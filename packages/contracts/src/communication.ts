@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { email } from './schemas/common';
+import type { SenderIdentity } from './support-chat';
 
 /**
  * Communication: HR's emails to people, internal chat (one to one, with HR, groups and departments) and the custom
@@ -90,6 +91,8 @@ export interface ChatMessageView {
   conversationId: string;
   senderMembershipId: string | null;
   senderName: string | null;
+  /** Who sent it: name, level (Super, HR or Employee Workspace) and workspace, as it was when the message was sent. */
+  sender: SenderIdentity | null;
   body: string;
   files: CommFile[];
   createdAt: string;
@@ -106,7 +109,9 @@ export interface ConversationView {
   title: string;
   subtitle: string | null;
   memberCount: number;
-  members: { membershipId: string; name: string | null }[];
+  members: { membershipId: string; name: string | null; identity: SenderIdentity | null }[];
+  /** Direct messages: the other person, with their level and workspace. */
+  counterpart: SenderIdentity | null;
   lastMessage: { body: string; senderName: string | null; at: string } | null;
   unread: number;
   muted: boolean;

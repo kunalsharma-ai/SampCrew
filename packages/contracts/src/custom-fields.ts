@@ -20,14 +20,15 @@ export const CUSTOM_FIELD_ENTITY_LABEL: Record<CustomFieldEntity, string> = {
 
 export const CUSTOM_FIELD_TYPES = [
   'short_text', 'long_text', 'number', 'date', 'datetime', 'dropdown', 'multi_select', 'radio', 'checkbox', 'email', 'phone', 'file', 'currency', 'url',
+  'decimal', 'searchable_dropdown', 'yes_no',
 ] as const;
 export type CustomFieldType = (typeof CUSTOM_FIELD_TYPES)[number];
 export const CUSTOM_FIELD_TYPE_LABEL: Record<CustomFieldType, string> = {
   short_text: 'Short text', long_text: 'Long text', number: 'Number', date: 'Date', datetime: 'Date and time', dropdown: 'Dropdown',
   multi_select: 'Multi-select', radio: 'Radio buttons', checkbox: 'Checkbox', email: 'Email', phone: 'Phone number', file: 'File upload',
-  currency: 'Currency', url: 'URL',
+  currency: 'Currency', url: 'URL', decimal: 'Decimal', searchable_dropdown: 'Searchable dropdown', yes_no: 'Yes / No',
 };
-export const OPTION_TYPES: readonly CustomFieldType[] = ['dropdown', 'multi_select', 'radio'];
+export const OPTION_TYPES: readonly CustomFieldType[] = ['dropdown', 'multi_select', 'radio', 'searchable_dropdown'];
 
 export interface CustomFieldOption {
   value: string;
@@ -56,7 +57,7 @@ export interface CustomFieldDefinition {
   editRoles: string[];
   /** Employee profile fields only: the employee can fill it in on their own profile. */
   employeeEditable: boolean;
-  config: { min?: number; max?: number; maxLength?: number; currency?: string };
+  config: { min?: number; max?: number; minLength?: number; maxLength?: number; currency?: string; pattern?: string; patternMessage?: string; placeholder?: string; flags?: string[]; description?: string };
 }
 
 const option = z.object({
@@ -84,6 +85,12 @@ const definitionBase = z.object({
     max: z.number().finite().optional(),
     maxLength: z.number().int().min(1).max(10000).optional(),
     currency: z.string().regex(/^[A-Z]{3}$/).optional(),
+    minLength: z.number().int().min(0).max(10000).optional(),
+    pattern: z.string().max(200).optional(),
+    patternMessage: z.string().max(120).optional(),
+    placeholder: z.string().max(120).optional(),
+    flags: z.array(z.string().max(20)).max(10).optional(),
+    description: z.string().max(300).optional(),
   }).strict().default({}),
 });
 
@@ -126,6 +133,12 @@ const isEmpty = (v: unknown) => v === undefined || v === null || v === '' || (Ar
  * before saving and by the forms for instant feedback.
  */
 export function checkFieldValue(def: Pick<CustomFieldDefinition, 'type' | 'required' | 'options' | 'config' | 'label'>, raw: unknown, opts: { country?: string | null; allowedArchived?: unknown } = {}): FieldCheck {
+  if (def.type === 'yes_no') {
+    if (raw === undefined || raw === null || raw === '') return def.required ? { ok: false, error: `${def.label} is required` } : { ok: true, value: null };
+    if (raw === true || raw === 'true' || raw === 'yes' || raw === 'Yes' || raw === 'Y' || raw === 'y' || raw === 1) return { ok: true, value: true };
+    if (raw === false || raw === 'false' || raw === 'no' || raw === 'No' || raw === 'N' || raw === 'n' || raw === 0) return { ok: true, value: false };
+    return { ok: false, error: 'Choose Yes or No' };
+  }
   if (def.type === 'checkbox') {
     const v = raw === true || raw === 'true' || raw === 'on' || raw === 1;
     if (def.required && !v) return { ok: false, error: `${def.label} must be ticked` };
@@ -142,9 +155,16 @@ export function checkFieldValue(def: Pick<CustomFieldDefinition, 'type' | 'requi
       if (typeof str !== 'string') return { ok: false, error: 'Enter text' };
       const limit = max ?? (def.type === 'short_text' ? 200 : 5000);
       if (str.length > limit) return { ok: false, error: `At most ${limit} characters` };
+      if (def.config.minLength !== undefined && str.length < def.config.minLength) return { ok: false, error: `At least ${def.config.minLength} characters` };
+      if (def.config.pattern) {
+        let re: RegExp | null = null;
+        try { re = new RegExp(`^(?:${def.config.pattern})$`); } catch { re = null; }
+        if (re && !re.test(str)) return { ok: false, error: def.config.patternMessage || 'Not in the expected format' };
+      }
       return { ok: true, value: str };
     }
     case 'number':
+    case 'decimal':
     case 'currency': {
       const n = typeof str === 'number' ? str : Number(String(str).replace(/,/g, ''));
       if (!Number.isFinite(n)) return { ok: false, error: 'Enter a number' };
@@ -161,6 +181,7 @@ export function checkFieldValue(def: Pick<CustomFieldDefinition, 'type' | 'requi
       return { ok: true, value: str.slice(0, 16) };
     }
     case 'dropdown':
+    case 'searchable_dropdown':
     case 'radio':
       if (typeof str !== 'string' || !kept(str)) return { ok: false, error: 'Choose one of the options' };
       return { ok: true, value: str };
@@ -200,8 +221,8 @@ export function fieldValueText(def: Pick<CustomFieldDefinition, 'type' | 'option
   if (v === null || v === undefined || v === '') return '';
   const label = (x: unknown) => def.options.find((o) => o.value === x)?.label ?? String(x);
   switch (def.type) {
-    case 'checkbox': return v ? 'Yes' : 'No';
-    case 'dropdown': case 'radio': return label(v);
+    case 'checkbox': case 'yes_no': return v ? 'Yes' : 'No';
+    case 'dropdown': case 'radio': case 'searchable_dropdown': return label(v);
     case 'multi_select': return Array.isArray(v) ? v.map(label).join(', ') : label(v);
     case 'currency': return `${def.config.currency ? `${def.config.currency} ` : ''}${typeof v === 'number' ? v.toFixed(2) : String(v)}`;
     case 'file': return (v as { fileName?: string }).fileName ?? 'File';

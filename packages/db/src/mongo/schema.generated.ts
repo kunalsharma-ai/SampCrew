@@ -785,8 +785,12 @@ export const TABLES: Record<string, TableSpec> = {
       edited_at: {"type": "timestamp"},
       file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Who sent it, as it was at sending: level (super, hr, employee) and workspace name (company or HR Workspace).
+      // Older messages have neither; they show the sender's current level.
+      sender_level: {"enum": ["super", "hr", "employee"], "type": "string"},
       // Null for a note SampCrew adds ("Asha added Ravi").
       sender_membership_id: {"type": "uuid"},
+      sender_workspace: {"type": "string"},
       system: {"default": false, "required": true, "type": "bool"},
       tenant_id: {"required": true, "type": "uuid"},
     },
@@ -1779,6 +1783,256 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((length(name) >= 1) AND (length(name) <= 160)))",
     ],
   },
+  candidate_activities: {
+    // Candidate CRM activity history: calls, emails, messages, meetings and interviews a recruiter logs, and what
+    // SampCrew records itself (stage changes, documents, follow-ups, imports, job applications). Never rewritten.
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      // Logged by hand (call, email ...) or recorded by SampCrew.
+      automatic: {"default": false, "required": true, "type": "bool"},
+      candidate_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      // Kind-specific facts: from/to stage, document id, follow-up id, job, interviewer, mode ...
+      detail: {"default": {"json": {}}, "required": true, "type": "json"},
+      duration_minutes: {"type": "int"},
+      hr_workspace_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"required": true, "type": "string"},
+      occurred_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      outcome: {"type": "string"},
+      remarks: {"type": "string"},
+      subject: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "candidate_activities_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "candidate_activities_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "candidate_id"], "onDelete": "cascade", "ref": "candidates", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "created_by_membership_id"], "onDelete": "no_action", "ref": "memberships", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "candidate_id"}, {"col": "occurred_at", "desc": true}], "name": "candidate_activities_candidate"},
+      {"cols": [{"col": "tenant_id"}, {"col": "occurred_at", "desc": true}], "name": "candidate_activities_recent"},
+    ],
+    checks: [
+      "CHECK ((length(remarks) <= 5000))",
+    ],
+  },
+  candidate_crm_access: {
+    // Super Workspace's switch for Candidate CRM per HR Workspace (key = its id) or for the company-wide HR team
+    // (key = 'central'), and the extra powers given. Switching off hides the CRM; no candidate data is removed.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      caps: {"default": {"json": []}, "required": true, "type": "string[]"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      enabled: {"default": false, "required": true, "type": "bool"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "candidate_crm_access_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "candidate_crm_access_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  candidate_crm_settings: {
+    // One per company: the CRM pipeline stages, candidate sources, retention and duplicate rules Super Workspace set,
+    // and the next candidate number (CAN-000124).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      match_fields: {"default": {"json": ["email", "phone", "candidate_code"]}, "required": true, "type": "string[]"},
+      next_number: {"default": 1, "required": true, "type": "int"},
+      retention_days: {"type": "int"},
+      // [{ key, label, active }]; empty: the built-in list.
+      sources: {"default": {"json": []}, "required": true, "type": "json"},
+      // [{ key, label, kind, active, position, system }]; empty: the built-in pipeline.
+      stages: {"default": {"json": []}, "required": true, "type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "candidate_crm_settings_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}], "name": "candidate_crm_settings_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  candidate_exports: {
+    // Every Candidate CRM export: who, what scope and filters, which columns and how many candidates.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      columns: {"default": {"json": []}, "required": true, "type": "string[]"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      filters: {"default": {"json": {}}, "required": true, "type": "json"},
+      format: {"enum": ["xlsx", "csv"], "required": true, "type": "string"},
+      hr_workspace_ids: {"default": {"json": []}, "required": true, "type": "string[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      rows: {"default": 0, "required": true, "type": "int"},
+      scope: {"enum": ["all", "filtered", "selected"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "candidate_exports_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "candidate_exports_recent"},
+    ],
+    checks: [],
+  },
+  candidate_follow_ups: {
+    // Candidate CRM follow-ups: what to do, when, by whom, its reminder, and how it ended.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      assigned_membership_id: {"type": "uuid"},
+      candidate_id: {"required": true, "type": "uuid"},
+      completed_at: {"type": "timestamp"},
+      completed_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      due_at: {"required": true, "type": "timestamp"},
+      // Sent "due today" and "overdue" notices, so each goes out once.
+      due_notified_at: {"type": "timestamp"},
+      hr_workspace_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      notes: {"type": "string"},
+      outcome: {"type": "string"},
+      overdue_notified_at: {"type": "timestamp"},
+      priority: {"default": "medium", "enum": ["low", "medium", "high", "urgent"], "required": true, "type": "string"},
+      reason: {"type": "string"},
+      reminded_at: {"type": "timestamp"},
+      reminder_minutes: {"type": "int"},
+      status: {"default": "pending", "enum": ["pending", "completed", "rescheduled", "missed", "cancelled"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      type: {"default": "general", "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "candidate_follow_ups_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "candidate_follow_ups_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "candidate_id"], "onDelete": "cascade", "ref": "candidates", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "assigned_membership_id"], "onDelete": "no_action", "ref": "memberships", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "due_at"}], "name": "candidate_follow_ups_due"},
+      {"cols": [{"col": "tenant_id"}, {"col": "candidate_id"}, {"col": "due_at"}], "name": "candidate_follow_ups_candidate"},
+    ],
+    checks: [
+      "CHECK ((length(notes) <= 3000))",
+    ],
+  },
+  candidate_import_templates: {
+    // Saved column mappings for Candidate CRM imports, reused for files with the same columns.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      hr_workspace_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      mapping: {"default": {"json": {}}, "required": true, "type": "json"},
+      name: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "candidate_import_templates_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "hr_workspace_id", "nullEqual": true}, {"col": "name", "fold": "lower"}], "name": "candidate_import_templates_name"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  candidate_imports: {
+    // Each Candidate CRM import: the uploaded file (kept for the error report), its columns and rows as read, the
+    // mapping, the check result, what happened to each row, and the counts.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      completed_at: {"type": "timestamp"},
+      counts: {"default": {"json": {}}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      duplicate_action: {"type": "string"},
+      file_name: {"required": true, "type": "string"},
+      headers: {"default": {"json": []}, "required": true, "type": "string[]"},
+      hr_workspace_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      mapping: {"default": {"json": {}}, "required": true, "type": "json"},
+      // [{ row, status: created|updated|skipped|failed|duplicate, candidateId?, errors?, matchId? }]
+      results: {"default": {"json": []}, "required": true, "type": "json"},
+      rows: {"default": {"json": []}, "required": true, "type": "json"},
+      status: {"default": "uploaded", "enum": ["uploaded", "checked", "completed", "cancelled"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "candidate_imports_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "candidate_imports_recent"},
+    ],
+    checks: [],
+  },
+  candidate_references: {
+    // Who referred or vouches for a candidate (Candidate CRM > Reference). Kept apart from the candidate's source.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      candidate_id: {"required": true, "type": "uuid"},
+      company: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      details: {"type": "string"},
+      email: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      name: {"type": "string"},
+      phone: {"type": "string"},
+      relationship: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      type: {"required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "candidate_references_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "candidate_references_tenant_id_id_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "candidate_id"], "onDelete": "cascade", "ref": "candidates", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "candidate_id"}], "name": "candidate_references_candidate"},
+    ],
+    checks: [
+      "CHECK ((length(details) <= 2000))",
+    ],
+  },
   candidate_files: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
@@ -1787,12 +2041,21 @@ export const TABLES: Record<string, TableSpec> = {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       file_name: {"required": true, "type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
-      kind: {"default": "resume", "enum": ["resume", "other"], "required": true, "type": "string"},
+      kind: {"default": "resume", "enum": ["resume", "other", "cover_letter", "education", "experience_letter", "portfolio", "certification", "previous_employment"], "required": true, "type": "string"},
+      // Candidate CRM: the document's own name and notes, its version (a replacement is the next version of the same
+      // document, the earlier file kept), and when it was deleted (the row stays for the history; the file is removed).
+      deleted_at: {"type": "timestamp"},
+      deleted_by_membership_id: {"type": "uuid"},
+      name: {"type": "string"},
+      notes: {"type": "string"},
+      replaces_file_id: {"type": "uuid"},
       sha256: {"required": true, "type": "string"},
       size_bytes: {"required": true, "type": "int"},
       storage_key: {"required": true, "type": "string"},
+      superseded_at: {"type": "timestamp"},
       tenant_id: {"required": true, "type": "uuid"},
       uploaded_by_membership_id: {"type": "uuid"},
+      version: {"default": 1, "required": true, "type": "int"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "candidate_files_pkey", "primary": true},
@@ -1812,10 +2075,17 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       application_id: {"type": "uuid"},
       author_membership_id: {"type": "uuid"},
+      // Candidate CRM: the activity the remark came from, the level and HR Workspace it was written in.
+      activity_id: {"type": "uuid"},
+      author_hr_workspace_id: {"type": "uuid"},
+      author_level: {"enum": ["super", "hr", "employee"], "type": "string"},
       body: {"required": true, "type": "string"},
       candidate_id: {"required": true, "type": "uuid"},
+      category: {"default": "general", "required": true, "type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Seen only by Super Workspace and HR Workspaces given "restricted remarks".
+      restricted: {"default": false, "required": true, "type": "bool"},
       tenant_id: {"required": true, "type": "uuid"},
     },
     unique: [
@@ -1829,7 +2099,7 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [],
     checks: [
-      "CHECK (((length(body) >= 1) AND (length(body) <= 5000)))",
+      "CHECK (((length(body) >= 1) AND (length(body) <= 10000)))",
     ],
   },
   candidates: {
@@ -1838,6 +2108,53 @@ export const TABLES: Record<string, TableSpec> = {
       anonymized_at: {"type": "timestamp"},
       consent_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       consent_basis: {"enum": ["candidate_consent", "recruiter_confirmed"], "required": true, "type": "string"},
+      // Candidate CRM (contracts candidate-crm.ts). The ATS candidate is the one candidate record; these add its CRM
+      // profile. Searched fields are columns; each form section's other answers are kept together as JSON.
+      assigned_recruiter_membership_id: {"type": "uuid"},
+      // CAN-000124: a running number per company, given when the record is created (or first opened in the CRM).
+      candidate_code: {"type": "string"},
+      city: {"type": "string"},
+      comp_basis: {"enum": ["annual", "monthly", "hourly"], "type": "string"},
+      comp_currency: {"type": "string"},
+      // { currentFixed, currentVariable, currentMonthly, expectedFixed, expectedVariable, expectedMonthly, negotiable, minimumAcceptable }
+      compensation: {"default": {"json": {}}, "required": true, "type": "json"},
+      country_code: {"type": "string"},
+      crm_archived_at: {"type": "timestamp"},
+      // The HR Workspace that owns the record; null: the Super Workspace and company-wide HR.
+      crm_hr_workspace_id: {"type": "uuid"},
+      // Other HR Workspaces Super Workspace shared the record with.
+      crm_shared_hr_workspace_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      crm_source: {"type": "string"},
+      crm_stage: {"type": "string"},
+      crm_stage_entered_at: {"type": "timestamp"},
+      current_ctc: {"scale": 2, "type": "decimal"},
+      department_name: {"type": "string"},
+      expected_ctc: {"scale": 2, "type": "decimal"},
+      industry: {"type": "string"},
+      // Recruiter remark fields (reason for change, assessments, interest level ...); restricted ones need the sensitive power.
+      insights: {"default": {"json": {}}, "required": true, "type": "json"},
+      job_role: {"type": "string"},
+      // { linkedin, portfolio, website, github, behance, dribbble, blog, other: [{ label, url }] }
+      links: {"default": {"json": {}}, "required": true, "type": "json"},
+      middle_name: {"type": "string"},
+      next_follow_up_at: {"type": "timestamp"},
+      // { period, value, unit, servingNotice, lastWorkingDay, immediateJoiner, availableFrom }
+      notice: {"default": {"json": {}}, "required": true, "type": "json"},
+      notice_days: {"type": "int"},
+      // Gender, date of birth, address, contact preferences, languages ... (sensitive keys need the sensitive power).
+      personal: {"default": {"json": {}}, "required": true, "type": "json"},
+      photo_storage_key: {"type": "string"},
+      preferences: {"default": {"json": {}}, "required": true, "type": "json"},
+      // Previous company, skills by kind, qualifications, summary ...
+      professional: {"default": {"json": {}}, "required": true, "type": "json"},
+      profession: {"type": "string"},
+      reference_types: {"default": {"json": []}, "required": true, "type": "string[]"},
+      relevant_experience_months: {"type": "int"},
+      // Every skill (primary, secondary, technical, soft), lower-cased, for search.
+      skills: {"default": {"json": []}, "required": true, "type": "string[]"},
+      state: {"type": "string"},
+      total_experience_months: {"type": "int"},
+      updated_by_membership_id: {"type": "uuid"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       created_by_membership_id: {"type": "uuid"},
       current_company: {"type": "string"},
@@ -1862,20 +2179,27 @@ export const TABLES: Record<string, TableSpec> = {
       {"cols": [{"col": "id"}], "name": "candidates_pkey", "primary": true},
       {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "candidates_tenant_id_id_key"},
       {"cols": [{"col": "tenant_id"}, {"col": "email"}], "name": "candidates_email", "where": [{"col": "anonymized_at", "op": "null"}]},
+      {"cols": [{"col": "tenant_id"}, {"col": "candidate_code"}], "name": "candidates_code", "where": [{"col": "candidate_code", "op": "notnull"}]},
     ],
     fks: [
       {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
       {"cols": ["tenant_id", "referred_by_membership_id"], "onDelete": "no_action", "ref": "memberships", "refCols": ["tenant_id", "id"]},
       {"cols": ["tenant_id", "created_by_membership_id"], "onDelete": "no_action", "ref": "memberships", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "assigned_recruiter_membership_id"], "onDelete": "no_action", "ref": "memberships", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "crm_hr_workspace_id"], "onDelete": "no_action", "ref": "hr_workspaces", "refCols": ["tenant_id", "id"]},
     ],
     indexes: [
       {"name": "candidates_name", "skip": "col: lower(((first_name || ' '::text) || last_name))"},
+      {"cols": [{"col": "tenant_id"}, {"col": "crm_hr_workspace_id"}, {"col": "crm_stage"}], "name": "candidates_crm_stage"},
+      {"cols": [{"col": "tenant_id"}, {"col": "assigned_recruiter_membership_id"}], "name": "candidates_crm_recruiter"},
+      {"cols": [{"col": "tenant_id"}, {"col": "phone"}], "name": "candidates_phone"},
+      {"cols": [{"col": "tenant_id"}, {"col": "next_follow_up_at"}], "name": "candidates_next_follow_up"},
     ],
     checks: [
       "CHECK ((length(last_name) <= 80))",
       "CHECK (((length(first_name) >= 1) AND (length(first_name) <= 80)))",
       "CHECK (((email = lower(email)) AND (length(email) <= 254)))",
-      "CHECK (((anonymized_at IS NOT NULL) OR (email IS NOT NULL)))",
+      "CHECK (((anonymized_at IS NOT NULL) OR (email IS NOT NULL) OR (phone IS NOT NULL)))",
     ],
   },
   career_sites: {
@@ -2522,7 +2846,7 @@ export const TABLES: Record<string, TableSpec> = {
     // An HR Workspace (Console > Super Workspace > HR Workspace > Employee): a department, branch or region of the
     // company with its own admins and a subset of the company's modules (features). Its people are the employees
     // whose hr_workspace_id points here. Archived ones keep their history; their people go back to the central group.
-    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    access: "tenant", grants: ["insert", "select", "update"], touch: true, triggers: ["workspace_limit_hr"],
     columns: {
       archived_at: {"type": "timestamp"},
       code: {"type": "string"},
@@ -4188,7 +4512,7 @@ export const TABLES: Record<string, TableSpec> = {
     ],
   },
   memberships: {
-    access: "tenant_or_user", grants: ["delete", "insert", "select", "update"], touch: true, triggers: ["memberships_no_manager_cycle"],
+    access: "tenant_or_user", grants: ["delete", "insert", "select", "update"], touch: true, triggers: ["memberships_no_manager_cycle", "workspace_limit_employee"],
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       department_id: {"type": "uuid"},
@@ -4275,8 +4599,10 @@ export const TABLES: Record<string, TableSpec> = {
     // Short-lived events pushed to open browsers over /notifications/stream (new notices, chat messages, read
     // receipts). Written in the transaction that caused them, so only committed changes are pushed; every API server
     // watches this collection and forwards events to its own connected members. Rows older than an hour are deleted.
+    // `console` events go to the Console Admins connected to /platform/support/stream instead (support chat).
     access: "tenant", grants: ["insert", "select", "delete"],
     columns: {
+      console: {"type": "bool"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       data: {"default": {"json": {}}, "required": true, "type": "json"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
@@ -5482,7 +5808,7 @@ export const TABLES: Record<string, TableSpec> = {
       is_default: {"default": false, "required": true, "type": "bool"},
       membership_id: {"required": true, "type": "uuid"},
       name: {"required": true, "type": "string"},
-      page: {"enum": ["employees", "candidates"], "required": true, "type": "string"},
+      page: {"enum": ["employees", "candidates", "candidate_crm"], "required": true, "type": "string"},
       state: {"required": true, "type": "json"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -6229,6 +6555,109 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((duration_minutes >= 15) AND (duration_minutes <= 480)))",
     ],
   },
+  support_conversations: {
+    // SampCrew Support chat: a private conversation between one Super Workspace (this tenant) and the Console Admin
+    // team. Only the tenant's Super Workspace level and Console Admins with support:chat reach it. The Console team
+    // reads as a team (console_read_at); Super Workspace members each have a read position in support_reads.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      category: {"default": "question", "enum": ["question", "technical", "account", "billing", "feature", "other"], "required": true, "type": "string"},
+      // The Console team's read and received positions (any admin opening or listing it).
+      console_delivered_at: {"type": "timestamp"},
+      console_read_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // The Console Admin who answered last ("handled by").
+      handled_by_admin_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      last_console_message_at: {"type": "timestamp"},
+      last_message: {"type": "json"},
+      last_message_at: {"type": "timestamp"},
+      last_workspace_message_at: {"type": "timestamp"},
+      // Per tenant, from 1, for "Support #12".
+      number: {"required": true, "type": "int"},
+      resolved_at: {"type": "timestamp"},
+      started_by_admin_id: {"type": "uuid"},
+      started_by_membership_id: {"type": "uuid"},
+      status: {"default": "open", "enum": ["open", "resolved"], "required": true, "type": "string"},
+      subject: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // The workspace side's received and read positions (any Super Workspace member), for the Console's ticks.
+      workspace_delivered_at: {"type": "timestamp"},
+      workspace_read_at: {"type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "support_conversations_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "number"}], "name": "support_conversations_number"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["started_by_membership_id"], "onDelete": "set_null", "ref": "memberships", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "last_message_at", "desc": true}], "name": "support_conversations_by_tenant"},
+      {"cols": [{"col": "last_message_at", "desc": true}], "name": "support_conversations_by_activity"},
+    ],
+    checks: [
+      "CHECK ((number >= 1))",
+    ],
+  },
+  support_messages: {
+    // Messages of a support conversation. The sender is a Super Workspace member or a Console Admin; their name,
+    // level and workspace are kept as they were when sent, so the history stays accountable.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      body: {"required": true, "type": "string"},
+      client_id: {"type": "string"},
+      conversation_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      sender_admin_id: {"type": "uuid"},
+      sender_kind: {"enum": ["member", "console", "system"], "required": true, "type": "string"},
+      sender_level: {"enum": ["console", "super", "hr", "employee"], "required": true, "type": "string"},
+      sender_membership_id: {"type": "uuid"},
+      sender_name: {"required": true, "type": "string"},
+      sender_workspace: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "support_messages_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["conversation_id"], "onDelete": "cascade", "ref": "support_conversations", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "conversation_id"}, {"col": "created_at", "desc": true}], "name": "support_messages_by_conversation"},
+      {"cols": [{"col": "client_id"}], "name": "support_messages_by_client_id", "where": [{"col": "client_id", "op": "notnull"}]},
+    ],
+    checks: [],
+  },
+  support_reads: {
+    // How far each Super Workspace member has received and read a support conversation (their unread count).
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      conversation_id: {"required": true, "type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      last_delivered_at: {"type": "timestamp"},
+      last_read_at: {"type": "timestamp"},
+      membership_id: {"required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "support_reads_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "conversation_id"}, {"col": "membership_id"}], "name": "support_reads_one_per_person"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["conversation_id"], "onDelete": "cascade", "ref": "support_conversations", "refCols": ["id"]},
+      {"cols": ["membership_id"], "onDelete": "cascade", "ref": "memberships", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}], "name": "support_reads_by_person"},
+    ],
+    checks: [],
+  },
   survey_invitations: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
@@ -6759,7 +7188,9 @@ export const TABLES: Record<string, TableSpec> = {
       required: {"default": false, "required": true, "type": "bool"},
       section: {"type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
-      type: {"enum": ["short_text", "long_text", "number", "date", "datetime", "dropdown", "multi_select", "radio", "checkbox", "email", "phone", "file", "currency", "url"], "required": true, "type": "string"},
+      type: {"enum": ["short_text", "long_text", "number", "date", "datetime", "dropdown", "multi_select", "radio", "checkbox", "email", "phone", "file", "currency", "url", "decimal", "searchable_dropdown", "yes_no"], "required": true, "type": "string"},
+      // Candidate CRM fields made by one HR Workspace are its own (used only on its candidates); null: company-wide.
+      hr_workspace_id: {"type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       updated_by_membership_id: {"type": "uuid"},
       view_roles: {"default": {"json": []}, "required": true, "type": "string[]"},
@@ -6767,7 +7198,7 @@ export const TABLES: Record<string, TableSpec> = {
     unique: [
       {"cols": [{"col": "id"}], "name": "custom_fields_pkey", "primary": true},
       {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "custom_fields_tenant_id_id_key"},
-      {"cols": [{"col": "tenant_id"}, {"col": "entity"}, {"col": "key"}], "name": "custom_fields_entity_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "entity"}, {"col": "hr_workspace_id", "nullEqual": true}, {"col": "key"}], "name": "custom_fields_entity_key"},
     ],
     fks: [
       {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},

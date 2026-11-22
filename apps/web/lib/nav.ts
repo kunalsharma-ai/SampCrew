@@ -15,6 +15,8 @@ export interface NavItem {
   hiddenWith?: string;
   /** Only for the Super Workspace level. */
   superOnly?: boolean;
+  /** Only when Candidate CRM is open to the person (Super Workspace, or an HR Workspace it is switched on for). */
+  candidateCrm?: boolean;
   /** Shown to billing admins when the plan lacks the feature: the link opens Plan & billing to upgrade. */
   locked?: boolean;
 }
@@ -38,6 +40,8 @@ export const NAV: NavGroup[] = [
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
       // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
       { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
+      // The Super Workspace's private chat with the SampCrew Console Admin team (every plan; not a Communication part).
+      { href: '/support', label: 'SampCrew Support', icon: 'headset', superOnly: true },
     ],
   },
   {
@@ -71,6 +75,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/recruitment', label: 'Jobs', icon: 'briefcase', permission: 'requisitions:read', feature: 'recruitment' },
       { href: '/recruitment/candidates', label: 'Candidates', icon: 'user-search', permission: 'candidates:read', feature: 'recruitment' },
+      { href: '/recruitment/crm', label: 'Candidate CRM', icon: 'contact', feature: 'recruitment', candidateCrm: true },
       // Interview panels: only for people who work in recruitment, not in every employee's menu (scorecards still open from notifications).
       { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'requisitions:read', feature: 'recruitment' },
       { href: '/settings/recruitment', label: 'Recruitment settings', icon: 'sliders', permission: 'recruitment:configure', feature: 'recruitment' },
@@ -217,7 +222,7 @@ export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: st
 
 export function visibleNav(me: Me): NavGroup[] {
   const allowed = (i: NavItem) =>
-    (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && !(i.hiddenWith && me.permissions[i.hiddenWith]) && !(i.superOnly && !me.levels?.super);
+    (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && !(i.hiddenWith && me.permissions[i.hiddenWith]) && !(i.superOnly && !me.levels?.super) && !(i.candidateCrm && !me.candidateCrm);
   // A billing admin also sees each module the plan lacks once, with a lock, so they know it exists and can upgrade.
   const upsell = me.permissions['billing:manage'] ? new Set<string>() : null;
   return NAV.map((g) => ({
