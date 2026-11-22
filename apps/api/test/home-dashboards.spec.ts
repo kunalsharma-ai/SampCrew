@@ -214,6 +214,9 @@ describe('Role-based home dashboards', () => {
     const held = rows.filter((r) => (r.next_attempt_at as Date).getTime() > now + 60_000);
     expect(rows).toHaveLength(2);
     expect(held).toHaveLength(1);
+    // Leave no pushes queued for other specs that send the whole queue.
+    await pool.delete('push_messages', { mobile_device_id: device.id });
+    await pool.delete('mobile_devices', { id: device.id });
     await api(app, staffToken).put('/notifications/preferences').send(prefs);
   });
 });
