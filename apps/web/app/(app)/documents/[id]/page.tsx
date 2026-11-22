@@ -32,6 +32,14 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
       />
       {d.supersededAt && <div className="mb-4"><Alert tone="info" title="Replaced">A newer version replaced this document on {fmtDate(d.supersededAt)}. It is kept for the record.</Alert></div>}
       {d.expired && <div className="mb-4"><Alert tone="warning" title="Expired">This document expired on {fmtDate(d.expiresOn)}. Request a replacement to collect a current one.</Alert></div>}
+      {d.verificationRemarks && (
+        <div className="mb-4">
+          <Alert tone={d.verificationStatus === 'rejected' ? 'danger' : d.verificationStatus === 'correction_required' ? 'warning' : 'success'}
+            title={`${d.verificationStatus === 'rejected' ? 'Reason for rejection' : d.verificationStatus === 'correction_required' ? 'What must be corrected' : 'Comment on approval'}${d.verifiedBy?.name ? ` from ${d.verifiedBy.name}` : ''}`}>
+            {d.verificationRemarks}
+          </Alert>
+        </div>
+      )}
       <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
         <div className="grid content-start gap-5">
           <Card>
@@ -68,7 +76,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
               <Row k="Uploaded">{fmtWhen(d.createdAt)}{d.submittedBy ? <span className="block text-xs text-fg-muted">by {d.submittedBy}</span> : null}</Row>
               <Row k="Requested by">{d.requestedBy ? <>{d.requestedBy.label}<span className="block text-xs text-fg-muted">{d.requestedBy.name}</span></> : 'Uploaded directly'}</Row>
               {d.verifiedBy && <Row k="Verified by">{d.verifiedBy.name}{d.verifiedBy.designation ? `, ${d.verifiedBy.designation}` : ''}<span className="block text-xs text-fg-muted">{d.verifiedBy.level}{d.verifiedAt ? ` · ${fmtWhen(d.verifiedAt)}` : ''}</span></Row>}
-              {d.verificationRemarks && <Row k="Remarks">{d.verificationRemarks}</Row>}
+              {d.verificationRemarks && <Row k={d.verificationStatus === 'rejected' ? 'Reason' : 'Reviewer comment'}>{d.verificationRemarks}</Row>}
               {d.submitterRemarks && <Row k="Note from uploader">{d.submitterRemarks}</Row>}
               <Row k="Expires">{d.expiresOn ? fmtDate(d.expiresOn) : 'Does not expire'}</Row>
               {d.sensitive && <Row k="Sensitive">Yes: file name hidden from people who cannot download</Row>}

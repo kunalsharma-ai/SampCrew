@@ -864,6 +864,8 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
     const v = await this.viewer(tx);
     const r = await tx.collection('document_requests').findOne({ id: requestId });
     if (!r) return;
+    // A rejection always carries its reason, also when it is decided from the Approvals page.
+    if (decision === 'reject' && (comment ?? '').trim().length < 3) throw Errors.badRequest('reason_required', 'Write the reason for rejecting. It is shown to the person who uploaded the document.');
     this.checkSwitch(v, r, decision);
     await this.closeRound(tx, v, r, decision, comment);
   }

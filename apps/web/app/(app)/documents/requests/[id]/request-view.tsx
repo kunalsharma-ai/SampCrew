@@ -34,8 +34,9 @@ export function RequestView({ r }: { r: RequestDetail }) {
     <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
       <div className="grid content-start gap-5">
         {note && <Alert tone="success">{note}</Alert>}
-        {r.status === 'correction_required' && r.reviewerComment && <Alert tone="warning" title="Correction required">{r.reviewerComment}</Alert>}
-        {r.status === 'rejected' && r.reviewerComment && <Alert tone="danger" title="Rejected">{r.reviewerComment}{r.isMine ? ' Upload a new file below.' : ''}</Alert>}
+        {r.status === 'correction_required' && r.reviewerComment && <Alert tone="warning" title={`Correction required by ${r.reviewer?.name ?? r.requestedBy.label}`}>{r.reviewerComment}</Alert>}
+        {r.status === 'rejected' && r.reviewerComment && <Alert tone="danger" title={`Rejected by ${r.reviewer?.name ?? r.requestedBy.label}: reason`}>{r.reviewerComment}{r.isMine ? ' Upload a new file below.' : ''}</Alert>}
+        {r.status === 'completed' && r.reviewerComment && <Alert tone="success" title={`Approved. Comment from ${r.reviewer?.name ?? r.requestedBy.label}`}>{r.reviewerComment}</Alert>}
         {r.status === 'cancelled' && <Alert tone="info" title="Cancelled">{r.cancelledReason ?? 'This request was called off.'}</Alert>}
 
         {mayUpload && (

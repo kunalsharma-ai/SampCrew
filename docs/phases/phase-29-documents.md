@@ -31,7 +31,7 @@ Each item below runs against the real API and MongoDB. They are covered by `apps
 - **Verification.**
   - The submission appears in Approvals under Document verification, and under Documents, Pending verification.
   - Opening it marks it "Under verification". The preview is inline for PDFs and images.
-  - Approve, Reject and Request correction each ask for confirmation. Reject and correction need a comment.
+  - Approve, Reject and Request correction each ask for confirmation. Approve takes an optional comment. Reject and correction need a comment, also when the rejection is made from the Approvals page (the API refuses one without a reason). The reason or comment is shown to the person highlighted: on the request, on the document page, under the status in their document lists, and in their notification.
   - Only the level that raised the request can verify it: HR Workspace cannot verify a Super Workspace request. The person who submitted can never verify their own document.
 - **Versions.** A resubmission is a new version. The earlier version is marked Replaced, its file is kept, and the full history stays readable.
 - **Expiry.** The expiry date is set at upload or at approval. An expired document is flagged once, with one notice. "Request replacement" asks for a new version linked to the old one.

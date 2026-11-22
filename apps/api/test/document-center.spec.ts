@@ -114,7 +114,11 @@ describe('Document management, verification and approval', () => {
 
     const ok = await decide(hrPuneToken, req.id, 'approve', 'Matches records');
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
-    expect(ok.body).toMatchObject({ status: 'completed', reviewer: { name: 'Priya Pune HR' } });
+    expect(ok.body).toMatchObject({ status: 'completed', reviewer: { name: 'Priya Pune HR' }, reviewerComment: 'Matches records' });
+    // The approval comment reaches the employee: on the request, the document and the notification.
+    expect((await api(app, kunal.token).get(`/document-requests/${req.id}`)).body.reviewerComment).toBe('Matches records');
+    expect((await api(app, kunal.token).get(`/employees/${kunal.employeeId}/documents`)).body.find((x: { id: string }) => x.id === aadhaarDoc).verificationRemarks).toBe('Matches records');
+    expect((await pool.one('notifications', { tenant_id: t.id, membership_id: kunal.membershipId, kind: 'document.approved' }))!.body).toContain('Matches records');
     expect((await api(app, kunal.token).get(`/tasks/${task.id}`)).body).toMatchObject({ status: 'completed', requestStatus: 'completed' });
     const profile = await api(app, hrPuneToken).get(`/employees/${kunal.employeeId}/documents`);
     expect(profile.body.find((x: { id: string }) => x.id === aadhaarDoc)).toMatchObject({ status: 'verified', statusLabel: 'Approved', typeName: 'Aadhaar Card', requestedBy: { level: 'hr_workspace' }, verifiedBy: { name: 'Priya Pune HR' }, version: 1 });
@@ -189,7 +193,14 @@ describe('Document management, verification and approval', () => {
     expect(first.status, JSON.stringify(first.body)).toBe(200);
     const v1 = first.body.document.id;
     expect((await decide(hrPuneToken, passportRequest, 'reject')).status).toBe(422);
+    // Rejecting from the Approvals page also needs the reason; nothing changes without it.
+    const ap = (await pool.one('document_requests', { id: passportRequest }))!.approval_request_id;
+    expect((await api(app, hrPuneToken).post(`/approvals/${ap}/reject`).send({})).status).toBe(400);
+    expect((await pool.one('document_requests', { id: passportRequest }))!.status).not.toBe('rejected');
     const no = await decide(hrPuneToken, passportRequest, 'reject', 'The photo page is unreadable');
+    // The reason is shown to the employee with the request, the document and in the notification.
+    expect((await api(app, kunal.token).get(`/document-requests/${passportRequest}`)).body).toMatchObject({ status: 'rejected', reviewerComment: 'The photo page is unreadable' });
+    expect((await pool.one('notifications', { tenant_id: t.id, membership_id: kunal.membershipId, kind: 'document.rejected' }))!.body).toContain('Reason: The photo page is unreadable');
     expect(no.status, JSON.stringify(no.body)).toBe(200);
     expect(no.body.status).toBe('rejected');
     expect((await pool.one('employee_documents', { id: v1 }))!).toMatchObject({ verification_status: 'rejected', verification_remarks: 'The photo page is unreadable' });

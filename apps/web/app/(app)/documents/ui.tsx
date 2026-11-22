@@ -116,7 +116,10 @@ export function DocumentTable({ rows, showOwner, filterable, empty, rowAction }:
                 <TD className="text-fg-muted">{d.typeName ?? d.title}<span className="block text-xs text-fg-subtle">{d.categoryName}</span></TD>
                 <TD className="text-fg-muted">{fmtDate(d.createdAt)}{d.submittedBy && <span className="block text-xs">{d.submittedBy}</span>}</TD>
                 <TD className="text-fg-muted">{d.requestedBy ? <>{d.requestedBy.label}<span className="block text-xs">{d.requestedBy.name}</span></> : <span className="text-xs">Added directly</span>}</TD>
-                <TD><DocStatusBadge status={d.status} label={d.statusLabel} /></TD>
+                <TD>
+                  <DocStatusBadge status={d.status} label={d.statusLabel} />
+                  {d.verificationRemarks && <ReviewerNote status={d.verificationStatus} text={d.verificationRemarks} />}
+                </TD>
                 <TD className="text-fg-muted">{d.verifiedBy ? <>{d.verifiedBy.name}<span className="block text-xs">{[d.verifiedBy.designation, fmtDate(d.verifiedAt)].filter(Boolean).join(' · ')}</span></> : '—'}</TD>
                 <TD className={d.expired ? 'font-medium text-danger' : 'text-fg-muted'}>{d.expiresOn ? fmtDate(d.expiresOn) : '—'}</TD>
                 <TD className="tabular-nums text-fg-muted">v{d.version}</TD>
@@ -415,12 +418,13 @@ export function DecisionButtons({ r, expiresOn, onDone }: { r: RequestRow; expir
         <Button variant="danger" onClick={() => setAsk('reject')}>Reject</Button>
       </div>
       <Dialog open={!!ask} onClose={() => setAsk(null)} title={ask ? title[ask] : ''}
-        description={ask === 'approve' ? 'It becomes an approved document in the profile and the request is marked collected.' : ask === 'reject' ? 'The person is told the reason and can upload a new file. The rejected file is kept in the history.' : 'The person is told what to fix and uploads a new version.'}
+        description={ask === 'approve' ? 'It becomes an approved document in the profile and the request is marked collected. Your comment is shown to the person who uploaded it.' : ask === 'reject' ? 'The person is told the reason and can upload a new file. The rejected file is kept in the history.' : 'The person is told what to fix and uploads a new version.'}
         footer={<><Button variant="secondary" onClick={() => setAsk(null)}>Back</Button><Button variant={ask === 'reject' ? 'danger' : 'primary'} loading={pending} disabled={needs && comment.trim().length < 3} onClick={go}>{ask === 'approve' ? 'Approve' : ask === 'reject' ? 'Reject' : 'Send back'}</Button></>}>
         <div className="grid gap-3">
           {error && <Alert tone="danger">{error}</Alert>}
           {ask === 'approve' && <Field label="Expiry date (if the document expires)">{(p) => <Input {...p} type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />}</Field>}
-          <Field label={ask === 'reject' ? 'Reason for rejecting' : ask === 'correction' ? 'What must be corrected' : 'Comment (optional)'} required={needs}>{(p) => <Textarea {...p} rows={3} maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} />}</Field>
+          <Field label={ask === 'reject' ? 'Reason for rejecting' : ask === 'correction' ? 'What must be corrected' : 'Comment for the person who uploaded it (optional)'} required={needs}
+            hint={needs ? 'Required. It is shown to the person, highlighted, with the document and in their notification.' : 'For example: Clear scan, thank you. It is shown with the document and in their notification.'}>{(p) => <Textarea {...p} data-testid="decision-comment" rows={3} maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} />}</Field>
         </div>
       </Dialog>
     </>
@@ -438,4 +442,11 @@ export function PreviewPanel({ d }: { d: Pick<DocRow, 'id' | 'contentType' | 'fi
     // eslint-disable-next-line @next/next/no-img-element
     ? <img src={`/document-preview/${d.id}`} alt={`Preview of ${d.fileName}`} className="max-h-[70vh] w-full rounded-lg border border-border object-contain" />
     : <iframe src={`/document-preview/${d.id}`} title={`Preview of ${d.fileName}`} className="h-[70vh] w-full rounded-lg border border-border" />;
+}
+
+/** The verifier's comment under a document's status: the reason for a rejection or correction, or a note on approval. */
+export function ReviewerNote({ status, text }: { status: string | null; text: string }) {
+  const tone = status === 'rejected' ? 'border-danger bg-danger-subtle text-danger' : status === 'correction_required' ? 'border-ember bg-ember-subtle text-ember' : 'border-border bg-bg-subtle text-fg-muted';
+  const label = status === 'rejected' ? 'Reason' : status === 'correction_required' ? 'To fix' : 'Comment';
+  return <span className={`mt-1 block max-w-[16rem] whitespace-pre-wrap rounded-md border-l-2 px-2 py-1 text-xs ${tone}`}><span className="font-semibold">{label}:</span> {text}</span>;
 }

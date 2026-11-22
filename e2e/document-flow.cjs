@@ -8,8 +8,9 @@
  * 1. Super Workspace (the owner) opens Centralized Document Management and requests an Aadhaar Card from Neha.
  * 2. Neha (Employee Workspace) sees it under My document requests and in My tasks, and uploads a PDF.
  * 3. Super Workspace previews it and asks for a correction (a comment is required).
- * 4. Neha uploads a second version; Super Workspace approves it. The document page shows both versions and history.
- * 5. Super Workspace switches downloads off for company-wide HR in Document Access Management; HR Workspace then sees
+ * 4. Neha uploads version 2; Super Workspace rejects it (a reason is required) and Neha sees the reason highlighted.
+ * 5. Neha uploads version 3; Super Workspace approves it with a comment, which Neha sees. All versions are kept.
+ * 6. Super Workspace switches downloads off for company-wide HR in Document Access Management; HR Workspace then sees
  *    the document without a Download link, and the direct file link is refused. The switch is put back at the end.
  * Fails on any browser error. SHOTS=<dir> saves a screenshot of each screen.
  */
@@ -139,31 +140,60 @@ async function setDownload(owner, on) {
     await see(owner, 'Sent back for correction');
     ok('Super Workspace previewed the file and asked for a correction with a comment');
 
-    // 4. Neha uploads version 2; Super Workspace approves it.
+    // 4. Neha uploads version 2; Super Workspace rejects it, which needs a reason, and Neha sees the reason highlighted.
     await emp.goto(requestUrl);
     await see(emp, 'The back side is missing');
     await see(emp, 'Upload a new version');
-    await upload(emp, pdf('aadhaar-both-sides.pdf', 'both sides'));
+    await upload(emp, pdf('aadhaar-both-sides.pdf', 'both sides, blurred'));
     await owner.goto(requestUrl);
     await see(owner, 'Version 2 of 2');
+    await owner.getByRole('button', { name: 'Reject' }).first().click();
+    const rejectDialog = owner.getByRole('dialog');
+    if (!(await rejectDialog.getByRole('button', { name: 'Reject' }).isDisabled())) throw new Error('A rejection needs a reason');
+    await rejectDialog.getByTestId('decision-comment').fill('The scan is blurred and the number cannot be read. Please scan it again.');
+    await save(owner, '06-reject-with-reason');
+    await rejectDialog.getByRole('button', { name: 'Reject' }).click();
+    await see(owner, 'Rejected. They have been told the reason');
+    await emp.goto(requestUrl);
+    await see(emp, 'Rejected by Aarav Mehta: reason');
+    await see(emp, 'The scan is blurred and the number cannot be read');
+    await save(emp, '07-employee-sees-reason');
+    await emp.goto(BASE + '/documents?tab=rejected');
+    await see(emp, 'Reason:');
+    await see(emp, 'The scan is blurred');
+    await save(emp, '08-employee-rejected-list');
+    ok('Super Workspace rejected version 2 with a reason (required), and Neha sees the reason on the request and in her list');
+
+    // 5. Neha uploads version 3; Super Workspace approves it with a comment, which Neha sees.
+    await emp.goto(requestUrl);
+    await upload(emp, pdf('aadhaar-rescan.pdf', 'clear rescan'));
+    await owner.goto(requestUrl);
+    await see(owner, 'Version 3 of 3');
     await owner.getByRole('button', { name: 'Approve' }).first().click();
-    await owner.getByRole('dialog').getByRole('button', { name: 'Approve' }).click();
+    const approveDialog = owner.getByRole('dialog');
+    await approveDialog.getByTestId('decision-comment').fill('Clear scan, thank you. Verified against the employee record.');
+    await save(owner, '09-approve-with-comment');
+    await approveDialog.getByRole('button', { name: 'Approve' }).click();
     await see(owner, 'Approved. The document is now in the profile');
     await see(owner, 'Completed');
-    await save(owner, '06-approved-request');
+    await save(owner, '10-approved-request');
     await owner.getByRole('link', { name: 'Document page' }).click();
     await owner.waitForURL(/\/documents\/[0-9a-f-]{36}$/);
     const docId = owner.url().split('/').pop();
     await see(owner, 'Versions');
-    await see(owner, 'Approved');
-    await save(owner, '07-document');
+    await see(owner, 'Comment on approval from Aarav Mehta');
+    await save(owner, '11-document');
+    await emp.goto(requestUrl);
+    await see(emp, 'Approved. Comment from Aarav Mehta');
+    await see(emp, 'Clear scan, thank you');
+    await save(emp, '12-employee-sees-approval-comment');
     await emp.goto(BASE + '/documents?tab=approved');
-    await see(emp, 'Aadhaar Card');
-    ok('Neha uploaded version 2 and Super Workspace approved it; both versions and the history are kept');
+    await see(emp, 'Comment:');
+    ok('Neha uploaded version 3 and Super Workspace approved it with a comment she can read; all versions and the history are kept');
 
-    // 5. Super Workspace switches downloads off for company-wide HR; HR loses the Download link and the direct link.
+    // 6. Super Workspace switches downloads off for company-wide HR; HR loses the Download link and the direct link.
     await setDownload(owner, false);
-    await save(owner, '08-document-access');
+    await save(owner, '13-document-access');
     const hr = await signIn(b, 'hr.admin@demo.crew.local');
     await hr.goto(`${BASE}/employees/${neha._id}?tab=documents`);
     await see(hr, 'Aadhaar Card');
@@ -172,10 +202,10 @@ async function setDownload(owner, on) {
     if (await row.getByRole('link', { name: 'Download' }).count()) throw new Error('HR still sees Download after Super Workspace switched it off');
     const direct = await hr.request.get(`${BASE}/files/${docId}`);
     if (direct.status() !== 404) throw new Error(`the direct file link answered ${direct.status()} instead of 404`);
-    await save(hr, '09-hr-profile-no-download');
+    await save(hr, '14-hr-profile-no-download');
     await hr.goto(BASE + '/documents');
     await see(hr, 'Documents');
-    await save(hr, '10-hr-documents');
+    await save(hr, '15-hr-documents');
     ok('with downloads off, HR Workspace sees no Download link and the direct file link is refused');
     await setDownload(owner, true);
     const again = await hr.request.get(`${BASE}/files/${docId}`);
