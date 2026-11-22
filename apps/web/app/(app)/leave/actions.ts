@@ -1,8 +1,19 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { act, api } from '@/lib/api';
+import { act, api, apiForm } from '@/lib/api';
 
-export interface Preview { days: string; tracked: boolean; available: string | null; balanceAfter: string | null; holidaysInRange: string[]; warnings: string[] }
+export type LeaveRoute = 'hr' | 'super' | 'both';
+export interface Preview {
+  days: string; tracked: boolean; available: string | null; balanceAfter: string | null; holidaysInRange: string[]; warnings: string[];
+  documents?: { mode: 'none' | 'optional' | 'required'; required: boolean; note: string | null };
+  routes?: { route: LeaveRoute; label: string; reviewers: string[] }[]; employeeChooses?: boolean; order?: 'simultaneous' | 'sequential'; managerFirst?: boolean;
+  route?: LeaveRoute; routeLabel?: string; reviewers?: string[];
+}
+
+/** A supporting document for an application; its id goes on the request as documentIds. */
+export async function uploadLeaveDocumentAction(form: FormData) {
+  return act(() => apiForm<{ id: string; name: string; size: number }>('/leave/documents', form));
+}
 
 export async function previewLeaveAction(values: Record<string, unknown>) {
   return act(() => api<Preview>('/leave/requests/preview', { method: 'POST', body: values }));
@@ -24,14 +35,6 @@ export async function cancelLeaveAction(id: string, reason?: string) {
 export async function decideAction(id: string, decision: 'approve' | 'reject', comment?: string) {
   const r = await act(() => api<{ status: string }>(`/approvals/${id}/${decision}`, { method: 'POST', body: comment ? { comment } : {} }));
   revalidatePath('/approvals');
-  return r;
-}
-
-/** For a workspace with no leave types yet: adds the standard ones with workspace-wide policies. */
-export async function addDefaultLeaveTypesAction() {
-  const r = await act(() => api<{ added: number }>('/leave/types/defaults', { method: 'POST', body: {} }), 'Standard leave types added.');
-  revalidatePath('/leave');
-  revalidatePath('/settings/leave');
   return r;
 }
 

@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { addMember, adminPool, api, createApp, createTenant, loginWithMfa, type TestDb, type TestTenant, leaveType } from './helpers';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const yearsAgo = (n: number, from = today()) => `${Number(from.slice(0, 4)) - n}${from.slice(4)}`.replace(/-02-29$/, '-02-28');
@@ -24,8 +24,8 @@ describe('create employee rules', () => {
     t = await createTenant(pool);
     const member = await addMember(pool, t, { roles: ['hr_admin'], name: 'Hina HR' });
     hr = (await loginWithMfa(app, pool, member.email)).accessToken;
-    cl = (await api(app, hr).post('/leave/types').send({ code: 'CL', name: 'Casual leave' })).body.id;
-    expect((await api(app, hr).post('/leave/policies').send({ leaveTypeId: cl, accrualMethod: 'annual_upfront', annualEntitlement: '12' })).status).toBe(201);
+    const owner = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
+    cl = await leaveType(app, owner, { code: 'CL', name: 'Casual leave', policy: { accrualMethod: 'annual_upfront', annualEntitlement: '12' } });
   });
   afterAll(async () => {
     await app.close();

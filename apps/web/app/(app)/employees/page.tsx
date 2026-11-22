@@ -10,6 +10,12 @@ import type { Department, Designation, Employee, LegalEntity, Location, Me, Onbo
 import type { Structure } from '../payroll/types';
 import { type EmployeeDraft, EmployeesView } from './employees-view';
 import type { LeavePolicyOption } from './hire-wizard';
+import type { LeaveType } from '@/lib/types';
+
+/** Leave types that accrue, one row per legal entity they are limited to (or one for everyone), for opening balances. */
+const openingOptions = (types: LeaveType[]): LeavePolicyOption[] => types
+  .filter((t) => t.active && t.policy.accrualMethod !== 'none')
+  .flatMap((t) => (t.eligibility.legalEntityIds.length ? t.eligibility.legalEntityIds : [null]).map((legalEntityId) => ({ leaveTypeId: t.id, leaveTypeName: t.name, legalEntityId, accrualMethod: t.policy.accrualMethod, typeArchived: false })));
 import type { DeviceOption, ShiftOption } from './[id]/profile-extras';
 import { DEFAULT_COLUMNS, viewUrl } from './view-url';
 
@@ -65,7 +71,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     canHire && canPay ? loadOptional<Structure[]>('/payroll/structures') : null,
     canHire && canAttendance ? loadOptional<ShiftOption[]>('/shifts/templates') : null,
     canHire && canAttendance && can(me, 'devices:manage') ? loadOptional<DeviceOption[]>('/attendance/devices') : null,
-    canOpenBalances ? loadOptional<LeavePolicyOption[]>('/leave/policies') : null,
+    canOpenBalances ? loadOptional<LeaveType[]>('/leave/types') : null,
     canHandOver ? loadOptional<AssetList>('/assets?status=available&limit=500') : null,
     canHire && can(me, 'hierarchy:read') ? loadOptional<{ items: { id: string; name: string }[] }>('/hr-workspaces?status=active') : null,
     canHire ? loadOptional<WorkspaceLimits>('/workspace-limits') : null,
@@ -117,7 +123,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         canManageOrg={canManageOrg}
         canAttendance={canAttendance}
         canConfigureShifts={canAttendance && can(me, 'attendance:configure')}
-        leavePolicies={canOpenBalances ? (policies ?? []).filter((x) => !x.typeArchived && x.accrualMethod !== 'none') : null}
+        leavePolicies={canOpenBalances ? openingOptions(policies ?? []) : null}
         availableAssets={canHandOver ? (freeAssets?.items ?? []).map((a) => ({ id: a.id, assetCode: a.assetCode, name: a.name, category: a.category })) : null}
         setupPending={setupPending}
       />

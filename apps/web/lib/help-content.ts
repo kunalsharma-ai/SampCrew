@@ -331,8 +331,20 @@ export const WEB_HELP: HelpContent = {
     '/leave': {
       title: 'Leave',
       what: 'Your leave balances, your month or year calendar, your requests and who is away soon.',
-      how: 'Press Apply for leave, choose the type and dates, and send. Change or cancel a request while it waits. A change to approved leave replaces it once approved. Year view shows all twelve months.',
+      how: 'Press Apply for leave, choose the type, dates and, where the type allows it, who it goes to. Attach a document if asked. Change or cancel while it waits. Year view shows all twelve months.',
       where: 'For every employee. Managers also see their team’s requests here, and Team balances shows what their people have left.',
+    },
+    '/leave/manage': {
+      title: 'Leave management',
+      what: 'Leave types and their policies, who gets them, the applications waiting for you, reports and the history of every change.',
+      how: 'The Super Workspace creates types, allocates them to people or makes them available to HR Workspaces. An HR Workspace allocates what it was given to its people and approves their leave.',
+      where: 'For the Super Workspace and HR Workspaces.',
+    },
+    '/leave/requests/[id]': {
+      title: 'Leave application',
+      what: 'One leave application: where it was sent, each authority’s decision with remarks, its documents and the rules it was made under.',
+      how: 'The applicant can cancel it while it waits or before approved leave starts. Approvers decide from Leave management or Approvals.',
+      where: 'Opened from your requests, the Approvals page or Leave management.',
     },
     '/leave/balances': {
       title: 'Leave balances',
@@ -852,10 +864,10 @@ export const WEB_HELP: HelpContent = {
       where: 'Opened from Attendance devices.',
     },
     '/settings/leave': {
-      title: 'Leave settings',
-      what: 'Leave types, who gets how much, holiday calendars and the approval chain.',
-      how: 'Add standard types (maternity, comp-off, work from home and more) or your own. Give each a policy for everyone or by entity, department, designation or location; the most specific wins. Set up to five approval steps.',
-      where: 'For HR, usually at setup and the start of each leave year.',
+      title: 'Holidays and leave rules',
+      what: 'Holiday calendars per location or entity, the same-day leave rule and yearly leave maintenance.',
+      how: 'Add each calendar’s holidays before the year starts. Leave types, their policies and allocation are on Leave management.',
+      where: 'For the Super Workspace and HR Workspaces, usually at the start of each leave year.',
     },
     '/settings/onboarding': {
       title: 'Onboarding checklists',
@@ -1081,7 +1093,8 @@ export const WEB_HELP: HelpContent = {
 
     // Leave, attendance
     'Who is away in the next 30 days': { what: 'Approved leave in your team for the next month.', how: 'Check it before you request leave or plan work.' },
-    'My requests': { what: 'Your leave requests and their status, and who a pending one is waiting for.', how: 'Cancel a request while it is still pending.' },
+    'My requests': { what: 'Your leave requests, where each was sent and every authority’s status.', how: 'Open one for its full trail. Change or cancel a request while it is still pending.' },
+    'My leave types': { what: 'Each leave type you hold: its rules, where applications go, who manages it and who created and allocated it.', how: 'Read the rules before applying. A type you cannot see has not been allocated to you.' },
     'My leave calendar': { what: 'Your month at a glance: approved and pending leave, weekly offs and public holidays.', how: 'Use the arrows to change month. Choose a working day to apply for leave from that day.', where: 'Holidays come from the calendar HR set for your location or legal entity.' },
     'New claim': { what: 'Claim back money you spent for work.', how: 'Pick the category, add the date, amount and a receipt, then submit.' },
     'My shifts': { what: 'Your shifts for the next two weeks.' },
@@ -1194,10 +1207,23 @@ export const WEB_HELP: HelpContent = {
 
     // Settings
     'Balances maintenance': { what: 'Tools to grant, adjust or carry forward leave balances.' },
-    'Leave types': { what: 'Kinds of leave, like casual, sick or earned.' },
+    'Leave types': { what: 'Kinds of leave, like permanent, casual or sick, each with its own policy, eligibility and approval route.', how: 'The Super Workspace creates, changes and deactivates them. Every change is versioned and kept in Leave history.' },
+    'Allocate leave': { what: 'Gives a leave type to people, or makes it available to an HR Workspace to allocate further.', how: 'Pick the type, then everyone or a mix of departments, designations, locations, groups and named people. The preview shows who it reaches first.' },
+    'Current allocations': { what: 'Every allocation in force: what was given, to whom, by whom and when.', how: 'Withdraw one to stop new credits. Days already credited and applications already made stay.' },
+    'Waiting for your approval': { what: 'Leave applications waiting on you, with where each was sent and every authority’s decision.', how: 'Approve, or reject with a remark the employee sees. With two authorities, it is approved only when both approve.' },
+    'Recent applications': { what: 'Leave applications in your scope, newest first, with their status at each authority.' },
+    'Leave types in use': { what: 'Each leave type with the days credited and taken this year and its applications by status.' },
+    'By HR Workspace': { what: 'Each HR Workspace with its people, the leave types it runs and its applications.' },
+    'Upcoming leave': { what: 'Approved leave starting in the next 30 days, with who approved it.' },
+    'By leave type': { what: 'Allocation and use of each leave type in the year: people, credited, taken, pending and decided.' },
+    'By employee': { what: 'Each person’s entitlement, used, pending and balance for every leave type.' },
+    'Leave history': { what: 'Every creation, change, deactivation and allocation of leave types, newest first, with who did it.', where: 'Decisions on applications are in each application’s trail and the audit log.' },
+    'Approval status': { what: 'Each authority the application went to, with its decision, when and the remarks.', how: 'It is approved only when every authority approved it. A rejection by one ends it.' },
+    'Application': { what: 'The dates, days, reason and when it was sent.' },
+    'Rules it was made under': { what: 'The leave type’s policy as it was when the application was sent. Later changes to the type do not change it.' },
     Policies: { what: 'Who gets how much of each leave type, and accrual rules.' },
     'Holiday calendars': { what: 'Public holidays per location.' },
-    'Leave approval chain': { what: 'Who approves leave, in order.' },
+    'Leave approval chain': { what: 'Who approves leave. It is set on each leave type in Leave management.' },
     'Punching policy': { what: 'Rules for where and how people can punch, like geofence and selfie.' },
     'Payroll locks': { what: 'Locks attendance for a month so payroll uses fixed numbers.' },
     'QR kiosks': { what: 'Screens at a site showing a QR code people scan to punch.' },
@@ -1359,6 +1385,12 @@ export const WEB_HELP: HelpContent = {
   },
 
   routes: {
+    '/leave/manage': {
+      sections: {
+    'Your HR Workspaces': { what: 'The HR Workspaces you look after, with their people, leave types and applications.' },
+    'By department': { what: 'Days credited and taken per department in the year.' },
+      },
+    },
     '/tasks': {
       sections: {
         'HR tasks': { what: 'Tasks HR gave you that are still open or waiting for review.', how: 'Open one to work on it. Document tasks are done once HR verifies your upload.' },

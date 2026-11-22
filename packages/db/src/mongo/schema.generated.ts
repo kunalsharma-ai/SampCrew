@@ -1011,15 +1011,24 @@ export const TABLES: Record<string, TableSpec> = {
   approval_steps: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
+      // The HR Workspace whose admins decide a hr_workspace step (null with kind hr_workspace: the company's HR team).
+      approver_hr_workspace_id: {"type": "uuid"},
       approver_membership_id: {"type": "uuid"},
       approver_role_key: {"type": "string"},
+      // Shown to the person who asked: "HR Workspace approval", "Super Workspace approval", "Manager approval".
+      authority: {"enum": ["manager", "hr", "super", "other"], "type": "string"},
       comment: {"type": "string"},
       decided_at: {"type": "timestamp"},
       decided_by_membership_id: {"type": "uuid"},
+      // Set when the step waited too long: the Super Workspace was told and may decide it too.
+      escalated_at: {"type": "timestamp"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
-      kind: {"enum": ["manager", "skip_level_manager", "role"], "required": true, "type": "string"},
+      kind: {"enum": ["manager", "skip_level_manager", "role", "hr_workspace", "super_workspace"], "required": true, "type": "string"},
       request_id: {"required": true, "type": "uuid"},
       seq: {"required": true, "type": "int"},
+      // Steps with the same stage are decided at the same time (any order); the next stage starts when all are approved.
+      // Absent on steps made before parallel stages: their stage is their seq.
+      stage: {"type": "int"},
       status: {"enum": ["waiting", "pending", "approved", "rejected", "skipped", "cancelled"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
     },
@@ -4024,6 +4033,84 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((length(description) <= 2000))",
     ],
   },
+  leave_allocations: {
+    // Who gets a leave type, kept apart from the type itself. target employees: the people the criteria reach (within
+    // the type's eligibility), given by the Super Workspace or by an HR Workspace for its own people. target
+    // hr_workspace: the Super Workspace makes the type available to an HR Workspace (or, hr_workspace_id null, to the
+    // company's HR team), which may then allocate it and reviews its applications. Revoked ones are kept for history.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      by_level: {"enum": ["super", "hr", "system"], "required": true, "type": "string"},
+      by_membership_id: {"type": "uuid"},
+      by_name: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // contracts leaveAllocationCriteria (target employees only).
+      criteria: {"default": {"json": {}}, "required": true, "type": "json"},
+      // Days a year for these people instead of the type's entitlement.
+      entitlement_days: {"scale": 2, "type": "decimal"},
+      // target employees: limited to this HR Workspace's people (an HR Workspace's own allocation, or the Super
+      // Workspace allocating to an HR Workspace's people). target hr_workspace: the HR Workspace it is made available to.
+      hr_workspace_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      leave_type_id: {"required": true, "type": "uuid"},
+      note: {"default": "", "required": true, "type": "string"},
+      revoked_at: {"type": "timestamp"},
+      revoked_by_membership_id: {"type": "uuid"},
+      revoked_by_name: {"type": "string"},
+      revoked_reason: {"type": "string"},
+      target: {"enum": ["employees", "hr_workspace"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "leave_allocations_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "leave_type_id"}, {"col": "hr_workspace_id", "nullEqual": true}], "name": "leave_allocations_one_hr_workspace", "where": [{"col": "target", "op": "eq", "value": "hr_workspace"}, {"col": "revoked_at", "op": "null"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "leave_type_id"], "onDelete": "no_action", "ref": "leave_types", "refCols": ["tenant_id", "id"]},
+      {"cols": ["tenant_id", "hr_workspace_id"], "onDelete": "no_action", "ref": "hr_workspaces", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "leave_type_id"}, {"col": "target"}], "name": "leave_allocations_type"},
+    ],
+    checks: [
+      "CHECK ((length(note) <= 300))",
+    ],
+  },
+  leave_type_versions: {
+    // Every saved state of a leave type (created, edited, deactivated, activated), with who did it, from which level and
+    // what changed. Requests keep the version number they were made under.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      action: {"enum": ["created", "updated", "deactivated", "activated"], "required": true, "type": "string"},
+      by_level: {"enum": ["super", "hr", "system"], "required": true, "type": "string"},
+      by_membership_id: {"type": "uuid"},
+      by_name: {"type": "string"},
+      // { field: { from, to } } for an update.
+      changes: {"default": {"json": {}}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      leave_type_id: {"required": true, "type": "uuid"},
+      note: {"type": "string"},
+      // The whole type as saved (name, code, eligibility, policy, approval ...).
+      snapshot: {"required": true, "type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      version: {"required": true, "type": "int"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "leave_type_versions_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "leave_type_id"}, {"col": "version"}, {"col": "action"}], "name": "leave_type_versions_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "leave_type_id"], "onDelete": "cascade", "ref": "leave_types", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "leave_type_versions_recent"},
+    ],
+    checks: [],
+  },
   leave_ledger: {
     access: "tenant", grants: ["insert", "select"], triggers: ["reject_mutation"],
     columns: {
@@ -4151,23 +4238,37 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       // The employee's local date when the request was made (for same-day leave).
       applied_on: {"type": "date"},
+      // Simultaneous or one after the other, when both authorities review it.
+      approval_order: {"enum": ["simultaneous", "sequential"], "type": "string"},
       approval_request_id: {"type": "uuid"},
+      // Who reviews it: an HR Workspace, the Super Workspace or both. Null on requests made before the rebuild.
+      approval_route: {"enum": ["hr", "super", "both"], "type": "string"},
       cancel_reason: {"type": "string"},
       cancelled_at: {"type": "timestamp"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       days: {"required": true, "scale": 2, "type": "decimal"},
       decided_at: {"type": "timestamp"},
+      // Supporting documents (comm_files ids).
+      document_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
       employee_id: {"required": true, "type": "uuid"},
       end_date: {"required": true, "type": "date"},
       end_half: {"default": "full", "enum": ["full", "first_half"], "required": true, "type": "string"},
+      // The employee's HR Workspace when they applied (null: the central group), for the HR Workspace dashboards.
+      hr_workspace_id: {"type": "uuid"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       leave_type_id: {"required": true, "type": "uuid"},
       // Each change made while it was pending: the earlier dates, type and reason, who changed it and when.
       modifications: {"default": {"json": []}, "required": true, "type": "json"},
+      // The leave type's version and the rules the request was checked and routed by, kept as they were then.
+      policy_snapshot: {"type": "json"},
+      policy_version: {"type": "int"},
       reason: {"type": "string"},
       // A change to approved leave is a new request; approving it cancels the one it replaces.
       replaces_request_id: {"type": "uuid"},
       requested_by_membership_id: {"type": "uuid"},
+      // The HR Workspace that reviews it when HR is on the route (null with reviewer_hr_company: the company's HR team).
+      reviewer_hr_company: {"type": "bool"},
+      reviewer_hr_workspace_id: {"type": "uuid"},
       // Applied on the day it starts, or after (see discipline_policies); true or absent.
       same_day: {"type": "bool"},
       start_date: {"required": true, "type": "date"},
@@ -4188,6 +4289,7 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [
       {"name": "leave_requests_tenant_id_employee_id_daterange_excl", "skip": "gist"},
+      {"cols": [{"col": "tenant_id"}, {"col": "leave_type_id"}, {"col": "status"}], "name": "leave_requests_type"},
       {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "start_date", "desc": true}], "name": "leave_requests_employee"},
     ],
     checks: [
@@ -4205,18 +4307,40 @@ export const TABLES: Record<string, TableSpec> = {
       code: {"required": true, "type": "string"},
       color: {"default": "#4f46e5", "required": true, "type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Its approval rules (contracts leaveApprovalRules): routes HR / Super / both, who chooses, order, escalation.
+      approval: {"default": {"json": {}}, "required": true, "type": "json"},
+      category: {"default": "general", "enum": ["general", "medical", "family", "statutory", "special", "unpaid", "other"], "required": true, "type": "string"},
       // Every calendar day counts, weekly offs and holidays included (maternity leave, for example).
       counts_calendar_days: {"default": false, "required": true, "type": "bool"},
+      // Who created it: the person, their name then, and the level they acted from (always the Super Workspace now).
+      created_by_level: {"enum": ["super", "hr", "system"], "type": "string"},
+      created_by_membership_id: {"type": "uuid"},
+      created_by_name: {"type": "string"},
+      // Why it was deactivated (archived_at is when).
+      deactivated_reason: {"type": "string"},
       description: {"type": "string"},
       // Read from the employee's recorded gender; someone with none recorded is not blocked.
       eligible_gender: {"default": "any", "enum": ["any", "female", "male"], "required": true, "type": "string"},
+      // Who it may ever be given to (contracts leaveEligibility); empty lists do not limit.
+      eligibility: {"default": {"json": {}}, "required": true, "type": "json"},
+      // Applications may start on or after this date.
+      effective_from: {"type": "date"},
+      // Whether the Super Workspace may make it available to HR Workspaces to allocate.
+      hr_allocatable: {"default": true, "required": true, "type": "bool"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       // standard: time off; wfh: counts as present; comp_off: credited by HR; optional_holiday: only on optional holidays.
       kind: {"default": "standard", "enum": ["standard", "wfh", "comp_off", "optional_holiday"], "required": true, "type": "string"},
       name: {"required": true, "type": "string"},
       paid: {"default": true, "required": true, "type": "bool"},
+      // Its policy (contracts leaveTypePolicy): entitlement, accrual, durations, notice, carry forward, documents.
+      policy: {"default": {"json": {}}, "required": true, "type": "json"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_level: {"enum": ["super", "hr", "system"], "type": "string"},
+      updated_by_membership_id: {"type": "uuid"},
+      updated_by_name: {"type": "string"},
+      // Goes up on every change; each version is kept in leave_type_versions and requests record the one they used.
+      version: {"default": 1, "required": true, "type": "int"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "leave_types_pkey", "primary": true},

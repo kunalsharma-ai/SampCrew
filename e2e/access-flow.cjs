@@ -9,7 +9,7 @@
  * 1. The console admin enrols MFA, opens the demo workspace and its Features & permissions page.
  * 2. Modules: Staffing bids is switched off. The recruiter's navigation loses it, and opening it directly shows
  *    "This module is switched off".
- * 3. Permissions: "Configure leave types" (leave:configure) is switched off. HR's navigation loses Leave settings,
+ * 3. Permissions: "Allocate leave" (leave:allocate) is switched off. HR's navigation loses Leave management,
  *    and Settings > Access levels shows the permission as switched off by SAMPLEDGE.
  * 4. People: the recruiter alone loses Recruitment. Their navigation has no Jobs and the page says it is not
  *    available to them; HR still has Jobs.
@@ -98,7 +98,7 @@ async function toggle(page, testId, want) {
     expect(links.includes('/staffing/bids') && links.includes('/recruitment'), `recruiter should start with bids and jobs: ${links}`);
     current = hr;
     await signIn(hr, 'hr.admin@demo.crew.local');
-    expect((await navLinks(hr)).includes('/settings/leave'), 'HR should start with Leave settings');
+    expect((await navLinks(hr)).includes('/leave/manage'), 'HR should start with Leave management');
 
     // 2. Switch Staffing bids off for the workspace.
     current = admin;
@@ -117,17 +117,17 @@ async function toggle(page, testId, want) {
     // 3. Switch a permission off for every role.
     current = admin;
     await admin.goto(`${tenantUrl}/access?tab=permissions`);
-    await toggle(admin, 'switch-perm-leave:configure', false);
+    await toggle(admin, 'switch-perm-leave:allocate', false);
     await shot(admin, 'access-permissions');
-    ok('leave:configure switched off in the console');
+    ok('leave:allocate switched off in the console');
     current = hr;
     await hr.goto(WEB + '/');
-    expect(!(await navLinks(hr)).includes('/settings/leave'), 'Leave settings should be hidden for HR');
+    expect(!(await navLinks(hr)).includes('/leave/manage'), 'Leave management should be hidden for HR');
     await hr.goto(WEB + '/settings/roles');
     await hr.getByRole('button', { name: /HR Workspace \d+$/ }).click();
     await hr.getByText('Switched off by SAMPLEDGE').first().waitFor();
     await shot(hr, 'access-web-roles');
-    ok('HR loses Leave settings and Access levels shows the permission as switched off by SAMPLEDGE');
+    ok('HR loses Leave management and Access levels shows the permission as switched off by SAMPLEDGE');
 
     // 4. Take Recruitment away from the recruiter only.
     current = admin;
@@ -175,7 +175,7 @@ async function toggle(page, testId, want) {
     expect(links.includes('/staffing/bids') && links.includes('/recruitment'), `recruiter should have bids and jobs again: ${links}`);
     current = hr;
     await hr.goto(WEB + '/');
-    expect((await navLinks(hr)).includes('/settings/leave'), 'HR should have Leave settings again');
+    expect((await navLinks(hr)).includes('/leave/manage'), 'HR should have Leave management again');
     ok('everything switched back; the recruiter and HR have their modules again');
 
     expect(!errs.length, `browser errors:\n${errs.join('\n')}`);
