@@ -108,8 +108,8 @@ export const WEB_HELP: HelpContent = {
     },
     '/communication/chat': {
       title: 'Chat',
-      what: 'Your conversations: one to one, groups, departments and your conversation with the HR team. New messages arrive as they are sent.',
-      how: 'Choose a conversation or start a new one. Search finds conversations by name; press Enter to search messages too.',
+      what: 'Your conversations: one to one, groups, departments and with the HR team. Each shows who the person is: name, level and workspace.',
+      how: 'Filter by Unread, Direct, Groups or HR. Search finds people by name, level or workspace; press Enter to search messages too.',
       where: 'Everyone can chat. Messages to HR are read and answered by anyone in the HR team; your manager cannot see them.',
     },
     '/communication/chat/[id]': {
@@ -117,6 +117,18 @@ export const WEB_HELP: HelpContent = {
       what: 'One conversation. Your messages show Sent, Delivered (their app has it) and Read (they opened it).',
       how: 'Write and press Enter to send (Shift+Enter for a new line). Attach up to 5 files. Mute a busy conversation, or leave a group.',
       where: 'Group owners can rename the group and change its members.',
+    },
+    '/support': {
+      title: 'SampCrew Support',
+      what: 'Your company\'s private chat with the SampCrew Console Admin team: questions, technical issues, account and billing.',
+      how: 'Start a conversation with a subject and topic, then chat. Replies arrive live and as a notification; resolve it when you are done.',
+      where: 'Only the Super Workspace can see these conversations. HR Workspace and Employee Workspace cannot.',
+    },
+    '/support/[id]': {
+      title: 'Support conversation',
+      what: 'One conversation with the SampCrew Console Admin team. Each message shows who sent it, their level and workspace.',
+      how: 'Write and press Enter to send (Shift+Enter for a new line). Your messages show Sent, Delivered and Read.',
+      where: 'Any Super Workspace person in your company sees the same conversation; a new message reopens a resolved one.',
     },
     '/communication/emails': {
       title: 'Emails',

@@ -509,8 +509,8 @@ export const PLATFORM_ROLES = ['super_admin', 'support', 'billing_ops', 'viewer'
 export type PlatformRole = (typeof PLATFORM_ROLES)[number];
 
 export const PLATFORM_ROLE_CAPABILITIES: Record<PlatformRole, readonly string[]> = {
-  super_admin: ['tenants:read', 'tenants:manage', 'access:manage', 'integrations:manage', 'billing:read', 'billing:manage', 'plans:manage', 'statutory:manage', 'support:request', 'admins:manage', 'audit:read', 'health:read'],
-  support: ['tenants:read', 'support:request', 'health:read', 'audit:read'],
+  super_admin: ['tenants:read', 'tenants:manage', 'access:manage', 'integrations:manage', 'billing:read', 'billing:manage', 'plans:manage', 'statutory:manage', 'support:request', 'support:chat', 'admins:manage', 'audit:read', 'health:read'],
+  support: ['tenants:read', 'support:request', 'support:chat', 'health:read', 'audit:read'],
   billing_ops: ['tenants:read', 'billing:read', 'billing:manage', 'plans:manage'],
   viewer: ['tenants:read', 'billing:read', 'health:read'],
 };

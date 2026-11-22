@@ -40,6 +40,8 @@ export const NAV: NavGroup[] = [
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
       // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
       { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
+      // The Super Workspace's private chat with the SampCrew Console Admin team (every plan; not a Communication part).
+      { href: '/support', label: 'SampCrew Support', icon: 'headset', superOnly: true },
     ],
   },
   {
