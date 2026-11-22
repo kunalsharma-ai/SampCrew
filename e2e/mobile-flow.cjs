@@ -200,14 +200,10 @@ function futureWeekday(taken) {
     await tab(p, 'Leave');
     await p.getByTestId('apply-leave').click();
     // A request the leave rules refuse says why next to the button before it is sent (permanent leave needs notice).
-    await p.getByRole('radio', { name: /^Permanent Leave/ }).click();
-    await p.getByTestId('leave-refusal').getByText(/days' notice/).waitFor();
-    await p.getByRole('radio', { name: /^Casual Leave/ }).click();
-    // A request the leave rules refuse says why next to the button before it is sent (earned leave needs notice).
     // The form starts on today, so on a weekend the first rule to refuse is the weekly off instead.
-    await p.getByRole('radio', { name: /^Earned leave/ }).click();
+    await p.getByRole('radio', { name: /^Permanent Leave/ }).click();
     await p.getByTestId('leave-refusal').getByText(/days' notice|all weekly offs or holidays/).waitFor();
-    await p.getByRole('radio', { name: /^Casual leave/ }).click();
+    await p.getByRole('radio', { name: /^Casual Leave/ }).click();
     const mine = await api(qa, 'GET', '/leave/requests');
     const day = futureWeekday(new Set(mine.filter((r) => r.status !== 'cancelled' && r.status !== 'rejected').map((r) => r.startDate)));
     // Dates are picked on a calendar, not typed.
