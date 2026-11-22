@@ -124,6 +124,9 @@ import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
 import { ChatService } from './modules/communication/chat.service';
 import { PlatformSupportChatController, SupportChatController } from './modules/support-chat/support-chat.controller';
 import { SupportChatService } from './modules/support-chat/support-chat.service';
+import { HelpController, PlatformHelpController } from './modules/help/help.controller';
+import { HelpContentService } from './modules/help/help-content.service';
+import { HelpQueriesService } from './modules/help/help-queries.service';
 import { CommFilesController, CommunicationController } from './modules/communication/communication.controller';
 import { CommunicationService } from './modules/communication/communication.service';
 import { CommEmailService } from './modules/communication/email.service';
@@ -247,6 +250,8 @@ export const CONTROLLERS = [
   CommunicationController,
   SupportChatController,
   PlatformSupportChatController,
+  HelpController,
+  PlatformHelpController,
   CommFilesController,
   MobileController,
   AiController,
@@ -364,6 +369,8 @@ export const CONTROLLERS = [
     HelpdeskService,
     ChatService,
     SupportChatService,
+    HelpContentService,
+    HelpQueriesService,
     CommEmailService,
     CommFilesService,
     CommunicationService,

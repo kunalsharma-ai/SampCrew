@@ -195,6 +195,8 @@ Platform staff authenticate in a separate realm (`platform_admins` table, separa
 | `statutory:manage` | ✓ | · | · | · |
 | `support:request` | ✓ | ✓ | · | · |
 | `support:chat` | ✓ | ✓ | · | · |
+| `help:manage` | ✓ | · | · | · |
+| `help:answer` | ✓ | ✓ | · | · |
 | `admins:manage` | ✓ | · | · | · |
 | `audit:read` | ✓ | ✓ | · | · |
 | `health:read` | ✓ | ✓ | · | ✓ |

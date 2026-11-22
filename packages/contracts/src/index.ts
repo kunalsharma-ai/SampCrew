@@ -83,3 +83,4 @@ export * from './assets';
 export * from './custom-fields';
 export * from './hr-admin';
 export * from './candidate-crm';
+export * from './help';
