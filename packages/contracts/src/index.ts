@@ -5,6 +5,7 @@ export * from './feature-parts';
 export * from './feature-management';
 export * from './access';
 export * from './hierarchy';
+export * from './workspace-limits';
 export * from './schemas/common';
 export * from './phone';
 export * from './schemas/auth';

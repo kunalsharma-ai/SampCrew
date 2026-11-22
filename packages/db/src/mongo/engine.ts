@@ -24,7 +24,7 @@ export function tableSpec(name: string, tables: Record<string, TableSpec> = TABL
  */
 export class ConstraintError extends Error {
   constructor(
-    readonly code: '23505' | '23503' | '23502' | '23514' | '22P02' | 'P0001',
+    readonly code: '23505' | '23503' | '23502' | '23514' | '22P02' | 'P0001' | 'P0402',
     message: string,
     readonly constraint?: string,
     readonly table?: string,

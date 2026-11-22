@@ -70,6 +70,8 @@ function useResult(setNote: (n: string) => void) {
 export function BillingView(props: {
   plans: Plan[]; info: SubscriptionInfo; invoices: Invoice[]; requests: PlanRequest[]; usage: UsageMetric[]; addons: Addon[]; profile: BillingProfile | null;
   features: string[]; canManage: boolean; orderId: string | null; checkoutCancelled: boolean; upgrade: string | null;
+  /** Opened from a workspace limit (HR Workspaces or Employee Workspaces): plans and add-ons with more are marked. */
+  limit?: string | null;
 }) {
   const withMfa = useMfaRetry();
   const { plans, info, invoices, requests, usage, addons, profile, features, canManage } = props;
@@ -89,6 +91,9 @@ export function BillingView(props: {
   const overdue = invoices.filter((i) => i.status === 'open' && i.overdue);
   const upgradeTo = props.upgrade && !features.includes(props.upgrade) ? props.upgrade : null;
   const sellsUpgrade = upgradeTo ? addons.find((a) => a.kind === 'module' && a.featureKey === upgradeTo && !a.includedInPlan) : undefined;
+  const limitFocus = props.limit ? usage.find((m) => m.key === props.limit) ?? null : null;
+  const roomier = (p: Plan) => !!limitFocus && limitFocus.limit !== null && limitFocus.limit !== -1 && (p.limits[limitFocus.key] === -1 || (p.limits[limitFocus.key] ?? 0) > limitFocus.limit);
+  const sellsMore = limitFocus ? addons.find((a) => a.kind === 'limit' && a.featureKey === limitFocus.key) : undefined;
 
   const run = (fn: () => Promise<void>) => { setError(null); start(fn); };
 
@@ -110,6 +115,16 @@ export function BillingView(props: {
           {plans.some((p) => p.features.includes(upgradeTo) && p.key !== sub?.planKey) ? `Plans with it are marked below.` : ''}
           {sellsUpgrade ? ` You can also add it to your current plan as an add-on.` : ''}
           {!canManage && ' A billing admin can upgrade.'}
+        </Alert>
+      )}
+      {limitFocus && (
+        <Alert tone={limitFocus.limit !== null && limitFocus.limit !== -1 && limitFocus.used >= limitFocus.limit ? 'warning' : 'info'} title={`${limitFocus.name}: ${limitFocus.used} / ${limitFocus.limit === null || limitFocus.limit === -1 ? 'Unlimited' : limitFocus.limit}`}>
+          <span data-testid="billing-limit-focus">
+            {plans.some((p) => p.key !== sub?.planKey && roomier(p)) ? 'Plans with more are marked below. ' : 'No other plan gives more; ask SAMPLEDGE for a higher limit. '}
+            {sellsMore ? `You can also buy ${sellsMore.name} on your current plan. ` : ''}
+            Your existing workspaces stay as they are; an upgrade only adds room.
+            {!canManage && ' A billing admin can upgrade.'}
+          </span>
         </Alert>
       )}
       {!info.paymentProvider.connected && <Alert tone="info">{info.paymentProvider.note}</Alert>}
@@ -192,10 +207,10 @@ export function BillingView(props: {
             const price = p.prices.find((x) => x.currency === (sub?.currency ?? 'USD')) ?? p.prices[0];
             const isCurrent = p.key === sub?.planKey;
             const canTry = canManage && !isCurrent && !p.quoteOnly && p.offered && p.trialDays > 0 && sub && !sub.trialUsed && sub.status === 'active';
-            const hasUpgrade = upgradeTo && p.features.includes(upgradeTo) && !isCurrent;
+            const hasUpgrade = (upgradeTo && p.features.includes(upgradeTo) && !isCurrent) || (!isCurrent && roomier(p));
             return (
               <Card key={p.key} className={cn('flex flex-col', isCurrent && 'ring-2 ring-accent', hasUpgrade && 'ring-2 ring-success')} data-testid={`billing-plan-${p.key}`} data-current={isCurrent ? 'true' : undefined}>
-                <CardHeader title={p.name} description={p.tagline} action={isCurrent ? <Badge tone="accent">Current</Badge> : hasUpgrade ? <Badge tone="success">Includes it</Badge> : undefined} />
+                <CardHeader title={p.name} description={p.tagline} action={isCurrent ? <Badge tone="accent">Current</Badge> : hasUpgrade ? <Badge tone="success">{limitFocus && !upgradeTo ? 'More room' : 'Includes it'}</Badge> : undefined} />
                 <CardBody className="flex flex-1 flex-col gap-4">
                   <div>
                     {p.quoteOnly || !price ? <div className="text-xl font-semibold">Custom quote</div> : (
@@ -209,6 +224,7 @@ export function BillingView(props: {
                   </div>
                   <ul className="grid gap-1.5 text-[0.8125rem]">
                     <li className="text-fg-muted">{capacity(p.limits.max_employees, 'person', 'people')}, {capacity(p.limits.max_legal_entities, 'legal entity', 'legal entities')}</li>
+                    <li className="text-fg-muted" data-testid={`billing-plan-${p.key}-workspaces`}>{capacity(p.limits.max_hr_workspaces, 'HR Workspace', 'HR Workspaces')}, {capacity(p.limits.max_employee_workspaces, 'Employee Workspace', 'Employee Workspaces')}</li>
                     {p.features.slice(0, 8).map((f) => <li key={f} className="flex gap-2"><Check className="mt-0.5 size-3.5 shrink-0 text-success" />{featureName(f)}</li>)}
                     {p.features.length > 8 && <li className="text-xs text-fg-subtle">and {p.features.length - 8} more</li>}
                   </ul>
@@ -238,7 +254,7 @@ export function BillingView(props: {
         </div>
       </div>
 
-      <AddonsCard addons={addons} canManage={canManage} trialing={sub?.status === 'trialing'} highlight={upgradeTo} onDone={done} onNote={setNote} onError={setError} />
+      <AddonsCard addons={addons} canManage={canManage} trialing={sub?.status === 'trialing'} highlight={upgradeTo ?? limitFocus?.key ?? null} onDone={done} onNote={setNote} onError={setError} />
 
       <Card>
         <CardHeader title="Compare plans" description="Every module and limit in each plan. Your workspace can use only what your plan includes." />
