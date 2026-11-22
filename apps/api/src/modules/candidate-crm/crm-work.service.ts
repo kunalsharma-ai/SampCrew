@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
-  CALL_OUTCOMES, CRM_DOCUMENT_MAX_BYTES, FOLLOW_UP_TYPES, CRM_DOCUMENT_TYPES, crmLabel, type CrmActivityInput, type CrmActivityQuery, type CrmFollowUpQuery, type FollowUpInput,
+  ACTIVITY_TYPES, CALL_OUTCOMES, CRM_DOCUMENT_MAX_BYTES, FOLLOW_UP_TYPES, CRM_DOCUMENT_TYPES, crmLabel, type CrmActivityInput, type CrmActivityQuery, type CrmFollowUpQuery, type FollowUpInput,
   type followUpUpdate, INTERVIEW_OUTCOMES, type crmDocumentMeta, type crmNoteInput, type ReferenceInput, type referencePatch,
 } from '@crew/contracts';
 import type { z } from 'zod';
@@ -130,7 +130,7 @@ export class CrmWorkService {
       const a = await this.access.actor(tx);
       const visible = await tx.collection('candidates').distinct<string>('id', { $and: [this.access.filter(a), { anonymized_at: null }] });
       const filter: Doc = { candidate_id: q.candidateId ? { $in: visible.includes(q.candidateId) ? [q.candidateId] : [] } : { $in: visible } };
-      if (q.include === 'manual') filter.automatic = false;
+      if (q.include === 'manual') filter.kind = q.type ?? { $in: ACTIVITY_TYPES.map((t) => t[0]) };
       if (q.type) filter.kind = q.type;
       if (q.outcome) filter.outcome = q.outcome;
       if (q.by) filter.created_by_membership_id = q.by === 'me' ? a.membershipId : q.by;

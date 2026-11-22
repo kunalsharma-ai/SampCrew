@@ -82,6 +82,16 @@ export class CrmFieldsService {
     });
   }
 
+  /** The fields the candidate form shows for a record owned by `owner` (the person's own HR Workspace by default). */
+  async formFields(owner: string | null | undefined) {
+    return this.db.tenant(async (tx) => {
+      const a = await this.access.actor(tx);
+      const o = this.access.ownerFor(a, owner);
+      const names = await this.spaceNames(tx);
+      return (await this.definitionsFor(tx, o, 'form')).map((d) => this.view(d, names, a));
+    });
+  }
+
   private async spaceNames(tx: TenantTx) {
     return new Map((await tx.collection('hr_workspaces').find({}, { projection: { name: 1 } })).map((w) => [w.id as string, w.name as string]));
   }

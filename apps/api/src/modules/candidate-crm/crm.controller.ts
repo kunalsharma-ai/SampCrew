@@ -302,6 +302,12 @@ export class CandidateCrmController {
     return this.fields.list();
   }
 
+  @Get('fields/form')
+  @Doc({ summary: 'The custom fields the candidate form shows for an HR Workspace’s records', query: uploadQuery })
+  formFields(@Query(new ZodPipe(uploadQuery)) q: z.infer<typeof uploadQuery>) {
+    return this.fields.formFields(q.hrWorkspaceId);
+  }
+
   @Post('fields')
   @Doc({ summary: 'Create a custom field (Super Workspace, or an HR Workspace given the power)', body: crmFieldInput })
   createField(@Body(new ZodPipe(crmFieldInput)) body: CrmFieldInput) {

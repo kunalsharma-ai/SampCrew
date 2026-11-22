@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import {
-  atsSourceOf, CRM_CENTRAL, CRM_EXPORT_COLUMNS, crmLabel, type CrmBulkInput, type CrmCandidateInput, type CrmCandidatePatch, type CrmExportInput, type CrmListQuery,
+  ACTIVITY_TYPES, atsSourceOf, CALL_OUTCOMES, INTERVIEW_OUTCOMES, CRM_CENTRAL, CRM_EXPORT_COLUMNS, crmLabel, type CrmBulkInput, type CrmCandidateInput, type CrmCandidatePatch, type CrmExportInput, type CrmListQuery,
   type CrmSettingsInput, CRM_PHOTO_MAX_BYTES, CRM_PHOTO_TYPES, crmListQuery, DEFAULT_CRM_STAGES, DOCUMENT_KINDS, experienceText, FOLLOW_UP_TYPES, noticeText, phoneKey,
   REFERENCE_TYPES, REMARK_CATEGORIES,
 } from '@crew/contracts';
@@ -751,7 +751,12 @@ export class CrmService {
       }
       const q = input.scope === 'all' ? {} : input.scope === 'selected' ? { ids: input.ids.join(',') } : input.filters;
       if (input.scope === 'selected' && !input.ids.length) throw Errors.badRequest('nothing_selected', 'Select the candidates to export');
-      const parsed = crmListQuery.parse({ ...q, limit: 1, offset: 0 });
+      const cf: Record<string, unknown> = {};
+      const rest: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(q)) if (k.startsWith('cf.')) cf[k.slice(3)] = v; else rest[k] = v;
+      const res = crmListQuery.safeParse({ ...rest, ...(Object.keys(cf).length ? { cf } : {}), limit: 1, offset: 0 });
+      if (!res.success) throw Errors.validation(res.error.issues.map((i) => ({ path: `filters.${i.path.join('.')}`, message: i.message })));
+      const parsed = res.data;
       if (input.scope === 'selected') parsed.ids = input.ids;
       const filter = await this.filterFor(tx, a, parsed);
       const docs = await tx.collection('candidates').find(filter, { sort: { created_at: 1, _id: 1 }, limit: 20_001 });
@@ -914,6 +919,11 @@ export function describeDetail(x: Doc, stageLabel: Map<string, string>): string 
     case 'shared': return `Shared with ${(d.hrWorkspaceIds as string[] | undefined)?.length ?? 0} HR Workspace${(d.hrWorkspaceIds as string[] | undefined)?.length === 1 ? '' : 's'}`;
     case 'archived': return 'Archived';
     case 'restored': return 'Restored from the archive';
-    default: return x.subject ?? '';
+    default: {
+      // Calls, emails, messages and meetings people logged.
+      const kind = crmLabel(ACTIVITY_TYPES, x.kind) || 'Activity';
+      const outcome = x.outcome ? crmLabel(x.kind === 'interview' ? INTERVIEW_OUTCOMES : CALL_OUTCOMES, x.outcome) : '';
+      return [kind, outcome, x.subject, x.remarks ? String(x.remarks).slice(0, 160) : null].filter(Boolean).join(' · ');
+    }
   }
 }

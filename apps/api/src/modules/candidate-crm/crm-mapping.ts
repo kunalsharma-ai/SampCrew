@@ -77,7 +77,7 @@ export function moneyCell(v: unknown, currency?: string | null) {
   if (v === null || v === undefined || v === '') return '';
   const n = Number(v);
   if (!Number.isFinite(n)) return String(v);
-  if ((currency ?? 'INR') === 'INR' && n >= 100000) return `₹${(n / 100000).toFixed(n % 100000 ? 2 : 0).replace(/\.?0+$/, '')} L`;
+  if ((currency ?? 'INR') === 'INR' && n >= 100000) return `₹${(n / 100000).toFixed(2).replace(/\.0+$|(\.\d)0$/, '$1')} L`;
   return `${currency ?? ''} ${n.toLocaleString('en-IN')}`.trim();
 }
 

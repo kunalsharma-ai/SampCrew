@@ -242,7 +242,17 @@ export class CrmImportService {
         if (!u.success || !u.data) bad(k, 'Not a valid web address'); else links[k] = u.data;
       }
       if (Object.keys(links).length) d.links = links;
-      if (v('source')) { const s = choose(sources, v('source')); if (!s) bad('source', `Not one of the candidate sources (${sources.slice(0, 4).map((x) => x.label).join(', ')} ...)`); else d.source = s; }
+      if (v('source')) {
+        // Job portals and referrals go by many names in recruiters' sheets; anything else is kept as "Other" with the text as the detail.
+        const raw = v('source');
+        const alias = /naukri|indeed|monster|shine|foundit|timesjobs|glassdoor|apna|instahyre|hirist|iimjobs|portal/i.test(raw) ? 'job_portal'
+          : /^referral$|employee ref/i.test(raw) ? 'employee_referral' : /consult/i.test(raw) ? 'consultant' : /agency|vendor/i.test(raw) ? 'agency' : null;
+        const s = choose(sources, raw) ?? (alias && sources.some((x) => x.key === alias) ? alias : null);
+        if (s) d.source = s;
+        else if (sources.some((x) => x.key === 'other')) { d.source = 'other'; d.sourceDetail ??= raw.slice(0, 120); }
+        else bad('source', `Not one of the candidate sources (${sources.slice(0, 4).map((x) => x.label).join(', ')} ...)`);
+        if (alias && s === alias) d.sourceDetail ??= raw.slice(0, 120);
+      }
       else if (plan.defaults.source) { d.source = plan.defaults.source; d.fromDefaults.push('source'); }
       if (v('stage')) { const s = choose(stages, v('stage')); if (!s) bad('stage', 'Not one of the pipeline stages'); else d.stage = s; }
       else if (plan.defaults.stage) { d.stage = plan.defaults.stage; d.fromDefaults.push('stage'); }

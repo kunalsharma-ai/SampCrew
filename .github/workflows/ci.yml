@@ -109,6 +109,7 @@ jobs:
           pnpm e2e:neon
           pnpm e2e:recruitment
           pnpm e2e:ats
+          pnpm e2e:candidate-crm
           pnpm e2e:iq
           pnpm e2e:notifications
       - name: Payroll outside India end-to-end flow
