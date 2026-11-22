@@ -46,7 +46,7 @@ export function Shell({ me, nav, live, children }: { me: Admin; nav: NavItem[]; 
       <ul className="flex flex-1 flex-col gap-0.5">
         {nav.map((item) => {
           const Icon = ICONS[item.icon] ?? Gauge;
-          const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+          const active = item.href === '/' ? pathname === '/' : pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <li key={item.href}>
               <Link href={item.href} aria-current={active ? 'page' : undefined} className={cn('crew-nav-link flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13.5px]', active ? 'bg-accent-subtle font-medium text-accent' : 'text-fg-muted hover:bg-bg-subtle hover:text-fg')}>

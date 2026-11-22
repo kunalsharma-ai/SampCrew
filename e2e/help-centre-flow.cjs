@@ -111,6 +111,11 @@ async function run(b, adminEmail, adminPassword, stamp) {
     await emp.waitForURL(/\/help\/articles\/how-to-apply-leave$/);
     await emp.getByTestId('help-steps').waitFor();
     const step = emp.getByTestId('help-step').first();
+    // Progress is saved per person: on a rerun the step may already be done, so start from not done.
+    if ((await step.getAttribute('data-done')) === 'true') {
+      await step.getByTestId('help-step-toggle').click();
+      await emp.getByTestId('help-progress').getByText(/^\s*0 of \d+ done/).waitFor();
+    }
     await step.getByTestId('help-step-toggle').click();
     await emp.getByTestId('help-progress').getByText(/1 of \d+ done/).waitFor();
     await emp.getByTestId('help-helpful-yes').click();
@@ -207,7 +212,8 @@ async function run(b, adminEmail, adminPassword, stamp) {
     await emp.getByTestId('query-rate-send').click();
     await emp.getByText('Thanks for your rating.').waitFor();
     await emp.getByTestId('query-reopen').click();
-    await emp.locator('[data-testid=query-detail][data-status=open]').waitFor();
+    // Reopened, and back with the person it is assigned to.
+    await emp.locator('[data-testid=query-detail][data-status=in_progress]').waitFor();
     await emp.getByTestId('query-close').click();
     await emp.locator('[data-testid=query-detail][data-status=closed]').waitFor();
     ok('HR resolves it; the employee rates it, reopens it and closes it');

@@ -606,6 +606,20 @@ export const HELP_LIBRARY_ARTICLES: LibArticle[] = [
     ['Resolve', 'Set Resolved once it is answered. The person can reopen it for a while, or rate the answer.'],
     ['Escalate if needed', 'If it needs the level above, press Escalate with a reason. It moves to the Super Workspace or SampCrew.'],
   ], { audiences: HR, feature: 'core_hr.help_inbox', keywords: ['answer query', 'inbox', 'support queue', 'tickets'], href: '/help/inbox' }),
+  tutorial('getting-started-employee', 'my-first-week', 'Your first week in SampCrew', 'A hands-on tour for the Employee Workspace: your profile, attendance, leave and payslips, one page at a time.', [
+    ['Check your profile', 'Open My profile and check your contact, bank and ID details. Changes HR must approve show as pending.', '/profile'],
+    ['Clock in', 'On Home or Attendance press Clock in when you start work, and Clock out when you finish.', '/attendance'],
+    ['Look at your leave balances', 'Leave shows what you have left for each leave type and your requests.', '/leave'],
+    ['Open your payslips', 'Payslips lists each month once payroll is finalised. Open one to download the PDF.', '/payslips'],
+    ['Turn on notifications', 'Use the bell to see what needs you; install the phone app to get them as push notifications.', '/notifications'],
+  ], { keywords: ['first week', 'tour', 'new joiner', 'onboarding', 'walkthrough'], href: '/', related: ['how-to-punch-in', 'how-to-apply-leave'] }),
+  tutorial('help-support', 'raise-and-follow-query', 'Raise a query and follow it to the end', 'Practise the whole Raise a Query flow: write it, follow replies, then close or reopen it.', [
+    ['Search first', 'Type your question in the Help & Support search; many answers are already there.', '/help'],
+    ['Raise a Query', 'Choose a category (or Other), write a subject and description, and attach a screenshot if it helps.', '/help/queries/new'],
+    ['Note your ticket ID', 'The confirmation shows a ticket ID such as HQ-00012. Quote it if you talk to HR about it.'],
+    ['Follow the replies', 'My queries shows every query with its status. A reply marks it Awaiting User Response: answer to move it on.', '/help/queries'],
+    ['Close, reopen or rate', 'Close it when sorted, reopen a resolved one within the allowed days, and rate the answer.'],
+  ], { feature: 'core_hr.help_queries', keywords: ['raise query', 'ticket', 'follow query', 'practice'], href: '/help/queries', related: ['query-statuses', 'reopen-query'] }),
   faq('help-support', 'tutorial-progress', 'How do tutorials work?', 'Tutorials are step-by-step walkthroughs of important workflows. Each step has a Go to page button that opens the right page, and a tick to mark it done. Your progress is saved, so you can come back later and carry on.', { keywords: ['tutorial', 'walkthrough', 'interactive'] }),
 
   // ============================================================================================ Troubleshooting

@@ -20,9 +20,9 @@ const KIND_ICON: Record<HelpArticleKind, typeof BookOpen> = { faq: CircleHelp, g
 function Hero({ home, children }: { home: HelpHome; children?: ReactNode }) {
   const { base, queriesBase, inboxBase, Link } = useHelpCentre();
   const quick: { label: string; href: string; icon: typeof BookOpen; hint: string; testid: string; badge?: number }[] = [
-    { label: 'Guides', href: `${base}/search?kind=guide`, icon: BookOpen, hint: `${home.counts.guide ?? 0} step-by-step guides`, testid: 'quick-guides' },
+    { label: 'Guides', href: `${base}/search?kind=guide`, icon: BookOpen, hint: home.counts.guide ? `${home.counts.guide} step-by-step guides` : 'Step by step', testid: 'quick-guides' },
     { label: 'FAQs', href: `${base}/search?kind=faq`, icon: CircleHelp, hint: `${home.counts.faq ?? 0} answers`, testid: 'quick-faqs' },
-    { label: 'Tutorials', href: `${base}/search?kind=tutorial`, icon: GraduationCap, hint: `${home.counts.tutorial ?? 0} interactive tutorials`, testid: 'quick-tutorials' },
+    { label: 'Tutorials', href: `${base}/search?kind=tutorial`, icon: GraduationCap, hint: home.counts.tutorial ? `${home.counts.tutorial} interactive tutorials` : 'Learn by doing', testid: 'quick-tutorials' },
   ];
   if (home.queries.raise) quick.push({ label: 'Raise a Query', href: `${queriesBase}/new`, icon: MessageSquarePlus, hint: home.queries.open ? `${home.queries.open} open ${home.queries.open === 1 ? 'query' : 'queries'}` : 'Ask our team anything', testid: 'quick-raise' });
   if (home.queries.inbox) quick.push({ label: 'Queries inbox', href: inboxBase, icon: Inbox, hint: home.queries.waiting ? `${home.queries.waiting} waiting for an answer` : 'Answer queries', testid: 'quick-inbox', badge: home.queries.waiting });
