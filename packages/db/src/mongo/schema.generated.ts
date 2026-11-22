@@ -785,8 +785,12 @@ export const TABLES: Record<string, TableSpec> = {
       edited_at: {"type": "timestamp"},
       file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Who sent it, as it was at sending: level (super, hr, employee) and workspace name (company or HR Workspace).
+      // Older messages have neither; they show the sender's current level.
+      sender_level: {"enum": ["super", "hr", "employee"], "type": "string"},
       // Null for a note SampCrew adds ("Asha added Ravi").
       sender_membership_id: {"type": "uuid"},
+      sender_workspace: {"type": "string"},
       system: {"default": false, "required": true, "type": "bool"},
       tenant_id: {"required": true, "type": "uuid"},
     },
@@ -4151,8 +4155,10 @@ export const TABLES: Record<string, TableSpec> = {
     // Short-lived events pushed to open browsers over /notifications/stream (new notices, chat messages, read
     // receipts). Written in the transaction that caused them, so only committed changes are pushed; every API server
     // watches this collection and forwards events to its own connected members. Rows older than an hour are deleted.
+    // `console` events go to the Console Admins connected to /platform/support/stream instead (support chat).
     access: "tenant", grants: ["insert", "select", "delete"],
     columns: {
+      console: {"type": "bool"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       data: {"default": {"json": {}}, "required": true, "type": "json"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
@@ -6104,6 +6110,109 @@ export const TABLES: Record<string, TableSpec> = {
     checks: [
       "CHECK (((duration_minutes >= 15) AND (duration_minutes <= 480)))",
     ],
+  },
+  support_conversations: {
+    // SampCrew Support chat: a private conversation between one Super Workspace (this tenant) and the Console Admin
+    // team. Only the tenant's Super Workspace level and Console Admins with support:chat reach it. The Console team
+    // reads as a team (console_read_at); Super Workspace members each have a read position in support_reads.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      category: {"default": "question", "enum": ["question", "technical", "account", "billing", "feature", "other"], "required": true, "type": "string"},
+      // The Console team's read and received positions (any admin opening or listing it).
+      console_delivered_at: {"type": "timestamp"},
+      console_read_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // The Console Admin who answered last ("handled by").
+      handled_by_admin_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      last_console_message_at: {"type": "timestamp"},
+      last_message: {"type": "json"},
+      last_message_at: {"type": "timestamp"},
+      last_workspace_message_at: {"type": "timestamp"},
+      // Per tenant, from 1, for "Support #12".
+      number: {"required": true, "type": "int"},
+      resolved_at: {"type": "timestamp"},
+      started_by_admin_id: {"type": "uuid"},
+      started_by_membership_id: {"type": "uuid"},
+      status: {"default": "open", "enum": ["open", "resolved"], "required": true, "type": "string"},
+      subject: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // The workspace side's received and read positions (any Super Workspace member), for the Console's ticks.
+      workspace_delivered_at: {"type": "timestamp"},
+      workspace_read_at: {"type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "support_conversations_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "number"}], "name": "support_conversations_number"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["started_by_membership_id"], "onDelete": "set_null", "ref": "memberships", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "last_message_at", "desc": true}], "name": "support_conversations_by_tenant"},
+      {"cols": [{"col": "last_message_at", "desc": true}], "name": "support_conversations_by_activity"},
+    ],
+    checks: [
+      "CHECK ((number >= 1))",
+    ],
+  },
+  support_messages: {
+    // Messages of a support conversation. The sender is a Super Workspace member or a Console Admin; their name,
+    // level and workspace are kept as they were when sent, so the history stays accountable.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      body: {"required": true, "type": "string"},
+      client_id: {"type": "string"},
+      conversation_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      sender_admin_id: {"type": "uuid"},
+      sender_kind: {"enum": ["member", "console", "system"], "required": true, "type": "string"},
+      sender_level: {"enum": ["console", "super", "hr", "employee"], "required": true, "type": "string"},
+      sender_membership_id: {"type": "uuid"},
+      sender_name: {"required": true, "type": "string"},
+      sender_workspace: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "support_messages_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["conversation_id"], "onDelete": "cascade", "ref": "support_conversations", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "conversation_id"}, {"col": "created_at", "desc": true}], "name": "support_messages_by_conversation"},
+      {"cols": [{"col": "client_id"}], "name": "support_messages_by_client_id", "where": [{"col": "client_id", "op": "notnull"}]},
+    ],
+    checks: [],
+  },
+  support_reads: {
+    // How far each Super Workspace member has received and read a support conversation (their unread count).
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      conversation_id: {"required": true, "type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      last_delivered_at: {"type": "timestamp"},
+      last_read_at: {"type": "timestamp"},
+      membership_id: {"required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "support_reads_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "conversation_id"}, {"col": "membership_id"}], "name": "support_reads_one_per_person"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["conversation_id"], "onDelete": "cascade", "ref": "support_conversations", "refCols": ["id"]},
+      {"cols": ["membership_id"], "onDelete": "cascade", "ref": "memberships", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}], "name": "support_reads_by_person"},
+    ],
+    checks: [],
   },
   survey_invitations: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],

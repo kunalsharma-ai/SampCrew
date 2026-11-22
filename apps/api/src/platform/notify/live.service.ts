@@ -14,6 +14,12 @@ interface Listener {
   push: (m: LiveMessage) => void;
 }
 
+/** A Console Admin connected to the support inbox. Gets the events written with `console: true`, from every workspace. */
+interface ConsoleListener {
+  adminId: string;
+  push: (m: LiveMessage & { tenantId: string }) => void;
+}
+
 const KEEP_MS = 60 * 60_000;
 const POLL_MS = 1_500;
 
@@ -26,6 +32,7 @@ const POLL_MS = 1_500;
 export class LiveService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LiveService.name);
   private readonly listeners = new Set<Listener>();
+  private readonly consoleListeners = new Set<ConsoleListener>();
   private stream: ChangeStream | null = null;
   private poll: NodeJS.Timeout | null = null;
   private sweep: NodeJS.Timeout | null = null;
@@ -50,7 +57,19 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
 
   /** How many browsers are connected to this server (health and tests). */
   get connections(): number {
-    return this.listeners.size;
+    return this.listeners.size + this.consoleListeners.size;
+  }
+
+  /** A stream of the Console Admin team's events (support chat), ending when the subscriber unsubscribes. */
+  subscribeConsole(adminId: string): Observable<LiveMessage & { tenantId: string }> {
+    return new Observable<LiveMessage & { tenantId: string }>((sub) => {
+      const l: ConsoleListener = { adminId, push: (m) => sub.next(m) };
+      this.consoleListeners.add(l);
+      void this.ensureWatching();
+      return () => {
+        this.consoleListeners.delete(l);
+      };
+    });
   }
 
   /** A stream of the events for one member, ending when the subscriber unsubscribes. */
@@ -117,6 +136,10 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
 
   private dispatch(doc: Document | undefined) {
     if (!doc) return;
+    if (doc.console === true) {
+      for (const l of this.consoleListeners) l.push({ type: doc.type, data: doc.data ?? {}, tenantId: doc.tenant_id });
+      return;
+    }
     const ids = new Set<string>(doc.membership_ids ?? []);
     for (const l of this.listeners) {
       if (l.tenantId === doc.tenant_id && ids.has(l.membershipId)) l.push({ type: doc.type, data: doc.data ?? {} });

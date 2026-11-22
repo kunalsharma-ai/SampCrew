@@ -1,5 +1,5 @@
 'use server';
-import type { AudienceInput, ChatMessageView, CommFile, EmailDraftInput } from '@crew/contracts';
+import type { AudienceInput, ChatMessageView, CommFile, EmailDraftInput, SenderIdentity } from '@crew/contracts';
 import { revalidatePath } from 'next/cache';
 import { act, api, apiForm } from '@/lib/api';
 import type { Person } from './types';
@@ -43,7 +43,7 @@ export async function muteAction(conversationId: string, muted: boolean) {
 }
 
 export async function searchMessagesAction(q: string) {
-  return act(() => api<{ items: { messageId: string; conversationId: string; conversationTitle: string; senderName: string | null; body: string; createdAt: string }[] }>(`/communication/search?q=${encodeURIComponent(q)}`));
+  return act(() => api<{ items: { messageId: string; conversationId: string; conversationTitle: string; senderName: string | null; sender: SenderIdentity | null; body: string; createdAt: string }[] }>(`/communication/search?q=${encodeURIComponent(q)}`));
 }
 
 export async function peopleAction(q: string) {

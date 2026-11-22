@@ -18,11 +18,13 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
     load<ConversationList>('/communication/conversations'),
     isHr ? loadOptional<Department[]>('/org/departments') : Promise.resolve(null),
   ]);
+  // The Super Workspace's SampCrew Support conversations show as a pinned entry in the chat list.
+  const support = me.levels?.super ? await loadOptional<{ unread: number; allowed: boolean }>('/support/unread') : null;
   return (
     <>
-      <PageHeader title="Communication" description="Chat one to one, in groups and departments, and with the HR team. Messages arrive as they are sent." />
-      <CommTabs active="chat" isHr={isHr} unread={list.unread} />
-      <ChatApp list={list.items} detail={detail} isHr={isHr} departments={(departments ?? []).map((d) => ({ id: d.id, name: d.name }))} startNew={false} me={me.membership.id} />
+      <PageHeader title="Communication" description="Chat one to one, in groups and departments, and with the HR team. Every message shows who sent it, their level and workspace." />
+      <CommTabs active="chat" isHr={isHr} unread={list.unread} superWs={!!me.levels?.super} supportUnread={support?.unread} />
+      <ChatApp list={list.items} detail={detail} isHr={isHr} departments={(departments ?? []).map((d) => ({ id: d.id, name: d.name }))} startNew={false} me={me.membership.id} support={support?.allowed ? { unread: support.unread } : null} />
     </>
   );
 }

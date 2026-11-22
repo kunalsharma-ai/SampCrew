@@ -113,6 +113,8 @@ import { AnnouncementsService } from './modules/helpdesk/announcements.service';
 import { AnnouncementsController, HelpdeskController } from './modules/helpdesk/helpdesk.controller';
 import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
 import { ChatService } from './modules/communication/chat.service';
+import { PlatformSupportChatController, SupportChatController } from './modules/support-chat/support-chat.controller';
+import { SupportChatService } from './modules/support-chat/support-chat.service';
 import { CommFilesController, CommunicationController } from './modules/communication/communication.controller';
 import { CommunicationService } from './modules/communication/communication.service';
 import { CommEmailService } from './modules/communication/email.service';
@@ -232,6 +234,8 @@ export const CONTROLLERS = [
   HelpdeskController,
   AnnouncementsController,
   CommunicationController,
+  SupportChatController,
+  PlatformSupportChatController,
   CommFilesController,
   MobileController,
   AiController,
@@ -341,6 +345,7 @@ export const CONTROLLERS = [
     EngagementService,
     HelpdeskService,
     ChatService,
+    SupportChatService,
     CommEmailService,
     CommFilesService,
     CommunicationService,

@@ -46,6 +46,7 @@ const FOUNDATION: Record<string, string> = {
   SetupController: 'First-run setup wizard',
   TenancyController: 'Workspace settings',
   SupportAccessController: 'Approving SAMPLEDGE support access',
+  SupportChatController: 'The Super Workspace contacting SampCrew Support (Console Admin team) is part of every plan',
   AiController: 'AI governance (status, settings, usage, history) shared by the Copilot and IQ modules; the Copilot actions are gated',
 };
 

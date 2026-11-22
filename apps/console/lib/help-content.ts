@@ -19,6 +19,18 @@ export const CONSOLE_HELP: HelpContent = {
       how: 'Search for a customer and open their workspace, or create a new workspace for a customer.',
       where: 'For Sampledge account managers and support. Opening a workspace shows account details only.',
     },
+    '/support': {
+      title: 'Support inbox',
+      what: 'Private conversations from each Super Workspace (Contact SampCrew Support). Only the Console Admin team and that company\'s Super Workspace can read them.',
+      how: 'Search by workspace, subject or message text, and filter by Unread, Waiting for reply, Replied or Resolved. Open one to reply.',
+      where: 'For Console Admins with support access (Super admin and Support roles). New messages arrive live and show in the menu badge.',
+    },
+    '/support/[id]': {
+      title: 'Support conversation',
+      what: 'One Super Workspace\'s conversation with the Console Admin team. Every message shows who sent it, their level and workspace.',
+      how: 'Reply as the team (your name is recorded), mark it unread for the team, or resolve it. A new message from the workspace reopens it.',
+      where: 'Your replies show Sent, Delivered and Read. The Super Workspace is notified of each reply.',
+    },
     '/tenants/[id]': {
       title: 'Workspace',
       what: 'One customer’s account: subscription, roles in use, support access and subscription history.',

@@ -237,6 +237,14 @@ jobs:
           node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
           pnpm e2e:password-reset
+      - name: SampCrew Support chat (Super Workspace and Console Admin team) and sender identity in chat
+        # On a fresh demo workspace: the flow adds its own Support role Console Admin and enrols its MFA.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login http-get://localhost:3001/login
+          pnpm e2e:support-chat
       - name: Plans decide features (Console plan builder, Web Portal gating, Enterprise request)
         # Enrols console admin and owner MFA, so it needs a fresh database.
         run: |

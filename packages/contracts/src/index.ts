@@ -76,6 +76,7 @@ export * from './rewards';
 export * from './notifications';
 export * from './approval-categories';
 export * from './communication';
+export * from './support-chat';
 export * from './bgv';
 export * from './assets';
 export * from './custom-fields';
