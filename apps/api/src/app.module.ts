@@ -34,6 +34,13 @@ import { FeatureLevelsService } from './modules/hierarchy/feature-levels.service
 import { EmployeesService } from './modules/employees/employees.service';
 import { HealthController } from './modules/health/health.controller';
 import { HrJobsService } from './modules/hr-jobs/hr-jobs.service';
+import { CandidateCrmController } from './modules/candidate-crm/crm.controller';
+import { CrmAccessService } from './modules/candidate-crm/crm-access.service';
+import { CrmFieldsService } from './modules/candidate-crm/crm-fields.service';
+import { CrmImportService } from './modules/candidate-crm/crm-import.service';
+import { CrmJobsService } from './modules/candidate-crm/crm-jobs.service';
+import { CrmWorkService } from './modules/candidate-crm/crm-work.service';
+import { CrmService } from './modules/candidate-crm/crm.service';
 import { LateComingController, LeavePenaltiesController } from './modules/discipline/discipline.controller';
 import { DisciplineService } from './modules/discipline/discipline.service';
 import { LeaveController } from './modules/leave/leave.controller';
@@ -221,6 +228,7 @@ export const CONTROLLERS = [
   DeviceApiController,
   LateComingController,
   RecruitmentController,
+  CandidateCrmController,
   CareersPublicController,
   ResumeFilesController,
   PayrollController,
@@ -331,6 +339,12 @@ export const CONTROLLERS = [
     DevicesService,
     RequisitionsService,
     CandidatesService,
+    CrmAccessService,
+    CrmFieldsService,
+    CrmService,
+    CrmWorkService,
+    CrmImportService,
+    CrmJobsService,
     InterviewsService,
     OffersService,
     CareersService,
