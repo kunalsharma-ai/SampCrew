@@ -192,6 +192,12 @@ export interface OrganizationHome {
 
 // Console --------------------------------------------------------------------------------------------------------------
 
+/** The Console bell: current system alerts, and whether this admin has seen each. */
+export interface ConsoleAlerts {
+  items: (HomeAction & { seen: boolean })[];
+  unseen: number;
+}
+
 export interface PlatformHome {
   generatedAt: string;
   overview: {

@@ -161,20 +161,27 @@ export function inQuietHours(q: QuietHours, minutesNow: number): boolean {
 }
 
 /**
- * The menu item that shows each category's unread count (the sidebar dot). Approvals, Communication, Announcements and
- * tasks keep their own counts (requests waiting, unread messages ...), so they are not listed here.
+ * The menu tab that marks each category's unread notices (Leave ●1, Attendance ●5 ...). The first tab the person
+ * has in their menu wins, so an employee's Payroll notices mark Payslips and a payroll admin's mark Payroll runs. A
+ * category with no tab in someone's menu is still counted on Notifications.
  */
-export const NOTIFICATION_NAV: Partial<Record<NotificationCategory, string>> = {
-  leave: '/leave',
-  attendance: '/attendance',
-  learning: '/learning',
-  appraisal: '/appraisal',
-  payroll: '/payslips',
-  documents: '/tasks',
-  assets: '/assets/mine',
-  recruitment: '/recruitment',
-  profile: '/profile',
-  verification: '/verification',
+export const NOTIFICATION_NAV: Record<NotificationCategory, string[]> = {
+  approvals: ['/approvals'],
+  leave: ['/leave'],
+  attendance: ['/attendance', '/attendance/team'],
+  communication: ['/communication', '/helpdesk/queue', '/helpdesk'],
+  announcements: ['/announcements'],
+  hr_tasks: ['/tasks'],
+  manager_tasks: ['/tasks'],
+  appraisal: ['/appraisal', '/reviews', '/goals'],
+  learning: ['/learning'],
+  profile: ['/profile/updates', '/employees'],
+  documents: ['/tasks'],
+  verification: ['/verification'],
+  assets: ['/assets/mine', '/assets'],
+  recruitment: ['/recruitment', '/recruitment/candidates'],
+  payroll: ['/payslips', '/payroll', '/expenses'],
+  system: ['/settings/security', '/settings/workspace'],
 };
 
 export const notificationListQuery = z.object({

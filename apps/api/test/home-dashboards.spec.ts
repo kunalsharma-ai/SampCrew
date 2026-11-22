@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
+import { NotificationService } from '../src/platform/notify/notification.service';
 import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 const today = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
@@ -172,6 +173,22 @@ describe('Role-based home dashboards', () => {
     expect((await api(app, owner).get('/platform/home')).status).toBeGreaterThanOrEqual(401);
   });
 
+  it('rings the Console bell for new system alerts until the admin has seen them', async () => {
+    const first = await api(app, consoleToken).get('/platform/alerts');
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    expect(first.body.unseen).toBeGreaterThan(0);
+    expect(first.body.items.every((a: { seen: boolean }) => !a.seen)).toBe(true);
+    const seen = await api(app, consoleToken).post('/platform/alerts/seen');
+    expect(seen.status).toBeLessThan(300);
+    const after = await api(app, consoleToken).get('/platform/alerts');
+    expect(after.body.unseen).toBe(0);
+    // A new workspace changes the count, so the alert is new again.
+    await createTenant(pool, { plan: 'business' });
+    const again = await api(app, consoleToken).get('/platform/alerts');
+    expect(again.body.items.find((a: { key: string; seen: boolean }) => a.key === 'new-workspaces')?.seen).toBe(false);
+    expect((await api(app, owner).get('/platform/alerts')).status).toBeGreaterThanOrEqual(401);
+  });
+
   it('keeps desktop alerts and quiet hours in the notification preferences', async () => {
     const before = await api(app, staffToken).get('/notifications/preferences');
     expect(before.body).toMatchObject({ desktop: false, quiet: { enabled: false, from: '20:00', to: '08:00' } });
@@ -182,5 +199,21 @@ describe('Role-based home dashboards', () => {
     expect((await api(app, staffToken).put('/notifications/preferences').send({ ...after.body, quiet: { enabled: true, from: '25:00', to: '07:00' } })).status).toBe(422);
     void staffMembership;
     void today;
+  });
+
+  it('holds phone pushes during quiet hours, except urgent ones', async () => {
+    const prefs = (await api(app, staffToken).get('/notifications/preferences')).body;
+    // Quiet all day except the last minute, whatever the time zone.
+    expect((await api(app, staffToken).put('/notifications/preferences').send({ ...prefs, quiet: { enabled: true, from: '00:00', to: '23:59' } })).status).toBe(200);
+    const device = await pool.tenant(t.id, (tx) => tx.collection('mobile_devices').insert({ membership_id: staffMembership, installation_id: 'install-quiet-0001', platform: 'android', app_version: '1.0.0', push_token: 'ExponentPushToken[quietquietquiet1]' }));
+    const svc = app.get(NotificationService);
+    await pool.tenant(t.id, (tx) => svc.notify(tx, { membershipIds: [staffMembership], kind: 'leave.approved', title: 'Quiet notice', priority: 'normal' }));
+    await pool.tenant(t.id, (tx) => svc.notify(tx, { membershipIds: [staffMembership], kind: 'system.alert', title: 'Urgent notice', priority: 'urgent' }));
+    const rows = await pool.platform((tx) => tx.collection('push_messages').find({ mobile_device_id: device.id }));
+    const now = Date.now();
+    const held = rows.filter((r) => (r.next_attempt_at as Date).getTime() > now + 60_000);
+    expect(rows).toHaveLength(2);
+    expect(held).toHaveLength(1);
+    await api(app, staffToken).put('/notifications/preferences').send(prefs);
   });
 });

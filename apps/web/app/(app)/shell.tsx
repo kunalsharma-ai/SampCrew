@@ -143,16 +143,6 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
 }) {
   const pathname = usePathname();
   const live = useOptionalLive();
-  // Unread notices per module (Leave ●1, Attendance ●5 ...) and the total on Notifications, kept live by the stream.
-  const unreadByHref = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const [cat, n] of Object.entries(live?.byCategory ?? {})) {
-      const href = NOTIFICATION_NAV[cat as keyof typeof NOTIFICATION_NAV];
-      if (href && n) out[href] = (out[href] ?? 0) + n;
-    }
-    if (live?.unread) out['/notifications'] = live.unread;
-    return out;
-  }, [live?.byCategory, live?.unread]);
   const [themesOpen, setThemesOpen] = useState(false);
   const [iqOpen, setIqOpen] = useState(false);
   const hasIq = me.features.includes('crew_iq');
@@ -166,6 +156,19 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   const collapsed = appearance.sidebar === 'collapsed';
   const allItems = useMemo(() => nav.flatMap((g) => g.items), [nav]);
   const allHrefs = allItems.map((i) => i.href);
+  // Unread notices per module (Leave ●1, Attendance ●5 ...) on the first menu tab this person has for the category,
+  // and the total on Notifications, kept live by the stream.
+  const hrefKey = allHrefs.join('|');
+  const unreadByHref = useMemo(() => {
+    const out: Record<string, number> = {};
+    const mine = new Set(hrefKey.split('|'));
+    for (const [cat, n] of Object.entries(live?.byCategory ?? {})) {
+      const href = NOTIFICATION_NAV[cat as keyof typeof NOTIFICATION_NAV]?.find((h) => mine.has(h));
+      if (href && n) out[href] = (out[href] ?? 0) + n;
+    }
+    if (live?.unread) out['/notifications'] = live.unread;
+    return out;
+  }, [live?.byCategory, live?.unread, hrefKey]);
 
   useEffect(() => setMobileOpen(false), [pathname]);
   // Each level has its own design system (colours, shape, motion): see data-level in @crew/ui styles.css.

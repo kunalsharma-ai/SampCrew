@@ -7,13 +7,18 @@ import { useEffect, useState, useTransition } from 'react';
 import { CONSOLE_HELP } from '@/lib/help-content';
 import type { Admin } from '@/lib/types';
 import { logoutAction } from '../auth-actions';
+import type { ConsoleAlerts } from '@crew/contracts';
+import { ConsoleBell, useConsoleAlerts } from '@/components/console-alerts';
 
 export interface NavItem { href: string; label: string; icon: string }
 const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound };
 const ROLE_LABEL: Record<Admin['role'], string> = { super_admin: 'Super admin', support: 'Support', billing_ops: 'Billing operations', viewer: 'Viewer' };
 
-export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; children: React.ReactNode }) {
+export function Shell({ me, nav, alerts: initialAlerts, children }: { me: Admin; nav: NavItem[]; alerts: ConsoleAlerts | null; children: React.ReactNode }) {
   const pathname = usePathname();
+  const { alerts, byTab, refresh, markSeen } = useConsoleAlerts(initialAlerts);
+  // Opening a page refreshes the alerts, so a fixed problem leaves the bell at once.
+  useEffect(() => { void refresh(); }, [pathname, refresh]);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const [dark, setDark] = useState(false);
@@ -40,6 +45,7 @@ export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; childr
     <nav aria-label="Console" className="flex h-full flex-col gap-6 px-3 py-4">
       <div className="flex items-center justify-between px-2">
         <CrewLogo subtitle="Console" />
+        {initialAlerts && <ConsoleBell alerts={alerts} markSeen={markSeen} />}
       </div>
       <div className="mx-2 rounded-md bg-bg-subtle px-2.5 py-1.5 text-[11px] font-medium text-fg-muted">SAMPLEDGE internal · Super Admin</div>
       <ul className="flex flex-1 flex-col gap-0.5">
@@ -50,7 +56,9 @@ export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; childr
             <li key={item.href}>
               <Link href={item.href} aria-current={active ? 'page' : undefined} className={cn('crew-nav-link flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13.5px]', active ? 'bg-accent-subtle font-medium text-accent' : 'text-fg-muted hover:bg-bg-subtle hover:text-fg')}>
                 <Icon className="size-4" aria-hidden />
-                {item.label}
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                {byTab[item.href] ? <span data-testid={`console-nav-alert-${item.href.slice(1) || 'home'}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-danger tabular" aria-label={`${byTab[item.href]} new alert${byTab[item.href] === 1 ? '' : 's'}`}><span aria-hidden className="size-1.5 rounded-full bg-danger" />{byTab[item.href]}</span> : null}
+                {item.href === '/' && alerts?.unseen ? <span data-testid="console-nav-alert-home" className="inline-flex items-center gap-1 text-[11px] font-semibold text-danger tabular" aria-label={`${alerts.unseen} new alerts`}><span aria-hidden className="size-1.5 rounded-full bg-danger" />{alerts.unseen}</span> : null}
               </Link>
             </li>
           );

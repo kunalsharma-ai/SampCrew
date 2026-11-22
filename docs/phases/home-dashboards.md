@@ -5,8 +5,8 @@ Workspace, HR Workspace and Employee Workspace, a centralized notification cente
 desktop settings, and notices inside the modules. Everything reads real data from MongoDB, and every figure is decided
 by the API from the signed-in person's grants, never from the URL.
 
-Migration: `0080_learning_notifications` moves earlier course notices from the Appraisal category to the new Learning
-category.
+Migrations: `0080_learning_notifications` moves earlier course notices from the Appraisal category to the new Learning
+category; `0081_console_alerts_seen` gives each Console admin a list of the system alerts they have already seen.
 
 ## API
 
@@ -16,6 +16,7 @@ category.
 | `GET /home/workforce?date=&departmentId=&locationId=&hrWorkspaceId=` | HR Workspace admins, managers with team scope, Super Workspace | today's workforce (present, working now, not in yet, absent, late, on leave, missing punch, from home, left early), the HR action center, leave, employee overview, learning, communication. Scope is the person's own: an HR Workspace admin asking for another HR Workspace or the central group gets 404, an employee gets 403 |
 | `GET /home/workforce/trend?days=7\|14\|30` | same | present / absent / on-leave share per day from stored attendance days |
 | `GET /home/organization` | Super Workspace only | organization overview, health per HR Workspace (target 85 %), alerts, learning per HR Workspace, communication and recent HR activity |
+| `GET /platform/alerts`, `POST /platform/alerts/seen` | Console Admin (`tenants:read`) | the system alerts with a `seen` flag for the bell, and marking them all seen |
 | `GET /platform/home` | Console Admin | customers, workspaces at each level, active users, new workspaces, suspended, system alerts (backups, migrations, audit chain, outbox, scanner, integrations, plan requests, support access), administrative activity. Counts only: no employee is named |
 
 `GET /attendance/team` also takes `filter=late|early_leave|working_now|not_in_yet|wfh`, so each Home card opens the
@@ -42,6 +43,15 @@ same list it counts. Notification preferences gain `desktop` and `quiet` (quiet 
   for background tabs (after the browser's permission); quiet hours hold back sound, pop-ups and desktop notices
   (urgent ones still come through); Attendance, Leave and Learning show their unread notices at the top, with mark
   read. Existing sound settings, pop-ups, the bell and the Notification Center are unchanged.
+- **Every category has a menu tab**: `NOTIFICATION_NAV` in `packages/contracts/src/notifications.ts` lists, per
+  category, the tabs that can mark it (an employee's payroll notices mark Payslips, a payroll admin's mark Payroll
+  runs); the first one in the person's menu wins, and the total stays on Notifications.
+- **Console bell**: the Console has a bell next to the logo with the system alerts, "New" tags, a sound toggle and
+  Mark all seen. Menu tabs (System health, Integrations, Plans, Customers) and Overview carry the unseen count. A new
+  warning or critical alert plays a tone and shows a desktop notice when the tab is in the background. Checked every
+  minute and on each page change.
+- **Phone pushes and quiet hours**: a push for someone in quiet hours (company time zone) waits until quiet hours end;
+  urgent notices still go at once.
 - **Live**: Home refreshes on notifications, approvals, leave and announcement events, and every minute on the HR and
   Super views.
 - **States**: each section has its own skeleton, empty and error state (Try again), so one slow or failing source
@@ -56,4 +66,6 @@ experience and console flows.
 ## Not yet
 - Phone Home screens: the redesign work builds them, calling the `/home/*` routes above.
 - Learning scores and progress percentages show once the learning work stores them; until then progress is 0 or 100.
+- The phone app has its notifications screen and Home tile, but no sound in the foreground and no menu markers yet;
+  phone pushes need Mobile push (Expo) switched on in Console > Integrations.
 - Desktop notifications appear only while a SampCrew tab is open (no service worker push yet).

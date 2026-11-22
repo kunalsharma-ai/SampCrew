@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import { load } from '@/lib/api';
+import type { ConsoleAlerts } from '@crew/contracts';
+import { api, load } from '@/lib/api';
 import { hasCap } from '@/lib/caps';
 import type { Admin } from '@/lib/types';
 import { Shell, type NavItem } from './shell';
@@ -27,5 +28,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   // A temporary password set by another admin is replaced before anything else (the API refuses other actions too).
   if (me.mustChangePassword) redirect('/change-password');
   const nav = NAV.filter((n) => !n.cap || hasCap(me, n.cap)).map(({ cap: _c, ...n }) => n);
-  return <Shell me={me} nav={nav}>{children}</Shell>;
+  // System alerts for the bell and the menu markers (admins who can see workspaces).
+  const alerts = hasCap(me, 'tenants:read') ? await api<ConsoleAlerts>('/platform/alerts').catch(() => null) : null;
+  return <Shell me={me} nav={nav} alerts={alerts}>{children}</Shell>;
 }

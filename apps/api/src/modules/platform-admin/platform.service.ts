@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { mongo } from '@crew/db';
 import type { z } from 'zod';
-import { ATTENTION_RANK, type AttentionLevel, type HomeAction, type PlatformHome, type platformCreateTenantRequest } from '@crew/contracts';
+import { ATTENTION_RANK, type AttentionLevel, type ConsoleAlerts, type HomeAction, type PlatformHome, type platformCreateTenantRequest } from '@crew/contracts';
 import { actorName, humanAction } from '../home/home.service';
 import { AuditService } from '../../platform/audit/audit.service';
 import { hashPassword, randomToken, sha256 } from '../../platform/auth/crypto';
@@ -442,6 +442,30 @@ export class PlatformService {
   }
 
   /**
+   * The Console bell: the current system alerts, each marked new unless this admin has seen it with the same count.
+   * Alerts are worked out live from health and pending requests, so one disappears once its cause is fixed.
+   */
+  async alerts(): Promise<ConsoleAlerts> {
+    const [{ alerts }, seen] = await Promise.all([this.home(), this.seenAlerts()]);
+    const items = alerts.map((a) => ({ ...a, seen: seen.has(alertId(a)) }));
+    return { items, unseen: items.filter((a) => !a.seen).length };
+  }
+
+  /** Marks every current alert seen for this admin (resolved ones drop off the list, so it never grows). */
+  async markAlertsSeen(): Promise<ConsoleAlerts> {
+    const { alerts } = await this.home();
+    const adminId = requestContext.platformActor().adminId;
+    await this.db.platform((tx) => tx.collection('platform_admins').updateOne({ id: adminId }, { $set: { seen_alerts: alerts.map(alertId), updated_at: new Date() } }));
+    return { items: alerts.map((a) => ({ ...a, seen: true })), unseen: 0 };
+  }
+
+  private async seenAlerts(): Promise<Set<string>> {
+    const adminId = requestContext.platformActor().adminId;
+    const a = await this.db.platform((tx) => tx.collection('platform_admins').findOne({ id: adminId }, { projection: { seen_alerts: 1 } }));
+    return new Set((a?.seen_alerts as string[] | undefined) ?? []);
+  }
+
+  /**
    * The Console's Home: customers, workspaces at every level and users (counts only, never employee records), workspaces
    * that need attention, system alerts worked out from health and pending requests, and recent administrative events.
    */
@@ -784,3 +808,6 @@ function prettyBytes(n: number): string {
   }
   return `${Math.round(n)} ${units[i]}`;
 }
+
+/** An alert as seen: its key and count, so the same alert with a new count shows as new again. */
+const alertId = (a: { key: string; count: number | null }) => `${a.key}:${a.count ?? ''}`;

@@ -52503,6 +52503,66 @@
         }
       }
     },
+    "/api/v1/platform/alerts": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Console bell: current system alerts, each marked new unless you have seen it",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_alerts",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/alerts/seen": {
+      "post": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Mark every current system alert seen in your Console bell",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_alertsSeen",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/home": {
       "get": {
         "tags": [

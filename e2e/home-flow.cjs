@@ -124,7 +124,9 @@ async function waitPhase(p, want) {
     await must(ownerT, 'POST', '/learning/assignments', { courseId: course.id, employeeIds: [neha.id], dueOn: '2099-12-31' });
     await e.getByTestId('nav-unread-learning').waitFor({ timeout: 15000 });
     await e.getByTestId('nav-unread-notifications').waitFor();
-    ok('the new course marks Learning and Notifications unread in the menu, live');
+    await e.getByTestId('recent-notifications').getByText(new RegExp(`Home flow safety ${run}`)).first().waitFor({ timeout: 15000 });
+    await e.getByTestId('notification-count').waitFor();
+    ok('the new course shows live on the Learning tab, the Home notifications card and the bell');
     await e.goto(BASE + '/learning');
     const notices = e.getByTestId('module-notices-learning');
     await notices.getByText(new RegExp(`Home flow safety ${run}`)).first().waitFor();
@@ -163,9 +165,26 @@ async function waitPhase(p, want) {
     expect((await api(supT, 'GET', '/home/organization')).status === 403, 'a manager cannot open the organization view');
     ok('an Employee Workspace manager sees their own day; the workforce and organization views are refused');
 
+    // Every level sees a notice in three places: its menu tab, the Home notifications card and the bell.
+    const everywhere = async (p, title) => {
+      await p.getByTestId('nav-unread-learning').waitFor({ timeout: 15000 });
+      await p.getByTestId('recent-notifications').getByText(title).first().waitFor();
+      await p.getByTestId('notification-count').waitFor();
+    };
+    const assignTo = async (email, title) => {
+      const t = await apiLogin(email);
+      const emp = (await must(t, 'GET', '/me')).employee;
+      const c = await must(ownerT, 'POST', '/learning/courses', { title, format: 'online', selfEnrol: false });
+      await must(ownerT, 'POST', '/learning/assignments', { courseId: c.id, employeeIds: [emp.id], dueOn: '2099-12-31' });
+    };
+    await assignTo('hr.admin@demo.crew.local', `HR course ${run}`);
+    await assignTo('owner@demo.crew.local', `Owner course ${run}`);
+
     // HR Workspace (company HR): My workforce, cards open the filtered team list.
     const hr = await signIn(b, 'hr.admin@demo.crew.local');
     await hr.getByTestId('workforce-home').waitFor();
+    await everywhere(hr, new RegExp(`HR course ${run}`));
+    ok('HR Workspace sees the new notice on the Learning tab, the Home notifications card and the bell');
     expect((await hr.getByTestId('home-level').innerText()).includes('HR Workspace'), 'the header names the HR Workspace level');
     await hr.getByTestId('wf-present').click();
     await hr.waitForURL((u) => u.pathname === '/attendance/team' && u.searchParams.get('status') === 'present');
@@ -182,6 +201,8 @@ async function waitPhase(p, want) {
     await owner.getByTestId('organization-home').waitFor();
     expect((await owner.getByTestId('home-level').innerText()).includes('Super Workspace'), 'the header names the Super Workspace level');
     await owner.getByTestId('org-alerts').waitFor();
+    await everywhere(owner, new RegExp(`Owner course ${run}`));
+    ok('Super Workspace sees the new notice on the Learning tab, the Home notifications card and the bell');
     await owner.getByTestId(`ws-${ws.id}`).click();
     await owner.waitForURL((u) => u.searchParams.get('hrWorkspace') === ws.id);
     await owner.getByTestId('workforce-home').waitFor();

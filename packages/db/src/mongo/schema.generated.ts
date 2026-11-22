@@ -4725,6 +4725,8 @@ export const TABLES: Record<string, TableSpec> = {
       must_change_password: {"default": false, "required": true, "type": "bool"},
       password_hash: {"required": true, "type": "string"},
       role: {"enum": ["super_admin", "support", "billing_ops", "viewer"], "required": true, "type": "string"},
+      // Console bell: the system alerts (key and count) this admin has already seen, so only new ones are marked.
+      seen_alerts: {"default": {"json": []}, "required": true, "type": "string[]"},
       status: {"default": "active", "enum": ["active", "disabled"], "required": true, "type": "string"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
     },
