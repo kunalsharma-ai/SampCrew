@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { FEATURES, isCoreFeature, LIMIT_KEYS, type PlanCreate, type PlanEntitlementsUpdate, type PlanUpdate } from '@crew/contracts';
+import { FEATURES, isCoreFeature, LIMIT_KEYS, UNLIMITED, WORKSPACE_LIMIT_KEY, WORKSPACE_LIMIT_KINDS, type PlanCreate, type PlanEntitlementsUpdate, type PlanUpdate, type WorkspaceLimitKind } from '@crew/contracts';
+import { countWorkspaces } from '../workspace-limits/workspace-limits.service';
 import { AccessControlsService } from './access-controls.service';
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
@@ -83,8 +84,9 @@ export class PlansService {
       } else {
         await planFeatures.insertMany([
           ...CORE_KEYS.map((key) => ({ plan_id: created.id, feature_key: key })),
-          // A new plan with no source starts at zero for every limit, so nothing is unlimited by accident.
-          ...LIMIT_KEYS.map((key) => ({ plan_id: created.id, feature_key: key, limit_value: 0 })),
+          // A new plan with no source starts at zero for every limit, so nothing is unlimited by accident (one Employee
+          // Workspace, so the company's Super Workspace can sign in).
+          ...LIMIT_KEYS.map((key) => ({ plan_id: created.id, feature_key: key, limit_value: key === 'max_employee_workspaces' ? 1 : 0 })),
         ]);
       }
       await this.audit.record(tx, { tenantId: null, action: 'platform.plan_created', resourceType: 'plan', resourceId: input.key, changes: { ...input } });
@@ -118,6 +120,8 @@ export class PlansService {
       const unknown = input.features.filter((f) => !BOOLEAN_KEYS.has(f));
       if (unknown.length) throw Errors.badRequest('unknown_feature', `Unknown module: ${unknown.join(', ')}`);
       const next = new Set([...input.features, ...CORE_KEYS]);
+      // Each company's Super Workspace people sign in with an Employee Workspace, so a plan must allow at least one.
+      if (input.limits.max_employee_workspaces === 0) throw Errors.validation([{ path: 'limits.max_employee_workspaces', message: 'Allow at least 1 Employee Workspace (the Super Workspace signs in with one), or -1 for unlimited' }]);
       const planFeatures = tx.collection<{ feature_key: string; limit_value: number | null }>('plan_features');
       const kinds = new Map((await tx.collection<{ key: string; kind: string }>('features').find()).map((f) => [f.key, f.kind]));
       const before = (await planFeatures.find({ plan_id: plan.id })).map((r) => ({ feature_key: r.feature_key, limit_value: r.limit_value ?? null, kind: kinds.get(r.feature_key) }));
@@ -149,11 +153,21 @@ export class PlansService {
           await this.audit.record(tx, { tenantId: t.tenant_id, action: 'subscription.plan_contents_changed', resourceType: 'subscription', resourceId: t.tenant_id, changes: { plan: key, added, removed, limits: limitChanges } });
         }
       }
-      return { ok: true, added, removed, workspaces: affected, tenantIds: tenantsOn };
+      // A lowered workspace limit removes nothing: companies already above it keep what they have and cannot add more.
+      const overLimit: { tenant: string; kind: WorkspaceLimitKind; used: number; limit: number }[] = [];
+      for (const kind of WORKSPACE_LIMIT_KINDS) {
+        const change = limitChanges[WORKSPACE_LIMIT_KEY[kind]];
+        if (!change || change.to === UNLIMITED) continue;
+        for (const tenantId of tenantsOn) {
+          const used = await countWorkspaces(tx, tenantId, kind);
+          if (used > change.to) overLimit.push({ tenant: ((await tx.collection('tenants').findOne({ id: tenantId }, { projection: { name: 1 } }))?.name as string) ?? tenantId, kind, used, limit: change.to });
+        }
+      }
+      return { ok: true, added, removed, workspaces: affected, tenantIds: tenantsOn, overLimit };
     });
     // Every HR Workspace in those companies is checked against what the plan now gives.
     for (const t of result.tenantIds) await this.access.recalculate(t);
-    return { ok: result.ok, added: result.added, removed: result.removed, workspaces: result.workspaces };
+    return { ok: result.ok, added: result.added, removed: result.removed, workspaces: result.workspaces, overLimit: result.overLimit };
   }
 
   async setArchived(key: string, archived: boolean) {

@@ -2833,7 +2833,7 @@ export const TABLES: Record<string, TableSpec> = {
     // An HR Workspace (Console > Super Workspace > HR Workspace > Employee): a department, branch or region of the
     // company with its own admins and a subset of the company's modules (features). Its people are the employees
     // whose hr_workspace_id points here. Archived ones keep their history; their people go back to the central group.
-    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    access: "tenant", grants: ["insert", "select", "update"], touch: true, triggers: ["workspace_limit_hr"],
     columns: {
       archived_at: {"type": "timestamp"},
       code: {"type": "string"},
@@ -4384,7 +4384,7 @@ export const TABLES: Record<string, TableSpec> = {
     ],
   },
   memberships: {
-    access: "tenant_or_user", grants: ["delete", "insert", "select", "update"], touch: true, triggers: ["memberships_no_manager_cycle"],
+    access: "tenant_or_user", grants: ["delete", "insert", "select", "update"], touch: true, triggers: ["memberships_no_manager_cycle", "workspace_limit_employee"],
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       department_id: {"type": "uuid"},

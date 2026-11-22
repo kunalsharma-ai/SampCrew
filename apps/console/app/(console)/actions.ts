@@ -45,7 +45,7 @@ export async function updatePlanAction(planKey: string, body: Record<string, unk
 }
 
 export async function setPlanEntitlementsAction(planKey: string, body: { features: string[]; limits: Record<string, number> }) {
-  const r = await act(() => api<{ added: string[]; removed: string[]; workspaces: number }>(`/platform/plans/${planKey}/entitlements`, { method: 'PUT', body }));
+  const r = await act(() => api<{ added: string[]; removed: string[]; workspaces: number; overLimit?: { tenant: string; kind: 'hr' | 'employee'; used: number; limit: number }[] }>(`/platform/plans/${planKey}/entitlements`, { method: 'PUT', body }));
   revalidatePath('/plans');
   return r;
 }

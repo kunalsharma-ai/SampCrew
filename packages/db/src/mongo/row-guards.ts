@@ -1,5 +1,6 @@
 import type { ClientSession, Db, Document } from 'mongodb';
 import { ConstraintError } from './engine';
+import { WORKSPACE_LIMIT_GUARDS } from './workspace-limits';
 
 export type GuardOp = 'insert' | 'update' | 'delete';
 
@@ -9,6 +10,8 @@ export interface GuardContext {
   table: string;
   /** Flags the caller set on the table (e.g. `erasure` for a privacy erasure that may blank frozen text). */
   flags: ReadonlySet<string>;
+  /** Shared by the documents of one write (an insertMany), so a guard can count the batch it is part of. */
+  pending: Map<string, number>;
 }
 
 /**
@@ -207,4 +210,5 @@ export const ROW_GUARDS: Record<string, RowGuard> = {
   survey_responses_anonymous: surveyResponsesAnonymous,
   workflow_versions_guard: workflowVersionsGuard,
   api_keys_guard: apiKeysGuard,
+  ...WORKSPACE_LIMIT_GUARDS,
 };

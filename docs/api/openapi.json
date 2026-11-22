@@ -13379,6 +13379,35 @@
         }
       }
     },
+    "/api/v1/workspace-limits": {
+      "get": {
+        "tags": [
+          "WorkspaceLimits"
+        ],
+        "summary": "HR Workspaces and Employee Workspaces in use and allowed by the plan, with upgrade options",
+        "operationId": "WorkspaceLimits_mine",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/onboarding/templates": {
       "get": {
         "tags": [
@@ -57548,6 +57577,46 @@
         }
       }
     },
+    "/api/v1/platform/tenants/{id}/workspace-limits": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "A company’s HR Workspaces and Employee Workspaces: used, allowed by its plan, and where the figures come from",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_tenantWorkspaceLimits",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/features": {
       "get": {
         "tags": [
@@ -59379,6 +59448,7 @@
                         "max_employees",
                         "max_legal_entities",
                         "max_hr_workspaces",
+                        "max_employee_workspaces",
                         "ai_credits_monthly",
                         "storage_gb"
                       ]
@@ -60439,6 +60509,7 @@
                         "max_employees",
                         "max_legal_entities",
                         "max_hr_workspaces",
+                        "max_employee_workspaces",
                         "ai_credits_monthly",
                         "storage_gb"
                       ]

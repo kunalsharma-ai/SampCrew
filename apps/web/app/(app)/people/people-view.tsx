@@ -1,4 +1,6 @@
 'use client';
+import type { WorkspaceLimits } from '@crew/contracts';
+import { WorkspaceLimitsCard } from '@/components/workspace-limits';
 import { useMfaRetry } from '@/components/mfa-step-up';
 import { useCreateParam } from '@/lib/use-create-param';
 import { Alert, Avatar, Badge, Button, Card, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
@@ -22,10 +24,13 @@ interface Props {
   canInvite: boolean;
   canManage: boolean;
   canAssignRoles: boolean;
+  /** The company's plan-based Employee Workspace limit (each login is one Employee Workspace). */
+  limits: WorkspaceLimits | null;
 }
 
 export function PeopleView(props: Props) {
-  const { page, query, canInvite } = props;
+  const { page, query, canInvite, limits } = props;
+  const full = !!limits?.employee.reached;
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useCreateParam('invite');
   const [selected, setSelected] = useState<Member | null>(null);
@@ -41,6 +46,7 @@ export function PeopleView(props: Props) {
 
   return (
     <>
+      {limits && canInvite && <div className="mb-4"><WorkspaceLimitsCard limits={limits} only="employee" title="Employee Workspaces on your plan" /></div>}
       {inviteLink && (
         <Alert tone="info" title="Invitation created" className="mb-4">
           An invitation email has been queued. If email delivery is not configured in this environment, share this one-time link instead:
@@ -68,7 +74,7 @@ export function PeopleView(props: Props) {
             <option value="invited">Invited</option>
             <option value="suspended">Suspended</option>
           </Select>
-          {canInvite && <Button onClick={() => setInviteOpen(true)}><UserPlus className="size-4" /> Invite people</Button>}
+          {canInvite && <Button onClick={() => setInviteOpen(true)} disabled={full} title={full ? `Employee Workspaces limit reached (${limits!.employee.text}). Upgrade the plan to add more.` : undefined} data-testid="invite-people"><UserPlus className="size-4" /> Invite people</Button>}
         </div>
         {page.items.length ? (
           <Table>

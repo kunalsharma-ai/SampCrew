@@ -67,7 +67,8 @@ describe('Plan builder and subscription entitlements', () => {
     const empty = `empty_${stamp}`;
     expect((await api(app, superToken).post('/platform/plans').send({ key: empty, name: 'Empty' })).status).toBe(201);
     expect(await modules(empty)).toEqual(['core_hr']);
-    expect(Object.values(await limits(empty)).every((v) => v === 0)).toBe(true);
+    // Every limit starts at 0, except one Employee Workspace so the company's Super Workspace can sign in.
+    expect(Object.entries(await limits(empty)).every(([k, v]) => v === (k === 'max_employee_workspaces' ? 1 : 0))).toBe(true);
     expect((await api(app, superToken).delete(`/platform/plans/${empty}`)).status).toBe(204);
   });
 

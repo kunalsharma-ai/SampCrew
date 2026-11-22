@@ -31,6 +31,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         orderId={order && /^[0-9a-f-]{36}$/.test(order) && !cancelled ? order : null}
         checkoutCancelled={cancelled}
         upgrade={one('upgrade')?.match(/^[a-z_]{2,40}$/) ? one('upgrade') : null}
+        limit={['max_hr_workspaces', 'max_employee_workspaces'].includes(one('limit') ?? '') ? one('limit') : null}
       />
     </>
   );
