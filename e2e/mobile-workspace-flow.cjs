@@ -174,9 +174,11 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     const n = await radios.count();
     assert(n >= 5, `score choices shown (${n})`);
     for (let i = 0; i < n; i++) await radios.nth(i).click();
+    for (const box of await p.locator('textarea').all()) if (!(await box.inputValue())) await box.fill('Cut changeover time on line 2 and trained two new joiners.');
+    await p.getByText('Every required question is answered.').waitFor();
+    // The draft keeps the scores and the written answers after the form reloads from the server.
     await p.getByTestId('appraisal-save').click();
     await p.getByText('Draft saved.').waitFor();
-    for (const box of await p.locator('textarea').all()) if (!(await box.inputValue())) await box.fill('Cut changeover time on line 2 and trained two new joiners.');
     await p.getByText('Every required question is answered.').waitFor();
     await p.getByTestId('appraisal-submit').click();
     await p.getByText('Submitted. Your manager has been told.').waitFor();

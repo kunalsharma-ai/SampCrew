@@ -57,9 +57,10 @@ export default function ProfileScreen() {
     setMsg(null);
     try {
       await fn();
-      setMsg({ tone: 'ok', text: done });
       setEditing(null);
+      // Say it is done once the profile has reloaded, so the next change starts from fresh data.
       await reload();
+      setMsg({ tone: 'ok', text: done });
     } catch (e) {
       setMsg({ tone: 'danger', text: e instanceof ApiError ? e.message : 'Something went wrong.' });
     } finally {

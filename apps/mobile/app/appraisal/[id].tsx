@@ -82,8 +82,10 @@ export default function AppraisalScreen() {
     setMsg(null);
     try {
       await fn();
-      setMsg({ tone: 'ok', text: done });
+      // Reload before saying it is done: the reload resets the form from the server, so anything typed after the
+      // message appeared would otherwise be wiped when it lands.
       await reload();
+      setMsg({ tone: 'ok', text: done });
     } catch (e) {
       setMsg({ tone: 'danger', text: e instanceof ApiError ? e.message : 'Something went wrong.' });
     } finally {
