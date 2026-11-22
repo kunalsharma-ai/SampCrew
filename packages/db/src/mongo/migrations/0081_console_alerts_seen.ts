@@ -2,7 +2,8 @@ import type { MongoMigration } from '../migrator';
 
 /**
  * Console admins get `seen_alerts`: the system alerts they have already seen in the Console bell. Existing admins start
- * with none, so every current alert shows as new once. Safe to run again.
+ * with none, so every current alert shows as new once. The column is optional, so an admin row written without it
+ * (older tooling, test fixtures) still counts as having seen nothing. Safe to run again.
  */
 export const m0081ConsoleAlertsSeen: MongoMigration = {
   name: '0081_console_alerts_seen',
