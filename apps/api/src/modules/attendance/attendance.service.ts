@@ -576,10 +576,9 @@ export class AttendanceService implements OnModuleInit {
         dayType: plan.dayType,
         holidayName: plan.holidayName,
         nextDirection: last && last.direction !== 'out' ? 'out' : 'in',
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), note: p.note ?? null, flags: p.risk_flags })),
         // Working, on a break (the last punch was an out for a break) or not checked in.
         state: last && last.direction !== 'out' ? 'working' : last && last.purpose === 'break' ? 'on_break' : last ? 'checked_out' : 'not_started',
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), flags: p.risk_flags, purpose: p.purpose })),
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), note: p.note ?? null, flags: p.risk_flags, purpose: p.purpose })),
         day: await this.dayRow(tx, e.id, date),
         allowed: { web: policy.web_punch, mobile: policy.mobile_punch, qr: policy.qr_punch },
         geofence: { mode: policy.geofence_mode, configured: Boolean(e.fence), radiusM: e.fence?.radiusM ?? null },

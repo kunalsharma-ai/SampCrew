@@ -2,8 +2,7 @@ import {
   Activity, AlarmClock, Award, Banknote, BarChart3, Bell, BookOpen, Bot, Briefcase, Building, Building2, CalendarClock, CalendarDays, CalendarRange, Check, ClipboardList, Clock,
   Contact, CreditCard, FileStack, FileText, Fingerprint, GraduationCap, Handshake, Headset, Heart, Home, Inbox, KeyRound, Landmark, LifeBuoy, ListChecks,
   LockKeyhole, Mail, Megaphone, MessageSquare, MessagesSquare, Orbit, Palette, Plug, Receipt, ScrollText, Settings, Shield, SlidersHorizontal, Sparkles, Tags,
-  Target, Timer, TrendingDown, Upload, Laptop, ShieldCheck, TextCursorInput, LayoutGrid, UserCheck, UserPlus, Users, UserSearch, UsersRound, UserX, Wallet, Workflow, X, type LucideIcon, Network, ToggleRight, Smartphone
-  Target, Timer, TrendingDown, Upload, Laptop, ShieldCheck, TextCursorInput, LayoutGrid, UserCheck, UserPlus, Users, UserSearch, UsersRound, UserX, Wallet, Workflow, X, type LucideIcon, Network, ToggleRight, ListTree
+  Target, Timer, TrendingDown, Upload, Laptop, ShieldCheck, TextCursorInput, LayoutGrid, UserCheck, UserPlus, Users, UserSearch, UsersRound, UserX, Wallet, Workflow, X, type LucideIcon, Network, ToggleRight, Smartphone, ListTree
 } from 'lucide-react';
 
 /** Icon names used by navigation, quick actions and overview tiles, so the API and nav can name icons as strings. */
