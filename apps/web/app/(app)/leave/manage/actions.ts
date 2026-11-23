@@ -1,7 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { act, api } from '@/lib/api';
-import type { LeaveAllocation, LeaveType } from '@/lib/types';
+import type { LeaveType } from '@/lib/types';
 
 const done = <T,>(r: T) => {
   revalidatePath('/leave/manage');
@@ -16,17 +16,12 @@ export const updateLeaveTypeAction = async (id: string, body: Record<string, unk
 export const setLeaveTypeStatusAction = async (id: string, active: boolean, reason: string) =>
   done(await act(() => api<LeaveType>(`/leave/types/${id}/status`, { method: 'POST', body: { active, reason } }), active ? 'Leave type activated' : 'Leave type deactivated'));
 export const deleteLeaveTypeAction = async (id: string) => done(await act(() => api(`/leave/types/${id}`, { method: 'DELETE' }), 'Leave type removed'));
-export const addStarterTypesAction = async () =>
-  done(await act(() => api<{ added: string[]; skipped: string[] }>('/leave/types/starter', { method: 'POST', body: {} })));
-export const addTemplatesAction = async (codes: string[]) =>
-  done(await act(() => api<{ added: string[]; skipped: string[] }>('/leave/types/standard', { method: 'POST', body: { codes } })));
+export const setLeaveVisibilityAction = async (id: string, visibility: 'hr' | 'employee' | 'both') =>
+  done(await act(() => api<LeaveType>(`/leave/types/${id}/visibility`, { method: 'PUT', body: { visibility } }), 'Visibility saved'));
 export const leaveTypeAction = async (id: string) => act(() => api<LeaveType>(`/leave/types/${id}`));
 
-export const previewAllocationAction = async (body: Record<string, unknown>) =>
-  act(() => api<{ count: number; people: { id: string; name: string; code: string }[] }>('/leave/allocations/preview', { method: 'POST', body }));
-export const allocateAction = async (body: Record<string, unknown>) => done(await act(() => api<LeaveAllocation>('/leave/allocations', { method: 'POST', body }), 'Allocated'));
-export const revokeAllocationAction = async (id: string, reason: string) =>
-  done(await act(() => api(`/leave/allocations/${id}/revoke`, { method: 'POST', body: { reason } }), 'Allocation withdrawn'));
+export const assignQuantityAction = async (body: { employeeId: string; leaveTypeId: string; year: number; quantity: string; note?: string }) =>
+  done(await act(() => api<{ assigned: string | null; used: string; remaining: string | null }>('/leave/quantities', { method: 'PUT', body }), 'Quantity saved'));
 
 export async function decideLeaveAction(approvalId: string, decision: 'approve' | 'reject', comment?: string) {
   const r = await act(() => api<{ status: string }>(`/approvals/${approvalId}/${decision}`, { method: 'POST', body: comment ? { comment } : {} }), decision === 'approve' ? 'Approved' : 'Rejected');

@@ -1,5 +1,5 @@
 import {
-  DEFAULT_IN_STATUTORY, leaveAllocationCriteria, leaveApprovalRules, leaveEligibility, leaveMath, leaveTypePolicy, legacyCourseBlocks, payrollEngine, startingStatutory,
+  DEFAULT_IN_STATUTORY, leaveApprovalRules, leaveEligibility, leaveMath, leaveTypePolicy, legacyCourseBlocks, payrollEngine, startingStatutory,
 } from '@crew/contracts';
 import type { ClientSession, Db, MongoClient } from 'mongodb';
 import { appendAuditEvent, applyAccessLevelsMongo, linkAuditChain, provisionTenantMongo, Table, type Row } from '../src/mongo';
@@ -294,37 +294,32 @@ async function seedCoreHr(
     });
   }
 
-  // Leave types with their policies, and who gets them. These are demo policies, not a statement of any country's
-  // statutory minimum. The Super Workspace owns the types; allocation is separate from creation.
+  // Leave types owned by the Super Workspace, visible to both workspaces, each open to one legal entity. These are
+  // demo policies, not a statement of any country's statutory minimum. Nothing is accrued or allocated (2026-11-23):
+  // the demo's quantities below are entered the way HR types them, as adjustment lines labelled demo data.
   const by = { by_level: 'system', by_membership_id: null, by_name: 'SampCrew (demo data)' };
-  const leavePolicies = new Map<string, { accrualMethod: string; annualEntitlement: string; rounding: string }>();
-  const type = async (code: string, name: string, paid: boolean, color: string, opts: { halfDay?: boolean; category?: string; method: string; entitlement: string; carry: string; notice?: number; maxRun?: string; probation?: boolean; routes?: string[]; employeeChooses?: boolean }) => {
+  const quantities = new Map<string, string>();
+  const type = async (code: string, name: string, paid: boolean, color: string, opts: { entity: string[]; halfDay?: boolean; category?: string; entitlement: string; notice?: number; maxRun?: string; probation?: boolean; routes?: string[]; employeeChooses?: boolean }) => {
     const policy = leaveTypePolicy.parse({
-      accrualMethod: opts.method, annualEntitlement: opts.entitlement, carryForwardMax: opts.carry, minNoticeDays: opts.notice ?? 0,
+      accrualMethod: 'none', annualEntitlement: opts.entitlement, carryForwardMax: '0', minNoticeDays: opts.notice ?? 0,
       maxDaysPerRequest: opts.maxRun ?? null, availableDuringProbation: opts.probation ?? true,
     });
     const approval = leaveApprovalRules.parse({ routes: opts.routes ?? ['hr'], employeeChooses: opts.employeeChooses ?? false, managerFirst: true });
     const fields = {
       code, name, description: 'Demo leave type', category: opts.category ?? (paid ? 'general' : 'unpaid'), paid, color, allow_half_day: opts.halfDay ?? true,
-      kind: 'standard', eligible_gender: 'any', counts_calendar_days: false, effective_from: null, hr_allocatable: true, eligibility: leaveEligibility.parse({}), policy, approval,
+      kind: 'standard', eligible_gender: 'any', counts_calendar_days: false, effective_from: null, hr_allocatable: true, eligibility: leaveEligibility.parse({ legalEntityIds: opts.entity }), policy, approval,
+      visibility: 'both', owner_level: 'super',
     };
     const id = await ws.insert('leave_types', { ...fields, version: 1, created_by_level: 'system', created_by_name: by.by_name, updated_by_level: 'system', updated_by_name: by.by_name });
     await ws.insert('leave_type_versions', { leave_type_id: id, version: 1, action: 'created', ...by, changes: {}, snapshot: fields, note: 'Demo leave type' });
-    await ws.insert('leave_allocations', { leave_type_id: id, target: 'hr_workspace', hr_workspace_id: null, criteria: {}, entitlement_days: null, note: 'Available to the company HR team', ...by });
-    leavePolicies.set(id, { accrualMethod: policy.accrualMethod, annualEntitlement: policy.annualEntitlement, rounding: policy.rounding });
+    if (opts.entitlement !== '0') quantities.set(id, opts.entitlement);
     return id;
   };
-  const allocate = (typeId: string, legalEntityId: string, note: string) =>
-    ws.insert('leave_allocations', {
-      leave_type_id: typeId, target: 'employees', hr_workspace_id: null, criteria: leaveAllocationCriteria.parse({ legalEntityIds: [legalEntityId] }), entitlement_days: null, note, ...by,
-    });
-  const cl = await type('CL', 'Casual Leave', true, '#2563eb', { method: 'annual_upfront', entitlement: '8', carry: '0', maxRun: '3' });
-  const sl = await type('SL', 'Sick Leave', true, '#dc2626', { category: 'medical', method: 'annual_upfront', entitlement: '8', carry: '0', routes: ['hr', 'super'], employeeChooses: true });
-  const pl = await type('PL', 'Permanent Leave', true, '#0d9488', { halfDay: false, method: 'monthly', entitlement: '18', carry: '30', notice: 7, probation: false, routes: ['both'] });
-  const lwp = await type('LWP', 'Leave without pay', false, '#6b7280', { method: 'none', entitlement: '0', carry: '0' });
-  const al = await type('AL', 'Annual Leave', true, '#7c3aed', { method: 'monthly', entitlement: '25', carry: '5', notice: 3 });
-  for (const id of [cl, sl, pl, lwp]) await allocate(id, c.indiaId, 'India entity (demo data)');
-  for (const id of [al, lwp]) await allocate(id, c.ukId, 'UK entity (demo data)');
+  const cl = await type('CL', 'Casual Leave', true, '#2563eb', { entity: [c.indiaId], entitlement: '8', maxRun: '3' });
+  const sl = await type('SL', 'Sick Leave', true, '#dc2626', { entity: [c.indiaId], category: 'medical', entitlement: '8', routes: ['hr', 'super'], employeeChooses: true });
+  const pl = await type('PL', 'Permanent Leave', true, '#0d9488', { entity: [c.indiaId], halfDay: false, entitlement: '18', notice: 7, probation: false, routes: ['both'] });
+  const lwp = await type('LWP', 'Leave without pay', false, '#6b7280', { entity: [c.indiaId, c.ukId], entitlement: '0' });
+  const al = await type('AL', 'Annual Leave', true, '#7c3aed', { entity: [c.ukId], entitlement: '25', notice: 3 });
   const entityTypes = new Map<string, string[]>([[c.indiaId, [cl, sl, pl, lwp]], [c.ukId, [al, lwp]]]);
 
   // Holiday calendars. Only fixed-date national holidays are listed for India; add regional ones per location.
@@ -345,17 +340,16 @@ async function seedCoreHr(
     }
   }
 
-  // Accruals due so far this year, using the same arithmetic as the API.
+  // This year's quantities, as HR would type them on Leave management > Quantities (demo data, never calculated).
   const emps = await ws.find('employees');
   for (const e of emps) {
     for (const typeId of entityTypes.get(e.current_legal_entity_id) ?? []) {
-      const p = leavePolicies.get(typeId)!;
-      for (const cr of leaveMath.accrualsDue({ accrualMethod: p.accrualMethod as never, annualEntitlement: leaveMath.toH(p.annualEntitlement), rounding: p.rounding as never }, { dateOfJoining: e.date_of_joining, lastWorkingDay: null }, today)) {
-        await ws.insert('leave_ledger', {
-          employee_id: e.id, leave_type_id: typeId, leave_year: year, kind: 'accrual', quantity: leaveMath.fromH(cr.quantity), effective_on: cr.effectiveOn,
-          accrual_key: cr.key, note: `Accrual ${cr.key.slice(1)}`,
-        });
-      }
+      const q = quantities.get(typeId);
+      if (!q) continue;
+      await ws.insert('leave_ledger', {
+        employee_id: e.id, leave_type_id: typeId, leave_year: year, kind: 'adjustment', quantity: leaveMath.fromH(leaveMath.toH(q)), effective_on: `${year}-01-01`,
+        note: 'Quantity entered by HR (demo data)',
+      });
     }
   }
 

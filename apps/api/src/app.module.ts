@@ -35,6 +35,8 @@ import { MasterDataService } from './modules/master-data/master-data.service';
 import { HrAdminService } from './modules/hr-admin/hr-admin.service';
 import { HierarchyController } from './modules/hierarchy/hierarchy.controller';
 import { WorkspaceLimitsController } from './modules/workspace-limits/workspace-limits.controller';
+import { WorkspacePermissionsController } from './modules/workspace-permissions/workspace-permissions.controller';
+import { WorkspacePermissionsService } from './modules/workspace-permissions/workspace-permissions.service';
 import { WorkspaceLimitsService } from './modules/workspace-limits/workspace-limits.service';
 import { HierarchyService } from './modules/hierarchy/hierarchy.service';
 import { FeatureLevelsService } from './modules/hierarchy/feature-levels.service';
@@ -224,6 +226,7 @@ export const CONTROLLERS = [
   HrAdminController,
   HierarchyController,
   WorkspaceLimitsController,
+  WorkspacePermissionsController,
   OnboardingController,
   TasksController,
   ProfileController,
@@ -367,6 +370,7 @@ export const CONTROLLERS = [
     HrAdminService,
     HierarchyService,
     WorkspaceLimitsService,
+    WorkspacePermissionsService,
     FeatureLevelsService,
     EmployeeImportService,
     DataImportService,

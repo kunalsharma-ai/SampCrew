@@ -44,6 +44,7 @@ const MANAGER_TEAM: Partial<Record<PermissionKey, Scope>> = {
   'documents:read': 'team',
   'leave:read': 'team',
   'leave:approve': 'team',
+  'leave:reject': 'team',
   'attendance:read': 'team',
   'attendance:approve': 'team',
   'shifts:read': 'team',
@@ -320,6 +321,9 @@ const HR_WORKSPACE_GRANTS: Partial<Record<PermissionKey, Scope>> = (() => {
       if (p) out[k] = (p.scopes as readonly Scope[]).includes('tenant') ? 'tenant' : p.scopes[p.scopes.length - 1]!;
     }
   }
+  // Simplified leave: HR Workspace approves and rejects, assigns quantities, and may manage its own leave types while
+  // the Super Workspace allows it (Settings > Workspace Permissions; those switches start off).
+  for (const k of ['leave:reject', 'leave:assign', 'leavetypes:create', 'leavetypes:edit', 'leavetypes:disable', 'leavetypes:visibility'] as const) out[k] = 'tenant';
   return out;
 })();
 
@@ -371,6 +375,12 @@ const AUDIT_TRAIL = new Set(['audit:read']);
 /** Permissions added after the four access levels, and the earlier ones whose holders get them too. */
 const FOLLOWS: Record<string, string[]> = {
   'leave:allocate': ['leave:configure', 'leave:approve'],
+  'leave:reject': ['leave:approve'],
+  'leave:assign': ['leave:allocate', 'leave:configure', 'leave:approve'],
+  'leavetypes:create': ['leave:allocate', 'leave:configure'],
+  'leavetypes:edit': ['leave:allocate', 'leave:configure'],
+  'leavetypes:disable': ['leave:allocate', 'leave:configure'],
+  'leavetypes:visibility': ['leave:allocate', 'leave:configure'],
   ...Object.fromEntries(Object.entries(SPLIT_PERMISSIONS).map(([k, from]) => [k, [from]])),
 };
 

@@ -28,10 +28,15 @@ export interface Balance {
   name: string;
   color: string;
   allowHalfDay: boolean;
+  /** True when someone typed a quantity for the year; false shows "Not Assigned" (the person can still apply). */
   tracked: boolean;
-  balance: string;
+  notAssigned?: boolean;
+  assigned?: string | null;
+  used?: string;
+  balance: string | null;
   pending: string;
-  available: string;
+  available: string | null;
+  kind?: string;
 }
 export interface LeaveRequest {
   id: string;

@@ -17,10 +17,10 @@ export function DashboardPanel({ d }: { d: LeaveDashboard }) {
         <Stat label={`Decided in ${d.year}`} value={c.approved + c.rejected} hint={`${c.approved} approved · ${c.rejected} rejected · ${c.cancelled} cancelled`} />
       </div>
       <Card>
-        <CardHeader title="Leave types in use" description={`Credited and taken days for ${d.year}, and applications by status.`} />
+        <CardHeader title="Leave types in use" description={`Days assigned by hand and taken in ${d.year}, and applications by status.`} />
         {d.byType.length ? (
           <Table aria-label="Leave types in use">
-            <THead><tr><TH>Leave type</TH><TH>People</TH><TH>Credited</TH><TH>Taken</TH><TH>Used</TH><TH>Pending</TH><TH>Approved</TH><TH>Rejected</TH></tr></THead>
+            <THead><tr><TH>Leave type</TH><TH>People</TH><TH>Assigned</TH><TH>Taken</TH><TH>Used</TH><TH>Pending</TH><TH>Approved</TH><TH>Rejected</TH></tr></THead>
             <TBody>
               {d.byType.map((t) => (
                 <TR key={t.id}>
@@ -86,14 +86,14 @@ export function ReportsPanel({ r }: { r: LeaveReport }) {
   return (
     <div className="grid gap-6" data-testid="leave-reports">
       <Card>
-        <CardHeader title="By leave type" description={`Allocation and use in ${r.year}.`} />
+        <CardHeader title="By leave type" description={`Days assigned by hand and used in ${r.year}.`} />
         <Table aria-label="By leave type">
-          <THead><tr><TH>Leave type</TH><TH>People</TH><TH>Allocations</TH><TH>Credited</TH><TH>Taken</TH><TH>Used</TH><TH>Pending</TH><TH>Approved</TH><TH>Rejected</TH><TH>Cancelled</TH></tr></THead>
+          <THead><tr><TH>Leave type</TH><TH>People</TH><TH>Assigned</TH><TH>Taken</TH><TH>Used</TH><TH>Pending</TH><TH>Approved</TH><TH>Rejected</TH><TH>Cancelled</TH></tr></THead>
           <TBody>
             {r.byType.map((t) => (
               <TR key={t.id}>
                 <TD className="font-medium">{t.name} <Badge>{t.code}</Badge></TD>
-                <TD className="tabular-nums">{t.holders}</TD><TD className="tabular-nums">{t.allocations}</TD><TD className="tabular-nums">{t.credited}</TD>
+                <TD className="tabular-nums">{t.holders}</TD><TD className="tabular-nums">{t.credited}</TD>
                 <TD className="tabular-nums">{t.taken}</TD><TD className="tabular-nums">{pct(t.utilisation)}</TD><TD className="tabular-nums">{t.pending}</TD>
                 <TD className="tabular-nums">{t.approved}</TD><TD className="tabular-nums">{t.rejected}</TD><TD className="tabular-nums">{t.cancelled}</TD>
               </TR>
@@ -104,7 +104,7 @@ export function ReportsPanel({ r }: { r: LeaveReport }) {
       <Card>
         <CardHeader title="By department" />
         <Table aria-label="By department">
-          <THead><tr><TH>Department</TH><TH>People</TH><TH>Credited</TH><TH>Taken</TH><TH>Used</TH></tr></THead>
+          <THead><tr><TH>Department</TH><TH>People</TH><TH>Assigned</TH><TH>Taken</TH><TH>Used</TH></tr></THead>
           <TBody>
             {r.byDepartment.map((x) => (
               <TR key={x.departmentId ?? 'none'}><TD className="font-medium">{x.name}</TD><TD className="tabular-nums">{x.employees}</TD><TD className="tabular-nums">{x.credited}</TD><TD className="tabular-nums">{x.taken}</TD><TD className="tabular-nums">{pct(x.utilisation)}</TD></TR>
@@ -137,14 +137,14 @@ export function ReportsPanel({ r }: { r: LeaveReport }) {
 
 const KIND: Record<string, string> = {
   type_created: 'Leave type created', type_updated: 'Leave type changed', type_deactivated: 'Leave type deactivated', type_activated: 'Leave type activated',
-  allocated: 'Allocated', made_available: 'Made available to HR', allocation_revoked: 'Allocation withdrawn',
+  allocated: 'Allocated (before 23 Nov 2026)', made_available: 'Made available to HR (before 23 Nov 2026)', allocation_revoked: 'Allocation withdrawn (before 23 Nov 2026)', visibility_changed: 'Visibility changed',
 };
 
 /** Who created, changed or allocated what, and when. */
 export function HistoryPanel({ rows }: { rows: LeaveHistoryRow[] }) {
   return (
     <Card>
-      <CardHeader title="Leave history" description="Every creation, change, deactivation and allocation, newest first. Approvals are in each application’s trail and in the audit log." />
+      <CardHeader title="Leave history" description="Every creation, change, visibility change and switch-off, newest first. Approvals are in each application’s trail and in the audit log." />
       {rows.length ? (
         <Table aria-label="Leave history">
           <THead><tr><TH>When</TH><TH>What</TH><TH>Leave type</TH><TH>By</TH><TH>Details</TH></tr></THead>

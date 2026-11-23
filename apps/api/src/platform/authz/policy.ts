@@ -46,6 +46,8 @@ export interface Subject {
   mfa: boolean;
   /** Resolves the people of HR Workspaces named in grant constraints (loaded once with the subject). */
   hrWorkspacePeople?: (ids: string[]) => HrWorkspacePeople;
+  /** API routes Settings > Workspace Permissions switched off for the subject's level (creating departments, ...). */
+  offRoutes?: readonly { method: string; path: string }[];
 }
 
 /** Attributes of the record being accessed. */

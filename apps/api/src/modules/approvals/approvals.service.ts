@@ -44,6 +44,8 @@ export interface ApprovalDocument { name: string; href: string }
 export interface ApprovalHandler {
   /** Permission an approver needs over the resource (checked with ABAC on every decision). */
   permission: string;
+  /** Permission a rejection needs as well, when rejecting is switched apart from approving (leave: leave:reject). */
+  rejectPermission?: string;
   /** Permission needed to change this resource type's approval chain. */
   configurePermission: string;
   defaultSteps: StepDef[];
@@ -430,6 +432,10 @@ export class ApprovalsService {
       const beyondScope = (step.kind === 'hr_workspace' && step.approver_hr_workspace_id) || step.kind === 'super_workspace' || step.escalated_at;
       if (h.decider || beyondScope) await this.authz.require(h.permission, undefined, tx);
       else await this.authz.require(h.permission, await h.attributes(tx, req.resource_id), tx);
+      if (decision === 'reject' && h.rejectPermission) {
+        if (h.decider || beyondScope) await this.authz.require(h.rejectPermission, undefined, tx);
+        else await this.authz.require(h.rejectPermission, await h.attributes(tx, req.resource_id), tx);
+      }
 
       await tx.collection('approval_steps').updateOne(
         { id: step.id },

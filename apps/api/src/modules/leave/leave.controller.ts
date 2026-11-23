@@ -7,9 +7,6 @@ import {
   isoDate,
   leaveAdjustmentInput,
   leaveAdjustmentsQuery,
-  leaveAllocationInput,
-  type LeaveAllocationInput,
-  leaveAllocationRevokeInput,
   leaveBalanceOverviewQuery,
   leaveCancelInput,
   leaveHistoryQuery,
@@ -18,14 +15,16 @@ import {
   leaveReportQuery,
   leaveRequestInput,
   type LeaveRequestInput,
-  leaveRunInput,
-  leaveStandardTypesInput,
+  leaveQuantityInput,
+  type LeaveQuantityInput,
   leaveTypeInput,
   type LeaveTypeInput,
+  leaveTypeSimpleInput,
   leaveTypeStatusInput,
   leaveTypeUpdate,
   type LeaveTypeUpdate,
-  yearEndInput,
+  type LeaveTypeSimpleInput,
+  leaveVisibilityInput,
 } from '@crew/contracts';
 import { z } from 'zod';
 import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
@@ -38,7 +37,12 @@ const balanceQuery = z.object({ employeeId: z.uuid().optional(), year: z.coerce.
 const yearQuery = z.object({ year: z.coerce.number().int().min(2000).max(2200).optional() });
 const ledgerQuery = z.object({ employeeId: z.uuid(), leaveTypeId: z.uuid(), year: z.coerce.number().int().min(2000).max(2200) });
 const typesQuery = z.object({ includeArchived: z.enum(['true', 'false']).optional() });
-const allocationsQuery = z.object({ leaveTypeId: z.uuid().optional(), includeRevoked: z.enum(['true', 'false']).optional() });
+/** The simple form, or the full settings (Super Workspace); the simple form may name the HR Workspace it is for. */
+const createTypeBody = z.union([leaveTypeSimpleInput.extend({ hrWorkspaceId: z.uuid().nullable().optional() }).strict(), leaveTypeInput]);
+const quantitiesQuery = z.object({
+  year: z.coerce.number().int().min(2000).max(2200).optional(), leaveTypeId: z.uuid().optional(),
+  hrWorkspaceId: z.union([z.literal('central'), z.uuid()]).optional(), q: z.string().trim().max(100).optional(),
+});
 const requestQuery = z.object({
   scope: z.enum(['mine', 'visible', 'review']).optional(),
   employeeId: z.uuid().optional(),
@@ -65,30 +69,6 @@ export class LeaveController {
     return this.leave.listTypes(q.includeArchived === 'true');
   }
 
-  @Get('types/standard')
-  @RequireFeature('leave')
-  @RequirePermission('leave:configure')
-  @Doc({ summary: 'Leave type templates (Permanent, Casual and Sick Leave as starters, plus earned, maternity, paternity and more), marking the codes already used' })
-  standardTypes() {
-    return this.leave.standardTypes();
-  }
-
-  @Post('types/standard')
-  @RequireFeature('leave')
-  @RequirePermission('leave:configure')
-  @Doc({ summary: 'Create leave types from chosen templates (codes already used are skipped; nothing is allocated)', body: leaveStandardTypesInput })
-  addStandardTypes(@Body(new ZodPipe(leaveStandardTypesInput)) body: z.infer<typeof leaveStandardTypesInput>) {
-    return this.leave.addTemplates(body.codes);
-  }
-
-  @Post('types/starter')
-  @RequireFeature('leave')
-  @RequirePermission('leave:configure')
-  @Doc({ summary: 'Create the starter leave types: Permanent Leave (PL), Casual Leave (CL) and Sick Leave (SL), fully editable afterwards' })
-  addStarterTypes() {
-    return this.leave.addStarterTypes();
-  }
-
   @Get('types/:id')
   @RequireFeature('leave')
   @RequirePermission('leave:read')
@@ -99,15 +79,23 @@ export class LeaveController {
 
   @Post('types')
   @RequireFeature('leave')
-  @RequirePermission('leave:configure')
-  @Doc({ summary: 'Create a leave type with its policy, eligibility and approval rules (Super Workspace)', body: leaveTypeInput })
-  createType(@Body(new ZodPipe(leaveTypeInput)) body: LeaveTypeInput) {
+  @RequirePermission('leavetypes:create')
+  @Doc({ summary: 'Create New Leave Type: name, description, optional code, visibility (HR Workspace, Employee Workspace or both) and status. An HR Workspace only when the Super Workspace allows it', body: createTypeBody })
+  createType(@Body(new ZodPipe(createTypeBody)) body: LeaveTypeInput | (LeaveTypeSimpleInput & { hrWorkspaceId?: string | null })) {
     return this.leave.createType(body);
+  }
+
+  @Put('types/:id/visibility')
+  @RequireFeature('leave')
+  @RequirePermission('leavetypes:visibility')
+  @Doc({ summary: 'Choose where a leave type appears: HR Workspace, Employee Workspace or both (applications already made stay)', body: leaveVisibilityInput })
+  setVisibility(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(leaveVisibilityInput)) body: z.infer<typeof leaveVisibilityInput>) {
+    return this.leave.setVisibility(id, body.visibility);
   }
 
   @Patch('types/:id')
   @RequireFeature('leave')
-  @RequirePermission('leave:configure')
+  @RequirePermission('leavetypes:edit')
   @Doc({ summary: 'Change a leave type (applies to new applications; refused when made on an older version)', body: leaveTypeUpdate })
   updateType(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(leaveTypeUpdate)) body: LeaveTypeUpdate) {
     return this.leave.updateType(id, body);
@@ -115,7 +103,7 @@ export class LeaveController {
 
   @Post('types/:id/status')
   @RequireFeature('leave')
-  @RequirePermission('leave:configure')
+  @RequirePermission('leavetypes:disable')
   @Doc({ summary: 'Deactivate or reactivate a leave type, with a reason (records and balances are kept)', body: leaveTypeStatusInput })
   setTypeStatus(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(leaveTypeStatusInput)) body: z.infer<typeof leaveTypeStatusInput>) {
     return this.leave.setTypeStatus(id, body.active, body.reason);
@@ -148,36 +136,22 @@ export class LeaveController {
     return this.leave.options();
   }
 
-  @Get('allocations')
+  // Manual leave quantities -----------------------------------------------------------------------------
+
+  @Get('quantities')
   @RequireFeature('leave')
-  @RequirePermission('leave:allocate')
-  @Doc({ summary: 'Allocations you can see: to employees, and types made available to HR Workspaces', query: allocationsQuery })
-  allocations(@Query(new ZodPipe(allocationsQuery)) q: z.infer<typeof allocationsQuery>) {
-    return this.leave.listAllocations({ leaveTypeId: q.leaveTypeId, includeRevoked: q.includeRevoked === 'true' });
+  @RequirePermission('leave:assign')
+  @Doc({ summary: 'Assign Leave Quantities: people in your scope with the quantity entered by hand for each leave type they can apply for (null: Not Assigned)', query: quantitiesQuery })
+  quantities(@Query(new ZodPipe(quantitiesQuery)) q: z.infer<typeof quantitiesQuery>) {
+    return this.leave.quantities(q);
   }
 
-  @Post('allocations/preview')
+  @Put('quantities')
   @RequireFeature('leave')
-  @RequirePermission('leave:allocate')
-  @Doc({ summary: 'Who an allocation would reach, and who is left out and why (nothing is saved)', body: leaveAllocationInput })
-  previewAllocation(@Body(new ZodPipe(leaveAllocationInput)) body: LeaveAllocationInput) {
-    return this.leave.previewAllocation(body);
-  }
-
-  @Post('allocations')
-  @RequireFeature('leave')
-  @RequirePermission('leave:allocate')
-  @Doc({ summary: 'Allocate a leave type to employees, or (Super Workspace) make it available to an HR Workspace', body: leaveAllocationInput })
-  allocate(@Body(new ZodPipe(leaveAllocationInput)) body: LeaveAllocationInput) {
-    return this.leave.allocate(body);
-  }
-
-  @Post('allocations/:id/revoke')
-  @RequireFeature('leave')
-  @RequirePermission('leave:allocate')
-  @Doc({ summary: 'Withdraw an allocation, with a reason (leave already taken is kept)', body: leaveAllocationRevokeInput })
-  revoke(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(leaveAllocationRevokeInput)) body: z.infer<typeof leaveAllocationRevokeInput>) {
-    return this.leave.revokeAllocation(id, body.reason);
+  @RequirePermission('leave:assign')
+  @Doc({ summary: 'Set the quantity of a leave type an employee has for a year (typed by hand; nothing is ever calculated)', body: leaveQuantityInput })
+  assignQuantity(@Body(new ZodPipe(leaveQuantityInput)) body: LeaveQuantityInput) {
+    return this.leave.assignQuantity(body);
   }
 
   // Dashboards and reports -------------------------------------------------------------------------------
@@ -382,21 +356,5 @@ export class LeaveController {
   @Doc({ summary: 'Add or deduct days with a note (recorded as a ledger adjustment)', body: leaveAdjustmentInput })
   adjust(@Body(new ZodPipe(leaveAdjustmentInput)) body: z.infer<typeof leaveAdjustmentInput>) {
     return this.leave.adjust(body);
-  }
-
-  @Post('accruals/run')
-  @RequireFeature('leave')
-  @RequirePermission('leave:configure')
-  @Doc({ summary: 'Post accruals due up to a date now (also runs automatically every hour; never double-credits)', body: leaveRunInput })
-  run(@Body(new ZodPipe(leaveRunInput)) body: z.infer<typeof leaveRunInput>) {
-    return this.leave.runAccrualsNow(body.asOf);
-  }
-
-  @Post('year-end')
-  @RequireFeature('leave')
-  @RequirePermission('leave:configure')
-  @Doc({ summary: 'Close a past leave year: carry forward up to each cap, lapse the rest', body: yearEndInput })
-  yearEnd(@Body(new ZodPipe(yearEndInput)) body: z.infer<typeof yearEndInput>) {
-    return this.leave.closeYear(body.year);
   }
 }

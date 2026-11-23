@@ -203,26 +203,18 @@ export function accessRows(roles: string[], constraints: Record<string, unknown>
 }
 
 /**
- * A leave type made the way the Super Workspace makes one: created with its policy and approval rules, allocated to
- * everyone eligible (unless allocate is false) and made available to the company's HR team (unless hr is false).
+ * A leave type made the way the Super Workspace makes one (visible to both workspaces unless the body says otherwise).
+ * Since 2026-11-23 nothing is allocated or accrued: give people days with assignLeave.
  */
-export async function leaveType(
-  app: INestApplication,
-  superToken: string,
-  body: Record<string, unknown>,
-  opts: { allocate?: boolean | Record<string, unknown>; hr?: boolean } = {},
-): Promise<string> {
+export async function leaveType(app: INestApplication, superToken: string, body: Record<string, unknown>): Promise<string> {
   const res = await api(app, superToken).post('/leave/types').send(body);
   expect(res.status, JSON.stringify(res.body)).toBe(201);
-  const id = res.body.id as string;
-  if (opts.hr !== false) {
-    const hr = await api(app, superToken).post('/leave/allocations').send({ target: 'hr_workspace', leaveTypeId: id, hrWorkspaceId: null });
-    expect(hr.status, JSON.stringify(hr.body)).toBe(201);
-  }
-  if (opts.allocate !== false) {
-    const criteria = typeof opts.allocate === 'object' ? opts.allocate : { all: true };
-    const al = await api(app, superToken).post('/leave/allocations').send({ target: 'employees', leaveTypeId: id, hrWorkspaceId: null, criteria });
-    expect(al.status, JSON.stringify(al.body)).toBe(201);
-  }
-  return id;
+  return res.body.id as string;
+}
+
+/** Sets, by hand, the days of a leave type an employee has for a year (the only way days are credited). */
+export async function assignLeave(app: INestApplication, token: string, employeeId: string, leaveTypeId: string, quantity: string, year = new Date().getUTCFullYear()) {
+  const res = await api(app, token).put('/leave/quantities').send({ employeeId, leaveTypeId, year, quantity });
+  expect(res.status, JSON.stringify(res.body)).toBe(200);
+  return res.body;
 }

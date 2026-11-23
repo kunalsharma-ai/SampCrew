@@ -21,7 +21,7 @@ function LeaveBody() {
   const router = useRouter();
   const { data, error, loading, reload } = useLoad(async () => {
     const [b, r] = await Promise.all([api.get<{ year: number; balances: Balance[] }>('/leave/balances'), api.get<LeaveRequest[]>('/leave/requests')]);
-    return { balances: b.balances.filter((x) => x.tracked), year: b.year, requests: r };
+    return { balances: b.balances.filter((x) => x.kind !== 'wfh'), year: b.year, requests: r };
   }, [api]);
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const { data: cal, reload: reloadCal } = useLoad(() => {
@@ -59,7 +59,7 @@ function LeaveBody() {
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
       {data && (
         <TileGrid>
-          <Tile testID="tile-available" tone="orange" icon="☼" value={String(Number(data.balances.reduce((s, b) => s + Number(b.available), 0).toFixed(1)))} label="Days available" hint={`Across ${data.balances.length} leave type${data.balances.length === 1 ? '' : 's'}`} />
+          <Tile testID="tile-available" tone="orange" icon="☼" value={String(Number(data.balances.reduce((s, b) => s + Number(b.available ?? 0), 0).toFixed(1)))} label="Days available" hint={`Across ${data.balances.filter((b) => b.tracked).length} assigned leave type${data.balances.filter((b) => b.tracked).length === 1 ? '' : 's'}`} />
           <Tile testID="tile-pending" tone="pink" icon="…" value={String(data.requests.filter((r) => r.status === 'pending').length)} label="Waiting for approval" hint={`${data.requests.filter((r) => r.status === 'approved').length} approved`} />
         </TileGrid>
       )}
@@ -86,6 +86,7 @@ function LeaveBody() {
         <CardTitle help="leave.balances">{data ? `Balances ${data.year}` : 'Balances'}</CardTitle>
         {data?.balances.length === 0 && <Empty>No leave balances.</Empty>}
         {data?.balances.map((b) => {
+          if (!b.tracked) return <ListItem key={b.leaveTypeId} title={b.name} subtitle={`Not Assigned${Number(b.used ?? 0) > 0 ? ` · ${b.used} days used` : ''}`} testID={`not-assigned-${b.code}`} />;
           // The bar shows what is left of what the person has (available plus already pending or used is the balance).
           const total = Math.max(Number(b.balance), Number(b.available));
           return (

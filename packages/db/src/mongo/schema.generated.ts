@@ -3214,7 +3214,10 @@ export const TABLES: Record<string, TableSpec> = {
       permissions: {"default": {"json": {}}, "required": true, "type": "json"},
       scope_hr_workspace_ids: {"type": "string[]"},
       subject_id: {"required": true, "type": "string"},
-      subject_type: {"enum": ["hr_workspace", "employee_workspace"], "required": true, "type": "string"},
+      // hr_template / employee_template (subject_id "default"): the editable default permission templates (2026-11-23).
+      subject_type: {"enum": ["hr_workspace", "employee_workspace", "hr_template", "employee_template"], "required": true, "type": "string"},
+      // The template last applied, and who applied it, for Settings > Workspace Permissions.
+      template: {"type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       updated_by_membership_id: {"type": "uuid"},
@@ -5205,6 +5208,11 @@ export const TABLES: Record<string, TableSpec> = {
       updated_by_name: {"type": "string"},
       // Goes up on every change; each version is kept in leave_type_versions and requests record the one they used.
       version: {"default": 1, "required": true, "type": "int"},
+      // Where it appears (2026-11-23): HR Workspace only, Employee Workspace only, or both. No allocation step.
+      visibility: {"default": "both", "enum": ["hr", "employee", "both"], "required": true, "type": "string"},
+      // Who owns it: the Super Workspace, or an HR Workspace (owner_hr_workspace_id; null for the company HR team).
+      owner_level: {"default": "super", "enum": ["super", "hr"], "required": true, "type": "string"},
+      owner_hr_workspace_id: {"type": "uuid"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "leave_types_pkey", "primary": true},

@@ -91,3 +91,4 @@ export * from './master-data';
 export * from './data-import';
 export * from './candidate-crm';
 export * from './help';
+export * from './workspace-permissions';

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BOOLEAN_FEATURES, isCoreFeature, UNLIMITED } from './features';
+import { hrWorkspaceTemplateChoice } from './workspace-permissions';
 
 /**
  * The four levels of SampCrew. Authority flows down, reporting flows up:
@@ -56,6 +57,11 @@ export const hrWorkspaceInput = z.object({
   /** Organisation units it usually looks after; informational and used to suggest employees. */
   departmentIds: uuids(200).default([]),
   locationIds: uuids(200).default([]),
+  /**
+   * The permissions it starts with (Settings > Workspace Permissions): the Default HR template (the default), all
+   * permitted permissions, or custom switches chosen on the form.
+   */
+  permissionTemplate: hrWorkspaceTemplateChoice.optional(),
 }).strict();
 export type HrWorkspaceInput = z.infer<typeof hrWorkspaceInput>;
 

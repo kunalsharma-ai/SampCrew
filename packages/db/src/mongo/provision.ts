@@ -1,5 +1,5 @@
 import {
-  builtInStatutoryPacks, DEFAULT_LEAVE_TYPES, leaveAllocationCriteria, leaveApprovalRules, leaveEligibility, leaveTypePolicy, FEATURES, PLAN_TEMPLATES, SWITCHABLE_FEATURE_KEYS, SYSTEM_ROLES,
+  builtInStatutoryPacks, DEFAULT_LEAVE_TYPES, leaveApprovalRules, leaveEligibility, leaveTypePolicy, FEATURES, PLAN_TEMPLATES, SWITCHABLE_FEATURE_KEYS, SYSTEM_ROLES,
 } from '@crew/contracts';
 import { applyAccessLevelsMongo } from './access-levels';
 import { syncHelpLibraryMongo } from './help-library';
@@ -87,26 +87,25 @@ export async function provisionTenantMongo(tx: Tables, input: ProvisionTenantInp
   // and a default onboarding checklist.
   await t('holiday_calendars').insert(own({ name: 'Default calendar', is_default: true, weekly_offs: [0, 6] }));
   await t('onboarding_templates').insert(own({ name: 'Standard onboarding', description: 'Default checklist for new joiners', tasks: DEFAULT_ONBOARDING_TASKS, is_default: true }));
-  // The starter leave types (Permanent, Casual and Sick Leave), allocated to everyone and available to the company's
-  // HR team, so employees can apply for leave from day one. Each is an ordinary type the Super Workspace can change,
-  // deactivate or remove; nothing about them is fixed in code.
-  if (!input.isDemo && input.leaveTypes !== 'none') {
+  // No leave types and no leave quantities are created for a new workspace (2026-11-23): the Super Workspace creates the
+  // leave types it wants and administrators enter quantities by hand. Only a caller that asks for them explicitly
+  // (leaveTypes: 'standard', used by tests) gets the three example types, with no quantities and no allocation.
+  if (!input.isDemo && input.leaveTypes === 'standard') {
     const by = { by_level: 'system', by_membership_id: null, by_name: 'SampCrew' };
     for (const lt of DEFAULT_LEAVE_TYPES) {
       const fields = {
         code: lt.code, name: lt.name, description: lt.description, category: lt.category, paid: lt.paid, allow_half_day: lt.allowHalfDay, color: lt.color,
         kind: lt.kind, eligible_gender: lt.eligibleGender, counts_calendar_days: lt.countsCalendarDays, effective_from: null, hr_allocatable: true,
+        visibility: 'both', owner_level: 'super', owner_hr_workspace_id: null,
         eligibility: leaveEligibility.parse({}),
-        policy: leaveTypePolicy.parse({ accrualMethod: lt.accrualMethod, annualEntitlement: lt.annualEntitlement, carryForwardMax: lt.carryForwardMax }),
+        policy: leaveTypePolicy.parse({ accrualMethod: 'none' }),
         approval: leaveApprovalRules.parse({}),
       };
       const type = await t('leave_types').insert(own({
         ...fields, version: 1, created_by_level: 'system', created_by_membership_id: null, created_by_name: 'SampCrew',
         updated_by_level: 'system', updated_by_membership_id: null, updated_by_name: 'SampCrew',
       }));
-      await t('leave_type_versions').insert(own({ leave_type_id: type.id, version: 1, action: 'created', ...by, changes: {}, snapshot: fields, note: 'Starter leave type' }));
-      await t('leave_allocations').insert(own({ leave_type_id: type.id, target: 'employees', hr_workspace_id: null, criteria: leaveAllocationCriteria.parse({ all: true }), entitlement_days: null, note: 'Starter allocation to everyone eligible', ...by }));
-      await t('leave_allocations').insert(own({ leave_type_id: type.id, target: 'hr_workspace', hr_workspace_id: null, criteria: {}, entitlement_days: null, note: 'Available to the company HR team', ...by }));
+      await t('leave_type_versions').insert(own({ leave_type_id: type.id, version: 1, action: 'created', ...by, changes: {}, snapshot: fields, note: 'Example leave type' }));
     }
   }
   // A general shift and a workspace attendance policy that uses it, so attendance works from day one.
@@ -308,7 +307,7 @@ export interface ProvisionTenantInput {
   /** `mustChangePassword` marks a temporary password that the owner replaces at their first sign-in. */
   owner: { email: string; fullName: string; passwordHash: string | null; mustChangePassword?: boolean };
   plan: { key: string; seats: number; billingCycle: 'monthly' | 'annual'; trialDays: number };
-  /** 'standard' (the default) starts the workspace with the starter leave types allocated to everyone; 'none' leaves them to the Super Workspace. */
+  /** 'none' (the default): no leave types, the Super Workspace creates them. 'standard' adds three example types with no quantities (tests). */
   leaveTypes?: 'standard' | 'none';
 }
 

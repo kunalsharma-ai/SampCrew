@@ -13,5 +13,3 @@ export const deleteCalendarAction = async (id: string) => done(await act(() => a
 export const addHolidayAction = async (calendarId: string, v: Record<string, unknown>) =>
   done(await act(() => api(`/leave/calendars/${calendarId}/holidays`, { method: 'POST', body: v }), 'Holiday added'));
 export const removeHolidayAction = async (calendarId: string, id: string) => done(await act(() => api(`/leave/calendars/${calendarId}/holidays/${id}`, { method: 'DELETE' })));
-export const runAccrualsAction = async () => done(await act(() => api<{ posted: number; asOf: string }>('/leave/accruals/run', { method: 'POST', body: {} })));
-export const closeYearAction = async (year: number) => done(await act(() => api<{ carried: number; lapsed: number }>('/leave/year-end', { method: 'POST', body: { year } })));

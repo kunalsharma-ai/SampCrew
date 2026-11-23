@@ -4,7 +4,7 @@ import { API_KEY_PREFIX, partForApiPath, PLATFORM_ROLE_CAPABILITIES, type Platfo
 import { recordMobileUsage, requireMobileRoute } from '../entitlements/mobile-access';
 import type { Request } from 'express';
 import { AuditService } from '../audit/audit.service';
-import { AuthzService } from '../authz/authz.service';
+import { AuthzService, routeSwitchedOff } from '../authz/authz.service';
 import { ALLOW_PENDING_PASSWORD_KEY, ALLOW_WHEN_LOCKED_KEY, ALLOW_WITHOUT_MFA_KEY, FEATURE_KEY, PERMISSION_KEY, PUBLIC_KEY, REALM_KEY } from '../authz/decorators';
 import { requestContext } from '../context/request-context';
 import { MongoService as DatabaseService } from '../database/mongo.service';
@@ -133,7 +133,19 @@ export class AuthGuard implements CanActivate {
         throw e;
       }
     }
+    await this.requireRouteOn(req);
     return true;
+  }
+
+  /** Settings > Workspace Permissions: a route switched off for the person's level is refused, also when called directly. */
+  private async requireRouteOn(req: Request) {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return;
+    const s = await this.authz.subject();
+    if (routeSwitchedOff(s, apiPath(req), req.method)) {
+      const e = Errors.forbidden('Your Super Workspace has switched this off for your workspace in Settings > Workspace Permissions');
+      await this.recordDenied(req, 'workspace_permissions', e);
+      throw e;
+    }
   }
 
   /**
@@ -155,6 +167,7 @@ export class AuthGuard implements CanActivate {
     if (feature) await this.entitlements.requireFeature(feature);
     await this.requirePart(req);
     await this.authz.require(permission);
+    await this.requireRouteOn(req);
     return true;
   }
 

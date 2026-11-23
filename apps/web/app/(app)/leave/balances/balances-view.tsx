@@ -47,7 +47,7 @@ export function BalanceOverview({ data, departments, types, filters }: { data: L
                       if (!b) return <TD key={t.id} className="text-right text-fg-subtle">–</TD>;
                       return (
                         <TD key={t.id} className="text-right tabular-nums" data-type={t.code}>
-                          {b.available !== null ? <span className={Number(b.available) < 0 ? 'text-danger' : ''}>{b.available}</span> : <span className="text-fg-muted">{b.taken} taken</span>}
+                          {b.available !== null ? <span className={Number(b.available) < 0 ? 'text-danger' : ''}>{b.available}</span> : <span className="text-fg-muted">Not Assigned{Number(b.taken) > 0 ? ` · ${b.taken} taken` : ''}</span>}
                           {Number(b.pending) > 0 && <div className="text-[0.6875rem] text-warning">{b.pending} pending</div>}
                         </TD>
                       );

@@ -376,7 +376,7 @@ export function JobTab({ e, history, reports, departments, entities, locations, 
 // -------------------------------------------------------------------------------------------------------------
 
 export function BalanceCards({ balances }: { balances: LeaveBalance[] }) {
-  if (!balances.length) return <EmptyState title="No leave types apply yet" description="Leave types reach people once the Super Workspace or their HR Workspace allocates them." />;
+  if (!balances.length) return <EmptyState title="No leave types apply yet" description="A leave type reaches people as soon as it is visible to their workspace." />;
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {balances.map((b) => (
@@ -387,13 +387,13 @@ export function BalanceCards({ balances }: { balances: LeaveBalance[] }) {
               <div className="mt-2 text-2xl font-semibold tabular-nums">{b.available}</div>
               <div className="text-xs text-fg-subtle">days available</div>
               <div className="mt-2 text-[0.6875rem] text-fg-muted tabular-nums">
-                {b.accrued} accrued{Number(b.carriedForward) ? ` · ${b.carriedForward} carried` : ''}{Number(b.adjusted) ? ` · ${b.adjusted} adjusted` : ''} · {b.taken} taken{Number(b.pending) ? ` · ${b.pending} pending` : ''}
+                {b.assigned} assigned · {b.used} used{Number(b.pending) ? ` · ${b.pending} pending` : ''}
               </div>
             </>
           ) : (
             <>
-              <div className="mt-2 text-2xl font-semibold tabular-nums">{b.taken}</div>
-              <div className="text-xs text-fg-subtle">days taken (no balance limit)</div>
+              <div className="mt-2 text-lg font-semibold text-fg-muted" data-testid="not-assigned">Not Assigned</div>
+              <div className="text-xs text-fg-subtle">{b.used} days used{Number(b.pending) ? ` · ${b.pending} pending` : ''}</div>
             </>
           )}
         </Card>

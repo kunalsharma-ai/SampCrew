@@ -32,6 +32,7 @@ const FOUNDATION: Record<string, string> = {
   MembersController: 'Workspace members and invitations (seat limit enforced in the service)',
   CustomFieldsController: 'Custom fields are part of HR Workspace Admin; a field on a module record checks that module in CustomFieldsService',
   HierarchyController: 'Company structure: HR Workspaces and module delegation (the max_hr_workspaces limit is checked in WorkspaceLimitsService and a database guard)',
+  WorkspacePermissionsController: 'Settings > Workspace Permissions: switches that only take permissions away from HR and Employee Workspaces, and the templates new HR Workspaces start from',
   WorkspaceLimitsController: 'Plan-based workspace limits (HR Workspaces, Employee Workspaces): used / allowed, shown wherever they are created',
   HrAdminController: 'HR Workspace Admin: module switches (within the plan) and the role permission matrix',
   EmployeeBulkController: 'Core HR (always included): the same job changes as one by one, for several people',

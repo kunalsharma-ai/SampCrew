@@ -122,7 +122,7 @@ export function LeaveTypeEditor({ open, onClose, type, options }: { open: boolea
 
         <Section title="Entitlement and rules">
           <Field label="Accrual">{(p) => <Select {...p} value={f.policy.accrualMethod} onChange={(e) => pol('accrualMethod', e.target.value as LeaveTypePolicy['accrualMethod'])}>{ACCRUAL_METHODS.map((m) => <option key={m} value={m}>{ACCRUAL_METHOD_LABELS[m]}</option>)}</Select>}</Field>
-          <Field label="Days a year" hint="Allocations can give some people a different number">{(p) => <Input {...p} name="annualEntitlement" inputMode="decimal" value={f.policy.annualEntitlement} onChange={(e) => pol('annualEntitlement', e.target.value)} />}</Field>
+          <Field label="Days a year" hint="A guide only: quantities are typed per person on the Quantities tab">{(p) => <Input {...p} name="annualEntitlement" inputMode="decimal" value={f.policy.annualEntitlement} onChange={(e) => pol('annualEntitlement', e.target.value)} />}</Field>
           <Field label="Fewest days in one application">{(p) => <DaysInput {...p} value={f.policy.minDaysPerRequest} onChange={(v) => pol('minDaysPerRequest', v)} />}</Field>
           <Field label="Most days in one application">{(p) => <DaysInput {...p} value={f.policy.maxDaysPerRequest} onChange={(v) => pol('maxDaysPerRequest', v)} />}</Field>
           <Field label="Most consecutive days" hint="Calendar days from first to last, weekends included">{(p) => <DaysInput {...p} value={f.policy.maxConsecutiveDays} onChange={(v) => pol('maxConsecutiveDays', v)} />}</Field>

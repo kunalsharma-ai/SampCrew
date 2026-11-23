@@ -5,17 +5,18 @@
  *   pnpm dev:api & pnpm dev:web &
  *   node e2e/leave-flow.cjs
  *
- * 1. The Super Workspace (the demo owner) adds Compensatory Off and Work From Home from the templates on Leave
- *    management, sees who created them, and allocates comp-off to the Assembly Line department after a preview that
- *    names the operator. The HR Workspace sees the types read-only.
- * 2. An operator sees their leave types with the rules and who allocated them, sees the route choice for sick leave,
+ * 1. The Super Workspace (the demo owner) creates Compensatory Off with + Create New Leave Type (visible to both
+ *    workspaces), sees who created it, and types the operator's Permanent Leave quantity on the Quantities tab. The HR
+ *    Workspace sees the types but has no create button, until the Super Workspace switches "Create leave types" on in
+ *    Settings > Workspace Permissions; it is switched off again afterwards.
+ * 2. An operator sees their leave types with the rules and Not Assigned for comp-off, sees the route choice for sick leave,
  *    applies for a day of casual leave, then changes the request to two days while it waits.
  * 3. The supervisor (reporting manager step) approves the changed request; the HR Workspace then approves it on the
  *    Approvals tab of Leave management. The application page shows both decisions.
  * 4. The operator changes the approved leave to another day. The original stays approved, marked "Change waiting".
  * 5. The supervisor credits a day of comp-off with a remark on Leave balances and approves the change; HR approves it.
  * 6. The operator sees the original replaced, the comp-off day in their balances, and the new day on the year view.
- * 7. The History tab lists the new types and the allocation with who did them.
+ * 7. The History tab lists the new type with who created it.
  * Fails on any browser error.
  */
 const path = require('node:path');
@@ -89,40 +90,63 @@ async function hrApprove(p, day) {
   await users.updateOne({ _id: ownerBefore._id }, { $set: { mfa_enabled: false, mfa_secret_enc: null } });
   let current;
   try {
-    // 1. The Super Workspace adds types from templates and allocates comp-off to a department.
+    // 1. The Super Workspace creates a leave type and types a quantity; nothing is allocated or calculated.
     const sw = current = await signIn(b, 'owner@demo.crew.local');
     await sw.goto(BASE + '/leave/manage?tab=types');
     await sw.getByTestId('leave-type-CL').waitFor();
-    await sw.getByRole('button', { name: 'From templates' }).click();
+    await sw.getByTestId('new-leave-type').click();
     let d = dialogOf(sw);
-    for (const name of ['Compensatory Off', 'Work From Home']) await d.getByLabel(new RegExp(name)).check();
-    await d.getByRole('button', { name: 'Add 2' }).click();
-    await sw.getByText(/Added (CO, WFH|WFH, CO)/).waitFor();
-    for (const code of ['CO', 'WFH']) await sw.getByTestId(`leave-type-${code}`).getByTestId('leave-type-created-by').filter({ hasText: 'Aarav Mehta' }).waitFor();
-    ok('the Super Workspace added comp-off and work from home from the templates; each shows who created it');
+    await d.getByTestId('leave-type-name').fill('Compensatory Off');
+    await d.getByLabel(/Leave code/).fill('CO');
+    await d.getByTestId('leave-type-visibility').selectOption('both');
+    await d.getByTestId('save-leave-type').click();
+    await sw.getByText('Compensatory Off created and visible to Both Workspaces').waitFor();
+    await sw.getByTestId('leave-type-CO').getByTestId('leave-type-created-by').filter({ hasText: 'Aarav Mehta' }).waitFor();
+    ok('the Super Workspace created Compensatory Off for both workspaces; it shows who created it');
 
-    await sw.goto(BASE + '/leave/manage?tab=allocation');
-    const form = sw.getByTestId('allocation-form');
-    await form.locator('select[name=leaveTypeId]').selectOption({ label: 'Compensatory Off (CO)' });
-    await form.getByLabel(/Everyone eligible/).uncheck();
-    await sw.getByTestId('alloc-departments').getByRole('button', { name: 'Assembly Line', exact: true }).click();
-    await sw.getByTestId('allocation-preview').getByText('Neha Deshmukh').waitFor();
-    await sw.getByTestId('allocate').click();
-    await sw.getByRole('table', { name: 'Current allocations' }).locator('tr').filter({ hasText: 'Compensatory Off' }).filter({ hasText: 'Assembly Line' }).waitFor();
-    ok('the Super Workspace previewed and allocated comp-off to Assembly Line');
+    await sw.goto(BASE + '/leave/manage?tab=quantities&q=Neha');
+    const qRow = sw.getByTestId('quantity-row').filter({ hasText: 'Neha Deshmukh' });
+    await qRow.getByLabel('Compensatory Off days for Neha Deshmukh').waitFor();
+    if (await qRow.getByLabel('Compensatory Off days for Neha Deshmukh').inputValue()) throw new Error('comp-off must start Not Assigned');
+    const plBox = qRow.getByLabel('Permanent Leave days for Neha Deshmukh');
+    await plBox.fill('20');
+    await plBox.press('Enter');
+    await sw.getByText(/Neha Deshmukh: 20 days of Permanent Leave/).waitFor();
+    ok('the Super Workspace typed 20 days of Permanent Leave for the operator; comp-off stays Not Assigned');
 
     const hr = current = await signIn(b, 'hr.admin@demo.crew.local');
     await hr.goto(BASE + '/leave/manage?tab=types');
     await hr.getByTestId('leave-type-CL').waitFor();
-    if (await hr.getByTestId('new-leave-type').count()) throw new Error('the HR Workspace must not create leave types');
-    ok('the HR Workspace sees the leave types but cannot create them');
+    if (await hr.getByTestId('new-leave-type').count()) throw new Error('the HR Workspace must not create leave types until the Super Workspace allows it');
+    current = sw;
+    const togglePerm = async (want) => {
+      await sw.goto(BASE + '/settings/workspace-permissions?level=hr&groupId=central');
+      const cat = sw.getByTestId('perm-category-leave_management');
+      if (!(await cat.getByTestId('perm-switch-leave.create_types').count())) await cat.getByRole('button', { name: /Leave/ }).first().click();
+      const sw1 = cat.getByTestId('perm-switch-leave.create_types');
+      if ((await sw1.getAttribute('aria-checked')) !== String(want)) await sw1.click();
+      await sw.getByTestId('perm-save').click();
+      await sw.getByText('Permissions saved').waitFor();
+    };
+    await togglePerm(true);
+    current = hr;
+    await hr.goto(BASE + '/leave/manage?tab=types');
+    await hr.getByTestId('new-leave-type').waitFor();
+    current = sw;
+    await togglePerm(false);
+    current = hr;
+    await hr.goto(BASE + '/leave/manage?tab=types');
+    await hr.getByTestId('leave-type-CL').waitFor();
+    if (await hr.getByTestId('new-leave-type').count()) throw new Error('switching Create leave types off must hide the button again');
+    ok('HR gets Create New Leave Type only while Workspace Permissions allow it');
 
     // 2. The operator sees their types, then applies and changes the request while it waits.
     const day = leaveDay();
     const neha = current = await signIn(b, 'operator2@demo.crew.local');
     await neha.goto(BASE + `/leave?month=${day.slice(0, 7)}`);
     const myTypes = neha.getByTestId('my-leave-types');
-    await myTypes.getByRole('region', { name: 'Compensatory Off' }).getByText(/Allocated by: .*Aarav Mehta/).waitFor();
+    await myTypes.getByRole('region', { name: 'Compensatory Off' }).getByTestId('my-quantity').filter({ hasText: 'Not Assigned' }).waitFor();
+    await myTypes.getByRole('region', { name: 'Permanent Leave' }).getByTestId('my-quantity').filter({ hasText: '20.00 days' }).waitFor();
     await myTypes.getByRole('region', { name: 'Casual Leave' }).getByText(/Applications go to: HR Workspace/).waitFor();
     await neha.getByTestId('leave-calendar').locator(`button[data-date="${day}"]`).click();
     d = dialogOf(neha);
@@ -211,13 +235,12 @@ async function hrApprove(p, day) {
     if (await neha.getByTestId('leave-year').locator(`[data-date="${day}"][data-leave]`).count()) throw new Error('the replaced day still shows as leave on the year view');
     ok('operator sees the original replaced, the comp-off credit and the moved day on the year view');
 
-    // 7. History lists who created and allocated what.
+    // 7. History lists who created what.
     current = sw;
     await sw.goto(BASE + '/leave/manage?tab=history');
     const hist = sw.getByRole('table', { name: 'Leave history' });
     await hist.locator('tr').filter({ hasText: 'Leave type created' }).filter({ hasText: 'Compensatory Off' }).filter({ hasText: 'Aarav Mehta' }).first().waitFor();
-    await hist.locator('tr').filter({ hasText: 'Allocated' }).filter({ hasText: 'Compensatory Off' }).first().waitFor();
-    ok('History shows the types created and the allocation, with who did them');
+    ok('History shows the type created, with who did it');
   } catch (e) {
     if (current) await current.screenshot({ path: '/tmp/leave-flow-failure.png', fullPage: true }).catch(() => {});
     throw e;

@@ -5,6 +5,7 @@ import { AlarmClock, Building2, GraduationCap, Network, Plane, TriangleAlert, Us
 import Link from 'next/link';
 import { RecentNotifications } from '@/components/notifications-widget';
 import type { QuickAction } from '@/lib/nav';
+import type { LeaveDashboard } from '@/lib/types';
 import { ActionCenter, LEVEL_STYLE, Progress, SectionError, StatCard, relative } from './ui';
 import { CommunicationCard, QuickActionsCard, TrendCard } from './workforce-home';
 
@@ -97,11 +98,44 @@ function LearningOverview({ l }: { l: OrganizationHome['learning'] }) {
   );
 }
 
+/** Leave across the company from the leave dashboard: real counts only, and the three things to do next. */
+function LeaveOverview({ d }: { d: LeaveDashboard }) {
+  const c = d.counts;
+  return (
+    <Card data-testid="org-leave-overview">
+      <CardHeader title="Leave overview" description={`${c.activeTypes} active leave type${c.activeTypes === 1 ? '' : 's'} for ${c.employees} people in ${d.year}. Days are only what administrators typed.`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/leave/manage">Leave management</Link>} />
+      <div className="grid grid-cols-1 gap-3 px-5 pb-5">
+        <div className="grid grid-cols-4 gap-2 text-center text-[0.6875rem]">
+          <Link href="/leave/manage?tab=approvals" className="rounded-lg bg-warning-subtle p-2 text-warning hover:ring-1 hover:ring-warning"><div className="text-lg font-bold tabular">{c.waitingForMe}</div>Waiting for you</Link>
+          <div className="rounded-lg bg-bg-subtle p-2"><div className="text-lg font-bold tabular">{c.pending}</div>Pending</div>
+          <div className="rounded-lg bg-success-subtle p-2 text-success"><div className="text-lg font-bold tabular">{c.approved}</div>Approved</div>
+          <div className="rounded-lg bg-info-subtle p-2 text-info"><div className="text-lg font-bold tabular">{c.onLeaveToday}</div>Away today</div>
+        </div>
+        <ul className="grid grid-cols-1 gap-2">
+          {d.byType.slice(0, 5).map((t) => (
+            <li key={t.id} className="grid grid-cols-[minmax(0,10rem)_1fr_5rem] items-center gap-2 text-[0.8125rem]">
+              <span className="flex items-center gap-1.5 truncate"><span className="size-2 shrink-0 rounded-full" style={{ background: t.color }} aria-hidden />{t.name}</span>
+              <Progress value={t.utilisation} label={`${t.name} used`} className="h-1.5" />
+              <span className="text-right text-[0.6875rem] tabular text-fg-muted">{Number(t.credited) ? `${t.taken} of ${t.credited}` : `${t.taken} taken`}</span>
+            </li>
+          ))}
+          {d.byType.length === 0 && <li className="text-[0.8125rem] text-fg-muted">No leave types yet.</li>}
+        </ul>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/leave/manage?tab=types" className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg">Create leave type</Link>
+          <Link href="/leave/manage?tab=quantities" className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-bg-subtle">Assign quantities</Link>
+          <Link href="/settings/workspace-permissions" className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-bg-subtle">Workspace Permissions</Link>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 /**
  * The Super Workspace Home: the whole organisation at once. Each HR Workspace card opens the workforce view filtered
  * to it; alerts name the HR Workspace and what to look at.
  */
-export function OrganizationHomeView({ o, trend, trendDays, actions }: { o: OrganizationHome | null; trend: WorkforceTrend | null; trendDays: number; actions: QuickAction[] }) {
+export function OrganizationHomeView({ o, trend, trendDays, actions, leave }: { o: OrganizationHome | null; trend: WorkforceTrend | null; trendDays: number; actions: QuickAction[]; leave?: LeaveDashboard | null }) {
   if (!o) return <SectionError title="Organization overview" what="The organisation overview" />;
   const v = o.overview;
   return (
@@ -128,6 +162,7 @@ export function OrganizationHomeView({ o, trend, trendDays, actions }: { o: Orga
       </Card>
       {o.workspaces.length > 1 && <Comparison list={o.workspaces} />}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        {leave && <LeaveOverview d={leave} />}
         <LearningOverview l={o.learning} />
         <div className="grid grid-cols-1 content-start gap-5">
           <CommunicationCard c={o.communication} title="Communication overview" />

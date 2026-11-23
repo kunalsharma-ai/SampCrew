@@ -92,70 +92,107 @@ export const genderOk = (t: Doc, e: Pick<EmployeeLite, 'gender'>) => {
   return g === 'any' || !(e.gender === 'female' || e.gender === 'male') || e.gender === g;
 };
 
-/** Everything allocation needs, loaded once for a set of decisions. */
+/** The level a person acts at for leave: what they see in their own Leave Management. */
+export interface LeaveLevel { level: 'super' | 'hr' | 'employee'; company: boolean; hrWorkspaceIds: string[] }
+
+/**
+ * Everything the leave rules need, loaded once for a set of decisions. Since 2026-11-23 a leave type reaches people by
+ * its visibility (HR Workspace, Employee Workspace or both), not by allocations: `allocations` are history only.
+ */
 export interface LeaveBook {
   types: Doc[];
   allocations: Doc[];
-  /** typeId|hrWorkspaceId ('' for the company's HR team) of types made available to HR. */
-  available: Set<string>;
+  /** Levels by membership id (people without a login are Employee Workspace). */
+  levels: Map<string, LeaveLevel>;
+  /** HR Workspaces that have the Leave module, by id. */
+  hrWithLeave: Set<string>;
 }
 
 export async function loadBook(tx: TenantTx, opts: { includeInactive?: boolean } = {}): Promise<LeaveBook> {
   const types = await tx.collection('leave_types').find(opts.includeInactive ? {} : { archived_at: null }, { sort: { name: 1 } });
   const allocations = await tx.collection('leave_allocations').find({ revoked_at: null });
-  const available = new Set(allocations.filter((a) => a.target === 'hr_workspace').map((a) => `${a.leave_type_id}|${a.hr_workspace_id ?? ''}`));
-  return { types, allocations, available };
+  const roles = new Map((await tx.collection('roles').find({ is_system: true, key: { $in: ['super_workspace', 'hr_workspace'] } }, { projection: { key: 1 } })).map((r) => [r.id as string, r.key as string]));
+  const levels = new Map<string, LeaveLevel>();
+  for (const a of await tx.collection('role_assignments').find({ role_id: { $in: [...roles.keys()] } }, { projection: { membership_id: 1, role_id: 1, constraints: 1 } })) {
+    const key = roles.get(a.role_id as string);
+    const cur = levels.get(a.membership_id as string) ?? { level: 'employee' as const, company: false, hrWorkspaceIds: [] };
+    if (key === 'super_workspace') cur.level = 'super';
+    else if (cur.level !== 'super') {
+      cur.level = 'hr';
+      const ids = ((a.constraints?.hrWorkspaceIds ?? []) as string[]);
+      if (ids.length) cur.hrWorkspaceIds = [...new Set([...cur.hrWorkspaceIds, ...ids])];
+      else cur.company = true;
+    }
+    levels.set(a.membership_id as string, cur);
+  }
+  const hrWithLeave = new Set(await tx.collection('hr_workspaces').distinct<string>('id', { status: 'active', features: 'leave' }));
+  return { types, allocations, levels, hrWithLeave };
 }
 
-export const availableTo = (book: LeaveBook, typeId: string, hrWorkspaceId: string | null) => book.available.has(`${typeId}|${hrWorkspaceId ?? ''}`);
+export const levelOfPerson = (book: LeaveBook, e: Pick<EmployeeLite, 'membership_id'>): LeaveLevel =>
+  (e.membership_id && book.levels.get(e.membership_id)) || { level: 'employee', company: false, hrWorkspaceIds: [] };
 
-/** How specific an allocation is for a person: a named person beats a group, which beats a designation, and so on. */
-function rankOf(a: Doc, p: LeavePerson): number {
-  const c = criteriaOf(a);
-  if (c.employeeIds.includes(p.id)) return 100;
-  if (c.all) return a.hr_workspace_id ? 0.5 : 0;
-  return (c.locationIds.length ? 8 : 0) + (c.designationIds.length ? 4 : 0) + (c.groupIds.length ? 3 : 0) + (c.departmentIds.length ? 2 : 0)
-    + (c.legalEntityIds.length ? 1 : 0) + (c.employmentTypes.length ? 1 : 0) + (a.hr_workspace_id ? 0.5 : 0);
+/** The HR Workspace a type belongs to: null for the Super Workspace's (and the company HR team's) types. */
+export const ownerHrWorkspace = (t: Doc): string | null => (t.owner_level === 'hr' ? ((t.owner_hr_workspace_id as string | null) ?? null) : null);
+
+/**
+ * Whether an HR Workspace (null: the company's HR team) reviews applications of a type: every type of the Super
+ * Workspace, and an HR Workspace's own types by that HR Workspace only. An HR Workspace without the Leave module
+ * reviews nothing.
+ */
+export function availableTo(book: LeaveBook, typeId: string, hrWorkspaceId: string | null): boolean {
+  const t = book.types.find((x) => x.id === typeId);
+  if (!t) return false;
+  if (hrWorkspaceId && !book.hrWithLeave.has(hrWorkspaceId)) return false;
+  return t.owner_level === 'hr' ? ownerHrWorkspace(t) === hrWorkspaceId : true;
 }
 
-/** An allocation counts while it reaches the person, and (for an HR Workspace's own) while the type is still available to it. */
-export function allocationReaches(book: LeaveBook, a: Doc, e: EmployeeLite): boolean {
+/** Kept for the history screens: whether an old allocation reached a person. Gives no leave since 2026-11-23. */
+export function allocationReaches(_book: LeaveBook, a: Doc, e: EmployeeLite): boolean {
   if (a.target !== 'employees' || a.revoked_at) return false;
   if (a.hr_workspace_id && a.hr_workspace_id !== e.hr_workspace_id) return false;
-  if (a.by_level === 'hr' && !availableTo(book, a.leave_type_id, a.hr_workspace_id ?? null)) return false;
   return leaveAllocationMatches(criteriaOf(a), personOf(e));
+}
+
+/** Is a type visible to a person, by its visibility, its owner and the person's level? */
+export function typeVisibleTo(t: Doc, e: EmployeeLite, lv: LeaveLevel): boolean {
+  const v = (t.visibility as string | undefined) ?? 'both';
+  const owner = ownerHrWorkspace(t);
+  if (lv.level === 'super') return true;
+  if (lv.level === 'hr') {
+    if (!(v === 'both' || v === 'hr')) return false;
+    if (t.owner_level !== 'hr' || !owner) return true;
+    return lv.company || lv.hrWorkspaceIds.includes(owner);
+  }
+  if (!(v === 'both' || v === 'employee')) return false;
+  return t.owner_level !== 'hr' || !owner || e.hr_workspace_id === owner;
 }
 
 export interface Entitlement {
   type: Doc;
+  /** Who made the type (the old allocation field, kept so screens can say who set it up). */
   allocation: Doc;
-  /** Days a year for this person (the allocation's own number, else the type's). */
+  /** Always '0': nothing is credited automatically. Quantities are assigned by hand. */
   annualEntitlement: string;
   policy: LeaveTypePolicy;
   approval: LeaveApprovalRules;
 }
 
 /**
- * The leave types a person holds now: active, inside the type's eligibility and gender, and reached by at least one
- * allocation. The most specific allocation decides the entitlement.
+ * The leave types a person can apply for now: active, visible to their level (HR Workspace people see the types
+ * visible to HR Workspace, everyone else the ones visible to Employee Workspace; the Super Workspace every one),
+ * inside the type's eligibility and gender. No allocation, no entitlement: quantities are assigned by hand.
  */
 export function entitlementsOf(book: LeaveBook, e: EmployeeLite, opts: { includeInactive?: boolean } = {}): Map<string, Entitlement> {
   const out = new Map<string, Entitlement>();
   const p = personOf(e);
+  const lv = levelOfPerson(book, e);
   for (const t of book.types) {
     if (t.archived_at && !opts.includeInactive) continue;
     const cfg = configOf(t);
-    if (!genderOk(t, e) || !leaveEligible(cfg.eligibility, p)) continue;
-    let best: Doc | undefined;
-    let bestRank = -1;
-    for (const a of book.allocations) {
-      if (a.leave_type_id !== t.id || !allocationReaches(book, a, e)) continue;
-      const r = rankOf(a, p);
-      if (r > bestRank || (r === bestRank && a.created_at > best!.created_at)) { best = a; bestRank = r; }
-    }
-    if (!best) continue;
-    const own = best.entitlement_days !== null && best.entitlement_days !== undefined ? String(best.entitlement_days) : null;
-    out.set(t.id, { type: t, allocation: best, annualEntitlement: own ?? cfg.policy.annualEntitlement, policy: cfg.policy, approval: cfg.approval });
+    if (!genderOk(t, e) || !leaveEligible(cfg.eligibility, p) || !typeVisibleTo(t, e, lv)) continue;
+    const allocation = { by_level: (t.owner_level as string | undefined) ?? (t.created_by_level as string | undefined) ?? 'super', by_name: (t.created_by_name as string | null) ?? null, created_at: t.created_at, hr_workspace_id: ownerHrWorkspace(t) };
+    out.set(t.id, { type: t, allocation, annualEntitlement: '0', policy: cfg.policy, approval: cfg.approval });
   }
   return out;
 }

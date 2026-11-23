@@ -124,7 +124,7 @@ function NewLeaveBody() {
             label="Leave type"
             help="field.leaveType"
             value={typeId}
-            options={balances.map((b) => ({ value: b.leaveTypeId, label: b.tracked ? `${b.name} (${b.available})` : b.name }))}
+            options={balances.map((b) => ({ value: b.leaveTypeId, label: b.tracked ? `${b.name} (${b.available})` : b.notAssigned ? `${b.name} (Not Assigned)` : b.name }))}
             onChange={setTypeId}
           />
         )}
@@ -156,7 +156,7 @@ function NewLeaveBody() {
         {refusal && !error && <Notice tone="warn" testID="leave-refusal">{refusal}</Notice>}
         {/* Shown next to the button, where the person is looking (the top of the form can be scrolled away). */}
         {error && <Notice tone="danger" testID="leave-error">{error}</Notice>}
-        {balances && balances.length === 0 && <Notice tone="warn">No leave types are allocated to you yet. Ask your HR Workspace to allocate them.</Notice>}
+        {balances && balances.length === 0 && <Notice tone="warn">No leave type is visible to you yet. It appears here as soon as your HR Workspace or the Super Workspace creates one for you.</Notice>}
         <Text muted size={13} testID="leave-reviewers">{preview?.reviewers?.length ? `Goes to ${preview.reviewers.join(preview.order === 'sequential' ? ', then ' : ' and ')}${preview.managerFirst ? ', after your reporting manager' : ''}. They are notified when you send this.` : 'Your approver is notified when you send this.'}</Text>
         <Button title="Send request" onPress={submit} busy={busy} disabled={!valid} testID="send-leave" />
       </Card>

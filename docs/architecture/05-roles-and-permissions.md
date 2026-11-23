@@ -35,6 +35,8 @@ Within the company, access combines **RBAC** (the level bundles permissions) wit
 | **People** | | |  |  |  |
 | `employees:transfer` Move employees between HR Workspaces and the central group, keeping their history | 29 |  | A | · | · |
 | `modules:assign` Choose which of the HR Workspace's modules each employee gets | 29 |  | A | A | · |
+| **Administration** | | |  |  |  |
+| `mobileapp:manage` Decide which modules and features the SampCrew mobile app shows to each level, and publish or restore its configuration (Super Workspace) | 30 |  | A | · | · |
 | **Organization** | | |  |  |  |
 | `org:manage` Create and change legal entities, business units, locations and departments | 1 |  | A | A | · |
 | **Administration** | | |  |  |  |
@@ -61,7 +63,13 @@ Within the company, access combines **RBAC** (the level bundles permissions) wit
 | `leave:request` Apply for leave | 2 |  | O | O | O |
 | `leave:approve` Approve or reject leave | 2 |  | A | A | T |
 | `leave:configure` Create and change leave types, their policies and approval rules, holidays, and make types available to HR Workspaces (Super Workspace) | 2 |  | A | · | · |
-| `leave:allocate` Allocate leave types to employees (an HR Workspace only the types made available to it, for its own people) | 2 |  | A | A | · |
+| `leave:allocate` Manage holiday calendars and see the leave dashboard, history and reports for the people in scope | 2 |  | A | A | · |
+| `leave:reject` Reject leave applications | 31 |  | A | A | T |
+| `leave:assign` Assign leave quantities to employees by hand (nothing is calculated) | 31 |  | A | A | · |
+| `leavetypes:create` Create leave types (an HR Workspace only when the Super Workspace allows it, visible only within its modules) | 31 |  | A | A | · |
+| `leavetypes:edit` Edit leave types (an HR Workspace only the ones it created) | 31 |  | A | A | · |
+| `leavetypes:disable` Disable and enable leave types (history stays) | 31 |  | A | A | · |
+| `leavetypes:visibility` Choose where leave types appear: HR Workspace, Employee Workspace or both | 31 |  | A | A | · |
 | **Attendance** | | |  |  |  |
 | `attendance:read` View attendance records | 3 |  | A | A | T |
 | `attendance:punch` Record own attendance | 3 |  | O | O | O |
@@ -150,6 +158,12 @@ Within the company, access combines **RBAC** (the level bundles permissions) wit
 | `tasks:assign` Assign Manager Tasks to people in scope and review their progress | 28 |  | A | A | T |
 | `tasks:hr` Assign HR Tasks (documents, forms, acknowledgements) and verify the documents people upload | 28 |  | A | A | · |
 | `profiles:review` Review the profile changes employees submit: compare, approve, reject or ask for more | 28 |  | A | A | · |
+| `employees:export` Download the employee list as CSV or Excel | 30 |  | A | A | T |
+| **Data import** | | |  |  |  |
+| `imports:read` See the data imports of the workspace (or of your HR Workspaces) and download their reports | 30 |  | A | A | · |
+| `imports:run` Import employees, candidates, clients and other records from Excel or CSV | 30 |  | A | A | · |
+| **Organization** | | |  |  |  |
+| `masterdata:manage` Add, rename, categorise and disable master data: industries, job titles, job roles, skills, education and other dropdown values | 30 |  | A | A | · |
 
 Legend: O own, T team, D department, E legal entity, A all (tenant), · not granted.
 

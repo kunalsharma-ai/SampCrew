@@ -21,6 +21,8 @@ export interface NavItem {
   candidateCrm?: boolean;
   /** Shown to billing admins when the plan lacks the feature: the link opens Plan & billing to upgrade. */
   locked?: boolean;
+  /** Extra words the Settings search matches. */
+  keywords?: string;
 }
 
 export interface NavGroup {
@@ -165,6 +167,8 @@ export const NAV: NavGroup[] = [
   {
     label: 'Administration',
     items: [
+      { href: '/settings', label: 'All settings', icon: 'layout-grid', adminOnly: true },
+      { href: '/settings/workspace-permissions', label: 'Workspace Permissions', icon: 'shield-check', permission: 'hierarchy:read', adminOnly: true },
       { href: '/settings/hr-admin', label: 'Super Workspace Admin', icon: 'layout-grid', permission: 'tenant:read' },
       { href: '/settings/mobile-app', label: 'Mobile app', icon: 'smartphone', permission: 'mobileapp:manage', superOnly: true },
       { href: '/settings/roles', label: 'Access levels', icon: 'shield', permission: 'roles:read' },
@@ -272,12 +276,15 @@ export function homeActions(me: Me, level: 'super' | 'hr'): QuickAction[] {
   if (level === 'super' && has('modules:assign')) out.push({ key: 'employee-features', label: 'Manage Employee Workspaces', href: '/employee-features', icon: 'toggle-right' });
   if (has('employees:create')) out.push({ key: 'employee', label: 'Add employee', href: '/employees?create=employee', icon: 'user-plus' });
   if (has('attendance:approve', 'attendance_basic')) out.push({ key: 'attendance', label: level === 'super' ? 'Manage attendance' : 'Mark attendance', href: '/attendance/team', icon: 'users-round' });
-  if (has('leave:approve', 'leave')) out.push({ key: 'leave', label: 'Manage leave', href: '/leave/balances', icon: 'calendar' });
+  if (has('leave:approve', 'leave')) out.push({ key: 'leave', label: 'Manage leave', href: '/leave/manage', icon: 'calendar' });
+  if (has('leavetypes:create', 'leave')) out.push({ key: 'leave-type', label: 'Create leave type', href: '/leave/manage?tab=types', icon: 'calendar' });
+  if (has('leave:assign', 'leave')) out.push({ key: 'leave-quantities', label: 'Assign leave quantities', href: '/leave/manage?tab=quantities', icon: 'calendar' });
   if (has('learning:configure', 'learning')) out.push({ key: 'learning-create', label: 'Create learning', href: '/learning/catalogue', icon: 'book-open' });
   if (has('learning:manage', 'learning')) out.push({ key: 'learning-assign', label: 'Assign learning', href: '/learning?view=team', icon: 'graduation-cap' });
   if (has('announcements:manage', 'announcements')) out.push({ key: 'announce', label: 'Send announcement', href: '/announcements/manage/new', icon: 'megaphone' });
   if (wide('employees:read')) out.push({ key: 'employees', label: 'View employees', href: '/employees', icon: 'contact' });
-  if (level === 'super' && has('roles:read')) out.push({ key: 'permissions', label: 'Manage permissions', href: '/people', icon: 'shield' });
+  if (level === 'super' && has('hierarchy:manage')) out.push({ key: 'workspace-permissions', label: 'Workspace Permissions', href: '/settings/workspace-permissions', icon: 'shield-check' });
+  if (level === 'super' && has('roles:read')) out.push({ key: 'permissions', label: 'Manage access levels', href: '/people', icon: 'shield' });
   if (wide('employees:read')) out.push({ key: 'reports', label: 'View reports', href: '/insights', icon: 'chart' });
   if (wide('employees:read')) out.push({ key: 'export', label: 'Export report', href: '/employees-export?format=xlsx', icon: 'upload' });
   return out;

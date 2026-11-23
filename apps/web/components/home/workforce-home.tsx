@@ -188,6 +188,7 @@ function LeaveSummary({ l }: { l: NonNullable<WorkforceHome['leave']> }) {
         <div className="flex flex-wrap gap-2">
           <Link href="/approvals?category=leave" className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg">Review requests</Link>
           <Link href="/leave?view=year" className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-bg-subtle">View leave calendar</Link>
+          <Link href="/leave/manage?tab=quantities" className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-bg-subtle">Assign quantities</Link>
           <Link href="/leave/balances" className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-bg-subtle">Balances</Link>
         </div>
       </div>

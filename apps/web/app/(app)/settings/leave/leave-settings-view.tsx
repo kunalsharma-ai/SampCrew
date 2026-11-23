@@ -6,7 +6,7 @@ import { useState, useTransition } from 'react';
 import { type FieldDef, ResourceDialog } from '@/components/resource-form';
 import type { ActionResult } from '@/lib/api';
 import type { HolidayCalendar, LegalEntity, Location } from '@/lib/types';
-import { addHolidayAction, closeYearAction, deleteCalendarAction, removeHolidayAction, runAccrualsAction, saveCalendarAction } from './actions';
+import { addHolidayAction, deleteCalendarAction, removeHolidayAction, saveCalendarAction } from './actions';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const yesNo = [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }];
@@ -15,37 +15,24 @@ interface Props {
   calendars: HolidayCalendar[];
   entities: LegalEntity[];
   locations: Location[];
-  /** The Super Workspace also posts accruals and closes leave years. */
-  canConfigure: boolean;
 }
 
 export function LeaveSettingsView(props: Props) {
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
   const [notice, setNotice] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const run = (fn: () => Promise<ActionResult<unknown>>, ok?: (data: unknown) => string) => start(async () => {
     const r = await fn();
     setNotice(r.ok ? { tone: 'success', text: ok ? ok(r.data) : r.message ?? 'Saved' } : { tone: 'danger', text: r.message });
     if (r.ok) router.refresh();
   });
-  const lastYear = new Date().getFullYear() - 1;
   return (
     <div className="grid gap-6">
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
       <Alert tone="info">
-        Leave types, their policies, who gets them and who approves them are on <a className="font-medium underline" href="/leave/manage?tab=types">Leave management</a>.
+        Leave types, who sees them and the quantities people have are on <a className="font-medium underline" href="/leave/manage?tab=types">Leave management</a>.
       </Alert>
       <CalendarsCard {...props} run={run} />
-      {props.canConfigure && <Card>
-        <CardHeader title="Balances maintenance" description="Accruals post automatically every hour and never credit the same period twice. Closing a year carries balances forward up to each leave type's cap and lapses the rest." />
-        <CardBody className="flex flex-wrap gap-2">
-          <Button variant="secondary" loading={pending} onClick={() => run(runAccrualsAction, (d) => `Posted ${(d as { posted: number }).posted} accrual line(s).`)}>Post accruals now</Button>
-          <Button variant="secondary" loading={pending} onClick={() => {
-            if (!confirm(`Close leave year ${lastYear}? This carries forward and lapses balances. Running it again does nothing more.`)) return;
-            run(() => closeYearAction(lastYear), (d) => { const x = d as { carried: number; lapsed: number }; return `Closed ${lastYear}: ${x.carried} balance(s) carried, ${x.lapsed} lapsed.`; });
-          }}>Close leave year {lastYear}</Button>
-        </CardBody>
-      </Card>}
     </div>
   );
 }

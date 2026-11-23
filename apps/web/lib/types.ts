@@ -1,4 +1,4 @@
-import type { LeaveAllocationCriteria, LeaveApprovalRules, LeaveEligibility, LeaveTypePolicy } from '@crew/contracts';
+import type { LeaveApprovalRules, LeaveEligibility, LeaveTypePolicy } from '@crew/contracts';
 import type { MeResponse, MemberAccess } from '@crew/contracts';
 
 export type Me = MeResponse;
@@ -85,14 +85,16 @@ export interface LeaveType {
   eligibleGender: string; countsCalendarDays: boolean; effectiveFrom: string | null; hrAllocatable: boolean; active: boolean; archivedAt: string | null;
   deactivatedReason: string | null; version: number; eligibility: LeaveEligibility; policy: LeaveTypePolicy; approval: LeaveApprovalRules;
   createdBy: { name: string | null; level: string | null; at: string | null }; updatedBy: { name: string | null; level: string | null; at: string | null };
-  allocations: { employees: number; hrWorkspaces: { id: string | null; name: string | null }[] }; used: boolean;
+  /** Who sees it: HR Workspace only, Employee Workspace only, or both. */
+  visibility: 'hr' | 'employee' | 'both'; visibilityLabel: string;
+  owner: { level: 'super' | 'hr'; hrWorkspaceId: string | null; hrWorkspaceName: string | null };
+  /** Whether the caller may edit it, change its visibility or switch it off (the API checks again). */
+  canManage: boolean; used: boolean;
   history?: LeaveHistoryRow[];
 }
-export interface StandardLeaveType { code: string; name: string; kind: string; category: string; paid: boolean; allowHalfDay: boolean; eligibleGender: string; countsCalendarDays: boolean; accrualMethod: string; annualEntitlement: string; description: string; starter: boolean; added: boolean }
-export interface LeaveAllocation {
-  id: string; leaveTypeId: string; leaveTypeName: string | null; leaveTypeCode: string | null; target: 'employees' | 'hr_workspace'; hrWorkspaceId: string | null; hrWorkspaceName: string | null;
-  criteria: LeaveAllocationCriteria; summary: string; entitlementDays: string | null; note: string; byName: string | null; byLevel: string; createdAt: string | null;
-  revokedAt: string | null; revokedByName: string | null; revokedReason: string | null; reach: number | null;
+export interface LeaveQuantities {
+  year: number; truncated: boolean; types: { id: string; code: string; name: string; color: string; visibility: string }[];
+  rows: { employeeId: string; name: string; code: string; departmentName: string | null; hrWorkspaceName: string | null; cells: Record<string, { assigned: string | null; used: string; remaining: string | null }> }[];
 }
 export interface LeaveHistoryRow { id: string; at: string; kind: string; leaveTypeId: string; leaveTypeName: string | null; version: number | null; byName: string | null; byLevel: string; changes: string[]; note: string | null }
 export interface LeaveAuthorityStatus { authority: 'manager' | 'hr' | 'super' | 'other'; label: string; status: string; decidedBy: string | null; decidedAt: string | null; comment: string | null; escalated: boolean }
@@ -116,7 +118,8 @@ export interface LeaveReport {
   byDepartment: { departmentId: string | null; name: string; employees: number; credited: string; taken: string; utilisation: number | null }[];
   employees: { employeeId: string; name: string; code: string; departmentName: string | null; hrWorkspaceName: string | null; cells: Record<string, { entitlement: string; used: string; pending: string; balance: string }> }[];
 }
-export interface LeaveBalance { leaveTypeId: string; code: string; name: string; color: string; paid: boolean; allowHalfDay: boolean; kind?: string; tracked: boolean; annualEntitlement: string; accrualMethod: string; accrued: string; carriedForward: string; adjusted: string; taken: string; lapsed: string; balance: string; pending: string; available: string | null; entitlement?: string; used?: string; upcomingApproved?: string }
+/** A leave type someone can apply for, with the quantity typed by hand for the year (null: Not Assigned). */
+export interface LeaveBalance { leaveTypeId: string; code: string; name: string; color: string; paid: boolean; allowHalfDay: boolean; kind?: string; category?: string; visibility?: string; tracked: boolean; assigned: string | null; notAssigned: boolean; entitlement: string | null; taken: string; used: string; balance: string | null; pending: string; upcomingApproved?: string; available: string | null }
 export interface LeaveRequest { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; leaveTypeKind?: string; color: string; startDate: string; endDate: string; startHalf: string; endHalf: string; days: string; reason: string | null; status: string; approvalId: string | null; waitingOn?: string | null; createdAt: string; decidedAt: string | null; cancelReason: string | null; requestedBy: string | null; approvalTrail?: ApprovalStep[]; sameDay?: boolean; appliedOn?: string | null; penalty?: { id: string; days: string; source: string; status: string; statusReason: string | null } | null; replacesRequestId?: string | null; reference?: string; approvalRoute?: 'hr' | 'super' | 'both' | null; approvalRouteLabel?: string; approvalOrder?: string | null; reviewerHrWorkspaceName?: string | null; hrWorkspaceName?: string | null; authorities?: LeaveAuthorityStatus[]; documentCount?: number; documents?: { id: string; name: string; href: string }[]; leaveTypeActive?: boolean; policyVersion?: number | null; policySnapshot?: { code: string; name: string; policy: LeaveTypePolicy; approval: LeaveApprovalRules; annualEntitlement: string; reviewers: string[] } | null; modifications?: { at: string; by: string | null; leaveTypeName: string | null; startDate: string; endDate: string; days: string; reason: string | null }[] }
 export interface LeaveAdjustment { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string | null; year: number; quantity: string; note: string | null; opening: boolean; by: string | null; createdAt: string }
 export interface LeaveOverview { year: number; truncated: boolean; types: { id: string; code: string; name: string; color: string; kind: string }[]; rows: { employeeId: string; name: string; code: string; departmentId: string | null; departmentName: string | null; balances: Record<string, { balance: string | null; available: string | null; taken: string; pending: string }> }[] }

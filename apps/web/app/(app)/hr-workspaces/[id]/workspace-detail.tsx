@@ -113,7 +113,7 @@ function PermissionsCard({ w }: { w: HrWorkspaceDetail }) {
   });
   return (
     <Card>
-      <CardHeader title="Employee data permissions" description={w.can.manage ? 'What this HR Workspace’s admins may do with the records of its people. Switching one off takes effect on their next page, and the server refuses it too.' : 'What the Super Workspace allows this HR Workspace’s admins to do with the records of its people.'} />
+      <CardHeader title="Employee data permissions" action={w.can.manage ? <a className="text-xs font-medium text-accent hover:underline" href={`/settings/workspace-permissions?level=hr&groupId=${w.id}`}>All permissions</a> : undefined} description={w.can.manage ? 'What this HR Workspace’s admins may do with the records of its people. Switching one off takes effect on their next page, and the server refuses it too.' : 'What the Super Workspace allows this HR Workspace’s admins to do with the records of its people.'} />
       <CardBody className="grid gap-3">
         {flash && <Alert tone={flash.tone}>{flash.text}</Alert>}
         <ul className="grid gap-2 sm:grid-cols-2">

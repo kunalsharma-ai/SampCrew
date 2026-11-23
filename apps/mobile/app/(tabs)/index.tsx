@@ -72,7 +72,7 @@ export default function Home() {
   const firstName = me?.user.fullName.split(' ')[0] ?? '';
   const level = app?.levelLabel ?? (me ? workspaceLevelLabel(me.levels, { withName: true }) : undefined);
   const toAck = data?.news?.filter((a) => a.requiresAck && !a.acknowledgedAt).length ?? 0;
-  const leaveDays = data?.balances?.reduce((sum, b) => sum + Number(b.available), 0);
+  const leaveDays = data?.balances?.reduce((sum, b) => sum + Number(b.available ?? 0), 0);
   const pendingLeave = data?.requests?.filter((r) => r.status === 'pending') ?? [];
   const openLearning = data?.learning?.filter((a) => a.status === 'assigned' || a.status === 'in_progress') ?? [];
   const day = data?.today?.day;
