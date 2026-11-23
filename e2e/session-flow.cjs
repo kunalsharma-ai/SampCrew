@@ -100,7 +100,7 @@ async function expectSignedOut(page, reason, text) {
       await page.waitForURL((u) => u.pathname !== '/login');
       const before = await db.collection('tenant_access_controls').findOne({ tenant_id: tenant._id });
       if (before) await db.collection('tenant_access_controls').updateOne({ tenant_id: tenant._id }, { $set: { web_portal_enabled: false } });
-      else await db.collection('tenant_access_controls').insertOne({ tenant_id: tenant._id, web_portal_enabled: false, mobile_app_enabled: true, web_off_features: [], mobile_off_features: [], disabled_permissions: [], device_vendors_disabled: [], non_delegable_features: [], super_may_create_employees: true, updated_at: new Date() });
+      else await db.collection('tenant_access_controls').insertOne({ tenant_id: tenant._id, web_portal_enabled: false, mobile_app_enabled: true, web_off_features: [], mobile_off_features: [], disabled_permissions: [], device_vendors_disabled: [], non_delegable_features: [], delete_areas_off: [], super_may_create_employees: true, updated_at: new Date() });
       try {
         await expectSignedOut(page, 'app_switched_off', 'switched the Web Portal off');
       } finally {
