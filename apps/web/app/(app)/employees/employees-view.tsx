@@ -72,6 +72,8 @@ interface Props {
   hrWorkspaces: { options: { id: string; name: string }[]; central: boolean } | null;
   /** Who may give workspace access while adding someone (Super Workspace people); null: Employee Workspace only. */
   accessChoice: { canGiveSuper: boolean; hrWorkspaces: { id: string; name: string }[] } | null;
+  /** Set when the plan's Employee Workspaces are all in use (no new logins). */
+  loginsFull: string | null;
   canManageOrg: boolean;
   canAttendance: boolean;
   canConfigureShifts: boolean;

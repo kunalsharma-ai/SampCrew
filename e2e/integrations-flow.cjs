@@ -236,7 +236,7 @@ const until = async (what, fn, ms = 30000) => {
     const [from, to] = leaveDays();
     const req = await api(arjunTok, 'POST', '/leave/requests', { leaveTypeId: cl.id, startDate: from, endDate: to, reason: `Integrations flow ${stamp}` });
     if (req.status >= 300) throw new Error(`leave request failed: ${JSON.stringify(req.body)}`);
-    const posted = await until('the workflow to post to Slack', async () => slack.got.find((g) => /Arjun Kulkarni applied for 2 days of Casual leave/.test(JSON.parse(g.body).text)));
+    const posted = await until('the workflow to post to Slack', async () => slack.got.find((g) => /Arjun Kulkarni applied for 2 days of Casual Leave/.test(JSON.parse(g.body).text)));
     if (!posted) throw new Error('unreachable');
     const leaveEvent = await until('the leave.requested webhook', async () => hook.got.find((g) => g.headers['crew-event'] === 'leave.requested'));
     const lb = JSON.parse(leaveEvent.body);

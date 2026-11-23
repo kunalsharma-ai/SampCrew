@@ -1,3 +1,4 @@
+import type { WorkspaceLimits } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load, loadOptional } from '@/lib/api';
@@ -14,12 +15,13 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   if (sp.status && ['active', 'invited', 'suspended'].includes(sp.status)) qs.set('status', sp.status);
   if (sp.cursor) qs.set('cursor', sp.cursor);
   const me = await load<Me>('/me');
-  const [members, hrWorkspaces, departments, entities, locations] = await Promise.all([
+  const [members, hrWorkspaces, departments, entities, locations, limits] = await Promise.all([
     load<Page<Member>>(`/members?${qs}`),
     can(me, 'hierarchy:read') ? loadOptional<{ items: { id: string; name: string }[] }>('/hr-workspaces?status=active') : null,
     loadOptional<Department[]>('/org/departments'),
     loadOptional<LegalEntity[]>('/org/legal-entities'),
     loadOptional<Location[]>('/org/locations'),
+    can(me, 'users:invite') ? loadOptional<WorkspaceLimits>('/workspace-limits') : null,
   ]);
   const scope = me.permissions['users:read'];
   const scopeNote = scope === 'tenant' ? 'Everyone in the workspace.' : scope === 'entity' ? 'People in your legal entity.' : scope === 'department' ? 'People in your department.' : scope === 'team' ? 'You and the people who report to you.' : 'Only you.';
@@ -37,6 +39,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
         canInvite={can(me, 'users:invite')}
         canManage={can(me, 'users:manage')}
         canAssignRoles={can(me, 'roles:manage')}
+        limits={limits}
       />
     </>
   );

@@ -42,6 +42,11 @@ export interface LeaveRequest {
   leaveTypeCode?: string;
   /** Who a pending request is waiting for. */
   waitingOn?: string | null;
+  reference?: string;
+  /** Where the application was sent: HR Workspace, Super Workspace or both. */
+  approvalRouteLabel?: string;
+  /** Each authority it went to and that authority's decision. */
+  authorities?: { authority: string; label: string; status: string; decidedBy: string | null; comment: string | null }[];
 }
 export interface LeaveCalendar { from: string; to: string; weeklyOffs: number[]; holidays: { date: string; name: string; optional: boolean }[]; requests: LeaveRequest[] }
 export interface InboxItem {

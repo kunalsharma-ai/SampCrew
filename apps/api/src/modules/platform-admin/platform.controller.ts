@@ -47,6 +47,7 @@ import {
 import { z } from 'zod';
 import { AllowPendingPassword, AllowWithoutMfa, PlatformRealm, Public } from '../../platform/authz/decorators';
 import { IdNumberPipe, UuidPipe, ZodPipe } from '../../platform/http/zod';
+import { WorkspaceLimitsService } from '../workspace-limits/workspace-limits.service';
 import { Doc } from '../../platform/openapi/openapi';
 import { FirstRunService } from './first-run.service';
 import { PlatformAuthService } from './platform-auth.service';
@@ -216,7 +217,15 @@ export class PlatformController {
     private readonly statutoryPacksService: StatutoryPacksService,
     private readonly features: PlatformFeaturesService,
     private readonly resets: PasswordResetService,
+    private readonly workspaceLimits: WorkspaceLimitsService,
   ) {}
+
+  @PlatformRealm('tenants:read')
+  @Get('tenants/:id/workspace-limits')
+  @Doc({ summary: 'A company’s HR Workspaces and Employee Workspaces: used, allowed by its plan, and where the figures come from' })
+  tenantWorkspaceLimits(@Param('id', UuidPipe) id: string) {
+    return this.workspaceLimits.forTenant(id);
+  }
 
   @PlatformRealm('tenants:read')
   @Get('features')

@@ -30,6 +30,7 @@ import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { employeeAttrs } from '../employees/employee-attrs';
+import { WorkspaceLimitsService } from '../workspace-limits/workspace-limits.service';
 import { fieldById, memberNames } from '../employees/employee-view';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,6 +64,7 @@ export class HierarchyService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationService,
     private readonly outbox: OutboxService,
+    private readonly limits: WorkspaceLimitsService,
   ) {}
 
   // Levels -----------------------------------------------------------------------------------------------------------
@@ -314,12 +316,8 @@ export class HierarchyService {
       const c = await this.company(tx);
       const features = input.features.filter((k) => !CORE.has(k));
       await this.refuseBeyondParent(tx, s, features.filter((k) => !c.delegable.includes(k)), { type: 'hr_workspace', id: null, name: input.name });
-      const limit = c.limits.max_hr_workspaces;
-      const count = await tx.collection('hr_workspaces').count({ archived_at: null });
-      if (limit !== undefined && limit !== UNLIMITED && count + 1 > limit) {
-        await this.recordRefusal({ action: 'hr_workspace.limit_reached', resourceType: 'hr_workspace', metadata: { limit, count } });
-        throw Errors.limitReached('HR Workspaces', limit);
-      }
+      // Current < Allowed, from the company's plan (Console > Plans); the database guard checks it again on insert.
+      await this.limits.require(tx, 'hr', 1, { name: input.name, level: 'super' });
       await this.checkEmployeeLimit(c.limits.max_employees, input.maxEmployees);
       await this.checkUnique(tx, input.name, input.code ?? null, null);
       const admins = await this.activeMembers(tx, input.adminMembershipIds);

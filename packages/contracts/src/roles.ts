@@ -74,6 +74,8 @@ export const ACCESS_LEVEL_LABEL: Record<AccessLevelRole, string> = { super_works
 const SUPER_GRANTS = everything('tenant');
 
 const HR_WORKSPACE_EXCLUDED = new Set<string>([
+  // Leave types, policies and approval rules belong to the Super Workspace; HR Workspaces allocate and approve.
+  'leave:configure',
   'tenant:manage', 'roles:manage', 'billing:manage', 'hierarchy:manage', 'employees:transfer', 'modules:manage',
   'integrations:manage', 'security:manage', 'ai:configure', 'audit:export',
 ]);
@@ -147,7 +149,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'users:read': 'tenant', 'users:invite': 'tenant', 'users:manage': 'tenant', 'roles:read': 'tenant',
       'employees:read': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant', 'employees:sensitive:read': 'tenant',
       'employees:lifecycle': 'tenant', 'documents:read': 'tenant', 'documents:manage': 'tenant',
-      'leave:read': 'tenant', 'leave:approve': 'tenant', 'leave:configure': 'tenant',
+      'leave:read': 'tenant', 'leave:approve': 'tenant', 'leave:configure': 'tenant', 'leave:allocate': 'tenant',
       'attendance:read': 'tenant', 'attendance:correct': 'tenant', 'attendance:approve': 'tenant', 'attendance:configure': 'tenant',
       'devices:manage': 'tenant', 'shifts:read': 'tenant', 'shifts:manage': 'tenant',
       'performance:read': 'tenant', 'performance:manage': 'tenant', 'performance:configure': 'tenant',
@@ -171,7 +173,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'org:read': 'tenant', 'users:read': 'tenant', 'users:invite': 'tenant', 'users:manage': 'tenant',
       'employees:read': 'tenant', 'employees:export': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant', 'employees:lifecycle': 'tenant',
       'documents:read': 'tenant', 'documents:manage': 'tenant',
-      'leave:read': 'tenant', 'leave:approve': 'tenant',
+      'leave:read': 'tenant', 'leave:approve': 'tenant', 'leave:allocate': 'tenant',
       'attendance:read': 'tenant', 'attendance:correct': 'tenant', 'attendance:approve': 'tenant', 'shifts:read': 'tenant', 'shifts:manage': 'tenant',
       'performance:read': 'tenant', 'performance:manage': 'tenant', 'learning:read': 'tenant', 'learning:manage': 'tenant',
       'helpdesk:manage': 'tenant', 'announcements:manage': 'tenant', 'reports:read': 'tenant',
@@ -366,6 +368,12 @@ export interface LevelConstraints {
 
 const AUDIT_TRAIL = new Set(['audit:read']);
 
+/** Permissions added after the four access levels, and the earlier ones whose holders get them too. */
+const FOLLOWS: Record<string, string[]> = {
+  'leave:allocate': ['leave:configure', 'leave:approve'],
+  ...Object.fromEntries(Object.entries(SPLIT_PERMISSIONS).map(([k, from]) => [k, [from]])),
+};
+
 /** Every area (permission module) a level can look after, in catalogue order. */
 export const ACCESS_AREAS: readonly string[] = [...new Set(PERMISSIONS.map((p) => p.module))];
 
@@ -379,7 +387,8 @@ export function levelGrantScope(permission: string, scope: Scope, c: LevelConstr
   if (!p) return null;
   if (c.hrWorkspaceIds?.length && COMPANY_HR_ONLY.has(permission)) return null;
   if (c.grants) {
-    const kept = c.grants[permission] ?? (SPLIT_PERMISSIONS[permission] ? c.grants[SPLIT_PERMISSIONS[permission]!] : undefined);
+    // A permission added after the person's grants were kept follows the ones it was split from.
+    const kept = c.grants[permission] ?? (FOLLOWS[permission] ?? []).map((k) => c.grants![k]).find(Boolean);
     if (!kept) return null;
     return SCOPE_RANK[kept] < SCOPE_RANK[scope] ? kept : scope;
   }
@@ -521,8 +530,8 @@ export const PLATFORM_ROLES = ['super_admin', 'support', 'billing_ops', 'viewer'
 export type PlatformRole = (typeof PLATFORM_ROLES)[number];
 
 export const PLATFORM_ROLE_CAPABILITIES: Record<PlatformRole, readonly string[]> = {
-  super_admin: ['tenants:read', 'tenants:manage', 'access:manage', 'integrations:manage', 'billing:read', 'billing:manage', 'plans:manage', 'statutory:manage', 'support:request', 'admins:manage', 'audit:read', 'health:read'],
-  support: ['tenants:read', 'support:request', 'health:read', 'audit:read'],
+  super_admin: ['tenants:read', 'tenants:manage', 'access:manage', 'integrations:manage', 'billing:read', 'billing:manage', 'plans:manage', 'statutory:manage', 'support:request', 'support:chat', 'admins:manage', 'audit:read', 'health:read'],
+  support: ['tenants:read', 'support:request', 'support:chat', 'health:read', 'audit:read'],
   billing_ops: ['tenants:read', 'billing:read', 'billing:manage', 'plans:manage'],
   viewer: ['tenants:read', 'billing:read', 'health:read'],
 };

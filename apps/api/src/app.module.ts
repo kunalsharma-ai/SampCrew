@@ -32,11 +32,20 @@ import { MasterDataController } from './modules/master-data/master-data.controll
 import { MasterDataService } from './modules/master-data/master-data.service';
 import { HrAdminService } from './modules/hr-admin/hr-admin.service';
 import { HierarchyController } from './modules/hierarchy/hierarchy.controller';
+import { WorkspaceLimitsController } from './modules/workspace-limits/workspace-limits.controller';
+import { WorkspaceLimitsService } from './modules/workspace-limits/workspace-limits.service';
 import { HierarchyService } from './modules/hierarchy/hierarchy.service';
 import { FeatureLevelsService } from './modules/hierarchy/feature-levels.service';
 import { EmployeesService } from './modules/employees/employees.service';
 import { HealthController } from './modules/health/health.controller';
 import { HrJobsService } from './modules/hr-jobs/hr-jobs.service';
+import { CandidateCrmController } from './modules/candidate-crm/crm.controller';
+import { CrmAccessService } from './modules/candidate-crm/crm-access.service';
+import { CrmFieldsService } from './modules/candidate-crm/crm-fields.service';
+import { CrmImportService } from './modules/candidate-crm/crm-import.service';
+import { CrmJobsService } from './modules/candidate-crm/crm-jobs.service';
+import { CrmWorkService } from './modules/candidate-crm/crm-work.service';
+import { CrmService } from './modules/candidate-crm/crm.service';
 import { LateComingController, LeavePenaltiesController } from './modules/discipline/discipline.controller';
 import { DisciplineService } from './modules/discipline/discipline.service';
 import { LeaveController } from './modules/leave/leave.controller';
@@ -118,6 +127,8 @@ import { AnnouncementsService } from './modules/helpdesk/announcements.service';
 import { AnnouncementsController, HelpdeskController } from './modules/helpdesk/helpdesk.controller';
 import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
 import { ChatService } from './modules/communication/chat.service';
+import { PlatformSupportChatController, SupportChatController } from './modules/support-chat/support-chat.controller';
+import { SupportChatService } from './modules/support-chat/support-chat.service';
 import { CommFilesController, CommunicationController } from './modules/communication/communication.controller';
 import { CommunicationService } from './modules/communication/communication.service';
 import { CommEmailService } from './modules/communication/email.service';
@@ -196,6 +207,7 @@ export const CONTROLLERS = [
   CustomFieldFilesController,
   HrAdminController,
   HierarchyController,
+  WorkspaceLimitsController,
   OnboardingController,
   TasksController,
   ProfileController,
@@ -226,6 +238,7 @@ export const CONTROLLERS = [
   DeviceApiController,
   LateComingController,
   RecruitmentController,
+  CandidateCrmController,
   CareersPublicController,
   ResumeFilesController,
   PayrollController,
@@ -240,6 +253,8 @@ export const CONTROLLERS = [
   HelpdeskController,
   AnnouncementsController,
   CommunicationController,
+  SupportChatController,
+  PlatformSupportChatController,
   CommFilesController,
   MobileController,
   AiController,
@@ -325,6 +340,7 @@ export const CONTROLLERS = [
     CustomFieldsService,
     HrAdminService,
     HierarchyService,
+    WorkspaceLimitsService,
     FeatureLevelsService,
     EmployeeImportService,
     DataImportService,
@@ -338,6 +354,12 @@ export const CONTROLLERS = [
     DevicesService,
     RequisitionsService,
     CandidatesService,
+    CrmAccessService,
+    CrmFieldsService,
+    CrmService,
+    CrmWorkService,
+    CrmImportService,
+    CrmJobsService,
     InterviewsService,
     OffersService,
     CareersService,
@@ -352,6 +374,7 @@ export const CONTROLLERS = [
     EngagementService,
     HelpdeskService,
     ChatService,
+    SupportChatService,
     CommEmailService,
     CommFilesService,
     CommunicationService,

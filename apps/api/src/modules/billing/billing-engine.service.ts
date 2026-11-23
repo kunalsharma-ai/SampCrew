@@ -1,3 +1,4 @@
+import { countWorkspaces } from '../workspace-limits/workspace-limits.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { permissionHolderIds } from '../../platform/authz/authz.service';
 import {
@@ -275,12 +276,19 @@ export class BillingEngine {
       members: await tx.collection('memberships').count({ tenant_id: tenantId, status: { $ne: 'suspended' } }),
       entities: await tx.collection('legal_entities').count({ tenant_id: tenantId, archived_at: null }),
       custom_roles: (await tx.collection('role_assignments').distinct('role_id', { tenant_id: tenantId, role_id: { $in: customRoleIds } })).length,
+      hr_workspaces: await countWorkspaces(tx, tenantId, 'hr'),
     };
     const out: string[] = [];
     const maxEmployees = limit('max_employees');
     const maxEntities = limit('max_legal_entities');
     if (maxEmployees !== UNLIMITED && usage.members > maxEmployees) out.push(`You have ${usage.members} members; ${plan.name} allows ${maxEmployees}.`);
     if (maxEntities !== UNLIMITED && usage.entities > maxEntities) out.push(`You have ${usage.entities} legal entities; ${plan.name} allows ${maxEntities}.`);
+    // Workspace limits: a plan with fewer places than are in use would leave the company unable to add any, so the
+    // move waits until some are archived or locked (nothing is ever removed by a plan change).
+    const maxHr = limit('max_hr_workspaces');
+    const maxAccounts = limit('max_employee_workspaces');
+    if (maxHr !== UNLIMITED && usage.hr_workspaces > maxHr) out.push(`You have ${usage.hr_workspaces} HR Workspaces; ${plan.name} allows ${maxHr}. Archive some first.`);
+    if (maxAccounts !== UNLIMITED && usage.members > maxAccounts) out.push(`You have ${usage.members} Employee Workspaces (sign-in accounts); ${plan.name} allows ${maxAccounts}. Lock some logins first.`);
     if (usage.custom_roles > 0 && !has.has('custom_roles')) out.push('Custom roles are in use and are not included in this plan.');
     if (usage.entities > 1 && !has.has('multi_entity')) out.push(`You have ${usage.entities} legal entities and ${plan.name} does not include multiple legal entities.`);
     if (seats < usage.members) out.push(`Seats (${seats}) cannot be fewer than active members (${usage.members}).`);
@@ -818,6 +826,8 @@ export class BillingEngine {
       };
       return [
         metric('max_employees', await tx.collection('memberships').count({ status: { $ne: 'suspended' } })),
+        metric('max_hr_workspaces', await tx.collection('hr_workspaces').count({ archived_at: null })),
+        metric('max_employee_workspaces', await tx.collection('memberships').count({ status: { $ne: 'suspended' } })),
         metric('ai_credits_monthly', credits?.used ?? 0),
         metric('storage_gb', Math.round((bytes / 1024 ** 3) * 100) / 100),
       ];

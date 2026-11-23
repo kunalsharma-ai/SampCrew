@@ -1,4 +1,5 @@
-import type { ResourceAttributes } from '../../platform/authz/policy';
+import { scopeFilter, type ResourceAttributes, type Subject } from '../../platform/authz/policy';
+import { syncCrmFromAts } from '../candidate-crm/crm-common';
 import { requestContext } from '../../platform/context/request-context';
 import { membershipUserNames, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
@@ -28,6 +29,27 @@ type Doc = Record<string, any>;
 
 /** A candidate's display name, as the SQL `trim(first_name || ' ' || last_name)`. */
 export const candidateName = (c: { first_name?: string | null; last_name?: string | null }) => `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim();
+
+/**
+ * The candidates a member may see with `permission` in the ATS, with Candidate CRM ownership applied:
+ *  - Super Workspace: everyone.
+ *  - Company-wide recruiters (no record limits): the company's own candidates and anyone in a job's pipeline, but not
+ *    the private CRM records of an HR Workspace.
+ *  - Others: candidates with an application to a requisition in their scope, plus the CRM records of the HR
+ *    Workspaces they run.
+ */
+export async function candidateScopeFilter(tx: TenantTx, subject: Subject, permission: string): Promise<Record<string, unknown>> {
+  const scope = scopeFilter(subject, permission, REQ_FIELDS) ?? { _id: { $in: [] } };
+  if (subject.grants.some((g) => g.roleKey === 'super_workspace' && g.permission === permission)) return {};
+  const own = [...new Set(subject.grants.filter((g) => g.permission === permission).flatMap((g) => g.constraints.hrWorkspaceIds ?? []))];
+  const owned = own.length ? [{ crm_hr_workspace_id: { $in: own } }, { crm_shared_hr_workspace_ids: { $in: own } }] : [];
+  const reqIds = await visibleRequisitionIds(tx, scope);
+  if (reqIds === null) {
+    return { $or: [{ crm_hr_workspace_id: null }, ...owned, { id: { $in: await tx.collection('applications').distinct<string>('candidate_id') } }] };
+  }
+  const viaJobs = { id: { $in: await tx.collection('applications').distinct<string>('candidate_id', { requisition_id: { $in: reqIds } }) } };
+  return owned.length ? { $or: [viaJobs, ...owned] } : viaJobs;
+}
 
 /** Requisition ids the member may see with `permission`, or null when they may see every requisition. */
 export async function visibleRequisitionIds(tx: TenantTx, scope: Record<string, unknown>): Promise<string[] | null> {
@@ -116,6 +138,8 @@ export async function recordEvent(
   });
   const app = await tx.collection('applications').findOne({ id: applicationId }, { projection: { candidate_id: 1 } });
   if (app) await tx.collection('candidates').updateOne({ id: app.candidate_id }, { $set: { last_activity_at: new Date() } });
+  // Candidate CRM: the event joins the candidate's timeline, and moves their CRM stage on where it should.
+  await syncCrmFromAts(tx, applicationId, kind, extra.detail ?? {});
 }
 
 export async function stageOfKind(tx: TenantTx, kind: 'new' | 'hired') {

@@ -228,7 +228,8 @@ export function LoginControlCard({ e, details }: { e: EmployeeProfile; details: 
   );
 }
 
-export function LoginModeChoice({ mode, onChange, allowNone = true }: { mode: 'none' | 'invite' | 'password'; onChange: (m: 'none' | 'invite' | 'password') => void; allowNone?: boolean }) {
+/** `full`: the plan's Employee Workspaces are all in use, so only "No login for now" can be chosen (the reason is shown). */
+export function LoginModeChoice({ mode, onChange, allowNone = true, full }: { mode: 'none' | 'invite' | 'password'; onChange: (m: 'none' | 'invite' | 'password') => void; allowNone?: boolean; full?: string | null }) {
   const options = [
     ...(allowNone ? [{ key: 'none' as const, title: 'No login for now', body: 'Keep the employee record only. You can create the login later from their profile.', icon: X }] : []),
     { key: 'password' as const, title: 'Create the login now', body: 'Works straight away with a temporary password you hand over. They choose their own at first sign-in.', icon: KeyRound },
@@ -237,13 +238,17 @@ export function LoginModeChoice({ mode, onChange, allowNone = true }: { mode: 'n
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-1 text-xs font-medium text-fg-muted">SampCrew login</legend>
-      {options.map((o) => (
-        <label key={o.key} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${mode === o.key ? 'border-accent bg-accent/5' : 'border-border hover:bg-bg-subtle'}`}>
-          <input type="radio" name="loginMode" value={o.key} checked={mode === o.key} onChange={() => onChange(o.key)} className="mt-0.5" />
+      {full && <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-fg" data-testid="login-limit-reached">{full}</p>}
+      {options.map((o) => {
+        const off = !!full && o.key !== 'none';
+        return (
+        <label key={o.key} className={`flex items-start gap-3 rounded-lg border p-3 ${off ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${mode === o.key ? 'border-accent bg-accent/5' : 'border-border hover:bg-bg-subtle'}`}>
+          <input type="radio" name="loginMode" value={o.key} checked={mode === o.key} disabled={off} onChange={() => onChange(o.key)} className="mt-0.5" />
           <o.icon className="mt-0.5 size-4 text-fg-muted" aria-hidden />
           <span><span className="block font-medium text-fg">{o.title}</span><span className="block text-xs text-fg-muted">{o.body}</span></span>
         </label>
-      ))}
+        );
+      })}
     </fieldset>
   );
 }

@@ -90,6 +90,8 @@ interface Props {
   hrWorkspaces?: { options: { id: string; name: string }[]; central: boolean } | null;
   /** Giving workspace access with the login; null: the login gets Employee Workspace access. */
   accessChoice?: { canGiveSuper: boolean; hrWorkspaces: { id: string; name: string }[] } | null;
+  /** Set when the plan's Employee Workspaces are all in use: why a login cannot be made now. */
+  loginsFull?: string | null;
 }
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
@@ -819,7 +821,7 @@ export function HireWizard(p: Props) {
               </>
             )}
             <div className="sm:col-span-2">
-              <LoginModeChoice mode={loginMode} onChange={(m) => set('loginMode', m)} />
+              <LoginModeChoice mode={loginMode} onChange={(m) => set('loginMode', m)} full={p.loginsFull} />
               {loginMode === 'password' && <div className="mt-3"><OwnPassword own={ownPassword} setOwn={setOwnPassword} password={password} setPassword={(x) => { setPassword(x); setErrors((e) => ({ ...e, initialPassword: '' })); }} error={errors.initialPassword} /></div>}
               {errors.workEmail && <p className="mt-1 text-xs text-danger">{errors.workEmail} <button type="button" className="text-accent hover:underline" onClick={() => setStep(0)}>Add it</button></p>}
             </div>
