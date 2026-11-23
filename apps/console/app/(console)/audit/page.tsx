@@ -1,7 +1,8 @@
 import type { ConsoleAuditRow } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
-import { AuditLogView, auditFiltersFrom } from '@/components/audit-log';
+import { AuditLogView } from '@/components/audit-log';
+import { auditFiltersFrom } from '@/lib/audit-filters';
 import { load } from '@/lib/api';
 import { hasCap } from '@/lib/caps';
 import type { Admin } from '@/lib/types';

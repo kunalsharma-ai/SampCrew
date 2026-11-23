@@ -9,7 +9,7 @@ export function WorkspaceFields({ errors, plans, defaults }: { errors: Record<st
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <Field label="Super Workspace name" hint="Usually the company or the group entity" required error={errors.companyName}>{(p) => <Input {...p} name="companyName" required defaultValue={defaults?.companyName} />}</Field>
-      <Field label="Workspace address" hint="Lowercase letters, numbers and hyphens" required error={errors.slug}>{(p) => <Input {...p} name="slug" required pattern="[a-z0-9-]+" />}</Field>
+      <Field label="Workspace address" hint="Lowercase letters, numbers and hyphens" required error={errors.slug}>{(p) => <Input {...p} name="slug" required pattern="[a-z0-9\-]+" />}</Field>
       <Field label="Super Workspace Admin name" required error={errors.ownerName}>{(p) => <Input {...p} name="ownerName" required />}</Field>
       <Field label="Super Workspace Admin email" required error={errors.ownerEmail}>{(p) => <Input {...p} name="ownerEmail" type="email" required />}</Field>
       <Field label="Plan" required error={errors.planKey}>{(p) => (

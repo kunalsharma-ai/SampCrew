@@ -1,4 +1,8 @@
 import type { ClientStatus } from '@crew/contracts';
+import type { Tone } from '@crew/ui';
+
+/** Badge colour for each company status (shared by the list and the Company 360 header). */
+export const CLIENT_TONE: Record<ClientStatus, Tone> = { active: 'success', trial: 'info', payment_due: 'warning', suspended: 'danger', inactive: 'neutral', setup_pending: 'accent', archived: 'neutral' };
 
 /** The Company 360 answer from GET /platform/clients/:id (money and contact details by permission). */
 export interface ClientDetail {

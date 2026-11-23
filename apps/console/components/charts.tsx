@@ -20,6 +20,8 @@ function niceMax(v: number) {
 }
 
 export const compact = (n: number) => new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+/** Axis and tooltip numbers: compact counts, or compact money when a currency is given (props stay serialisable). */
+const formatter = (currency?: string) => (currency ? (n: number) => { try { return new Intl.NumberFormat('en', { style: 'currency', currency, notation: 'compact', maximumFractionDigits: 1 }).format(n); } catch { return compact(n); } } : compact);
 
 function Legend({ keys, hidden, toggle }: { keys: SeriesKey[]; hidden: Set<string>; toggle: (k: string) => void }) {
   if (keys.length < 2) return null;
@@ -44,7 +46,8 @@ function SrTable({ points, keys, format }: { points: Point[]; keys: SeriesKey[];
 }
 
 /** A line chart (with a soft area under the first series) for counts or money over time. */
-export function TrendChart({ points, keys, height = 220, format = compact, area = true, testId }: { points: Point[]; keys: SeriesKey[]; height?: number; format?: (n: number) => string; area?: boolean; testId?: string }) {
+export function TrendChart({ points, keys, height = 220, currency, area = true, testId }: { points: Point[]; keys: SeriesKey[]; height?: number; currency?: string; area?: boolean; testId?: string }) {
+  const format = formatter(currency);
   const id = useId();
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [hover, setHover] = useState<number | null>(null);
@@ -100,7 +103,8 @@ export function TrendChart({ points, keys, height = 220, format = compact, area 
 }
 
 /** Bars per period (grouped when there are several series). */
-export function BarChart({ points, keys, height = 200, format = compact, testId }: { points: Point[]; keys: SeriesKey[]; height?: number; format?: (n: number) => string; testId?: string }) {
+export function BarChart({ points, keys, height = 200, currency, testId }: { points: Point[]; keys: SeriesKey[]; height?: number; currency?: string; testId?: string }) {
+  const format = formatter(currency);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [hover, setHover] = useState<number | null>(null);
   const shown = keys.filter((k) => !hidden.has(k.key));

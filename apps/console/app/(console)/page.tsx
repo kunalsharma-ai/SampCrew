@@ -17,7 +17,6 @@ export const metadata: Metadata = { title: 'Command center' };
 const fmtMoney = (v: string | number, c: string) => {
   try { return new Intl.NumberFormat('en', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(Number(v)); } catch { return `${c} ${v}`; }
 };
-const compactMoney = (c: string) => (n: number) => { try { return new Intl.NumberFormat('en', { style: 'currency', currency: c, notation: 'compact', maximumFractionDigits: 1 }).format(n); } catch { return String(n); } };
 const LEVEL: Record<string, { icon: typeof Info; tone: Tone; label: string }> = {
   critical: { icon: AlertOctagon, tone: 'danger', label: 'Critical' }, warning: { icon: AlertTriangle, tone: 'warning', label: 'Warning' }, info: { icon: Info, tone: 'info', label: 'Info' },
 };
@@ -119,7 +118,7 @@ export default async function CommandCenterPage({ searchParams }: { searchParams
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
           <Card>
             <CardHeader title="Revenue" description={`Collected and refunded per ${cc.range.bucket}, ${cur}. ${fmtMoney(r.inRange, cur)} in this range, ${fmtMoney(r.thisYear, cur)} this year.`} />
-            <CardBody><BarChart testId="chart-revenue" points={cc.series.revenue} keys={[{ key: 'revenue', label: 'Collected' }, { key: 'refunds', label: 'Refunded' }]} format={compactMoney(cur)} /></CardBody>
+            <CardBody><BarChart testId="chart-revenue" points={cc.series.revenue} keys={[{ key: 'revenue', label: 'Collected' }, { key: 'refunds', label: 'Refunded' }]} currency={cur} /></CardBody>
           </Card>
           <Card>
             <CardHeader title="Subscriptions" description={`New, upgraded, downgraded and cancelled. Trial conversion ${r.conversionRate ?? '–'}%, churn ${r.churnRate ?? '–'}%.`} />
@@ -131,7 +130,7 @@ export default async function CommandCenterPage({ searchParams }: { searchParams
           </Card>
           <Card>
             <CardHeader title="Outstanding" description={`Unpaid invoice total at the end of each ${cc.range.bucket}`} />
-            <CardBody><TrendChart points={cc.series.outstanding} keys={[{ key: 'outstanding', label: 'Outstanding' }]} format={compactMoney(cur)} /></CardBody>
+            <CardBody><TrendChart points={cc.series.outstanding} keys={[{ key: 'outstanding', label: 'Outstanding' }]} currency={cur} /></CardBody>
           </Card>
         </div>
       )}

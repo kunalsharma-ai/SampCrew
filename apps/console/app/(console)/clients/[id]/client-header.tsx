@@ -1,6 +1,6 @@
 import { Avatar, Badge, cn } from '@crew/ui';
 import Link from 'next/link';
-import { CLIENT_TONE } from '../clients-view';
+import { CLIENT_TONE } from '../client-types';
 import type { ClientDetail } from '../client-types';
 
 export type ClientTab = 'overview' | 'workspaces' | 'users' | 'billing' | 'activity';

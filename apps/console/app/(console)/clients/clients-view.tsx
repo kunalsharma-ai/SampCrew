@@ -7,11 +7,11 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { LocalTime } from '@/components/local-time';
 import { fmtMoneyMap } from '@/lib/format';
+import { CLIENT_TONE } from './client-types';
 import { clientBulkAction } from '../console-actions';
 
 export type ClientFilters = Partial<Record<'q' | 'status' | 'plan' | 'industry' | 'size' | 'paid' | 'createdFrom' | 'createdTo' | 'renewalWithinDays' | 'sort' | 'dir' | 'offset' | 'demo', string>>;
 
-export const CLIENT_TONE: Record<ClientStatus, Tone> = { active: 'success', trial: 'info', payment_due: 'warning', suspended: 'danger', inactive: 'neutral', setup_pending: 'accent', archived: 'neutral' };
 const PAY: Record<ClientRow['paymentStatus'], { tone: Tone; label: string }> = { paid: { tone: 'success', label: 'Paid' }, due: { tone: 'warning', label: 'Due' }, overdue: { tone: 'danger', label: 'Overdue' }, none: { tone: 'neutral', label: '—' } };
 const PAGE = 25;
 
