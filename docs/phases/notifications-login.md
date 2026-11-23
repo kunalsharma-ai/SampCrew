@@ -19,6 +19,7 @@ The spec names five levels. SampCrew has four, so two of them are mapped:
 - **One read state.** The bell, the Home widget, the module notices and the phone all read the same `notifications` rows. Reading a notice in one place clears it everywhere, live over `/live`.
 - **Action needed.** `notifications.action_required` is set from the kind (approvals, assignments, `*.requested`, `*.awaiting_action`) or from `notice.action`. Migration `0170` backfills it. It is filterable as `?action=true`, counted in `/notifications/summary` `actionNeeded`, and shown as a badge in the bell, on Home, on module pages, in the Notification Center and on the phone.
 - **Module notices.** Notices now also appear on 16 more web pages and on 4 phone screens (leave, attendance, approvals, learning).
+- **Approval notices close when the request is decided.** Deciding a request marks its "awaiting your approval" notices read for everyone who can no longer act on it (the next step's approvers keep theirs), live in the bell and on page strips. On the Approvals page the strip leaves out those notices, because the inbox below already lists the same requests.
 - **Organisation policy.** Super Workspace only: Settings › Notification policy (`GET`/`PUT /notifications/policy`, audited as `notifications.policy_changed`). It sets:
   - categories that are always shown;
   - categories that are always emailed;

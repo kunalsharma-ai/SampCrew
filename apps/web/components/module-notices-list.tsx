@@ -15,9 +15,10 @@ const BAR: Record<string, string> = { low: 'bg-fg-subtle', normal: 'bg-accent', 
  * The notices strip at the top of a module page. New notices of its categories appear here live; reading one (or all)
  * here marks them read in the bell, on Home and on the phone too.
  */
-export function ModuleNoticesList({ categories, category, label, items: initial }: { categories?: string[]; category?: string; label: string; items: NotificationView[] }) {
+export function ModuleNoticesList({ categories, category, label, items: initial, exceptKinds = [] }: { categories?: string[]; category?: string; label: string; items: NotificationView[]; exceptKinds?: string[] }) {
   const cats = categories ?? (category ? [category] : []);
   const key = cats.join(',');
+  const except = exceptKinds.join(',');
   const live = useOptionalLive();
   const [items, setItems] = useState(initial);
   const [fresh, setFresh] = useState<string | null>(null);
@@ -25,10 +26,10 @@ export function ModuleNoticesList({ categories, category, label, items: initial 
   useEffect(() => setItems(initial), [initial]);
   // A new notice about this module appears here at once.
   useEffect(() => live?.on('notification', (d: { notification: NotificationView; self?: boolean }) => {
-    if (!key.split(',').includes(d.notification.category) || d.self) return;
+    if (!key.split(',').includes(d.notification.category) || d.self || except.split(',').includes(d.notification.kind)) return;
     setFresh(d.notification.id);
     setItems((cur) => [d.notification, ...cur.filter((x) => x.id !== d.notification.id)].slice(0, 5));
-  }), [live, key]);
+  }), [live, key, except]);
   // Read somewhere else (the bell, another tab, the phone): drop it here too.
   useEffect(() => live?.on('notifications.read', (d?: { ids?: string[] }) => {
     // The server says which notices it closed (a request was decided), else the bell's own list knows.
