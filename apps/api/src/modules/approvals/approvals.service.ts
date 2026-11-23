@@ -4,13 +4,26 @@ import {
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService, loadSubject } from '../../platform/authz/authz.service';
-import { can, type ResourceAttributes } from '../../platform/authz/policy';
+import { can, hasPermission, type ResourceAttributes } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, membershipUserNames, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 
-export type StepDef = { type: 'manager' } | { type: 'skip_level_manager' } | { type: 'role'; role: string };
+/**
+ * One step of a chain. `stage` groups steps decided at the same time: every step of a stage must be approved before
+ * the next stage starts (steps without a stage each get their own, in order).
+ *  - manager / skip_level_manager: the employee's manager, or their manager's manager;
+ *  - role: anyone on that access level whose access covers the record;
+ *  - hr_workspace: the admins of one HR Workspace (hrWorkspaceId), or the company's HR team (null);
+ *  - super_workspace: one named Super Workspace administrator, or any of them.
+ */
+export type StepDef =
+  | { type: 'manager'; stage?: number }
+  | { type: 'skip_level_manager'; stage?: number }
+  | { type: 'role'; role: string; stage?: number }
+  | { type: 'hr_workspace'; hrWorkspaceId: string | null; stage?: number }
+  | { type: 'super_workspace'; membershipId?: string | null; stage?: number };
 
 export interface ApprovalRequestRow {
   id: string;
@@ -41,6 +54,8 @@ export interface ApprovalHandler {
   attributes: (tx: TenantTx, resourceId: string) => Promise<ResourceAttributes>;
   onApproved: (tx: TenantTx, req: ApprovalRequestRow) => Promise<void>;
   onRejected: (tx: TenantTx, req: ApprovalRequestRow) => Promise<void>;
+  /** Told after each step decision that does not end the request (one authority of several approved). */
+  onProgress?: (tx: TenantTx, req: ApprovalRequestRow) => Promise<void>;
   /** Extra facts the approver needs to decide, shown with the item in the inbox (for example same-day leave). */
   details?: (tx: TenantTx, resourceId: string) => Promise<Record<string, unknown> | null>;
   /** Supporting documents (receipts, attachments) to show with the request. */
@@ -50,22 +65,35 @@ export interface ApprovalHandler {
    * one-person workspace would otherwise wait forever). Recorded in the audit trail as approval.auto_approved.
    */
   autoApproveSoleOwner?: boolean;
+  /** The module sets the chain of each request itself (leave: on each leave type), so the shared chain editor is closed. */
+  chainSetByModule?: string;
 }
 
 interface StepRow {
   id: string;
   seq: number;
+  stage?: number | null;
   kind: string;
   approver_membership_id: string | null;
   approver_role_key: string | null;
+  approver_hr_workspace_id?: string | null;
+  authority?: string | null;
+  escalated_at?: Date | null;
   status: string;
 }
 
+const stageOf = (st: Pick<StepRow, 'seq' | 'stage'>) => st.stage ?? st.seq;
+const authorityOf = (kind: string, role: string | null): 'manager' | 'hr' | 'super' | 'other' =>
+  kind === 'manager' || kind === 'skip_level_manager' ? 'manager'
+    : kind === 'hr_workspace' || (role && levelRoleKeyFor(role) === 'hr_workspace') ? 'hr'
+      : kind === 'super_workspace' || (role && levelRoleKeyFor(role) === 'super_workspace') ? 'super' : 'other';
+
 /**
  * The approvals engine shared by every module. A request is a chain of steps resolved when it starts:
- * the employee's manager, their manager's manager, or anyone holding a role whose access covers the record.
- * Nobody approves their own request. Decisions are authorised again at decision time, so a person who has
- * since lost access or moved out of scope cannot act.
+ * the employee's manager, their manager's manager, anyone holding a level whose access covers the record, the admins
+ * of an HR Workspace or the Super Workspace. Steps of one stage are decided at the same time. Nobody approves their own
+ * request. Decisions are authorised again at decision time, so a person who has since lost access or moved out of
+ * scope cannot act.
  */
 @Injectable()
 export class ApprovalsService {
@@ -97,7 +125,7 @@ export class ApprovalsService {
   async start(tx: TenantTx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[]; meta?: ApprovalMeta }): Promise<string> {
     const h = this.handler(input.resourceType);
     const actor = requestContext.tenantActor();
-    // A caller can set the chain for one request (a workflow's approval step names its own approver).
+    // A caller can set the chain for one request (a workflow's approval step names its own approver; leave its type's rules).
     const defs = input.steps ?? await this.steps(tx, input.resourceType);
 
     // Some requests (for example an offer to a candidate) are not about an employee; manager steps then resolve to
@@ -114,19 +142,30 @@ export class ApprovalsService {
     };
 
     const requester = actor.membershipId;
-    const resolved: { kind: StepDef['type']; membershipId: string | null; role: string | null }[] = [];
+    type Resolved = { kind: StepDef['type']; membershipId: string | null; role: string | null; hrWorkspaceId: string | null; stage: number };
+    const resolved: Resolved[] = [];
     const manager = await managerOf(subject.manager_id);
-    for (const d of defs) {
-      if (d.type === 'role') resolved.push({ kind: 'role', membershipId: null, role: levelRoleKeyFor(d.role) });
-      else {
+    for (const [i, d] of defs.entries()) {
+      const stage = d.stage ?? 1000 + i;
+      if (d.type === 'role') resolved.push({ kind: 'role', membershipId: null, role: levelRoleKeyFor(d.role), hrWorkspaceId: null, stage });
+      else if (d.type === 'hr_workspace') resolved.push({ kind: 'hr_workspace', membershipId: null, role: 'hr_workspace', hrWorkspaceId: d.hrWorkspaceId, stage });
+      else if (d.type === 'super_workspace') {
+        // A named administrator counts only while active and not the person asking; otherwise any Super Workspace administrator.
+        const named = d.membershipId && d.membershipId !== requester && d.membershipId !== subject.membership_id
+          && (await tx.collection('memberships').exists({ id: d.membershipId, status: 'active' })) ? d.membershipId : null;
+        resolved.push({ kind: 'super_workspace', membershipId: named, role: 'super_workspace', hrWorkspaceId: null, stage });
+      } else {
         const person = d.type === 'manager' ? manager : await managerOf(manager?.manager_id ?? null);
         // Unresolvable or self-approval steps are dropped; the fallback below guarantees someone else decides.
         if (person?.membership_id && person.membership_id !== requester && person.membership_id !== subject.membership_id) {
-          resolved.push({ kind: d.type, membershipId: person.membership_id, role: null });
+          resolved.push({ kind: d.type, membershipId: person.membership_id, role: null, hrWorkspaceId: null, stage });
         }
       }
     }
-    if (!resolved.length) resolved.push({ kind: 'role', membershipId: null, role: levelRoleKeyFor(h.fallbackRole) });
+    if (!resolved.length) resolved.push({ kind: 'role', membershipId: null, role: levelRoleKeyFor(h.fallbackRole), hrWorkspaceId: null, stage: 1 });
+    // Stages numbered 1, 2, 3 ... in order; steps that share one start together.
+    const stages = [...new Set(resolved.map((r) => r.stage))].sort((a, b) => a - b);
+    const first = stages[0]!;
 
     const req = await tx.collection('approval_requests').insert({
       resource_type: input.resourceType,
@@ -138,7 +177,10 @@ export class ApprovalsService {
       category: categorizeApproval(input.resourceType, input.meta, await this.customCategories(tx)),
     });
     await tx.collection('approval_steps').insertMany(
-      resolved.map((st, i) => ({ request_id: req.id, seq: i + 1, kind: st.kind, approver_membership_id: st.membershipId, approver_role_key: st.role, status: i === 0 ? 'pending' : 'waiting' })),
+      resolved.map((st, i) => ({
+        request_id: req.id, seq: i + 1, stage: stages.indexOf(st.stage) + 1, kind: st.kind, approver_membership_id: st.membershipId, approver_role_key: st.role,
+        approver_hr_workspace_id: st.hrWorkspaceId, authority: authorityOf(st.kind, st.role), status: st.stage === first ? 'pending' : 'waiting',
+      })),
     );
     if (h.autoApproveSoleOwner && (await this.autoApprove(tx, req.id, requester))) return req.id;
     await this.notifications.signal(tx, [requester], 'approvals.changed');
@@ -160,11 +202,22 @@ export class ApprovalsService {
     return req.id;
   }
 
-  /** "Your request is awaiting manager approval (Asha)." for the request's current step. */
+  /** The kind of approval a request waits for now: manager, HR, Super Workspace or both. */
+  private async waitingStage(tx: TenantTx, requestId: string): Promise<'manager' | 'hr' | 'super' | 'both' | 'other' | null> {
+    const steps = await tx.collection<StepRow>('approval_steps').find({ request_id: requestId, status: 'pending' });
+    if (!steps.length) return null;
+    const kinds = new Set(steps.map((st) => st.authority ?? authorityOf(st.kind, st.approver_role_key)));
+    if (kinds.has('hr') && kinds.has('super')) return 'both';
+    if (kinds.has('manager')) return 'manager';
+    if (kinds.has('hr')) return 'hr';
+    if (kinds.has('super')) return 'super';
+    return 'other';
+  }
+
+  /** "Your request is awaiting manager approval (Asha)." for the request's current stage. */
   private async stageMessage(tx: TenantTx, requestId: string, who?: string | null): Promise<string> {
-    const step = await tx.collection<StepRow>('approval_steps').findOne({ request_id: requestId, status: 'pending' });
-    if (!step) return approvalStatusMessage('approved', null);
-    const stage = step.kind === 'manager' || step.kind === 'skip_level_manager' ? 'manager' : /^hr_/.test(step.approver_role_key ?? '') ? 'hr' : 'other';
+    const stage = await this.waitingStage(tx, requestId);
+    if (!stage) return approvalStatusMessage('approved', null);
     return approvalStatusMessage('pending', { stage, who: who ?? null });
   }
 
@@ -182,6 +235,15 @@ export class ApprovalsService {
     return (await tx.collection('memberships').find({ id: { $in: ids }, status: 'active' }, { projection: { _id: 1 } })).map((m) => m.id as string);
   }
 
+  /** Starts the next stage (all of its steps), or returns false when there is none. */
+  private async nextStage(tx: TenantTx, requestId: string): Promise<boolean> {
+    const waiting = await tx.collection<StepRow>('approval_steps').find({ request_id: requestId, status: 'waiting' });
+    if (!waiting.length) return false;
+    const next = Math.min(...waiting.map(stageOf));
+    for (const st of waiting.filter((x) => stageOf(x) === next)) await tx.collection('approval_steps').updateOne({ id: st.id }, { $set: { status: 'pending' } });
+    return true;
+  }
+
   /**
    * Approves the request's steps one by one while nobody but the requester could decide them and the requester is
    * the only Owner. Returns true when the whole request was approved this way.
@@ -193,12 +255,13 @@ export class ApprovalsService {
     const h = this.handler(req.resource_type);
     const note = 'Approved automatically: you are the only Owner of this workspace and nobody else can approve it.';
     for (;;) {
-      const step = await tx.collection<StepRow>('approval_steps').findOne({ request_id: requestId, status: 'pending' });
-      if (!step) break;
+      const pending = await tx.collection<StepRow>('approval_steps').find({ request_id: requestId, status: 'pending' });
+      if (!pending.length) break;
       if ((await this.currentApprovers(tx, requestId)).length) return false;
-      await tx.collection('approval_steps').updateOne({ id: step.id }, { $set: { status: 'approved', decided_by_membership_id: requester, decided_at: new Date(), comment: note } });
-      const next = await tx.collection('approval_steps').findOne({ request_id: requestId, status: 'waiting' }, { sort: { seq: 1 } });
-      if (next) await tx.collection('approval_steps').updateOne({ id: next.id }, { $set: { status: 'pending' } });
+      for (const step of pending) {
+        await tx.collection('approval_steps').updateOne({ id: step.id }, { $set: { status: 'approved', decided_by_membership_id: requester, decided_at: new Date(), comment: note } });
+      }
+      if (!(await this.nextStage(tx, requestId))) break;
     }
     await tx.collection('approval_requests').updateOne({ id: requestId }, { $set: { status: 'approved', decided_at: new Date(), auto_approved: true } });
     await this.audit.record(tx, {
@@ -235,43 +298,75 @@ export class ApprovalsService {
     return out;
   }
 
-  /** People who can act on the request's current step. Role steps are narrowed to holders whose scope covers the record. */
-  private async currentApprovers(tx: TenantTx, requestId: string): Promise<string[]> {
-    const req = (await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId }))!;
-    const step = await tx.collection<StepRow>('approval_steps').findOne({ request_id: requestId, status: 'pending' });
-    if (!step) return [];
-    if (step.approver_membership_id) return [step.approver_membership_id];
+  /** Active holders of an access level (by role key), with their user ids. */
+  private async holders(tx: TenantTx, level: string, filter: (constraints: Record<string, unknown>) => boolean = () => true) {
+    const roleRow = await tx.collection('roles').findOne({ key: level, is_system: true });
+    if (!roleRow) return [];
+    const assignments = (await tx.collection('role_assignments').find({ role_id: roleRow.id })).filter((a) => filter((a.constraints ?? {}) as Record<string, unknown>));
+    return (await tx.collection('memberships').find({ id: { $in: [...new Set(assignments.map((a) => a.membership_id as string))] }, status: 'active' }, { projection: { user_id: 1 } })).map((m) => ({
+      membership_id: m.id as string,
+      user_id: m.user_id as string,
+    }));
+  }
+
+  /** People who can decide one step. Nobody decides a request they made or one about themselves. */
+  private async stepApprovers(tx: TenantTx, req: ApprovalRequestRow, step: StepRow, attrs: () => Promise<ResourceAttributes>): Promise<string[]> {
     const h = this.handler(req.resource_type);
-    const attrs = await h.attributes(tx, req.resource_id);
-    const eligible = async (role: string) => {
+    const subjectMembership = req.subject_employee_id ? ((await tx.collection('employees').findOne({ id: req.subject_employee_id }, { projection: { membership_id: 1 } }))?.membership_id as string | undefined) : undefined;
+    const notSelf = (m: string) => m !== req.requested_by_membership_id && m !== subjectMembership;
+    /** Holders of a level who hold the permission (anywhere, or over this record when coverage counts). */
+    const eligible = async (role: string, coverage: boolean, filter?: (c: Record<string, unknown>) => boolean) => {
       // Steps saved before the four access levels name an old role: it means the level that role became.
       const level = levelRoleKeyFor(role);
-      const roleRow = await tx.collection('roles').findOne({ key: level, is_system: true });
-      const holderIds = roleRow ? await tx.collection('role_assignments').distinct<string>('membership_id', { role_id: roleRow.id }) : [];
-      const holders = (await tx.collection('memberships').find({ id: { $in: holderIds }, status: 'active' }, { projection: { user_id: 1 } })).map((m) => ({
-        membership_id: m.id as string,
-        user_id: m.user_id as string,
-      }));
       const out: string[] = [];
-      for (const holder of holders) {
-        if (holder.membership_id === req.requested_by_membership_id) continue;
+      for (const holder of await this.holders(tx, level, filter)) {
+        if (!notSelf(holder.membership_id)) continue;
         // MFA is checked when they decide; here we only need to know whether the record is in their scope.
         const s = await loadSubject(tx, holder.membership_id, holder.user_id, true);
         if (s.employeeId && s.employeeId === req.subject_employee_id) continue;
         // They decide as someone on that level: what their Employee Workspace gives them (their own team) does not count.
-        if (can({ ...s, grants: s.grants.filter((g) => g.roleKey === level) }, h.permission, attrs).allowed) out.push(holder.membership_id);
+        const own = { ...s, grants: s.grants.filter((g) => g.roleKey === level) };
+        if (coverage ? can(own, h.permission, await attrs()).allowed : hasPermission(own, h.permission).allowed) out.push(holder.membership_id);
       }
       return out;
     };
-    const out = await eligible(step.approver_role_key!);
-    // When nobody on the level can act (e.g. the only HR Workspace person is the requester), Super Workspace decides.
-    return out.length || levelRoleKeyFor(step.approver_role_key!) === 'super_workspace' ? out : eligible('super_workspace');
+    const supers = () => eligible('super_workspace', true);
+    let out: string[];
+    if (step.approver_membership_id) out = notSelf(step.approver_membership_id) ? [step.approver_membership_id] : [];
+    else if (step.kind === 'hr_workspace') {
+      out = step.approver_hr_workspace_id
+        // The admins of that HR Workspace: the leave module made them responsible, whether or not the person is one of theirs.
+        ? await eligible('hr_workspace', false, (c) => ((c.hrWorkspaceIds as string[] | undefined) ?? []).includes(step.approver_hr_workspace_id!))
+        // The company's HR team: HR Workspace people not limited to some HR Workspaces, whose access covers the record.
+        : await eligible('hr_workspace', true, (c) => !((c.hrWorkspaceIds as string[] | undefined) ?? []).length);
+    } else if (step.kind === 'super_workspace') out = [];
+    else out = await eligible(step.approver_role_key!, true);
+    // When nobody can act (no HR team, the only one is the requester, a named administrator left), the Super Workspace
+    // decides; an escalated step may be decided by the Super Workspace too.
+    if (!out.length || step.escalated_at) out = [...new Set([...out, ...(await supers())])];
+    return out;
   }
 
-  private async notifyApprovers(tx: TenantTx, requestId: string): Promise<string[]> {
+  /** People who can act on the request now: anyone who can decide one of its pending steps. */
+  private async currentApprovers(tx: TenantTx, requestId: string): Promise<string[]> {
+    return [...new Set((await this.pendingApprovers(tx, requestId)).flatMap((x) => x.approvers))];
+  }
+
+  private async pendingApprovers(tx: TenantTx, requestId: string): Promise<{ step: StepRow; approvers: string[] }[]> {
+    const req = (await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId }))!;
+    const steps = await tx.collection<StepRow>('approval_steps').find({ request_id: requestId, status: 'pending' }, { sort: { seq: 1 } });
+    if (!steps.length) return [];
+    let attrs: ResourceAttributes | undefined;
+    const lazy = async () => (attrs ??= await this.handler(req.resource_type).attributes(tx, req.resource_id));
+    const out = [];
+    for (const step of steps) out.push({ step, approvers: await this.stepApprovers(tx, req, step, lazy) });
+    return out;
+  }
+
+  private async notifyApprovers(tx: TenantTx, requestId: string, only?: Set<string>): Promise<string[]> {
     const req = (await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId }))!;
     const h = this.handler(req.resource_type);
-    const approvers = await this.currentApprovers(tx, requestId);
+    const approvers = (await this.currentApprovers(tx, requestId)).filter((m) => !only || only.has(m));
     await this.notifications.notify(tx, {
       membershipIds: approvers,
       kind: 'approval.requested',
@@ -287,7 +382,23 @@ export class ApprovalsService {
     return approvers;
   }
 
-  /** Approve or reject the current step. */
+  /**
+   * Escalates the pending steps of a request that waited too long: the Super Workspace is told and may decide them.
+   * Returns false when nothing was waiting or it was escalated already.
+   */
+  async escalate(tx: TenantTx, requestId: string, reason: string): Promise<boolean> {
+    const req = await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId, status: 'pending' });
+    if (!req) return false;
+    const before = new Set(await this.currentApprovers(tx, requestId));
+    const n = await tx.collection('approval_steps').update({ request_id: requestId, status: 'pending', escalated_at: null, kind: { $ne: 'super_workspace' } }, { $set: { escalated_at: new Date() } });
+    if (!n) return false;
+    const added = new Set((await this.currentApprovers(tx, requestId)).filter((m) => !before.has(m)));
+    if (added.size) await this.notifyApprovers(tx, requestId, added);
+    await this.audit.record(tx, { action: 'approval.escalated', resourceType: req.resource_type, resourceId: req.resource_id, metadata: { approvalId: requestId, reason } });
+    return true;
+  }
+
+  /** Approve or reject the step the caller may decide (with several authorities, each decides its own). */
   async decide(requestId: string, decision: 'approve' | 'reject', comment?: string) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
@@ -302,11 +413,14 @@ export class ApprovalsService {
         throw Errors.forbidden('You cannot approve your own request');
       }
       if (req.status !== 'pending') throw Errors.conflict('invalid_state', `This request is already ${req.status}`);
-      const step = (await tx.collection<StepRow>('approval_steps').findOne({ request_id: requestId, status: 'pending' }))!;
-      const approvers = await this.currentApprovers(tx, requestId);
-      if (!approvers.includes(actor.membershipId)) throw Errors.notFound('Approval');
-      // Re-check the permission with the caller's live session (including MFA requirements).
-      await this.authz.require(h.permission, await h.attributes(tx, req.resource_id), tx);
+      const mine = (await this.pendingApprovers(tx, requestId)).find((x) => x.approvers.includes(actor.membershipId));
+      if (!mine) throw Errors.notFound('Approval');
+      const step = mine.step;
+      // Re-check the permission with the caller's live session (including MFA requirements). The admins of a named HR
+      // Workspace, a named Super Workspace administrator and escalation reach beyond the record's usual scope.
+      const beyondScope = (step.kind === 'hr_workspace' && step.approver_hr_workspace_id) || step.kind === 'super_workspace' || step.escalated_at;
+      if (beyondScope) await this.authz.require(h.permission, undefined, tx);
+      else await this.authz.require(h.permission, await h.attributes(tx, req.resource_id), tx);
 
       await tx.collection('approval_steps').updateOne(
         { id: step.id },
@@ -314,18 +428,17 @@ export class ApprovalsService {
       );
       let final: 'approved' | 'rejected' | null = null;
       if (decision === 'reject') {
-        await tx.collection('approval_steps').update({ request_id: requestId, status: 'waiting' }, { $set: { status: 'cancelled' } });
+        // Any mandatory authority rejecting ends it: the other authorities' steps are withdrawn.
+        await tx.collection('approval_steps').update({ request_id: requestId, status: { $in: ['waiting', 'pending'] } }, { $set: { status: 'cancelled' } });
         final = 'rejected';
-      } else {
-        const next = await tx.collection('approval_steps').findOne({ request_id: requestId, status: 'waiting' }, { sort: { seq: 1 } });
-        if (next) await tx.collection('approval_steps').updateOne({ id: next.id }, { $set: { status: 'pending' } });
-        else final = 'approved';
+      } else if (!(await tx.collection('approval_steps').exists({ request_id: requestId, status: 'pending' }))) {
+        if (!(await this.nextStage(tx, requestId))) final = 'approved';
       }
       await this.audit.record(tx, {
         action: `approval.${decision === 'approve' ? 'step_approved' : 'rejected'}`,
         resourceType: req.resource_type,
         resourceId: req.resource_id,
-        metadata: { approvalId: requestId, step: step.seq, comment: comment ?? null },
+        metadata: { approvalId: requestId, step: step.seq, authority: step.authority ?? authorityOf(step.kind, step.approver_role_key), comment: comment ?? null },
       });
       if (final) {
         await tx.collection('approval_requests').updateOne({ id: requestId }, { $set: { status: final, decided_at: new Date() } });
@@ -347,14 +460,21 @@ export class ApprovalsService {
         });
         await this.notifications.signal(tx, [...requesterIds, actor.membershipId], 'approvals.changed');
       } else {
-        const next = await this.notifyApprovers(tx, requestId);
+        await h.onProgress?.(tx, { ...req, comment: comment ?? null });
+        // Only people newly able to act are notified (the other authority of a simultaneous pair already was).
+        const before = new Set(mine.approvers);
+        const startedNow = await tx.collection<StepRow>('approval_steps').find({ request_id: requestId, status: 'pending' });
+        const fresh = startedNow.some((st) => stageOf(st) !== stageOf(step));
+        const next = fresh ? await this.notifyApprovers(tx, requestId) : (await this.currentApprovers(tx, requestId)).filter((m) => !before.has(m));
         // The person asking sees where it is now: "Your request is pending HR approval."
         const subjectEmployee = req.subject_employee_id ? await tx.collection('employees').findOne({ id: req.subject_employee_id }) : undefined;
         const asker = (subjectEmployee?.membership_id as string | undefined) ?? (req.subject_employee_id ? null : req.requested_by_membership_id);
         if (asker && !next.includes(asker)) {
           const who = (await this.waitingOn(tx, [requestId])).get(requestId);
+          const labels = { manager: 'Manager', hr: 'HR Workspace', super: 'Super Workspace', other: 'Step' } as const;
+          const label = labels[(step.authority ?? authorityOf(step.kind, step.approver_role_key)) as keyof typeof labels] ?? 'Step';
           await this.notifications.notify(tx, {
-            membershipIds: [asker], kind: 'approval.progressed', title: `${h.label}: step ${step.seq} approved`,
+            membershipIds: [asker], kind: 'approval.progressed', title: `${h.label}: ${label} approved`,
             body: `${await this.stageMessage(tx, requestId, who)}\n${req.summary}`, link: h.link(req.resource_id), actorMembershipId: actor.membershipId,
             resource: { type: req.resource_type, id: req.resource_id },
           });
@@ -375,7 +495,7 @@ export class ApprovalsService {
   async inbox() {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const steps = await tx.collection('approval_steps').find({ status: 'pending', $or: [{ approver_membership_id: actor.membershipId }, { approver_role_key: { $ne: null } }] });
+      const steps = await tx.collection('approval_steps').find({ status: 'pending', $or: [{ approver_membership_id: actor.membershipId }, { approver_role_key: { $ne: null } }, { escalated_at: { $ne: null } }] });
       const stepOf = new Map(steps.map((st) => [st.request_id as string, st]));
       const requests = await tx.collection('approval_requests').find({ id: { $in: [...stepOf.keys()] }, status: 'pending' }, { sort: { created_at: -1 }, limit: 200 });
       const counts = new Map<string, number>();
@@ -418,8 +538,15 @@ export class ApprovalsService {
   async trail(tx: TenantTx, requestId: string) {
     const steps = await tx.collection('approval_steps').find({ request_id: requestId }, { sort: { seq: 1 } });
     const names = await membershipUserNames(tx, steps.flatMap((st) => [st.approver_membership_id, st.decided_by_membership_id]));
+    const hrIds = [...new Set(steps.map((st) => st.approver_hr_workspace_id).filter(Boolean))];
+    const hrNames = new Map((hrIds.length ? await tx.collection('hr_workspaces').find({ id: { $in: hrIds } }, { projection: { name: 1 } }) : []).map((w) => [w.id as string, w.name as string]));
     return steps.map((st) => ({
       seq: st.seq,
+      stage: (st.stage as number | undefined) ?? (st.seq as number),
+      authority: (st.authority as string | undefined) ?? authorityOf(st.kind, st.approver_role_key ?? null),
+      hrWorkspaceId: (st.approver_hr_workspace_id as string | null | undefined) ?? null,
+      hrWorkspaceName: st.approver_hr_workspace_id ? hrNames.get(st.approver_hr_workspace_id) ?? null : null,
+      escalatedAt: st.escalated_at ?? null,
       kind: st.kind,
       status: st.status,
       role: st.approver_role_key ?? null,
@@ -439,6 +566,7 @@ export class ApprovalsService {
   async setPolicy(resourceType: string, steps: StepDef[]) {
     const h = this.handler(resourceType);
     await this.authz.require(h.configurePermission);
+    if (h.chainSetByModule) throw Errors.badRequest('chain_set_by_module', h.chainSetByModule);
     return this.db.tenant(async (tx) => {
       // A step names an access level (HR Workspace or Super Workspace); an old role name is saved as the level it became.
       steps = steps.map((st) => (st.type === 'role' ? { ...st, role: levelRoleKeyFor(st.role) } : st));
@@ -459,7 +587,7 @@ export class ApprovalsService {
       const out = [];
       for (const [resourceType, h] of this.handlers) {
         const canConfigure = s.grants.some((g) => g.permission === h.configurePermission);
-        out.push({ resourceType, label: h.label, canConfigure, fallbackRole: h.fallbackRole, steps: canConfigure ? await this.steps(tx, resourceType) : null, autoApproveSoleOwner: Boolean(h.autoApproveSoleOwner) });
+        out.push({ resourceType, label: h.label, canConfigure: canConfigure && !h.chainSetByModule, setByModule: h.chainSetByModule ?? null, fallbackRole: h.fallbackRole, steps: canConfigure && !h.chainSetByModule ? await this.steps(tx, resourceType) : null, autoApproveSoleOwner: Boolean(h.autoApproveSoleOwner) });
       }
       return out.sort((a, b) => a.label.localeCompare(b.label));
     });
@@ -520,11 +648,17 @@ export class ApprovalsService {
     });
   }
 
+  /** Resource ids of one module's pending requests that are waiting on the signed-in person now. */
+  async waitingForMe(tx: TenantTx, resourceType: string): Promise<string[]> {
+    const rows = await this.viewRequests(tx, 'waiting');
+    return rows.filter((r) => r.resource_type === resourceType).map((r) => r.resource_id as string);
+  }
+
   /** The requests one view covers, newest first: waiting for me, decided by me, or my own (and those about me). */
   private async viewRequests(tx: TenantTx, view: ApprovalView, limit = 2000) {
     const actor = requestContext.tenantActor();
     if (view === 'waiting') {
-      const steps = await tx.collection('approval_steps').find({ status: 'pending', $or: [{ approver_membership_id: actor.membershipId }, { approver_role_key: { $ne: null } }] }, { projection: { request_id: 1 } });
+      const steps = await tx.collection('approval_steps').find({ status: 'pending', $or: [{ approver_membership_id: actor.membershipId }, { approver_role_key: { $ne: null } }, { escalated_at: { $ne: null } }] }, { projection: { request_id: 1 } });
       const reqs = await tx.collection('approval_requests').find({ id: { $in: steps.map((st) => st.request_id) }, status: 'pending' }, { sort: { created_at: -1 }, limit: 500 });
       const out = [];
       for (const r of reqs) if ((await this.currentApprovers(tx, r.id)).includes(actor.membershipId)) out.push(r);
@@ -596,9 +730,11 @@ export class ApprovalsService {
     return rows.map((r) => {
       const h = this.handlers.get(r.resource_type);
       const steps = stepsOf.get(r.id) ?? [];
-      const current = steps.find((st) => st.status === 'pending');
+      const pendingNow = steps.filter((st) => st.status === 'pending');
+      const current = pendingNow[0];
+      const auth = new Set(pendingNow.map((st) => st.authority ?? authorityOf(st.kind, st.approver_role_key)));
       const category = (r.category as string | undefined) ?? categorizeApproval(r.resource_type, r.meta, custom);
-      const stage = current ? (current.kind === 'role' ? (/^hr_/.test(current.approver_role_key ?? '') ? 'hr' : 'other') : 'manager') : null;
+      const stage = !current ? null : auth.has('hr') && auth.has('super') ? 'both' : auth.has('manager') ? 'manager' : auth.has('hr') ? 'hr' : auth.has('super') ? 'super' : 'other';
       return {
         id: r.id as string,
         ref: approvalRef(r.id),
@@ -610,7 +746,7 @@ export class ApprovalsService {
         summary: r.summary as string,
         status: r.status as string,
         autoApproved: Boolean(r.auto_approved),
-        statusMessage: approvalStatusMessage(r.status, stage ? { stage: stage as 'manager' | 'hr' | 'other', who: waiting.get(r.id) ?? null } : null),
+        statusMessage: approvalStatusMessage(r.status, stage ? { stage, who: waiting.get(r.id) ?? null } : null),
         waitingOn: waiting.get(r.id) ?? null,
         stepSeq: current?.seq ?? null,
         stepCount: steps.length,

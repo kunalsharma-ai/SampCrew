@@ -36,7 +36,11 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
       const code = status === 404 ? 'not_found' : status === 405 ? 'method_not_allowed' : 'http_error';
       return res.status(status).json({ error: { code, message: String(message), requestId } });
     }
-    const pg = exception as { code?: string; constraint?: string };
+    const pg = exception as { code?: string; constraint?: string; message?: string; kind?: string; used?: number; limit?: number };
+    // The database's own check on the plan's workspace limits (packages/db workspace-limits.ts): its message is for people.
+    if (pg?.code === 'P0402') {
+      return res.status(HttpStatus.PAYMENT_REQUIRED).json({ error: { code: 'workspace_limit_reached', message: pg.message, details: { kind: pg.kind, used: pg.used, limit: pg.limit }, requestId } });
+    }
     if (pg?.code && PG_ERRORS[pg.code]) {
       const m = PG_ERRORS[pg.code]!;
       return res.status(m.status).json({ error: { code: m.code, message: m.message, details: pg.constraint ? { constraint: pg.constraint } : undefined, requestId } });

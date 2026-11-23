@@ -11,3 +11,4 @@ export { TABLES } from './schema.generated';
 export { MONGO_MIGRATIONS } from './migrations';
 export * from './provision';
 export * from './access-levels';
+export * from './workspace-limits';

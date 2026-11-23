@@ -14,6 +14,16 @@ const REASONS: Record<string, { title: string; description: string; icon: React.
     description: 'This page holds sensitive information, so your session must be verified with an authenticator app. Do it below; you stay signed in.',
     icon: <KeyRound className="size-6" />,
   },
+  crm_not_enabled: {
+    title: 'Candidate CRM is not switched on for your HR Workspace',
+    description: 'Your Super Workspace decides which HR Workspaces use Candidate CRM. Ask them to switch it on in Candidate CRM settings. Nothing is lost while it is off.',
+    icon: <Lock className="size-6" />,
+  },
+  crm_not_available: {
+    title: 'Candidate CRM is not part of your access',
+    description: 'Candidate CRM is for Super Workspace and HR Workspace people who work in recruitment. Employee Workspace does not have it.',
+    icon: <Lock className="size-6" />,
+  },
   feature_not_in_plan: {
     title: 'Not included in your plan',
     description: 'Your workspace plan does not include this module. An administrator can compare plans on the Plan & billing page.',

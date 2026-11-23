@@ -1,4 +1,6 @@
-import { DEFAULT_IN_STATUTORY, leaveMath, legacyCourseBlocks, payrollEngine, startingStatutory } from '@crew/contracts';
+import {
+  DEFAULT_IN_STATUTORY, leaveAllocationCriteria, leaveApprovalRules, leaveEligibility, leaveMath, leaveTypePolicy, legacyCourseBlocks, payrollEngine, startingStatutory,
+} from '@crew/contracts';
 import type { ClientSession, Db, MongoClient } from 'mongodb';
 import { appendAuditEvent, applyAccessLevelsMongo, linkAuditChain, provisionTenantMongo, Table, type Row } from '../src/mongo';
 
@@ -292,25 +294,38 @@ async function seedCoreHr(
     });
   }
 
-  // Leave types and policies. These are demo policies, not a statement of any country's statutory minimum.
-  const type = (code: string, name: string, paid: boolean, color: string, halfDay = true) =>
-    ws.insert('leave_types', { code, name, paid, color, allow_half_day: halfDay, description: 'Demo leave type' });
-  const cl = await type('CL', 'Casual leave', true, '#2563eb');
-  const sl = await type('SL', 'Sick leave', true, '#dc2626');
-  const el = await type('EL', 'Earned leave', true, '#059669', false);
-  const lwp = await type('LWP', 'Leave without pay', false, '#6b7280');
-  const al = await type('AL', 'Annual leave', true, '#7c3aed');
-  const policy = (typeId: string, entity: string, method: string, entitlement: string, carry: string, extra: { notice?: number; maxRun?: string; probation?: boolean } = {}) =>
-    ws.insert('leave_policies', {
-      leave_type_id: typeId, legal_entity_id: entity, accrual_method: method, annual_entitlement: entitlement, carry_forward_max: carry,
-      min_notice_days: extra.notice ?? 0, max_consecutive_days: extra.maxRun ?? null, available_during_probation: extra.probation ?? true,
+  // Leave types with their policies, and who gets them. These are demo policies, not a statement of any country's
+  // statutory minimum. The Super Workspace owns the types; allocation is separate from creation.
+  const by = { by_level: 'system', by_membership_id: null, by_name: 'SampCrew (demo data)' };
+  const leavePolicies = new Map<string, { accrualMethod: string; annualEntitlement: string; rounding: string }>();
+  const type = async (code: string, name: string, paid: boolean, color: string, opts: { halfDay?: boolean; category?: string; method: string; entitlement: string; carry: string; notice?: number; maxRun?: string; probation?: boolean; routes?: string[]; employeeChooses?: boolean }) => {
+    const policy = leaveTypePolicy.parse({
+      accrualMethod: opts.method, annualEntitlement: opts.entitlement, carryForwardMax: opts.carry, minNoticeDays: opts.notice ?? 0,
+      maxDaysPerRequest: opts.maxRun ?? null, availableDuringProbation: opts.probation ?? true,
     });
-  await policy(cl, c.indiaId, 'annual_upfront', '8', '0', { maxRun: '3' });
-  await policy(sl, c.indiaId, 'annual_upfront', '8', '0');
-  await policy(el, c.indiaId, 'monthly', '18', '30', { notice: 7, probation: false });
-  await policy(lwp, c.indiaId, 'none', '0', '0');
-  await policy(al, c.ukId, 'monthly', '25', '5', { notice: 3 });
-  await policy(lwp, c.ukId, 'none', '0', '0');
+    const approval = leaveApprovalRules.parse({ routes: opts.routes ?? ['hr'], employeeChooses: opts.employeeChooses ?? false, managerFirst: true });
+    const fields = {
+      code, name, description: 'Demo leave type', category: opts.category ?? (paid ? 'general' : 'unpaid'), paid, color, allow_half_day: opts.halfDay ?? true,
+      kind: 'standard', eligible_gender: 'any', counts_calendar_days: false, effective_from: null, hr_allocatable: true, eligibility: leaveEligibility.parse({}), policy, approval,
+    };
+    const id = await ws.insert('leave_types', { ...fields, version: 1, created_by_level: 'system', created_by_name: by.by_name, updated_by_level: 'system', updated_by_name: by.by_name });
+    await ws.insert('leave_type_versions', { leave_type_id: id, version: 1, action: 'created', ...by, changes: {}, snapshot: fields, note: 'Demo leave type' });
+    await ws.insert('leave_allocations', { leave_type_id: id, target: 'hr_workspace', hr_workspace_id: null, criteria: {}, entitlement_days: null, note: 'Available to the company HR team', ...by });
+    leavePolicies.set(id, { accrualMethod: policy.accrualMethod, annualEntitlement: policy.annualEntitlement, rounding: policy.rounding });
+    return id;
+  };
+  const allocate = (typeId: string, legalEntityId: string, note: string) =>
+    ws.insert('leave_allocations', {
+      leave_type_id: typeId, target: 'employees', hr_workspace_id: null, criteria: leaveAllocationCriteria.parse({ legalEntityIds: [legalEntityId] }), entitlement_days: null, note, ...by,
+    });
+  const cl = await type('CL', 'Casual Leave', true, '#2563eb', { method: 'annual_upfront', entitlement: '8', carry: '0', maxRun: '3' });
+  const sl = await type('SL', 'Sick Leave', true, '#dc2626', { category: 'medical', method: 'annual_upfront', entitlement: '8', carry: '0', routes: ['hr', 'super'], employeeChooses: true });
+  const pl = await type('PL', 'Permanent Leave', true, '#0d9488', { halfDay: false, method: 'monthly', entitlement: '18', carry: '30', notice: 7, probation: false, routes: ['both'] });
+  const lwp = await type('LWP', 'Leave without pay', false, '#6b7280', { method: 'none', entitlement: '0', carry: '0' });
+  const al = await type('AL', 'Annual Leave', true, '#7c3aed', { method: 'monthly', entitlement: '25', carry: '5', notice: 3 });
+  for (const id of [cl, sl, pl, lwp]) await allocate(id, c.indiaId, 'India entity (demo data)');
+  for (const id of [al, lwp]) await allocate(id, c.ukId, 'UK entity (demo data)');
+  const entityTypes = new Map<string, string[]>([[c.indiaId, [cl, sl, pl, lwp]], [c.ukId, [al, lwp]]]);
 
   // Holiday calendars. Only fixed-date national holidays are listed for India; add regional ones per location.
   const india = await ws.insert('holiday_calendars', { name: 'India offices (demo data)', legal_entity_id: c.indiaId, weekly_offs: [0, 6] });
@@ -332,12 +347,12 @@ async function seedCoreHr(
 
   // Accruals due so far this year, using the same arithmetic as the API.
   const emps = await ws.find('employees');
-  const pols = await ws.find('leave_policies', { active: true });
   for (const e of emps) {
-    for (const p of pols.filter((x) => x.legal_entity_id === e.current_legal_entity_id)) {
-      for (const cr of leaveMath.accrualsDue({ accrualMethod: p.accrual_method, annualEntitlement: leaveMath.toH(p.annual_entitlement), rounding: p.rounding }, { dateOfJoining: e.date_of_joining, lastWorkingDay: null }, today)) {
+    for (const typeId of entityTypes.get(e.current_legal_entity_id) ?? []) {
+      const p = leavePolicies.get(typeId)!;
+      for (const cr of leaveMath.accrualsDue({ accrualMethod: p.accrualMethod as never, annualEntitlement: leaveMath.toH(p.annualEntitlement), rounding: p.rounding as never }, { dateOfJoining: e.date_of_joining, lastWorkingDay: null }, today)) {
         await ws.insert('leave_ledger', {
-          employee_id: e.id, leave_type_id: p.leave_type_id, leave_year: year, kind: 'accrual', quantity: leaveMath.fromH(cr.quantity), effective_on: cr.effectiveOn,
+          employee_id: e.id, leave_type_id: typeId, leave_year: year, kind: 'accrual', quantity: leaveMath.fromH(cr.quantity), effective_on: cr.effectiveOn,
           accrual_key: cr.key, note: `Accrual ${cr.key.slice(1)}`,
         });
       }
@@ -356,16 +371,18 @@ async function seedCoreHr(
   if (nextMonday.slice(0, 4) === String(year)) {
     const lr = await ws.insert('leave_requests', {
       employee_id: arjun, leave_type_id: cl, start_date: nextMonday, end_date: nextMonday, days: '1', reason: 'Family function', requested_by_membership_id: arjunM,
+      approval_route: 'hr', approval_order: 'sequential', policy_version: 1, reviewer_hr_company: true,
     });
     const ar = await ws.insert('approval_requests', {
       resource_type: 'leave_request', resource_id: lr, subject_employee_id: arjun, requested_by_membership_id: arjunM,
-      summary: `Arjun Kulkarni: Casual leave, ${nextMonday} (1.00 days). "Family function"`,
-      meta: { leaveTypeCode: 'CL', leaveTypeName: 'Casual leave', paid: true, halfDay: false }, category: 'casual_leave',
+      summary: `Arjun Kulkarni: Casual Leave, ${nextMonday} (1.00 days). "Family function"`,
+      meta: { leaveTypeCode: 'CL', leaveTypeName: 'Casual Leave', paid: true, halfDay: false }, category: 'casual_leave',
     });
-    await ws.insert('approval_steps', { request_id: ar, seq: 1, kind: 'manager', approver_membership_id: supM, status: 'pending' });
+    await ws.insert('approval_steps', { request_id: ar, seq: 1, stage: 1, kind: 'manager', authority: 'manager', approver_membership_id: supM, status: 'pending' });
+    await ws.insert('approval_steps', { request_id: ar, seq: 2, stage: 2, kind: 'hr_workspace', authority: 'hr', approver_role_key: 'hr_workspace', approver_hr_workspace_id: null, status: 'waiting' });
     await ws.set('leave_requests', { id: lr }, { approval_request_id: ar });
     await ws.insert('notifications', {
-      membership_id: supM, kind: 'approval.requested', title: 'Leave request waiting for your approval', body: `Arjun Kulkarni: Casual leave, ${nextMonday}`, link: '/approvals', category: 'approvals', priority: 'high', count: 1, updated_at: new Date(),
+      membership_id: supM, kind: 'approval.requested', title: 'Leave request waiting for your approval', body: `Arjun Kulkarni: Casual Leave, ${nextMonday}`, link: '/approvals', category: 'approvals', priority: 'high', count: 1, updated_at: new Date(),
     });
   }
   const neha = employeeByEmail.get('operator2@demo.crew.local')!;
@@ -817,7 +834,7 @@ async function seedAiAutomation(ws: Workspace, c: { membershipByEmail: Map<strin
   const definition = {
     trigger: { event: 'leave.requested' },
     steps: [
-      { id: 'condition_1', type: 'condition', field: 'leave.type', op: 'eq', value: 'Sick leave' },
+      { id: 'condition_1', type: 'condition', field: 'leave.type', op: 'eq', value: 'Sick Leave' },
       { id: 'condition_2', type: 'condition', field: 'leave.days', op: 'gte', value: 3 },
       { id: 'notify_1', type: 'notify', to: 'role', role: 'hr_workspace', title: '{{employee.name}} asked for {{leave.days}} days of sick leave', body: 'Consider checking in with {{employee.name}} ({{employee.department}}) to see whether they need any support.', email: false },
     ],
@@ -828,11 +845,11 @@ async function seedAiAutomation(ws: Workspace, c: { membershipByEmail: Map<strin
   const v = await ws.insert('workflow_versions', { workflow_id: w, version: 1, definition, created_by_membership_id: hr, tested_at: new Date() });
   // The test run that let version 1 be activated.
   const run = await ws.insert('workflow_runs', {
-    workflow_id: w, version_id: v, mode: 'test', context: { 'employee.name': 'Sample Employee', 'employee.department': 'Assembly Line', 'leave.type': 'Sick leave', 'leave.days': 4 },
+    workflow_id: w, version_id: v, mode: 'test', context: { 'employee.name': 'Sample Employee', 'employee.department': 'Assembly Line', 'leave.type': 'Sick Leave', 'leave.days': 4 },
     status: 'succeeded', step_index: 3, outcome: 'Reached the end', started_by_membership_id: hr, finished_at: new Date(),
   });
   const trace = [
-    ['condition_1', 'condition', 'Met: leave.type is "Sick leave"'],
+    ['condition_1', 'condition', 'Met: leave.type is "Sick Leave"'],
     ['condition_2', 'condition', 'Met: leave.days is "4"'],
     ['notify_1', 'notify', 'Would notify the people with HR Workspace access: "Sample Employee asked for 4 days of sick leave"'],
   ];

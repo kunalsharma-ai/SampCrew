@@ -23,6 +23,11 @@ type Def = { key: string; name: string; module: string; kind: 'boolean' | 'limit
 const DEFS = FEATURES as readonly Def[];
 const MODULES = DEFS.filter((f) => f.kind === 'boolean');
 const LIMITS = DEFS.filter((f) => f.kind === 'limit');
+/** The plan-based workspace limits: how many each company on the plan may create. */
+const WORKSPACE_LIMIT_HINTS: Record<string, string> = {
+  max_hr_workspaces: 'How many HR Workspaces each company on this plan may create. -1 means unlimited.',
+  max_employee_workspaces: 'How many people may sign in (one Employee Workspace each), at least 1. -1 means unlimited.',
+};
 const LAUNCH = new Set(['starter', 'professional', 'business', 'enterprise']);
 const nameOf = (key: string) => DEFS.find((f) => f.key === key)?.name ?? key;
 const limitText = (v: number | null | undefined, unit?: string) => (v === null || v === undefined ? 'Not set' : v === -1 ? 'Unlimited' : `${v.toLocaleString()}${unit ? ` ${unit}` : ''}`);
@@ -203,7 +208,9 @@ function ContentsDialog({ plan, onClose, onSaved }: { plan: PlatformPlan; onClos
       if (!r.ok) { setError(r.message ?? 'Could not save'); return; }
       const d = r.data!;
       const parts = [d.added.length ? `added ${d.added.map(nameOf).join(', ')}` : '', d.removed.length ? `removed ${d.removed.map(nameOf).join(', ')}` : ''].filter(Boolean);
-      onSaved(`${plan.name} saved${parts.length ? `: ${parts.join('; ')}` : ''}. Applies now to ${d.workspaces} workspace(s).`);
+      // A lowered workspace limit removes nothing: say which companies are above it now.
+      const over = (d.overLimit ?? []).map((o) => `${o.tenant} has ${o.used} ${o.kind === 'hr' ? 'HR Workspaces' : 'Employee Workspaces'} (new limit ${o.limit})`);
+      onSaved(`${plan.name} saved${parts.length ? `: ${parts.join('; ')}` : ''}. Applies now to ${d.workspaces} workspace(s).${over.length ? ` Above the new limit, keeping what they have but unable to add more: ${over.join('; ')}.` : ''}`);
     });
   };
 
@@ -240,7 +247,7 @@ function ContentsDialog({ plan, onClose, onSaved }: { plan: PlatformPlan; onClos
           <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Limits</h3>
           <div className="grid gap-3 sm:grid-cols-2">
             {LIMITS.map((l) => (
-              <Field key={l.key} label={`${l.name}${l.unit ? ` (${l.unit})` : ''}`} hint="-1 means unlimited" error={limitErrors[l.key]}>
+              <Field key={l.key} label={`${l.name}${l.unit ? ` (${l.unit})` : ''}`} hint={WORKSPACE_LIMIT_HINTS[l.key] ?? '-1 means unlimited'} error={limitErrors[l.key]}>
                 {(p) => (
                   <div className="flex items-center gap-2">
                     <Input {...p} inputMode="numeric" value={limits[l.key]} onChange={(e) => setLimits((s) => ({ ...s, [l.key]: e.target.value }))} data-testid={`plan-limit-${l.key}`} />

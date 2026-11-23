@@ -20,6 +20,7 @@ import { Errors } from '../../platform/http/errors';
 import { StorageService } from '../../platform/storage/storage.service';
 import { storeUpload, type UploadedFile } from '../../platform/storage/uploads';
 import { employeeAttrs } from '../employees/employee-attrs';
+import { candidateScopeFilter } from '../recruitment/recruitment-common';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Doc = Record<string, any>;
@@ -109,10 +110,17 @@ export class CustomFieldsService {
       if (entity) filter.entity = entity;
       const manage = await this.canManage(tx);
       if (!includeArchived || !manage) filter.archived_at = null;
-      const rows = await tx.collection('custom_fields').find(filter, { sort: { entity: 1, position: 1, created_at: 1 } });
+      const reach = fieldReach(await this.authz.subject(tx));
+      const rows = (await tx.collection('custom_fields').find(filter, { sort: { entity: 1, position: 1, created_at: 1 } })).filter((r) => !r.hr_workspace_id || !reach || reach.has(r.hr_workspace_id));
       const usage = manage ? new Map((await tx.collection('custom_field_values').aggregate<{ _id: string; n: number }>([{ $match: { field_id: { $in: rows.map((r) => r.id) }, value: { $ne: null } } }, { $group: { _id: '$field_id', n: { $sum: 1 } } }])).map((x) => [x._id, x.n])) : new Map();
       return rows.map((r) => ({ ...definitionView(r), ...(manage ? { valueCount: usage.get(r.id) ?? 0 } : {}) }));
     });
+  }
+
+  /** A Candidate CRM field made by one HR Workspace can be changed only by Super Workspace or that HR Workspace. */
+  private async ownField(tx: TenantTx, f: Doc) {
+    const reach = fieldReach(await this.authz.subject(tx));
+    if (f.hr_workspace_id && reach && !reach.has(f.hr_workspace_id)) throw Errors.notFound('Field');
   }
 
   private async canManage(tx: TenantTx) {
@@ -160,6 +168,7 @@ export class CustomFieldsService {
       await this.authz.require('fields:manage', undefined, tx);
       const before = await tx.collection('custom_fields').findOne({ id });
       if (!before) throw Errors.notFound('Field');
+      await this.ownField(tx, before);
       if (before.archived_at) throw Errors.conflict('field_archived', 'Restore the field before changing it');
       const type = input.type ?? before.type;
       let options = input.options ?? before.options ?? [];
@@ -208,6 +217,7 @@ export class CustomFieldsService {
       await this.authz.require('fields:manage', undefined, tx);
       const f = await tx.collection('custom_fields').findOne({ id });
       if (!f) throw Errors.notFound('Field');
+      await this.ownField(tx, f);
       await tx.collection('custom_fields').updateOne({ id }, { $set: { archived_at: archived ? f.archived_at ?? new Date() : null, updated_by_membership_id: actorMembership() } });
       await this.audit.record(tx, { action: archived ? 'custom_field.archived' : 'custom_field.restored', resourceType: 'custom_field', resourceId: id, changes: { key: f.key, label: f.label, entity: f.entity } });
       return definitionView((await tx.collection('custom_fields').findOne({ id }))!);
@@ -220,6 +230,7 @@ export class CustomFieldsService {
       await this.authz.require('fields:manage', undefined, tx);
       const f = await tx.collection('custom_fields').findOne({ id });
       if (!f) throw Errors.notFound('Field');
+      await this.ownField(tx, f);
       const used = await tx.collection('custom_field_values').count({ field_id: id, value: { $ne: null } });
       if (used || (await tx.collection('custom_field_files').exists({ field_id: id }))) throw Errors.conflict('field_in_use', `${used} record${used === 1 ? ' holds' : 's hold'} a value in this field. Archive it instead: it disappears from forms and the values are kept.`);
       await tx.collection('custom_field_values').delete({ field_id: id });
@@ -260,7 +271,15 @@ export class CustomFieldsService {
     const covers = (perm: string) => grantsFor(s, perm).some((g) => !rec.attrs || grantCovers(s, g, rec.attrs));
     const isSelf = !!rec.selfEmployeeId && s.employeeId === rec.selfEmployeeId;
     if (!covers(rule.view)) throw Errors.notFound('Record');
-    return { rec, s, canEditRecord: covers(rule.edit), isSelf, roles: this.roleKeys(s) };
+    // Candidates: the ATS and Candidate CRM rules on whose candidates a person may see; an HR Workspace's own fields
+    // apply only to its own candidates.
+    let owner: string | null = null;
+    if (entity === 'candidate') {
+      const c = await tx.collection('candidates').findOne({ $and: [{ id: recordId }, await candidateScopeFilter(tx, s, rule.view)] }, { projection: { crm_hr_workspace_id: 1 } });
+      if (!c) throw Errors.notFound('Record');
+      owner = (c.crm_hr_workspace_id as string | null) ?? null;
+    }
+    return { rec, s, canEditRecord: covers(rule.edit), isSelf, roles: this.roleKeys(s), applies: (d: Doc) => !d.hr_workspace_id || d.hr_workspace_id === owner };
   }
 
   private visible(d: Doc, roles: Set<string>) {
@@ -280,7 +299,7 @@ export class CustomFieldsService {
   async values(entity: CustomFieldEntity, recordId: string) {
     return this.db.tenant(async (tx) => {
       const a = await this.access(tx, entity, recordId);
-      const defs = await tx.collection('custom_fields').find({ entity }, { sort: { position: 1, created_at: 1 } });
+      const defs = (await tx.collection('custom_fields').find({ entity }, { sort: { position: 1, created_at: 1 } })).filter(a.applies);
       const vals = new Map((await tx.collection('custom_field_values').find({ entity, record_id: recordId })).map((v) => [v.field_id as string, v.value]));
       return defs
         .filter((d) => this.visible(d, a.roles) && (d.enabled || vals.has(d.id)) && (!d.archived_at || (vals.get(d.id) !== undefined && vals.get(d.id) !== null)))
@@ -300,7 +319,7 @@ export class CustomFieldsService {
   async save(entity: CustomFieldEntity, recordId: string, values: Record<string, unknown>, opts: { tx?: TenantTx; creating?: boolean } = {}) {
     const run = async (tx: TenantTx) => {
       const a = await this.access(tx, entity, recordId);
-      const defs = await tx.collection('custom_fields').find({ entity, archived_at: null, enabled: true });
+      const defs = (await tx.collection('custom_fields').find({ entity, archived_at: null, enabled: true })).filter(a.applies);
       const byKey = new Map(defs.map((d) => [d.key as string, d]));
       const existing = new Map((await tx.collection('custom_field_values').find({ entity, record_id: recordId })).map((v) => [v.field_id as string, v]));
       const problems: { path: string; message: string }[] = [];
@@ -350,7 +369,7 @@ export class CustomFieldsService {
     const actor = requestContext.tenantActor();
     const fieldId = await this.db.tenant(async (tx) => {
       const a = await this.access(tx, entity, recordId);
-      const d = await tx.collection('custom_fields').findOne({ entity, key, archived_at: null, enabled: true, type: 'file' });
+      const d = (await tx.collection('custom_fields').find({ entity, key, archived_at: null, enabled: true, type: 'file' })).find(a.applies);
       if (!d) throw Errors.notFound('Field');
       if (!this.editable(d, a)) throw Errors.forbidden('You cannot change this field');
       return d.id as string;
@@ -390,6 +409,17 @@ export class CustomFieldsService {
       return rows.map((r) => ({ id: r.id as string, action: r.action as string, fieldId: r.resource_id ?? null, by: r.actor_label ?? null, at: r.created_at, changes: r.changes }));
     });
   }
+}
+
+/**
+ * The HR Workspaces whose own Candidate CRM fields a person may see and change: null for everyone's (Super Workspace
+ * and company-wide HR), otherwise the HR Workspaces they run.
+ */
+function fieldReach(s: Subject): Set<string> | null {
+  if (s.grants.some((g) => g.roleKey === 'super_workspace')) return null;
+  const hr = s.grants.filter((g) => g.roleKey === 'hr_workspace');
+  if (hr.some((g) => !g.constraints.hrWorkspaceIds?.length)) return null;
+  return new Set(hr.flatMap((g) => g.constraints.hrWorkspaceIds ?? []));
 }
 
 /** Fields are shown or editable by access level; a role key from before the levels is saved as the level it became. */

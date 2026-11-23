@@ -9,7 +9,7 @@
  *    plays nothing (sound never autoplays), and the preview button plays a tone.
  * 2. The supervisor has Home open in one tab and Approvals in another. The operator applies for casual leave; without
  *    reloading, the bell count goes up, a pop-up shows on Home (not on Approvals, which updates by itself), and the
- *    Casual leave card's pending count goes up.
+ *    Casual Leave card's pending count goes up.
  * 3. The supervisor opens the request (/approvals/[id]): request ID, type, approval authority and history show.
  *    Rejecting without remarks is refused; rejecting with remarks works and the history shows them.
  * 4. The operator gets the rejection live, sees it in the Notification Center (Approvals category, Important),
@@ -108,7 +108,7 @@ const count = async (p) => {
     await op.goto(BASE + `/leave?month=${day.slice(0, 7)}`);
     await op.getByTestId('leave-calendar').locator(`button[data-date="${day}"]`).click();
     await op.waitForSelector('dialog[open]');
-    const cl = await op.$eval('dialog select[name=leaveTypeId]', (s) => [...s.options].find((o) => o.text.startsWith('Casual leave'))?.value);
+    const cl = await op.$eval('dialog select[name=leaveTypeId]', (s) => [...s.options].find((o) => o.text.startsWith('Casual Leave'))?.value);
     await op.selectOption('dialog select[name=leaveTypeId]', cl);
     await op.fill('dialog input[name=endDate]', day);
     await op.fill('dialog textarea[name=reason]', 'Notification browser test');
@@ -127,7 +127,7 @@ const count = async (p) => {
     }, pendingBefore, { timeout: 10000 });
     if ((await board.getByTestId('notification-toasts').locator('[role=status]').count()) !== 0) throw new Error('the Approvals page popped up a notice about itself');
     await board.close();
-    ok('supervisor bell, pop-up and Casual leave card updated live without reloading');
+    ok('supervisor bell, pop-up and Casual Leave card updated live without reloading');
 
     // 3. Detail page, reject with remarks.
     await sup.goto(BASE + '/approvals');

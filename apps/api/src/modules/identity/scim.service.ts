@@ -1,3 +1,4 @@
+import { WorkspaceLimitsService } from '../workspace-limits/workspace-limits.service';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   applyScimPatch, parseScimFilter, parseScimToken, SCIM_LIST_SCHEMA, SCIM_TOKEN_PREFIX, SCIM_USER_SCHEMA, type ScimPatchInput, scimEmail, scimFullName,
@@ -60,6 +61,7 @@ export class ScimService {
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
     private readonly outbox: OutboxService,
+    private readonly limits: WorkspaceLimitsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -204,6 +206,9 @@ export class ScimService {
         await this.entitlements.requireWithinLimit('max_employees', n, tx).catch(() => {
           throw new ScimError(409, undefined, 'The workspace has no seats left on its plan. Add seats in Plan and billing, then retry.');
         });
+        await this.limits.require(tx, 'employee', 1, { via: 'scim' }).catch((err: Error) => {
+          throw new ScimError(409, undefined, err.message);
+        });
       }
       const legalEntity = await tx.collection('legal_entities').findOne({ archived_at: null }, { sort: { created_at: 1 } });
       const m = await tx.collection('memberships').insert({
@@ -267,6 +272,9 @@ export class ScimService {
       const n = await tx.collection('memberships').count({ status: { $ne: 'suspended' } });
       await this.entitlements.requireWithinLimit('max_employees', n, tx).catch(() => {
         throw new ScimError(409, undefined, 'The workspace has no seats left on its plan');
+      });
+      await this.limits.require(tx, 'employee', 1, { via: 'scim', membershipId: r.id }).catch((err: Error) => {
+        throw new ScimError(409, undefined, err.message);
       });
     }
     if (next.externalId !== r.scim_external_id && next.externalId && (await tx.collection('memberships').exists({ scim_external_id: next.externalId, id: { $ne: r.id } }))) {

@@ -1,6 +1,9 @@
 import type { AudienceInput, ChatMessageView, CommFile, ConversationView, EmailStatus } from '@crew/contracts';
 
-export interface Person { membershipId: string; name: string; department: string | null; designation: string | null }
+export interface Person {
+  membershipId: string; name: string; department: string | null; designation: string | null;
+  level: 'super' | 'hr' | 'employee'; levelLabel: string; workspace: string | null; employeeCode: string | null; email: string | null;
+}
 export interface ConversationList { items: ConversationView[]; unread: number; isHr: boolean }
 export interface ConversationDetail { conversation: ConversationView & { asHr: boolean }; messages: ChatMessageView[]; hasOlder: boolean }
 

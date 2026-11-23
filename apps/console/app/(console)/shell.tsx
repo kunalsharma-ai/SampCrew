@@ -1,18 +1,19 @@
 'use client';
 import { Avatar, Badge, CrewLogo, HelpProvider, cn } from '@crew/ui';
-import { Activity, Building2, Fingerprint, Gauge, Globe, KeyRound, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon, ToggleRight } from 'lucide-react';
+import { Activity, Building2, Fingerprint, Gauge, Globe, Headset, KeyRound, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon, ToggleRight } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { CONSOLE_HELP } from '@/lib/help-content';
 import type { Admin } from '@/lib/types';
 import { logoutAction } from '../auth-actions';
+import { LiveRefresh } from '@/components/live-refresh';
 
-export interface NavItem { href: string; label: string; icon: string }
-const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound };
+export interface NavItem { href: string; label: string; icon: string; badge?: number }
+const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound, headset: Headset };
 const ROLE_LABEL: Record<Admin['role'], string> = { super_admin: 'Super admin', support: 'Support', billing_ops: 'Billing operations', viewer: 'Viewer' };
 
-export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; children: React.ReactNode }) {
+export function Shell({ me, nav, live, children }: { me: Admin; nav: NavItem[]; live?: boolean; children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -51,6 +52,7 @@ export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; childr
               <Link href={item.href} aria-current={active ? 'page' : undefined} className={cn('crew-nav-link flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13.5px]', active ? 'bg-accent-subtle font-medium text-accent' : 'text-fg-muted hover:bg-bg-subtle hover:text-fg')}>
                 <Icon className="size-4" aria-hidden />
                 {item.label}
+                {!!item.badge && <span className="ml-auto rounded-full bg-accent px-1.5 text-[10px] font-semibold leading-4 text-accent-fg" data-testid="nav-badge">{item.badge}</span>}
               </Link>
             </li>
           );
@@ -76,6 +78,7 @@ export function Shell({ me, nav, children }: { me: Admin; nav: NavItem[]; childr
 
   return (
     <HelpProvider content={CONSOLE_HELP} pathname={pathname}>
+    {live && <LiveRefresh />}
     <div className="flex min-h-dvh">
       <aside className="crew-glass crew-sidebar sticky top-0 hidden h-dvh w-60 shrink-0 border-r border-border lg:block">{sidebar}</aside>
       {open && (
