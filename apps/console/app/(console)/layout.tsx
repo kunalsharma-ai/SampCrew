@@ -8,6 +8,7 @@ import { Shell, type NavItem } from './shell';
 const NAV: (NavItem & { cap?: string })[] = [
   { href: '/', label: 'Overview', icon: 'gauge', cap: 'tenants:read' },
   { href: '/tenants', label: 'Workspaces', icon: 'building', cap: 'tenants:read' },
+  { href: '/support', label: 'Support inbox', icon: 'headset', cap: 'support:chat' },
   { href: '/users', label: 'All users', icon: 'users', cap: 'access:manage' },
   { href: '/devices', label: 'Attendance machines', icon: 'fingerprint', cap: 'tenants:read' },
   { href: '/features', label: 'Feature management', icon: 'toggle', cap: 'tenants:read' },
@@ -27,8 +28,10 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (!me.session.mfa) redirect('/enrol');
   // A temporary password set by another admin is replaced before anything else (the API refuses other actions too).
   if (me.mustChangePassword) redirect('/change-password');
-  const nav = NAV.filter((n) => !n.cap || hasCap(me, n.cap)).map(({ cap: _c, ...n }) => n);
+  // The support inbox badge: unread messages from Super Workspaces. Live events refresh it (see LiveRefresh).
+  const support = hasCap(me, 'support:chat') ? await load<{ unread: number }>('/platform/support/unread').catch(() => null) : null;
+  const nav = NAV.filter((n) => !n.cap || hasCap(me, n.cap)).map(({ cap: _c, ...n }) => (n.href === '/support' && support?.unread ? { ...n, badge: support.unread } : n));
   // System alerts for the bell and the menu markers (admins who can see workspaces).
   const alerts = hasCap(me, 'tenants:read') ? await api<ConsoleAlerts>('/platform/alerts').catch(() => null) : null;
-  return <Shell me={me} nav={nav} alerts={alerts}>{children}</Shell>;
+  return <Shell me={me} nav={nav} alerts={alerts} live={hasCap(me, 'support:chat')}>{children}</Shell>;
 }

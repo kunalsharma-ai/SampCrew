@@ -11,6 +11,7 @@ import { MongoService as DatabaseService, type TenantTx } from '../../platform/d
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
+import { WorkspaceLimitsService } from '../workspace-limits/workspace-limits.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
 import { Errors } from '../../platform/http/errors';
@@ -105,6 +106,7 @@ export class MembersService {
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     private readonly entitlements: EntitlementsService,
+    private readonly limits: WorkspaceLimitsService,
     private readonly notifications: NotificationService,
     private readonly mailer: MailerService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -155,6 +157,7 @@ export class MembersService {
     const token = randomToken(32);
     const count = await tx.collection('memberships').count({ status: { $ne: 'suspended' } });
     await this.entitlements.requireWithinLimit('max_employees', count, tx);
+    await this.limits.require(tx, 'employee', 1, { email: input.email });
     const legalEntityId0 = input.legalEntityId ?? null;
     const access = await this.requestedAccess(tx, input, { legalEntityId: legalEntityId0, departmentId: input.departmentId ?? null });
 
@@ -193,6 +196,7 @@ export class MembersService {
     const actor = requestContext.tenantActor();
     const count = await tx.collection('memberships').count({ status: { $ne: 'suspended' } });
     await this.entitlements.requireWithinLimit('max_employees', count, tx);
+    await this.limits.require(tx, 'employee', 1, { email: input.email });
     const access = await this.requestedAccess(tx, input, { legalEntityId: input.legalEntityId ?? null, departmentId: input.departmentId ?? null });
     const legalEntityId = input.legalEntityId ?? (await tx.collection('legal_entities').findOne({ archived_at: null }, { sort: { created_at: 1 } }))?.id ?? null;
     const hash = await hashPassword(temporaryPassword);
@@ -263,6 +267,8 @@ export class MembersService {
         throw Errors.conflict('placement_on_employee', 'This member has an employee record. Change their placement there so the job history is kept.');
       }
       if (input.status && before.status === 'invited') throw Errors.badRequest('invite_pending', 'This person has not accepted their invitation yet');
+      // A suspended login coming back takes an Employee Workspace place again.
+      if (input.status && input.status !== 'suspended' && before.status === 'suspended') await this.limits.require(tx, 'employee', 1, { membershipId: id, reason: 'reactivated' });
       if (entries.length) await tx.collection('memberships').updateOne({ id }, { $set: Object.fromEntries(entries.map(([k, v]) => [map[k]!, v])) });
       const after = await this.load(tx, id);
       // The new placement must also be within the caller's scope (cannot move someone out of reach).

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AttendanceDaysService } from '../src/modules/attendance/attendance-days.service';
 import { attlogLines } from '../src/modules/attendance/zk-push';
 import { MongoService as DatabaseService } from '../src/platform/database/mongo.service';
-import { addMember, adminPool, api, createApp, createTenant, department, expectHiddenFrom, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { addMember, adminPool, leaveType, api, createApp, createTenant, department, expectHiddenFrom, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const IST_OFFSET = '+05:30';
 const istToday = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
@@ -225,11 +225,11 @@ describe('attendance', () => {
 
     it('approved leave turns an absence into leave', async () => {
       const d3 = pastWeekday(5);
-      const type = await api(app, hrAdmin).post('/leave/types').send({ code: 'LWP', name: 'Leave without pay', paid: false });
-      expect((await api(app, hrAdmin).post('/leave/policies').send({ leaveTypeId: type.body.id, accrualMethod: 'none', annualEntitlement: '0' })).status).toBe(201);
-      const req = await api(app, hrAdmin).post('/leave/requests').send({ employeeId: people.operator!.employeeId, leaveTypeId: type.body.id, startDate: d3, endDate: d3, reason: 'Recorded late' });
+      const owner = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
+      const typeId = await leaveType(app, owner, { code: 'LWP', name: 'Leave without pay', paid: false, category: 'unpaid', policy: { accrualMethod: 'none', annualEntitlement: '0' }, approval: { routes: ['super'] } });
+      const req = await api(app, hrAdmin).post('/leave/requests').send({ employeeId: people.operator!.employeeId, leaveTypeId: typeId, startDate: d3, endDate: d3, reason: 'Recorded late' });
       expect(req.status, JSON.stringify(req.body)).toBe(201);
-      await approveAll('supervisor');
+      expect((await api(app, owner).post(`/approvals/${req.body.approvalId}/approve`).send({})).body.status).toBe('approved');
       expect((await dayOf('operator', d3)).status).toBe('on_leave');
     });
   });

@@ -97,7 +97,7 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
       const placementsUpdated = await this.employees.applyCurrent(tx, asOf);
       const joinersStarted = await this.employees.startJoiners(tx, asOf);
       const exitsCompleted = await this.employees.finaliseExits(tx, asOf);
-      const accrualsPosted = await this.leave.runAccruals(tx, asOf);
+      const accrualsPosted = await this.leave.runScheduled(tx, asOf);
       return { tenantId, placementsUpdated, joinersStarted, exitsCompleted, accrualsPosted };
     }, { tenantId });
     // Attendance runs in its own transactions so a problem there never holds back the HR changes above.

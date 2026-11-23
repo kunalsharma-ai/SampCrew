@@ -1,6 +1,6 @@
 'use client';
 import { Avatar, Badge, CrewLogo, HelpProvider, cn } from '@crew/ui';
-import { Activity, Building2, Fingerprint, Gauge, Globe, KeyRound, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon, ToggleRight } from 'lucide-react';
+import { Activity, Building2, Fingerprint, Gauge, Globe, Headset, KeyRound, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon, ToggleRight } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
@@ -9,12 +9,13 @@ import type { Admin } from '@/lib/types';
 import { logoutAction } from '../auth-actions';
 import type { ConsoleAlerts } from '@crew/contracts';
 import { ConsoleBell, useConsoleAlerts } from '@/components/console-alerts';
+import { LiveRefresh } from '@/components/live-refresh';
 
-export interface NavItem { href: string; label: string; icon: string }
-const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound };
+export interface NavItem { href: string; label: string; icon: string; badge?: number }
+const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound, headset: Headset };
 const ROLE_LABEL: Record<Admin['role'], string> = { super_admin: 'Super admin', support: 'Support', billing_ops: 'Billing operations', viewer: 'Viewer' };
 
-export function Shell({ me, nav, alerts: initialAlerts, children }: { me: Admin; nav: NavItem[]; alerts: ConsoleAlerts | null; children: React.ReactNode }) {
+export function Shell({ me, nav, alerts: initialAlerts, live, children }: { me: Admin; nav: NavItem[]; alerts: ConsoleAlerts | null; live?: boolean; children: React.ReactNode }) {
   const pathname = usePathname();
   const { alerts, byTab, refresh, markSeen } = useConsoleAlerts(initialAlerts);
   // Opening a page refreshes the alerts, so a fixed problem leaves the bell at once.
@@ -59,6 +60,7 @@ export function Shell({ me, nav, alerts: initialAlerts, children }: { me: Admin;
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 {byTab[item.href] ? <span data-testid={`console-nav-alert-${item.href.slice(1) || 'home'}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-danger tabular" aria-label={`${byTab[item.href]} new alert${byTab[item.href] === 1 ? '' : 's'}`}><span aria-hidden className="size-1.5 rounded-full bg-danger" />{byTab[item.href]}</span> : null}
                 {item.href === '/' && alerts?.unseen ? <span data-testid="console-nav-alert-home" className="inline-flex items-center gap-1 text-[11px] font-semibold text-danger tabular" aria-label={`${alerts.unseen} new alerts`}><span aria-hidden className="size-1.5 rounded-full bg-danger" />{alerts.unseen}</span> : null}
+                {!!item.badge && <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold leading-4 text-accent-fg" data-testid="nav-badge">{item.badge}</span>}
               </Link>
             </li>
           );
@@ -84,6 +86,7 @@ export function Shell({ me, nav, alerts: initialAlerts, children }: { me: Admin;
 
   return (
     <HelpProvider content={CONSOLE_HELP} pathname={pathname}>
+    {live && <LiveRefresh />}
     <div className="flex min-h-dvh">
       <aside className="crew-glass crew-sidebar sticky top-0 hidden h-dvh w-60 shrink-0 border-r border-border lg:block">{sidebar}</aside>
       {open && (

@@ -76,7 +76,7 @@ export function RecordFieldsButton({ entity, recordId, title = 'Details' }: { en
   );
 }
 
-function FieldInput({ r, value, onChange, error, entity, recordId }: { r: FieldValue; value: unknown; onChange: (v: unknown) => void; error?: string; entity: string; recordId: string }) {
+export function FieldInput({ r, value, onChange, error, entity, recordId }: { r: FieldValue; value: unknown; onChange: (v: unknown) => void; error?: string; entity: string; recordId: string }) {
   const f = r.field;
   const opts = f.options.filter((o) => !o.archived || o.value === value || (Array.isArray(value) && value.includes(o.value)));
   const text = value === null || value === undefined ? '' : String(value);
@@ -87,7 +87,13 @@ function FieldInput({ r, value, onChange, error, entity, recordId }: { r: FieldV
       {(p) => {
         switch (f.type) {
           case 'long_text': return <Textarea {...p} rows={3} value={text} maxLength={f.config.maxLength ?? 5000} onChange={(e) => onChange(e.target.value)} />;
-          case 'number': case 'currency': return <Input {...p} inputMode="decimal" value={text} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)} />;
+          case 'number': case 'decimal': case 'currency': return <Input {...p} inputMode="decimal" value={text} placeholder={f.config.placeholder} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)} />;
+          case 'yes_no': return <Select {...p} value={value === true ? 'yes' : value === false ? 'no' : ''} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value === 'yes')}><option value="">Choose…</option><option value="yes">Yes</option><option value="no">No</option></Select>;
+          case 'searchable_dropdown': {
+            const listId = `cf-${f.key}-options`;
+            const shown = opts.find((o) => o.value === value)?.label ?? text;
+            return <><Input {...p} list={listId} defaultValue={shown} placeholder={f.config.placeholder ?? 'Type to search'} onChange={(e) => { const o = opts.find((x) => x.label === e.target.value || x.value === e.target.value); onChange(o ? o.value : e.target.value || null); }} /><datalist id={listId}>{opts.map((o) => <option key={o.value} value={o.label} />)}</datalist></>;
+          }
           case 'date': return <Input {...p} type="date" value={text} onChange={(e) => onChange(e.target.value)} />;
           case 'datetime': return <Input {...p} type="datetime-local" value={text.slice(0, 16)} onChange={(e) => onChange(e.target.value)} />;
           case 'email': return <Input {...p} type="email" value={text} onChange={(e) => onChange(e.target.value)} />;
@@ -113,7 +119,7 @@ function FieldInput({ r, value, onChange, error, entity, recordId }: { r: FieldV
               }} />
             </div>
           );
-          default: return <Input {...p} value={text} maxLength={f.config.maxLength ?? 500} onChange={(e) => onChange(e.target.value)} />;
+          default: return <Input {...p} value={text} placeholder={f.config.placeholder} maxLength={f.config.maxLength ?? 500} onChange={(e) => onChange(e.target.value)} />;
         }
       }}
     </Field>

@@ -6,6 +6,15 @@ import type { Balance, LeaveCalendar, LeaveRequest } from '../../src/lib/types';
 import { type DayMark, MonthCalendar, monthBounds } from '../../src/ui/calendar';
 import { Badge, Button, Card, CardTitle, Empty, errorText, fmt, ListItem, Meter, Notice, Row, Screen, Text, Tile, TileGrid, Title, useLoad, useReloadOnFocus } from '../../src/ui';
 
+const AUTH_STATUS: Record<string, string> = { approved: 'approved', rejected: 'rejected', pending: 'waiting', waiting: 'not yet reached', withdrawn: 'withdrawn' };
+
+/** Where the application went and each authority's status, e.g. " · HR Workspace: approved · Super Workspace: waiting". */
+function authorityText(r: LeaveRequest): string {
+  const a = (r.authorities ?? []).filter((x) => x.authority !== 'manager' || r.authorities!.length > 1);
+  if (a.length) return a.map((x) => ` · ${x.label}: ${AUTH_STATUS[x.status] ?? x.status}`).join('');
+  return r.status === 'pending' && r.waitingOn ? ` · waiting for ${r.waitingOn}` : '';
+}
+
 export default function Leave() {
   const { api, hasFeature } = useSession();
   const router = useRouter();
@@ -99,11 +108,11 @@ export default function Leave() {
             <ListItem
               key={r.id}
               title={`${r.leaveTypeName}, ${r.days} day${r.days === '1.00' ? '' : 's'}`}
-              subtitle={`${fmt.date(r.startDate)}${r.endDate !== r.startDate ? ` to ${fmt.date(r.endDate)}` : ''}${r.reason ? ` · ${r.reason}` : ''}${r.status === 'pending' && r.waitingOn ? ` · waiting for ${r.waitingOn}` : ''}`}
+              subtitle={`${fmt.date(r.startDate)}${r.endDate !== r.startDate ? ` to ${fmt.date(r.endDate)}` : ''}${r.reason ? ` · ${r.reason}` : ''}${authorityText(r)}`}
               right={
                 <Row>
                   <Badge tone={s.tone}>{s.label}</Badge>
-                  {r.status === 'pending' && hasFeature('leave.cancel') && <Button title="Cancel" kind="secondary" onPress={() => cancel(r.id)} />}
+                  {(r.status === 'pending' || (r.status === 'approved' && r.startDate > today)) && hasFeature('leave.cancel') && <Button title="Cancel" kind="secondary" onPress={() => cancel(r.id)} />}
                 </Row>
               }
             />

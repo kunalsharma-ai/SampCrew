@@ -62,6 +62,35 @@ describe('MongoDB migrations', () => {
     expect(runs).toBe(1);
   });
 
+  it('carries the old leave setup into the rebuilt model, keeping what worked and running only once', async () => {
+    const m = mongo.MONGO_MIGRATIONS.find((x) => x.name === '0040_leave_rebuild')!;
+    const tenant = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const typeId = 'bbbbbbbb-0000-4000-8000-000000000001';
+    const hrWs = 'cccccccc-0000-4000-8000-000000000001';
+    const dept = 'dddddddd-0000-4000-8000-000000000001';
+    await scratch.collection('leave_types').insertOne({ _id: typeId as never, tenant_id: tenant, code: 'CL', name: 'Casual leave', paid: true, allow_half_day: true });
+    await scratch.collection('leave_policies').insertMany([
+      { _id: 'p1' as never, tenant_id: tenant, leave_type_id: typeId, active: true, accrual_method: 'annual_upfront', annual_entitlement: '8', max_consecutive_days: '3', carry_forward_max: '0' },
+      { _id: 'p2' as never, tenant_id: tenant, leave_type_id: typeId, active: true, department_id: dept, accrual_method: 'annual_upfront', annual_entitlement: '10', carry_forward_max: '0' },
+      { _id: 'p3' as never, tenant_id: tenant, leave_type_id: typeId, active: false, annual_entitlement: '99' },
+    ]);
+    await scratch.collection('approval_policies').insertOne({ tenant_id: tenant, resource_type: 'leave_request', steps: [{ type: 'manager' }, { type: 'role', role: 'hr_admin' }] });
+    await scratch.collection('hr_workspaces').insertOne({ _id: hrWs as never, tenant_id: tenant, name: 'Pune', status: 'active' });
+    await scratch.collection('leave_requests').insertOne({ tenant_id: tenant, leave_type_id: typeId, status: 'approved' });
+    await m.up!(scratch);
+    await m.up!(scratch);
+    const t = (await scratch.collection('leave_types').findOne({ _id: typeId as never }))!;
+    expect(t.policy).toMatchObject({ accrualMethod: 'annual_upfront', annualEntitlement: '8', maxDaysPerRequest: '3', maxConsecutiveDays: null });
+    expect(t.approval).toMatchObject({ routes: ['hr'], managerFirst: true });
+    expect(t).toMatchObject({ version: 1, created_by_level: 'system', category: 'general' });
+    expect(await scratch.collection('leave_type_versions').countDocuments({ leave_type_id: typeId })).toBe(1);
+    const allocs = await scratch.collection('leave_allocations').find({ leave_type_id: typeId }).toArray();
+    const toEmployees = allocs.filter((a) => a.target === 'employees');
+    expect(toEmployees.map((a) => [a.criteria.all, a.criteria.departmentIds, a.entitlement_days?.toString() ?? null]).sort()).toEqual([[false, [dept], '10.00'], [true, [], null]]);
+    expect(allocs.filter((a) => a.target === 'hr_workspace').map((a) => a.hr_workspace_id).sort()).toEqual([hrWs, null].sort());
+    expect((await scratch.collection('leave_requests').findOne({ tenant_id: tenant }))!.document_ids).toEqual([]);
+  });
+
   it('reads the database name from the URL', () => {
     expect(mongo.databaseName('mongodb://localhost:27017/crew_prod?replicaSet=rs0')).toBe('crew_prod');
     expect(mongo.databaseName('mongodb+srv://u:p@cluster0.example.net/?retryWrites=true')).toBe('crew');

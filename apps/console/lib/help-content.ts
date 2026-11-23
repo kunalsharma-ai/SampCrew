@@ -19,6 +19,18 @@ export const CONSOLE_HELP: HelpContent = {
       how: 'Search for a customer and open their workspace, or create a new workspace for a customer.',
       where: 'For Sampledge account managers and support. Opening a workspace shows account details only.',
     },
+    '/support': {
+      title: 'Support inbox',
+      what: 'Private conversations from each Super Workspace (Contact SampCrew Support). Only the Console Admin team and that company\'s Super Workspace can read them.',
+      how: 'Search by workspace, subject or message text, and filter by Unread, Waiting for reply, Replied or Resolved. Open one to reply.',
+      where: 'For Console Admins with support access (Super admin and Support roles). New messages arrive live and show in the menu badge.',
+    },
+    '/support/[id]': {
+      title: 'Support conversation',
+      what: 'One Super Workspace\'s conversation with the Console Admin team. Every message shows who sent it, their level and workspace.',
+      how: 'Reply as the team (your name is recorded), mark it unread for the team, or resolve it. A new message from the workspace reopens it.',
+      where: 'Your replies show Sent, Delivered and Read. The Super Workspace is notified of each reply.',
+    },
     '/tenants/[id]': {
       title: 'Workspace',
       what: 'One customer’s account: subscription, roles in use, support access and subscription history.',
@@ -152,6 +164,7 @@ export const CONSOLE_HELP: HelpContent = {
     'Payment gateway per currency': { what: 'Whether Razorpay or Stripe collects online payments in each currency.', how: 'Add the keys in Integrations. With None, invoices are paid by bank transfer.' },
     'Payment events': { what: 'Notifications from Razorpay and Stripe, and what SampCrew did with each.' },
     'Contract terms': { what: 'A price per seat, discount or extra modules agreed with one workspace, until an end date.', how: 'Leave everything empty to go back to list prices.' },
+    'Workspace limits': { what: 'How many HR Workspaces and Employee Workspaces this company may have on its plan, and how many it uses.', how: 'Change the figures in Plans. Lowering a limit never removes a workspace; it only stops new ones.' },
     Usage: { what: 'How much of each limit the workspace uses, and whether going beyond it is blocked or billed.' },
     'Add-ons': { what: 'Add-ons this workspace bought, with quantity and price.' },
     'Online payments': { what: 'Checkouts sent to Razorpay or Stripe and whether each was confirmed.' },
