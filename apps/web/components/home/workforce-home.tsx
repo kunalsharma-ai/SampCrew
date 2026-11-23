@@ -148,7 +148,7 @@ export function WorkforceCalendar({ trend }: { trend: WorkforceTrend | null }) {
         <div className="mt-1 grid grid-cols-7 gap-1">
           {Array.from({ length: lead }, (_, i) => <div key={i} />)}
           {trend.days.map((d) => {
-            const tone = d.rate === null ? 'bg-bg-subtle text-fg-subtle' : d.rate >= 90 ? 'bg-success/20 text-success' : d.rate >= 75 ? 'bg-accent/15 text-accent' : 'bg-warning/20 text-warning';
+            const tone = d.rate === null ? 'bg-bg-subtle text-fg-subtle' : d.rate >= 90 ? 'bg-success-subtle text-success ring-1 ring-inset ring-success/40' : d.rate >= 75 ? 'bg-accent-subtle text-accent ring-1 ring-inset ring-accent/40' : 'bg-warning-subtle text-warning ring-1 ring-inset ring-warning/40';
             return (
               <Link key={d.date} href={`/attendance/team?date=${d.date}`} title={`${shortDate(d.date)}: ${d.rate === null ? 'nobody expected' : `${d.rate}% present, ${d.absent} absent, ${d.onLeave} on leave, ${d.missingPunch} missing punches`}`}
                 className={cn('grid aspect-square place-items-center rounded-md text-[0.6875rem] tabular transition-transform hover:scale-105', tone)}>
