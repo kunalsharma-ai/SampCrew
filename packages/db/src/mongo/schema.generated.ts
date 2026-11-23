@@ -3508,6 +3508,257 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((parent_goal_id IS NULL) OR (parent_goal_id <> id)))",
     ],
   },
+  help_activity: {
+    // Help & Support: one row per person and article: how often they opened it, when last (Recently viewed), their
+    // "Was this helpful?" answer and the tutorial steps they finished.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      article_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      done_steps: {"default": {"json": []}, "required": true, "type": "int[]"},
+      helpful: {"type": "bool"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      last_viewed_at: {"type": "timestamp"},
+      membership_id: {"required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      views: {"default": 0, "required": true, "type": "int"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "help_activity_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "article_id"}], "name": "help_activity_one_per_person"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["membership_id"], "onDelete": "cascade", "ref": "memberships", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "last_viewed_at", "desc": true}], "name": "help_activity_recent"},
+      {"cols": [{"col": "article_id"}], "name": "help_activity_by_article"},
+    ],
+    checks: [],
+  },
+  help_articles: {
+    // Help & Support articles: FAQs, step-by-step guides, interactive tutorials, troubleshooting and quick starts.
+    // Managed in the Console. Built-in articles (builtin_key) come with the catalogue; once a Console Admin edits one
+    // (customised_at) or deletes one (deleted_at) the catalogue sync leaves it alone. Each is shown only to its
+    // audiences, while its feature is on for the person and they hold its permission.
+    access: "shared", grants: ["select"], touch: true,
+    columns: {
+      audiences: {"default": {"json": []}, "required": true, "type": "string[]"},
+      body: {"default": "", "required": true, "type": "string"},
+      builtin_key: {"type": "string"},
+      category_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      customised_at: {"type": "timestamp"},
+      deleted_at: {"type": "timestamp"},
+      feature: {"type": "string"},
+      href: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      image_url: {"type": "string"},
+      keywords: {"default": {"json": []}, "required": true, "type": "string[]"},
+      kind: {"enum": ["faq", "guide", "tutorial", "troubleshooting", "quickstart"], "required": true, "type": "string"},
+      permission: {"type": "string"},
+      related: {"default": {"json": []}, "required": true, "type": "string[]"},
+      slug: {"required": true, "type": "string"},
+      sort: {"default": 100, "required": true, "type": "int"},
+      status: {"default": "published", "enum": ["published", "draft"], "required": true, "type": "string"},
+      steps: {"default": {"json": []}, "required": true, "type": "json"},
+      summary: {"default": "", "required": true, "type": "string"},
+      title: {"required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_admin_id: {"type": "uuid"},
+      video_url: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "help_articles_pkey", "primary": true},
+      {"cols": [{"col": "slug"}], "name": "help_articles_slug"},
+    ],
+    fks: [
+      {"cols": ["category_id"], "onDelete": "restrict", "ref": "help_categories", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "category_id"}, {"col": "sort"}], "name": "help_articles_by_category"},
+      {"cols": [{"col": "builtin_key"}], "name": "help_articles_builtin", "where": [{"col": "builtin_key", "op": "notnull"}]},
+    ],
+    checks: [],
+  },
+  help_categories: {
+    // Help & Support categories and subcategories (parent_id), by module, workspace level or topic. Same built-in
+    // and Console rules as help_articles.
+    access: "shared", grants: ["select"], touch: true,
+    columns: {
+      audiences: {"default": {"json": []}, "required": true, "type": "string[]"},
+      builtin_key: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      customised_at: {"type": "timestamp"},
+      deleted_at: {"type": "timestamp"},
+      description: {"default": "", "required": true, "type": "string"},
+      feature: {"type": "string"},
+      icon: {"default": "book", "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      name: {"required": true, "type": "string"},
+      parent_id: {"type": "uuid"},
+      sort: {"default": 100, "required": true, "type": "int"},
+      status: {"default": "published", "enum": ["published", "draft"], "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_admin_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "help_categories_pkey", "primary": true},
+      {"cols": [{"col": "key"}], "name": "help_categories_key"},
+    ],
+    fks: [
+      {"cols": ["parent_id"], "onDelete": "restrict", "ref": "help_categories", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "sort"}], "name": "help_categories_by_sort"},
+    ],
+    checks: [],
+  },
+  help_queries: {
+    // Raise a Query: a question someone could not answer from the help centre. It belongs to their company, has a
+    // ticket number per company (HQ-00012) and goes to the level above (route): the HR Workspace that looks after an
+    // employee (hr_workspace_id; null is the company-wide HR team), the Super Workspace, or the Console Admin team.
+    // The raiser's name, level, workspace and contact details are kept as they were when it was raised.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      article_id: {"type": "uuid"},
+      assignee_admin_id: {"type": "uuid"},
+      assignee_membership_id: {"type": "uuid"},
+      category_key: {"required": true, "type": "string"},
+      category_label: {"required": true, "type": "string"},
+      client_id: {"type": "string"},
+      closed_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      description: {"required": true, "type": "string"},
+      feature: {"type": "string"},
+      file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      // Seen positions: the raiser's, and the handling team's (shared by the team, as in the support inbox).
+      handler_seen_at: {"type": "timestamp"},
+      hr_workspace_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      last_handler_message_at: {"type": "timestamp"},
+      last_message_at: {"type": "timestamp"},
+      last_raiser_message_at: {"type": "timestamp"},
+      number: {"required": true, "type": "int"},
+      page: {"type": "string"},
+      raised_by_membership_id: {"type": "uuid"},
+      raiser_email: {"type": "string"},
+      raiser_level: {"enum": ["super", "hr", "employee"], "required": true, "type": "string"},
+      raiser_name: {"required": true, "type": "string"},
+      raiser_phone: {"type": "string"},
+      raiser_seen_at: {"type": "timestamp"},
+      raiser_workspace: {"type": "string"},
+      rating: {"type": "int"},
+      rating_comment: {"type": "string"},
+      resolved_at: {"type": "timestamp"},
+      route: {"enum": ["hr", "super", "console"], "required": true, "type": "string"},
+      status: {"default": "open", "enum": ["open", "in_progress", "awaiting_user", "resolved", "closed"], "required": true, "type": "string"},
+      subject: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "help_queries_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "number"}], "name": "help_queries_number"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["raised_by_membership_id"], "onDelete": "set_null", "ref": "memberships", "refCols": ["id"]},
+      {"cols": ["assignee_membership_id"], "onDelete": "set_null", "ref": "memberships", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "raised_by_membership_id"}, {"col": "last_message_at", "desc": true}], "name": "help_queries_mine"},
+      {"cols": [{"col": "tenant_id"}, {"col": "route"}, {"col": "status"}, {"col": "last_message_at", "desc": true}], "name": "help_queries_inbox"},
+      {"cols": [{"col": "route"}, {"col": "last_message_at", "desc": true}], "name": "help_queries_console"},
+      {"cols": [{"col": "client_id"}], "name": "help_queries_by_client_id", "where": [{"col": "client_id", "op": "notnull"}]},
+    ],
+    checks: [
+      "CHECK ((number >= 1))",
+    ],
+  },
+  help_query_categories: {
+    // The categories people choose from when they raise a query, managed in the Console. "Other" is built in and
+    // cannot be removed. to_console sends a category's queries straight to the Console Admin team.
+    access: "shared", grants: ["select"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      builtin_key: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      customised_at: {"type": "timestamp"},
+      deleted_at: {"type": "timestamp"},
+      description: {"default": "", "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      label: {"required": true, "type": "string"},
+      sort: {"default": 100, "required": true, "type": "int"},
+      to_console: {"default": false, "required": true, "type": "bool"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "help_query_categories_pkey", "primary": true},
+      {"cols": [{"col": "key"}], "name": "help_query_categories_key"},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [],
+  },
+  help_query_messages: {
+    // The conversation on a query: messages from the raiser and the handlers, handlers' internal notes (kind note,
+    // never shown to the raiser) and events (status changes, assignment, escalation). Author identity is kept as it
+    // was when written.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      author_admin_id: {"type": "uuid"},
+      author_kind: {"enum": ["member", "console", "system"], "required": true, "type": "string"},
+      author_level: {"enum": ["console", "super", "hr", "employee"], "type": "string"},
+      author_membership_id: {"type": "uuid"},
+      author_name: {"type": "string"},
+      author_workspace: {"type": "string"},
+      body: {"required": true, "type": "string"},
+      client_id: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"default": "message", "enum": ["message", "note", "event"], "required": true, "type": "string"},
+      query_id: {"required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "help_query_messages_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["query_id"], "onDelete": "cascade", "ref": "help_queries", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "query_id"}, {"col": "created_at"}], "name": "help_query_messages_by_query"},
+    ],
+    checks: [],
+  },
+  help_settings: {
+    // Help & Support settings for the whole application (one row, key default), set in the Console.
+    access: "shared", grants: ["select"], touch: true,
+    columns: {
+      attachments: {"default": true, "required": true, "type": "bool"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      escalation: {"default": true, "required": true, "type": "bool"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      reopen_days: {"default": 14, "required": true, "type": "int"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      welcome: {"default": "", "required": true, "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "help_settings_pkey", "primary": true},
+      {"cols": [{"col": "key"}], "name": "help_settings_key"},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [],
+  },
   helpdesk_articles: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
     columns: {

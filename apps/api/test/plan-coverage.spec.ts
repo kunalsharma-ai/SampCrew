@@ -48,6 +48,7 @@ const FOUNDATION: Record<string, string> = {
   TenancyController: 'Workspace settings',
   SupportAccessController: 'Approving SAMPLEDGE support access',
   SupportChatController: 'The Super Workspace contacting SampCrew Support (Console Admin team) is part of every plan',
+  HelpController: 'Help & Support (guides, FAQs, Raise a Query) is part of every plan; its three People parts can be switched per level',
   AiController: 'AI governance (status, settings, usage, history) shared by the Copilot and IQ modules; the Copilot actions are gated',
 };
 

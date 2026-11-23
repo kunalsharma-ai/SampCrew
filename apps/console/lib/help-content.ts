@@ -7,6 +7,46 @@ import type { HelpContent } from '@crew/ui';
  */
 export const CONSOLE_HELP: HelpContent = {
   pages: {
+    '/help': {
+      title: 'Help & Support',
+      what: 'Guides, FAQs, tutorials and quick starts for Console Admins, with search and categories.',
+      how: 'Search by feature, question or error message, or open a category. Help queries and Help content are in the menu.',
+    },
+    '/help/search': {
+      title: 'Search help',
+      what: 'Help articles that match your words, best match first.',
+      how: 'Filter by kind (FAQs, guides, tutorials, troubleshooting, quick starts). Open one to read it.',
+    },
+    '/help/categories/[key]': {
+      title: 'Help category',
+      what: 'The articles and topics in one help category.',
+      how: 'Open an article, or a topic for its own articles.',
+    },
+    '/help/articles/[slug]': {
+      title: 'Help article',
+      what: 'One help article: the answer, or numbered steps with links to the pages they mention.',
+      how: 'Use Go to this page or a step\'s Open to jump there. Related articles are on the side.',
+    },
+    '/help-queries': {
+      title: 'Help queries',
+      what: 'Queries raised to SampCrew Support from Help & Support in every company: by Super Workspaces, in SampCrew categories, and escalations.',
+      how: 'Filter by status, assigned to you or unassigned, or search by ticket ID, subject, person or workspace. Open one to answer it.',
+    },
+    '/help-queries/[id]': {
+      title: 'Help query',
+      what: 'One query: what was asked, the conversation and who it is assigned to.',
+      how: 'Reply (the person is notified and it moves to Awaiting User Response), add an internal note, assign it to an admin or change its status.',
+    },
+    '/help-content': {
+      title: 'Help content',
+      what: 'The Help & Support content every level sees: articles, categories and subcategories, query categories, settings and insights.',
+      how: 'Create, edit, publish, unpublish or delete. Choose the levels, the feature and the permission each article needs.',
+    },
+    '/help-content/articles/[id]': {
+      title: 'Help article editor',
+      what: 'Write a help article: title, kind, category, answer, steps, links, media and who sees it.',
+      how: 'Save as a draft to keep it hidden, or Save and publish. Built-in articles you edit keep your changes.',
+    },
     '/': {
       title: 'Overview',
       what: 'SampCrew across all customers: workspaces, trials, subscriptions and revenue. Demo workspaces are counted separately.',
@@ -142,6 +182,7 @@ export const CONSOLE_HELP: HelpContent = {
   },
 
   sections: {
+    'Workspace limits': { what: 'How many HR Workspaces and Employee Workspaces this company may have on its plan, and how many it uses.', how: 'Change the plan or add an extra to raise a limit.' },
     'Workspace hierarchy': { what: 'This company’s four levels: Console Admin (SAMPLEDGE), Super Workspace, HR Workspace and Employee Workspace, with how many people hold each.', where: 'People are counted once, at their highest level. Names are shown only for Super Workspace.' },
     'Country packs': { what: 'Every country with ready-made starting values, whether it is offered, and whether it was changed in Console.', how: 'Open one to edit it, or add a country below the list.' },
     'Pack settings': { what: 'The contributions, income tax bands and regional taxes of one country pack.', how: 'Change the values and save. Workspaces see them the next time they open statutory settings for an entity there.' },
@@ -160,7 +201,6 @@ export const CONSOLE_HELP: HelpContent = {
     'Payment gateway per currency': { what: 'Whether Razorpay or Stripe collects online payments in each currency.', how: 'Add the keys in Integrations. With None, invoices are paid by bank transfer.' },
     'Payment events': { what: 'Notifications from Razorpay and Stripe, and what SampCrew did with each.' },
     'Contract terms': { what: 'A price per seat, discount or extra modules agreed with one workspace, until an end date.', how: 'Leave everything empty to go back to list prices.' },
-    'Workspace limits': { what: 'How many HR Workspaces and Employee Workspaces this company may have on its plan, and how many it uses.', how: 'Change the figures in Plans. Lowering a limit never removes a workspace; it only stops new ones.' },
     Usage: { what: 'How much of each limit the workspace uses, and whether going beyond it is blocked or billed.' },
     'Add-ons': { what: 'Add-ons this workspace bought, with quantity and price.' },
     'Online payments': { what: 'Checkouts sent to Razorpay or Stripe and whether each was confirmed.' },

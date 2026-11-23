@@ -138,6 +138,14 @@ export default function Me() {
         </Card>
       )}
 
+      {hasFeature('core_hr.help_centre') && (
+        <Card testID="me-help">
+          <CardTitle help="help">Help &amp; Support</CardTitle>
+          <ListItem title="Guides, FAQs and tutorials" subtitle="Find answers for every feature you use" onPress={() => router.push('/help')} testID="me-help-open" />
+          {hasFeature('core_hr.help_queries') && <ListItem title="My queries" subtitle="Raise a query and follow replies" onPress={() => router.push('/help/queries')} testID="me-help-queries" />}
+        </Card>
+      )}
+
       <Card>
         <CardTitle help="me.security">Security</CardTitle>
         <Row style={{ justifyContent: 'space-between' }}>

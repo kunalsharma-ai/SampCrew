@@ -45,6 +45,8 @@ export const NAV: NavGroup[] = [
       { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
       // The Super Workspace's private chat with the SampCrew Console Admin team (every plan; not a Communication part).
       { href: '/support', label: 'SampCrew Support', icon: 'headset', superOnly: true },
+      // Help & Support: guides, FAQs and tutorials for what this person can use, and Raise a Query (every level).
+      { href: '/help', label: 'Help & Support', icon: 'life-buoy' },
     ],
   },
   {
