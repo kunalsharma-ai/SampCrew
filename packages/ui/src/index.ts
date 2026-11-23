@@ -1,6 +1,9 @@
 export { cn } from './cn';
 export * from './components/button';
 export * from './components/form';
+export * from './components/password-input';
+export * from './components/sign-in-feedback';
+export * from './components/welcome-intro';
 export * from './components/date-picker';
 export * from './components/surface';
 export * from './components/table';

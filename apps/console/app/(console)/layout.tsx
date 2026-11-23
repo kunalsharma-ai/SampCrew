@@ -3,6 +3,7 @@ import type { ConsoleAlerts } from '@crew/contracts';
 import { api, load } from '@/lib/api';
 import { hasCap } from '@/lib/caps';
 import type { Admin } from '@/lib/types';
+import { WelcomeIntro } from '@crew/ui';
 import { Shell, type NavItem } from './shell';
 
 const NAV: (NavItem & { cap?: string })[] = [
@@ -39,5 +40,11 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const nav = NAV.filter((n) => !n.cap || hasCap(me, n.cap)).map(({ cap: _c, ...n }) => (n.href === '/support' && support?.unread ? { ...n, badge: support.unread } : n.href === '/help-queries' && help?.waiting ? { ...n, badge: help.waiting } : n));
   // System alerts for the bell and the menu markers (admins who can see workspaces).
   const alerts = hasCap(me, 'tenants:read') ? await api<ConsoleAlerts>('/platform/alerts').catch(() => null) : null;
-  return <Shell me={me} nav={nav} alerts={alerts} live={hasCap(me, 'support:chat')}>{children}</Shell>;
+  return (
+    <>
+      {/* The welcome that plays once right after signing in. */}
+      <WelcomeIntro scene="console" name={me.fullName} workspace="SAMPLEDGE" />
+      <Shell me={me} nav={nav} alerts={alerts} live={hasCap(me, 'support:chat')}>{children}</Shell>
+    </>
+  );
 }

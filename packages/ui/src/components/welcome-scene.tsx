@@ -1,14 +1,16 @@
 'use client';
-import { WELCOME_COPY, type WelcomeScene as Scene } from '@crew/contracts';
-import { Fragment, useEffect, useState, type CSSProperties } from 'react';
+import { SIGN_IN_PALETTES, WELCOME_CARD, WELCOME_COPY, WELCOME_HELLOS, sceneIsDark, timeGreeting, type SignInMode, type WelcomeScene as Scene } from '@crew/contracts';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { cn } from '../cn';
+import { SignInStatusProvider, useSignInStatus } from './sign-in-feedback';
 
 /**
- * The animated welcome beside every SampCrew sign-in form. Each level is its own world, in the colours of the product
- * the person is about to enter, with the workspace's name written large so nobody signs in to the wrong place:
+ * The SampCrew sign-in experience, shared by the Web Portal and the Console. Each level is its own animated world,
+ * in the colours of the product the person is about to enter, and greets them: the time of day, "hello" in turn in
+ * the languages SampCrew's customers speak, and the workspace's name in bold, so nobody signs in to the wrong place.
  *
- * - console   Super Admin Console: a night-blue command centre, a turning wireframe globe with satellites and a radar
- *             sweep, live status panels and a scan line.
+ * - console   Super Admin Console (SAMPLEDGE staff only): a night-blue command centre, a turning wireframe globe with
+ *             satellites and a radar sweep, live status panels and a scan line.
  * - super     Super Workspace: emerald and gold, a crowned core with HR Workspaces orbiting it, data flowing along gold
  *             links and a twinkling starfield.
  * - hr        HR Workspace: violet and coral, a hiring board where a candidate card travels Applied, Interview, Hired
@@ -18,28 +20,136 @@ import { cn } from '../cn';
  * - team      Employee Workspace of someone people report to: the same daylight, with their team gathering and
  *             requests being approved.
  *
- * The official logo is shown unchanged. Only transform and opacity move, so it stays smooth on slow machines; with
- * reduced motion it is a still composition. Decoration is hidden from screen readers and the words are real text.
- * The form beside it is usable from the first frame: nothing waits for the animation.
+ * The form sits in a sign-in card of the same world (a moving gradient frame, the workspace's badge, field icons and
+ * what keeps the account safe). People can switch the page to light or dark and try other colour palettes; the
+ * choice stays on this device. The official logo is shown unchanged. Only transform and opacity move, so it stays
+ * smooth on slow machines; with reduced motion it is a still composition. Decoration is hidden from screen readers and
+ * the words are real text. The form is usable from the first frame: nothing waits for the animation.
  */
+
+type Choice = { label: string; href: string; active: boolean; scene?: Scene };
+const PREFS_KEY = 'crew-signin-theme';
+const PALETTE_KEYS = new Set(SIGN_IN_PALETTES.map((p) => p.key));
+
+/** The page's look: light or dark (auto keeps each workspace's own) and the colour palette, remembered per device. */
+function useSignInTheme() {
+  const [mode, setMode] = useState<SignInMode>('auto');
+  const [palette, setPalette] = useState('signature');
+  const loaded = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(PREFS_KEY) ?? '{}') as { mode?: string; palette?: string };
+      if (raw.mode === 'light' || raw.mode === 'dark') setMode(raw.mode);
+      if (raw.palette && PALETTE_KEYS.has(raw.palette)) setPalette(raw.palette);
+    } catch {
+      // Nothing saved, or no storage: the workspace's own look.
+    }
+    loaded.current = true;
+  }, []);
+  useEffect(() => {
+    if (!loaded.current) return;
+    try {
+      window.localStorage.setItem(PREFS_KEY, JSON.stringify({ mode, palette }));
+    } catch {
+      // No storage (private mode): the choice lasts for this page.
+    }
+  }, [mode, palette]);
+  return { mode, setMode, palette, setPalette };
+}
+
+/** CSS variables for a palette on a dark or light page (signature keeps the workspace's own, from the stylesheet). */
+function paletteStyle(key: string, tone: 'dark' | 'light'): CSSProperties | undefined {
+  const p = SIGN_IN_PALETTES.find((x) => x.key === key);
+  if (!p) return undefined;
+  const t = p[tone];
+  return {
+    '--base': t.base,
+    '--g1': p.colors[0], '--g2': p.colors[1], '--g3': p.colors[2],
+    '--name': `linear-gradient(90deg, ${t.name[0]} 0%, ${t.name[1]} 40%, ${t.name[2]} 80%, ${t.name[0]} 100%)`,
+  } as CSSProperties;
+}
+function paletteShellStyle(key: string): CSSProperties | undefined {
+  const p = SIGN_IN_PALETTES.find((x) => x.key === key);
+  if (!p) return undefined;
+  return {
+    '--sc-tint': p.tint, '--sc-c1': p.colors[0], '--sc-c2': p.colors[1], '--sc-c3': p.colors[2],
+    '--sc-btn': `linear-gradient(100deg, ${p.colors[0]}, ${p.tint} 55%, ${p.colors[2]})`,
+  } as CSSProperties;
+}
+
+/**
+ * The whole sign-in page: the level's welcome, and beside it (below it on phones) the sign-in card with the theme
+ * controls. The Web Portal and the Console both use it, with their own form inside.
+ */
+export function SignInFrame({
+  scene,
+  choices,
+  heading = 'h1',
+  footer,
+  helpHref,
+  children,
+}: {
+  scene: Scene;
+  choices?: Choice[];
+  /** The public Help & Support page, offered as a button above the card. */
+  helpHref?: string;
+  heading?: 'h1' | 'h2';
+  /** A line under the card (copyright, audit note). */
+  footer?: ReactNode;
+  children: ReactNode;
+}) {
+  const { mode, setMode, palette, setPalette } = useSignInTheme();
+  const tone: 'dark' | 'light' = mode === 'auto' ? (sceneIsDark(scene) ? 'dark' : 'light') : mode;
+  return (
+    <div className="sc-shell grid min-h-dvh bg-bg lg:grid-cols-[1fr_540px]" data-scene={scene} data-mode={mode} data-tone={tone} data-palette={palette} style={paletteShellStyle(palette)} data-testid="sign-in-page">
+      <WelcomeScene scene={scene} choices={choices} heading={heading} tone={tone} style={paletteStyle(palette, tone)} className="min-h-0 lg:min-h-dvh" />
+      <main className="sc-panel">
+        <span className="sc-panel-blob sc-panel-blob-1" aria-hidden />
+        <span className="sc-panel-blob sc-panel-blob-2" aria-hidden />
+        <div className="sc-panel-inner">
+          <ThemePicker
+            mode={mode} onMode={setMode} palette={palette} onPalette={setPalette}
+            lead={helpHref ? <a className="sc-help" href={helpHref} data-testid="sign-in-help"><HelpIcon />Help &amp; Support</a> : null}
+          />
+          <SignInCard scene={scene}>{children}</SignInCard>
+          {footer && <div className="sc-panel-foot">{footer}</div>}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/** The time-of-day greeting by the person's own clock (a plain welcome until the page knows it). */
+function useGreeting() {
+  const [g, setG] = useState('Welcome');
+  useEffect(() => setG(timeGreeting(new Date().getHours())), []);
+  return g;
+}
+
 export function WelcomeScene({
   scene,
   logoSrc,
   choices,
   className,
   heading: Heading = 'h1',
+  tone,
+  style,
 }: {
   scene: Scene;
-  /** The workspace name's element: h1 when the form beside it uses h2 (Web Portal), h2 when the form has the h1 (Console). */
+  /** The workspace name's element: h1 when the form beside it uses h2 (Web Portal), h2 when the form has the h1. */
   heading?: 'h1' | 'h2';
-  /** Defaults to the official logo for a dark or light backdrop, whichever this level's world uses. */
+  /** Defaults to the official logo for a dark or light backdrop. */
   logoSrc?: string;
-  /** Links to the other levels' sign-in ("Signing in to: Super Workspace · HR Workspace · Employee Workspace"). */
-  choices?: { label: string; href: string; active: boolean; scene?: Scene }[];
+  /** Links to the other levels' sign-in. */
+  choices?: Choice[];
   className?: string;
+  /** Dark or light page; defaults to the workspace's own. */
+  tone?: 'dark' | 'light';
+  style?: CSSProperties;
 }) {
   const copy = WELCOME_COPY[scene];
-  const light = scene === 'employee' || scene === 'team';
+  const t = tone ?? (sceneIsDark(scene) ? 'dark' : 'light');
+  const greeting = useGreeting();
   // The full reveal plays once per browser session; coming back to the page (after signing out) is quicker.
   const [quick, setQuick] = useState(false);
   useEffect(() => {
@@ -51,19 +161,26 @@ export function WelcomeScene({
     }
   }, []);
   const words = copy.level.split(' ');
+  const staff = WELCOME_CARD[scene].staffOnly;
   return (
-    <section className={cn('sc-scene', quick && 'sc-quick', className)} data-scene={scene} data-testid="welcome-scene" aria-label={`${copy.level} welcome`}>
+    <section className={cn('sc-scene', quick && 'sc-quick', className)} data-scene={scene} data-tone={t} style={style} data-testid="welcome-scene" aria-label={`${copy.level} welcome`}>
       <Backdrop scene={scene} />
       <div className="sc-content">
         <div className="sc-top">
-          <img src={logoSrc ?? `/brand/sampcrew-logo-${light ? 'light' : 'dark'}.svg`} alt="SampCrew" className="sc-logo" width={243} height={64} />
+          <img src={logoSrc ?? `/brand/sampcrew-logo-${t === 'light' ? 'light' : 'dark'}.svg`} alt="SampCrew" className="sc-logo" width={243} height={64} />
+          {staff && <span className="sc-staff" data-testid="staff-only"><LockIcon />SAMPLEDGE staff only</span>}
         </div>
-        <div className="sc-copy">
-          <p className="sc-eyebrow"><span className="sc-eyebrow-dot" aria-hidden />You are signing in to</p>
+        <div className="sc-copy" data-testid="welcome-copy">
+          <p className="sc-greet" data-testid="welcome-greeting">
+            <span className="sc-wave" aria-hidden>👋</span>
+            <span className="sc-greet-text">{[...`${greeting}${staff ? ', SAMPLEDGE team' : ''}`].map((ch, i) => <span key={i} className="sc-ch" style={{ '--i': i } as CSSProperties}>{ch}</span>)}</span>
+            <span className="sc-hello" aria-hidden><span className="sc-hello-track">{[...WELCOME_HELLOS, WELCOME_HELLOS[0]].map((h, i) => <span key={i}>{h}</span>)}</span></span>
+          </p>
+          <p className="sc-eyebrow"><span className="sc-eyebrow-dot" aria-hidden />{staff ? 'Welcome to the' : 'Welcome to your'}</p>
           <Heading className="sc-name" data-testid="welcome-level">
             {words.map((w, i) => (
               <Fragment key={w + i}>
-                <span className="sc-word-mask"><span className="sc-word" style={{ '--i': i } as CSSProperties}>{w}</span></span>
+                <span className="sc-word-mask"><strong className="sc-word" style={{ '--i': i } as CSSProperties}>{w}</strong></span>
                 {i < words.length - 1 ? ' ' : null}
               </Fragment>
             ))}
@@ -85,7 +202,7 @@ export function WelcomeScene({
             </nav>
           )}
         </div>
-        <div className="sc-stage" aria-hidden>
+        <div className="sc-stage" aria-hidden data-testid="welcome-stage">
           <svg viewBox="0 0 800 420" preserveAspectRatio="xMidYMid meet" focusable="false">
             {scene === 'console' && <ConsoleStage />}
             {scene === 'super' && <SuperStage />}
@@ -97,6 +214,102 @@ export function WelcomeScene({
         <p className="sc-foot">SampCrew · People, simplified. · by SAMPLEDGE</p>
       </div>
     </section>
+  );
+}
+
+/** The sign-in card: a moving gradient frame, the workspace's badge and name, the form, and what keeps it safe. */
+function SignInCard(props: { scene: Scene; children: ReactNode }) {
+  return <SignInStatusProvider><SignInCardBody {...props} /></SignInStatusProvider>;
+}
+
+/** The burst over the card when the sign-in worked: a big tick drawing itself, a ring and sparks. */
+function SuccessBurst({ name }: { name: string }) {
+  return (
+    <div className="sc-success" role="status" data-testid="sign-in-success">
+      <span className="sc-success-glow" aria-hidden />
+      <span className="sc-success-sparks" aria-hidden>{Array.from({ length: 12 }, (_, i) => <i key={i} style={{ '--i': i } as CSSProperties} />)}</span>
+      <svg className="sc-success-tick" viewBox="0 0 64 64" aria-hidden="true">
+        <circle className="sc-success-ring" cx="32" cy="32" r="28" />
+        <path className="sc-success-path" d="M19 33.5l8.5 8.5L45 24.5" />
+      </svg>
+      <p className="sc-success-title">Signed in</p>
+      <p className="sc-success-sub">Opening your <strong>{name}</strong>…</p>
+    </div>
+  );
+}
+
+function SignInCardBody({ scene, children }: { scene: Scene; children: ReactNode }) {
+  const copy = WELCOME_COPY[scene];
+  const card = WELCOME_CARD[scene];
+  const { status, attempt } = useSignInStatus();
+  return (
+    <div className="sc-card" data-testid="sign-in-card" data-auth={status} data-attempt={attempt % 2}>
+      {status === 'ok' && <SuccessBurst name={copy.level} />}
+      <span className="sc-card-frame" aria-hidden />
+      <span className="sc-card-glow sc-card-glow-1" aria-hidden />
+      <span className="sc-card-glow sc-card-glow-2" aria-hidden />
+      <div className="sc-card-head">
+        <span className="sc-card-badge" aria-hidden><SceneIcon scene={scene} /><span className="sc-card-badge-ring" /></span>
+        <div className="sc-card-id">
+          <p className="sc-card-kicker">{card.kicker}</p>
+          <p className="sc-card-name" data-testid="card-workspace"><strong>{copy.level}</strong></p>
+        </div>
+        <span className={cn('sc-card-chip', card.staffOnly && 'sc-card-chip-staff')}><LockIcon />{card.staffOnly ? 'Staff only' : 'Secure'}</span>
+      </div>
+      <div className="sc-card-body">{children}</div>
+      <ul className="sc-card-trust" aria-label="How your account is protected">
+        <li><ShieldIcon />Multi-factor</li>
+        <li><LockIcon />Encrypted</li>
+        <li><EyeIcon />Every sign-in audited</li>
+      </ul>
+    </div>
+  );
+}
+
+/** Light, dark or the workspace's own look, and colour palettes to try. */
+function ThemePicker({ mode, onMode, palette, onPalette, lead }: { mode: SignInMode; onMode: (m: SignInMode) => void; palette: string; onPalette: (p: string) => void; lead?: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [open]);
+  const modes: { m: SignInMode; label: string; icon: ReactNode }[] = [
+    { m: 'auto', label: 'Workspace look', icon: <SparkIcon /> },
+    { m: 'light', label: 'Light', icon: <SunIcon /> },
+    { m: 'dark', label: 'Dark', icon: <MoonIcon /> },
+  ];
+  const palettes = [{ key: 'signature', label: 'Signature', colors: ['var(--sc-c1)', 'var(--sc-c2)', 'var(--sc-c3)'] }, ...SIGN_IN_PALETTES];
+  return (
+    <div className="sc-theme" ref={box}>
+      {lead}
+      <div className="sc-theme-modes" role="group" aria-label="Page look">
+        {modes.map((x) => (
+          <button key={x.m} type="button" aria-pressed={mode === x.m} title={x.label} aria-label={x.label} onClick={() => onMode(x.m)} data-testid={`theme-mode-${x.m}`}>{x.icon}</button>
+        ))}
+      </div>
+      <button type="button" className="sc-theme-open" aria-expanded={open} aria-haspopup="true" onClick={() => setOpen((o) => !o)} data-testid="theme-palettes">
+        <span className="sc-theme-dots" aria-hidden><i /><i /><i /></span>Colours
+      </button>
+      {open && (
+        <div className="sc-theme-pop" role="group" aria-label="Colour palette" data-testid="theme-palette-list">
+          {palettes.map((p) => (
+            <button key={p.key} type="button" aria-pressed={palette === p.key} onClick={() => onPalette(p.key)} data-testid={`theme-palette-${p.key}`}>
+              <span className="sc-swatch" style={{ background: `conic-gradient(${p.colors[0]}, ${p.colors[1]}, ${p.colors[2]}, ${p.colors[0]})` }} aria-hidden />
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -112,6 +325,23 @@ function Backdrop({ scene }: { scene: Scene }) {
       {scene === 'super' && <span className="sc-beams" />}
     </div>
   );
+}
+
+/* Small line icons (24px grid, currentColor). */
+const I = ({ children }: { children: ReactNode }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="sc-i">{children}</svg>;
+const LockIcon = () => <I><rect x="4" y="11" width="16" height="10" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></I>;
+const ShieldIcon = () => <I><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" /><path d="M9 12l2 2 4-4" /></I>;
+const EyeIcon = () => <I><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></I>;
+const SunIcon = () => <I><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></I>;
+const MoonIcon = () => <I><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></I>;
+const HelpIcon = () => <I><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" /><path d="M5.6 5.6l4 4M14.4 14.4l4 4M18.4 5.6l-4 4M9.6 14.4l-4 4" /></I>;
+const SparkIcon = () => <I><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="M19 17l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" /></I>;
+function SceneIcon({ scene }: { scene: Scene }) {
+  if (scene === 'console') return <I><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></I>;
+  if (scene === 'super') return <I><path d="M3 18l2-11 5 5 2-7 2 7 5-5 2 11z" /><path d="M5 21h14" /></I>;
+  if (scene === 'hr') return <I><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><circle cx="17.5" cy="9" r="2.5" /><path d="M16 14.2a5 5 0 0 1 6 4.8" /></I>;
+  if (scene === 'team') return <I><circle cx="12" cy="7" r="3" /><circle cx="5" cy="10" r="2.3" /><circle cx="19" cy="10" r="2.3" /><path d="M6.5 20a5.5 5.5 0 0 1 11 0M1.5 19a4 4 0 0 1 5-3.6M22.5 19a4 4 0 0 0-5-3.6" /></I>;
+  return <I><circle cx="12" cy="12" r="4" /><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" /></I>;
 }
 
 const v = (o: Record<string, string | number>) => o as CSSProperties;

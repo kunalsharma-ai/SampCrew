@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Button, Checkbox, Field, Input, Select } from '@crew/ui';
+import { Alert, Button, Checkbox, Field, Input, PasswordInput, Select } from '@crew/ui';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { signupAction } from '../actions';
@@ -69,7 +69,7 @@ export function SignupForm() {
         <Field label="Work email" error={fe.email} required>{(p) => <Input {...p} name="email" type="email" autoComplete="email" required />}</Field>
       </div>
       <Field label="Password" hint="At least 12 characters, mixing letters, numbers and symbols" error={fe.password} required>
-        {(p) => <Input {...p} name="password" type="password" autoComplete="new-password" required minLength={12} />}
+        {(p) => <PasswordInput {...p} name="password" autoComplete="new-password" required minLength={12} rules />}
       </Field>
       <Checkbox name="acceptTerms" required label="I agree to the SAMPLEDGE terms of service and privacy notice" />
       {fe.acceptTerms && <p className="-mt-2 text-xs text-danger">{fe.acceptTerms}</p>}

@@ -140,7 +140,7 @@ import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
 import { ChatService } from './modules/communication/chat.service';
 import { PlatformSupportChatController, SupportChatController } from './modules/support-chat/support-chat.controller';
 import { SupportChatService } from './modules/support-chat/support-chat.service';
-import { HelpController, PlatformHelpController } from './modules/help/help.controller';
+import { HelpController, PlatformHelpController, PublicHelpController } from './modules/help/help.controller';
 import { HelpContentService } from './modules/help/help-content.service';
 import { HelpQueriesService } from './modules/help/help-queries.service';
 import { CommFilesController, CommunicationController } from './modules/communication/communication.controller';
@@ -276,6 +276,7 @@ export const CONTROLLERS = [
   PlatformSupportChatController,
   HelpController,
   PlatformHelpController,
+  PublicHelpController,
   CommFilesController,
   LmsController,
   LearningFilesController,

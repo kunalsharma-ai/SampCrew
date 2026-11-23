@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Button, Field, Input } from '@crew/ui';
+import { Alert, Button, Field, Input, PasswordInput } from '@crew/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { firstAdminAction } from '../auth-actions';
@@ -53,9 +53,9 @@ export function SetupForm({ addressProblem }: { addressProblem?: string | null }
       <Field label="Your name" required error={fieldErrors.fullName}>{(p) => <Input {...p} name="fullName" autoComplete="name" required />}</Field>
       <Field label="Email" required error={fieldErrors.email}>{(p) => <Input {...p} name="email" type="email" autoComplete="username" required />}</Field>
       <Field label="Password" required error={fieldErrors.password} hint="At least 12 characters, with three of: lower case, upper case, numbers, symbols.">
-        {(p) => <Input {...p} name="password" type="password" autoComplete="new-password" required />}
+        {(p) => <PasswordInput {...p} name="password" autoComplete="new-password" required rules />}
       </Field>
-      <Field label="Password again" required error={fieldErrors.confirm}>{(p) => <Input {...p} name="confirm" type="password" autoComplete="new-password" required />}</Field>
+      <Field label="Password again" required error={fieldErrors.confirm}>{(p) => <PasswordInput {...p} name="confirm" autoComplete="new-password" required matches="password" />}</Field>
       <Button type="submit" loading={pending}>Create Super admin</Button>
       <p className="text-xs text-fg-subtle">Next you set up two-step verification with an authenticator app. It is required for every Console admin.</p>
     </form>

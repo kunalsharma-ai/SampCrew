@@ -16,24 +16,34 @@ import { z } from 'zod';
  * it one level up.
  */
 
-export const HELP_AUDIENCES = ['console', 'super', 'hr', 'employee'] as const;
+/**
+ * `public` content is the Help & Support page anyone can open before signing in (from every sign-in page): what
+ * SampCrew is, its features and offerings, and the FAQs and articles a visitor needs. Signed-in people see it too.
+ */
+export const HELP_AUDIENCES = ['console', 'super', 'hr', 'employee', 'public'] as const;
 export type HelpAudience = (typeof HELP_AUDIENCES)[number];
 export const HELP_AUDIENCE_LABEL: Record<HelpAudience, string> = {
   console: 'Console Admin',
   super: 'Super Workspace',
   hr: 'HR Workspace',
   employee: 'Employee Workspace',
+  public: 'Everyone (public Help & Support)',
 };
 
-/** The audiences a person on a level sees: their own and every level below it (a Super Workspace also runs HR work). */
+/** The audiences a person on a level sees: their own, every level below it (a Super Workspace also runs HR work) and the public pages. */
 export function helpAudiencesFor(level: HelpAudience): HelpAudience[] {
   if (level === 'console') return ['console'];
-  if (level === 'super') return ['super', 'hr', 'employee'];
-  if (level === 'hr') return ['hr', 'employee'];
-  return ['employee'];
+  if (level === 'public') return ['public'];
+  if (level === 'super') return ['super', 'hr', 'employee', 'public'];
+  if (level === 'hr') return ['hr', 'employee', 'public'];
+  return ['employee', 'public'];
 }
 
-export const HELP_ARTICLE_KINDS = ['faq', 'guide', 'tutorial', 'troubleshooting', 'quickstart'] as const;
+/**
+ * `feature` is a feature brief (what a module does and why it helps, for the "Our features" showcase) and `article`
+ * a longer read (offerings, facilities, security, getting started). Both are written in the Console like the rest.
+ */
+export const HELP_ARTICLE_KINDS = ['faq', 'guide', 'tutorial', 'troubleshooting', 'quickstart', 'feature', 'article'] as const;
 export type HelpArticleKind = (typeof HELP_ARTICLE_KINDS)[number];
 export const HELP_KIND_LABEL: Record<HelpArticleKind, string> = {
   faq: 'FAQ',
@@ -41,6 +51,8 @@ export const HELP_KIND_LABEL: Record<HelpArticleKind, string> = {
   tutorial: 'Tutorial',
   troubleshooting: 'Troubleshooting',
   quickstart: 'Quick start',
+  feature: 'Feature brief',
+  article: 'Article',
 };
 export const HELP_KIND_PLURAL: Record<HelpArticleKind, string> = {
   faq: 'FAQs',
@@ -48,6 +60,8 @@ export const HELP_KIND_PLURAL: Record<HelpArticleKind, string> = {
   tutorial: 'Tutorials',
   troubleshooting: 'Troubleshooting',
   quickstart: 'Quick starts',
+  feature: 'Features',
+  article: 'Articles',
 };
 
 /** Icons a category can use (lucide names on the web; the phone shows the glyph). */
@@ -111,7 +125,7 @@ export const helpCategoryInput = z.object({
   icon: z.enum(HELP_ICON_KEYS).default('book'),
   /** A subcategory names its parent category. */
   parentId: z.uuid().optional().nullable().transform((v) => v ?? null),
-  audiences: z.array(z.enum(HELP_AUDIENCES)).min(1, 'Choose at least one level').max(4),
+  audiences: z.array(z.enum(HELP_AUDIENCES)).min(1, 'Choose at least one level').max(5),
   /** Shown only while this feature (or part) is switched on for the person. */
   feature: featureKey,
   sort: z.coerce.number().int().min(0).max(10000).default(100),
@@ -128,7 +142,7 @@ export const helpArticleInput = z.object({
   /** The answer or explanation. Paragraphs are separated by a blank line; lines starting with "- " are a list. */
   body: z.string().trim().max(20000).default(''),
   steps: z.array(helpStepInput).max(30).default([]),
-  audiences: z.array(z.enum(HELP_AUDIENCES)).min(1, 'Choose at least one level').max(4),
+  audiences: z.array(z.enum(HELP_AUDIENCES)).min(1, 'Choose at least one level').max(5),
   feature: featureKey,
   permission: permissionKey,
   keywords: z.array(z.string().trim().min(1).max(60)).max(40).default([]),
@@ -137,6 +151,8 @@ export const helpArticleInput = z.object({
   videoUrl: z.string().trim().max(500).regex(/^https:\/\//, 'Use an https:// link').optional().nullable().transform((v) => (v ? v : null)),
   imageUrl: z.string().trim().max(500).regex(/^https:\/\//, 'Use an https:// link').optional().nullable().transform((v) => (v ? v : null)),
   related: z.array(slug).max(12).default([]),
+  /** The icon of a feature brief or article card (other kinds show their category's). */
+  icon: z.enum(HELP_ICON_KEYS).optional().nullable().transform((v) => v ?? null),
   sort: z.coerce.number().int().min(0).max(10000).default(100),
   status: z.enum(HELP_CONTENT_STATUSES).default('published'),
 });
@@ -256,6 +272,8 @@ export interface HelpArticleSummary {
   href: string | null;
   hasVideo: boolean;
   steps: number;
+  /** Its own icon, or its category's. */
+  icon: HelpIcon;
 }
 
 export interface HelpArticleView extends HelpArticleSummary {
@@ -289,6 +307,26 @@ export interface HelpHome {
   /** What the person may do with queries (the parts their level has on). */
   queries: { raise: boolean; open: number; inbox: boolean; waiting: number };
 }
+
+/** One feature brief or FAQ on the public Help & Support page, with its text (no second request needed). */
+export interface PublicHelpEntry extends HelpArticleSummary {
+  body: string;
+  keywords: string[];
+}
+
+/** The public Help & Support page: anyone can read it before signing in. */
+export interface PublicHelpHome {
+  welcome: string;
+  categories: HelpCategoryView[];
+  features: PublicHelpEntry[];
+  faqs: PublicHelpEntry[];
+  articles: HelpArticleSummary[];
+  guides: HelpArticleSummary[];
+  counts: Record<HelpArticleKind, number>;
+}
+
+/** A public article: the text and steps, nothing about the reader. */
+export type PublicHelpArticle = Omit<HelpArticleView, 'mine' | 'helpful'>;
 
 export interface HelpSearchResult {
   items: (HelpArticleSummary & { score: number; snippet: string })[];

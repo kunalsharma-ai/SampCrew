@@ -59131,7 +59131,9 @@
                 "guide",
                 "tutorial",
                 "troubleshooting",
-                "quickstart"
+                "quickstart",
+                "feature",
+                "article"
               ]
             }
           },
@@ -60420,7 +60422,9 @@
                 "guide",
                 "tutorial",
                 "troubleshooting",
-                "quickstart"
+                "quickstart",
+                "feature",
+                "article"
               ]
             }
           },
@@ -60686,7 +60690,7 @@
                   },
                   "audiences": {
                     "minItems": 1,
-                    "maxItems": 4,
+                    "maxItems": 5,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -60694,7 +60698,8 @@
                         "console",
                         "super",
                         "hr",
-                        "employee"
+                        "employee",
+                        "public"
                       ]
                     }
                   },
@@ -60856,7 +60861,7 @@
                   },
                   "audiences": {
                     "minItems": 1,
-                    "maxItems": 4,
+                    "maxItems": 5,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -60864,7 +60869,8 @@
                         "console",
                         "super",
                         "hr",
-                        "employee"
+                        "employee",
+                        "public"
                       ]
                     }
                   },
@@ -61046,7 +61052,9 @@
                       "guide",
                       "tutorial",
                       "troubleshooting",
-                      "quickstart"
+                      "quickstart",
+                      "feature",
+                      "article"
                     ]
                   },
                   "title": {
@@ -61100,7 +61108,7 @@
                   },
                   "audiences": {
                     "minItems": 1,
-                    "maxItems": 4,
+                    "maxItems": 5,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -61108,7 +61116,8 @@
                         "console",
                         "super",
                         "hr",
-                        "employee"
+                        "employee",
+                        "public"
                       ]
                     }
                   },
@@ -61192,6 +61201,56 @@
                       "maxLength": 80,
                       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
                     }
+                  },
+                  "icon": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "rocket",
+                          "user",
+                          "shield",
+                          "home",
+                          "inbox",
+                          "messages",
+                          "megaphone",
+                          "users",
+                          "network",
+                          "toggle",
+                          "clock",
+                          "calendar",
+                          "wallet",
+                          "receipt",
+                          "briefcase",
+                          "handshake",
+                          "target",
+                          "graduation",
+                          "heart",
+                          "file",
+                          "laptop",
+                          "checklist",
+                          "chart",
+                          "sparkles",
+                          "scroll",
+                          "card",
+                          "settings",
+                          "phone",
+                          "headset",
+                          "wrench",
+                          "building",
+                          "tag",
+                          "key",
+                          "activity",
+                          "plug",
+                          "globe",
+                          "book",
+                          "upload"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "sort": {
                     "default": 100,
@@ -61313,7 +61372,9 @@
                       "guide",
                       "tutorial",
                       "troubleshooting",
-                      "quickstart"
+                      "quickstart",
+                      "feature",
+                      "article"
                     ]
                   },
                   "title": {
@@ -61367,7 +61428,7 @@
                   },
                   "audiences": {
                     "minItems": 1,
-                    "maxItems": 4,
+                    "maxItems": 5,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -61375,7 +61436,8 @@
                         "console",
                         "super",
                         "hr",
-                        "employee"
+                        "employee",
+                        "public"
                       ]
                     }
                   },
@@ -61459,6 +61521,56 @@
                       "maxLength": 80,
                       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
                     }
+                  },
+                  "icon": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "rocket",
+                          "user",
+                          "shield",
+                          "home",
+                          "inbox",
+                          "messages",
+                          "megaphone",
+                          "users",
+                          "network",
+                          "toggle",
+                          "clock",
+                          "calendar",
+                          "wallet",
+                          "receipt",
+                          "briefcase",
+                          "handshake",
+                          "target",
+                          "graduation",
+                          "heart",
+                          "file",
+                          "laptop",
+                          "checklist",
+                          "chart",
+                          "sparkles",
+                          "scroll",
+                          "card",
+                          "settings",
+                          "phone",
+                          "headset",
+                          "wrench",
+                          "building",
+                          "tag",
+                          "key",
+                          "activity",
+                          "plug",
+                          "globe",
+                          "book",
+                          "upload"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "sort": {
                     "default": 100,
@@ -62238,6 +62350,137 @@
           },
           {
             "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/help": {
+      "get": {
+        "tags": [
+          "PublicHelp"
+        ],
+        "summary": "Public Help & Support: feature briefs, FAQs, articles and guides anyone can read before signing in",
+        "operationId": "PublicHelp_home",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/help/search": {
+      "get": {
+        "tags": [
+          "PublicHelp"
+        ],
+        "summary": "Search the public Help & Support content",
+        "operationId": "PublicHelp_search",
+        "security": [],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "faq",
+                "guide",
+                "tutorial",
+                "troubleshooting",
+                "quickstart",
+                "feature",
+                "article"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/help/articles/{slug}": {
+      "get": {
+        "tags": [
+          "PublicHelp"
+        ],
+        "summary": "One public help article, feature brief or FAQ",
+        "operationId": "PublicHelp_article",
+        "security": [],
+        "parameters": [
+          {
+            "name": "slug",
             "in": "path",
             "required": true,
             "schema": {

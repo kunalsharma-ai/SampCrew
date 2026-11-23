@@ -3629,7 +3629,8 @@ export const TABLES: Record<string, TableSpec> = {
     checks: [],
   },
   help_articles: {
-    // Help & Support articles: FAQs, step-by-step guides, interactive tutorials, troubleshooting and quick starts.
+    // Help & Support articles: FAQs, step-by-step guides, interactive tutorials, troubleshooting, quick starts, feature
+    // briefs and articles. Audience "public" is the Help & Support page anyone can read before signing in.
     // Managed in the Console. Built-in articles (builtin_key) come with the catalogue; once a Console Admin edits one
     // (customised_at) or deletes one (deleted_at) the catalogue sync leaves it alone. Each is shown only to its
     // audiences, while its feature is on for the person and they hold its permission.
@@ -3647,7 +3648,9 @@ export const TABLES: Record<string, TableSpec> = {
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       image_url: {"type": "string"},
       keywords: {"default": {"json": []}, "required": true, "type": "string[]"},
-      kind: {"enum": ["faq", "guide", "tutorial", "troubleshooting", "quickstart"], "required": true, "type": "string"},
+      // The icon of a feature brief or article card (others show their category's).
+      icon: {"type": "string"},
+      kind: {"enum": ["faq", "guide", "tutorial", "troubleshooting", "quickstart", "feature", "article"], "required": true, "type": "string"},
       permission: {"type": "string"},
       related: {"default": {"json": []}, "required": true, "type": "string[]"},
       slug: {"required": true, "type": "string"},

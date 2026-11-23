@@ -1,7 +1,7 @@
 import { designLevelOf, welcomeSceneFor, type MemberPreferences, type NotificationPreferences, type NotificationView } from '@crew/contracts';
 import { RememberWelcome } from '@/components/remember-welcome';
 import { headers } from 'next/headers';
-import { DemoBanner } from '@crew/ui';
+import { DemoBanner, WelcomeIntro } from '@crew/ui';
 import Link from 'next/link';
 import { loadOptional, loadSession } from '@/lib/api';
 import { MfaStepUpProvider } from '@/components/mfa-step-up';
@@ -53,6 +53,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       <script nonce={nonce} dangerouslySetInnerHTML={{ __html: levelScript }} />
       <RememberWelcome scene={welcomeSceneFor(me.levels)} />
+      {/* The welcome that plays once right after signing in, over the dashboard while it loads. */}
+      <WelcomeIntro scene={welcomeSceneFor(me.levels)} name={me.user.fullName} workspace={me.tenant.name} />
       {me.tenant.isDemo && <DemoBanner />}
       {me.subscription?.locked && (
         <div role="alert" data-testid="read-only-banner" className="border-b border-danger/30 bg-danger-subtle px-4 py-1.5 text-center text-xs font-medium text-danger">

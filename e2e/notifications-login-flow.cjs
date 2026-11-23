@@ -87,9 +87,14 @@ async function signIn(ctx, email, space) {
     await p.click('button[type=submit]');
     const r = await Promise.race([
       p.waitForURL((u) => u.pathname === '/' || u.pathname === '/setup', { timeout: 20000 }).then(() => 'in'),
-      p.locator('text=Too many requests').waitFor({ timeout: 20000 }).then(() => 'limited'),
-    ]);
+      p.locator('text=/Too many (requests|failed sign-in attempts)/').waitFor({ timeout: 20000 }).then(() => 'limited'),
+    ]).catch(async (e) => {
+      await p.screenshot({ path: `/tmp/signin-${email}.png` }).catch(() => undefined);
+      throw new Error(`sign-in for ${email} did not finish (${p.url()}): ${await p.locator('[role=alert]').allInnerTexts().catch(() => [])}`, { cause: e });
+    });
     if (r === 'in') {
+      // The welcome after sign-in plays over the dashboard for a few seconds; wait until it has opened onto it.
+      await p.getByTestId('welcome-intro').waitFor({ state: 'detached', timeout: 10000 }).catch(() => undefined);
       if (new URL(p.url()).pathname === '/setup') await p.goto(BASE + '/');
       return p;
     }
@@ -133,7 +138,69 @@ const unread = async (p) => {
       await shot(lp, `login-${space}`, { wait: 2600 });
     }
     expect(titles.size === 4, 'every level has its own welcome words');
+    // Nothing overlaps: the greeting, name and words never sit on the animated picture, on a laptop or a phone.
+    for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+      await lp.setViewportSize(size);
+      for (const [space] of scenes) {
+        await lp.goto(`${BASE}/login?space=${space}`);
+        await lp.waitForTimeout(2600);
+        const stage = await lp.getByTestId('welcome-stage').boundingBox();
+        for (const id of ['welcome-greeting', 'welcome-level', 'welcome-title']) {
+          const b = await lp.getByTestId(id).boundingBox();
+          const hit = b && stage && b.x < stage.x + stage.width && stage.x < b.x + b.width && b.y < stage.y + stage.height && stage.y < b.y + b.height;
+          expect(!hit, `${space} at ${size.width}px: ${id} overlaps the animated picture`);
+        }
+      }
+    }
+    await lp.setViewportSize({ width: 1440, height: 900 });
+    ok('the greeting, workspace name and words never overlap the animation');
+
+    // Light or dark, and colour palettes: the choice is kept on this device.
+    await lp.goto(`${BASE}/login?space=hr`);
+    await lp.getByTestId('theme-mode-dark').click();
+    await lp.getByTestId('theme-palettes').click();
+    await lp.getByTestId('theme-palette-ocean').click();
+    await lp.reload();
+    await lp.locator('[data-testid=sign-in-page][data-mode=dark][data-palette=ocean]').waitFor();
+    await shot(lp, 'login-hr-dark-ocean', { wait: 2000 });
+    await lp.getByTestId('theme-mode-auto').click();
+    await lp.getByTestId('theme-palettes').click();
+    await lp.getByTestId('theme-palette-signature').click();
+    ok('light/dark mode and colour palettes are remembered on this device');
+
+    // Validation, the eye button and the tick or cross.
+    await lp.goto(`${BASE}/login?space=employee`);
+    await lp.fill('input[name=email]', 'owner@demo');
+    await lp.locator('input[name=password]').focus();
+    await lp.getByTestId('email-check').waitFor();
+    await lp.fill('input[name=email]', 'owner@demo.crew.local');
+    await lp.getByTestId('mark-ok').first().waitFor();
+    await lp.fill('input[name=password]', 'not-the-password-1');
+    expect((await lp.locator('input[name=password]').getAttribute('type')) === 'password', 'the password starts hidden');
+    await lp.getByTestId('password-eye').click();
+    expect((await lp.locator('input[name=password]').getAttribute('type')) === 'text', 'the eye button shows the password');
+    await lp.getByTestId('password-eye').click();
+    expect((await lp.locator('input[name=password]').getAttribute('type')) === 'password', 'the eye button hides it again');
+    await lp.click('button[type=submit]');
+    await lp.locator('[data-testid=sign-in-card][data-auth=fail]').waitFor();
+    await lp.getByTestId('mark-bad').waitFor();
+    expect(await lp.getByTestId('forgot-password-link').isVisible(), 'Forgot password is on the sign-in box');
+    await shot(lp, 'login-wrong-password', { wait: 700 });
+    ok('email is checked as it is typed, the eye shows and hides the password, a wrong password gets a red cross and a shake');
+
+    // The public Help & Support page, from the sign-in page's header.
+    await lp.getByTestId('sign-in-help').click();
+    await lp.waitForURL('**/help-and-support');
+    await lp.getByTestId('public-help').waitFor();
+    expect((await lp.getByTestId('public-help-feature').count()) >= 10, 'feature briefs are listed');
+    await lp.fill('[data-testid=public-help-search]', 'forgot password');
+    await lp.getByTestId('public-help-results').getByText('I forgot my password').waitFor();
+    await shot(lp, 'help-and-support', { wait: 400 });
+    await lp.getByTestId('public-help-results').getByText('I forgot my password').click();
+    await lp.getByTestId('public-help-article').waitFor();
+    ok('Help & Support opens from the sign-in page before signing in, with features, search and articles');
     // The level chips switch the welcome.
+    await lp.goto(`${BASE}/login?space=super`);
     await lp.getByTestId('welcome-choice').filter({ hasText: 'HR Workspace' }).click();
     await lp.waitForURL(/space=hr/);
     await lp.getByTestId('welcome-scene').and(lp.locator('[data-scene=hr]')).waitFor();
@@ -170,10 +237,39 @@ const unread = async (p) => {
     expect((await cp.getByTestId('welcome-level').innerText()).toLowerCase() === 'super admin console', 'the Console has its own welcome');
     await cp.fill('input[name=email]', 'admin@example.com', { timeout: 1500 });
     await shot(cp, 'login-console', { wait: 2600 });
+    await cp.fill('input[name=password]', 'not-the-password-1');
+    await cp.getByTestId('password-eye').click();
+    expect((await cp.locator('input[name=password]').getAttribute('type')) === 'text', 'the Console eye button shows the password');
+    await cp.click('button[type=submit]');
+    await cp.getByTestId('mark-bad').waitFor();
+    expect(await cp.getByTestId('forgot-password-link').isVisible(), 'Forgot password is on the Console sign-in');
     ok('the Console sign-in has its own welcome and its form is usable at once');
 
     // The browser remembers the level it last signed in to.
     const hrCtx = await context(b);
+    // A right password: a green tick and a burst on the card, then the welcome plays before the dashboard.
+    {
+      const w = await hrCtx.newPage();
+      watch(w, 'welcome');
+      await w.goto(`${BASE}/login`);
+      await w.fill('input[name=email]', 'hr.admin@demo.crew.local');
+      await w.fill('input[name=password]', PASSWORD);
+      await w.click('button[type=submit]');
+      const first = await Promise.race([
+        w.getByTestId('sign-in-success').waitFor({ timeout: 20000 }).then(() => 'ok'),
+        w.locator('text=Too many requests').waitFor({ timeout: 20000 }).then(() => 'limited'),
+      ]);
+      if (first === 'ok') {
+        await shot(w, 'login-success', { wait: 900 });
+        await w.getByTestId('welcome-intro').waitFor({ timeout: 20000 });
+        expect((await w.getByTestId('welcome-intro-level').innerText()) === 'HR Workspace', 'the welcome names the HR Workspace');
+        await shot(w, 'welcome-intro-hr', { wait: 1400 });
+        await w.getByTestId('welcome-intro').waitFor({ state: 'detached', timeout: 10000 });
+        await w.getByTestId('notification-bell').waitFor();
+        ok('a right password shows a tick and a burst, then the welcome opens onto the dashboard');
+      }
+      await w.close();
+    }
     const hr = await signIn(hrCtx, 'hr.admin@demo.crew.local');
     await hr.getByTestId('notification-bell').waitFor();
     const remembered = (await hrCtx.cookies()).find((c) => c.name === 'crew_welcome')?.value;
@@ -182,7 +278,7 @@ const unread = async (p) => {
     await back.addCookies([{ name: 'crew_welcome', value: remembered, url: BASE }]);
     const bp = await back.newPage();
     await bp.goto(`${BASE}/login`);
-    await bp.locator('[data-testid=welcome-scene][data-scene=hr]').waitFor();
+    await bp.locator('[data-testid=welcome-scene][data-scene=hr] >> visible=true').waitFor();
     await back.close();
     const supT = await apiLogin('supervisor@demo.crew.local');
     const supMe = await must(supT, 'GET', '/me');

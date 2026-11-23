@@ -271,3 +271,73 @@ function Stage({ scene, w, h, run }: { scene: WelcomeScene; w: number; h: number
     </>
   );
 }
+
+/**
+ * The welcome that plays right after signing in (not when the app opens with a saved session): the level's world, a
+ * time greeting, the person's first name in big letters, the workspace in bold, pulsing rings and a progress line, then
+ * it fades and grows away to show Home, which loads underneath. A tap skips it; with reduced motion it is a short card.
+ */
+export function WelcomeIntro({ scene, name, workspace, onDone }: { scene: WelcomeScene; name: string; workspace?: string | null; onDone: () => void }) {
+  const w = WORLDS[scene];
+  const reduced = useReducedMotion();
+  const { width } = useWindowDimensions();
+  const show = useRef(new Animated.Value(0)).current;
+  const out = useRef(new Animated.Value(0)).current;
+  const bar = useRef(new Animated.Value(0)).current;
+  const rings = useCycle(2400, !reduced);
+  const native = Platform.OS !== 'web';
+  const done = useRef(false);
+  const finish = () => {
+    if (done.current) return;
+    done.current = true;
+    Animated.timing(out, { toValue: 1, duration: reduced ? 200 : 520, easing: Easing.in(Easing.cubic), useNativeDriver: native }).start(() => onDone());
+  };
+  useEffect(() => {
+    Animated.timing(show, { toValue: 1, duration: reduced ? 1 : 900, easing: Easing.out(Easing.back(1.4)), useNativeDriver: native }).start();
+    Animated.timing(bar, { toValue: 1, duration: reduced ? 600 : 2400, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }).start();
+    const t = setTimeout(finish, reduced ? 900 : 2900);
+    return () => clearTimeout(t);
+  }, []);
+  const first = name.trim().split(/\s+/)[0] || name;
+  const hour = new Date().getHours();
+  const hello = hour < 5 ? 'Good evening' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const ring = (i: number) => {
+    const size = Math.min(width * 1.1, 520);
+    const phase = Animated.modulo(Animated.add(rings, i / 3), 1);
+    return (
+      <Animated.View key={i} pointerEvents="none" style={{ position: 'absolute', width: size, height: size, borderRadius: size / 2, borderWidth: 1.5, borderColor: w.name[1], opacity: phase.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] }), transform: [{ scale: phase.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1.3] }) }] }} />
+    );
+  };
+  const rise = (from: number) => ({ opacity: show, transform: [{ translateY: show.interpolate({ inputRange: [0, 1], outputRange: [from, 0] }) }] });
+  return (
+    <Animated.View
+      testID="welcome-intro"
+      accessibilityRole="alert"
+      accessibilityLabel={`${hello}, ${first}. Welcome to your ${WELCOME_COPY[scene].level}`}
+      style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, gradient(w.bg, w.base), {
+        opacity: out.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+        transform: [{ scale: out.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }],
+      }]}
+    >
+      <Pressable accessibilityRole="button" accessibilityLabel="Skip the welcome" onPress={finish} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+      <Glow color={w.glowA} size={340} style={{ top: -80, left: -120 }} run={!reduced} light={w.light} />
+      <Glow color={w.glowB} size={300} style={{ bottom: -90, right: -110 }} run={!reduced} light={w.light} delay={1200} />
+      {!reduced && [0, 1, 2].map(ring)}
+      <View pointerEvents="none" style={{ alignItems: 'center', paddingHorizontal: 28, gap: 8 }}>
+        <Animated.Image source={w.light ? LOGO_LIGHT : LOGO_DARK} style={[{ width: 150, height: 40, marginBottom: 10 }, rise(10)]} resizeMode="contain" />
+        <Animated.Text style={[{ color: w.ink2, fontSize: 16, fontWeight: '600' }, rise(14)]}>{hello}</Animated.Text>
+        <Animated.Text testID="welcome-intro-name" numberOfLines={1} adjustsFontSizeToFit style={[{ color: w.name[0], fontSize: 64, fontWeight: '900', letterSpacing: -2, textAlign: 'center' }, gradientText(w.name), {
+          opacity: show, transform: [{ scale: show.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }],
+        }]}>{first}</Animated.Text>
+        <Animated.Text style={[{ color: w.ink2, fontSize: 17, textAlign: 'center' }, rise(18)]}>
+          Welcome to your <Text style={{ color: w.ink, fontWeight: '800' }}>{WELCOME_COPY[scene].level}</Text>
+          {workspace ? <>{' at '}<Text style={{ color: w.ink, fontWeight: '800' }}>{workspace}</Text></> : null}
+        </Animated.Text>
+        <View style={{ width: 200, height: 5, borderRadius: 3, overflow: 'hidden', backgroundColor: w.light ? 'rgba(30,27,75,0.12)' : 'rgba(255,255,255,0.16)', marginTop: 22 }}>
+          <Animated.View style={[{ height: 5, borderRadius: 3 }, gradient(`linear-gradient(90deg, ${w.name[0]}, ${w.name[1]})`, w.name[1]), { width: bar.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
+        </View>
+        <Text style={{ color: w.ink2, fontSize: 13, marginTop: 4 }}>Preparing your Home…</Text>
+      </View>
+    </Animated.View>
+  );
+}

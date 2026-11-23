@@ -76,6 +76,7 @@ const PUBLIC_CHECKED_IN_SERVICE: Record<string, string> = {
   DeviceApiController: 'attendance_advanced (DevicesService.admit)',
   ProposalsPublicController: 'staffing_bids (ProposalsPublicService)',
   CareersPublicController: 'recruitment (CareersService)',
+  PublicHelpController: 'none: platform Help & Support content with the public audience, read-only (HelpContentService.publicHome)',
   ResumeFilesController: 'signed, expiring links issued by a gated module',
   ReceiptFilesController: 'signed, expiring links issued by a gated module',
   'CommFilesController.file': 'signed, expiring links issued by a gated module (communication, announcements)',

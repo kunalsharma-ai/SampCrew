@@ -1,15 +1,15 @@
 'use client';
 import { HELP_ICONS, HELP_KIND_LABEL, type HelpArticleKind, type HelpArticleSummary, type HelpCategoryView, type HelpIcon, type HelpQueryStatus } from '@crew/contracts';
-import { BookOpen, ChevronRight, CircleHelp, Compass, GraduationCap, ListChecks, PlayCircle, Rocket, Search, Wrench } from 'lucide-react';
+import { BookOpen, ChevronRight, CircleHelp, Compass, GraduationCap, ListChecks, Newspaper, PlayCircle, Rocket, Search, Sparkles, Wrench } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { cn } from '../../cn';
 import { Badge, type Tone } from '../surface';
 import { useHelpCentre } from './context';
 
-export const KIND_TONE: Record<HelpArticleKind, Tone> = { faq: 'info', guide: 'accent', tutorial: 'success', troubleshooting: 'warning', quickstart: 'ember' };
+export const KIND_TONE: Record<HelpArticleKind, Tone> = { faq: 'info', guide: 'accent', tutorial: 'success', troubleshooting: 'warning', quickstart: 'ember', feature: 'accent', article: 'neutral' };
 export const STATUS_TONE: Record<HelpQueryStatus, Tone> = { open: 'info', in_progress: 'warning', awaiting_user: 'ember', resolved: 'success', closed: 'neutral' };
 
-const KIND_ICON: Record<HelpArticleKind, typeof BookOpen> = { faq: CircleHelp, guide: BookOpen, tutorial: GraduationCap, troubleshooting: Wrench, quickstart: Rocket };
+const KIND_ICON: Record<HelpArticleKind, typeof BookOpen> = { faq: CircleHelp, guide: BookOpen, tutorial: GraduationCap, troubleshooting: Wrench, quickstart: Rocket, feature: Sparkles, article: Newspaper };
 
 /** Gradient backgrounds for the category tiles, picked from the key so a category keeps its colour. */
 const TILE_TONES = [

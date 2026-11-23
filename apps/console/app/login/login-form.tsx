@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Button, Field, Input } from '@crew/ui';
+import { Alert, Button, EmailInput, Field, Input, PasswordInput, emailProblem, markWelcomeIntro, useSignInStatus } from '@crew/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { loginAction } from '../auth-actions';
@@ -10,16 +10,33 @@ export function LoginForm({ next, expired, addressProblem }: { next: string; exp
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
+  // The tick or cross in the boxes and the card's animation: right password, wrong password, signed in.
+  const feedback = useSignInStatus();
+  const [verdict, setVerdict] = useState<'ok' | 'bad' | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const later = (fn: () => void, ms: number) => window.setTimeout(fn, window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 150 : ms);
+
   const run = (input: { email: string; password: string; code?: string }) => {
     setError(null);
+    setVerdict(null);
+    feedback.set('checking');
     start(async () => {
       const r = await loginAction(input);
       if (!r.ok) {
         setError(r.message);
+        setVerdict('bad');
+        feedback.set('fail');
         return;
       }
-      if (r.data!.step === 'mfa') setCreds({ email: input.email, password: input.password });
-      else router.replace(r.data!.step === 'enrol' ? '/enrol' : next);
+      setVerdict('ok');
+      if (r.data!.step === 'mfa') {
+        feedback.set('idle');
+        later(() => { setVerdict(null); setCreds({ email: input.email, password: input.password }); }, 650);
+      } else {
+        feedback.set('ok');
+        if (r.data!.step !== 'enrol') markWelcomeIntro();
+        later(() => router.replace(r.data!.step === 'enrol' ? '/enrol' : next), 1250);
+      }
     });
   };
 
@@ -52,15 +69,19 @@ export function LoginForm({ next, expired, addressProblem }: { next: string; exp
       onSubmit={(e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);
-        run({ email: String(f.get('email') ?? ''), password: String(f.get('password') ?? '') });
+        const email = String(f.get('email') ?? '');
+        const bad = emailProblem(email);
+        setEmailError(bad);
+        if (bad) { feedback.set('fail'); return; }
+        run({ email, password: String(f.get('password') ?? '') });
       }}
     >
       <h1 className="text-lg font-semibold">Sign in to the console</h1>
       {addressProblem && !error && <Alert tone="danger">{addressProblem}</Alert>}
       {expired && !error && <Alert tone="warning">Your session ended. Sign in again.</Alert>}
       {error && <Alert tone="danger">{error}</Alert>}
-      <Field label="Email" required>{(p) => <Input {...p} name="email" type="email" autoComplete="username" required autoFocus />}</Field>
-      <Field label="Password" required>{(p) => <Input {...p} name="password" type="password" autoComplete="current-password" required />}</Field>
+      <Field label="Email" required error={emailError ?? undefined}>{(p) => <EmailInput {...p} name="email" autoComplete="username" required autoFocus verified={verdict === 'ok'} onChange={() => setEmailError(null)} />}</Field>
+      <Field label="Password" required>{(p) => <PasswordInput {...p} name="password" autoComplete="current-password" required check={verdict} onChange={() => { if (verdict === 'bad') { setVerdict(null); feedback.set('idle'); } }} />}</Field>
       <div className="-mt-2 text-right">
         <a href="/forgot-password" className="text-[13px] font-medium text-accent hover:underline" data-testid="forgot-password-link">Forgot password?</a>
       </div>

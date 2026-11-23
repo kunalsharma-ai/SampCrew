@@ -95,3 +95,69 @@ export function pickWelcomeScene(asked: string | null | undefined, remembered: s
   for (const v of [alias(asked), alias(remembered)]) if (isWelcomeScene(v) && v !== 'console') return v;
   return 'employee';
 }
+
+/** What the sign-in card says under the workspace name, and whether only SAMPLEDGE staff may use it. */
+export const WELCOME_CARD: Record<WelcomeScene, { kicker: string; staffOnly?: boolean }> = {
+  console: { kicker: 'Platform administration', staffOnly: true },
+  super: { kicker: 'Organisation control' },
+  hr: { kicker: 'People operations' },
+  team: { kicker: 'Your team and your day' },
+  employee: { kicker: 'Your everyday self-service' },
+};
+
+/** "Hello" in the languages SampCrew's customers speak, shown in turn beside the greeting. */
+export const WELCOME_HELLOS = ['Hello', 'Namaste', 'Marhaba', 'Bonjour', 'Hola', 'Vanakkam'] as const;
+
+/** The time-of-day greeting for an hour (0-23) of the person's own clock. */
+export function timeGreeting(hour: number): string {
+  if (hour < 5) return 'Good evening';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+/** Light or dark sign-in page; auto keeps each workspace's own look (and the device's setting for the form). */
+export const SIGN_IN_MODES = ['auto', 'light', 'dark'] as const;
+export type SignInMode = (typeof SIGN_IN_MODES)[number];
+
+export interface SignInPalette {
+  key: string;
+  label: string;
+  /** Three colours for the swatch, the glows and the card's moving border. */
+  colors: [string, string, string];
+  /** The backdrop and the workspace name's colours on a dark page and on a light page (CSS gradients). */
+  dark: { base: string; name: [string, string, string] };
+  light: { base: string; name: [string, string, string] };
+  /** Buttons, links and focus rings in the sign-in form. */
+  tint: string;
+}
+
+/**
+ * Colour palettes people can try on the sign-in pages. "signature" (no entry here) is each workspace's own colours;
+ * these replace them everywhere on the page: backdrop, glows, the workspace name, the sign-in card and its button.
+ */
+export const SIGN_IN_PALETTES: SignInPalette[] = [
+  { key: 'aurora', label: 'Aurora', colors: ['#22d3ee', '#a78bfa', '#f472b6'], tint: '#7c3aed',
+    dark: { base: 'radial-gradient(120% 90% at 20% 0%, #1e1b4b 0%, #0b1026 55%, #050816 100%)', name: ['#a5f3fc', '#c4b5fd', '#f9a8d4'] },
+    light: { base: 'linear-gradient(150deg, #ecfeff 0%, #f5f3ff 50%, #fdf2f8 100%)', name: ['#0891b2', '#7c3aed', '#db2777'] } },
+  { key: 'sunset', label: 'Sunset', colors: ['#fb923c', '#f43f5e', '#a855f7'], tint: '#e11d48',
+    dark: { base: 'radial-gradient(120% 90% at 20% 0%, #4c0519 0%, #1c0a1f 55%, #0c0512 100%)', name: ['#fed7aa', '#fda4af', '#d8b4fe'] },
+    light: { base: 'linear-gradient(150deg, #fff7ed 0%, #ffe4e6 50%, #faf5ff 100%)', name: ['#ea580c', '#e11d48', '#9333ea'] } },
+  { key: 'ocean', label: 'Ocean', colors: ['#38bdf8', '#2563eb', '#14b8a6'], tint: '#2563eb',
+    dark: { base: 'radial-gradient(120% 90% at 20% 0%, #082f49 0%, #04162b 55%, #020817 100%)', name: ['#bae6fd', '#60a5fa', '#5eead4'] },
+    light: { base: 'linear-gradient(150deg, #f0f9ff 0%, #e0f2fe 50%, #ecfeff 100%)', name: ['#0369a1', '#2563eb', '#0d9488'] } },
+  { key: 'forest', label: 'Forest', colors: ['#34d399', '#a3e635', '#059669'], tint: '#059669',
+    dark: { base: 'radial-gradient(120% 90% at 20% 0%, #064e3b 0%, #04170f 55%, #020a06 100%)', name: ['#bbf7d0', '#d9f99d', '#6ee7b7'] },
+    light: { base: 'linear-gradient(150deg, #f0fdf4 0%, #ecfccb 50%, #ecfdf5 100%)', name: ['#047857', '#4d7c0f', '#059669'] } },
+  { key: 'candy', label: 'Candy', colors: ['#f472b6', '#818cf8', '#fbbf24'], tint: '#db2777',
+    dark: { base: 'radial-gradient(120% 90% at 20% 0%, #3b0764 0%, #1e0a2e 55%, #0f0517 100%)', name: ['#fbcfe8', '#c7d2fe', '#fde68a'] },
+    light: { base: 'linear-gradient(150deg, #fdf2f8 0%, #eef2ff 50%, #fffbeb 100%)', name: ['#db2777', '#6366f1', '#d97706'] } },
+  { key: 'graphite', label: 'Graphite', colors: ['#94a3b8', '#e2e8f0', '#64748b'], tint: '#3f3f46',
+    dark: { base: 'radial-gradient(120% 90% at 20% 0%, #27272a 0%, #18181b 55%, #09090b 100%)', name: ['#fafafa', '#d4d4d8', '#a1a1aa'] },
+    light: { base: 'linear-gradient(150deg, #fafafa 0%, #f4f4f5 50%, #e4e4e7 100%)', name: ['#18181b', '#3f3f46', '#71717a'] } },
+];
+
+/** Whether a workspace's own world is a dark one (auto mode keeps it). */
+export function sceneIsDark(scene: WelcomeScene): boolean {
+  return scene !== 'employee' && scene !== 'team';
+}

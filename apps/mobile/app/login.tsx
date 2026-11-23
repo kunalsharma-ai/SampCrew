@@ -29,6 +29,11 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  /** Tick or cross in the boxes: the password was wrong (cross, the box shakes) or right (tick). */
+  const [verdict, setVerdict] = useState<'ok' | 'bad' | null>(null);
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+  // The email gets a tick once it is a complete address, and a cross once an @ is typed but it is not complete yet.
+  const emailCheck: 'ok' | 'bad' | null = !email ? null : emailOk ? 'ok' : email.includes('@') ? 'bad' : null;
   // The level's welcome: asked for in the link (crew://login?space=hr), else the last level signed in to on this phone.
   const params = useLocalSearchParams<{ space?: string }>();
   const [scene, setScene] = useState<WelcomeScene>(() => pickWelcomeScene(params.space, null));
@@ -41,8 +46,10 @@ export default function Login() {
     setBusy(true);
     setError(null);
     setFieldErrors({});
+    setVerdict(null);
     try {
       const next = await fn();
+      if (next.step !== 'cancelled' && next.step !== 'redirected') setVerdict('ok');
       if (next.step === 'cancelled') setError('Single sign-on was cancelled.');
       else if (next.step === 'redirected') return; // the tab is on its way to the identity provider
       else if (next.step !== 'done') setStep(next);
@@ -50,6 +57,7 @@ export default function Login() {
       if (e instanceof ApiError) {
         setError(e.status === 429 ? 'Too many attempts. Wait a minute and try again.' : e.code === 'sso_required' ? 'Your workspace signs in with single sign-on. Use the button below.' : e.message);
         if (e.code === 'sso_required') setSso(true);
+        else if (e.status === 401) setVerdict('bad');
         setFieldErrors(e.fieldErrors);
       } else setError('Could not sign in. Please try again.');
     } finally {
@@ -160,8 +168,8 @@ export default function Login() {
           )}
           {!step && !forgot && !sso && (
             <>
-              <Field label="Work email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="username" error={fieldErrors.email} />
-              <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" textContentType="password" error={fieldErrors.password} onSubmitEditing={submitPassword} />
+              <Field label="Work email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="username" error={fieldErrors.email} check={emailCheck} testID="login-email" />
+              <Field label="Password" value={password} onChangeText={(v) => { setPassword(v); if (verdict === 'bad') setVerdict(null); }} secureTextEntry autoComplete="current-password" textContentType="password" error={fieldErrors.password} onSubmitEditing={submitPassword} check={verdict} testID="login-password" />
               <Field label="Workspace (optional)" help="field.workspace" value={workspace} onChangeText={setWorkspace} autoCapitalize="none" hint="Only needed if your account is in more than one workspace." error={fieldErrors.tenantSlug} />
               <Button title="Sign in" onPress={submitPassword} busy={busy} />
               <Button title="Forgot password?" kind="secondary" onPress={() => { setForgot('email'); setError(null); setInfo(null); setFieldErrors({}); }} testID="forgot-start" />
