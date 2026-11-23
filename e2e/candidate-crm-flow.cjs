@@ -14,7 +14,10 @@
  *    data is still there for Super Workspace. It is switched back on at the end so later flows see the same state.
  */
 const fs = require('node:fs');
+const path = require('node:path');
 const { chromium } = require('playwright');
+const { MongoClient } = require(require.resolve('mongodb', { paths: [path.join(__dirname, '../apps/api')] }));
+const MONGODB_URL = process.env.MONGODB_URL ?? 'mongodb://localhost:27017/crew?replicaSet=rs0';
 
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 const PASSWORD = process.env.CREW_DEMO_PASSWORD;
@@ -69,6 +72,12 @@ async function setCentralAccess(p, on) {
 
 (async () => {
   const b = await chromium.launch();
+  // The demo owner is the Super Workspace; an earlier flow (e2e:web) turned on their MFA. Off for this run, restored after.
+  const mongo = new MongoClient(MONGODB_URL);
+  await mongo.connect();
+  const users = mongo.db().collection('users');
+  const ownerBefore = await users.findOne({ email: 'owner@demo.crew.local' });
+  await users.updateOne({ _id: ownerBefore._id }, { $set: { mfa_enabled: false, mfa_secret_enc: null } });
   let page;
   try {
     // 1. Before: with the CRM off for the HR team the recruiter has no Candidate CRM. Super Workspace switches it on.
@@ -245,6 +254,8 @@ async function setCentralAccess(p, on) {
     console.error(errs.join('\n'));
     process.exitCode = 1;
   } finally {
+    await users.updateOne({ _id: ownerBefore._id }, { $set: { mfa_enabled: ownerBefore.mfa_enabled ?? false, mfa_secret_enc: ownerBefore.mfa_secret_enc ?? null } });
+    await mongo.close();
     await b.close();
   }
 })();

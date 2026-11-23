@@ -160,6 +160,7 @@ export const CONSOLE_HELP: HelpContent = {
     'Payment gateway per currency': { what: 'Whether Razorpay or Stripe collects online payments in each currency.', how: 'Add the keys in Integrations. With None, invoices are paid by bank transfer.' },
     'Payment events': { what: 'Notifications from Razorpay and Stripe, and what SampCrew did with each.' },
     'Contract terms': { what: 'A price per seat, discount or extra modules agreed with one workspace, until an end date.', how: 'Leave everything empty to go back to list prices.' },
+    'Workspace limits': { what: 'How many HR Workspaces and Employee Workspaces this company may have on its plan, and how many it uses.', how: 'Change the figures in Plans. Lowering a limit never removes a workspace; it only stops new ones.' },
     Usage: { what: 'How much of each limit the workspace uses, and whether going beyond it is blocked or billed.' },
     'Add-ons': { what: 'Add-ons this workspace bought, with quantity and price.' },
     'Online payments': { what: 'Checkouts sent to Razorpay or Stripe and whether each was confirmed.' },
