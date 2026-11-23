@@ -3,6 +3,7 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import type { z } from 'zod';
 import {
   attendanceEngine,
+  attendanceTotals,
   zonedTime,
   type AttendancePolicyInput,
   type CorrectionInput,
@@ -25,6 +26,7 @@ import { NotificationService } from '../../platform/notify/notification.service'
 import { ApprovalsService, type ApprovalRequestRow } from '../approvals/approvals.service';
 import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
 import { employeeNames, fieldById } from '../employees/employee-view';
+import { AttendanceAccessService } from './attendance-access.service';
 import { AttendanceDaysService, type EmployeeCtx, isLocked } from './attendance-days.service';
 
 const { addDays, fromLocal, hhmm, localToday } = zonedTime;
@@ -121,6 +123,7 @@ export class AttendanceService implements OnModuleInit {
     private readonly notifications: NotificationService,
     private readonly approvals: ApprovalsService,
     private readonly days: AttendanceDaysService,
+    private readonly access: AttendanceAccessService,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
     this.qrKey = Buffer.from(hkdfSync('sha256', config.JWT_ACCESS_SECRET, 'crew', 'crew:kiosk-qr:v1', 32));
@@ -527,6 +530,13 @@ export class AttendanceService implements OnModuleInit {
     return d ? (await dayViews(tx, [d]))[0] : undefined;
   }
 
+  /** 404 unless the caller may see this person's attendance (see AttendanceAccessService). */
+  private async requireVisible(tx: TenantTx, employeeId: string) {
+    const v = await this.access.viewer(tx);
+    if (v.employeeId === employeeId) return;
+    if (!(await tx.collection('employees').count({ $and: [await this.access.visibleFilter(tx, v), { id: employeeId }] }))) throw Errors.notFound('Employee');
+  }
+
   /** My day today: status, punches, what I can do next. */
   async today() {
     return this.db.tenant(async (tx) => {
@@ -564,7 +574,8 @@ export class AttendanceService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const e = employeeId ? await this.days.employee(tx, employeeId) : await this.me(tx);
       if (!e) throw Errors.notFound('Employee');
-      await this.authz.require('attendance:read', attrsOf(e), tx);
+      // Who may see whom is decided in one place (it also covers HR Workspaces the Super Workspace opened to others).
+      await this.requireVisible(tx, e.id);
       const today = localToday(e.tz);
       const end = to > today ? today : to;
       const start = from < e.date_of_joining ? e.date_of_joining : from;
@@ -576,10 +587,17 @@ export class AttendanceService implements OnModuleInit {
       }
       const rows = await dayViews(tx, await tx.collection('attendance_days').find({ employee_id: e.id, work_date: { $gte: from, $lte: to } }, { sort: { work_date: 1 } }));
       const count = (s: string) => rows.filter((r) => r.status === s).length;
+      // Working days and the attendance percentage, counted the same way as the overview and the Excel export.
+      const counted: Record<string, number> = {};
+      for (const r of rows) if (r.workDate <= today && r.status !== 'not_joined') counted[r.status] = (counted[r.status] ?? 0) + 1;
+      const totals = attendanceTotals(counted, { late: rows.filter((r) => r.workDate <= today && r.lateMinutes > 0).length });
       return {
         employee: { id: e.id, name: e.name, code: e.code, timeZone: e.tz },
         from, to,
+        totals,
         summary: {
+          workingDays: totals.workingDays,
+          attendancePercent: totals.percent,
           present: count('present'), halfDay: count('half_day') + count('half_day_leave'), absent: count('absent'), missingPunch: count('missing_punch'),
           onLeave: count('on_leave'), late: rows.filter((r) => r.lateMinutes > 0).length,
           workedMinutes: rows.reduce((t, r) => t + r.workedMinutes, 0),
@@ -611,7 +629,8 @@ export class AttendanceService implements OnModuleInit {
     return this.db.tenant(async (tx) => {
       const e = await this.days.employee(tx, employeeId);
       if (!e) throw Errors.notFound('Employee');
-      await this.authz.require('attendance:read', attrsOf(e), tx);
+      // Who may see whom is decided in one place (it also covers HR Workspaces the Super Workspace opened to others).
+      await this.requireVisible(tx, e.id);
       const win = await this.days.window(tx, e, date);
       const punches = await this.days.punches(tx, e.id, win.from, win.to);
       return {
@@ -624,10 +643,37 @@ export class AttendanceService implements OnModuleInit {
     });
   }
 
+  /**
+   * Brings one date up to date for these employees before a read view shows it. A day is recomputed when it was never
+   * computed, or (for today and yesterday, which change as time passes) when it is older than TEAM_REFRESH_SECONDS or a
+   * leave request changed after it. Punches, corrections, devices and shift changes recompute their days when they are
+   * written, so a busy view does not rewrite every person's day on every request.
+   */
+  async refreshDate(tx: TenantTx, employees: Doc[], date: string) {
+    const ids = employees.map((e) => e.id as string);
+    if (!ids.length) return;
+    const stored = new Map((await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: date })).map((d) => [d.employee_id as string, d]));
+    const fresh = await freshDays(tx, date, [...stored.values()]);
+    const tenant = await tx.collection('tenants').findOne({});
+    const locationTz = await fieldById(tx, 'locations', employees.map((e) => e.current_location_id), 'timezone');
+    const entityTz = await fieldById(tx, 'legal_entities', employees.map((e) => e.current_legal_entity_id), 'timezone');
+    const people = employees.map((e) => ({
+      id: e.id as string,
+      computed: stored.has(e.id),
+      fresh: fresh.has(e.id),
+      tz: locationTz.get(e.current_location_id) ?? entityTz.get(e.current_legal_entity_id) ?? (tenant!.timezone as string),
+    }));
+    const stale = people.filter((p) => date <= localToday(p.tz) && (!p.computed || (date >= addDays(localToday(p.tz), -1) && !p.fresh)));
+    if (stale.length) {
+      await this.days.lockBulk(tx);
+      for (const p of stale.sort((a, b) => a.id.localeCompare(b.id))) await this.days.recompute(tx, p.id, date, date);
+    }
+  }
+
   /** Everyone the caller can see on one date, with a status summary. Recent days are refreshed first. */
   async team(q: { date: string; status?: string; departmentId?: string; locationId?: string }) {
     return this.db.tenant(async (tx) => {
-      const scope = await this.authz.filter('attendance:read', EMPLOYEE_FIELDS, tx);
+      const scope = await this.access.visibleFilter(tx, await this.access.viewer(tx));
       const and: Record<string, unknown>[] = [scope, { date_of_joining: { $lte: q.date } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: q.date } }] }];
       if (q.departmentId) and.push({ current_department_id: q.departmentId });
       if (q.locationId) and.push({ current_location_id: q.locationId });
@@ -637,23 +683,8 @@ export class AttendanceService implements OnModuleInit {
       // person's day on every request.
       const employees = await tx.collection('employees').find({ $and: and }, { limit: 1000 });
       const ids = employees.map((e) => e.id as string);
-      const stored = new Map((await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: q.date })).map((d) => [d.employee_id as string, d]));
-      const fresh = await freshDays(tx, q.date, [...stored.values()]);
-      const tenant = await tx.collection('tenants').findOne({});
-      const locationTz = await fieldById(tx, 'locations', employees.map((e) => e.current_location_id), 'timezone');
-      const entityTz = await fieldById(tx, 'legal_entities', employees.map((e) => e.current_legal_entity_id), 'timezone');
-      const people = employees.map((e) => ({
-        id: e.id as string,
-        computed: stored.has(e.id),
-        fresh: fresh.has(e.id),
-        tz: locationTz.get(e.current_location_id) ?? entityTz.get(e.current_legal_entity_id) ?? (tenant!.timezone as string),
-      }));
-      const stale = people.filter((p) => q.date <= localToday(p.tz) && (!p.computed || (q.date >= addDays(localToday(p.tz), -1) && !p.fresh)));
-      if (stale.length) {
-        await this.days.lockBulk(tx);
-        for (const p of stale.sort((a, b) => a.id.localeCompare(b.id))) await this.days.recompute(tx, p.id, q.date, q.date);
-      }
-      if (!people.length) return { date: q.date, summary: {}, rows: [] };
+      await this.refreshDate(tx, employees, q.date);
+      if (!ids.length) return { date: q.date, summary: {}, rows: [] };
       const allDays = await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: q.date });
       const views = await dayViews(tx, q.status ? allDays.filter((d) => d.status === q.status) : allDays);
       const byId = new Map(employees.map((e) => [e.id as string, e]));
@@ -691,7 +722,7 @@ export class AttendanceService implements OnModuleInit {
     const dates: string[] = [];
     for (let d = from; d <= to; d = addDays(d, 1)) dates.push(d);
     return this.db.tenant(async (tx) => {
-      const scope = await this.authz.filter('attendance:read', EMPLOYEE_FIELDS, tx);
+      const scope = await this.access.visibleFilter(tx, await this.access.viewer(tx));
       const and: Record<string, unknown>[] = [scope, { date_of_joining: { $lte: to } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: from } }] }];
       if (q.departmentId) and.push({ current_department_id: q.departmentId });
       if (q.locationId) and.push({ current_location_id: q.locationId });
@@ -818,7 +849,7 @@ export class AttendanceService implements OnModuleInit {
       const and: Record<string, unknown>[] = [];
       if (q.scope === 'mine') and.push({ employee_id: (await this.me(tx)).id });
       else {
-        const scope = await this.authz.filter('attendance:read', EMPLOYEE_FIELDS, tx);
+        const scope = await this.access.visibleFilter(tx, await this.access.viewer(tx));
         and.push({ employee_id: { $in: (await tx.collection('employees').find(scope, { projection: { _id: 1 } })).map((e) => e.id) } });
       }
       if (q.status) and.push({ status: q.status });

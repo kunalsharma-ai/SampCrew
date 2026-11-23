@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { DOCUMENT_MAX_BYTES, DOCUMENT_TYPES, type documentMetaInput } from '@crew/contracts';
 import type { z } from 'zod';
@@ -69,7 +69,7 @@ export class DocumentsService {
   /** The checks every upload passes: a file is attached, of an allowed type and size, and its bytes match the type. */
   static check(file: UploadedFile | undefined): asserts file is UploadedFile {
     if (!file) throw Errors.badRequest('file_required', 'Attach a file');
-    if (!(DOCUMENT_TYPES as readonly string[]).includes(file.mimetype)) throw Errors.badRequest('unsupported_type', 'Upload a PDF, PNG, JPEG, WebP, Word document or plain text file');
+    if (!(DOCUMENT_TYPES as readonly string[]).includes(file.mimetype)) throw Errors.badRequest('unsupported_type', 'Upload a PDF, PNG, JPEG, WebP, Word, Excel or plain text file');
     if (file.size <= 0 || file.size > DOCUMENT_MAX_BYTES) throw Errors.badRequest('file_too_large', 'Files can be up to 10 MB');
     if (!sniffMatches(file.mimetype, file.buffer.subarray(0, 512))) throw Errors.badRequest('content_mismatch', 'The file content does not match its type');
   }
@@ -78,17 +78,27 @@ export class DocumentsService {
    * Stores a checked file as an employee document in the caller's transaction (used by HR Tasks and profile changes,
    * which do their own access checks). `extra` adds columns such as the verification status.
    */
-  async store(tx: TenantTx, employeeId: string, meta: z.infer<typeof documentMetaInput>, file: UploadedFile, extra: Record<string, unknown> = {}) {
+  async store(tx: TenantTx, employeeId: string | null, meta: z.infer<typeof documentMetaInput>, file: UploadedFile, extra: Record<string, unknown> = {}) {
     const actor = requestContext.tenantActor();
     const key = this.storage.newKey(actor.tenantId);
     const sha = createHash('sha256').update(file.buffer).digest('hex');
     const name = safeFileName(file.originalname, 'file');
     await this.storage.put(key, file.buffer, { upload: true });
+    const id = (extra.id as string | undefined) ?? randomUUID();
+    let hrWorkspaceId = extra.hr_workspace_id;
+    if (hrWorkspaceId === undefined && employeeId) hrWorkspaceId = ((await tx.collection('employees').findOne({ id: employeeId }, { projection: { hr_workspace_id: 1 } }))?.hr_workspace_id ?? null);
     const row = await tx.collection('employee_documents').insert({
       employee_id: employeeId, category: meta.category, title: meta.title, file_name: name, content_type: file.mimetype, size_bytes: file.size, sha256: sha,
-      storage_key: key, visibility: meta.visibility, uploaded_by_membership_id: actor.membershipId, ...extra,
+      storage_key: key, visibility: meta.visibility, uploaded_by_membership_id: actor.membershipId, owner_type: 'employee', version: 1,
+      reference: `DOC-${id.replace(/-/g, '').slice(0, 8).toUpperCase()}`, ...extra, id, hr_workspace_id: hrWorkspaceId ?? null,
     });
-    await this.audit.record(tx, { action: 'document.uploaded', resourceType: 'employee', resourceId: employeeId, metadata: { documentId: row.id, category: meta.category, title: meta.title, sha256: sha } });
+    await this.audit.record(tx, { action: 'document.uploaded', resourceType: employeeId ? 'employee' : 'hr_workspace', resourceId: employeeId ?? (hrWorkspaceId as string | null), metadata: { documentId: row.id, category: meta.category, title: meta.title, sha256: sha } });
+    if (!extra.request_id) {
+      await tx.collection('document_activity').insert({
+        action: 'uploaded', document_id: row.id, employee_id: employeeId, hr_workspace_id: hrWorkspaceId ?? null, actor_membership_id: actor.membershipId, actor_user_id: actor.userId,
+        actor_level: 'employee_workspace', metadata: { title: meta.title, task: extra.task_id ?? null }, task_id: (extra.task_id as string | undefined) ?? null,
+      });
+    }
     return (await docViews(tx, [row]))[0]!;
   }
 

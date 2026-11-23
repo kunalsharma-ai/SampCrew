@@ -23,6 +23,7 @@ import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { DocumentsService, type UploadedFile } from '../documents/documents.service';
+import { DocumentCenterService } from '../document-center/document-center.service';
 import { employeeAttrs, EMPLOYEE_FIELDS } from '../employees/employee-attrs';
 import { displayName, fieldById } from '../employees/employee-view';
 
@@ -61,6 +62,7 @@ export class TasksService implements OnModuleInit {
     private readonly notifications: NotificationService,
     private readonly approvals: ApprovalsService,
     private readonly documents: DocumentsService,
+    private readonly center: DocumentCenterService,
   ) {}
 
   onModuleInit() {
@@ -135,6 +137,9 @@ export class TasksService implements OnModuleInit {
           verificationStatus: (d.verification_status ?? null) as string | null, verificationRemarks: (d.verification_remarks ?? null) as string | null, verifiedAt: d.verified_at ?? null,
         } : { id: null }) } : null,
         verificationRequestId: (t.verification_request_id ?? null) as string | null,
+        // A task made for a document request: the request and its status (New request, Submitted, Under verification...).
+        requestId: (t.request_id ?? null) as string | null,
+        requestStatus: (t.request_status ?? null) as string | null,
         isMine: mine,
         history: ((t.history ?? []) as Doc[]).map((h) => ({ at: h.at, by: names.get(h.by) ?? null, action: h.action as string, status: (h.status ?? null) as string | null, remarks: (h.remarks ?? null) as string | null })),
       };
@@ -206,8 +211,10 @@ export class TasksService implements OnModuleInit {
       if (grantsFor(s, 'tasks:hr').some((g) => g.scope !== 'own')) {
         const scope = await this.authz.filter('tasks:hr', EMPLOYEE_FIELDS, tx);
         const ids = (await tx.collection('employees').distinct<string>('id', scope)).filter((id) => id !== s.employeeId);
-        out.documentsToVerify = await tx.collection('employee_tasks').count({ kind: 'document', status: 'pending_review', employee_id: { $in: ids } });
+        out.documentsToVerify = await tx.collection('employee_tasks').count({ kind: 'document', status: 'pending_review', request_id: null, employee_id: { $in: ids } });
       }
+      // Document requests (from Super Workspace or an HR Workspace) waiting for this person's verification.
+      out.documentsToVerify += (await this.approvals.waitingFor(tx, actor.membershipId, 'document_request')).length;
       return out;
     });
   }
@@ -302,6 +309,7 @@ export class TasksService implements OnModuleInit {
       if (isEmployee && !t.seen_at) {
         await tx.collection('employee_tasks').updateOne({ id }, { $set: { seen_at: new Date(), ...(t.status === 'new' ? { status: 'not_started' } : {}) } });
       }
+      if (isEmployee && t.request_id) await this.center.markOpenedByTask(tx, t.request_id);
       return { ok: true };
     });
   }
@@ -346,6 +354,12 @@ export class TasksService implements OnModuleInit {
       if (input.action === 'complete' && t.kind === 'document' && t.status !== 'completed') throw Errors.badRequest('verify_document', 'Verify the uploaded document to complete this task');
       if (input.action === 'complete' && t.status === 'completed') throw Errors.conflict('invalid_state', 'This task is already completed');
       if (input.action === 'reopen' && !['completed', 'pending_review'].includes(t.status)) throw Errors.conflict('invalid_state', 'Only completed tasks or tasks in review can be reopened');
+      if (t.request_id) {
+        // A document request's task follows the request: it can only be cancelled (which cancels the request).
+        if (input.action !== 'cancel') throw Errors.badRequest('verify_document', 'Verify the document from its request');
+        await this.center.cancelByTask(tx, t.request_id, input.remarks ?? 'Cancelled');
+        return (await this.views(tx, [(await tx.collection('employee_tasks').findOne({ id }))!], s))[0];
+      }
       const status = input.action === 'complete' ? 'completed' : input.action === 'reopen' ? 'reopened' : 'cancelled';
       const set: Doc = { status, reviewer_remarks: input.remarks ?? null };
       if (status === 'completed') set.completed_at = new Date();
@@ -371,6 +385,15 @@ export class TasksService implements OnModuleInit {
   /** The employee uploads the document a task asks for. It is filed in their documents and goes to HR to verify. */
   async upload(id: string, file: UploadedFile | undefined, remarks?: string | null) {
     DocumentsService.check(file);
+    // A document request's task: the file goes to the request (one record, verified by the level that asked).
+    const requestId = await this.db.tenant(async (tx) => (await this.load(tx, id)).t.request_id as string | null | undefined);
+    if (requestId) {
+      await this.center.submit(requestId, file, { remarks: remarks ?? null });
+      return this.db.tenant(async (tx) => {
+        const s = await this.authz.subject(tx);
+        return (await this.views(tx, [(await tx.collection('employee_tasks').findOne({ id }))!], s))[0];
+      });
+    }
     return this.db.tenant(async (tx) => {
       const { t, s, isEmployee } = await this.load(tx, id);
       if (!isEmployee) throw Errors.forbidden('Only the person the task is for can upload its document');
@@ -394,6 +417,11 @@ export class TasksService implements OnModuleInit {
 
   /** HR verifies or rejects the uploaded document (the same decision as in Approvals). */
   async verify(id: string, input: z.infer<typeof documentVerifyInput>) {
+    const linked = await this.db.tenant(async (tx) => (await this.load(tx, id)).t.request_id as string | null | undefined);
+    if (linked) {
+      await this.center.decide(linked, { decision: input.decision === 'verify' ? 'approve' : 'reject', comment: input.remarks ?? null });
+      return this.get(id);
+    }
     const reqId = await this.db.tenant(async (tx) => {
       const { t, canManage } = await this.load(tx, id);
       if (!canManage) throw Errors.notFound('Task');

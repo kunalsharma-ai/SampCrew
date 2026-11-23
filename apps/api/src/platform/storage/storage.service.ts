@@ -127,9 +127,11 @@ export function sniffMatches(contentType: string, head: Buffer): boolean {
     case 'image/webp':
       return starts(0x52, 0x49, 0x46, 0x46) && head.subarray(8, 12).toString('ascii') === 'WEBP';
     case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
       return starts(0x50, 0x4b, 0x03, 0x04);
+    // Word 97-2003 and Excel 97-2003 are OLE compound files.
     case 'application/msword':
-      // Word 97-2003 (.doc): an OLE compound file.
+    case 'application/vnd.ms-excel':
       return starts(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1);
     case 'text/plain':
       return !head.subarray(0, 512).includes(0);
