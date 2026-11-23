@@ -3,12 +3,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
-import type { AttendanceRegistration, Department, Designation, Employee, EmployeeDocument, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, LoginDetails, Me, OnboardingTask, Page } from '@/lib/types';
+import type { AttendanceRegistration, Department, Designation, Employee, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, LoginDetails, Me, OnboardingTask, Page } from '@/lib/types';
 import { EmployeeStatus } from '../status';
 import type { EmployeeSkill } from '@crew/contracts';
 import { ActivityTab, AtAGlance, type Summary360 } from './at-a-glance';
 import { AttendanceCard, type DeviceOption, LoginCard, LoginControlCard, PhotoAvatar, type ShiftOption } from './profile-extras';
 import { SkillsCard } from './skills-card';
+import type { Catalogue, DocRow, MyDocAccess, RequestRow } from '../../documents/types';
 import { DocumentsTab, JobTab, LeaveTab, OnboardingTab, OverviewTab } from './tabs';
 import { AssetsTab, type EmployeeAsset, VerificationTab } from './hr-tabs';
 import { CustomFieldsCard, type FieldValue } from '@/components/custom-fields-card';
@@ -102,7 +103,14 @@ export default async function EmployeePage({ params, searchParams }: { params: P
   } else if (tab === 'assets') {
     content = <AssetsTab assets={await load<EmployeeAsset[]>(`/employees/${id}/assets`)} canAssign={Boolean(me.permissions['assets:create'])} />;
   } else if (tab === 'documents') {
-    content = <DocumentsTab e={e} documents={await load<EmployeeDocument[]>(`/employees/${id}/documents`)} />;
+    const [documents, requests, mine, catalogue] = await Promise.all([
+      load<DocRow[]>(`/employees/${id}/documents`),
+      loadOptional<{ items: RequestRow[] }>(`/document-requests?scope=all&employeeId=${id}&limit=100`),
+      loadOptional<MyDocAccess>('/documents/access/mine'),
+      loadOptional<Catalogue>('/documents/catalogue'),
+    ]);
+    const mayRequest = !e.isSelf && !!catalogue && (mine?.level === 'super_workspace' || (mine?.level === 'hr_workspace' && !!mine.access?.request));
+    content = <DocumentsTab e={e} documents={documents} requests={requests?.items ?? []} catalogue={mayRequest ? catalogue : null} />;
   } else {
     content = <OnboardingTab e={e} tasks={await load<OnboardingTask[]>(`/onboarding/employees/${id}/tasks`)} />;
   }

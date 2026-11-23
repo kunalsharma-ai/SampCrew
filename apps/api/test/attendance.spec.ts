@@ -160,12 +160,15 @@ describe('attendance', () => {
 
     it('team view shows only people in scope, with counts', async () => {
       const d1 = pastWeekday(3);
+      // Employee Workspace sees only its own attendance, managers included (Kunal's choice, 2026-11-21).
       const sup = await api(app, await token('supervisor')).get(`/attendance/team?date=${d1}`);
       expect(sup.status).toBe(200);
-      const names = sup.body.rows.map((r: { employeeName: string }) => r.employeeName).sort();
-      // The supervisor sees their team and themselves.
+      expect(sup.body.rows.map((r: { employeeName: string }) => r.employeeName)).toEqual(['Sam Supervisor']);
+      // HR Workspace sees the department.
+      const hr = await api(app, hrAdmin).get(`/attendance/team?date=${d1}&departmentId=${assembly}`);
+      const names = hr.body.rows.map((r: { employeeName: string }) => r.employeeName).sort();
       expect(names).toEqual(['Ola Operator', 'Olu Operator', 'Sam Supervisor']);
-      expect(sup.body.summary).toMatchObject({ total: 3, present: 1, absent: 2, late: 1 });
+      expect(hr.body.summary).toMatchObject({ total: 3, present: 1, absent: 2, late: 1 });
       const peer = await api(app, await token('peer')).get(`/attendance/team?date=${d1}`);
       expect(peer.body.rows.map((r: { employeeName: string }) => r.employeeName)).toEqual(['Pat Peer']);
       // Someone outside the team cannot open a colleague's day.
@@ -175,7 +178,7 @@ describe('attendance', () => {
     it("team view reuses today's computed days for 30 seconds instead of rewriting them on every request", async () => {
       const today = istToday();
       const computedAt = async () => (await pool.one('attendance_days', { employee_id: people.operator!.employeeId, work_date: today }))?.computed_at as Date;
-      const sup = await token('supervisor');
+      const sup = hrAdmin;
       expect((await api(app, sup).get(`/attendance/team?date=${today}`)).status).toBe(200);
       const first = await computedAt();
       expect(first).toBeTruthy();
