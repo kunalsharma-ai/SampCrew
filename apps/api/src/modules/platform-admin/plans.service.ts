@@ -14,7 +14,7 @@ const CORE_KEYS = FEATURES.filter((f) => isCoreFeature(f.key)).map((f) => f.key 
 const LIVE = ['trialing', 'active', 'past_due'];
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-interface PlanRow { id: string; key: string; name: string; quote_only: boolean; is_public: boolean; archived_at: Date | null }
+interface PlanRow { id: string; key: string; name: string; quote_only: boolean; is_public: boolean; archived_at: Date | null; retired_at?: Date | null }
 
 /**
  * The plan builder. SAMPLEDGE decides here which modules and limits each plan includes; a workspace's
@@ -36,10 +36,10 @@ export class PlansService {
       const rows = await tx.collection<PlanRow & { tagline: string | null; minimum_seats: number; sort_order: number; customised_at: Date | null; customised_by_admin_id: string | null; trial_days: number | null; trial_features: string[] | null; overage: Record<string, { policy: string; prices: Record<string, string> }> | null }>('plans').find();
       const admins = new Map((await tx.collection<{ id: string; full_name: string }>('platform_admins').find({ id: { $in: rows.map((r) => r.customised_by_admin_id).filter(Boolean) } })).map((a) => [a.id, a.full_name]));
       const plans = rows
-        .sort((a, b) => Number(!!a.archived_at) - Number(!!b.archived_at) || a.sort_order - b.sort_order || cmp(a.name, b.name))
+        .sort((a, b) => Number(!!a.retired_at) - Number(!!b.retired_at) || Number(!!a.archived_at) - Number(!!b.archived_at) || a.sort_order - b.sort_order || cmp(a.name, b.name))
         .map((p) => ({
           id: p.id, key: p.key, name: p.name, tagline: p.tagline ?? '', quoteOnly: p.quote_only, minimumSeats: p.minimum_seats, isPublic: p.is_public,
-          sortOrder: p.sort_order, customisedAt: p.customised_at ?? null, customisedBy: (p.customised_by_admin_id && admins.get(p.customised_by_admin_id)) ?? null, archivedAt: p.archived_at ?? null,
+          sortOrder: p.sort_order, customisedAt: p.customised_at ?? null, customisedBy: (p.customised_by_admin_id && admins.get(p.customised_by_admin_id)) ?? null, archivedAt: p.archived_at ?? null, retiredAt: p.retired_at ?? null,
           trialDays: p.trial_days ?? 0, trialFeatures: p.trial_features ?? [], overage: p.overage ?? {},
         }));
       const prices = (await tx.collection<{ plan_id: string; currency: string; monthly_per_seat: string; annual_per_seat_month: string }>('plan_prices').find({}, { sort: { currency: 1 } }))
@@ -173,6 +173,7 @@ export class PlansService {
   async setArchived(key: string, archived: boolean) {
     return this.db.platform(async (tx) => {
       const plan = await this.plan(tx, key);
+      if (!archived && plan.retired_at) throw Errors.conflict('plan_retired', 'This plan is retired. Undo the retirement first.');
       await tx.collection('plans').updateOne({ id: plan.id }, { $set: { archived_at: archived ? new Date() : null } });
       if (archived) {
         // Open requests for a plan that is no longer sold are declined, so the customer is not left waiting.
@@ -190,12 +191,37 @@ export class PlansService {
     });
   }
 
+  /**
+   * Retires a plan: closed for good to new sign-ups and plan changes, and hidden from the plan picker. Workspaces
+   * already on it keep it (and its price) until they move. The plan is archived too. Undo is possible, but only by a
+   * role that manages plans, and it is audited.
+   */
+  async setRetired(key: string, retired: boolean, reason?: string) {
+    return this.db.platform(async (tx) => {
+      const plan = await this.plan(tx, key);
+      if (retired && ['starter', 'professional', 'business', 'enterprise'].includes(key) && !(await tx.collection('plans').exists({ key: { $ne: key }, archived_at: null, retired_at: null, is_public: true }))) {
+        throw Errors.badRequest('last_plan', 'Keep at least one public plan open for new companies');
+      }
+      const set: Record<string, unknown> = { retired_at: retired ? new Date() : null };
+      if (retired) set.archived_at = plan.archived_at ?? new Date();
+      await tx.collection('plans').updateOne({ id: plan.id }, { $set: set });
+      if (retired) {
+        await tx.collection('plan_requests').update({ plan_id: plan.id, status: 'pending' }, { $set: { status: 'declined', decision_note: 'This plan has been retired', decided_at: new Date(), decided_by_admin_id: requestContext.platformActor().adminId } });
+      }
+      const n = await tx.collection('subscriptions').count({ plan_id: plan.id, status: { $in: LIVE } });
+      await this.audit.record(tx, { tenantId: null, action: retired ? 'platform.plan_retired' : 'platform.plan_unretired', resourceType: 'plan', resourceId: key, metadata: { reason: reason ?? null, subscribers: n } });
+      return { ok: true, note: retired ? `${plan.name} is retired. ${n} workspace(s) on it keep it until they change plan.` : `${plan.name} is no longer retired. It stays archived until you restore it.` };
+    });
+  }
+
   /** Deletes a plan nobody has ever subscribed to (for example, one created by mistake). */
   async remove(key: string) {
     return this.db.platform(async (tx) => {
       const plan = await this.plan(tx, key);
       if (['starter', 'professional', 'business', 'enterprise'].includes(key)) throw Errors.badRequest('launch_plan', 'The four launch plans can be archived but not deleted');
       if (await tx.collection('subscriptions').exists({ plan_id: plan.id })) throw Errors.conflict('plan_in_use', 'Workspaces are on this plan. Archive it instead.');
+      // A plan that ever billed anyone stays, so invoices, revenue reports and the billing history keep their plan.
+      if (await tx.collection('billing_events').exists({ $or: [{ plan_key: key }, { from_plan_key: key }] })) throw Errors.conflict('plan_has_billing', 'This plan has billing records. Archive or retire it instead.');
       await tx.collection('plan_requests').delete({ plan_id: plan.id });
       await tx.collection('plans').delete({ id: plan.id });
       await this.audit.record(tx, { tenantId: null, action: 'platform.plan_deleted', resourceType: 'plan', resourceId: key });

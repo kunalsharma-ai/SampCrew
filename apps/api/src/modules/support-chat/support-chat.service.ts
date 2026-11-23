@@ -17,6 +17,7 @@ import {
 import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
 import { ilike, MongoService as DatabaseService, type PlatformTx, type TenantTx } from '../../platform/database/mongo.service';
+import { ConsoleNotifyService } from '../../platform/notify/console-notify.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { isSuperWorkspace, memberIdentities, superWorkspaceMembers } from '../communication/identity';
@@ -47,6 +48,7 @@ export class SupportChatService {
     private readonly db: DatabaseService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationService,
+    private readonly consoleNotify: ConsoleNotifyService,
   ) {}
 
   // ----------------------------------------------------------------------------------------- shared views
@@ -81,7 +83,7 @@ export class SupportChatService {
     const unread = await this.unreadCounts(tx, convs, viewer);
     const tenants = new Map((await tx.collection('tenants').find({ id: { $in: [...new Set(convs.map((c) => c.tenant_id as string))] } }, { projection: { name: 1, slug: 1 } })).map((t) => [t.id as string, t]));
     const admins = viewer.side === 'console'
-      ? new Map((await tx.collection('platform_admins').find({ id: { $in: convs.map((c) => c.handled_by_admin_id).filter(Boolean) } }, { projection: { full_name: 1 } })).map((a) => [a.id as string, a.full_name as string]))
+      ? new Map((await tx.collection('platform_admins').find({ id: { $in: [...convs.map((c) => c.handled_by_admin_id), ...convs.map((c) => c.assigned_admin_id)].filter(Boolean) } }, { projection: { full_name: 1 } })).map((a) => [a.id as string, a.full_name as string]))
       : new Map<string, string>();
     const firsts = await tx.collection('support_messages').aggregate([
       { $match: { conversation_id: { $in: convs.map((c) => c.id) }, sender_kind: { $ne: 'system' } } },
@@ -101,6 +103,10 @@ export class SupportChatService {
         lastMessage: c.last_message ? { body: c.last_message.body, senderName: c.last_message.senderName, fromConsole: !!c.last_message.fromConsole, at: iso(c.last_message.at)! } : null,
         unread: n,
         handledBy: viewer.side === 'console' && c.handled_by_admin_id ? admins.get(c.handled_by_admin_id) ?? null : null,
+        ...(viewer.side === 'console' ? {
+          priority: (c.priority as SupportConversationView['priority']) ?? 'normal',
+          assignedTo: c.assigned_admin_id ? { id: c.assigned_admin_id as string, name: admins.get(c.assigned_admin_id) ?? 'Console Admin' } : null,
+        } : {}),
         createdAt: iso(c.created_at)!, updatedAt: iso(c.last_message_at ?? c.created_at)!,
       };
     });
@@ -204,8 +210,9 @@ export class SupportChatService {
     });
   }
 
-  workspaceStart(input: SupportConversationInput) {
-    return this.db.tenant(async (tx) => {
+  async workspaceStart(input: SupportConversationInput) {
+    const tenantId = requestContext.tenantActor().tenantId;
+    const r = await this.db.tenant(async (tx) => {
       const viewer = await this.workspaceViewer(tx);
       if (input.clientId) {
         const dup = await tx.collection('support_messages').findOne({ sender_membership_id: viewer.membershipId, client_id: input.clientId });
@@ -219,6 +226,10 @@ export class SupportChatService {
       await this.audit.record(tx, { action: 'support_chat.started', resourceType: 'support_conversation', resourceId: c.id, changes: { subject: input.subject, category: input.category } });
       return { id: c.id as string, created: true };
     });
+    if (r.created) {
+      await this.consoleNotify.later({ category: 'support', kind: 'support.started', priority: 'high', title: `New support conversation: ${input.subject}`, body: preview(input.body), href: `/support/${r.id}`, tenantId, entityType: 'support_conversation', entityId: r.id });
+    }
+    return r;
   }
 
   private async workspaceSendIn(tx: TenantTx, c: Doc, viewer: { membershipId: string }, body: string, clientId?: string) {
@@ -248,15 +259,22 @@ export class SupportChatService {
     });
   }
 
-  workspaceSend(id: string, input: SupportMessageInput) {
-    return this.db.tenant(async (tx) => {
+  async workspaceSend(id: string, input: SupportMessageInput) {
+    const tenantId = requestContext.tenantActor().tenantId;
+    let subject = '';
+    let fresh = false;
+    const view = await this.db.tenant(async (tx) => {
       const viewer = await this.workspaceViewer(tx);
       const c = await this.ownConversation(tx, id);
+      subject = c.subject as string;
       const dup = input.clientId ? await tx.collection('support_messages').findOne({ conversation_id: id, sender_membership_id: viewer.membershipId, client_id: input.clientId }) : undefined;
+      fresh = !dup;
       const row = dup ?? (await this.workspaceSendIn(tx, c, viewer, input.body, input.clientId));
-      const fresh = (await tx.collection('support_conversations').findOne({ id }))!;
-      return this.messageViews(fresh, [row], viewer)[0]!;
+      const after = (await tx.collection('support_conversations').findOne({ id }))!;
+      return this.messageViews(after, [row], viewer)[0]!;
     });
+    if (fresh) await this.consoleNotify.later({ category: 'support', kind: 'support.message', title: `Support message: ${subject}`, body: preview(input.body), href: `/support/${id}`, tenantId, entityType: 'support_conversation', entityId: id });
+    return view;
   }
 
   workspaceRead(id: string) {
@@ -310,7 +328,11 @@ export class SupportChatService {
   consoleList(q: SupportListQuery) {
     return this.db.platform(async (tx) => {
       const viewer = this.consoleViewer();
-      const filter: Doc = { ...(q.tenantId ? { tenant_id: q.tenantId } : {}) };
+      const filter: Doc = {
+        ...(q.tenantId ? { tenant_id: q.tenantId } : {}),
+        ...(q.assigned === 'me' ? { assigned_admin_id: viewer.adminId } : q.assigned === 'nobody' ? { assigned_admin_id: null } : {}),
+        ...(q.priority ? (q.priority === 'normal' ? { priority: { $in: ['normal', null] } } : { priority: q.priority }) : {}),
+      };
       if (q.q) {
         // Search covers company names, subjects and message text.
         const tenants = await tx.collection('tenants').distinct<string>('id', { $or: [{ name: ilike(q.q) }, { slug: ilike(q.q) }] });
@@ -410,6 +432,54 @@ export class SupportChatService {
       const c = await this.consoleConversation(tx, id);
       if (c.status === status) return { ok: true };
       await this.setStatus(tx, c, status, { kind: 'system', name: await this.adminName(tx, viewer.adminId), level: 'console', workspace: CONSOLE_TEAM_NAME });
+      return { ok: true };
+    });
+  }
+
+  /** A Console Admin starts a conversation with a company's Super Workspace (they are notified like for a reply). */
+  consoleStart(input: { tenantId: string; subject: string; category: SupportCategory; body: string; priority: 'low' | 'normal' | 'high' | 'urgent' }) {
+    return this.db.platform(async (tx) => {
+      const viewer = this.consoleViewer();
+      const t = await tx.collection('tenants').findOne({ id: input.tenantId }, { projection: { name: 1 } });
+      if (!t) throw Errors.notFound('Workspace');
+      const number = (await tx.collection('support_conversations').count({ tenant_id: input.tenantId })) + 1;
+      const c = await tx.collection('support_conversations').insert({
+        tenant_id: input.tenantId, number, subject: input.subject, category: input.category, status: 'open', started_by_admin_id: viewer.adminId,
+        priority: input.priority, assigned_admin_id: viewer.adminId,
+      });
+      const name = await this.adminName(tx, viewer.adminId);
+      const row = await this.store(tx, c, { kind: 'console', adminId: viewer.adminId, name, level: 'console', workspace: CONSOLE_TEAM_NAME, body: input.body });
+      const team = await superWorkspaceMembers(tx, input.tenantId);
+      await this.notifications.notify(tx, {
+        membershipIds: team, kind: 'support.reply', category: 'communication', title: `${name} (Console Admin) wrote: ${input.subject}`, body: preview(input.body), link: supportLink(c.id as string),
+        dedupeKey: `support:${c.id}`, resource: { type: 'support_conversation', id: c.id as string },
+      });
+      await this.live(tx, input.tenantId, 'support.message', { conversationId: c.id, messageId: row.id }, { workspace: team, console: true });
+      await this.audit.record(tx, { tenantId: input.tenantId, action: 'support_chat.started_by_console', resourceType: 'support_conversation', resourceId: c.id as string, changes: { subject: input.subject, priority: input.priority } });
+      return { id: c.id as string };
+    });
+  }
+
+  /** Priority and assignment (Console only; the Super Workspace never sees them). */
+  consoleTriage(id: string, input: { priority?: 'low' | 'normal' | 'high' | 'urgent'; assignedAdminId?: string | null }) {
+    return this.db.platform(async (tx) => {
+      const c = await this.consoleConversation(tx, id);
+      if (input.assignedAdminId) {
+        const a = await tx.collection('platform_admins').findOne({ id: input.assignedAdminId, status: 'active' }, { projection: { role: 1 } });
+        const role = a ? await tx.collection<{ permissions: string[] }>('platform_roles').findOne({ key: a.role }) : undefined;
+        if (!a || !role?.permissions?.includes('support:chat')) throw Errors.badRequest('cannot_assign', 'Assign it to an active admin who can answer client conversations');
+      }
+      const set: Doc = {};
+      if (input.priority !== undefined) set.priority = input.priority;
+      if (input.assignedAdminId !== undefined) set.assigned_admin_id = input.assignedAdminId;
+      await tx.collection('support_conversations').updateOne({ id }, { $set: set });
+      await this.audit.record(tx, {
+        tenantId: null, action: 'platform.support_triaged', resourceType: 'support_conversation', resourceId: id,
+        changes: Object.fromEntries(Object.entries(set).map(([k, v]) => [k, { from: c[k] ?? null, to: v }])),
+      });
+      if (input.assignedAdminId && input.assignedAdminId !== requestContext.platformActor().adminId) {
+        await this.consoleNotify.emit(tx, { category: 'support', kind: 'support.assigned', title: `Conversation assigned: ${c.subject}`, href: `/support/${id}`, tenantId: c.tenant_id as string, entityType: 'support_conversation', entityId: id });
+      }
       return { ok: true };
     });
   }

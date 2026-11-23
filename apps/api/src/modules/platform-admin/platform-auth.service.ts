@@ -7,6 +7,8 @@ import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, type PlatformTx as Tx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
+import { ConsoleSettingsService } from '../console/console-settings.service';
+import { ConsoleNotifyService } from '../../platform/notify/console-notify.service';
 
 interface AdminRow {
   id: string;
@@ -29,6 +31,8 @@ export class PlatformAuthService {
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly settings: ConsoleSettingsService,
+    private readonly consoleNotify: ConsoleNotifyService,
   ) {}
 
   async login(email: string, password: string, code?: string) {
@@ -37,6 +41,8 @@ export class PlatformAuthService {
     const ok = await verifyPassword(admin?.password_hash ?? null, password);
     if (!admin || !ok || admin.status !== 'active') {
       if (admin) await this.failed(admin.id);
+      // A wrong address is recorded too (Security > Sign-in history), with the address as typed, so guessing shows up.
+      else await this.db.platform((tx) => this.audit.record(tx, { tenantId: null, action: 'platform.login_failed', resourceType: 'platform_admin', resourceId: null, metadata: { email: email.slice(0, 120), unknownEmail: true } }));
       throw Errors.unauthorized('Email or password is incorrect');
     }
     let mfa = false;
@@ -58,10 +64,20 @@ export class PlatformAuthService {
 
   private async failed(id: string) {
     await this.db.platform(async (tx) => {
-      const admins = tx.collection<{ failed_login_count: number }>('platform_admins');
+      // How many tries and how long a lockout lasts are Console > Settings > Security choices.
+      const { security } = await this.settings.read(tx);
+      const admins = tx.collection<{ failed_login_count: number; email: string; locked_until: Date | null }>('platform_admins');
       const a = await admins.updateAndGet({ id }, { $inc: { failed_login_count: 1 } });
-      if ((a?.failed_login_count ?? 0) >= 5) await admins.updateOne({ id }, { $set: { locked_until: new Date(Date.now() + 15 * 60_000) } });
-      await this.audit.record(tx, { tenantId: null, action: 'platform.login_failed', resourceType: 'platform_admin', resourceId: id });
+      const count = a?.failed_login_count ?? 0;
+      await this.audit.record(tx, { tenantId: null, action: 'platform.login_failed', resourceType: 'platform_admin', resourceId: id, metadata: { attempt: count } });
+      if (count >= security.lockoutAttempts && !(a?.locked_until && a.locked_until > new Date())) {
+        await admins.updateOne({ id }, { $set: { locked_until: new Date(Date.now() + security.lockoutMinutes * 60_000) } });
+        await this.audit.record(tx, { tenantId: null, action: 'platform.admin_locked', resourceType: 'platform_admin', resourceId: id, metadata: { attempts: count, minutes: security.lockoutMinutes } });
+        await this.consoleNotify.emit(tx, {
+          category: 'security', kind: 'security.admin_locked', priority: 'urgent', title: `Console sign-in locked for ${a?.email ?? 'an admin'}`,
+          body: `${count} wrong passwords or codes in a row. Locked for ${security.lockoutMinutes} minutes.`, href: '/security?tab=logins', entityType: 'platform_admin', entityId: id,
+        });
+      }
     });
   }
 
@@ -70,7 +86,7 @@ export class PlatformAuthService {
     const ctx = requestContext.get();
     const s = await tx.collection<{ id: string }>('platform_sessions').insert({
       admin_id: admin.id, refresh_token_hash: sha256(refreshToken), mfa_verified: mfa,
-      ip: ctx?.ip ?? null, user_agent: ctx?.userAgent?.slice(0, 400) ?? null, expires_at: new Date(Date.now() + 12 * 3_600_000),
+      ip: ctx?.ip ?? null, user_agent: ctx?.userAgent?.slice(0, 400) ?? null, expires_at: new Date(Date.now() + (await this.settings.read(tx)).security.sessionHours * 3_600_000),
     });
     const accessToken = await this.tokens.signPlatform({ sub: admin.id, role: admin.role, sid: s.id, mfa });
     return { accessToken, refreshToken, expiresIn: this.tokens.accessTtl };
@@ -97,8 +113,9 @@ export class PlatformAuthService {
   async me() {
     const a = requestContext.platformActor();
     const r = await this.db.platform((tx) => tx.collection<AdminRow>('platform_admins').findOne({ id: a.adminId }));
-    const row = r ? { id: r.id, email: r.email, fullName: r.full_name, role: r.role, mfaEnabled: r.mfa_enabled, mustChangePassword: r.must_change_password === true } : undefined;
-    return { ...row, session: { mfa: a.mfa } };
+    const roleName = r ? (await this.db.platform((tx) => tx.collection<{ name: string }>('platform_roles').findOne({ key: r.role })))?.name ?? r.role : null;
+    const row = r ? { id: r.id, email: r.email, fullName: r.full_name, role: r.role, roleName, permissions: [...a.permissions], mfaEnabled: r.mfa_enabled, mustChangePassword: r.must_change_password === true } : undefined;
+    return { ...row, session: { mfa: a.mfa, id: a.sessionId } };
   }
 
   async mfaSetup() {

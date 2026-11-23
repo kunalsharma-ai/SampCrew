@@ -37,7 +37,7 @@ import {
   platformCreateTenantRequest,
   platformLoginRequest,
   platformTenantStatusRequest,
-  PLATFORM_ROLES,
+  consoleRoleKey,
   refreshRequest,
   supportAccessRequest,
   SUBSCRIPTION_STATUSES,
@@ -84,9 +84,9 @@ const subscriptionOverride = z
     limits: z.partialRecord(z.enum(LIMIT_KEYS as [string, ...string[]]), z.number().int().min(-1).max(10_000_000).nullable()).optional(),
   })
   .strict();
-const createAdmin = z.object({ email, fullName: name, role: z.enum(PLATFORM_ROLES), password });
+const createAdmin = z.object({ email, fullName: name, role: consoleRoleKey, password });
 const updateAdmin = z
-  .object({ fullName: name.optional(), role: z.enum(PLATFORM_ROLES).optional(), status: z.enum(['active', 'disabled']).optional() })
+  .object({ fullName: name.optional(), role: consoleRoleKey.optional(), status: z.enum(['active', 'disabled']).optional() })
   .strict()
   .refine((v) => Object.keys(v).length > 0, 'Nothing to change');
 const resetAdminPassword = z.object({ password }).strict();

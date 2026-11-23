@@ -1,5 +1,5 @@
 import {
-  builtInStatutoryPacks, DEFAULT_LEAVE_TYPES, leaveAllocationCriteria, leaveApprovalRules, leaveEligibility, leaveTypePolicy, FEATURES, PLAN_TEMPLATES, SWITCHABLE_FEATURE_KEYS, SYSTEM_ROLES,
+  builtInStatutoryPacks, CONSOLE_SYSTEM_ROLES, DEFAULT_LEAVE_TYPES, leaveAllocationCriteria, leaveApprovalRules, leaveEligibility, leaveTypePolicy, FEATURES, PLAN_TEMPLATES, SWITCHABLE_FEATURE_KEYS, SYSTEM_ROLES,
 } from '@crew/contracts';
 import { applyAccessLevelsMongo } from './access-levels';
 import { syncHelpLibraryMongo } from './help-library';
@@ -18,7 +18,16 @@ export interface Tables {
 export async function provisionTenantMongo(tx: Tables, input: ProvisionTenantInput): Promise<ProvisionedTenant> {
   if (await tx.collection('tenants').exists({ slug: input.slug })) throw new SlugTakenError();
 
+  // Every Super Workspace belongs to a client company (the Console's record of the customer). A new one gets its own
+  // company unless the Console adds it to an existing company.
+  let companyId = input.companyId ?? null;
+  if (companyId) {
+    if (!(await tx.collection('companies').exists({ id: companyId, archived_at: null }))) throw new CompanyNotFoundError();
+  } else {
+    companyId = (await tx.collection('companies').insert({ name: input.name, country_code: input.countryCode, is_demo: input.isDemo ?? false, ...(input.company ?? {}) })).id as string;
+  }
   const tenant = await tx.collection('tenants').insert({
+    company_id: companyId,
     slug: input.slug,
     name: input.name,
     country_code: input.countryCode,
@@ -251,8 +260,23 @@ export async function syncFeatureStatesMongo(tx: Tables): Promise<void> {
   }
 }
 
+/**
+ * The built-in Console roles (contracts CONSOLE_SYSTEM_ROLES): adds missing ones and keeps names and permissions in
+ * step with the code, except a built-in role a Console admin changed (customised_at), which keeps its permissions.
+ */
+export async function syncConsoleRolesMongo(tx: Tables): Promise<void> {
+  const roles = tx.collection('platform_roles');
+  for (const r of CONSOLE_SYSTEM_ROLES) {
+    const row = await roles.findOne({ key: r.key });
+    if (!row) await roles.insert({ key: r.key, name: r.name, description: r.description, permissions: [...r.permissions], is_system: true });
+    else if (!row.customised_at) await roles.updateOne({ key: r.key }, { $set: { name: r.name, description: r.description, permissions: [...r.permissions], is_system: true } });
+    else await roles.updateOne({ key: r.key }, { $set: { is_system: true } });
+  }
+}
+
 export async function syncCatalogueMongo(tx: Tables): Promise<void> {
   await syncStatutoryPacksMongo(tx);
+  await syncConsoleRolesMongo(tx);
   await syncSystemRolesMongo(tx);
   await applyAccessLevelsMongo(tx);
   const features = tx.collection('features');
@@ -305,11 +329,21 @@ export interface ProvisionTenantInput {
   locale?: string;
   region?: string;
   isDemo?: boolean;
+  /** Add this Super Workspace to an existing client company (companies.id) instead of creating one. */
+  companyId?: string | null;
+  /** Profile fields for the new company (companies columns), when one is created. */
+  company?: Row;
   /** `mustChangePassword` marks a temporary password that the owner replaces at their first sign-in. */
   owner: { email: string; fullName: string; passwordHash: string | null; mustChangePassword?: boolean };
   plan: { key: string; seats: number; billingCycle: 'monthly' | 'annual'; trialDays: number };
   /** 'standard' (the default) starts the workspace with the starter leave types allocated to everyone; 'none' leaves them to the Super Workspace. */
   leaveTypes?: 'standard' | 'none';
+}
+
+export class CompanyNotFoundError extends Error {
+  constructor() {
+    super('That client company does not exist or is archived');
+  }
 }
 
 export interface ProvisionedTenant {

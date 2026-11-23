@@ -1,3 +1,4 @@
+import { fetchBrand, type BrandApiKeys } from './company-data';
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import {
@@ -201,9 +202,15 @@ export class PlatformIntegrationsService implements OnApplicationBootstrap {
     return r.secrets.webhookSecret ?? null;
   }
 
+  /** The company-data (Brandfetch) key when it is switched on, else null. */
+  async companyData(): Promise<BrandApiKeys | null> {
+    const r = await this.resolve('company_data');
+    return r.enabled && r.secrets.apiKey ? { apiKey: r.secrets.apiKey, baseUrl: (r.settings.baseUrl as string) || null } : null;
+  }
+
   /** For a workspace's Settings > Integrations: which installation-wide services are on. No settings, no secrets. */
   async workspaceStatus(): Promise<PlatformServiceStatus[]> {
-    const on: Record<Exclude<PlatformIntegrationKey, 'backups'>, boolean> = {
+    const on: Record<Exclude<PlatformIntegrationKey, 'backups' | 'company_data'>, boolean> = {
       ai: Boolean(await this.ai()),
       email: Boolean(await this.email()),
       push: (await this.push()).enabled,
@@ -399,6 +406,10 @@ export class PlatformIntegrationsService implements OnApplicationBootstrap {
         }
       case 'backups':
         return probeBackupStorage(settings, secrets);
+      case 'company_data': {
+        const found = await fetchBrand({ apiKey: secrets.apiKey ?? '', baseUrl: (settings.baseUrl as string) || null }, 'brandfetch.com');
+        return `Brandfetch answered: found ${found.name ?? 'brandfetch.com'}`;
+      }
     }
   }
 
@@ -424,7 +435,7 @@ export class PlatformIntegrationsService implements OnApplicationBootstrap {
     // A secret field left out altogether keeps the one in effect, like an empty one.
     for (const k of PLATFORM_INTEGRATION_SECRETS[key]) if (!(k in input) && current.secrets[k]) secrets[k] = current.secrets[k]!;
     if (key === 'email' && !settings.username) delete settings.username;
-    if ((key === 'ai' || key === 'razorpay' || key === 'stripe') && !settings.baseUrl) delete settings.baseUrl;
+    if ((key === 'ai' || key === 'razorpay' || key === 'stripe' || key === 'company_data') && !settings.baseUrl) delete settings.baseUrl;
     if (key === 'stripe' && !settings.publishableKey) delete settings.publishableKey;
     if (key === 'backups') {
       // Only the chosen provider's fields are kept, so switching provider cannot leave another one's key behind.
@@ -436,7 +447,7 @@ export class PlatformIntegrationsService implements OnApplicationBootstrap {
     }
     // A saved secret is only reused for the server it was saved for: pointing the key or password at a different
     // address needs it typed again, so a changed address cannot be used to send the saved secret somewhere else.
-    const destination = (v: Values) => (key === 'ai' || key === 'stripe' ? [v.baseUrl ?? ''] : key === 'razorpay' ? [v.baseUrl ?? '', v.keyId ?? ''] : key === 'email' ? [v.host, v.port, v.username ?? '']
+    const destination = (v: Values) => (key === 'ai' || key === 'stripe' || key === 'company_data' ? [v.baseUrl ?? ''] : key === 'razorpay' ? [v.baseUrl ?? '', v.keyId ?? ''] : key === 'email' ? [v.host, v.port, v.username ?? '']
       : key === 'backups' ? [v.provider, v.endpoint ?? '', v.bucket ?? '', v.accessKeyId ?? '', v.account ?? '', v.host ?? '', v.port ?? '', v.user ?? ''] : []);
     if (JSON.stringify(destination(settings)) !== JSON.stringify(destination(current.settings))) {
       for (const k of PLATFORM_INTEGRATION_SECRETS[key]) {
@@ -456,6 +467,7 @@ export class PlatformIntegrationsService implements OnApplicationBootstrap {
 
   private requireComplete(key: PlatformIntegrationKey, settings: Values, secrets: Secrets) {
     if (key === 'ai' && !secrets.apiKey) throw Errors.validation([{ path: 'apiKey', message: 'Paste the Claude API key' }]);
+    if (key === 'company_data' && !secrets.apiKey) throw Errors.validation([{ path: 'apiKey', message: 'Paste the Brandfetch API key' }]);
     if (key === 'email' && settings.username && !secrets.password) throw Errors.validation([{ path: 'password', message: 'Enter the password or API key for this user name' }]);
     if (key === 'razorpay' && !secrets.keySecret) throw Errors.validation([{ path: 'keySecret', message: 'Paste the Razorpay key secret' }]);
     if (key === 'stripe' && !secrets.secretKey) throw Errors.validation([{ path: 'secretKey', message: 'Paste the Stripe secret key' }]);
@@ -479,7 +491,7 @@ export class PlatformIntegrationsService implements OnApplicationBootstrap {
   /** Staging and production refuse values that would send secrets or sign-ins over plain connections. */
   private checkProduction(key: PlatformIntegrationKey, settings: Values) {
     if (!this.config.isProductionLike) return;
-    if ((key === 'ai' || key === 'razorpay' || key === 'stripe') && settings.baseUrl && !String(settings.baseUrl).startsWith('https://')) throw Errors.validation([{ path: 'baseUrl', message: 'Use an https:// address' }]);
+    if ((key === 'ai' || key === 'razorpay' || key === 'stripe' || key === 'company_data') && settings.baseUrl && !String(settings.baseUrl).startsWith('https://')) throw Errors.validation([{ path: 'baseUrl', message: 'Use an https:// address' }]);
     if (key === 'email' && settings.security === 'none') throw Errors.validation([{ path: 'security', message: 'Use STARTTLS or TLS: the password and email would otherwise cross the network unencrypted' }]);
     if (key === 'mobile_sso' && (settings.redirects as string[]).some((r) => /^http:/i.test(r))) throw Errors.validation([{ path: 'redirects', message: 'Plain http:// addresses are for local development only' }]);
     if (key === 'backups' && settings.endpoint && !String(settings.endpoint).startsWith('https://')) throw Errors.validation([{ path: 'endpoint', message: 'Use an https:// address' }]);
