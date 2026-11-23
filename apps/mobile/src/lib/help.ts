@@ -12,6 +12,42 @@ export interface MobileHelpEntry {
 }
 
 export const MOBILE_HELP = {
+  help: {
+    title: 'Help & Support',
+    what: 'Guides, FAQs, tutorials and quick starts for the features you can use, and Raise a Query.',
+    how: 'Search, tap a quick button or a category. Articles you open appear under Recently viewed.',
+    where: 'What you see depends on your level, your company\'s features and your permissions.',
+  },
+  'help.search': {
+    title: 'Search help',
+    what: 'Help articles that match your words: feature names, questions and error messages.',
+    how: 'Type and tap Search. Open an article to read it.',
+  },
+  'help.category': {
+    title: 'Help category',
+    what: 'The topics and articles in one help category.',
+  },
+  'help.article': {
+    title: 'Help article',
+    what: 'One help article: the answer, or steps you can tick off as you go.',
+    how: 'Tap a step to mark it done (saved for you) and say whether it helped.',
+  },
+  'help.ask': {
+    title: 'Raise a Query',
+    what: 'Ask for help: a category (or Other), a subject, a description and photos.',
+    how: 'Submit to get a ticket ID. You are notified of every reply.',
+    where: 'It goes to your HR Workspace, or the level above yours.',
+  },
+  'help.queries': {
+    title: 'My queries',
+    what: 'The queries you raised, with ticket IDs and statuses.',
+    how: 'Tap one to read replies and answer.',
+  },
+  'help.query': {
+    title: 'Query',
+    what: 'One query: what you asked, the replies and its status.',
+    how: 'Reply, close it when sorted, reopen a resolved one within the allowed days, or rate the answer.',
+  },
   // Screens (shown in the header)
   home: {
     title: 'Home',

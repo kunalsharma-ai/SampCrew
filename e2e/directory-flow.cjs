@@ -70,7 +70,10 @@ let current;
     await hr.keyboard.press('Escape');
     await hr.getByRole('button', { name: 'Compact rows' }).click();
     await hr.waitForURL(/density=compact/);
-    const joined = await table.locator('tbody tr').evaluateAll((rows) => rows.map((r) => r.children[6]?.textContent ?? ''));
+    // Find the Joined column by its heading: people who can make bulk changes get a checkbox column first.
+    const joinedCol = await table.locator('thead th').evaluateAll((ths) => ths.findIndex((th) => (th.textContent ?? '').trim().startsWith('Joined')));
+    expect(joinedCol >= 0, 'the Joined column is shown');
+    const joined = await table.locator('tbody tr').evaluateAll((rows, i) => rows.map((r) => r.children[i]?.textContent ?? ''), joinedCol);
     expect(joined.length > 3, `expected the demo directory, saw ${joined.length} rows`);
     expect(joined.every((d, i) => i === 0 || joined[i - 1] >= d), `rows are not newest first: ${joined.slice(0, 5).join(', ')}`);
     ok(`sorted ${joined.length} people by joining date (newest first), added Work email, compact rows`);

@@ -20,6 +20,7 @@ import { Errors } from '../../platform/http/errors';
 import { StorageService } from '../../platform/storage/storage.service';
 import { storeUpload, type UploadedFile } from '../../platform/storage/uploads';
 import { employeeAttrs } from '../employees/employee-attrs';
+import { listEntries } from '../master-data/master-data.service';
 import { candidateScopeFilter } from '../recruitment/recruitment-common';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,6 +69,10 @@ const RULES: Record<CustomFieldEntity, EntityRule> = {
     view: 'candidates:read', edit: 'candidates:manage', feature: 'recruitment',
     attrs: async (tx, id) => ((await tx.collection('candidates').exists({ id })) ? {} : null),
   },
+  client: {
+    view: 'bids:read', edit: 'bids:manage', feature: 'staffing_bids',
+    attrs: async (tx, id) => ((await tx.collection('clients').exists({ id })) ? {} : null),
+  },
   leave_request: {
     view: 'leave:read', edit: 'leave:request', feature: 'leave',
     attrs: async (tx, id) => {
@@ -82,7 +87,22 @@ export function definitionView(d: Doc): CustomFieldDefinition {
     id: d.id, entity: d.entity, key: d.key, label: d.label, type: d.type, helpText: d.help_text ?? null, required: !!d.required, defaultValue: d.default_value ?? null,
     options: d.options ?? [], position: d.position ?? 0, section: d.section ?? null, enabled: !!d.enabled, archivedAt: d.archived_at ? new Date(d.archived_at).toISOString() : null,
     viewRoles: d.view_roles ?? [], editRoles: d.edit_roles ?? [], employeeEditable: !!d.employee_editable, config: d.config ?? {},
+    searchable: !!d.searchable, importable: d.importable !== false,
   };
+}
+
+/**
+ * Fields whose options come from a Master data list get that list's values as options (disabled values stay as
+ * archived options, so records holding them keep showing them). Changes the rows in place and returns them.
+ */
+export async function withListOptions(tx: TenantTx, rows: Doc[]): Promise<Doc[]> {
+  const lists = [...new Set(rows.map((r) => r.config?.masterList).filter(Boolean))] as string[];
+  for (const list of lists) {
+    const entries = await listEntries(tx, list as never);
+    const options = entries.map((e) => ({ value: e.key, label: e.label, ...(e.disabled ? { archived: true } : {}) }));
+    for (const r of rows) if (r.config?.masterList === list) r.options = options;
+  }
+  return rows;
 }
 
 /**
@@ -111,7 +131,7 @@ export class CustomFieldsService {
       const manage = await this.canManage(tx);
       if (!includeArchived || !manage) filter.archived_at = null;
       const reach = fieldReach(await this.authz.subject(tx));
-      const rows = (await tx.collection('custom_fields').find(filter, { sort: { entity: 1, position: 1, created_at: 1 } })).filter((r) => !r.hr_workspace_id || !reach || reach.has(r.hr_workspace_id));
+      const rows = (await withListOptions(tx, await tx.collection('custom_fields').find(filter, { sort: { entity: 1, position: 1, created_at: 1 } }))).filter((r) => !r.hr_workspace_id || !reach || reach.has(r.hr_workspace_id));
       const usage = manage ? new Map((await tx.collection('custom_field_values').aggregate<{ _id: string; n: number }>([{ $match: { field_id: { $in: rows.map((r) => r.id) }, value: { $ne: null } } }, { $group: { _id: '$field_id', n: { $sum: 1 } } }])).map((x) => [x._id, x.n])) : new Map();
       return rows.map((r) => ({ ...definitionView(r), ...(manage ? { valueCount: usage.get(r.id) ?? 0 } : {}) }));
     });
@@ -144,23 +164,32 @@ export class CustomFieldsService {
   }
 
   async create(input: z.infer<typeof customFieldInput>) {
-    return this.db.tenant(async (tx) => {
+    return this.db.tenant((tx) => this.createIn(tx, input));
+  }
+
+  /** create() inside a transaction the caller holds (a data import adds a field while it saves the column mapping). */
+  async createIn(tx: TenantTx, input: z.infer<typeof customFieldInput>, via?: string) {
+    {
       await this.authz.require('fields:manage', undefined, tx);
       const key = input.key ?? fieldKeyFromLabel(input.label);
       if (await tx.collection('custom_fields').exists({ entity: input.entity, key })) throw Errors.validation([{ path: input.key ? 'key' : 'label', message: `A field with the key ${key} already exists on ${CUSTOM_FIELD_ENTITY_LABEL[input.entity]}` }]);
       await this.validateRoles(tx, [...input.viewRoles, ...input.editRoles]);
       if (input.employeeEditable && input.entity !== 'employee') throw Errors.validation([{ path: 'employeeEditable', message: 'Only employee profile fields can be filled in by employees' }]);
-      const defaultValue = this.checkDefault({ ...input, options: OPTION_TYPES.includes(input.type) ? input.options : [] });
+      if (input.config.masterList && !OPTION_TYPES.includes(input.type)) throw Errors.validation([{ path: 'config.masterList', message: 'Only dropdown, radio and multi-select fields take their options from a list' }]);
+      const ownOptions = OPTION_TYPES.includes(input.type) && !input.config.masterList ? input.options : [];
+      const [probe] = await withListOptions(tx, [{ config: input.config, options: ownOptions }]);
+      const defaultValue = this.checkDefault({ ...input, options: probe!.options });
       const position = await tx.collection('custom_fields').count({ entity: input.entity });
       const row = await tx.collection('custom_fields').insert({
         entity: input.entity, key, label: input.label, type: input.type, help_text: input.helpText ?? null, required: input.required, default_value: defaultValue,
-        options: OPTION_TYPES.includes(input.type) ? input.options : [], position, section: input.section ?? null, enabled: input.enabled,
+        options: ownOptions, position, section: input.section ?? null, enabled: input.enabled,
         view_roles: asLevels(input.viewRoles), edit_roles: asLevels(input.editRoles), employee_editable: input.employeeEditable, config: input.config,
+        searchable: input.searchable, importable: input.importable,
         created_by_membership_id: actorMembership(), updated_by_membership_id: actorMembership(),
       });
-      await this.audit.record(tx, { action: 'custom_field.created', resourceType: 'custom_field', resourceId: row.id, changes: { after: definitionView(row) } });
-      return definitionView(row);
-    });
+      await this.audit.record(tx, { action: 'custom_field.created', resourceType: 'custom_field', resourceId: row.id, changes: { after: definitionView(row) }, ...(via ? { metadata: { via } } : {}) });
+      return definitionView((await withListOptions(tx, [row]))[0]!);
+    }
   }
 
   async update(id: string, input: z.infer<typeof customFieldUpdate>) {
@@ -179,7 +208,7 @@ export class CustomFieldsService {
         const dropped = (before.options ?? []).filter((o: { value: string }) => !kept.has(o.value) && used.has(o.value)).map((o: Doc) => ({ ...o, archived: true }));
         options = [...options, ...dropped];
       }
-      if (OPTION_TYPES.includes(type) && !options.some((o: { archived?: boolean }) => !o.archived)) throw Errors.validation([{ path: 'options', message: 'Add at least one option' }]);
+      if (OPTION_TYPES.includes(type) && !(input.config ?? before.config ?? {}).masterList && !options.some((o: { archived?: boolean }) => !o.archived)) throw Errors.validation([{ path: 'options', message: 'Add at least one option' }]);
       await this.validateRoles(tx, [...(input.viewRoles ?? []), ...(input.editRoles ?? [])]);
       if (input.employeeEditable && before.entity !== 'employee') throw Errors.validation([{ path: 'employeeEditable', message: 'Only employee profile fields can be filled in by employees' }]);
       const config = input.config ?? before.config ?? {};
@@ -193,12 +222,17 @@ export class CustomFieldsService {
       if (input.viewRoles !== undefined) set.view_roles = asLevels(input.viewRoles);
       if (input.editRoles !== undefined) set.edit_roles = asLevels(input.editRoles);
       if (input.employeeEditable !== undefined) set.employee_editable = input.employeeEditable;
+      if (input.searchable !== undefined) set.searchable = input.searchable;
+      if (input.importable !== undefined) set.importable = input.importable;
       if (input.config !== undefined) set.config = input.config;
-      set.options = OPTION_TYPES.includes(type) ? options : [];
-      if (input.defaultValue !== undefined || input.type !== undefined || input.options !== undefined) {
-        set.default_value = this.checkDefault({ type, options: set.options, config, label: input.label ?? before.label, defaultValue: input.defaultValue !== undefined ? input.defaultValue : before.default_value });
+      if (config.masterList && !OPTION_TYPES.includes(type)) throw Errors.validation([{ path: 'config.masterList', message: 'Only dropdown, radio and multi-select fields take their options from a list' }]);
+      set.options = OPTION_TYPES.includes(type) && !config.masterList ? options : [];
+      if (input.defaultValue !== undefined || input.type !== undefined || input.options !== undefined || input.config !== undefined) {
+        const [probe] = await withListOptions(tx, [{ config, options: set.options }]);
+        set.default_value = this.checkDefault({ type, options: probe!.options, config, label: input.label ?? before.label, defaultValue: input.defaultValue !== undefined ? input.defaultValue : before.default_value });
       }
-      const after = await tx.collection('custom_fields').updateAndGet({ id }, { $set: set });
+      const after = (await withListOptions(tx, [(await tx.collection('custom_fields').updateAndGet({ id }, { $set: set }))!]))[0];
+      await withListOptions(tx, [before]);
       const b = definitionView(before);
       const a = definitionView(after!);
       const changes = Object.fromEntries(Object.keys(a).filter((k) => JSON.stringify((a as never)[k]) !== JSON.stringify((b as never)[k])).map((k) => [k, { from: (b as never)[k], to: (a as never)[k] }]));
@@ -299,7 +333,7 @@ export class CustomFieldsService {
   async values(entity: CustomFieldEntity, recordId: string) {
     return this.db.tenant(async (tx) => {
       const a = await this.access(tx, entity, recordId);
-      const defs = (await tx.collection('custom_fields').find({ entity }, { sort: { position: 1, created_at: 1 } })).filter(a.applies);
+      const defs = (await withListOptions(tx, await tx.collection('custom_fields').find({ entity }, { sort: { position: 1, created_at: 1 } }))).filter(a.applies);
       const vals = new Map((await tx.collection('custom_field_values').find({ entity, record_id: recordId })).map((v) => [v.field_id as string, v.value]));
       return defs
         .filter((d) => this.visible(d, a.roles) && (d.enabled || vals.has(d.id)) && (!d.archived_at || (vals.get(d.id) !== undefined && vals.get(d.id) !== null)))
@@ -319,7 +353,7 @@ export class CustomFieldsService {
   async save(entity: CustomFieldEntity, recordId: string, values: Record<string, unknown>, opts: { tx?: TenantTx; creating?: boolean } = {}) {
     const run = async (tx: TenantTx) => {
       const a = await this.access(tx, entity, recordId);
-      const defs = (await tx.collection('custom_fields').find({ entity, archived_at: null, enabled: true })).filter(a.applies);
+      const defs = (await withListOptions(tx, await tx.collection('custom_fields').find({ entity, archived_at: null, enabled: true }))).filter(a.applies);
       const byKey = new Map(defs.map((d) => [d.key as string, d]));
       const existing = new Map((await tx.collection('custom_field_values').find({ entity, record_id: recordId })).map((v) => [v.field_id as string, v]));
       const problems: { path: string; message: string }[] = [];

@@ -25,6 +25,15 @@ export class AuthzService {
     return subject;
   }
 
+  /**
+   * Drops the subject kept for this request, so the next check reads it again: after a record the person's scope
+   * depends on was just created in the same transaction (an imported employee joins an HR Workspace's people).
+   */
+  forget(): void {
+    const ctx = requestContext.get() as (ReturnType<typeof requestContext.get> & { [SUBJECT_KEY]?: Subject }) | undefined;
+    if (ctx) delete ctx[SUBJECT_KEY];
+  }
+
   async require(permission: string, resource?: ResourceAttributes, tx?: TenantTx): Promise<Grant> {
     const s = await this.subject(tx);
     const d = resource ? can(s, permission, resource) : hasPermission(s, permission);
@@ -72,7 +81,15 @@ export async function loadSubject(tx: TenantTx, membershipId: string, userId: st
   const hrIds = [...new Set(assignments.flatMap((a) => ((a.constraints?.hrWorkspaceIds ?? []) as string[])))];
   const hrPeople = new Map<string, { employees: string[]; memberships: string[] }>();
   if (hrIds.length) {
-    const live = new Set(await tx.collection('hr_workspaces').distinct<string>('id', { id: { $in: hrIds }, status: 'active' }));
+    const spaces = await tx.collection('hr_workspaces').find({ id: { $in: hrIds } }, { projection: { status: 1, permissions_off: 1 } });
+    const live = new Set(spaces.filter((w) => w.status === 'active').map((w) => w.id as string));
+    // The Super Workspace's employee-data switches per HR Workspace: an admin limited to HR Workspaces keeps a
+    // permission while at least one of their HR Workspaces has it on.
+    const offIn = new Map(spaces.map((w) => [w.id as string, new Set((w.permissions_off ?? []) as string[])]));
+    for (let i = grants.length - 1; i >= 0; i--) {
+      const ids = (grants[i]!.constraints.hrWorkspaceIds ?? []) as string[];
+      if (ids.length && ids.every((id) => offIn.get(id)?.has(grants[i]!.permission) ?? false)) grants.splice(i, 1);
+    }
     const people = await tx.collection('employees').find({ hr_workspace_id: { $in: [...live] } }, { projection: { _id: 1, hr_workspace_id: 1, membership_id: 1 } });
     for (const id of live) hrPeople.set(id, { employees: [], memberships: [] });
     for (const e of people) {

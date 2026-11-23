@@ -27,6 +27,11 @@ import { CustomFieldFilesController, CustomFieldsController } from './modules/cu
 import { CustomFieldsService } from './modules/custom-fields/custom-fields.service';
 import { EmployeeImportController, HrAdminController } from './modules/hr-admin/hr-admin.controller';
 import { EmployeeImportService } from './modules/hr-admin/employee-import.service';
+import { DataImportController, EmployeeBulkController } from './modules/data-import/data-import.controller';
+import { EmployeeBulkService } from './modules/data-import/employee-bulk.service';
+import { DataImportService } from './modules/data-import/data-import.service';
+import { MasterDataController } from './modules/master-data/master-data.controller';
+import { MasterDataService } from './modules/master-data/master-data.service';
 import { HrAdminService } from './modules/hr-admin/hr-admin.service';
 import { HierarchyController } from './modules/hierarchy/hierarchy.controller';
 import { WorkspaceLimitsController } from './modules/workspace-limits/workspace-limits.controller';
@@ -129,6 +134,9 @@ import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
 import { ChatService } from './modules/communication/chat.service';
 import { PlatformSupportChatController, SupportChatController } from './modules/support-chat/support-chat.controller';
 import { SupportChatService } from './modules/support-chat/support-chat.service';
+import { HelpController, PlatformHelpController } from './modules/help/help.controller';
+import { HelpContentService } from './modules/help/help-content.service';
+import { HelpQueriesService } from './modules/help/help-queries.service';
 import { CommFilesController, CommunicationController } from './modules/communication/communication.controller';
 import { CommunicationService } from './modules/communication/communication.service';
 import { CommEmailService } from './modules/communication/email.service';
@@ -196,6 +204,9 @@ export const CONTROLLERS = [
   DesignationsController,
   // Before EmployeesController, so /employees/import is not read as an employee id.
   EmployeeImportController,
+  DataImportController,
+  EmployeeBulkController,
+  MasterDataController,
   EmployeesController,
   AssetsController,
   AssetsEmployeeController,
@@ -256,6 +267,8 @@ export const CONTROLLERS = [
   CommunicationController,
   SupportChatController,
   PlatformSupportChatController,
+  HelpController,
+  PlatformHelpController,
   CommFilesController,
   MobileAppController,
   MobileAppAdminController,
@@ -346,6 +359,9 @@ export const CONTROLLERS = [
     WorkspaceLimitsService,
     FeatureLevelsService,
     EmployeeImportService,
+    DataImportService,
+    EmployeeBulkService,
+    MasterDataService,
     DocumentsService,
     DocumentCenterService,
     AttendanceDaysService,
@@ -378,6 +394,8 @@ export const CONTROLLERS = [
     HelpdeskService,
     ChatService,
     SupportChatService,
+    HelpContentService,
+    HelpQueriesService,
     CommEmailService,
     CommFilesService,
     CommunicationService,

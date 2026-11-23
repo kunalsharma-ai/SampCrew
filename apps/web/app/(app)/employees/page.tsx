@@ -1,4 +1,4 @@
-import { EMPLOYEE_COLUMNS_CATALOGUE, EMPLOYEE_SORTS, type SavedView, type ViewState, type WorkspaceLimits, workspaceLimitMessage } from '@crew/contracts';
+import { type CustomFieldDefinition, EMPLOYEE_COLUMNS_CATALOGUE, EMPLOYEE_SORTS, type SavedView, type ViewState, type WorkspaceLimits, workspaceLimitMessage } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
@@ -21,8 +21,9 @@ import { DEFAULT_COLUMNS, viewUrl } from './view-url';
 
 export const metadata: Metadata = { title: 'Employees' };
 
+const BULK_TYPES: string[] = ['short_text', 'number', 'decimal', 'date', 'dropdown', 'radio', 'yes_no', 'email', 'phone', 'url', 'currency'];
 const STATUSES = ['pre_boarding', 'probation', 'active', 'notice', 'exited'];
-type Search = { create?: string; q?: string; status?: string; departmentId?: string; cursor?: string; sort?: string; dir?: string; cols?: string; density?: string; view?: string };
+type Search = { create?: string; q?: string; status?: string; departmentId?: string; importId?: string; cursor?: string; sort?: string; dir?: string; cols?: string; density?: string; view?: string };
 
 /** The table state lives in the address bar, so a view can be bookmarked, shared and restored after a reload. */
 function stateFrom(sp: Search): ViewState {
@@ -30,6 +31,7 @@ function stateFrom(sp: Search): ViewState {
   if (sp.q) filters.q = sp.q.slice(0, 200);
   if (sp.status && STATUSES.includes(sp.status)) filters.status = sp.status;
   if (sp.departmentId && /^[0-9a-f-]{36}$/.test(sp.departmentId)) filters.departmentId = sp.departmentId;
+  if (sp.importId && /^[0-9a-f-]{36}$/.test(sp.importId)) filters.importId = sp.importId;
   const cols = (sp.cols ?? '').split(',').filter((c) => (EMPLOYEE_COLUMNS_CATALOGUE as readonly string[]).includes(c));
   return {
     filters,
@@ -76,6 +78,11 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     canHire && can(me, 'hierarchy:read') ? loadOptional<{ items: { id: string; name: string }[] }>('/hr-workspaces?status=active') : null,
     canHire ? loadOptional<WorkspaceLimits>('/workspace-limits') : null,
   ]);
+  // Bulk changes: for people who change others' records (not only their own).
+  const beyondOwn = (perm: string) => !!me.permissions[perm] && me.permissions[perm] !== 'own';
+  const canMove = beyondOwn('employees:lifecycle');
+  const canFields = beyondOwn('employees:update');
+  const bulkFields = canFields ? ((await loadOptional<CustomFieldDefinition[]>('/custom-fields?entity=employee')) ?? []).filter((f) => f.enabled && !f.archivedAt && BULK_TYPES.includes(f.type)) : [];
   const loginsFull = limits?.employee.reached && limits.employee.limit !== null ? workspaceLimitMessage('employee', limits.employee.used, limits.employee.limit) : null;
   // Company-wide admins choose the central group or an HR Workspace; an HR Workspace admin only their own.
   const centralChoice = me.levels.super || me.levels.companyHr;
@@ -93,7 +100,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
       <ModuleOverview module="employees" actions={allowed(me, [
         { label: 'Add employee', href: '/employees?create=employee', icon: 'user-plus', permission: 'employees:create' },
         { label: 'Structure', href: '/organization', icon: 'building', permission: 'org:read' },
-        { label: 'Import existing employees', href: '/employees/import', icon: 'upload', permission: 'employees:create' },
+        { label: 'Import existing employees', href: '/imports/new?type=employees', icon: 'upload', permission: 'imports:run', feature: 'data_import' },
         { label: 'Onboarding checklists', href: '/settings/onboarding', icon: 'list-checks', permission: 'employees:create' },
         { label: 'Logins & access', href: '/people', icon: 'users', permission: 'users:read' },
         { label: 'Workforce Universe', href: '/insights/universe', icon: 'orbit', permission: 'employees:read', feature: 'workforce_universe' },
@@ -113,6 +120,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         drafts={drafts ?? []}
         structures={(structures ?? []).filter((s) => !s.archivedAt)}
         canHire={canHire}
+        bulk={canMove || canFields ? { canMove, canFields, fields: bulkFields } : null}
         canPay={canPay}
         canDocs={canDocs}
         shifts={shifts}

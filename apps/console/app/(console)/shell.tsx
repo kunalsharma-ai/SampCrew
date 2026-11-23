@@ -1,6 +1,6 @@
 'use client';
 import { Avatar, Badge, CrewLogo, HelpProvider, cn } from '@crew/ui';
-import { Activity, Building2, Fingerprint, Gauge, Globe, Headset, KeyRound, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon, ToggleRight } from 'lucide-react';
+import { Activity, BookOpen, Building2, LifeBuoy, Ticket, Fingerprint, Gauge, Globe, Headset, KeyRound, LogOut, Menu, Moon, Palette, Plug, Receipt, ScrollText, Shield, Sun, Tag, Users, X, type LucideIcon, ToggleRight } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
@@ -10,7 +10,7 @@ import { logoutAction } from '../auth-actions';
 import { LiveRefresh } from '@/components/live-refresh';
 
 export interface NavItem { href: string; label: string; icon: string; badge?: number }
-const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound, headset: Headset };
+const ICONS: Record<string, LucideIcon> = { gauge: Gauge, building: Building2, tag: Tag, activity: Activity, scroll: ScrollText, shield: Shield, plug: Plug, users: Users, fingerprint: Fingerprint, receipt: Receipt, globe: Globe, toggle: ToggleRight, key: KeyRound, headset: Headset, ticket: Ticket, book: BookOpen, lifebuoy: LifeBuoy };
 const ROLE_LABEL: Record<Admin['role'], string> = { super_admin: 'Super admin', support: 'Support', billing_ops: 'Billing operations', viewer: 'Viewer' };
 
 export function Shell({ me, nav, live, children }: { me: Admin; nav: NavItem[]; live?: boolean; children: React.ReactNode }) {
@@ -46,7 +46,7 @@ export function Shell({ me, nav, live, children }: { me: Admin; nav: NavItem[]; 
       <ul className="flex flex-1 flex-col gap-0.5">
         {nav.map((item) => {
           const Icon = ICONS[item.icon] ?? Gauge;
-          const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+          const active = item.href === '/' ? pathname === '/' : pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <li key={item.href}>
               <Link href={item.href} aria-current={active ? 'page' : undefined} className={cn('crew-nav-link flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13.5px]', active ? 'bg-accent-subtle font-medium text-accent' : 'text-fg-muted hover:bg-bg-subtle hover:text-fg')}>

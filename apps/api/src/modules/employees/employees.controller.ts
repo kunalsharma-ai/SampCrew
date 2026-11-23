@@ -80,14 +80,14 @@ export class EmployeesController {
   }
 
   @Get('export.csv')
-  @RequirePermission('employees:read')
+  @RequirePermission('employees:export')
   @Doc({ summary: 'The directory as CSV with chosen columns (same scope and filters as the list; audited)', query: employeeExportQuery })
   async exportCsv(@Query(new ZodPipe(employeeExportQuery)) q: z.infer<typeof employeeExportQuery>, @Res() res: Response) {
     sendFile(res, await this.employees.exportCsv(q, 'csv'), 'csv');
   }
 
   @Get('export.xlsx')
-  @RequirePermission('employees:read')
+  @RequirePermission('employees:export')
   @Doc({ summary: 'The directory as an Excel workbook with chosen columns (same scope and filters as the list; audited)', query: employeeExportQuery })
   async exportXlsx(@Query(new ZodPipe(employeeExportQuery)) q: z.infer<typeof employeeExportQuery>, @Res() res: Response) {
     sendFile(res, await this.employees.exportCsv(q, 'xlsx'), 'xlsx', 'Employees');

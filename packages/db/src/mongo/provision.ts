@@ -2,6 +2,7 @@ import {
   builtInStatutoryPacks, DEFAULT_LEAVE_TYPES, leaveAllocationCriteria, leaveApprovalRules, leaveEligibility, leaveTypePolicy, FEATURES, PLAN_TEMPLATES, SWITCHABLE_FEATURE_KEYS, SYSTEM_ROLES,
 } from '@crew/contracts';
 import { applyAccessLevelsMongo } from './access-levels';
+import { syncHelpLibraryMongo } from './help-library';
 import type { Row, Table } from './table';
 
 /** Anything that hands out unrestricted tables in one transaction (the API's PlatformTx, or a script's own). */
@@ -264,6 +265,7 @@ export async function syncCatalogueMongo(tx: Tables): Promise<void> {
     await features.upsert({ key: f.key }, row, { $set: { name: row.name, module: row.module, kind: row.kind, unit: row.unit } });
   }
   await syncFeatureStatesMongo(tx);
+  await syncHelpLibraryMongo(tx);
   for (const p of PLAN_TEMPLATES) {
     const existing = await plans.findOne({ key: p.key });
     if (existing?.customised_at) {

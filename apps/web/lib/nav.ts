@@ -45,6 +45,8 @@ export const NAV: NavGroup[] = [
       { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
       // The Super Workspace's private chat with the SampCrew Console Admin team (every plan; not a Communication part).
       { href: '/support', label: 'SampCrew Support', icon: 'headset', superOnly: true },
+      // Help & Support: guides, FAQs and tutorials for what this person can use, and Raise a Query (every level).
+      { href: '/help', label: 'Help & Support', icon: 'life-buoy' },
     ],
   },
   {
@@ -68,7 +70,7 @@ export const NAV: NavGroup[] = [
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
       { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
       { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
-      { href: '/employees/import', label: 'Import employees', icon: 'upload', permission: 'employees:create' },
+      { href: '/imports', label: 'Data import', icon: 'upload', permission: 'imports:run', feature: 'data_import' },
       { href: '/verification', label: 'Background verification', icon: 'shield-check', permission: 'bgv:view', feature: 'background_verification' },
       { href: '/assets', label: 'Assets', icon: 'laptop', permission: 'assets:view', beyondOwn: true, feature: 'asset_management' },
     ],
@@ -166,6 +168,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/mobile-app', label: 'Mobile app', icon: 'smartphone', permission: 'mobileapp:manage', superOnly: true },
       { href: '/settings/roles', label: 'Access levels', icon: 'shield', permission: 'roles:read' },
       { href: '/settings/custom-fields', label: 'Custom fields', icon: 'text-cursor-input', permission: 'fields:manage' },
+      { href: '/settings/master-data', label: 'Master data', icon: 'list-tree', permission: 'org:read' },
       { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },
       { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },

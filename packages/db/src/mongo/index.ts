@@ -10,5 +10,6 @@ export * from './row-guards';
 export { TABLES } from './schema.generated';
 export { MONGO_MIGRATIONS } from './migrations';
 export * from './provision';
+export * from './help-library';
 export * from './access-levels';
 export * from './workspace-limits';

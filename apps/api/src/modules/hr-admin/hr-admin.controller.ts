@@ -4,7 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { featureLevelsInput, roleGrantsInput, workspaceModulesInput } from '@crew/contracts';
 import type { Response } from 'express';
 import { z } from 'zod';
-import { RequirePermission } from '../../platform/authz/decorators';
+import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { sendFile } from '../../platform/export/tabular';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
@@ -70,8 +70,9 @@ export class HrAdminController {
   }
 }
 
-/** Bulk import of existing employees from the CSV or Excel template. */
+/** Bulk import of existing employees from the CSV or Excel template (the Data import module; the wizard at /imports replaces it). */
 @Controller('employees/import')
+@RequireFeature('data_import')
 export class EmployeeImportController {
   constructor(private readonly importer: EmployeeImportService) {}
 

@@ -2,7 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-export const SUPPORT_EVENTS = ['support.message', 'support.read', 'support.changed'] as const;
+export const SUPPORT_EVENTS = ['support.message', 'support.read', 'support.changed', 'help.query'] as const;
 
 /**
  * Keeps the Console's support inbox (and its menu badge) current: listens to /live and re-renders the page's server

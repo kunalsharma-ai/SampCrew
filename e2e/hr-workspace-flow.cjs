@@ -13,7 +13,7 @@
  *    to the agency; the agency opens its private link (no login), sees only the shared file and sends its findings;
  *    HR sees them and records the result.
  * 4. HR adds a custom field for employees and fills it in on Neha's profile.
- * 5. HR checks an import file (one row needs fixing), then imports the good row.
+ * 5. HR checks an import file in Data import (one row needs fixing), then imports the good row.
  * Module switches and role changes need a recent MFA check: the owner turns MFA on in the step-up dialog. The owner's
  * MFA settings are put back as they were at the end, so the flows after this one see no change.
  * Fails on any browser error. SHOTS=<dir> saves a screenshot of each screen.
@@ -303,14 +303,18 @@ async function run(b) {
     `IMP-${stamp},Ishaan,Imported,ishaan.${stamp.toLowerCase()}@mail.example,Northwind Manufacturing (Demo),2022-04-01`,
     `IMP-${stamp}B,,Missing,,Northwind Manufacturing (Demo),not-a-date`,
   ].join('\n'));
+  // The old address leads to Data import, which checks every row before anything is saved.
   await hr.goto(BASE + '/employees/import');
-  await hr.getByLabel('Filled-in file').setInputFiles(csv);
-  await hr.getByRole('button', { name: 'Check the file' }).click();
-  await hr.getByRole('table', { name: 'Import results' }).waitFor({ timeout: 15000 }).catch((e) => fail(hr, e));
-  await see(hr, 'Enter the first name');
+  await hr.waitForURL(/\/imports\/new\?type=employees/, { timeout: 15000 }).catch((e) => fail(hr, e));
+  await hr.getByTestId('import-file').setInputFiles(csv);
+  await hr.getByRole('button', { name: 'Upload and match columns' }).click();
+  await hr.waitForURL(/\/imports\/[0-9a-f-]{36}$/, { timeout: 20000 }).catch((e) => fail(hr, e));
+  await hr.getByTestId('check-rows').click();
+  await hr.getByTestId('row-3').waitFor({ timeout: 30000 }).catch((e) => fail(hr, e));
+  await see(hr, 'Enter the name');
   await save(hr, '09-import-checked');
-  await hr.getByRole('button', { name: 'Import 1 person' }).click().catch((e) => fail(hr, e));
-  await see(hr, '1 person was added');
+  await hr.getByRole('button', { name: 'Import 1 row' }).click().catch((e) => fail(hr, e));
+  await see(hr, 'Import finished', 60000);
   await save(hr, '09b-import-done');
   await hr.goto(BASE + `/employees?q=IMP-${stamp}`);
   await see(hr, 'Ishaan');
