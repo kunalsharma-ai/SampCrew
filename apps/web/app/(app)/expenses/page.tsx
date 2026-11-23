@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load } from '@/lib/api';
@@ -16,6 +17,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHeader title="Expenses" description="Claim work expenses with a receipt. Approved claims are paid with your next salary, tax-free as reimbursements." />
+      <ModuleNotices category="payroll" label="Expense" />
       <ExpensesView view={view} claims={claims} categories={categories} canApprove={canApprove} canSubmit={Boolean(me.permissions['expenses:submit'])} currency={me.tenant.currency} />
     </>
   );

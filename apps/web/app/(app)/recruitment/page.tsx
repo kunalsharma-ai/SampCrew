@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load, loadOptional } from '@/lib/api';
@@ -23,6 +24,7 @@ export default async function RecruitmentPage({ searchParams }: { searchParams: 
   return (
     <>
       <PageHeader title="Recruitment" description="Job requisitions, from approval to hire. Open a job to manage its posting and pipeline." />
+      <ModuleNotices category="recruitment" label="Recruitment" />
       <ModuleOverview module="recruitment" actions={allowed(me, [
         { label: 'Create job', href: '/recruitment?create=requisition', icon: 'briefcase', permission: 'requisitions:create' },
         { label: 'Candidates', href: '/recruitment/candidates', icon: 'user-search', permission: 'candidates:read' },

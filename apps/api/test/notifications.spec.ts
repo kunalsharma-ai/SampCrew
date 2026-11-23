@@ -100,9 +100,9 @@ describe('notifications and approvals', () => {
         sound: { enabled: true, volume: 40, minPriority: 'high' },
       }));
       expect(prefs.categories.approvals.inApp).toBe(true);
-      expect(prefs.categories.announcements).toEqual({ inApp: false, email: false });
+      expect(prefs.categories.announcements).toMatchObject({ inApp: false, email: false });
       expect(prefs.sound).toEqual({ enabled: true, volume: 40, minPriority: 'high' });
-      expect(ok(await as('emp').get('/notifications/preferences')).categories.leave).toEqual({ inApp: true, email: false });
+      expect(ok(await as('emp').get('/notifications/preferences')).categories.leave).toMatchObject({ inApp: true, email: false });
 
       const before = await pool.count('email_messages', { tenant_id: t.id });
       await notify({ membershipIds: [people.emp.membershipId], kind: 'announcement.published', title: 'Muted announcement', email: true });

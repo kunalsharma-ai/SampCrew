@@ -14,3 +14,4 @@ export * from './components/feature-switches';
 export * from './components/password-reset';
 export * from './components/password-reset-list';
 export * from './components/help-centre';
+export * from './components/welcome-scene';

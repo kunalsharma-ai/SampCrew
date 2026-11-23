@@ -9,6 +9,10 @@ import type { NotificationPriority } from '@crew/contracts';
  */
 let ctx: AudioContext | null = null;
 let unlocked = false;
+/** A tone held back because the browser did not allow sound yet; it plays at the person's next click or key press. */
+let pending: { priority: NotificationPriority; volume: number; at: number } | null = null;
+/** How long a held-back tone stays worth playing. */
+const PENDING_MS = 2 * 60_000;
 
 function context(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -26,6 +30,10 @@ export function armAudioUnlock(): () => void {
     if (c && c.state === 'suspended') void c.resume();
     unlocked = true;
     remove();
+    // A notice arrived before sound was allowed: its tone plays now, once, if it is still recent.
+    const p = pending;
+    pending = null;
+    if (p && Date.now() - p.at < PENDING_MS) playNotificationSound(p.priority, p.volume);
   };
   const remove = () => {
     window.removeEventListener('pointerdown', unlock);
@@ -48,8 +56,12 @@ const TONES: Record<NotificationPriority, number[]> = {
  * Plays the tone for a priority at a volume from 0 to 100. Returns false when the browser does not allow sound yet
  * (the person has not interacted with the page); a preview button counts as that interaction.
  */
-export function playNotificationSound(priority: NotificationPriority, volume: number, opts: { fromGesture?: boolean } = {}): boolean {
-  if (!opts.fromGesture && !unlocked) return false;
+export function playNotificationSound(priority: NotificationPriority, volume: number, opts: { fromGesture?: boolean; queueIfLocked?: boolean } = {}): boolean {
+  if (!opts.fromGesture && !unlocked) {
+    // Only the newest held-back tone is kept, so a burst of notices never plays a burst of sounds later.
+    if (opts.queueIfLocked && volume > 0) pending = { priority, volume, at: Date.now() };
+    return false;
+  }
   const c = context();
   if (!c) return false;
   if (c.state === 'suspended') void c.resume();
@@ -71,4 +83,36 @@ export function playNotificationSound(priority: NotificationPriority, volume: nu
     osc.stop(t + 0.25);
   });
   return true;
+}
+
+const TAB = Math.random().toString(36).slice(2);
+const played = new Map<string, number>();
+
+/**
+ * Whether this tab should sound for a notice: a notice sounds once, in one tab, however many SampCrew tabs are open,
+ * and a folded notice that only counts up again (more chat messages from the same person) sounds at most once a
+ * minute. Resolves after about 150 ms. Uses localStorage to agree between tabs; without it (private mode) each tab decides for itself.
+ */
+export async function claimNotice(id: string, folded = false): Promise<boolean> {
+  const now = Date.now();
+  const last = played.get(id);
+  if (last && (!folded || now - last < 60_000)) return false;
+  played.set(id, now);
+  if (played.size > 200) played.delete(played.keys().next().value!);
+  try {
+    const key = `crew-sound:${id}`;
+    const prev = window.localStorage.getItem(key);
+    if (prev && prev.split('|')[0] !== TAB && now - Number(prev.split('|')[1]) < 60_000) return false;
+    window.localStorage.setItem(key, `${TAB}|${now}`);
+    // Drop old claims so storage does not grow.
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const k = window.localStorage.key(i);
+      if (k?.startsWith('crew-sound:') && now - Number(window.localStorage.getItem(k)?.split('|')[1] ?? 0) > 10 * 60_000) window.localStorage.removeItem(k);
+    }
+    // Every open tab writes its claim as the notice arrives; after a short wait the last writer is the one that plays.
+    await new Promise((r) => setTimeout(r, 150));
+    return window.localStorage.getItem(key)?.startsWith(`${TAB}|`) ?? true;
+  } catch {
+    return true;
+  }
 }

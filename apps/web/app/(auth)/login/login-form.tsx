@@ -8,7 +8,7 @@ import { initialPasswordAction, loginAction, selectTenantAction, ssoStartAction,
 
 type Step = { kind: 'password' } | { kind: 'sso'; email: string; notice?: string } | { kind: 'mfa'; mfaToken: string } | { kind: 'newPassword'; changeToken: string } | { kind: 'tenant'; selectToken: string; tenants: { id: string; name: string; slug: string }[] };
 
-export function LoginForm({ next, expired, workspace, ssoFailure, notice, addressProblem }: { next: string; expired: boolean; workspace?: string; ssoFailure?: string | null; notice?: string | null; addressProblem?: string | null }) {
+export function LoginForm({ title = 'Sign in to SampCrew', next, expired, workspace, ssoFailure, notice, addressProblem }: { title?: string; next: string; expired: boolean; workspace?: string; ssoFailure?: string | null; notice?: string | null; addressProblem?: string | null }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>(ssoFailure ? { kind: 'sso', email: '' } : { kind: 'password' });
   const [error, setError] = useState<string | null>(ssoFailure ?? null);
@@ -167,7 +167,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
       className="flex flex-col gap-5"
     >
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Sign in to SampCrew</h2>
+        <h2 className="text-2xl font-semibold tracking-tight" data-testid="login-title">{title}</h2>
         <p className="mt-1 text-sm text-fg-muted">Welcome back. Use your work email.</p>
       </div>
       {addressProblem && !error && <Alert tone="danger">{addressProblem}</Alert>}

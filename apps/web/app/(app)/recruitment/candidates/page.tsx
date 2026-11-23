@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import type { SavedView } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
@@ -26,6 +27,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
   return (
     <>
       <PageHeader title="Candidates" description="Everyone who has applied or been added, across the jobs you can see." />
+      <ModuleNotices category="recruitment" label="Recruitment" />
       <CandidatesView
         candidates={candidates}
         state={state}

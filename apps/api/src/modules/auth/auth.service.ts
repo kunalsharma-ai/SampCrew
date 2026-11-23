@@ -321,6 +321,7 @@ export class AuthService {
         companyHr,
         employee: Boolean(employee),
         ownHrWorkspace: own ? { id: own.id as string, name: own.name as string } : null,
+        leadsTeam: await tx.collection('memberships').exists({ manager_membership_id: actor.membershipId, status: 'active' }),
       };
       // Candidate CRM: Super Workspace always; an HR Workspace while Super Workspace has switched it on for it.
       const crmGrants = subject.grants.filter((g) => g.permission === 'candidates:read' && ['super_workspace', 'hr_workspace'].includes(g.roleKey ?? ''));

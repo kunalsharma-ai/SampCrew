@@ -33,3 +33,17 @@ export async function notificationCountsAction(): Promise<Record<string, number>
   const s = await api<{ categories: { category: string; unread: number }[] }>('/notifications/summary').catch(() => null);
   return s ? Object.fromEntries(s.categories.filter((c) => c.unread > 0).map((c) => [c.category, c.unread])) : null;
 }
+
+/** Unread notices per category and how many ask for action (the bell's Action needed tab, Home and the menu markers). */
+export async function notificationLiveCountsAction(): Promise<{ byCategory: Record<string, number>; actionNeeded: number } | null> {
+  const s = await api<{ categories: { category: string; unread: number }[]; actionNeeded?: number }>('/notifications/summary').catch(() => null);
+  return s ? { byCategory: Object.fromEntries(s.categories.filter((c) => c.unread > 0).map((c) => [c.category, c.unread])), actionNeeded: s.actionNeeded ?? 0 } : null;
+}
+
+export async function markNotificationUnreadAction(id: string) {
+  return act(() => api(`/notifications/${id}/unread`, { method: 'POST' }));
+}
+
+export async function notificationPreferencesAction() {
+  return api<import('@crew/contracts').NotificationPreferences>('/notifications/preferences').catch(() => null);
+}

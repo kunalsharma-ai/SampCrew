@@ -176,6 +176,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
       { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
+      { href: '/settings/notifications/organisation', label: 'Notification policy', icon: 'bell', superOnly: true },
       { href: '/settings/document-access', label: 'Document access', icon: 'lock-keyhole', permission: 'documents:manage', feature: 'documents', superOnly: true },
     ],
   },

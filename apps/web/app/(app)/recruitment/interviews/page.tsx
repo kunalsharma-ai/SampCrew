@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -13,6 +14,7 @@ export default async function MyInterviewsPage() {
   return (
     <>
       <PageHeader title="My interviews" description="Interviews you are on the panel for. Submit your scorecard after each one; you see others' scorecards once yours is in." />
+      <ModuleNotices category="recruitment" label="Interview" />
       <Card>
         <CardHeader title="Interviews" />
         {items.length ? (

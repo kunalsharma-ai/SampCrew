@@ -105,6 +105,8 @@ export interface MeResponse {
     employee: boolean;
     /** The HR Workspace looking after this person's own employee record (null: the central group). */
     ownHrWorkspace: { id: string; name: string } | null;
+    /** People report to this person (they lead a team inside the Employee Workspace). */
+    leadsTeam?: boolean;
   };
   /** Recruitment & ATS > Candidate CRM is open to this person (Super Workspace, or an HR Workspace it is switched on for). */
   candidateCrm?: boolean;

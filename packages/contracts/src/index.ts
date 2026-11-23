@@ -77,6 +77,7 @@ export * from './appraisals';
 export * from './profile';
 export * from './rewards';
 export * from './notifications';
+export * from './welcome-scenes';
 export * from './home';
 export * from './approval-categories';
 export * from './communication';

@@ -17,6 +17,7 @@ import { m0100DocumentCenter } from './0100_document_center';
 import { m0110CandidateCrm } from './0110_candidate_crm';
 import { m0130WorkspaceLimits } from './0130_workspace_limits';
 import { m0140HelpCentre } from './0140_help_centre';
+import { m0170NotificationFramework } from './0170_notification_framework';
 
 /** Every MongoDB migration, in order. Append new ones; never edit or reorder one that has shipped. */
 export const MONGO_MIGRATIONS: MongoMigration[] = [
@@ -38,4 +39,5 @@ export const MONGO_MIGRATIONS: MongoMigration[] = [
   m0110CandidateCrm,
   m0130WorkspaceLimits,
   m0140HelpCentre,
+  m0170NotificationFramework,
 ];

@@ -1,9 +1,12 @@
-import { useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, View } from 'react-native';
+import { pickWelcomeScene, WELCOME_COPY, WELCOME_SCENE_COOKIE, type WelcomeScene } from '@crew/contracts';
+import { useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { KeyboardAvoidingView, Platform } from 'react-native';
 import { ApiError } from '../src/lib/api';
 import { type SignInStep, useSession } from '../src/lib/session';
-import { secureStorageAvailable } from '../src/lib/storage';
-import { Button, Card, Field, ListItem, Notice, Screen, Text, useTheme } from '../src/ui';
+import { kv, secureStorageAvailable } from '../src/lib/storage';
+import { Button, Card, Field, ListItem, Notice, Screen, Text } from '../src/ui';
+import { WelcomeHero } from '../src/ui/welcome';
 
 /**
  * Sign-in: email and password, then a 6-digit code when two-step sign-in is on, then a workspace if there are several.
@@ -26,6 +29,13 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // The level's welcome: asked for in the link (crew://login?space=hr), else the last level signed in to on this phone.
+  const params = useLocalSearchParams<{ space?: string }>();
+  const [scene, setScene] = useState<WelcomeScene>(() => pickWelcomeScene(params.space, null));
+  useEffect(() => {
+    if (params.space) return;
+    void kv.get(WELCOME_SCENE_COOKIE).then((v) => setScene(pickWelcomeScene(null, v))).catch(() => undefined);
+  }, [params.space]);
 
   const run = async (fn: () => Promise<SignInStep>) => {
     setBusy(true);
@@ -106,10 +116,9 @@ export default function Login() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Screen>
-        <View style={{ height: 40 }} />
-        <Brand />
-        <Text size={26} weight="800" accessibilityRole="header" style={{ marginTop: 12, letterSpacing: -0.4 }}>Welcome back</Text>
-        <Text muted>Sign in to your workspace.</Text>
+        <WelcomeHero scene={scene} onChoose={step ? undefined : setScene} />
+        <Text size={22} weight="800" style={{ marginTop: 4, letterSpacing: -0.4 }} testID="login-title">{WELCOME_COPY[scene].formTitle}</Text>
+        <Text muted>Welcome back. Use your work email.</Text>
         {notice && <Notice tone="warn">{notice}</Notice>}
         {!secureStorageAvailable && (
           <Notice tone="warn" testID="web-preview-notice">
@@ -195,18 +204,5 @@ export default function Login() {
         </Card>
       </Screen>
     </KeyboardAvoidingView>
-  );
-}
-
-/** The SampCrew logo ("People, simplified." by SAMPLEDGE), drawn for the light or dark theme. */
-const LOGO = { light: require('../assets/logo-light.png'), dark: require('../assets/logo-dark.png') } as const;
-
-function Brand() {
-  const t = useTheme();
-  // The artwork is 1458 x 384.
-  return (
-    <View testID="brand" accessible accessibilityRole="image" accessibilityLabel="SampCrew. People, simplified. By SAMPLEDGE">
-      <Image source={t.mode === 'dark' ? LOGO.dark : LOGO.light} style={{ width: 243, height: 64 }} resizeMode="contain" />
-    </View>
   );
 }

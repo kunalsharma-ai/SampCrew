@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load } from '@/lib/api';
@@ -31,6 +32,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader title="Approvals" description="Requests by category: those waiting for your decision, your own requests and their status, and what you decided. Every decision is recorded in the audit trail." />
+      <ModuleNotices category="approvals" label="Approval" />
       <ApprovalsBoard view={view} overview={overview} counts={counts} inbox={inbox} rows={rows} category={category} status={status} />
     </>
   );

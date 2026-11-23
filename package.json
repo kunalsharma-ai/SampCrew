@@ -46,6 +46,7 @@
     "e2e:workspace": "node e2e/workspace-flow.cjs",
     "e2e:helpdesk": "node e2e/helpdesk-flow.cjs",
     "e2e:notifications": "node e2e/notifications-flow.cjs",
+    "e2e:notifications-login": "node e2e/notifications-login-flow.cjs",
     "e2e:home": "node e2e/home-flow.cjs",
     "e2e:communication": "node e2e/communication-flow.cjs",
     "e2e:support-chat": "node e2e/support-chat-flow.cjs",

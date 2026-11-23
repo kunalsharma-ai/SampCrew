@@ -1,10 +1,11 @@
+import { welcomeSceneFor } from '@crew/contracts';
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
 import { useSession } from '../src/lib/session';
 import { Button, Notice, Screen, Text, Title } from '../src/ui';
+import { WelcomeHero } from '../src/ui/welcome';
 
 export default function Unlock() {
-  const { unlock, signOut } = useSession();
+  const { unlock, signOut, me } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const go = async () => {
@@ -19,7 +20,8 @@ export default function Unlock() {
   }, []);
   return (
     <Screen>
-      <View style={{ height: 60 }} />
+      {/* The level's welcome; biometric unlock starts at once and is not held back by the animation. */}
+      <WelcomeHero scene={welcomeSceneFor(me?.levels)} />
       <Title>SampCrew is locked</Title>
       <Text muted>Unlock with your fingerprint or face to continue.</Text>
       {error && <Notice tone="danger">{error}</Notice>}

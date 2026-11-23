@@ -27600,6 +27600,17 @@
             }
           },
           {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          },
+          {
             "name": "category",
             "in": "query",
             "required": false,
@@ -27896,7 +27907,7 @@
         "tags": [
           "Notifications"
         ],
-        "summary": "Your notification preferences: in-app and email per category, sound and pop-ups",
+        "summary": "Your notification preferences: in app, email, phone push and sound per category, sound, pop-ups, desktop and quiet hours, with what your organisation locked (`locks`)",
         "operationId": "Notifications_preferences",
         "security": [
           {
@@ -27923,7 +27934,7 @@
         "tags": [
           "Notifications"
         ],
-        "summary": "Change your notification preferences",
+        "summary": "Change your notification preferences (anything your organisation locked stays as it decided)",
         "operationId": "Notifications_setPreferences",
         "security": [
           {
@@ -27970,6 +27981,14 @@
                           "type": "boolean"
                         },
                         "email": {
+                          "default": true,
+                          "type": "boolean"
+                        },
+                        "push": {
+                          "default": true,
+                          "type": "boolean"
+                        },
+                        "sound": {
                           "default": true,
                           "type": "boolean"
                         }
@@ -28035,6 +28054,161 @@
                         "default": "08:00",
                         "type": "string",
                         "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/policy": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Your organisation's notification policy (Super Workspace only): categories everyone sees, required emails, whether sound, desktop and phone push are allowed, starting choices",
+        "operationId": "Notifications_policy",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Change your organisation's notification policy (Super Workspace only). It applies to everyone at once, above their own settings.",
+        "operationId": "Notifications_setPolicy",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "mandatory": {
+                    "default": [],
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "approvals",
+                        "leave",
+                        "attendance",
+                        "communication",
+                        "announcements",
+                        "hr_tasks",
+                        "manager_tasks",
+                        "appraisal",
+                        "learning",
+                        "profile",
+                        "documents",
+                        "verification",
+                        "assets",
+                        "recruitment",
+                        "payroll",
+                        "system"
+                      ]
+                    }
+                  },
+                  "emailRequired": {
+                    "default": [],
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "approvals",
+                        "leave",
+                        "attendance",
+                        "communication",
+                        "announcements",
+                        "hr_tasks",
+                        "manager_tasks",
+                        "appraisal",
+                        "learning",
+                        "profile",
+                        "documents",
+                        "verification",
+                        "assets",
+                        "recruitment",
+                        "payroll",
+                        "system"
+                      ]
+                    }
+                  },
+                  "allowSound": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "allowDesktop": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "allowPush": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "defaults": {
+                    "default": {
+                      "sound": false,
+                      "toasts": true,
+                      "desktop": false
+                    },
+                    "type": "object",
+                    "properties": {
+                      "sound": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "toasts": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "desktop": {
+                        "default": false,
+                        "type": "boolean"
                       }
                     }
                   }

@@ -105,6 +105,7 @@ function Gate() {
       <Stack.Screen name="sso" options={{ headerShown: false }} />
       <Stack.Screen name="approvals" options={{ title: 'Approvals', ...screenHelp('approvals') }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications', ...screenHelp('notifications') }} />
+      <Stack.Screen name="notification-settings" options={{ title: 'Notification settings', ...screenHelp('notification-settings') }} />
       <Stack.Screen name="leave/new" options={{ title: 'Apply for leave', ...screenHelp('leave.new') }} />
       <Stack.Screen name="helpdesk/new" options={{ title: 'Ask HR', ...screenHelp('helpdesk.new') }} />
       <Stack.Screen name="helpdesk/[id]" options={{ title: 'Case', ...screenHelp('helpdesk.case') }} />

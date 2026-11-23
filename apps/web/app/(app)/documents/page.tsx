@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { DOCUMENT_STATUS_LABEL } from '@crew/contracts';
 import { Badge, buttonClass, Card, CardHeader, Input, PageHeader, Select, Stat } from '@crew/ui';
 import { AlertTriangle, CheckCircle2, Clock, Download, FileStack, FileWarning, Inbox, ShieldCheck } from 'lucide-react';
@@ -208,6 +209,7 @@ async function CentralDocuments({ sp, mine, catalogue }: { sp: Sp; mine: MyDocAc
         description={levelNote}
         actions={targets && (isSuper || a?.request) ? <RequestDocumentButton catalogue={catalogue} preset={null} targets={targets} /> : undefined}
       />
+      <ModuleNotices category="documents" label="Document" />
       {!isSuper && a && !a.enabled && <p className="mb-4 rounded-lg border border-border bg-bg-subtle px-4 py-3 text-sm text-fg-muted">Super Workspace has switched off document management for your HR Workspace. Nothing has been deleted.</p>}
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Stat label="Total documents" value={overview.total} icon={<FileStack className="size-4" />} />
@@ -249,6 +251,7 @@ async function EmployeeDocuments({ sp, mine }: { sp: Sp; mine: MyDocAccess }) {
     <>
       <LiveDocuments />
       <PageHeader title="My documents" description="Documents HR Workspace or Super Workspace asked you for, and every document in your profile with its status." />
+      <ModuleNotices category="documents" label="Document" />
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Waiting for you" value={open.filter((r) => ['new_request', 'pending_submission', 'correction_required', 'rejected'].includes(r.status)).length} icon={<Inbox className="size-4" />} hint={open.some((r) => r.overdue) ? <Badge tone="danger">Overdue</Badge> : undefined} />
         <Stat label="Being verified" value={open.filter((r) => ['submitted', 'resubmitted', 'under_verification'].includes(r.status)).length} icon={<Clock className="size-4" />} />

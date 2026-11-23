@@ -107,7 +107,16 @@ const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM');
 export const quietHours = z.object({ enabled: z.boolean().default(false), from: hhmm.default('20:00'), to: hhmm.default('08:00') });
 export type QuietHours = z.infer<typeof quietHours>;
 
-const channelSetting = z.object({ inApp: z.boolean().default(true), email: z.boolean().default(true) });
+const channelSetting = z.object({
+  inApp: z.boolean().default(true),
+  email: z.boolean().default(true),
+  /** Phone push for this category (the SampCrew app on iOS and Android). */
+  push: z.boolean().default(true),
+  /** Whether a notice of this category may make a sound (web tone and phone alert). Sound itself is switched on below. */
+  sound: z.boolean().default(true),
+});
+export type NotificationChannel = z.infer<typeof channelSetting>;
+const DEFAULT_CHANNEL: NotificationChannel = { inApp: true, email: true, push: true, sound: true };
 
 export const notificationPreferencesInput = z.object({
   /** Per category; a category left out keeps the defaults (in the app and by email). */
@@ -122,32 +131,127 @@ export const notificationPreferencesInput = z.object({
 });
 export type NotificationPreferencesInput = z.infer<typeof notificationPreferencesInput>;
 
+/**
+ * The organisation's notification rules, set by the Super Workspace (Settings > Notifications > Organisation). They sit
+ * above each person's own choices: a person can choose anything the organisation leaves open, never less than it
+ * requires. Workspaces that never saved a policy get DEFAULT_NOTIFICATION_POLICY.
+ */
+export const notificationPolicyInput = z.object({
+  /** Categories everyone sees in SampCrew, on top of Approvals and Workspace & security (always on). */
+  mandatory: z.array(z.enum(NOTIFICATION_CATEGORY_KEYS)).max(NOTIFICATION_CATEGORY_KEYS.length).default([]),
+  /** Categories whose emails nobody can switch off (for example Payroll, so payslip emails always arrive). */
+  emailRequired: z.array(z.enum(NOTIFICATION_CATEGORY_KEYS)).max(NOTIFICATION_CATEGORY_KEYS.length).default([]),
+  /** Notification sounds allowed at all (web tone and phone alert). Off: everything is silent, visual only. */
+  allowSound: z.boolean().default(true),
+  /** Browser (desktop) notifications allowed. Off for organisations that do not want notice text on screen outside SampCrew. */
+  allowDesktop: z.boolean().default(true),
+  /** Phone push allowed. Off: the SampCrew app shows notices when opened, nothing is pushed. */
+  allowPush: z.boolean().default(true),
+  /** Starting choices for people who have not changed their own settings. */
+  defaults: z.object({
+    sound: z.boolean().default(false),
+    toasts: z.boolean().default(true),
+    desktop: z.boolean().default(false),
+  }).default({ sound: false, toasts: true, desktop: false }),
+});
+export type NotificationPolicy = z.infer<typeof notificationPolicyInput>;
+export const DEFAULT_NOTIFICATION_POLICY: NotificationPolicy = notificationPolicyInput.parse({});
+
+/** What the organisation decided for a person, so settings pages can show the switch as locked and say why. */
+export interface NotificationLocks {
+  /** Categories that always show in SampCrew (built-in mandatory ones and the organisation's). */
+  inApp: NotificationCategory[];
+  /** Categories that are always emailed when the module sends an email. */
+  email: NotificationCategory[];
+  sound: boolean;
+  desktop: boolean;
+  push: boolean;
+}
+
 export interface NotificationPreferences {
-  categories: Record<NotificationCategory, { inApp: boolean; email: boolean }>;
+  categories: Record<NotificationCategory, NotificationChannel>;
   sound: NotificationSoundSettings;
   toasts: boolean;
   desktop: boolean;
   quiet: QuietHours;
+  /** Whether the person saved their own settings (false: the organisation's defaults apply). */
+  customised?: boolean;
+  /** What the organisation locked (absent on old answers: nothing). */
+  locks?: NotificationLocks;
 }
 
-/** A person's preferences with every category filled in; mandatory categories are always on in the app. */
-export function resolveNotificationPreferences(raw: unknown): NotificationPreferences {
-  const parsed = notificationPreferencesInput.safeParse(raw ?? {});
+/** The locks a policy puts on everyone's settings. */
+export function notificationLocks(policy: NotificationPolicy = DEFAULT_NOTIFICATION_POLICY): NotificationLocks {
+  return {
+    inApp: [...new Set([...MANDATORY_CATEGORIES, ...policy.mandatory])],
+    email: [...new Set<NotificationCategory>(['system', ...policy.emailRequired])],
+    sound: !policy.allowSound,
+    desktop: !policy.allowDesktop,
+    push: !policy.allowPush,
+  };
+}
+
+/**
+ * A person's preferences with every category filled in, inside the organisation's policy: mandatory categories are
+ * always on in the app, required emails always on, and sound, desktop or push forced off where the organisation turned
+ * them off. A person who never saved settings starts from the organisation's defaults.
+ */
+export function resolveNotificationPreferences(raw: unknown, policyRaw?: unknown): NotificationPreferences {
+  const policy = notificationPolicyInput.safeParse(policyRaw ?? {}).data ?? DEFAULT_NOTIFICATION_POLICY;
+  const customised = raw != null && typeof raw === 'object' && Object.keys(raw as object).length > 0;
+  const base = customised ? raw : { sound: { enabled: policy.defaults.sound }, toasts: policy.defaults.toasts, desktop: policy.defaults.desktop };
+  const parsed = notificationPreferencesInput.safeParse(base);
   const p = parsed.success ? parsed.data : notificationPreferencesInput.parse({});
+  const locks = notificationLocks(policy);
   const categories = Object.fromEntries(
     NOTIFICATION_CATEGORY_KEYS.map((k) => {
-      const c = p.categories[k] ?? { inApp: true, email: true };
-      return [k, { inApp: MANDATORY_CATEGORIES.includes(k) ? true : c.inApp, email: c.email }];
+      const c = { ...DEFAULT_CHANNEL, ...(p.categories[k] ?? {}) };
+      return [k, {
+        inApp: locks.inApp.includes(k) ? true : c.inApp,
+        email: locks.email.includes(k) ? true : c.email,
+        push: locks.push ? false : c.push,
+        sound: locks.sound ? false : c.sound,
+      }];
     }),
   ) as NotificationPreferences['categories'];
-  return { categories, sound: p.sound, toasts: p.toasts, desktop: p.desktop, quiet: p.quiet };
+  return {
+    categories,
+    sound: locks.sound ? { ...p.sound, enabled: false } : p.sound,
+    toasts: p.toasts,
+    desktop: locks.desktop ? false : p.desktop,
+    quiet: p.quiet,
+    customised,
+    locks,
+  };
 }
 
 export const PRIORITY_RANK: Record<NotificationPriority, number> = { low: 0, normal: 1, high: 2, urgent: 3 };
 
-/** Whether a notice of this priority should make a sound for someone with these settings. */
-export function shouldPlaySound(sound: NotificationSoundSettings, priority: NotificationPriority): boolean {
-  return sound.enabled && sound.volume > 0 && PRIORITY_RANK[priority] >= PRIORITY_RANK[sound.minPriority];
+/**
+ * Whether a notice should make a sound for someone with these settings: sound on, loud enough, the notice's priority
+ * at or above the chosen level and, when the category is given, sound allowed for that category.
+ */
+export function shouldPlaySound(sound: NotificationSoundSettings, priority: NotificationPriority, category?: NotificationCategory, prefs?: Pick<NotificationPreferences, 'categories'> | null): boolean {
+  if (!(sound.enabled && sound.volume > 0 && PRIORITY_RANK[priority] >= PRIORITY_RANK[sound.minPriority])) return false;
+  return !category || !prefs || prefs.categories[category]?.sound !== false;
+}
+
+/**
+ * Kinds that ask the person to do something (decide, complete, acknowledge, review). They are marked "Action needed"
+ * in the bell, Home and the module's own page. A module can also say so itself with Notice.action.
+ */
+const ACTION_KINDS = new Set([
+  'approval.requested', 'appraisal.assigned', 'appraisal.hr_pending', 'appraisal.manager_submitted', 'appraisal.self_submitted',
+  'asset.assigned', 'bgv.assigned', 'candidate.assigned', 'candidate.follow_up_assigned', 'document.requested', 'document.submitted',
+  'document.deadline', 'document.overdue', 'goal.assigned', 'help.query_assigned', 'help.query_submitted', 'helpdesk.assigned',
+  'helpdesk.case_new', 'interview.scheduled', 'learning.assigned', 'learning.submission', 'onboarding.assigned',
+  'profile_update.info_requested', 'review.feedback_requested', 'review.manager_requested', 'review.self_requested',
+  'review.self_submitted', 'shift_swap.asked', 'survey.opened', 'task.assigned',
+]);
+
+/** Whether a notification kind asks the person to act. */
+export function kindNeedsAction(kind: string): boolean {
+  return ACTION_KINDS.has(kind) || /\.(requested|awaiting_action)$/.test(kind);
 }
 
 /** Whether a local time (minutes after midnight) falls in quiet hours; a range past midnight (20:00 to 08:00) wraps. */
@@ -186,6 +290,8 @@ export const NOTIFICATION_NAV: Record<NotificationCategory, string[]> = {
 
 export const notificationListQuery = z.object({
   unread: z.enum(['true', 'false']).optional(),
+  /** Only notices that ask the person to act. */
+  action: z.enum(['true']).optional(),
   category: z.enum(NOTIFICATION_CATEGORY_KEYS).optional(),
   priority: z.enum(NOTIFICATION_PRIORITIES).optional(),
   q: z.string().trim().max(100).optional(),
@@ -213,6 +319,8 @@ export interface NotificationView {
   /** How many events this notice stands for (chat messages from one conversation are folded into one). */
   count: number;
   actorName: string | null;
+  /** The notice asks the person to do something (decide, complete, acknowledge); shown as "Action needed". */
+  actionRequired: boolean;
   readAt: string | null;
   createdAt: string;
   updatedAt: string;

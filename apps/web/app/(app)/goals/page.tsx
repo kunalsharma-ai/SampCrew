@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load } from '@/lib/api';
@@ -20,6 +21,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader title="Goals" description="Measurable goals with key results. Update progress with a check-in; your manager sees it." />
+      <ModuleNotices category="appraisal" label="Performance" />
       <GoalsView view={view} goals={data.goals} overall={data.overallProgress} alignable={alignable} people={people} manages={manages} />
     </>
   );
