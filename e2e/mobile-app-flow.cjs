@@ -128,14 +128,14 @@ async function web(b, email) {
   }
 }
 
-/** A row link's spoken name is its title, then ", " and the subtitle when it has one. */
-const rowName = (title) => new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(, |$)`);
+/** A row link (IconRow) by its title; a row with a subtitle is named by all its visible text. */
+const rowLink = (list, title) => list.getByRole('link').filter({ has: list.page().getByText(title, { exact: true }) });
 
 /** The More menu's module names on the phone. */
 async function moreNames(p) {
   await p.goto(APP + '/more');
   await p.getByTestId('more-list').waitFor();
-  return p.getByTestId('more-list').getByRole('link').evaluateAll((as) => as.map((a) => (a.getAttribute('aria-label') || '').split(', ')[0]));
+  return p.getByTestId('more-list').locator('[data-testid$="-title"]').allInnerTexts();
 }
 
 (async () => {
@@ -159,7 +159,7 @@ async function moreNames(p) {
     ph = await phone(b);
     const p = ph.p;
     assert((await moreNames(p)).includes('Email'), 'Email is in More');
-    await p.getByTestId('more-list').getByRole('link', { name: rowName('Email') }).click();
+    await rowLink(p.getByTestId('more-list'), 'Email').click();
     await p.getByTestId('email-setup').getByText('Email is not set up yet').waitFor();
     await save(p, 'phone-email-setup');
     ok('the phone lists Email in More and says email is not set up yet');
@@ -250,7 +250,7 @@ async function moreNames(p) {
     const text = `Line 2 changeover done ${Date.now()}`;
     await p.goto(APP + '/chat/new');
     await p.getByTestId('people-search').fill(headName.split(' ')[0]);
-    const headRow = p.getByTestId('people-list').getByRole('link', { name: rowName(headName) });
+    const headRow = rowLink(p.getByTestId('people-list'), headName);
     await headRow.waitFor();
     await headRow.click();
     await p.getByTestId('chat-input').fill(text);
@@ -285,7 +285,7 @@ async function moreNames(p) {
     await p.getByTestId('sign-in-history').getByText('(this device)').waitFor();
     await save(p, 'phone-sessions');
     await moreNames(p);
-    await p.getByTestId('more-list').getByRole('link', { name: rowName('Leave') }).click();
+    await rowLink(p.getByTestId('more-list'), 'Leave').click();
     await p.getByTestId('apply-leave').waitFor();
     ok('Login and sessions shows this sign-in; Leave opens from More');
 

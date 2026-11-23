@@ -123,7 +123,7 @@ export function IconRow({ icon, tone, title, subtitle, right, onPress, testID, b
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}>
       <Icon3D name={icon} tone={tone} size={40} />
       <View style={{ flex: 1, gap: 2 }}>
-        <Text weight="600" numberOfLines={1}>{title}</Text>
+        <Text weight="600" numberOfLines={1} testID={testID ? `${testID}-title` : undefined}>{title}</Text>
         {subtitle ? <Text muted size={13} numberOfLines={2}>{subtitle}</Text> : null}
       </View>
       {badge ? <CountBadge n={badge} /> : null}
@@ -131,7 +131,7 @@ export function IconRow({ icon, tone, title, subtitle, right, onPress, testID, b
     </View>
   );
   if (!onPress) return <View testID={testID}>{body}</View>;
-  return <Pressable testID={testID} accessibilityRole="link" accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>{body}</Pressable>;
+  return <Pressable testID={testID} accessibilityRole="link" accessibilityLabel={subtitle ? undefined : title} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>{body}</Pressable>;
 }
 
 /** An unread count; 99+ above that. */
