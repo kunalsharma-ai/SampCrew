@@ -225,6 +225,12 @@ export const WEB_HELP: HelpContent = {
       how: 'Switch categories on or off, set the sound and its volume, try the preview, then save.',
       where: 'Your own settings. Approvals and workspace notices always show in SampCrew.',
     },
+    '/settings/notifications/organisation': {
+      title: 'Notification policy',
+      what: 'The rules for notifications across your whole organisation: categories everyone always sees or always gets by email, whether sound, desktop pop-ups and phone push are allowed, and the starting choices for new people.',
+      how: 'Switch what you need, then save. People choose their own settings inside these rules; what you require here they cannot switch off.',
+      where: 'Super Workspace only. Every change is recorded in the audit trail and applies straight away to everyone signed in.',
+    },
     '/settings/approvals': {
       title: 'Approval settings',
       what: 'Who approves each kind of request and in what order, and the categories the Approvals page groups requests into.',
@@ -1182,6 +1188,11 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+
+    // Notification policy
+    'Required for everyone': { what: 'Categories that always show in SampCrew, or are always emailed, for everyone in your organisation.', how: 'Switch Always shown or Always emailed for a category. Approvals and Workspace & security always show.' },
+    'Allowed in your organisation': { what: 'Whether anyone may have notification sounds, desktop pop-ups or phone push at all.', how: 'Switching one off turns it off for everyone, whatever they chose. Switch it back on and their own choices return.' },
+    'Starting choices': { what: 'The settings people get before they change their own: sound, pop-ups in the corner and desktop notifications.', how: 'Anyone can change these for themselves later.' },
 
     // Learning
     'Module details': { what: 'What learners see: title, descriptions, category, skills, level, length, language, creator and cover.' },
