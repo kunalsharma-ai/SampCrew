@@ -17,8 +17,8 @@ export function Table({ className, children, 'aria-label': label }: { className?
     </div>
   );
 }
-export const THead = (p: HTMLAttributes<HTMLTableSectionElement>) => <thead {...p} className={cn('text-xs text-fg-subtle', p.className)} />;
+export const THead = (p: HTMLAttributes<HTMLTableSectionElement>) => <thead {...p} className={cn('bg-bg-subtle/50 text-xs text-fg-muted', p.className)} />;
 export const TBody = (p: HTMLAttributes<HTMLTableSectionElement>) => <tbody {...p} className={cn('divide-y divide-border', p.className)} />;
-export const TR = (p: HTMLAttributes<HTMLTableRowElement>) => <tr {...p} className={cn('transition-colors hover:bg-bg-subtle/60', p.className)} />;
+export const TR = (p: HTMLAttributes<HTMLTableRowElement>) => <tr {...p} className={cn('transition-colors hover:bg-bg-subtle/60 focus-within:bg-bg-subtle/60', p.className)} />;
 export const TH = (p: ThHTMLAttributes<HTMLTableCellElement>) => <th {...p} className={cn('px-5 py-2.5 font-medium border-b border-border whitespace-nowrap', p.className)} />;
 export const TD = (p: TdHTMLAttributes<HTMLTableCellElement>) => <td {...p} className={cn('px-5 py-3 align-middle text-fg', p.className)} />;

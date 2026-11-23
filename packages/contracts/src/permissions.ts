@@ -72,6 +72,7 @@ export const PERMISSIONS = [
   { key: 'hierarchy:manage', module: 'Organization', description: 'Create, change, suspend and archive HR Workspaces and decide which modules each one gets (Super Workspace)', phase: 29, scopes: TENANT_ONLY, action: 'manage' },
   { key: 'employees:transfer', module: 'People', description: 'Move employees between HR Workspaces and the central group, keeping their history', phase: 29, scopes: TENANT_ONLY, action: 'manage' },
   { key: 'modules:assign', module: 'People', description: "Choose which of the HR Workspace's modules each employee gets", phase: 29, scopes: ['department', 'entity', 'tenant'], action: 'manage' },
+  { key: 'mobileapp:manage', module: 'Administration', description: 'Decide which modules and features the SampCrew mobile app shows to each level, and publish or restore its configuration (Super Workspace)', phase: 30, scopes: TENANT_ONLY, action: 'manage' },
   { key: 'org:manage', module: 'Organization', description: 'Create and change legal entities, business units, locations and departments', phase: 1, scopes: TENANT_ONLY },
   { key: 'users:read', module: 'Administration', description: 'View workspace members', phase: 1, scopes: ALL },
   { key: 'users:invite', module: 'Administration', description: 'Invite people to the workspace', phase: 1, scopes: TENANT_ONLY },

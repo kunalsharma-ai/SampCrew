@@ -3,9 +3,10 @@ import { ApiError } from '../src/lib/api';
 import { useSession } from '../src/lib/session';
 import type { InboxItem } from '../src/lib/types';
 import { Button, Card, Empty, Field, fmt, Loading, Notice, Row, Screen, Text, useLoad, CardTitle } from '../src/ui';
+import { ModuleGate } from '../src/ui/kit';
 
 /** Requests waiting for my decision: leave, corrections, overtime, expenses and the rest. */
-export default function Approvals() {
+function ApprovalsBody() {
   const { api } = useSession();
   const { data, error, reload, loading } = useLoad(() => api.get<InboxItem[]>('/approvals/inbox'), [api]);
   const [comments, setComments] = useState<Record<string, string>>({});
@@ -46,5 +47,13 @@ export default function Approvals() {
         </Card>
       ))}
     </Screen>
+  );
+}
+
+export default function Approvals() {
+  return (
+    <ModuleGate module="approvals">
+      <ApprovalsBody />
+    </ModuleGate>
   );
 }

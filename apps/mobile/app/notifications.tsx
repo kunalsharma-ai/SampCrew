@@ -3,8 +3,9 @@ import { appRoute } from '../src/lib/format';
 import { useSession } from '../src/lib/session';
 import type { Notification } from '../src/lib/types';
 import { Badge, Button, Card, Empty, fmt, ListItem, Notice, Screen, useLoad } from '../src/ui';
+import { ModuleGate } from '../src/ui/kit';
 
-export default function Notifications() {
+function NotificationsBody() {
   const { api } = useSession();
   const router = useRouter();
   const { data, error, reload, loading } = useLoad(() => api.get<{ unread: number; items: Notification[] }>('/notifications?limit=50'), [api]);
@@ -25,5 +26,13 @@ export default function Notifications() {
         ))}
       </Card>
     </Screen>
+  );
+}
+
+export default function Notifications() {
+  return (
+    <ModuleGate module="notifications">
+      <NotificationsBody />
+    </ModuleGate>
   );
 }

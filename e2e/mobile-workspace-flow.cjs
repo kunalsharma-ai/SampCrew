@@ -121,7 +121,7 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     ok('Home shows open tasks and the self-appraisal waiting');
 
     // 3. Tasks.
-    await p.getByTestId('qa-tasks').click();
+    await p.getByTestId('home-tasks').click();
     await p.getByTestId('tasks-list').waitFor();
     await p.getByTestId('tasks-list').getByText(`Read the safety handbook ${run}`).click();
     await p.getByTestId('task-ack').click();

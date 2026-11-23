@@ -76,7 +76,7 @@ const SUPER_GRANTS = everything('tenant');
 const HR_WORKSPACE_EXCLUDED = new Set<string>([
   // Leave types, policies and approval rules belong to the Super Workspace; HR Workspaces allocate and approve.
   'leave:configure',
-  'tenant:manage', 'roles:manage', 'billing:manage', 'hierarchy:manage', 'employees:transfer', 'modules:manage',
+  'tenant:manage', 'roles:manage', 'billing:manage', 'hierarchy:manage', 'employees:transfer', 'modules:manage', 'mobileapp:manage',
   'integrations:manage', 'security:manage', 'ai:configure', 'audit:export',
 ]);
 

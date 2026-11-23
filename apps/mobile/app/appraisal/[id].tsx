@@ -6,6 +6,7 @@ import { appraisalStage, reviewStage } from '../../src/lib/labels';
 import { useSession } from '../../src/lib/session';
 import type { AppraisalAnswers, AppraisalDetail, AppraisalSectionDef } from '../../src/lib/types';
 import { Badge, Button, Card, CardTitle, Choice, Field, fmt, Loading, Meter, Notice, Screen, Text, useLoad } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
 type Role = AppraisalDetail['role'];
 const WHO: Record<Role, string> = { employee: 'You', manager: 'Manager', hr: 'HR' };
@@ -28,7 +29,7 @@ const shown = (v: number | null | undefined) => (v === null || v === undefined ?
  * question or an approved percentage (with a reason), finalises and shares the result. Each part saves as a draft
  * and locks on submit.
  */
-export default function AppraisalScreen() {
+function AppraisalScreenBody() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api } = useSession();
   const { data: a, error, reload } = useLoad(() => api.get<AppraisalDetail>(`/appraisals/${id}`), [api, id]);
@@ -82,6 +83,7 @@ export default function AppraisalScreen() {
     setMsg(null);
     try {
       await fn();
+      // Reload first: the answers on screen are replaced by the saved ones, so nothing typed after the message is lost.
       // Reload before saying it is done: the reload resets the form from the server, so anything typed after the
       // message appeared would otherwise be wiped when it lands.
       await reload();
@@ -239,5 +241,13 @@ export default function AppraisalScreen() {
         </Card>
       )}
     </Screen>
+  );
+}
+
+export default function AppraisalScreen() {
+  return (
+    <ModuleGate module="appraisal">
+      <AppraisalScreenBody />
+    </ModuleGate>
   );
 }

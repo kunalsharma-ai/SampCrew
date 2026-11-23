@@ -89,3 +89,15 @@ export function mimeFromName(name: string): string | null {
   const ext = name.toLowerCase().split('.').pop() ?? '';
   return ({ pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', txt: 'text/plain', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' } as Record<string, string>)[ext] ?? null;
 }
+
+/** Picks any file of the given MIME types (attachments and documents), checking its type and size first. */
+export async function pickFile(types: readonly string[], maxBytes: number, typesLabel: string): Promise<PickResult> {
+  const r = await DocumentPicker.getDocumentAsync({ type: [...types], copyToCacheDirectory: true, multiple: false, base64: true });
+  if (r.canceled || !r.assets?.[0]) return { ok: false, cancelled: true };
+  const a = r.assets[0];
+  const mimeType = a.mimeType ?? a.file?.type ?? mimeFromName(a.name);
+  if (!mimeType || !types.includes(mimeType)) return { ok: false, message: `Choose a ${typesLabel} file.` };
+  const size = a.size ?? a.file?.size ?? null;
+  if (size != null && size > maxBytes) return { ok: false, message: `The file can be up to ${Math.round(maxBytes / 1048576)} MB. Choose a smaller one.` };
+  return { ok: true, photo: { uri: a.uri, mimeType, fileName: a.name, size, base64: a.base64 ?? null } };
+}

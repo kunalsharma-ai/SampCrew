@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 import { useSession } from '../../src/lib/session';
 import type { Payslip } from '../../src/lib/types';
 import { Card, fmt, Loading, Notice, Row, Screen, Text, useLoad, CardTitle, Tile, TileGrid } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
 /** Pay details are private: screenshots and screen recording are blocked on this screen (iOS and Android). */
 function useNoCapture() {
@@ -16,7 +17,7 @@ function useNoCapture() {
   }, []);
 }
 
-export default function PayslipScreen() {
+function PayslipScreenBody() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api } = useSession();
   useNoCapture();
@@ -63,5 +64,13 @@ export default function PayslipScreen() {
       {section('Reimbursements', 'reimbursement', p.reimbursements)}
       <Text muted size={13}>The Web Portal shows how each line was worked out and lets you print the payslip.</Text>
     </Screen>
+  );
+}
+
+export default function PayslipScreen() {
+  return (
+    <ModuleGate module="payslips">
+      <PayslipScreenBody />
+    </ModuleGate>
   );
 }

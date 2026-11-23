@@ -9,11 +9,14 @@ import { getPushToken } from '../../src/lib/push';
 import { useSession } from '../../src/lib/session';
 import type { PayslipRow } from '../../src/lib/types';
 import { Avatar, Badge, Button, Card, CardTitle, Choice, DemoBanner, Empty, errorText, fmt, gradient, ListItem, Notice, Row, Screen, Text, Title, useLoad, useReloadOnFocus } from '../../src/ui';
+import { useMobileApp } from '../../src/lib/mobile-app';
 
 export default function Me() {
   const { api, me, device, setDevice, signOut, can, hasFeature, refreshMe } = useSession();
   const router = useRouter();
-  const payslips = hasFeature('payroll.payslips') && can('payslips:read');
+  const { has } = useMobileApp();
+  // The phone shows a module only while the Super Workspace keeps it on for this level (and the person may use it).
+  const payslips = has('payslips');
   const { data, error, reload, loading } = useLoad(() => (payslips ? api.get<PayslipRow[]>('/payslips?mine=true') : Promise.resolve([])), [api, payslips]);
   useReloadOnFocus(reload);
   const [bio, setBio] = useState<{ support: BiometricSupport; on: boolean } | null>(null);
@@ -122,8 +125,8 @@ export default function Me() {
         <Card testID="me-work">
           <CardTitle>My work</CardTitle>
           <ListItem title="My profile" subtitle="Personal details, contacts, bank and ID" onPress={() => router.push('/profile')} testID="me-profile" />
-          <ListItem title="My tasks" subtitle="From HR and your manager" onPress={() => router.push('/tasks')} testID="me-tasks" />
-          {hasFeature('performance.my_appraisal') && <ListItem title="Appraisal" subtitle="Self-appraisal and results" onPress={() => router.push('/appraisal')} testID="me-appraisal" />}
+          {has('tasks') && <ListItem title="My tasks" subtitle="From HR and your manager" onPress={() => router.push('/tasks')} testID="me-tasks" />}
+          {has('appraisal') && <ListItem title="Appraisal" subtitle="Self-appraisal and results" onPress={() => router.push('/appraisal')} testID="me-appraisal" />}
         </Card>
       )}
 
@@ -171,6 +174,7 @@ export default function Me() {
             <Button title={device.pushEnabled ? 'Turn off' : 'Turn on'} kind="secondary" busy={busy === 'push'} onPress={togglePush} testID="push-toggle" />
           </>
         )}
+        {has('sessions') && <Button title="Login and sessions" kind="secondary" onPress={() => router.push('/sessions')} testID="me-sessions" />}
         <Button title="Signed-in devices" kind="secondary" onPress={() => router.push('/devices')} />
       </Card>
 

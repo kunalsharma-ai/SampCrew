@@ -218,6 +218,21 @@ export class MeController {
     return this.auth.sessions();
   }
 
+  @Get('sign-ins')
+  @AllowWithoutMfa()
+  @Doc({ summary: 'Your recent sign-ins in this workspace (newest first): when, which app, device and whether the session is still open; the previous successful sign-in' })
+  signIns() {
+    return this.auth.signIns();
+  }
+
+  @Post('sessions/sign-out-others')
+  @AllowWithoutMfa()
+  @HttpCode(200)
+  @Doc({ summary: 'Sign out every other session of this account in this workspace (this one stays signed in)' })
+  signOutOthers() {
+    return this.auth.signOutOthers();
+  }
+
   @Delete('sessions/:id')
   @AllowWithoutMfa()
   @HttpCode(204)

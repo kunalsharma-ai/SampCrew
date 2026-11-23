@@ -272,6 +272,8 @@ export class AttendanceDaysService {
       verify_method: (ev.verify_method as string | null) ?? null,
       note: (ev.note as string | null) ?? null,
       risk_flags: (ev.risk_flags as string[]) ?? [],
+      // A phone punch that starts or ends a break (raw.purpose), so the app can show the right next action.
+      purpose: ((ev.raw as { purpose?: string } | null | undefined)?.purpose as 'work' | 'break' | undefined) ?? null,
     }));
   }
 

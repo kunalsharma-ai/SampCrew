@@ -73,7 +73,7 @@ export function DataTable<T>(p: DataTableProps<T>) {
       ) : (
         <div className="max-h-[70vh] overflow-auto">
           <table className="w-full text-left text-[0.8125rem]" aria-label={p.label}>
-            <thead className="sticky top-0 z-10 bg-surface text-xs text-fg-subtle">
+            <thead className="sticky top-0 z-10 bg-surface text-xs text-fg-muted shadow-[inset_0_-1px_0_var(--border)]">
               <tr>
                 {p.selection && (
                   <th className={cn('w-10 border-b border-border pl-5', compact ? 'py-1.5' : 'py-2.5')}>
@@ -107,6 +107,7 @@ export function DataTable<T>(p: DataTableProps<T>) {
             </thead>
             <tbody className="divide-y divide-border">
               {p.rows.map((r) => (
+                <tr key={p.rowKey(r)} className={cn('transition-colors hover:bg-bg-subtle/60 focus-within:bg-bg-subtle/60', p.onRowClick && 'cursor-pointer')} onClick={p.onRowClick ? () => p.onRowClick!(r) : undefined}>
                 <tr key={p.rowKey(r)} className={cn('transition-colors hover:bg-bg-subtle/60', p.onRowClick && 'cursor-pointer', p.selection?.selected.has(p.rowKey(r)) && 'bg-accent-subtle/40')} onClick={p.onRowClick ? () => p.onRowClick!(r) : undefined}>
                   {p.selection && (
                     <td className={cn('w-10 pl-5', compact ? 'py-1.5' : 'py-3')} onClick={(e) => e.stopPropagation()}>

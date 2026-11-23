@@ -84,6 +84,7 @@ export * from './bgv';
 export * from './assets';
 export * from './custom-fields';
 export * from './hr-admin';
+export * from './mobile-app';
 export * from './master-data';
 export * from './data-import';
 export * from './candidate-crm';

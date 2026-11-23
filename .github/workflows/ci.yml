@@ -105,6 +105,7 @@ jobs:
           pnpm e2e:attendance
           pnpm e2e:payroll
           pnpm e2e:mobile
+          pnpm e2e:mobile-app
           pnpm e2e:experience
           pnpm e2e:neon
           pnpm e2e:recruitment
