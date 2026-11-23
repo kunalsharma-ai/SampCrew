@@ -60,3 +60,9 @@ export async function setMemberModulesAction(employeeId: string, modules: string
   refresh(hrWorkspaceId ?? undefined);
   return r;
 }
+
+export async function setHrWorkspacePermissionsAction(id: string, changes: { key: string; enabled: boolean }[], version: number) {
+  const r = await act(() => api(`/hr-workspaces/${id}/permissions`, { method: 'PUT', body: { changes, version } }), 'Saved. Its admins see the change on their next page.');
+  refresh(id);
+  return r;
+}

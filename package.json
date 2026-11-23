@@ -33,6 +33,7 @@
     "e2e:late": "node e2e/late-flow.cjs",
     "e2e:attendance-overview": "node e2e/attendance-overview-flow.cjs",
     "e2e:hr-workspace": "node e2e/hr-workspace-flow.cjs",
+    "e2e:data-import": "node e2e/data-import-flow.cjs",
     "e2e:documents": "node e2e/document-flow.cjs",
     "e2e:recruitment": "node e2e/recruitment-flow.cjs",
     "e2e:payroll": "node e2e/payroll-flow.cjs",

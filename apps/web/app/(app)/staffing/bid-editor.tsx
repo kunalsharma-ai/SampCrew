@@ -4,6 +4,7 @@ import { Alert, Badge, Button, Card, Dialog, Field, Input, Select, Textarea, cn 
 import { AlertTriangle, Plus, Trash2, Zap, SlidersHorizontal } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
+import { MasterSelect } from '@/components/master-select';
 import type { Designation, LegalEntity } from '@/lib/types';
 import { saveBidAction, saveClientAction } from './actions';
 import type { Bid, BidTemplate, Client, RateCard } from './types';
@@ -394,7 +395,7 @@ export function NewClientDialog({ open, onClose, onCreated, client }: { open: bo
         <Field label="Contact person" error={fe.contactName}>{(f) => <Input {...f} name="contactName" defaultValue={client?.contactName ?? ''} maxLength={120} />}</Field>
         <Field label="Contact email" error={fe.contactEmail}>{(f) => <Input {...f} name="contactEmail" type="email" defaultValue={client?.contactEmail ?? ''} />}</Field>
         <Field label="Phone" error={fe.contactPhone}>{(f) => <Input {...f} name="contactPhone" defaultValue={client?.contactPhone ?? ''} maxLength={30} />}</Field>
-        <Field label="Industry" error={fe.industry}>{(f) => <Input {...f} name="industry" defaultValue={client?.industry ?? ''} maxLength={80} />}</Field>
+        <Field label="Industry" error={fe.industry}>{(f) => <MasterSelect {...f} list="industry" name="industry" defaultValue={client?.industry ?? ''} maxLength={80} />}</Field>
         <Field label="Currency" error={fe.currency}>{(f) => <Input {...f} name="currency" defaultValue={client?.currency ?? 'INR'} maxLength={3} />}</Field>
         <Field label="Address" error={fe.address} className="sm:col-span-2">{(f) => <Textarea {...f} name="address" rows={2} defaultValue={client?.address ?? ''} maxLength={500} />}</Field>
         <Field label="Notes" error={fe.notes} className="sm:col-span-2">{(f) => <Textarea {...f} name="notes" rows={2} defaultValue={client?.notes ?? ''} maxLength={1000} />}</Field>

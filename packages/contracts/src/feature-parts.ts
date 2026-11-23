@@ -34,6 +34,7 @@ export const FEATURE_PARTS = [
   { key: 'core_hr.structure', feature: 'core_hr', name: 'Company structure', audience: 'hr', web: ['/organization'] },
   { key: 'core_hr.import', feature: 'core_hr', name: 'Import employees', audience: 'hr', web: ['/employees/import'], api: ['employees/import'] },
   { key: 'core_hr.custom_fields', feature: 'core_hr', name: 'Custom fields', audience: 'admin', web: ['/settings/custom-fields'] },
+  { key: 'core_hr.master_data', feature: 'core_hr', name: 'Master data', audience: 'admin', web: ['/settings/master-data'], api: ['master-data'] },
   { key: 'core_hr.tasks', feature: 'core_hr', name: 'My tasks', audience: 'employee', web: ['/tasks'] },
   { key: 'core_hr.analytics', feature: 'core_hr', name: 'HR analytics', audience: 'hr', web: ['/insights'] },
   { key: 'core_hr.privacy', feature: 'core_hr', name: 'Privacy requests', audience: 'admin', web: ['/privacy'], api: ['privacy/requests'] },

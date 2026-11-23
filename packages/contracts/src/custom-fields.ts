@@ -8,7 +8,7 @@ import { checkPhone } from './phone';
  * too; values that no longer fit are shown as they were and must be corrected before the record is saved again.
  */
 
-export const CUSTOM_FIELD_ENTITIES = ['employee', 'asset', 'bgv_case', 'candidate', 'leave_request'] as const;
+export const CUSTOM_FIELD_ENTITIES = ['employee', 'asset', 'bgv_case', 'candidate', 'leave_request', 'client'] as const;
 export type CustomFieldEntity = (typeof CUSTOM_FIELD_ENTITIES)[number];
 export const CUSTOM_FIELD_ENTITY_LABEL: Record<CustomFieldEntity, string> = {
   employee: 'Employee profile',
@@ -16,6 +16,7 @@ export const CUSTOM_FIELD_ENTITY_LABEL: Record<CustomFieldEntity, string> = {
   bgv_case: 'Background verification',
   candidate: 'Candidates (recruitment)',
   leave_request: 'Leave requests',
+  client: 'Clients (staffing bids)',
 };
 
 export const CUSTOM_FIELD_TYPES = [
@@ -57,7 +58,11 @@ export interface CustomFieldDefinition {
   editRoles: string[];
   /** Employee profile fields only: the employee can fill it in on their own profile. */
   employeeEditable: boolean;
-  config: { min?: number; max?: number; minLength?: number; maxLength?: number; currency?: string; pattern?: string; patternMessage?: string; placeholder?: string; flags?: string[]; description?: string };
+  /** Found by the search on the record's list (employees: the Employees search box). */
+  searchable: boolean;
+  /** Offered as a target when importing a spreadsheet. */
+  importable: boolean;
+  config: { min?: number; max?: number; minLength?: number; maxLength?: number; currency?: string; decimals?: number; masterList?: string; pattern?: string; patternMessage?: string; placeholder?: string; flags?: string[]; description?: string };
 }
 
 const option = z.object({
@@ -80,11 +85,16 @@ const definitionBase = z.object({
   viewRoles: roleKeys.default([]),
   editRoles: roleKeys.default([]),
   employeeEditable: z.boolean().default(false),
+  searchable: z.boolean().default(false),
+  importable: z.boolean().default(true),
   config: z.object({
     min: z.number().finite().optional(),
     max: z.number().finite().optional(),
     maxLength: z.number().int().min(1).max(10000).optional(),
     currency: z.string().regex(/^[A-Z]{3}$/).optional(),
+    decimals: z.number().int().min(1).max(6).optional(),
+    /** Dropdown, radio and multi-select only: the options are a Master data list, kept up to date there. */
+    masterList: z.enum(['industry', 'job_role', 'skill', 'education', 'candidate_source', 'seniority_level', 'department', 'job_title']).optional(),
     minLength: z.number().int().min(0).max(10000).optional(),
     pattern: z.string().max(200).optional(),
     patternMessage: z.string().max(120).optional(),
@@ -94,8 +104,8 @@ const definitionBase = z.object({
   }).strict().default({}),
 });
 
-const optionsRule = (v: { type: CustomFieldType; options: { value: string }[] }) =>
-  !OPTION_TYPES.includes(v.type) || v.options.length > 0;
+const optionsRule = (v: { type: CustomFieldType; options: { value: string }[]; config?: { masterList?: string } }) =>
+  !OPTION_TYPES.includes(v.type) || v.options.length > 0 || !!v.config?.masterList;
 const uniqueOptions = (v: { options: { value: string }[] }) => new Set(v.options.map((o) => o.value)).size === v.options.length;
 
 export const customFieldInput = definitionBase.extend({
@@ -107,7 +117,7 @@ export const customFieldInput = definitionBase.extend({
   .refine(uniqueOptions, { message: 'Two options have the same value', path: ['options'] });
 
 export const customFieldUpdate = definitionBase.partial().strict()
-  .refine((v) => !v.type || !v.options || optionsRule({ type: v.type, options: v.options }), { message: 'Add at least one option', path: ['options'] })
+  .refine((v) => !v.type || !v.options || optionsRule({ type: v.type, options: v.options, config: v.config }), { message: 'Add at least one option', path: ['options'] })
   .refine((v) => !v.options || uniqueOptions({ options: v.options }), { message: 'Two options have the same value', path: ['options'] });
 
 export const customFieldReorder = z.object({
@@ -163,8 +173,18 @@ export function checkFieldValue(def: Pick<CustomFieldDefinition, 'type' | 'requi
       }
       return { ok: true, value: str };
     }
+    case 'decimal': {
+      const n = typeof str === 'number' ? str : Number(String(str).replace(/,/g, ''));
+      if (!Number.isFinite(n)) return { ok: false, error: 'Enter a number' };
+      // With no number of places set (fields made before it existed, Candidate CRM), any decimal is kept as typed.
+      const places = def.config.decimals;
+      const f = places === undefined ? 1 : 10 ** places;
+      if (places !== undefined && Math.abs(Math.round(n * f) - n * f) > 1e-6) return { ok: false, error: `At most ${places} decimal${places === 1 ? '' : 's'}` };
+      if (def.config.min !== undefined && n < def.config.min) return { ok: false, error: `At least ${def.config.min}` };
+      if (def.config.max !== undefined && n > def.config.max) return { ok: false, error: `At most ${def.config.max}` };
+      return { ok: true, value: places === undefined ? n : Math.round(n * f) / f };
+    }
     case 'number':
-    case 'decimal':
     case 'currency': {
       const n = typeof str === 'number' ? str : Number(String(str).replace(/,/g, ''));
       if (!Number.isFinite(n)) return { ok: false, error: 'Enter a number' };

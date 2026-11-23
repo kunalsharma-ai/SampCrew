@@ -215,7 +215,7 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     await p.getByTestId('edit-bank').click();
     await p.getByLabel('Bank name').fill('HDFC Bank');
     await p.getByLabel('Account number', { exact: true }).fill(account);
-    await p.getByLabel('Account number again').fill(`${account.slice(0, -1)}0`);
+    await p.getByLabel('Account number again').fill(`${account.slice(0, -1)}${account.endsWith("0") ? "1" : "0"}`);
     await p.getByLabel('IFSC').fill('HDFC0000123');
     await p.getByTestId('send-bank').click();
     await p.getByText('The two account numbers do not match. Type them again.').waitFor();

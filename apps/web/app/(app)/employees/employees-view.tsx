@@ -1,5 +1,5 @@
 'use client';
-import type { SavedView, ViewState } from '@crew/contracts';
+import type { CustomFieldDefinition, SavedView, ViewState } from '@crew/contracts';
 import { Alert, Avatar, Button, Card, type DataColumn, DataTable, EmptyState, Input, Select, buttonClass } from '@crew/ui';
 import { Contact, Copy, Download, FilePen, Search, Trash2, UserPlus } from 'lucide-react';
 import Link from 'next/link';
@@ -13,6 +13,7 @@ import type { Structure } from '../payroll/types';
 import type { DeviceOption, ShiftOption } from './[id]/profile-extras';
 import { TemporaryPassword } from './[id]/profile-extras';
 import { discardHireDraftAction } from './actions';
+import { BulkChange } from './bulk-change';
 import { type AssetOption, type EmployeeDraft, HIRE_STEPS, HireWizard, type LeavePolicyOption } from './hire-wizard';
 import { EmployeeStatus } from './status';
 import { DEFAULT_COLUMNS, viewUrl } from './view-url';
@@ -77,6 +78,8 @@ interface Props {
   canAttendance: boolean;
   canConfigureShifts: boolean;
   setupPending: boolean;
+  /** Bulk changes: dated job changes (employees:lifecycle) and custom fields (employees:update). */
+  bulk: { canMove: boolean; canFields: boolean; fields: CustomFieldDefinition[] } | null;
 }
 
 export type HireDone = { inviteUrl: string | null; warnings: string[]; name: string; login?: { email: string; temporaryPassword: string } | null };
@@ -89,6 +92,7 @@ export function EmployeesView(props: Props) {
   const [done, setDone] = useState<HireDone | null>(null);
   const [login, setLogin] = useState<{ email: string; temporaryPassword: string } | null>(null);
   const [, start] = useTransition();
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const filters = state.filters ?? {};
   // Every change keeps the active view selected; the menu shows when it no longer matches what is saved.
   const go = (patch: Partial<ViewState>) => router.push(viewUrl({ ...state, ...patch }, props.activeViewId));
@@ -139,7 +143,12 @@ export function EmployeesView(props: Props) {
           </ul>
         </Card>
       )}
+      {filters.importId && <Alert tone="info" className="mb-4">Showing the people added or updated by one import. <Link className="font-medium text-accent hover:underline" href={`/imports/${filters.importId}`}>Open the import</Link> · <Link className="font-medium text-accent hover:underline" href="/employees?view=all">Show everyone</Link></Alert>}
       <Card>
+        {props.bulk && picked.size > 0 && (
+          <BulkChange ids={[...picked]} onDone={() => setPicked(new Set())} departments={departments} designations={props.designations} locations={props.locations} managers={props.managers}
+            fields={props.bulk.fields} canMove={props.bulk.canMove} canFields={props.bulk.canFields} />
+        )}
         <DataTable
           label="Employees"
           columns={COLUMNS}
@@ -148,6 +157,7 @@ export function EmployeesView(props: Props) {
           rows={page.items}
           rowKey={(e) => e.id}
           onRowClick={(e) => router.push(`/employees/${e.id}`)}
+          selection={props.bulk ? { selected: picked, onChange: setPicked } : undefined}
           sort={state.sort}
           dir={state.dir}
           onSort={(sort, dir) => go({ sort, dir })}
@@ -196,7 +206,7 @@ export function EmployeesView(props: Props) {
                 : <Button size="sm" onClick={() => { setDraft(null); setHireOpen(true); }}><UserPlus className="size-4" /> Add employee</Button>)}
             </>
           }
-          empty={<EmptyState icon={<Contact className="size-5" />} title={filtered ? 'No one matches these filters' : 'No employee records yet'} description={canHire ? 'Add employees one by one with the guided hire. Bulk import arrives with the data migration tools.' : undefined} />}
+          empty={<EmptyState icon={<Contact className="size-5" />} title={filtered ? 'No one matches these filters' : 'No employee records yet'} description={canHire ? 'Add employees one by one with the guided hire, or bring many in at once from Data import.' : undefined} />}
           footer={
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-[0.8125rem] text-fg-muted">
               <span>{page.total !== undefined ? `${shown} shown of ${page.total}` : `${shown} shown`}{props.cursor ? ' (later page)' : ''}</span>

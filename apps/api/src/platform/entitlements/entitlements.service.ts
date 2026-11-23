@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { FEATURE_PARTS, FEATURES, featurePart, type FeaturePart, moduleOfFeature, UNLIMITED, type FeatureBlockReason, type FeatureDefinition } from '@crew/contracts';
+import { ADMIN_ONLY_FEATURES, FEATURE_PARTS, FEATURES, featurePart, type FeaturePart, moduleOfFeature, UNLIMITED, type FeatureBlockReason, type FeatureDefinition } from '@crew/contracts';
 import { requestContext } from '../context/request-context';
 import { MongoService as DatabaseService, type TenantTx } from '../database/mongo.service';
 import { Errors } from '../http/errors';
@@ -191,6 +191,8 @@ export async function applyHierarchy(tx: TenantTx, membershipId: string, feature
   let employeeLevel = false;
   if (level === 'employee') {
     drop(own?.employee_level_off, 'level_off');
+    // Administrator-only modules (data import) never reach Employee Workspace, whatever is switched where.
+    drop([...features].filter((k) => ADMIN_ONLY_FEATURES.has(moduleOfFeature(k))), 'level_off');
     employeeLevel = true;
   }
   // Company-wide: Super Workspace, and HR Workspace not limited to HR Workspaces.

@@ -9,6 +9,7 @@ import { m0033LeaveUpgrade } from './0033_leave_upgrade';
 import { m0034RewardPayouts } from './0034_reward_payouts';
 import { m0035FeatureManagement } from './0035_feature_management';
 import { m0040LeaveRebuild } from './0040_leave_rebuild';
+import { m0060DataImport } from './0060_data_import';
 import { m0100DocumentCenter } from './0100_document_center';
 import { m0110CandidateCrm } from './0110_candidate_crm';
 import { m0130WorkspaceLimits } from './0130_workspace_limits';
@@ -26,6 +27,7 @@ export const MONGO_MIGRATIONS: MongoMigration[] = [
   m0034RewardPayouts,
   m0035FeatureManagement,
   m0040LeaveRebuild,
+  m0060DataImport,
   m0100DocumentCenter,
   m0110CandidateCrm,
   m0130WorkspaceLimits,

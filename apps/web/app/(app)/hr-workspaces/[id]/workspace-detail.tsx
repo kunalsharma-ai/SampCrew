@@ -1,11 +1,11 @@
 'use client';
 import { HR_WORKSPACE_KIND_LABEL, HR_WORKSPACE_KINDS, PLATFORM_LEVEL_LABEL, type ConfigVersionRow, type HierarchyMemberRow, type HrWorkspaceDetail, type TransferRow } from '@crew/contracts';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Stat, Table, TBody, TD, Textarea, TH, THead, TR, cn } from '@crew/ui';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Stat, Switch, Table, TBody, TD, Textarea, TH, THead, TR, cn } from '@crew/ui';
 import { ArrowRightLeft, Layers, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
-import { assignToHrWorkspaceAction, setHrWorkspaceAdminsAction, setHrWorkspaceStatusAction, setMemberModulesAction, transferEmployeeAction, updateHrWorkspaceAction } from '../actions';
+import { assignToHrWorkspaceAction, setHrWorkspaceAdminsAction, setHrWorkspacePermissionsAction, setHrWorkspaceStatusAction, setMemberModulesAction, transferEmployeeAction, updateHrWorkspaceAction } from '../actions';
 import { ModulePicker } from '../module-picker';
 import { MODULE_NAME } from '../modules';
 
@@ -95,8 +95,40 @@ function ModulesTab({ w }: { w: HrWorkspaceDetail }) {
           <ModulePicker modules={modules} value={features} onChange={setFeatures} disabled={!w.can.manage} />
         </CardBody>
       </Card>
+      <PermissionsCard w={w} />
       {w.can.manage && <DetailsCard w={w} />}
     </div>
+  );
+}
+
+/** The Super Workspace's switches for what this HR Workspace's admins may do with employee data. */
+function PermissionsCard({ w }: { w: HrWorkspaceDetail }) {
+  const router = useRouter();
+  const [flash, setFlash] = useState<Flash>(null);
+  const [pending, start] = useTransition();
+  const flip = (key: string, on: boolean) => start(async () => {
+    const r = await setHrWorkspacePermissionsAction(w.id, [{ key, enabled: on }], w.version);
+    setFlash({ tone: r.ok ? 'success' : 'danger', text: r.ok ? (r.message ?? 'Saved') : r.message });
+    if (r.ok) router.refresh();
+  });
+  return (
+    <Card>
+      <CardHeader title="Employee data permissions" description={w.can.manage ? 'What this HR Workspace’s admins may do with the records of its people. Switching one off takes effect on their next page, and the server refuses it too.' : 'What the Super Workspace allows this HR Workspace’s admins to do with the records of its people.'} />
+      <CardBody className="grid gap-3">
+        {flash && <Alert tone={flash.tone}>{flash.text}</Alert>}
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {w.permissions.map((x) => (
+            <li key={x.key} className="flex items-start justify-between gap-3 rounded-md border border-border px-3 py-2.5" data-testid={`hr-permission-${x.key}`}>
+              <div className="min-w-0">
+                <div className="text-sm font-medium">{x.label}</div>
+                {x.reason ? <div className="text-xs text-fg-muted">{x.reason}</div> : x.locked ? <div className="text-xs text-fg-muted">Always on: the HR Workspace exists to look after its people</div> : null}
+              </div>
+              <Switch label={x.label} checked={x.on} disabled={!w.can.manage || x.locked || pending} onChange={(on) => flip(x.key, on)} testId={`switch-${x.key}`} />
+            </li>
+          ))}
+        </ul>
+      </CardBody>
+    </Card>
   );
 }
 

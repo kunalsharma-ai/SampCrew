@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  ADMIN_ONLY_FEATURES,
   BOOLEAN_FEATURES,
   FEATURE_PARTS,
   featurePart,
@@ -74,6 +75,9 @@ export class FeatureLevelsService {
       };
       const before = Object.fromEntries(Object.entries(lists).map(([k, v]) => [k, [...v].sort()]));
       for (const c of changes) {
+        if (c.target === 'employee' && c.enabled && ADMIN_ONLY_FEATURES.has(moduleOfFeature(c.key))) {
+          throw Errors.forbiddenCode('feature_restricted', `${this.nameOf(c.key)} is for administrators only: Employee Workspace never gets it.`, { key: c.key });
+        }
         const above = this.aboveCompany(e, lists.company, c.key);
         if (c.enabled && above) throw Errors.forbiddenCode('feature_restricted', `${this.nameOf(c.key)} is switched off by ${above === 'plan' ? 'your plan' : 'SAMPLEDGE'}, so it cannot be switched on here.`, { key: c.key });
         const set = c.target === 'company' ? lists.company : c.target === 'hr' ? lists.hr : lists.employee;
@@ -142,7 +146,8 @@ export class FeatureLevelsService {
         if (extra?.has(f.key)) return { on: false, indicator: 'inactive', setBy: 'hr', editable: true };
         return { on: true, indicator: 'inherited', editable: true };
       };
-      return { key: f.key, name: f.name, module: f.module, parent: f.parent, audience: f.audience, company: companyCell, hr: level(hr), employee: level(employee, employeeByHr) };
+      const employeeCell: FeatureCell = ADMIN_ONLY_FEATURES.has(moduleOfFeature(f.key)) ? { on: false, indicator: 'restricted', restrictedBy: 'level', editable: false } : level(employee, employeeByHr);
+      return { key: f.key, name: f.name, module: f.module, parent: f.parent, audience: f.audience, company: companyCell, hr: level(hr), employee: employeeCell };
     });
     return { items };
   }
@@ -219,6 +224,7 @@ export class FeatureLevelsService {
     return catalogue().map((f): EmployeeFeatureRow => {
       const base = { key: f.key, name: f.name, module: f.module, parent: f.parent, audience: f.audience };
       if (f.core) return { ...base, cell: { on: true, indicator: 'inherited', editable: false } };
+      if (ADMIN_ONLY_FEATURES.has(moduleOfFeature(f.key))) return { ...base, cell: { on: false, indicator: 'restricted', restrictedBy: 'level', editable: false } };
       const above = this.aboveCompany(e, company, f.key);
       if (above) return { ...base, cell: { on: false, indicator: 'restricted', restrictedBy: above, editable: false } };
       if (offIn(company, f.key)) return { ...base, cell: { on: false, indicator: 'restricted', restrictedBy: 'company', editable: false } };
