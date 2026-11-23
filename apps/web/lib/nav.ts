@@ -15,6 +15,8 @@ export interface NavItem {
   hiddenWith?: string;
   /** Only for the Super Workspace level. */
   superOnly?: boolean;
+  /** Only for Super Workspace and HR Workspace (Employee Workspace sees only its own records here). */
+  adminOnly?: boolean;
   /** Only when Candidate CRM is open to the person (Super Workspace, or an HR Workspace it is switched on for). */
   candidateCrm?: boolean;
   /** Shown to billing admins when the plan lacks the feature: the link opens Plan & billing to upgrade. */
@@ -37,6 +39,7 @@ export const NAV: NavGroup[] = [
       { href: '/', label: 'Home', icon: 'home' },
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
+      { href: '/documents', label: 'Documents', icon: 'file-stack', permission: 'documents:read', feature: 'documents' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
       // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
       { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
@@ -95,9 +98,12 @@ export const NAV: NavGroup[] = [
   {
     label: 'Attendance & time',
     items: [
-      { href: '/attendance/register', label: 'All employees attendance', icon: 'calendar-range', permission: 'attendance:approve', feature: 'attendance_basic' },
-      { href: '/attendance/team', label: 'Team attendance', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },
-      { href: '/attendance/late', label: 'Late coming & penalties', icon: 'alarm-clock', permission: 'attendance:approve', feature: 'attendance_basic' },
+      { href: '/attendance/employees', label: 'Employee Workspace attendance', icon: 'users-round', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
+      { href: '/attendance/hr-workspaces', label: 'HR Workspace attendance', icon: 'network', permission: 'attendance:read', feature: 'attendance_basic', superOnly: true },
+      { href: '/attendance/register', label: 'All employees attendance', icon: 'calendar-range', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
+      { href: '/attendance/team', label: 'Team attendance', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
+      { href: '/attendance/late', label: 'Late coming & penalties', icon: 'alarm-clock', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
+      { href: '/settings/attendance-access', label: 'Attendance permissions', icon: 'shield-check', permission: 'hierarchy:manage', feature: 'attendance_basic', superOnly: true },
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
       { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
       { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
@@ -167,6 +173,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
       { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
+      { href: '/settings/document-access', label: 'Document access', icon: 'lock-keyhole', permission: 'documents:manage', feature: 'documents', superOnly: true },
     ],
   },
   {
@@ -204,7 +211,7 @@ export function workflowActions(me: Me): QuickAction[] {
   const out: QuickAction[] = [{ key: 'approve', label: 'Approve requests', href: '/approvals', icon: 'inbox', keywords: 'approve leave approvals inbox' }];
   if (has('candidates:read', 'recruitment')) out.push({ key: 'find-candidate', label: 'Find candidate', href: '/recruitment/candidates', icon: 'user-search', keywords: 'search applicant' });
   if (has('payroll:read', 'payroll')) out.push({ key: 'payroll', label: 'Open payroll', href: '/payroll', icon: 'wallet', keywords: 'pay run salary' });
-  if (has('attendance:approve', 'attendance_basic')) out.push({ key: 'exceptions', label: 'Review attendance exceptions', href: '/attendance/team?status=missing_punch', icon: 'users-round', keywords: 'missing punch late absent' });
+  if (has('attendance:approve', 'attendance_basic') && isAdminLevel(me)) out.push({ key: 'exceptions', label: 'Review attendance exceptions', href: '/attendance/team?status=missing_punch', icon: 'users-round', keywords: 'missing punch late absent' });
   if (has('insights:attrition', 'workforce_analytics')) out.push({ key: 'report', label: 'Open attrition report', href: '/insights/attrition', icon: 'trending-down', keywords: 'hr report analytics' });
   out.push({ key: 'theme', label: 'Open Theme Studio', href: '/settings/appearance', icon: 'palette', keywords: 'appearance theme dark light colour density' });
   return out;
@@ -222,9 +229,12 @@ export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: st
   ];
 }
 
+/** Super Workspace or HR Workspace (company-wide or for named HR Workspaces). */
+export const isAdminLevel = (me: Me) => Boolean(me.levels?.super || me.levels?.companyHr || me.levels?.hrWorkspaces?.length);
+
 export function visibleNav(me: Me): NavGroup[] {
   const allowed = (i: NavItem) =>
-    (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && !(i.hiddenWith && me.permissions[i.hiddenWith]) && !(i.superOnly && !me.levels?.super) && !(i.candidateCrm && !me.candidateCrm);
+    (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && !(i.hiddenWith && me.permissions[i.hiddenWith]) && !(i.superOnly && !me.levels?.super) && !(i.adminOnly && !isAdminLevel(me)) && !(i.candidateCrm && !me.candidateCrm);
   // A billing admin also sees each module the plan lacks once, with a lock, so they know it exists and can upgrade.
   const upsell = me.permissions['billing:manage'] ? new Set<string>() : null;
   return NAV.map((g) => ({

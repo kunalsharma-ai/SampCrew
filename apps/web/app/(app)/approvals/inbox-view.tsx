@@ -36,7 +36,13 @@ function Item({ item, result: decidedResult, onDecided }: { item: InboxItem; res
   const [pending, start] = useTransition();
   const [failure, setFailure] = useState<Result | null>(null);
   const result = decidedResult ?? failure;
+  const isDocument = item.resourceType === 'document_request';
+  const [needReason, setNeedReason] = useState(false);
   const decide = (d: 'approve' | 'reject') => start(async () => {
+    if (isDocument && d === 'reject' && comment.trim().length < 3) {
+      setNeedReason(true);
+      return;
+    }
     const r = await decideAction(item.id, d, comment.trim() || undefined);
     if (r.ok) {
       onDecided({ tone: 'success', text: r.data?.status === 'pending' ? 'Approved. It moves to the next approver.' : d === 'approve' ? 'Approved' : 'Rejected' });
@@ -58,10 +64,12 @@ function Item({ item, result: decidedResult, onDecided }: { item: InboxItem; res
           <p className="mt-1 text-xs text-fg-subtle" suppressHydrationWarning>
             {item.ref && <span className="mr-1 font-mono">{item.ref}</span>}Requested {item.requestedBy && item.requestedBy !== item.subjectName ? `by ${item.requestedBy} ` : ''}on {new Date(item.createdAt).toLocaleString()}
             {' · '}<Link href={`/approvals/${item.id}`} className="font-medium text-accent hover:underline">Details and history</Link>
+            {isDocument && <>{' · '}<Link href={`/documents/requests/${item.resourceId}`} className="font-medium text-accent hover:underline">Preview the document</Link></>}
           </p>
+          {needReason && !result && <Alert tone="danger" className="mt-3">Write the reason for rejecting in the comment box. It is shown to the person who uploaded the document.</Alert>}
           {result ? <Alert tone={result.tone} className="mt-3">{result.text}</Alert> : (
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-              <Textarea aria-label="Comment" placeholder="Comment (optional, shared with the requester)" value={comment} onChange={(e) => setComment(e.target.value)} maxLength={1000} className="min-h-9 flex-1" rows={1} />
+              <Textarea aria-label="Comment" placeholder={isDocument ? 'Comment for the person who uploaded it (required to reject)' : 'Comment (optional, shared with the requester)'} value={comment} onChange={(e) => setComment(e.target.value)} maxLength={1000} className="min-h-9 flex-1" rows={1} />
               <div className="flex gap-2">
                 <Button variant="secondary" loading={pending} onClick={() => decide('reject')}><X className="size-4" /> Reject</Button>
                 <Button loading={pending} onClick={() => decide('approve')}><Check className="size-4" /> Approve</Button>

@@ -291,7 +291,8 @@ export const documentMetaInput = z.object({
 });
 /** Uploads are limited to common document and image types, 10 MB each. */
 export const DOCUMENT_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'] as const;
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword',
+  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] as const;
 export const DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
 export const approvalDecisionInput = z.object({ comment: optionalText(1000) });
 
