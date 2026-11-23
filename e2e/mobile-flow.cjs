@@ -137,7 +137,7 @@ const tab = async (p, name, moreName = name) => {
   const inBar = p.getByRole('tab', { name: named(name) });
   if (await inBar.isVisible().catch(() => false)) return inBar.click();
   await p.getByRole('tab', { name: named('More') }).click();
-  await p.getByTestId('more-list').getByRole('link', { name: moreName, exact: true }).click();
+  await p.getByTestId('more-list').getByRole('link', { name: new RegExp(`^${moreName}(, |$)`) }).click();
 };
 
 const shot = async (p, e) => {

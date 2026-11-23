@@ -131,7 +131,7 @@ export function IconRow({ icon, tone, title, subtitle, right, onPress, testID, b
     </View>
   );
   if (!onPress) return <View testID={testID}>{body}</View>;
-  return <Pressable testID={testID} accessibilityRole="link" accessibilityLabel={title} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>{body}</Pressable>;
+  return <Pressable testID={testID} accessibilityRole="link" accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>{body}</Pressable>;
 }
 
 /** An unread count; 99+ above that. */
