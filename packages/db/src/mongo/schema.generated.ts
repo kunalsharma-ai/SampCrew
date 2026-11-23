@@ -2538,6 +2538,181 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((jsonb_typeof(attachments) = 'array'::text))",
     ],
   },
+  document_requests: {
+    // A document asked of a person or an HR Workspace by Super Workspace or an HR Workspace (migration 0100). The
+    // file itself is an employee_documents row; this is the requirement, its task, its approval and its history.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      reference: {"required": true, "type": "string"},
+      target_type: {"enum": ["employee", "hr_workspace"], "required": true, "type": "string"},
+      employee_id: {"type": "uuid"},
+      // For employee targets the employee's HR Workspace when asked (null: the central group).
+      hr_workspace_id: {"type": "uuid"},
+      assignee_membership_id: {"type": "uuid"},
+      type_key: {"required": true, "type": "string"},
+      doc_category: {"required": true, "type": "string"},
+      title: {"required": true, "type": "string"},
+      instructions: {"type": "string"},
+      reason: {"required": true, "type": "string"},
+      due_on: {"type": "date"},
+      priority: {"default": "normal", "enum": ["low", "normal", "high", "urgent"], "required": true, "type": "string"},
+      formats: {"default": {"json": ["pdf", "image"]}, "required": true, "type": "string[]"},
+      max_mb: {"default": 10, "required": true, "type": "int"},
+      expiry_required: {"default": false, "required": true, "type": "bool"},
+      replaces_document_id: {"type": "uuid"},
+      requested_by_membership_id: {"required": true, "type": "uuid"},
+      // The level that asked, and for HR Workspace the HR Workspace (null: company-wide HR). That level verifies it.
+      requester_level: {"enum": ["super_workspace", "hr_workspace"], "required": true, "type": "string"},
+      requester_hr_workspace_id: {"type": "uuid"},
+      status: {"default": "new_request", "enum": ["new_request", "pending_submission", "submitted", "resubmitted", "under_verification", "correction_required", "rejected", "completed", "cancelled"], "required": true, "type": "string"},
+      document_id: {"type": "uuid"},
+      task_id: {"type": "uuid"},
+      approval_request_id: {"type": "uuid"},
+      submitted_at: {"type": "timestamp"},
+      submitted_by_membership_id: {"type": "uuid"},
+      submissions: {"default": 0, "required": true, "type": "int"},
+      reviewer_membership_id: {"type": "uuid"},
+      reviewer_comment: {"type": "string"},
+      decided_at: {"type": "timestamp"},
+      completed_at: {"type": "timestamp"},
+      cancelled_reason: {"type": "string"},
+      reminder_sent_on: {"type": "date"},
+      overdue_notified_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "document_requests_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "id"}], "name": "document_requests_tenant_id_id_key"},
+      {"cols": [{"col": "tenant_id"}, {"col": "reference"}], "name": "document_requests_reference_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "document_requests_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "hr_workspace_id"}, {"col": "status"}], "name": "document_requests_hr_workspace"},
+      {"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "due_on"}], "name": "document_requests_status"},
+      {"cols": [{"col": "tenant_id"}, {"col": "requested_by_membership_id"}, {"col": "created_at", "desc": true}], "name": "document_requests_requester"},
+    ],
+    checks: [
+      "CHECK (((length(title) >= 1) AND (length(title) <= 200)))",
+    ],
+  },
+  document_activity: {
+    // Every event in a document's life (migration 0100): request, submission, views, downloads, decisions, expiry,
+    // access changes. Append only: nobody can change or delete an entry from the app.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      action: {"required": true, "type": "string"},
+      document_id: {"type": "uuid"},
+      request_id: {"type": "uuid"},
+      task_id: {"type": "uuid"},
+      approval_request_id: {"type": "uuid"},
+      employee_id: {"type": "uuid"},
+      hr_workspace_id: {"type": "uuid"},
+      actor_membership_id: {"type": "uuid"},
+      actor_user_id: {"type": "uuid"},
+      // super_workspace, hr_workspace, employee_workspace or system.
+      actor_level: {"required": true, "type": "string"},
+      actor_hr_workspace_id: {"type": "uuid"},
+      comment: {"type": "string"},
+      metadata: {"default": {"json": {}}, "required": true, "type": "json"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "document_activity_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "document_id"}, {"col": "created_at"}], "name": "document_activity_document"},
+      {"cols": [{"col": "tenant_id"}, {"col": "request_id"}, {"col": "created_at"}], "name": "document_activity_request"},
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "document_activity_recent"},
+    ],
+    checks: [],
+  },
+  document_access_settings: {
+    // Super Workspace's document access switches for one HR Workspace, or for company-wide HR (scope_key central).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      scope_key: {"required": true, "type": "string"},
+      hr_workspace_id: {"type": "uuid"},
+      switches: {"default": {"json": {}}, "required": true, "type": "json"},
+      shared_hr_workspace_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      version: {"default": 1, "required": true, "type": "int"},
+      updated_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "document_access_settings_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "scope_key"}], "name": "document_access_settings_scope_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  document_categories: {
+    // Custom document categories next to the built-in groups (identity, employment, ...).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      name: {"required": true, "type": "string"},
+      description: {"type": "string"},
+      active: {"default": true, "required": true, "type": "bool"},
+      created_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "document_categories_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "document_categories_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  document_types: {
+    // Custom document types next to the built-in ones (contracts BUILT_IN_DOCUMENT_TYPES).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      name: {"required": true, "type": "string"},
+      category: {"required": true, "type": "string"},
+      sensitive: {"default": false, "required": true, "type": "bool"},
+      owners: {"default": {"json": ["employee"]}, "required": true, "type": "string[]"},
+      active: {"default": true, "required": true, "type": "bool"},
+      created_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "document_types_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "document_types_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
   employee_documents: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
@@ -2545,10 +2720,28 @@ export const TABLES: Record<string, TableSpec> = {
       category: {"enum": ["id_proof", "address_proof", "contract", "offer_letter", "policy", "certificate", "tax", "other"], "required": true, "type": "string"},
       content_type: {"required": true, "type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
-      employee_id: {"required": true, "type": "uuid"},
+      // The person the document belongs to. Empty for an HR Workspace's own documents (owner_type hr_workspace).
+      employee_id: {"type": "uuid"},
       file_name: {"required": true, "type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       sha256: {"required": true, "type": "string"},
+      // Centralized document management (migration 0100). Whose profile the file is in: a person or an HR Workspace.
+      owner_type: {"default": "employee", "enum": ["employee", "hr_workspace"], "required": true, "type": "string"},
+      // The HR Workspace the owner belonged to when the file was added (or the HR Workspace itself).
+      hr_workspace_id: {"type": "uuid"},
+      // The document request it answers, and the document type (contracts BUILT_IN_DOCUMENT_TYPES or document_types).
+      request_id: {"type": "uuid"},
+      type_key: {"type": "string"},
+      doc_category: {"type": "string"},
+      // DOC-XXXXXXXX, shown to people and searchable.
+      reference: {"type": "string"},
+      // Versions of one requirement: a resubmission or replacement points at the version before it.
+      version: {"default": 1, "required": true, "type": "int"},
+      previous_document_id: {"type": "uuid"},
+      superseded_at: {"type": "timestamp"},
+      expires_on: {"type": "date"},
+      expired_at: {"type": "timestamp"},
+      submitter_remarks: {"type": "string"},
       size_bytes: {"required": true, "type": "int"},
       storage_key: {"required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
@@ -2556,7 +2749,7 @@ export const TABLES: Record<string, TableSpec> = {
       uploaded_by_membership_id: {"type": "uuid"},
       // HR verification of an employee upload (HR Tasks, profile changes). Null for documents nobody needs to check.
       verification_remarks: {"type": "string"},
-      verification_status: {"enum": ["pending", "verified", "rejected"], "type": "string"},
+      verification_status: {"enum": ["pending", "verified", "rejected", "correction_required"], "type": "string"},
       verified_at: {"type": "timestamp"},
       verified_by_membership_id: {"type": "uuid"},
       visibility: {"default": "employee", "enum": ["employee", "hr_only"], "required": true, "type": "string"},
@@ -2574,6 +2767,10 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "employee_documents_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "hr_workspace_id"}, {"col": "created_at", "desc": true}], "name": "employee_documents_hr_workspace"},
+      {"cols": [{"col": "tenant_id"}, {"col": "request_id"}], "name": "employee_documents_request"},
+      {"cols": [{"col": "tenant_id"}, {"col": "verification_status"}, {"col": "created_at", "desc": true}], "name": "employee_documents_status"},
+      {"cols": [{"col": "tenant_id"}, {"col": "reference"}], "name": "employee_documents_reference"},
     ],
     checks: [
       "CHECK (((length(title) >= 1) AND (length(title) <= 200)))",
@@ -2825,6 +3022,9 @@ export const TABLES: Record<string, TableSpec> = {
       title: {"required": true, "type": "string"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       verification_request_id: {"type": "uuid"},
+      // A task made for a document request (migration 0100): the request, and its status shown on the task.
+      request_id: {"type": "uuid"},
+      request_status: {"type": "string"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "employee_tasks_pkey", "primary": true},

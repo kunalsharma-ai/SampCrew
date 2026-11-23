@@ -37,6 +37,7 @@ export const NAV: NavGroup[] = [
       { href: '/', label: 'Home', icon: 'home' },
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
+      { href: '/documents', label: 'Documents', icon: 'file-stack', permission: 'documents:read', feature: 'documents' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
       // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
       { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
@@ -165,6 +166,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
       { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
+      { href: '/settings/document-access', label: 'Document access', icon: 'lock-keyhole', permission: 'documents:manage', feature: 'documents', superOnly: true },
     ],
   },
   {

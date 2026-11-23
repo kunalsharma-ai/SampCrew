@@ -15,6 +15,8 @@ import { BillingJobsService } from './modules/billing/billing-jobs.service';
 import { PlatformBillingController } from './modules/billing/platform-billing.controller';
 import { PlatformBillingService } from './modules/billing/platform-billing.service';
 import { DocumentsController } from './modules/documents/documents.controller';
+import { DocumentCenterController } from './modules/document-center/document-center.controller';
+import { DocumentCenterService } from './modules/document-center/document-center.service';
 import { DocumentsService } from './modules/documents/documents.service';
 import { DesignationsController, EmployeesController } from './modules/employees/employees.controller';
 import { AssetsController, AssetsEmployeeController } from './modules/assets/assets.controller';
@@ -209,6 +211,7 @@ export const CONTROLLERS = [
   SignaturesController,
   SignatureAgentController,
   DocumentsController,
+  DocumentCenterController,
   LeaveController,
   LeavePenaltiesController,
   ApprovalsController,
@@ -336,6 +339,7 @@ export const CONTROLLERS = [
     FeatureLevelsService,
     EmployeeImportService,
     DocumentsService,
+    DocumentCenterService,
     AttendanceDaysService,
     DisciplineService,
     AttendanceService,
