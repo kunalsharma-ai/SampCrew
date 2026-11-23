@@ -83,7 +83,6 @@ function AppraisalScreenBody() {
     setMsg(null);
     try {
       await fn();
-      // Reload first: the answers on screen are replaced by the saved ones, so nothing typed after the message is lost.
       // Reload before saying it is done: the reload resets the form from the server, so anything typed after the
       // message appeared would otherwise be wiped when it lands.
       await reload();
