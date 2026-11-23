@@ -81,7 +81,8 @@ function expect(cond, msg) {
     await p.waitForTimeout(2000);
     return signIn();
   }).catch(async (e) => {
-    const text = (await p.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 600);
+    // The sign-in form's own text (its message, if any), not the welcome beside it.
+    const text = (await p.locator('form').first().innerText().catch(() => p.locator('body').innerText().catch(() => ''))).replace(/\s+/g, ' ').slice(0, 600);
     throw new Error(`sign-in did not reach Home (at ${p.url()}): ${e.message.split('\n')[0]}\npage: ${text}\nbrowser: ${errs.join(' | ')}`);
   });
   // The sign-in redirect finishes with a client-side navigation; let it settle so the next goto does not cancel it

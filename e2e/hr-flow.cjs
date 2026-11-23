@@ -131,10 +131,12 @@ function leaveDay() {
   // 4. The supervisor approves it.
   const sup = await signIn(b, 'supervisor@demo.crew.local');
   await sup.goto(BASE + '/approvals');
-  const card = sup.locator('div', { hasText: `Riya Tester ${stamp % 10000}: Casual Leave` }).last();
+  // The inbox itself; the page's notices strip above it repeats the same words.
+  const inbox = sup.getByRole('region', { name: 'Requests' });
+  const card = inbox.locator('div', { hasText: `Riya Tester ${stamp % 10000}: Casual Leave` }).last();
   await card.locator('button', { hasText: 'Approve' }).click();
   // The decision shows briefly, then the item leaves the inbox.
-  await sup.locator(`text=Riya Tester ${stamp % 10000}: Casual Leave`).waitFor({ state: 'detached', timeout: 10000 });
+  await inbox.locator(`text=Riya Tester ${stamp % 10000}: Casual Leave`).waitFor({ state: 'detached', timeout: 10000 });
   ok('supervisor approved from the inbox');
 
   // 4b. After the reporting manager, the application goes to HR, who approves it on Leave management.
