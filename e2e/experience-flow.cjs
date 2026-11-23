@@ -128,7 +128,8 @@ function leaveDay() {
     await sup.getByRole('button', { name: 'Add Leave to favourites' }).count().then((n) => expect(n === 0, 'favourite stars should hide in the icon rail'));
     await sup.getByRole('button', { name: 'Expand sidebar' }).click();
     await sup.getByRole('button', { name: 'Collapse sidebar' }).waitFor();
-    await sup.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Leave', exact: true }).hover();
+    // The link's name carries its unread marker once a leave notice arrives ("Leave 1 unread notification").
+    await sup.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Leave( \d+ unread notifications?)?$/ }).hover();
     await sup.getByRole('button', { name: 'Add Leave to favourites' }).click();
     const favs = sup.getByRole('list', { name: 'Favourites' });
     await favs.getByRole('link', { name: 'Leave' }).waitFor();
