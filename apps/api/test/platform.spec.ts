@@ -72,8 +72,9 @@ describe('SAMPLEDGE Super Admin Console API', () => {
     expect(res.body.ownerInviteUrl).toContain('/accept-invite?token=');
     const mail = await pool.one('email_messages', { to_email: `boss@${slug}.test`, template: 'invitation' });
     expect(mail?.text_body).toContain(res.body.ownerInviteUrl);
-    // The new workspace starts with the starter leave types (Permanent, Casual and Sick Leave), so its employees can apply for leave straight away.
-    expect((await pool.find('leave_types', { tenant_id: res.body.tenantId })).map((x) => x.code).sort()).toEqual(['CL', 'PL', 'SL']);
+    // A new workspace starts with no leave types and no leave days: the Super Workspace creates the types it wants (2026-11-23).
+    expect(await pool.count('leave_types', { tenant_id: res.body.tenantId })).toBe(0);
+    expect(await pool.count('leave_ledger', { tenant_id: res.body.tenantId })).toBe(0);
   });
 
   it('creates a tenant whose owner gets a temporary password to replace at first sign-in', async () => {
