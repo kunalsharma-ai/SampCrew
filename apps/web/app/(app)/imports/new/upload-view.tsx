@@ -68,8 +68,9 @@ export function UploadView({ type, list, lists, maxMb, maxRows }: { type: string
           >
             <FileSpreadsheet className="size-8 text-accent" aria-hidden />
             {file ? <><span className="font-medium">{file.name}</span><span className="text-xs text-fg-muted">{(file.size / 1024).toFixed(0)} KB · click to choose another</span></> : <><span className="font-medium">Drop your file here, or click to choose it</span><span className="text-xs text-fg-muted">.xlsx or .csv</span></>}
-            <input ref={input} type="file" className="sr-only" data-testid="import-file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => pick(e.target.files?.[0])} />
           </div>
+          {/* Outside the drop zone, so the zone is not a button with a control inside it; the zone opens it. */}
+          <input ref={input} type="file" className="sr-only" tabIndex={-1} aria-label="Spreadsheet to import (.xlsx or .csv)" data-testid="import-file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => pick(e.target.files?.[0])} />
           <div><Button onClick={send} disabled={!file} loading={pending}><Upload className="size-4" aria-hidden /> Upload and match columns</Button></div>
         </CardBody>
       </Card>
