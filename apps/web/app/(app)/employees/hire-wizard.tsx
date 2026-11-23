@@ -675,7 +675,7 @@ export function HireWizard(p: Props) {
                 {p.leavePolicies && balanceTypes.length > 0 && (
                   <fieldset className="sm:col-span-2">
                     <legend className="text-[0.8125rem] font-medium">Leave balance available today</legend>
-                    <p className="mb-2 text-xs text-fg-subtle">From their previous records. SampCrew credits this year&apos;s leave as usual, then sets each balance you enter to this number. Leave a type empty to use what SampCrew works out.</p>
+                    <p className="mb-2 text-xs text-fg-subtle">From their previous records. Each number you enter becomes their quantity for this year. A type left empty shows as Not Assigned until HR enters one.</p>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                       {balanceTypes.map((t) => (
                         <label key={t.leaveTypeId} className="flex flex-col gap-1 text-xs text-fg-muted">
