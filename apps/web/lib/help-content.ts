@@ -108,8 +108,8 @@ export const WEB_HELP: HelpContent = {
     },
     '/communication/chat': {
       title: 'Chat',
-      what: 'Your conversations: one to one, groups, departments and your conversation with the HR team. New messages arrive as they are sent.',
-      how: 'Choose a conversation or start a new one. Search finds conversations by name; press Enter to search messages too.',
+      what: 'Your conversations: one to one, groups, departments and with the HR team. Each shows who the person is: name, level and workspace.',
+      how: 'Filter by Unread, Direct, Groups or HR. Search finds people by name, level or workspace; press Enter to search messages too.',
       where: 'Everyone can chat. Messages to HR are read and answered by anyone in the HR team; your manager cannot see them.',
     },
     '/communication/chat/[id]': {
@@ -117,6 +117,18 @@ export const WEB_HELP: HelpContent = {
       what: 'One conversation. Your messages show Sent, Delivered (their app has it) and Read (they opened it).',
       how: 'Write and press Enter to send (Shift+Enter for a new line). Attach up to 5 files. Mute a busy conversation, or leave a group.',
       where: 'Group owners can rename the group and change its members.',
+    },
+    '/support': {
+      title: 'SampCrew Support',
+      what: 'Your company\'s private chat with the SampCrew Console Admin team: questions, technical issues, account and billing.',
+      how: 'Start a conversation with a subject and topic, then chat. Replies arrive live and as a notification; resolve it when you are done.',
+      where: 'Only the Super Workspace can see these conversations. HR Workspace and Employee Workspace cannot.',
+    },
+    '/support/[id]': {
+      title: 'Support conversation',
+      what: 'One conversation with the SampCrew Console Admin team. Each message shows who sent it, their level and workspace.',
+      how: 'Write and press Enter to send (Shift+Enter for a new line). Your messages show Sent, Delivered and Read.',
+      where: 'Any Super Workspace person in your company sees the same conversation; a new message reopens a resolved one.',
     },
     '/communication/emails': {
       title: 'Emails',
@@ -342,8 +354,20 @@ export const WEB_HELP: HelpContent = {
     '/leave': {
       title: 'Leave',
       what: 'Your leave balances, your month or year calendar, your requests and who is away soon.',
-      how: 'Press Apply for leave, choose the type and dates, and send. Change or cancel a request while it waits. A change to approved leave replaces it once approved. Year view shows all twelve months.',
+      how: 'Press Apply for leave, choose the type, dates and, where the type allows it, who it goes to. Attach a document if asked. Change or cancel while it waits. Year view shows all twelve months.',
       where: 'For every employee. Managers also see their team’s requests here, and Team balances shows what their people have left.',
+    },
+    '/leave/manage': {
+      title: 'Leave management',
+      what: 'Leave types and their policies, who gets them, the applications waiting for you, reports and the history of every change.',
+      how: 'The Super Workspace creates types, allocates them to people or makes them available to HR Workspaces. An HR Workspace allocates what it was given to its people and approves their leave.',
+      where: 'For the Super Workspace and HR Workspaces.',
+    },
+    '/leave/requests/[id]': {
+      title: 'Leave application',
+      what: 'One leave application: where it was sent, each authority’s decision with remarks, its documents and the rules it was made under.',
+      how: 'The applicant can cancel it while it waits or before approved leave starts. Approvers decide from Leave management or Approvals.',
+      where: 'Opened from your requests, the Approvals page or Leave management.',
     },
     '/leave/balances': {
       title: 'Leave balances',
@@ -422,6 +446,73 @@ export const WEB_HELP: HelpContent = {
       what: 'Everyone who has applied or been added, across the jobs you can see.',
       how: 'Filter, sort and save views. Select several to move, email or export them in bulk.',
       where: 'For recruiters.',
+    },
+    '/recruitment/crm': {
+      title: 'Candidate CRM',
+      what: 'The candidate database at a glance: totals, stages, sources, follow-ups due, the weekly trend and each recruiter’s work.',
+      how: 'Open a number to see those candidates. Super Workspace switches the CRM on for each HR Workspace in CRM Settings.',
+      where: 'For Super Workspace and HR Workspaces with Candidate CRM switched on.',
+    },
+    '/recruitment/crm/candidates': {
+      title: 'All Candidates',
+      what: 'Every candidate you can see, with their Candidate ID, experience, pay, notice period, stage and next follow-up.',
+      how: 'Search, filter and choose columns, save views, then select candidates to move, assign, tag, archive or export them.',
+      where: 'Recruitment & ATS > Candidate CRM.',
+    },
+    '/recruitment/crm/candidates/new': {
+      title: 'Add candidate',
+      what: 'The candidate form: personal and professional details, pay and notice, preferences, recruiter insights, links and references.',
+      how: 'Give an email or a phone number. The candidate gets a Candidate ID (CAN-…) when saved. Duplicates are checked first.',
+      where: 'From Candidate CRM > Add candidate.',
+    },
+    '/recruitment/crm/candidates/[id]': {
+      title: 'Candidate profile',
+      what: 'The 360° view of one candidate: details, remarks, references, calls, follow-ups, documents, jobs and the full timeline.',
+      how: 'Change the stage or recruiter at the top, log a call, schedule a follow-up, or upload documents from the tabs.',
+      where: 'Opened from All Candidates, the pipeline or a follow-up.',
+    },
+    '/recruitment/crm/candidates/[id]/edit': {
+      title: 'Edit candidate',
+      what: 'Change any of the candidate’s details. Remarks, references and documents are changed from the profile.',
+      how: 'Save to record the change on the candidate’s timeline and audit trail.',
+    },
+    '/recruitment/crm/pipeline': {
+      title: 'Recruitment Pipeline',
+      what: 'Candidates by stage, as a board, a table or a list.',
+      how: 'Drag a card to another stage, or use the stage menu on the card. Each move is recorded on the timeline.',
+    },
+    '/recruitment/crm/follow-ups': {
+      title: 'Follow-ups',
+      what: 'Calls and tasks due for candidates: overdue, today, upcoming, completed and missed.',
+      how: 'Complete, reschedule or mark a follow-up as missed. Reminders arrive in the notification bell before each one is due.',
+    },
+    '/recruitment/crm/activities': {
+      title: 'Activities',
+      what: 'Every call, email, message and meeting recruiters logged, with call outcomes.',
+      how: 'Filter by type, outcome, person or dates. Log new activities from a candidate’s profile.',
+    },
+    '/recruitment/crm/fields': {
+      title: 'Custom Fields',
+      what: 'Your own questions for candidates, in 17 field types, for the form, profile, filters, import and export.',
+      how: 'Create, reorder, edit or archive fields. Archiving keeps the answers.',
+      where: 'For Super Workspace, and HR Workspaces allowed to create custom fields.',
+    },
+    '/recruitment/crm/import': {
+      title: 'Import candidates',
+      what: 'Bring candidates in from Excel or CSV: match columns, check every row and choose what to do with duplicates.',
+      how: 'Download the sample file, upload, match the columns, check, then import. Rows with problems go into an error report.',
+      where: 'For people allowed to import candidates.',
+    },
+    '/recruitment/crm/export': {
+      title: 'Export to Excel',
+      what: 'Download candidates as Excel or CSV with the columns you choose.',
+      how: 'Choose the candidates and columns, then download. Every export is logged with who made it.',
+      where: 'For people allowed to export candidates.',
+    },
+    '/recruitment/crm/settings': {
+      title: 'CRM Settings',
+      what: 'Candidate CRM access for each HR Workspace, the pipeline stages, sources, duplicate rules and data retention.',
+      how: 'Super Workspace switches the CRM and its powers on or off for each HR Workspace. Switching off keeps the data.',
     },
     '/recruitment/candidates/[id]': {
       title: 'Candidate',
@@ -796,10 +887,10 @@ export const WEB_HELP: HelpContent = {
       where: 'Opened from Attendance devices.',
     },
     '/settings/leave': {
-      title: 'Leave settings',
-      what: 'Leave types, who gets how much, holiday calendars and the approval chain.',
-      how: 'Add standard types (maternity, comp-off, work from home and more) or your own. Give each a policy for everyone or by entity, department, designation or location; the most specific wins. Set up to five approval steps.',
-      where: 'For HR, usually at setup and the start of each leave year.',
+      title: 'Holidays and leave rules',
+      what: 'Holiday calendars per location or entity, the same-day leave rule and yearly leave maintenance.',
+      how: 'Add each calendar’s holidays before the year starts. Leave types, their policies and allocation are on Leave management.',
+      where: 'For the Super Workspace and HR Workspaces, usually at the start of each leave year.',
     },
     '/settings/onboarding': {
       title: 'Onboarding checklists',
@@ -1033,7 +1124,8 @@ export const WEB_HELP: HelpContent = {
 
     // Leave, attendance
     'Who is away in the next 30 days': { what: 'Approved leave in your team for the next month.', how: 'Check it before you request leave or plan work.' },
-    'My requests': { what: 'Your leave requests and their status, and who a pending one is waiting for.', how: 'Cancel a request while it is still pending.' },
+    'My requests': { what: 'Your leave requests, where each was sent and every authority’s status.', how: 'Open one for its full trail. Change or cancel a request while it is still pending.' },
+    'My leave types': { what: 'Each leave type you hold: its rules, where applications go, who manages it and who created and allocated it.', how: 'Read the rules before applying. A type you cannot see has not been allocated to you.' },
     'My leave calendar': { what: 'Your month at a glance: approved and pending leave, weekly offs and public holidays.', how: 'Use the arrows to change month. Choose a working day to apply for leave from that day.', where: 'Holidays come from the calendar HR set for your location or legal entity.' },
     'New claim': { what: 'Claim back money you spent for work.', how: 'Pick the category, add the date, amount and a receipt, then submit.' },
     'My shifts': { what: 'Your shifts for the next two weeks.' },
@@ -1146,10 +1238,23 @@ export const WEB_HELP: HelpContent = {
 
     // Settings
     'Balances maintenance': { what: 'Tools to grant, adjust or carry forward leave balances.' },
-    'Leave types': { what: 'Kinds of leave, like casual, sick or earned.' },
+    'Leave types': { what: 'Kinds of leave, like permanent, casual or sick, each with its own policy, eligibility and approval route.', how: 'The Super Workspace creates, changes and deactivates them. Every change is versioned and kept in Leave history.' },
+    'Allocate leave': { what: 'Gives a leave type to people, or makes it available to an HR Workspace to allocate further.', how: 'Pick the type, then everyone or a mix of departments, designations, locations, groups and named people. The preview shows who it reaches first.' },
+    'Current allocations': { what: 'Every allocation in force: what was given, to whom, by whom and when.', how: 'Withdraw one to stop new credits. Days already credited and applications already made stay.' },
+    'Waiting for your approval': { what: 'Leave applications waiting on you, with where each was sent and every authority’s decision.', how: 'Approve, or reject with a remark the employee sees. With two authorities, it is approved only when both approve.' },
+    'Recent applications': { what: 'Leave applications in your scope, newest first, with their status at each authority.' },
+    'Leave types in use': { what: 'Each leave type with the days credited and taken this year and its applications by status.' },
+    'By HR Workspace': { what: 'Each HR Workspace with its people, the leave types it runs and its applications.' },
+    'Upcoming leave': { what: 'Approved leave starting in the next 30 days, with who approved it.' },
+    'By leave type': { what: 'Allocation and use of each leave type in the year: people, credited, taken, pending and decided.' },
+    'By employee': { what: 'Each person’s entitlement, used, pending and balance for every leave type.' },
+    'Leave history': { what: 'Every creation, change, deactivation and allocation of leave types, newest first, with who did it.', where: 'Decisions on applications are in each application’s trail and the audit log.' },
+    'Approval status': { what: 'Each authority the application went to, with its decision, when and the remarks.', how: 'It is approved only when every authority approved it. A rejection by one ends it.' },
+    'Application': { what: 'The dates, days, reason and when it was sent.' },
+    'Rules it was made under': { what: 'The leave type’s policy as it was when the application was sent. Later changes to the type do not change it.' },
     Policies: { what: 'Who gets how much of each leave type, and accrual rules.' },
     'Holiday calendars': { what: 'Public holidays per location.' },
-    'Leave approval chain': { what: 'Who approves leave, in order.' },
+    'Leave approval chain': { what: 'Who approves leave. It is set on each leave type in Leave management.' },
     'Punching policy': { what: 'Rules for where and how people can punch, like geofence and selfie.' },
     'Payroll locks': { what: 'Locks attendance for a month so payroll uses fixed numbers.' },
     'QR kiosks': { what: 'Screens at a site showing a QR code people scan to punch.' },
@@ -1316,6 +1421,12 @@ export const WEB_HELP: HelpContent = {
         'HR Workspaces': { what: 'Each HR Workspace you may see, and the central group, with today’s numbers and attendance % for the period.', how: 'Open one for its people. Someone who looks after an HR Workspace is counted in it.' },
       },
     },
+    '/leave/manage': {
+      sections: {
+    'Your HR Workspaces': { what: 'The HR Workspaces you look after, with their people, leave types and applications.' },
+    'By department': { what: 'Days credited and taken per department in the year.' },
+      },
+    },
     '/tasks': {
       sections: {
         'HR tasks': { what: 'Tasks HR gave you that are still open or waiting for review.', how: 'Open one to work on it. Document tasks are done once HR verifies your upload.' },
@@ -1437,6 +1548,73 @@ export const WEB_HELP: HelpContent = {
       sections: {
         Message: { what: 'The text that was published.' },
         People: { what: 'Who received it and whether they have read or acknowledged it.' },
+      },
+    },
+    '/recruitment/crm': {
+      sections: {
+        'My day': { what: 'Your follow-ups that are overdue or due today.' },
+        'Follow-up summary': { what: 'Follow-ups overdue, due today and upcoming, and those completed or missed this week.' },
+        'Candidates by stage': { what: 'How many candidates are in each pipeline stage. Open a stage to see them.' },
+        'Candidates by source': { what: 'Where candidates came from, such as job portals, referrals or LinkedIn.' },
+        'Weekly trend': { what: 'Candidates added and joined in each of the last 12 weeks.' },
+        'Recruiter-wise view': { what: 'For each recruiter: candidates assigned, in progress and joined, follow-ups, and calls in the last 30 days.' },
+        'Recent activity': { what: 'The latest calls, notes and changes across your candidates.' },
+      },
+    },
+    '/recruitment/crm/candidates': {
+      sections: {
+        'A. Personal details': { what: 'Name and contact details. Gender, date of birth and nationality show only to people allowed to see private details.' },
+        'B. Professional details': { what: 'Current work, experience, skills and education. Skills are searchable from All Candidates.' },
+        'C. Compensation and notice period': { what: 'Current and expected pay and the notice period, used in filters and the list.' },
+        'D. Job preferences': { what: 'Roles, locations and work mode the candidate is looking for.' },
+        'E. Recruiter insights': { what: 'The recruiter’s assessment of the candidate. Later remarks are added as dated notes on the profile.' },
+        'Professional links': { what: 'LinkedIn, portfolio and other profiles. SampCrew saves the addresses but never opens them.' },
+        'Source and assignment': { what: 'Where the candidate came from, their first stage, their recruiter and who owns the record.' },
+        References: { what: 'Who referred the candidate, or the portal or agency the reference came from.' },
+      },
+    },
+    '/recruitment/crm/candidates/[id]': {
+      sections: {
+        'Personal details': { what: 'How to reach the candidate. Private details show only to people allowed to see them.' },
+        'Professional details': { what: 'Current work, experience, skills and education.' },
+        'Compensation and notice': { what: 'Current and expected pay, and when the candidate can join.' },
+        'Job preferences and recruiter insights': { what: 'What the candidate is looking for and the recruiter’s assessment.' },
+        'Professional links': { what: 'LinkedIn, portfolio and other profiles. They open in a new tab.' },
+        Record: { what: 'Where the candidate came from, who owns the record, and who added and last changed it.' },
+        'Recruiter remarks': { what: 'Dated notes by category. Restricted remarks show only to people allowed to see private details.' },
+        References: { what: 'Who referred the candidate, or where the reference came from.' },
+        'Activity history': { what: 'Calls, emails, messages and meetings logged for this candidate, with outcomes.' },
+        'Follow-ups': { what: 'Scheduled calls and tasks. The assigned person gets a reminder before each one is due.' },
+        Jobs: { what: 'Job requisitions the candidate is in, with interviews and offers from Recruitment & ATS.' },
+      },
+    },
+    '/recruitment/crm/activities': {
+      sections: { 'Call outcomes': { what: 'How the calls in this view went. Select an outcome to see those calls.' } },
+    },
+    '/recruitment/crm/fields': {
+      sections: { 'Candidate fields': { what: 'Fields on the candidate form, in order. Company-wide fields apply to every HR Workspace.' } },
+    },
+    '/recruitment/crm/import': {
+      sections: {
+        'Upload a spreadsheet': { what: 'Excel or CSV with headings in the first row, up to 5,000 candidates.' },
+        'Match columns': { what: 'Tell SampCrew which field each column fills, and what to do with candidates who already exist.' },
+        'Check rows': { what: 'Every row checked before anything is imported: ready rows, duplicates and problems.' },
+        'Import finished': { what: 'What happened to each row. Download the error report to fix and import the rest.' },
+        'Import history': { what: 'Earlier imports, who ran them and what they added.' },
+        'Saved mappings': { what: 'Column mappings saved for files with the same headings.' },
+      },
+    },
+    '/recruitment/crm/export': {
+      sections: {
+        'What to export': { what: 'Which candidates and columns go into the file.' },
+        'Export log': { what: 'Every export: who, when, how many candidates and columns.' },
+      },
+    },
+    '/recruitment/crm/settings': {
+      sections: {
+        'Candidate CRM Access': { what: 'Switch Candidate CRM on or off for each HR Workspace and choose its powers. Switching off keeps the data.' },
+        'Candidate sources': { what: 'Where candidates come from. Switch off a source to hide it from the form; existing candidates keep it.' },
+        'Duplicates and data retention': { what: 'Which details mark two records as the same person, and when inactive candidates’ details are erased.' },
       },
     },
     '/recruitment/candidates/[id]': {

@@ -74,6 +74,16 @@ describe('accrual', () => {
     expect(accrualsDue(p, { dateOfJoining: '2026-07-02', lastWorkingDay: null }, '2026-07-02').map((x) => fromH(x.quantity))).toEqual(['10.00']);
     expect(accrualsDue(p, { dateOfJoining: '2026-07-02', lastWorkingDay: null }, '2026-07-01')).toEqual([]);
   });
+  it('credits a quarter of the year at the start of each quarter, prorated for a joiner', () => {
+    const q = { accrualMethod: 'quarterly' as const, annualEntitlement: toH('12'), rounding: 'none' as const };
+    expect(accrualsDue(q, longServing, '2026-05-20').map((x) => [x.key, x.effectiveOn, fromH(x.quantity)])).toEqual([
+      ['Q2026-1', '2026-01-01', '3.00'], ['Q2026-2', '2026-04-01', '3.00'],
+    ]);
+    // Joined 16 May: 46 of 91 days of the second quarter -> 3 x 46 / 91 = 1.52
+    expect(accrualsDue(q, { dateOfJoining: '2026-05-16', lastWorkingDay: null }, '2026-07-01').map((x) => [x.key, x.effectiveOn, fromH(x.quantity)])).toEqual([
+      ['Q2026-2', '2026-05-16', '1.52'], ['Q2026-3', '2026-07-01', '3.00'],
+    ]);
+  });
   it('credits nothing for policies without accrual or before joining', () => {
     expect(accrualsDue({ ...monthly, accrualMethod: 'none' }, longServing, '2026-06-01')).toEqual([]);
     expect(accrualsDue(monthly, { dateOfJoining: '2027-01-10', lastWorkingDay: null }, '2026-12-31')).toEqual([]);

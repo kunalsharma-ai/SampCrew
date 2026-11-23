@@ -131,7 +131,7 @@ export class Table<T extends Row = Row> {
 
   private async runGuards(op: GuardOp, pairs: Array<[Document | null, Document | null]>) {
     if (!this.guards.length) return;
-    const ctx = { db: this.db, session: this.session, table: this.name, flags: new Set(this.opts.flags ?? []) };
+    const ctx = { db: this.db, session: this.session, table: this.name, flags: new Set(this.opts.flags ?? []), pending: new Map<string, number>() };
     for (const [before, after] of pairs) for (const g of this.guards) await g(ctx, op, before, after);
   }
 

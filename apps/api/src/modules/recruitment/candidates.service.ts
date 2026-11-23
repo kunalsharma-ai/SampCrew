@@ -23,7 +23,7 @@ import { NotificationService } from '../../platform/notify/notification.service'
 import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
 import type { UploadedFile } from '../documents/documents.service';
 import { uniqueAs } from '../employees/employees.service';
-import { CANDIDATE_FOOTER, candidateName, loadApplication, loadRequisition, recordEvent, REQ_FIELDS, reqAttrs, stageOfKind, visibleRequisitionIds, withdrawOpenOffers } from './recruitment-common';
+import { CANDIDATE_FOOTER, candidateName, candidateScopeFilter, loadApplication, loadRequisition, recordEvent, REQ_FIELDS, reqAttrs, stageOfKind, visibleRequisitionIds, withdrawOpenOffers } from './recruitment-common';
 import { safeFileName } from '../../platform/http/content-disposition';
 
 const PATCH_COLUMNS: Record<string, string> = {
@@ -110,9 +110,7 @@ export class CandidatesService {
    * workspace-wide access see everyone, others see candidates with an application to a requisition in their scope.
    */
   async candidateScope(tx: TenantTx, permission: string): Promise<Doc> {
-    const reqIds = await visibleRequisitionIds(tx, await this.authz.filter(permission, REQ_FIELDS, tx));
-    if (reqIds === null) return {};
-    return { id: { $in: await tx.collection('applications').distinct<string>('candidate_id', { requisition_id: { $in: reqIds } }) } };
+    return candidateScopeFilter(tx, await this.authz.subject(tx), permission);
   }
 
   /** Throws 404 unless the subject may see this candidate with `permission`. */
@@ -222,7 +220,7 @@ export class CandidatesService {
         withCan.push({ ...a, can: { manage: can(s, 'candidates:manage', attrs).allowed, offers: can(s, 'offers:manage', attrs).allowed } });
       }
       const appIds = applications.map((a) => a.id as string);
-      const files = (await tx.collection('candidate_files').find({ candidate_id: id }, { sort: { created_at: -1 } })).map((f) => ({
+      const files = (await tx.collection('candidate_files').find({ candidate_id: id, deleted_at: null, superseded_at: null }, { sort: { created_at: -1 } })).map((f) => ({
         id: f.id, kind: f.kind, fileName: f.file_name, contentType: f.content_type, sizeBytes: f.size_bytes, createdAt: f.created_at,
       }));
       const noteDocs = await tx.collection('candidate_notes').find({ candidate_id: id, $or: [{ application_id: null }, { application_id: { $in: appIds } }] }, { sort: { created_at: -1 } });
@@ -610,16 +608,30 @@ export class CandidatesService {
     });
   }
 
-  private async anonymize(tx: TenantTx, candidateId: string, why: 'request' | 'retention') {
+  /**
+   * Removes a candidate's personal data: files, notes, the Candidate CRM profile, references, custom field answers
+   * and the written parts of activities and follow-ups. What happened stays (stages, dates, counts) without the text.
+   */
+  async anonymize(tx: TenantTx, candidateId: string, why: 'request' | 'retention') {
     const filesTable = tx.collection('candidate_files');
     const files = await filesTable.find({ candidate_id: candidateId }, { projection: { storage_key: 1 } });
     await filesTable.delete({ candidate_id: candidateId });
     for (const f of files) await this.storage.remove(f.storage_key);
     await tx.collection('candidate_notes').delete({ candidate_id: candidateId });
+    await tx.collection('candidate_references').delete({ candidate_id: candidateId });
+    await tx.collection('custom_field_values').update({ entity: 'candidate', record_id: candidateId }, { $set: { value: null } });
+    await tx.collection('candidate_activities').update({ candidate_id: candidateId }, { $set: { remarks: null, subject: null, detail: {} } });
+    await tx.collection('candidate_follow_ups').update({ candidate_id: candidateId }, { $set: { notes: null, outcome: null, reason: null } });
+    await tx.collection('candidate_follow_ups').update({ candidate_id: candidateId, status: { $in: ['pending', 'rescheduled'] } }, { $set: { status: 'cancelled' } });
+    const photo = (await tx.collection('candidates').findOne({ id: candidateId }, { projection: { photo_storage_key: 1 } }))?.photo_storage_key as string | undefined;
+    if (photo) await this.storage.remove(photo);
     await tx.collection('candidates').updateOne({ id: candidateId }, {
       $set: {
         first_name: 'Erased', last_name: 'candidate', email: null, phone: null, location_text: null, current_title: null, current_company: null,
         profile_url: null, source_detail: null, tags: [], anonymized_at: new Date(),
+        middle_name: null, city: null, state: null, country_code: null, profession: null, industry: null, department_name: null, job_role: null,
+        current_ctc: null, expected_ctc: null, compensation: {}, personal: {}, professional: {}, preferences: {}, insights: {}, links: {}, notice: {}, notice_days: null,
+        skills: [], reference_types: [], photo_storage_key: null, next_follow_up_at: null, total_experience_months: null, relevant_experience_months: null,
       },
     });
     const appIds = await tx.collection('applications').distinct<string>('id', { candidate_id: candidateId });
@@ -642,7 +654,10 @@ export class CandidatesService {
   async applyRetention(tenantId: string) {
     return this.db.tenant(async (tx) => {
       const site = await tx.collection('career_sites').findOne({}, { projection: { retention_days: 1 } });
-      const cutoff = new Date(Date.now() - ((site?.retention_days as number | undefined) ?? 365) * 86_400_000);
+      // Candidate CRM can set its own period; otherwise the career site's applies.
+      const crm = await tx.collection('candidate_crm_settings').findOne({}, { projection: { retention_days: 1 } });
+      const days = (crm?.retention_days as number | null | undefined) ?? (site?.retention_days as number | undefined) ?? 365;
+      const cutoff = new Date(Date.now() - days * 86_400_000);
       const stale = await tx.collection('candidates').distinct<string>('id', { anonymized_at: null, last_activity_at: { $lt: cutoff } });
       let due: string[] = [];
       if (stale.length) {
@@ -650,6 +665,8 @@ export class CandidatesService {
         const busy = new Set(await apps.distinct<string>('candidate_id', { candidate_id: { $in: stale }, status: 'active' }));
         const offerApps = await tx.collection('offers').distinct<string>('application_id', { status: { $in: ['pending_approval', 'approved', 'sent', 'accepted'] } });
         if (offerApps.length) for (const c of await apps.distinct<string>('candidate_id', { id: { $in: offerApps }, status: { $ne: 'hired' }, candidate_id: { $in: stale } })) busy.add(c);
+        // A follow-up still to do means someone is working with the candidate.
+        for (const c of await tx.collection('candidate_follow_ups').distinct<string>('candidate_id', { candidate_id: { $in: stale }, status: { $in: ['pending', 'rescheduled'] } })) busy.add(c);
         due = stale.filter((id) => !busy.has(id)).slice(0, 200);
       }
       for (const id of due) {

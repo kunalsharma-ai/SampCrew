@@ -199,10 +199,11 @@ function futureWeekday(taken) {
     // 3. Leave request with preview; approved by the manager on their phone.
     await tab(p, 'Leave');
     await p.getByTestId('apply-leave').click();
-    // A request the leave rules refuse says why next to the button before it is sent (earned leave needs notice).
-    await p.getByRole('radio', { name: /^Earned leave/ }).click();
-    await p.getByTestId('leave-refusal').getByText(/days' notice/).waitFor();
-    await p.getByRole('radio', { name: /^Casual leave/ }).click();
+    // A request the leave rules refuse says why next to the button before it is sent (permanent leave needs notice).
+    // The form starts on today, so on a weekend the first rule to refuse is the weekly off instead.
+    await p.getByRole('radio', { name: /^Permanent Leave/ }).click();
+    await p.getByTestId('leave-refusal').getByText(/days' notice|all weekly offs or holidays/).waitFor();
+    await p.getByRole('radio', { name: /^Casual Leave/ }).click();
     const mine = await api(qa, 'GET', '/leave/requests');
     const day = futureWeekday(new Set(mine.filter((r) => r.status !== 'cancelled' && r.status !== 'rejected').map((r) => r.startDate)));
     // Dates are picked on a calendar, not typed.
@@ -218,7 +219,7 @@ function futureWeekday(taken) {
     await p.getByLabel('Reason (optional)').fill(reason);
     await p.getByTestId('leave-preview').waitFor();
     await p.getByTestId('send-leave').click();
-    await p.getByTestId('leave-sent').getByText(/waiting for approval from \S/).waitFor();
+    await p.getByTestId('leave-sent').getByText(/to HR Workspace\. It is waiting for \S/).waitFor();
     await p.getByTestId('leave-sent-done').click();
     await p.getByTestId('leave-requests').getByText(reason, { exact: false }).waitFor();
     await p.getByTestId('leave-requests').getByText('Waiting for approval').first().waitFor();
@@ -235,6 +236,15 @@ function futureWeekday(taken) {
     await item.getByRole('button', { name: 'Approve' }).click();
     await mgr.p.getByTestId('approval-message').getByText(/Approved/).waitFor();
     ok('the plant head approved it from the Approvals screen');
+    await p.reload();
+    await p.getByTestId('leave-requests').getByText(/HR Workspace: waiting/).first().waitFor();
+    const hrPhone = await phone(b, 'hr.admin');
+    await signIn(hrPhone.p, 'hr.admin@demo.crew.local');
+    await hrPhone.p.getByTestId('home-approvals').click();
+    await hrPhone.p.getByTestId('approval-item').filter({ hasText: reason }).getByRole('button', { name: 'Approve' }).click();
+    await hrPhone.p.getByTestId('approval-message').getByText(/Approved/).waitFor();
+    await hrPhone.ctx.close();
+    ok('after the manager, HR approved it from the Approvals screen on their phone');
     await p.reload();
     await p.getByTestId('leave-requests').locator('div').filter({ hasText: reason }).filter({ hasText: 'Approved' }).last().waitFor();
     ok('the QA lead sees the leave approved');

@@ -3,7 +3,7 @@ import { request as httpRequest, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NotificationService } from '../src/platform/notify/notification.service';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { addMember, adminPool, api, leaveType, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 /**
  * The shared notification service and the approvals page built on it: categories, priorities, folding repeated
@@ -53,6 +53,9 @@ describe('notifications and approvals', () => {
     tokens.mgr = (await login(app, people.mgr.email)).accessToken;
     tokens.rec = (await login(app, people.rec.email)).accessToken;
     tokens.solo = (await loginWithMfa(app, pool, solo.ownerEmail)).accessToken;
+    // Leave without pay, reviewed by the manager and then HR (the starter types are Permanent, Casual and Sick Leave).
+    const owner = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
+    await leaveType(app, owner, { code: 'LWP', name: 'Leave without pay', paid: false, category: 'unpaid', policy: { accrualMethod: 'none', annualEntitlement: '0' }, approval: { managerFirst: true, routes: ['hr'] } });
   });
 
   afterAll(async () => {
@@ -190,7 +193,6 @@ describe('notifications and approvals', () => {
     });
 
     it('moves through a two-step chain, telling the employee it now waits for HR, then shows the decision and remarks', async () => {
-      ok(await as('hr').put('/approvals/policies/leave_request').send({ steps: [{ type: 'manager' }, { type: 'role', role: 'hr_admin' }] }));
       const types = ok(await as('emp').get('/leave/balances')).balances;
       const lwp = types.find((x: { code: string }) => x.code === 'LWP');
       const r = ok(await as('emp').post('/leave/requests').set('idempotency-key', crypto.randomUUID()).send({ leaveTypeId: lwp.leaveTypeId, startDate: `${year}-04-06`, endDate: `${year}-04-06`, startHalf: 'second_half' }), 201);
@@ -208,7 +210,6 @@ describe('notifications and approvals', () => {
       expect(told!.body).toContain('Remarks: Quarter-end freeze');
       expect(told!.priority).toBe('high');
       expect(ok(await as('hr').get('/approvals/overview?view=decided')).categories.find((c: { key: string }) => c.key === 'half_day_leave')).toMatchObject({ rejected: 1 });
-      ok(await as('hr').put('/approvals/policies/leave_request').send({ steps: [{ type: 'manager' }] }));
       void r;
     });
 

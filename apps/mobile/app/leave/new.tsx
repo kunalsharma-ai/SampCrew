@@ -7,7 +7,12 @@ import type { Balance } from '../../src/lib/types';
 import { Button, Card, Choice, Field, Notice, Screen, Text, useLoad } from '../../src/ui';
 import { DateField } from '../../src/ui/calendar';
 
-interface Preview { days: string; tracked: boolean; available: string | null; balanceAfter: string | null; holidaysInRange: string[]; warnings: string[] }
+type Route = 'hr' | 'super' | 'both';
+interface Preview {
+  days: string; tracked: boolean; available: string | null; balanceAfter: string | null; holidaysInRange: string[]; warnings: string[];
+  routes?: { route: Route; label: string; reviewers: string[] }[]; employeeChooses?: boolean; route?: Route; reviewers?: string[];
+  order?: 'simultaneous' | 'sequential'; managerFirst?: boolean;
+}
 
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
 const localToday = () => {
@@ -28,6 +33,8 @@ export default function NewLeave() {
   const [end, setEnd] = useState(startFrom);
   const [half, setHalf] = useState<'full' | 'first_half' | 'second_half'>('full');
   const [reason, setReason] = useState('');
+  // Where the application goes, when the leave type lets the employee choose (empty: the type's first route).
+  const [route, setRoute] = useState<Route | ''>('');
   const [preview, setPreview] = useState<Preview | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +45,7 @@ export default function NewLeave() {
   useEffect(() => {
     if (!typeId && balances?.length) setTypeId(balances[0].leaveTypeId);
   }, [balances, typeId]);
+  useEffect(() => setRoute(''), [typeId]);
 
   const body = useMemo(() => {
     const single = start === end;
@@ -48,8 +56,9 @@ export default function NewLeave() {
       startHalf: single && half === 'second_half' ? 'second_half' : 'full',
       endHalf: single && half === 'first_half' ? 'first_half' : 'full',
       ...(reason.trim() ? { reason: reason.trim() } : {}),
+      ...(route ? { approvalRoute: route } : {}),
     };
-  }, [typeId, start, end, half, reason]);
+  }, [typeId, start, end, half, reason, route]);
 
   const valid = typeId && isDate(start) && isDate(end) && end >= start;
   // One idempotency key per version of the request: a retry of the same request (say after a dropped connection)
@@ -83,9 +92,9 @@ export default function NewLeave() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.post<{ waitingOn: string | null; status: string }>('/leave/requests', body, key);
+      const r = await api.post<{ waitingOn: string | null; status: string; approvalRouteLabel?: string; reference?: string }>('/leave/requests', body, key);
       // Say who it went to, so the request is not sent into silence.
-      setSent(r.status === 'pending' ? `Sent. Your request is waiting for approval${r.waitingOn ? ` from ${r.waitingOn}` : ''}. You will get a notification when it is decided.` : `Sent. Your request is ${r.status}.`);
+      setSent(r.status === 'pending' ? `Sent${r.reference ? ` (${r.reference})` : ''} to ${r.approvalRouteLabel ?? 'approval'}. It is waiting${r.waitingOn ? ` for ${r.waitingOn}` : ''}. You will get a notification when it is decided.` : `Sent. Your request is ${r.status}.`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not send the request.');
       if (e instanceof ApiError) setErrors(e.fieldErrors);
@@ -129,6 +138,14 @@ export default function NewLeave() {
             onChange={setHalf}
           />
         )}
+        {preview?.employeeChooses && (preview.routes?.length ?? 0) > 1 && (
+          <Choice
+            label="Send it to"
+            value={route || preview.route || preview.routes![0]!.route}
+            options={preview.routes!.map((r) => ({ value: r.route, label: r.label }))}
+            onChange={(v) => setRoute(v as Route)}
+          />
+        )}
         <Field label="Reason (optional)" value={reason} onChangeText={setReason} multiline maxLength={1000} error={errors.reason} />
         {preview && (
           <Notice tone={preview.warnings.length ? 'warn' : 'info'} testID="leave-preview">
@@ -138,8 +155,8 @@ export default function NewLeave() {
         {refusal && !error && <Notice tone="warn" testID="leave-refusal">{refusal}</Notice>}
         {/* Shown next to the button, where the person is looking (the top of the form can be scrolled away). */}
         {error && <Notice tone="danger" testID="leave-error">{error}</Notice>}
-        {balances && balances.length === 0 && <Notice tone="warn">No leave types are set up for you yet. Ask HR to add a leave policy for your legal entity.</Notice>}
-        <Text muted size={13}>Your approver is notified when you send this.</Text>
+        {balances && balances.length === 0 && <Notice tone="warn">No leave types are allocated to you yet. Ask your HR Workspace to allocate them.</Notice>}
+        <Text muted size={13} testID="leave-reviewers">{preview?.reviewers?.length ? `Goes to ${preview.reviewers.join(preview.order === 'sequential' ? ', then ' : ' and ')}${preview.managerFirst ? ', after your reporting manager' : ''}. They are notified when you send this.` : 'Your approver is notified when you send this.'}</Text>
         <Button title="Send request" onPress={submit} busy={busy} disabled={!valid} testID="send-leave" />
       </Card>
     </Screen>

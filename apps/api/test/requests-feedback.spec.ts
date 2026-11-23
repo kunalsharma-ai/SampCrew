@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { addMember, adminPool, api, leaveType, createApp, createTenant, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 /**
  * What people see after asking for something: a leave request says who it waits for, the asker is told, the leave
@@ -42,6 +42,9 @@ describe('requests feedback, HR helpdesk, announcements and the leave calendar',
     tokens.emp = (await login(app, people.emp.email)).accessToken;
     tokens.mgr = (await login(app, people.mgr.email)).accessToken;
     tokens.owner = (await login(app, t.ownerEmail)).accessToken;
+    tokens.super = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
+    // Leave without pay, reviewed by the manager and then HR.
+    await leaveType(app, tokens.super, { code: 'LWP', name: 'Leave without pay', paid: false, category: 'unpaid', policy: { accrualMethod: 'none', annualEntitlement: '0' }, approval: { managerFirst: true, routes: ['hr'] } });
   });
 
   afterAll(async () => {
@@ -49,9 +52,10 @@ describe('requests feedback, HR helpdesk, announcements and the leave calendar',
     await pool?.end();
   });
 
-  it('starts a new workspace with the standard leave types, credited to new employees', async () => {
+  it('starts a new workspace with the starter leave types (Permanent, Casual and Sick Leave), credited to new employees', async () => {
     const b = ok(await as('emp').get('/leave/balances'));
-    expect(b.balances.map((x: { code: string }) => x.code).sort()).toEqual(['CL', 'EL', 'LWP', 'SL']);
+    expect(b.balances.map((x: { code: string }) => x.code).sort()).toEqual(['CL', 'LWP', 'PL', 'SL']);
+    expect(ok(await as('emp').get('/leave/types')).find((x: { code: string }) => x.code === 'PL')).toMatchObject({ name: 'Permanent Leave' });
     expect(b.balances.find((x: { code: string }) => x.code === 'CL').available).toBe('8.00');
   });
 
@@ -81,9 +85,11 @@ describe('requests feedback, HR helpdesk, announcements and the leave calendar',
     expect(ok(await as('emp').get(`/leave/calendar?from=${day('04-01')}&to=${day('04-30')}`)).requests).toEqual([]);
     expect(ok(await as('mgr').get(`/leave/calendar?from=${day('03-01')}&to=${day('03-31')}`)).requests).toEqual([]);
 
-    // Once decided, it no longer says it is waiting.
+    // Once decided by the manager and then HR, it no longer says it is waiting.
     const inbox = ok(await as('mgr').get('/approvals/inbox'));
     ok(await as('mgr').post(`/approvals/${inbox[0].id}/approve`).send({}));
+    expect(ok(await as('emp').get(`/leave/requests/${r.id}`)).waitingOn).toBe('Hana HR');
+    ok(await as('hr').post(`/approvals/${inbox[0].id}/approve`).send({}));
     const after = ok(await as('emp').get(`/leave/calendar?from=${day('03-01')}&to=${day('03-31')}`)).requests[0];
     expect([after.status, after.waitingOn]).toEqual(['approved', null]);
   });
@@ -120,18 +126,25 @@ describe('requests feedback, HR helpdesk, announcements and the leave calendar',
     expect(owner.acknowledgedAt).toBeTruthy();
   });
 
-  it('gives an older workspace without leave types the standard set in one step', async () => {
+  it('gives an older workspace without leave types the starter set in one step, reaching people once allocated', async () => {
     const bare = await createTenant(pool);
     const hr = await addMember(pool, bare, { roles: ['hr_admin'], name: 'Bea HR' });
     const token = (await loginWithMfa(app, pool, hr.email)).accessToken;
+    const sup = (await loginWithMfa(app, pool, bare.ownerEmail)).accessToken;
     ok(await api(app, token).post('/employees').send({ legalEntityId: bare.legalEntityId, firstName: 'Bea', lastName: 'HR', dateOfJoining: '2024-01-01', membershipId: hr.membershipId, onboardingTemplateId: null }), 201);
     expect(ok(await api(app, token).get('/leave/balances')).balances).toEqual([]);
-    const added = ok(await api(app, token).post('/leave/types/defaults').send({}), 201);
-    expect(added.added).toBe(4);
+    // Only the Super Workspace creates leave types.
+    expect((await api(app, token).post('/leave/types/starter').send({})).status).toBe(403);
+    const added = ok(await api(app, sup).post('/leave/types/starter').send({}), 201);
+    expect(added.added).toEqual(['PL', 'CL', 'SL']);
+    // Created is not allocated: nobody holds them yet.
+    expect(ok(await api(app, token).get('/leave/balances')).balances).toEqual([]);
+    const sl = (ok(await api(app, sup).get('/leave/types')) as unknown as { id: string; code: string }[]).find((x) => x.code === 'SL')!.id;
+    // HR can allocate it only once the Super Workspace makes it available to them.
+    expect((await api(app, token).post('/leave/allocations').send({ target: 'employees', leaveTypeId: sl, criteria: { all: true } })).status).toBe(403);
+    ok(await api(app, sup).post('/leave/allocations').send({ target: 'hr_workspace', leaveTypeId: sl, hrWorkspaceId: null }), 201);
+    ok(await api(app, token).post('/leave/allocations').send({ target: 'employees', leaveTypeId: sl, criteria: { all: true } }), 201);
     expect(ok(await api(app, token).get('/leave/balances')).balances.find((x: { code: string }) => x.code === 'SL').available).toBe('8.00');
-    expect((await api(app, token).post('/leave/types/defaults').send({})).status).toBe(409);
-    // Only people who configure leave can do it.
-    const emp = await addMember(pool, bare, { name: 'Plain Person' });
-    expect((await api(app, (await login(app, emp.email)).accessToken).post('/leave/types/defaults').send({})).status).toBe(403);
+    expect(ok(await api(app, sup).post('/leave/types/starter').send({}), 201)).toEqual({ added: [], skipped: ['PL', 'CL', 'SL'] });
   });
 });

@@ -1,4 +1,4 @@
-import { EMPLOYEE_COLUMNS_CATALOGUE, EMPLOYEE_SORTS, type SavedView, type ViewState } from '@crew/contracts';
+import { EMPLOYEE_COLUMNS_CATALOGUE, EMPLOYEE_SORTS, type SavedView, type ViewState, type WorkspaceLimits, workspaceLimitMessage } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
@@ -10,6 +10,12 @@ import type { Department, Designation, Employee, LegalEntity, Location, Me, Onbo
 import type { Structure } from '../payroll/types';
 import { type EmployeeDraft, EmployeesView } from './employees-view';
 import type { LeavePolicyOption } from './hire-wizard';
+import type { LeaveType } from '@/lib/types';
+
+/** Leave types that accrue, one row per legal entity they are limited to (or one for everyone), for opening balances. */
+const openingOptions = (types: LeaveType[]): LeavePolicyOption[] => types
+  .filter((t) => t.active && t.policy.accrualMethod !== 'none')
+  .flatMap((t) => (t.eligibility.legalEntityIds.length ? t.eligibility.legalEntityIds : [null]).map((legalEntityId) => ({ leaveTypeId: t.id, leaveTypeName: t.name, legalEntityId, accrualMethod: t.policy.accrualMethod, typeArchived: false })));
 import type { DeviceOption, ShiftOption } from './[id]/profile-extras';
 import { DEFAULT_COLUMNS, viewUrl } from './view-url';
 
@@ -53,7 +59,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const canAttendance = me.features.includes('attendance_basic');
   const canOpenBalances = canHire && me.features.includes('leave') && can(me, 'leave:approve');
   const canHandOver = canHire && me.features.includes('asset_management') && can(me, 'assets:create');
-  const [page, departments, entities, locations, designations, managers, templates, drafts, structures, shifts, devices, policies, freeAssets, spaces] = await Promise.all([
+  const [page, departments, entities, locations, designations, managers, templates, drafts, structures, shifts, devices, policies, freeAssets, spaces, limits] = await Promise.all([
     load<Page<Employee> & { total?: number }>(`/employees?${qs}`),
     loadOptional<Department[]>('/org/departments'),
     loadOptional<LegalEntity[]>('/org/legal-entities'),
@@ -65,10 +71,12 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     canHire && canPay ? loadOptional<Structure[]>('/payroll/structures') : null,
     canHire && canAttendance ? loadOptional<ShiftOption[]>('/shifts/templates') : null,
     canHire && canAttendance && can(me, 'devices:manage') ? loadOptional<DeviceOption[]>('/attendance/devices') : null,
-    canOpenBalances ? loadOptional<LeavePolicyOption[]>('/leave/policies') : null,
+    canOpenBalances ? loadOptional<LeaveType[]>('/leave/types') : null,
     canHandOver ? loadOptional<AssetList>('/assets?status=available&limit=500') : null,
     canHire && can(me, 'hierarchy:read') ? loadOptional<{ items: { id: string; name: string }[] }>('/hr-workspaces?status=active') : null,
+    canHire ? loadOptional<WorkspaceLimits>('/workspace-limits') : null,
   ]);
+  const loginsFull = limits?.employee.reached && limits.employee.limit !== null ? workspaceLimitMessage('employee', limits.employee.used, limits.employee.limit) : null;
   // Company-wide admins choose the central group or an HR Workspace; an HR Workspace admin only their own.
   const centralChoice = me.levels.super || me.levels.companyHr;
   const hrWorkspaces = spaces && (spaces.items.length || !centralChoice) ? { options: spaces.items.map((w) => ({ id: w.id, name: w.name })), central: centralChoice } : null;
@@ -110,11 +118,12 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         shifts={shifts}
         devices={devices}
         hrWorkspaces={hrWorkspaces}
+        loginsFull={loginsFull}
         accessChoice={can(me, 'roles:manage') ? { canGiveSuper: me.levels.super, hrWorkspaces: spaces?.items.map((w) => ({ id: w.id, name: w.name })) ?? [] } : null}
         canManageOrg={canManageOrg}
         canAttendance={canAttendance}
         canConfigureShifts={canAttendance && can(me, 'attendance:configure')}
-        leavePolicies={canOpenBalances ? (policies ?? []).filter((x) => !x.typeArchived && x.accrualMethod !== 'none') : null}
+        leavePolicies={canOpenBalances ? openingOptions(policies ?? []) : null}
         availableAssets={canHandOver ? (freeAssets?.items ?? []).map((a) => ({ id: a.id, assetCode: a.assetCode, name: a.name, category: a.category })) : null}
         setupPending={setupPending}
       />

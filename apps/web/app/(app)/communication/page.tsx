@@ -24,7 +24,7 @@ export default async function CommunicationPage() {
         description="Email people, chat with employees and teams, and answer messages to HR. Help requests (Ask HR) are here too."
         actions={<><Link href="/communication/emails/new" className={buttonClass('primary', 'sm')}><Send className="size-3.5" /> New email</Link><Link href="/communication/chat?new=1" className={buttonClass('secondary', 'sm')}><MessagesSquare className="size-3.5" /> New chat</Link></>}
       />
-      <CommTabs active="overview" isHr unread={chats.unread} />
+      <CommTabs active="overview" isHr unread={chats.unread} superWs={!!me.levels?.super} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="comm-stats">
         <Stat label="Emails sent (30 days)" value={d.email.sent30} hint={`${d.email.recipients30} recipients`} icon={<Mail className="size-4" />} />
         <Stat label="Delivered" value={d.email.deliveryRate === null ? '—' : `${d.email.deliveryRate}%`} hint={d.email.failed30 ? `${d.email.failed30} not delivered` : 'None failed'} icon={<Send className="size-4" />} />
