@@ -153,8 +153,13 @@ const unread = async (p) => {
     const sp = await still.newPage();
     watch(sp, 'reduced-motion');
     await sp.goto(`${BASE}/login?space=super`);
-    const anim = await sp.locator('.sc-logo-card').evaluate((el) => getComputedStyle(el).animationName);
-    expect(anim === 'none', `with reduced motion the logo should not animate (got ${anim})`);
+    const anim = await sp.locator('.sc-word').first().evaluate((el) => getComputedStyle(el).animationName);
+    expect(anim === 'none', `with reduced motion the workspace name should not animate (got ${anim})`);
+    const stage = await sp.locator('.scs-orbit').first().evaluate((el) => getComputedStyle(el).animationName);
+    expect(stage === 'none', `with reduced motion the scene should stand still (got ${stage})`);
+    // With motion allowed, the same name does animate (so the check above means something).
+    const moving = await lp.locator('.sc-word').first().evaluate((el) => getComputedStyle(el).animationName);
+    expect(moving !== 'none', 'with motion allowed the workspace name animates');
     await still.close();
     ok('phone layout keeps the form on screen; reduced motion shows a still welcome');
 
@@ -162,7 +167,7 @@ const unread = async (p) => {
     watch(cp, 'console');
     await cp.goto(`${CONSOLE}/login`);
     await cp.locator('[data-testid=welcome-scene][data-scene=console]').waitFor();
-    expect((await cp.getByTestId('welcome-level').innerText()).toLowerCase() === 'console', 'the Console has its own welcome');
+    expect((await cp.getByTestId('welcome-level').innerText()).toLowerCase() === 'super admin console', 'the Console has its own welcome');
     await cp.fill('input[name=email]', 'admin@example.com', { timeout: 1500 });
     await shot(cp, 'login-console', { wait: 2600 });
     ok('the Console sign-in has its own welcome and its form is usable at once');

@@ -54,7 +54,7 @@ describe('notification preferences inside the organisation policy', () => {
 
 describe('sign-in welcome scenes', () => {
   it('has words for every scene, with level names only', () => {
-    for (const s of WELCOME_SCENES) expect(WELCOME_COPY[s].level).toMatch(/^(Console|Super Workspace|HR Workspace|Employee Workspace)$/);
+    for (const s of WELCOME_SCENES) expect(WELCOME_COPY[s].level).toMatch(/^(Super Admin Console|Super Workspace|HR Workspace|Employee Workspace)$/);
   });
 
   it('picks the scene from the signed-in levels', () => {

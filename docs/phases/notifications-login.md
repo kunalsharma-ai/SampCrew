@@ -39,13 +39,23 @@ The spec names five levels. SampCrew has four, so two of them are mapped:
 
 ## Sign-in welcome
 
-- Shared `WelcomeScene` (`@crew/ui`): the exact SampCrew logo, brand colours, and a CSS and SVG motif per level.
-- Text: `WELCOME_COPY` in `@crew/contracts`.
-- The form renders at once beside the scene, or above it on phones. Nothing waits on the animation.
-- `prefers-reduced-motion` shows a still scene. A repeat visit in the same browser session plays a shorter version.
-- **Web portal:** the level comes from `?space=` or from the `crew_welcome` cookie set after the last sign-in. Chips switch the level.
-- **Console:** has its own scene.
-- **Mobile:** `WelcomeHero` (Animated, native driver) on sign-in and on the biometric unlock screen. The last level is remembered on the device. Biometric sign-in is unchanged.
+Each level is its own world, with the workspace's name written large ("You are signing in to **HR Workspace**").
+The colours follow the product the person is about to enter (the level design systems in `packages/ui/src/styles.css`):
+
+| Level | World | Animation |
+| --- | --- | --- |
+| Super Admin Console | Night-blue command centre | A turning wireframe globe with satellites and a radar sweep; live status panels; a scan line |
+| Super Workspace | Emerald and gold | A crowned core with HR Workspaces orbiting it; gold links with light flowing; twinkling stars |
+| HR Workspace | Violet and coral | A hiring board: a candidate card travels Applied → Interview → Hired and lands in confetti |
+| Employee Workspace | Warm daylight | A rising sun and drifting clouds; a check-in that ticks; leave days filling a calendar; a payslip ready |
+| Employee Workspace (leads a team) | Fresh daylight | Their team gathering and requests being approved |
+
+- **Shared pieces.** `WelcomeScene` lives in `@crew/ui`. The text is `WELCOME_COPY` in `@crew/contracts`. Both use the official logo, unchanged: the dark version on dark worlds and the light version on daylight ones.
+- **The sign-in form takes the same world's colours.** The page is wrapped in `.sc-shell[data-scene]`, which sets the accent, the button gradient and a top bar. The form renders straight away; nothing waits for the animation.
+- **Motion.** Only transform and opacity animate. With `prefers-reduced-motion`, the whole scene is a still picture. A second visit in the same browser session plays a shorter version.
+- **Web portal.** The level comes from `?space=`, or from the `crew_welcome` cookie set at the last sign-in. Chips let people switch level.
+- **Console.** It has its own world.
+- **Mobile.** `WelcomeHero` (Animated, native driver) uses the same worlds. It shows on sign-in and on the biometric unlock screen. The scene moves in a band at the bottom so it never covers the words. The last level is remembered on the device, and biometric sign-in is unchanged.
 
 ## Tests
 

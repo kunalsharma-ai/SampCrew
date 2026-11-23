@@ -1,19 +1,25 @@
 import { WELCOME_COPY, WORKSPACE_WELCOME_CHOICES, type WelcomeScene } from '@crew/contracts';
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, Image, Pressable, Text, useWindowDimensions, View, type ViewStyle } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Image, Platform, Pressable, Text, useWindowDimensions, View, type ViewStyle } from 'react-native';
 import { gradient } from './index';
 
-/** SampCrew colours from the official mark and wordmark. */
-const C = { rose: '#FB7185', pink: '#F472B6', violet: '#8B5CF6', indigo: '#7B4DFF', blue: '#2F6BFF', cyan: '#0BC5FF' };
-/** Each level's base and glow colours (the same palette as the Web Portal and Console welcome). */
-const SCENE: Record<WelcomeScene, { base: string; a: string; b: string }> = {
-  console: { base: '#070b1f', a: C.indigo, b: C.cyan },
-  super: { base: '#0d0b2b', a: C.pink, b: C.violet },
-  hr: { base: '#0a0e2c', a: C.rose, b: C.blue },
-  team: { base: '#100b2e', a: C.violet, b: C.rose },
-  employee: { base: '#160d2e', a: C.rose, b: C.pink },
+/**
+ * Each level's world, the same as the Web Portal and Console sign-in: the Super Admin Console is a night-blue command
+ * centre, the Super Workspace emerald and gold, the HR Workspace violet and coral, the Employee Workspace warm daylight
+ * (and the team welcome a fresher daylight).
+ */
+interface World { bg: string; base: string; ink: string; ink2: string; name: [string, string]; glowA: string; glowB: string; light: boolean; chip: string; accent: string }
+export const WORLDS: Record<WelcomeScene, World> = {
+  console: { bg: 'radial-gradient(circle at 85% 0%, #0f2a5c, #050a16 60%, #02040b)', base: '#050a16', ink: '#ffffff', ink2: 'rgba(224,242,254,0.78)', name: ['#67e8f9', '#3b82f6'], glowA: '#1d4ed8', glowB: '#06b6d4', light: false, chip: 'rgba(255,255,255,0.1)', accent: '#2563eb' },
+  super: { bg: 'radial-gradient(circle at 15% 0%, #14532d, #0c2620 50%, #04110d)', base: '#0c2620', ink: '#ffffff', ink2: 'rgba(254,243,199,0.8)', name: ['#fde68a', '#e3b341'], glowA: '#059669', glowB: '#e3b341', light: false, chip: 'rgba(227,179,65,0.16)', accent: '#047857' },
+  hr: { bg: 'linear-gradient(140deg, #2e1065, #5b21b6 42%, #a21caf 72%, #e8697a)', base: '#5b21b6', ink: '#ffffff', ink2: 'rgba(255,255,255,0.85)', name: ['#ffffff', '#fdba74'], glowA: '#fb8a7e', glowB: '#a78bfa', light: false, chip: 'rgba(255,255,255,0.16)', accent: '#7c3aed' },
+  employee: { bg: 'linear-gradient(160deg, #fff7ed, #fdf2f8 45%, #eef2ff)', base: '#fff7ed', ink: '#1e1b4b', ink2: '#475569', name: ['#4f46e5', '#f97316'], glowA: '#fdba74', glowB: '#a5b4fc', light: true, chip: 'rgba(255,255,255,0.8)', accent: '#4f46e5' },
+  team: { bg: 'linear-gradient(160deg, #ecfdf5, #eef2ff 55%, #fff7ed)', base: '#ecfdf5', ink: '#1e1b4b', ink2: '#475569', name: ['#059669', '#4f46e5'], glowA: '#6ee7b7', glowB: '#a5b4fc', light: true, chip: 'rgba(255,255,255,0.8)', accent: '#4f46e5' },
 };
-const LOGO = require('../../assets/logo-dark.png');
+/** The colour dot beside each level on the level chips. */
+const CHOICE_DOT: Record<string, string> = { super: '#e3b341', hr: '#fb8a7e', employee: '#4f46e5' };
+const LOGO_DARK = require('../../assets/logo-dark.png');
+const LOGO_LIGHT = require('../../assets/logo-light.png');
 
 /** Whether the person asked their phone for less motion (then everything shows still, at its final place). */
 function useReducedMotion() {
@@ -30,14 +36,15 @@ function useReducedMotion() {
   return reduced;
 }
 
-/** A value that loops 0 to 1 for as long as the screen is open (native driver: smooth on low-end phones too). */
-function useLoop(ms: number, run: boolean, delay = 0) {
-  const v = useRef(new Animated.Value(0)).current;
+/** A value that swings 0 to 1 and back for as long as the screen is open (native driver: smooth on low-end phones). */
+function useSwing(ms: number, run: boolean, delay = 0) {
+  const v = useRef(new Animated.Value(0.5)).current;
   useEffect(() => {
     if (!run) {
       v.setValue(0.5);
       return;
     }
+    v.setValue(0);
     const a = Animated.loop(Animated.sequence([Animated.delay(delay), Animated.timing(v, { toValue: 1, duration: ms, easing: Easing.inOut(Easing.sin), useNativeDriver: true }), Animated.timing(v, { toValue: 0, duration: ms, easing: Easing.inOut(Easing.sin), useNativeDriver: true })]));
     a.start();
     return () => a.stop();
@@ -45,78 +52,92 @@ function useLoop(ms: number, run: boolean, delay = 0) {
   return v;
 }
 
+/** A value that runs 0 to 1 again and again (turning, travelling). */
+function useCycle(ms: number, run: boolean, delay = 0) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!run) {
+      v.setValue(0);
+      return;
+    }
+    const a = Animated.loop(Animated.sequence([Animated.delay(delay), Animated.timing(v, { toValue: 1, duration: ms, easing: Easing.linear, useNativeDriver: true })]));
+    a.start();
+    return () => a.stop();
+  }, [v, ms, run, delay]);
+  return v;
+}
+
 /**
- * The animated SampCrew welcome at the top of the phone sign-in: the official logo rises onto a tilted glass card,
- * the level's own motion moves behind it, and the welcome words fade in. It sizes itself to the screen and orientation,
- * stands still when the phone asks for reduced motion, and never blocks the form below (no waiting, no touch capture
- * except the level chips).
+ * The animated welcome at the top of the phone sign-in: the level's own world, the official logo, and the workspace's
+ * name written large so nobody signs in to the wrong place. It sizes itself to the screen and orientation, stands still
+ * when the phone asks for reduced motion, and never blocks the form below (no waiting, no touch capture except the
+ * level chips).
  */
 export function WelcomeHero({ scene, onChoose }: { scene: WelcomeScene; onChoose?: (s: WelcomeScene) => void }) {
   const { width, height } = useWindowDimensions();
   const landscape = width > height;
-  const heroH = Math.round(Math.min(landscape ? height * 0.62 : height * 0.4, 360));
+  const heroH = Math.round(Math.min(landscape ? height * 0.7 : height * 0.44, 390));
   const reduced = useReducedMotion();
-  const pal = SCENE[scene];
+  const w = WORLDS[scene];
   const copy = WELCOME_COPY[scene];
   const reveal = useRef(new Animated.Value(reduced ? 1 : 0)).current;
+  const name = useRef(new Animated.Value(reduced ? 1 : 0)).current;
   const words = useRef(new Animated.Value(reduced ? 1 : 0)).current;
   useEffect(() => {
     if (reduced) {
-      reveal.setValue(1);
-      words.setValue(1);
+      for (const v of [reveal, name, words]) v.setValue(1);
       return;
     }
-    reveal.setValue(0);
-    words.setValue(0);
+    for (const v of [reveal, name, words]) v.setValue(0);
     Animated.parallel([
-      Animated.timing(reveal, { toValue: 1, duration: 1100, easing: Easing.out(Easing.exp), useNativeDriver: true }),
-      Animated.timing(words, { toValue: 1, duration: 700, delay: 350, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(reveal, { toValue: 1, duration: 800, easing: Easing.out(Easing.exp), useNativeDriver: true }),
+      Animated.timing(name, { toValue: 1, duration: 900, delay: 150, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }),
+      Animated.timing(words, { toValue: 1, duration: 700, delay: 500, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
-  }, [scene, reduced, reveal, words]);
-  const float = useLoop(4500, !reduced);
-  const logoW = Math.min(width - 96, 260);
+  }, [scene, reduced, reveal, name, words]);
+  const logoW = Math.min(width - 120, 190);
+  const nameSize = landscape ? 30 : Math.min(40, Math.max(28, width / 10.5));
   return (
-    <View testID="welcome-hero" style={[{ height: heroH, overflow: 'hidden', borderRadius: 24, marginHorizontal: -4 }, gradient(`radial-gradient(circle at 20% 0%, ${pal.a}55, ${pal.base} 60%)`, pal.base)]} accessibilityLabel={`${copy.level} welcome`}>
-      <Glow color={pal.a} size={heroH * 1.1} style={{ left: -heroH * 0.35, top: -heroH * 0.45 }} run={!reduced} />
-      <Glow color={pal.b} size={heroH} style={{ right: -heroH * 0.4, bottom: -heroH * 0.5 }} run={!reduced} delay={1500} />
+    <View testID="welcome-hero" style={[{ height: heroH, overflow: 'hidden', borderRadius: 24, marginHorizontal: -4 }, gradient(w.bg, w.base)]} accessibilityLabel={`${copy.level} welcome`}>
+      <Glow color={w.glowA} size={heroH * 1.1} style={{ left: -heroH * 0.35, top: -heroH * 0.5 }} run={!reduced} light={w.light} />
+      <Glow color={w.glowB} size={heroH} style={{ right: -heroH * 0.45, bottom: -heroH * 0.55 }} run={!reduced} light={w.light} delay={1500} />
       <View pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={{ position: 'absolute', inset: 0 } as ViewStyle}>
-        <Motif scene={scene} w={width} h={heroH} run={!reduced} />
+        <Stage scene={scene} w={width} h={heroH} run={!reduced} />
       </View>
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, gap: 10 }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: BAND, gap: 5 }}>
         <Animated.View
           accessible
           accessibilityRole="image"
           accessibilityLabel="SampCrew. People, simplified. By SAMPLEDGE"
           testID="brand"
-          style={{
-            opacity: reveal,
-            transform: [
-              { perspective: 800 },
-              { translateY: Animated.add(reveal.interpolate({ inputRange: [0, 1], outputRange: [26, 0] }), float.interpolate({ inputRange: [0, 1], outputRange: [0, -4] })) },
-              { rotateX: reveal.interpolate({ inputRange: [0, 1], outputRange: ['28deg', '0deg'] }) },
-              { rotateY: float.interpolate({ inputRange: [0, 1], outputRange: ['-3deg', '3deg'] }) },
-              { scale: reveal.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) },
-            ],
-            borderRadius: 20, paddingHorizontal: 18, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.09)',
-            boxShadow: '0 18px 40px -16px rgba(0,0,0,0.6)',
-          } as never}
+          style={{ opacity: reveal, transform: [{ translateY: reveal.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }] }}
         >
           {/* The artwork is 1458 x 384: its proportions are kept. */}
-          <Image source={LOGO} style={{ width: logoW, height: Math.round((logoW * 384) / 1458) }} resizeMode="contain" />
+          <Image source={w.light ? LOGO_LIGHT : LOGO_DARK} style={{ width: logoW, height: Math.round((logoW * 384) / 1458) }} resizeMode="contain" />
+        </Animated.View>
+        <Text style={{ color: w.ink2, fontSize: 10.5, fontWeight: '700', letterSpacing: 1.6, textTransform: 'uppercase', marginTop: 4 }}>You are signing in to</Text>
+        <Animated.View style={{ opacity: name, transform: [{ translateY: name.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }, { scale: name.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] }}>
+          <Text
+            testID="welcome-level"
+            accessibilityRole="header"
+            style={[{ fontSize: nameSize, lineHeight: nameSize * 1.08, fontWeight: '900', letterSpacing: -1, textAlign: 'center', color: w.name[0], fontFamily: scene === 'console' ? 'monospace' : undefined }, gradientText(w.name)]}
+          >
+            {copy.level}
+          </Text>
         </Animated.View>
         <Animated.View style={{ alignItems: 'center', opacity: words, transform: [{ translateY: words.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }}>
-          <Text testID="welcome-level" style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' }}>{copy.level}</Text>
-          <Text testID="welcome-title" accessibilityRole="header" style={{ color: '#fff', fontSize: landscape ? 18 : 21, fontWeight: '800', textAlign: 'center', marginTop: 4, letterSpacing: -0.3 }}>{copy.title}</Text>
-          {!landscape && heroH > 300 && <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 13, textAlign: 'center', marginTop: 4, maxWidth: 320 }}>{copy.message}</Text>}
+          <View style={{ width: 56, height: 4, borderRadius: 2, marginBottom: 6, ...gradient(`linear-gradient(90deg, ${w.name[0]}, ${w.name[1]})`, w.name[1]) }} />
+          <Text testID="welcome-title" style={{ color: w.ink, fontSize: landscape ? 15 : 16, fontWeight: '800', textAlign: 'center', letterSpacing: -0.2 }}>{copy.title}</Text>
         </Animated.View>
         {onChoose && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 }} accessibilityRole="tablist" accessibilityLabel="Choose where you are signing in">
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6, marginTop: 4 }} accessibilityRole="tablist" accessibilityLabel="Choose where you are signing in">
             {WORKSPACE_WELCOME_CHOICES.map((c) => {
               const active = c.scene === scene || (c.scene === 'employee' && scene === 'team');
               return (
                 <Pressable key={c.scene} testID={`welcome-choice-${c.scene}`} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => onChoose(c.scene)} hitSlop={6}
-                  style={{ borderRadius: 99, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: active ? 'rgba(255,255,255,0.4)' : 'transparent', backgroundColor: active ? 'rgba(255,255,255,0.16)' : 'transparent' }}>
-                  <Text style={{ color: active ? '#fff' : 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: active ? '700' : '500' }}>{c.label}</Text>
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: active ? w.ink : 'transparent', backgroundColor: active ? w.ink : w.chip }}>
+                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: CHOICE_DOT[c.scene] }} />
+                  <Text style={{ color: active ? (w.light ? '#fff' : '#0b1020') : w.ink, fontSize: 12, fontWeight: '700' }}>{c.label}</Text>
                 </Pressable>
               );
             })}
@@ -127,70 +148,126 @@ export function WelcomeHero({ scene, onChoose }: { scene: WelcomeScene; onChoose
   );
 }
 
-function Glow({ color, size, style, run, delay = 0 }: { color: string; size: number; style: ViewStyle; run: boolean; delay?: number }) {
-  const v = useLoop(9000, run, delay);
+/** Gradient-filled text where the platform can draw it (the web build); a solid colour elsewhere. */
+function gradientText([a, b]: [string, string]) {
+  if (Platform.OS !== 'web') return null;
+  return { backgroundImage: `linear-gradient(90deg, ${a}, ${b})`, backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' } as never;
+}
+
+function Glow({ color, size, style, run, light, delay = 0 }: { color: string; size: number; style: ViewStyle; run: boolean; light: boolean; delay?: number }) {
+  const v = useSwing(9000, run, delay);
   return (
-    <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: 0.32 }, style, {
+    <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: light ? 0.28 : 0.35 }, style, {
       transform: [{ translateX: v.interpolate({ inputRange: [0, 1], outputRange: [0, size * 0.08] }) }, { scale: v.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }],
     }]} />
   );
 }
 
-/** Each level's moving shapes, kept light: a handful of views animated on the native thread. */
-function Motif({ scene, w, h, run }: { scene: WelcomeScene; w: number; h: number; run: boolean }) {
-  const a = useLoop(3200, run);
-  const b = useLoop(4100, run, 600);
-  const spin = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (!run) return;
-    const l = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 24000, easing: Easing.linear, useNativeDriver: true }));
-    l.start();
-    return () => l.stop();
-  }, [run, spin]);
-  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const dot = (key: string, x: number, y: number, r: number, color: string, extra?: object) => (
-    <Animated.View key={key} style={[{ position: 'absolute', left: x - r, top: y - r, width: r * 2, height: r * 2, borderRadius: r, backgroundColor: color, opacity: 0.6 }, extra]} />
-  );
-  if (scene === 'console' || scene === 'team') {
-    const R = Math.min(w, h) * 0.42;
-    return (
-      <Animated.View style={{ position: 'absolute', left: w / 2 - R, top: h / 2 - R, width: R * 2, height: R * 2, transform: [{ rotate }] }}>
-        <View style={{ position: 'absolute', inset: 0, borderRadius: R, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderStyle: 'dashed' } as ViewStyle} />
-        <View style={{ position: 'absolute', inset: R * 0.3, borderRadius: R, borderWidth: 1, borderColor: 'rgba(11,197,255,0.25)' } as ViewStyle} />
-        {scene === 'console'
-          ? [dot('a', R * 2, R, 5, C.rose), dot('b', R * 0.3, R * 0.4, 4, C.cyan), dot('c', R, R * 1.7, 3, C.violet)]
-          : [0, 1, 2].map((i) => {
-              const ang = (i * 2 * Math.PI) / 3;
-              const cx = R + Math.cos(ang) * R * 0.75;
-              const cy = R + Math.sin(ang) * R * 0.75;
-              return <View key={i}>{dot('a', cx, cy - 7, 10, C.rose)}{dot('b', cx - 8, cy + 6, 10, C.pink)}{dot('c', cx + 8, cy + 6, 10, C.violet)}</View>;
-            })}
-      </Animated.View>
-    );
-  }
-  if (scene === 'hr') {
-    return (
-      <View style={{ position: 'absolute', left: 16, bottom: 0, flexDirection: 'row', alignItems: 'flex-end', gap: 10, height: h * 0.55 }}>
-        {[0, 1, 2, 3, 4].map((i) => (
-          <Animated.View key={i} style={{ width: 16, height: h * 0.55, borderTopLeftRadius: 8, borderTopRightRadius: 8, backgroundColor: i % 2 ? C.violet : C.blue, opacity: 0.4, transformOrigin: 'bottom', transform: [{ scaleY: (i % 2 ? b : a).interpolate({ inputRange: [0, 1], outputRange: [0.35 + i * 0.06, 0.9] }) }] } as never} />
-        ))}
-      </View>
-    );
-  }
-  if (scene === 'super') {
-    const pts: [number, number][] = [[0.5, 0.18], [0.2, 0.5], [0.8, 0.5], [0.1, 0.85], [0.4, 0.86], [0.62, 0.86], [0.92, 0.84]];
+/** The strip at the bottom of the hero where each level's scene moves, clear of the words above it. */
+const BAND = 54;
+
+const abs = (s: ViewStyle): ViewStyle => ({ position: 'absolute', ...s });
+
+/** Each level's moving scene, kept light: a handful of views animated on the native thread. */
+function Stage({ scene, w, h, run }: { scene: WelcomeScene; w: number; h: number; run: boolean }) {
+  const turn = useCycle(14000, run);
+  const fast = useCycle(5000, run);
+  const swing = useSwing(2600, run);
+  const swing2 = useSwing(3400, run, 700);
+  const rotate = turn.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const rotateFast = fast.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  if (scene === 'console') {
+    const R = Math.min(h * 0.22, 80);
+    const cx = w - R * 0.7;
+    const cy = h - R * 0.55;
     return (
       <>
-        {pts.map(([x, y], i) => dot(String(i), x * w, y * h, i === 0 ? 9 : 6, i === 0 ? C.rose : i < 3 ? C.pink : C.indigo, { transform: [{ scale: (i % 2 ? a : b).interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.2] }) }] }))}
+        {Array.from({ length: Math.ceil(w / 36) }, (_, i) => <View key={`v${i}`} style={abs({ left: i * 36, top: 0, bottom: 0, width: 1, backgroundColor: 'rgba(34,211,238,0.07)' })} />)}
+        {Array.from({ length: Math.ceil(h / 36) }, (_, i) => <View key={`h${i}`} style={abs({ top: i * 36, left: 0, right: 0, height: 1, backgroundColor: 'rgba(34,211,238,0.07)' })} />)}
+        <View style={abs({ left: cx - R, top: cy - R, width: R * 2, height: R * 2, borderRadius: R, borderWidth: 1.5, borderColor: 'rgba(56,189,248,0.6)', backgroundColor: 'rgba(29,78,216,0.18)' })} />
+        {[0, 1, 2].map((i) => (
+          <Animated.View key={i} style={abs({ left: cx - R, top: cy - R, width: R * 2, height: R * 2, borderRadius: R, borderWidth: 1, borderColor: 'rgba(34,211,238,0.45)', transform: [{ scaleX: (i === 1 ? swing2 : swing).interpolate({ inputRange: [0, 1], outputRange: i === 2 ? [0.3, 0.9] : [0.05, 0.75] }) }] })} />
+        ))}
+        <View style={abs({ left: cx - R, top: cy - R * 0.16, width: R * 2, height: R * 0.32, borderRadius: R, borderWidth: 1, borderColor: 'rgba(34,211,238,0.3)' })} />
+        <View style={abs({ left: cx - R * 1.5, top: cy - R * 1.5, width: R * 3, height: R * 3, transform: [{ scaleY: 0.3 }, { rotate: '-14deg' }] })}>
+          <Animated.View style={abs({ left: 0, top: 0, width: R * 3, height: R * 3, borderRadius: R * 1.5, borderWidth: 1, borderColor: 'rgba(96,165,250,0.45)', borderStyle: 'dashed', transform: [{ rotate: rotateFast }] })}>
+            <View style={abs({ left: R * 3 - 8, top: R * 1.5 - 8, width: 16, height: 16, borderRadius: 8, backgroundColor: '#60a5fa' })} />
+          </Animated.View>
+        </View>
+        {[[0.06, 0.92], [0.22, 0.9], [0.4, 0.94]].map(([x, y], i) => (
+          <Animated.View key={i} style={abs({ left: x! * w, top: y! * h - 4, width: 8, height: 8, borderRadius: 4, backgroundColor: '#34d399', opacity: (i % 2 ? swing : swing2).interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) })} />
+        ))}
       </>
     );
   }
-  // employee: bubbles drifting up
+  if (scene === 'super') {
+    const R = Math.min(h * 0.2, 72);
+    const cx = w - R * 0.9;
+    const cy = h - R * 0.45;
+    const stars: [number, number][] = [[0.06, 0.12], [0.2, 0.86], [0.32, 0.1], [0.5, 0.94], [0.66, 0.08], [0.9, 0.18], [0.12, 0.5], [0.72, 0.5], [0.42, 0.66], [0.96, 0.92]];
+    return (
+      <>
+        {stars.map(([x, y], i) => <Animated.View key={i} style={abs({ left: x * w, top: y * h, width: 3, height: 3, borderRadius: 2, backgroundColor: '#fef3c7', opacity: (i % 2 ? swing : swing2).interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) })} />)}
+        {[0, 1].map((i) => (
+          <View key={i} style={abs({ left: cx - R * (1.2 + i * 0.4), top: cy - R * (1.2 + i * 0.4), width: R * (2.4 + i * 0.8), height: R * (2.4 + i * 0.8), transform: [{ scaleY: 0.34 }, { rotate: i ? '12deg' : '-10deg' }] })}>
+            <Animated.View style={abs({ left: 0, top: 0, right: 0, bottom: 0, borderRadius: R * 2, borderWidth: 1, borderColor: 'rgba(227,179,65,0.5)', transform: [{ rotate: i ? rotate : rotateFast }] })}>
+              <View style={abs({ right: -9, top: R * (1.2 + i * 0.4) - 9, width: 18, height: 18, borderRadius: 9, backgroundColor: i ? '#34d399' : '#fde68a' })} />
+            </Animated.View>
+          </View>
+        ))}
+        <Animated.View style={abs({ left: cx - R * 0.42, top: cy - R * 0.42, width: R * 0.84, height: R * 0.84, borderRadius: R, borderWidth: 2, borderColor: 'rgba(227,179,65,0.7)', opacity: fast.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] }), transform: [{ scale: fast.interpolate({ inputRange: [0, 1], outputRange: [1, 2.4] }) }] })} />
+        <View style={abs({ left: cx - R * 0.42, top: cy - R * 0.42, width: R * 0.84, height: R * 0.84, borderRadius: R, alignItems: 'center', justifyContent: 'center', ...gradient('radial-gradient(circle at 40% 35%, #fde68a, #e3b341 55%, #a16207)', '#e3b341') })}>
+          <Text style={{ fontSize: R * 0.36, color: '#0c2620', fontWeight: '900' }}>♛</Text>
+        </View>
+      </>
+    );
+  }
+  if (scene === 'hr') {
+    const colW = Math.min(96, w * 0.26);
+    const top = h - BAND + 8;
+    const x0 = w / 2 - colW * 1.5 - 8;
+    const travel = fast.interpolate({ inputRange: [0, 0.15, 0.35, 0.5, 0.7, 0.95, 1], outputRange: [0, 0, colW + 8, colW + 8, 2 * (colW + 8), 2 * (colW + 8), 0] });
+    const lift = fast.interpolate({ inputRange: [0, 0.15, 0.25, 0.35, 0.5, 0.6, 0.7, 1], outputRange: [0, 0, -10, 0, 0, -10, 0, 0] });
+    const hired = fast.interpolate({ inputRange: [0, 0.7, 0.76, 0.95, 1], outputRange: [0, 0, 1, 1, 0] });
+    return (
+      <>
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={abs({ left: x0 + i * (colW + 8), top, width: colW, height: h, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' })} />
+        ))}
+        <Animated.View style={abs({ left: x0 + 6, top: top + 10, width: colW - 12, height: 30, borderRadius: 10, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6, transform: [{ translateX: travel }, { translateY: lift }] })}>
+          <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: '#fb8a7e' }} />
+          <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: '#2e1065', opacity: 0.7 }} />
+          <Animated.View style={abs({ right: -6, top: -8, width: 18, height: 18, borderRadius: 9, backgroundColor: '#10b981', alignItems: 'center', justifyContent: 'center', transform: [{ scale: hired }] })}>
+            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>✓</Text>
+          </Animated.View>
+        </Animated.View>
+        {[[0.1, 0.2], [0.88, 0.16], [0.06, 0.6], [0.94, 0.55]].map(([x, y], i) => (
+          <Animated.View key={i} style={abs({ left: x! * w, top: y! * h, width: 10, height: 10, borderRadius: 3, backgroundColor: ['#fbbf24', '#fb8a7e', '#a78bfa', '#34d399'][i], opacity: 0.8, transform: [{ rotate }, { translateY: (i % 2 ? swing : swing2).interpolate({ inputRange: [0, 1], outputRange: [-6, 6] }) }] })} />
+        ))}
+      </>
+    );
+  }
+  // Employee Workspace and team: daylight, a turning sun, a drifting cloud, and a friendly tick or the team.
+  const sun = Math.min(h * 0.12, 40);
   return (
     <>
-      {[[0.12, 22, a], [0.35, 14, b], [0.62, 26, a], [0.85, 16, b]].map(([x, r, v], i) => dot(String(i), (x as number) * w, h * 0.8, r as number, [C.rose, C.pink, C.violet, C.rose][i]!, {
-        transform: [{ translateY: (v as Animated.Value).interpolate({ inputRange: [0, 1], outputRange: [0, -h * 0.55] }) }], opacity: 0.35,
-      }))}
+      <Animated.View style={abs({ right: 8, top: 8, width: sun * 1.6, height: sun * 1.6, alignItems: 'center', justifyContent: 'center', transform: [{ rotate }] })}>
+        {Array.from({ length: 8 }, (_, i) => <View key={i} style={abs({ width: 4, height: sun * 1.6, borderRadius: 2, backgroundColor: 'rgba(251,146,60,0.35)', transform: [{ rotate: `${i * 22.5}deg` }] })} />)}
+      </Animated.View>
+      <View style={abs({ right: 8 + sun * 0.3, top: 8 + sun * 0.3, width: sun, height: sun, borderRadius: sun / 2, ...gradient('radial-gradient(circle, #fde68a, #fb923c 60%, #f97316)', '#fb923c') })} />
+      <Animated.View style={abs({ left: 10, top: 14, width: 46, height: 18, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.95)', transform: [{ translateX: swing2.interpolate({ inputRange: [0, 1], outputRange: [0, 18] }) }] })} />
+      <Animated.View style={abs({ right: w * 0.3, bottom: 18, width: 40, height: 14, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.9)', transform: [{ translateX: swing.interpolate({ inputRange: [0, 1], outputRange: [0, -24] }) }] })} />
+      {scene === 'team'
+        ? [0, 1, 2, 3].map((i) => (
+            <Animated.View key={i} style={abs({ left: 14 + i * 22, bottom: 14, width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#fff', backgroundColor: ['#6366f1', '#fb923c', '#34d399', '#f472b6'][i], transform: [{ translateY: (i % 2 ? swing : swing2).interpolate({ inputRange: [0, 1], outputRange: [0, -6] }) }] })} />
+          ))
+        : (
+            <Animated.View style={abs({ left: 14, bottom: 14, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#fff', transform: [{ translateY: swing.interpolate({ inputRange: [0, 1], outputRange: [0, -6] }) }] })}>
+              <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#10b981', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>✓</Text></View>
+              <Text style={{ color: '#1e1b4b', fontSize: 11, fontWeight: '800' }}>Checked in</Text>
+            </Animated.View>
+          )}
     </>
   );
 }
