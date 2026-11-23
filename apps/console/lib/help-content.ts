@@ -249,6 +249,7 @@ export const CONSOLE_HELP: HelpContent = {
   },
 
   sections: {
+    'Delete permissions': { what: 'The areas this company\'s Super Workspace may delete in. Whatever is off here is off for its HR Workspaces and Employee Workspace too; the Super Workspace passes on only what is on.', how: 'Switch an area off to stop deletes there at every level. Every delete still asks for the person\'s own password and is written to the audit log.' },
     Growth: { what: 'New companies, Super Workspaces, HR Workspaces and users per period in the range.', how: 'Click a series name to hide or show it.' },
     'Needs action': { what: 'What a Console Admin should look at now: failed payments, overdue invoices, trials ending, waiting tickets and system warnings.', how: 'Open an item to go to the page that fixes it.' },
     Revenue: { what: 'Money collected and refunded per period, in the chosen currency.' },
