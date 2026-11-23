@@ -1,3 +1,4 @@
+import { CONSOLE_SYSTEM_ROLES } from './console';
 import { PERMISSION_ACTIONS, PERMISSIONS, permissionAction, SCOPE_RANK, type PermissionAction, type PermissionKey, type Scope } from './permissions';
 
 export interface RoleTemplate {
@@ -535,13 +536,13 @@ export function accessLevelOf(roleKeys: readonly string[]): 'super' | 'hr' | 'em
   return 'employee';
 }
 
-/** Platform (SAMPLEDGE staff) roles for the Super Admin Console. Separate realm from tenant roles. */
-export const PLATFORM_ROLES = ['super_admin', 'support', 'billing_ops', 'viewer'] as const;
+/**
+ * Platform (SAMPLEDGE staff) roles for the Console. Separate realm from tenant roles. These are the built-in roles
+ * (console.ts CONSOLE_SYSTEM_ROLES); admins can also hold a custom role stored in platform_roles, so a role key is
+ * any string at run time. The API reads a role's permissions from the database on every request.
+ */
+export const PLATFORM_ROLES = ['super_admin', 'admin', 'billing_ops', 'support', 'operations', 'viewer'] as const;
 export type PlatformRole = (typeof PLATFORM_ROLES)[number];
 
-export const PLATFORM_ROLE_CAPABILITIES: Record<PlatformRole, readonly string[]> = {
-  super_admin: ['tenants:read', 'tenants:manage', 'access:manage', 'integrations:manage', 'billing:read', 'billing:manage', 'plans:manage', 'statutory:manage', 'support:request', 'support:chat', 'help:manage', 'help:answer', 'admins:manage', 'audit:read', 'health:read'],
-  support: ['tenants:read', 'support:request', 'support:chat', 'help:answer', 'health:read', 'audit:read'],
-  billing_ops: ['tenants:read', 'billing:read', 'billing:manage', 'plans:manage'],
-  viewer: ['tenants:read', 'billing:read', 'health:read'],
-};
+/** Built-in role permissions (the fallback when the database has no row for a built-in role yet). */
+export const PLATFORM_ROLE_CAPABILITIES: Record<string, readonly string[]> = Object.fromEntries(CONSOLE_SYSTEM_ROLES.map((r) => [r.key, r.permissions]));

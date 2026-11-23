@@ -18,6 +18,8 @@ export interface PlatformActor {
   kind: 'platform_admin';
   adminId: string;
   role: string;
+  /** The role's permissions, read from platform_roles for this request (so a role change applies at once). */
+  permissions: readonly string[];
   sessionId: string;
   mfa: boolean;
   label: string;

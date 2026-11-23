@@ -184,7 +184,7 @@ describe('Platform integrations (Super Admin Console)', () => {
 
   it('lists every integration with where its setting comes from: nothing saved yet', async () => {
     const list = ok(await as(superToken).get('/platform/integrations')) as unknown as Record<string, any>[];
-    expect(list.map((v) => v.key)).toEqual(['ai', 'email', 'push', 'scanning', 'mobile_sso', 'razorpay', 'stripe', 'backups']);
+    expect(list.map((v) => v.key)).toEqual(['ai', 'email', 'push', 'scanning', 'mobile_sso', 'razorpay', 'stripe', 'backups', 'company_data']);
     // Nothing comes from the environment any more; only the app's own sign-in address has a built-in default.
     expect(list.find((v) => v.key === 'ai')).toMatchObject({ source: 'none', enabled: false, secrets: { apiKey: { set: false, hint: null } } });
     expect(list.find((v) => v.key === 'email')).toMatchObject({ source: 'none', enabled: false });

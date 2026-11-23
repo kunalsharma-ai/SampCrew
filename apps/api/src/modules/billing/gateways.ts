@@ -182,6 +182,19 @@ export async function chargeSavedCard(keys: GatewayKeys, input: { customer: stri
   return pi.id as string;
 }
 
+/**
+ * Refunds all or part of a captured payment. Razorpay takes the payment id (pay_...), Stripe the payment intent
+ * (pi_...). Returns the gateway's refund id. The idempotency key stops a retried request from refunding twice.
+ */
+export async function refundPayment(keys: GatewayKeys, input: { paymentId: string; amountMinor: number; reason: string; creditNoteId: string }): Promise<string> {
+  if (keys.provider === 'razorpay') {
+    const r = await call(keys, 'POST', `/v1/payments/${encodeURIComponent(input.paymentId)}/refund`, { amount: input.amountMinor, speed: 'normal', notes: { reason: input.reason.slice(0, 250), credit_note_id: input.creditNoteId }, receipt: input.creditNoteId.slice(0, 40) });
+    return r.id as string;
+  }
+  const r = await call(keys, 'POST', '/v1/refunds', { payment_intent: input.paymentId, amount: input.amountMinor, metadata: { reason: input.reason.slice(0, 450), credit_note_id: input.creditNoteId } }, `refund-${input.creditNoteId}`);
+  return r.id as string;
+}
+
 const safeEqual = (a: string, b: string) => {
   const x = Buffer.from(a);
   const y = Buffer.from(b);

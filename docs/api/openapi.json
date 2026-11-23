@@ -58040,6 +58040,32 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
+          },
+          {
+            "name": "assigned",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "me",
+                "nobody"
+              ]
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "low",
+                "normal",
+                "high",
+                "urgent"
+              ]
+            }
           }
         ],
         "responses": {
@@ -58418,8 +58444,192 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
+          },
+          {
+            "name": "assigned",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "me",
+                "nobody"
+              ]
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "low",
+                "normal",
+                "high",
+                "urgent"
+              ]
+            }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Platform: SupportChat"
+        ],
+        "summary": "Start a conversation with a company's Super Workspace (they are notified)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformSupportChat_start",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "tenantId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "subject": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 120
+                  },
+                  "category": {
+                    "default": "question",
+                    "type": "string",
+                    "enum": [
+                      "question",
+                      "technical",
+                      "account",
+                      "billing",
+                      "feature",
+                      "other"
+                    ]
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "priority": {
+                    "default": "normal",
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "normal",
+                      "high",
+                      "urgent"
+                    ]
+                  }
+                },
+                "required": [
+                  "tenantId",
+                  "subject",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/support/conversations/{id}/triage": {
+      "put": {
+        "tags": [
+          "Platform: SupportChat"
+        ],
+        "summary": "Set a conversation's priority or assign it to a Console admin",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformSupportChat_triage",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "normal",
+                      "high",
+                      "urgent"
+                    ]
+                  },
+                  "assignedAdminId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -76249,12 +76459,7 @@
                   },
                   "role": {
                     "type": "string",
-                    "enum": [
-                      "super_admin",
-                      "support",
-                      "billing_ops",
-                      "viewer"
-                    ]
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
                   },
                   "password": {
                     "type": "string",
@@ -76327,12 +76532,7 @@
                   },
                   "role": {
                     "type": "string",
-                    "enum": [
-                      "super_admin",
-                      "support",
-                      "billing_ops",
-                      "viewer"
-                    ]
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
                   },
                   "status": {
                     "type": "string",
@@ -78135,6 +78335,4288 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/command-center": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "The Console dashboard for a range: workspace counts, growth, revenue and subscriptions (money only with billing:read), attention items, activity",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_commandCenter",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "30d",
+              "type": "string",
+              "enum": [
+                "today",
+                "7d",
+                "30d",
+                "3m",
+                "6m",
+                "1y",
+                "custom"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/activity": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "The activity feed: new companies, workspaces, users, payments, plan changes, support and security events (by permission)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_activity",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Client companies with filters, search, sort and counts per status",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_clients",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "trial",
+                "payment_due",
+                "suspended",
+                "inactive",
+                "setup_pending",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "plan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 60
+            }
+          },
+          {
+            "name": "industry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "it_services",
+                "manufacturing",
+                "retail",
+                "healthcare",
+                "staffing",
+                "financial_services",
+                "education",
+                "logistics",
+                "hospitality",
+                "construction",
+                "other"
+              ]
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1-10",
+                "11-50",
+                "51-200",
+                "201-500",
+                "501-1000",
+                "1000+"
+              ]
+            }
+          },
+          {
+            "name": "paid",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "paid",
+                "free",
+                "enterprise"
+              ]
+            }
+          },
+          {
+            "name": "createdFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "createdTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "subscribedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "subscribedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "renewalWithinDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 365
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "created",
+              "type": "string",
+              "enum": [
+                "name",
+                "created",
+                "revenue",
+                "users",
+                "renewal",
+                "activity"
+              ]
+            }
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "demo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "include",
+              "type": "string",
+              "enum": [
+                "include",
+                "exclude",
+                "only"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Create a client company with its first Super Workspace (owner invite, plan, trial)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_createClient",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "legalName": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "industry": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "it_services",
+                              "manufacturing",
+                              "retail",
+                              "healthcare",
+                              "staffing",
+                              "financial_services",
+                              "education",
+                              "logistics",
+                              "hospitality",
+                              "construction",
+                              "other"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "description": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "website": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 200,
+                                "pattern": "^https?:\\/\\/\\S+$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "linkedin": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 200,
+                                "pattern": "^https?:\\/\\/\\S+$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "email": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 200,
+                                "format": "email",
+                                "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "const": ""
+                          }
+                        ]
+                      },
+                      "phone": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 30,
+                            "pattern": "^[+0-9 ()-]*$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "whatsapp": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 30,
+                            "pattern": "^[+0-9 ()-]*$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "foundedYear": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 1800,
+                            "maximum": 2100
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "companySize": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "1-10",
+                              "11-50",
+                              "51-200",
+                              "201-500",
+                              "501-1000",
+                              "1000+"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "address": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "line1": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 160
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "line2": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 160
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "city": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 80
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "state": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 80
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "postalCode": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 20
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "country": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "pattern": "^[A-Z]{2}$"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "primaryContact": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "email": {
+                                "anyOf": [
+                                  {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "maxLength": 200,
+                                        "format": "email",
+                                        "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": ""
+                                  }
+                                ]
+                              },
+                              "phone": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 30,
+                                    "pattern": "^[+0-9 ()-]*$"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "title": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "accountManagerId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "tags": {
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        }
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "workspace": {
+                    "type": "object",
+                    "properties": {
+                      "companyName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "slug": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 40,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+                      },
+                      "ownerEmail": {
+                        "type": "string"
+                      },
+                      "ownerName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "planKey": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                      },
+                      "seats": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "countryCode": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{2}$"
+                      },
+                      "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                      },
+                      "timezone": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "trialDays": {
+                        "default": 14,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 90
+                      },
+                      "ownerAccess": {
+                        "default": "invite",
+                        "type": "string",
+                        "enum": [
+                          "invite",
+                          "password"
+                        ]
+                      },
+                      "ownerPassword": {
+                        "type": "string",
+                        "minLength": 12,
+                        "maxLength": 200
+                      }
+                    },
+                    "required": [
+                      "companyName",
+                      "slug",
+                      "ownerEmail",
+                      "ownerName",
+                      "planKey",
+                      "seats",
+                      "countryCode",
+                      "currency",
+                      "timezone"
+                    ]
+                  }
+                },
+                "required": [
+                  "profile",
+                  "workspace"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/export": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "The filtered client list as CSV, Excel or PDF (audited)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_exportClients",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "trial",
+                "payment_due",
+                "suspended",
+                "inactive",
+                "setup_pending",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "plan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 60
+            }
+          },
+          {
+            "name": "industry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "it_services",
+                "manufacturing",
+                "retail",
+                "healthcare",
+                "staffing",
+                "financial_services",
+                "education",
+                "logistics",
+                "hospitality",
+                "construction",
+                "other"
+              ]
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1-10",
+                "11-50",
+                "51-200",
+                "201-500",
+                "501-1000",
+                "1000+"
+              ]
+            }
+          },
+          {
+            "name": "paid",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "paid",
+                "free",
+                "enterprise"
+              ]
+            }
+          },
+          {
+            "name": "createdFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "createdTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "subscribedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "subscribedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "renewalWithinDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 365
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "created",
+              "type": "string",
+              "enum": [
+                "name",
+                "created",
+                "revenue",
+                "users",
+                "renewal",
+                "activity"
+              ]
+            }
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "demo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "include",
+              "type": "string",
+              "enum": [
+                "include",
+                "exclude",
+                "only"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/options": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Client companies for pickers (id and name)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_clientOptions",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/managers": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Active Console admins who can be account managers (id and name)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_clientManagers",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/bulk": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Bulk action on selected companies: suspend, activate, tag, assign an account manager",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_bulk",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "suspend",
+                      "activate",
+                      "tag",
+                      "assign_manager"
+                    ]
+                  },
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  },
+                  "tag": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "accountManagerId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "action",
+                  "ids"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/{id}": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Company 360: profile, status, workspaces (Super, HR, Employee), people, subscription and money (by permission), support",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_client",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/{id}/profile": {
+      "put": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Save the company profile (contact details only with users:pii)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_profile",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "legalName": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "industry": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "it_services",
+                          "manufacturing",
+                          "retail",
+                          "healthcare",
+                          "staffing",
+                          "financial_services",
+                          "education",
+                          "logistics",
+                          "hospitality",
+                          "construction",
+                          "other"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "website": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 200,
+                            "pattern": "^https?:\\/\\/\\S+$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "linkedin": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 200,
+                            "pattern": "^https?:\\/\\/\\S+$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "email": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 200,
+                            "format": "email",
+                            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  },
+                  "phone": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 30,
+                        "pattern": "^[+0-9 ()-]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "whatsapp": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 30,
+                        "pattern": "^[+0-9 ()-]*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "foundedYear": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1800,
+                        "maximum": 2100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "companySize": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "1-10",
+                          "11-50",
+                          "51-200",
+                          "201-500",
+                          "501-1000",
+                          "1000+"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "address": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "line1": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 160
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "line2": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 160
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "city": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 80
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "state": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 80
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "postalCode": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 20
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "country": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[A-Z]{2}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "primaryContact": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 120
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "email": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 200,
+                                    "format": "email",
+                                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "const": ""
+                              }
+                            ]
+                          },
+                          "phone": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 30,
+                                "pattern": "^[+0-9 ()-]*$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 120
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "accountManagerId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tags": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/{id}/archive": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Archive a company whose Super Workspaces are suspended, or restore it (nothing is deleted)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_archive",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "archived",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/{id}/workspaces": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Add another Super Workspace to the company",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_addWorkspace",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "companyName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 40,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+                  },
+                  "ownerEmail": {
+                    "type": "string"
+                  },
+                  "ownerName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "planKey": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  },
+                  "seats": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "countryCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{2}$"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "trialDays": {
+                    "default": 14,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 90
+                  },
+                  "ownerAccess": {
+                    "default": "invite",
+                    "type": "string",
+                    "enum": [
+                      "invite",
+                      "password"
+                    ]
+                  },
+                  "ownerPassword": {
+                    "type": "string",
+                    "minLength": 12,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "companyName",
+                  "slug",
+                  "ownerEmail",
+                  "ownerName",
+                  "planKey",
+                  "seats",
+                  "countryCode",
+                  "currency",
+                  "timezone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/client": {
+      "put": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Move a Super Workspace to another company",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_move",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "clientId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "clientId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/{id}/users": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "People in every Super Workspace of the company (emails masked without users:pii)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_clientUsers",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "invited",
+                "suspended"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/{id}/lookup": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Look the company up in the company-data integration (Brandfetch) by its website; saves nothing",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_lookup",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/clients/{id}/lookup/apply": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Save chosen fields from a fresh Brandfetch lookup, marked with their source",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_applyLookup",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "fields": {
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "description",
+                        "logo",
+                        "linkedin",
+                        "foundedYear",
+                        "location"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "fields"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/notifications/summary": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Unread count per category (for the menu badges and the bell), the latest notifications and my preferences",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_notificationSummary",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/notifications": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Notification history, newest first, only categories my role allows",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_notificationList",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "clients",
+                "workspaces",
+                "users",
+                "subscriptions",
+                "payments",
+                "support",
+                "security",
+                "system",
+                "admin"
+              ]
+            }
+          },
+          {
+            "name": "unread",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/notifications/read": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Mark notifications read",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_markRead",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "ids"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/notifications/unread": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Mark notifications unread again",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_markUnread",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "ids"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/notifications/read-all": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Mark all as read",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_markAllRead",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/notifications/preferences": {
+      "put": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "My notification preferences: muted categories, sound (off by default), desktop notifications",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_prefs",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "muted": {
+                    "maxItems": 9,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "clients",
+                        "workspaces",
+                        "users",
+                        "subscriptions",
+                        "payments",
+                        "support",
+                        "security",
+                        "system",
+                        "admin"
+                      ]
+                    }
+                  },
+                  "sound": {
+                    "type": "boolean"
+                  },
+                  "desktop": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "muted",
+                  "sound",
+                  "desktop"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/console/stream": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Live Console events (text/event-stream): new notifications my role may see, and support inbox updates when I can chat",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_stream",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/roles/mine": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "My Console role and its permissions",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_myRole",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/roles": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Console roles with their permissions and how many admins hold each",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_roleList",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Create a custom Console role",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_createRole",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                  },
+                  "description": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "permissions": {
+                    "maxItems": 24,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "tenants:read",
+                        "tenants:manage",
+                        "users:read",
+                        "users:pii",
+                        "access:manage",
+                        "billing:read",
+                        "billing:manage",
+                        "billing:refund",
+                        "plans:manage",
+                        "support:chat",
+                        "help:answer",
+                        "help:manage",
+                        "support:request",
+                        "reports:read",
+                        "reports:export",
+                        "audit:read",
+                        "audit:export",
+                        "health:read",
+                        "integrations:manage",
+                        "statutory:manage",
+                        "settings:manage",
+                        "admins:manage",
+                        "roles:manage",
+                        "security:manage"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "permissions"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/roles/{key}": {
+      "put": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Change a role's name, description and permissions (Super Admin always has every permission)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_updateRole",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                  },
+                  "description": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "permissions": {
+                    "maxItems": 24,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "tenants:read",
+                        "tenants:manage",
+                        "users:read",
+                        "users:pii",
+                        "access:manage",
+                        "billing:read",
+                        "billing:manage",
+                        "billing:refund",
+                        "plans:manage",
+                        "support:chat",
+                        "help:answer",
+                        "help:manage",
+                        "support:request",
+                        "reports:read",
+                        "reports:export",
+                        "audit:read",
+                        "audit:export",
+                        "health:read",
+                        "integrations:manage",
+                        "statutory:manage",
+                        "settings:manage",
+                        "admins:manage",
+                        "roles:manage",
+                        "security:manage"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "permissions"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Archive a custom role nobody holds",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_archiveRole",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/search": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Global search across companies, workspaces, users, billing, plans, support, audit and admins (only what my role can open)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_find",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "types",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 6,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/reports/{kind}": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "A report (business, workspaces, subscriptions, payments) as JSON, or as CSV, Excel or PDF with format (reports:export, audited)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_report",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "clientId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "plan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 60
+            }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "json",
+              "type": "string",
+              "enum": [
+                "json",
+                "csv",
+                "xlsx",
+                "pdf"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/audit-log": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "The audit log with filters: before and after values, IP and device",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_audit",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "actorType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "platform_admin",
+                "system",
+                "ai_agent",
+                "integration"
+              ]
+            }
+          },
+          {
+            "name": "actorId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "tenantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "clientId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "area",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "companies",
+                "workspaces",
+                "users",
+                "plans",
+                "billing",
+                "admins",
+                "security",
+                "communication",
+                "settings",
+                "other"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "success",
+                "denied",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "platform",
+              "type": "string",
+              "enum": [
+                "platform",
+                "all"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/audit-log/export": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "The filtered audit log as CSV, Excel or PDF (audited)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_exportAudit",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "actorType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "platform_admin",
+                "system",
+                "ai_agent",
+                "integration"
+              ]
+            }
+          },
+          {
+            "name": "actorId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "tenantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "clientId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "area",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "companies",
+                "workspaces",
+                "users",
+                "plans",
+                "billing",
+                "admins",
+                "security",
+                "communication",
+                "settings",
+                "other"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "success",
+                "denied",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "platform",
+              "type": "string",
+              "enum": [
+                "platform",
+                "all"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/security": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Console sessions, sign-in history, suspicious activity and two-step verification coverage",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_security",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/sessions/{id}/revoke": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "End one Console session now",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_revokeSession",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/admins/{id}/sessions/revoke": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "End every session of one admin (except mine)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_revokeAdminSessions",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/credit-notes": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Refunds and credit notes, newest first",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_creditNotes",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "invoiceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "clientId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/refunds": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Refund all or part of a paid invoice through its gateway or by bank transfer; issues a credit note",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_refund",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "invoiceId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "amount": {
+                    "type": "string",
+                    "pattern": "^\\d{1,9}(\\.\\d{1,2})?$"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "gateway",
+                      "bank_transfer"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  },
+                  "reference": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "invoiceId",
+                  "amount",
+                  "method",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/credit-notes/{id}/void": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Void a credit note recorded by mistake (bank transfers only)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_voidNote",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plans/{key}/impact": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Subscribers, MRR, revenue and billing records of a plan, and whether it can be deleted",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_planImpact",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Preview a change of modules and limits: what subscribers would lose and who is over a lowered limit (saves nothing)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_previewPlan",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "features": {
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]*$"
+                    }
+                  },
+                  "limits": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "max_employees",
+                        "max_legal_entities",
+                        "max_hr_workspaces",
+                        "max_employee_workspaces",
+                        "ai_credits_monthly",
+                        "storage_gb"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": -1,
+                      "maximum": 10000000
+                    }
+                  }
+                },
+                "required": [
+                  "features",
+                  "limits"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plans/{key}/duplicate": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Copy a plan (modules, limits and prices) under a new key; the copy starts hidden",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_duplicatePlan",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                  }
+                },
+                "required": [
+                  "key",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plans/{key}/retire": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Retire a plan: closed to new companies and plan changes; subscribers keep it",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_retirePlan",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/plans/{key}/unretire": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Undo a retirement (the plan stays archived until restored)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_unretirePlan",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/status": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "System health as Operational, Warning or Critical per component, with API traffic and errors",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_status",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/settings": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Console global settings",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_getSettings",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Save one or more sections of the global settings (audited with before and after)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_saveSettings",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "workspaceDefaults": {
+                    "type": "object",
+                    "properties": {
+                      "trialDays": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 90
+                      },
+                      "defaultPlan": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 60
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "requireMfa": {
+                        "type": "boolean"
+                      },
+                      "region": {
+                        "type": "string",
+                        "enum": [
+                          "in",
+                          "eu",
+                          "us",
+                          "uk",
+                          "me",
+                          "sg",
+                          "au"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "trialDays",
+                      "defaultPlan",
+                      "requireMfa",
+                      "region"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "userDefaults": {
+                    "type": "object",
+                    "properties": {
+                      "inviteExpiryDays": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 30
+                      },
+                      "ownerAccess": {
+                        "type": "string",
+                        "enum": [
+                          "invite",
+                          "password"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "inviteExpiryDays",
+                      "ownerAccess"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "communication": {
+                    "type": "object",
+                    "properties": {
+                      "supportHours": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "autoReply": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "firstResponseHours": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 168
+                      }
+                    },
+                    "required": [
+                      "supportHours",
+                      "autoReply",
+                      "firstResponseHours"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "security": {
+                    "type": "object",
+                    "properties": {
+                      "sessionHours": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 72
+                      },
+                      "lockoutAttempts": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 20
+                      },
+                      "lockoutMinutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1440
+                      },
+                      "suspiciousFailedLogins": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 100
+                      }
+                    },
+                    "required": [
+                      "sessionHours",
+                      "lockoutAttempts",
+                      "lockoutMinutes",
+                      "suspiciousFailedLogins"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "notifications": {
+                    "type": "object",
+                    "properties": {
+                      "renewalNoticeDays": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 60
+                      },
+                      "inactiveAfterDays": {
+                        "type": "integer",
+                        "minimum": 7,
+                        "maximum": 365
+                      }
+                    },
+                    "required": [
+                      "renewalNoticeDays",
+                      "inactiveAfterDays"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "branding": {
+                    "type": "object",
+                    "properties": {
+                      "consoleName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60
+                      },
+                      "supportEmail": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "email",
+                            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "accent": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^#[0-9a-fA-F]{6}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "consoleName",
+                      "supportEmail",
+                      "accent"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "workspaceDefaults",
+                  "userDefaults",
+                  "communication",
+                  "security",
+                  "notifications",
+                  "branding"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/view-as": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "My approved support access to this Super Workspace, if any: time left and what I can see",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_viewAsCurrent",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/view-as/{section}": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "One read-only section of the workspace during an approved grant (audited in the workspace and the Console)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_viewAsSection",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "section",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/view-as/exit": {
+      "post": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Exit: end my support access now",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_viewAsExit",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"

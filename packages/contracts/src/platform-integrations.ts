@@ -9,7 +9,7 @@ import { z } from 'zod';
  * Workspace-level integrations (Slack, webhooks, API keys, single sign-on) stay in each workspace's own
  * Settings > Integrations in the Web Portal.
  */
-export const PLATFORM_INTEGRATION_KEYS = ['ai', 'email', 'push', 'scanning', 'mobile_sso', 'razorpay', 'stripe', 'backups'] as const;
+export const PLATFORM_INTEGRATION_KEYS = ['ai', 'email', 'push', 'scanning', 'mobile_sso', 'razorpay', 'stripe', 'backups', 'company_data'] as const;
 /** The integrations that collect payments for SampCrew subscriptions. */
 export const PAYMENT_GATEWAYS = ['razorpay', 'stripe'] as const;
 export type PaymentGateway = (typeof PAYMENT_GATEWAYS)[number];
@@ -22,7 +22,7 @@ export type PlatformIntegrationKey = (typeof PLATFORM_INTEGRATION_KEYS)[number];
 export type IntegrationSource = 'console' | 'default' | 'none';
 
 /** Integrations that only SAMPLEDGE's own operations use; workspaces are never told about them. */
-export const INTERNAL_PLATFORM_INTEGRATIONS: readonly PlatformIntegrationKey[] = ['backups'];
+export const INTERNAL_PLATFORM_INTEGRATIONS: readonly PlatformIntegrationKey[] = ['backups', 'company_data'];
 
 export const AI_EFFORTS = ['low', 'medium', 'high'] as const;
 export const SMTP_SECURITY = ['starttls', 'tls', 'none'] as const;
@@ -161,6 +161,15 @@ export const backupsIntegrationInput = z.object({
   if (v.provider === 'folder' && !v.path?.startsWith('/')) need('path', 'Enter the full path of the folder, e.g. /mnt/nas/sampcrew');
 });
 
+/** Company data (Brandfetch Brand API): logos and public company details for the Console's client profiles. */
+export const companyDataIntegrationInput = z.object({
+  enabled: z.boolean(),
+  /** Leave empty to keep the key already saved. */
+  apiKey: optionalSecret,
+  /** Optional: a different Brand API address (a proxy). Empty means https://api.brandfetch.io. */
+  baseUrl: z.union([z.literal(''), z.string().trim().url().max(300)]).optional(),
+}).strict();
+
 export const PLATFORM_INTEGRATION_INPUTS = {
   ai: aiIntegrationInput,
   email: emailIntegrationInput,
@@ -170,6 +179,7 @@ export const PLATFORM_INTEGRATION_INPUTS = {
   razorpay: razorpayIntegrationInput,
   stripe: stripeIntegrationInput,
   backups: backupsIntegrationInput,
+  company_data: companyDataIntegrationInput,
 } as const;
 
 export type PlatformIntegrationInput<K extends PlatformIntegrationKey = PlatformIntegrationKey> = z.infer<(typeof PLATFORM_INTEGRATION_INPUTS)[K]>;
@@ -193,6 +203,7 @@ export const PLATFORM_INTEGRATION_SECRETS: Record<PlatformIntegrationKey, readon
   razorpay: ['keySecret', 'webhookSecret'],
   stripe: ['secretKey', 'webhookSecret'],
   backups: ['secretAccessKey', 'accountKey', 'privateKey', 'password', 'alertWebhook'],
+  company_data: ['apiKey'],
 };
 
 export interface PlatformIntegrationStep { title: string; body: string; link?: { label: string; href: string } }
@@ -318,6 +329,18 @@ export const PLATFORM_INTEGRATIONS: readonly PlatformIntegrationDef[] = [
       { title: 'Create a bucket and a key just for SampCrew', body: 'Amazon S3, Backblaze B2, Cloudflare R2, Wasabi, DigitalOcean Spaces, MinIO and Google Cloud Storage (HMAC keys) all work as "S3-compatible". Turn versioning on (and object lock or retention if offered), and give the key access to that bucket only.' },
       { title: 'Enter the details and test', body: 'Test connection writes a small check file to the folder and lists it, exactly as the backup service will. For SFTP it checks that the server answers; the sign-in itself is checked by the next copy (System health shows the result).' },
       { title: 'Switch on and keep a copy of the keys', body: 'The backup service picks up the change before its next copy (every 15 minutes), with no restart. Also keep the storage keys and BACKUP_PASSPHRASE in your password manager: after losing the whole server, you type them in again to fetch the backups (docs/ops/mongodb.md, "Disaster recovery").' },
+    ],
+  },
+  {
+    key: 'company_data',
+    name: 'Company data (Brandfetch)',
+    category: 'Operations',
+    description: 'Fills in a client\'s logo and public company details (description, LinkedIn, founded year, location) from its website domain, in Console > Clients. Every field fetched is labelled with its source and date; nothing is saved until a Console admin accepts it.',
+    whenOff: 'Client logos and profiles are entered by hand. Nothing is looked up or guessed.',
+    legacyVariables: [],
+    steps: [
+      { title: 'Create a Brand API key', body: 'Sign up at Brandfetch, open the developer dashboard and copy your Brand API key.', link: { label: 'Open Brandfetch developers', href: 'https://developers.brandfetch.com/' } },
+      { title: 'Paste the key, test, then switch on', body: 'Test connection looks up brandfetch.com with the key. Once it passes, switch it on and save. In a client\'s profile, Fetch company details then shows what was found for its website, for you to accept field by field.' },
     ],
   },
 ];

@@ -1,5 +1,5 @@
 'use client';
-import { PLATFORM_ROLE_CAPABILITIES, PLATFORM_ROLES, password as passwordSchema } from '@crew/contracts';
+import { consoleRoleKey, type ConsoleRole, password as passwordSchema } from '@crew/contracts';
 import { Alert, Badge, Button, Card, Dialog, Field, Input, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Settings2, UserPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -10,16 +10,13 @@ import { LocalTime } from '@/components/local-time';
 
 export interface AdminRow { id: string; email: string; fullName: string; role: string; mfaEnabled: boolean; status: string; lastLoginAt: string | null; mustChangePassword: boolean; locked: boolean }
 
-const ROLE_OPTIONS = [
-  ['support', 'Support: view workspaces, request support access, health, audit'],
-  ['billing_ops', 'Billing operations: subscriptions and prices'],
-  ['viewer', 'Viewer: read-only'],
-  ['super_admin', 'Super admin: everything'],
-] as const;
 
-const schema = z.object({ fullName: z.string().trim().min(1, 'Required').max(120), email: z.email('Enter a valid email'), role: z.enum(PLATFORM_ROLES), password: passwordSchema });
+const schema = z.object({ fullName: z.string().trim().min(1, 'Required').max(120), email: z.email('Enter a valid email'), role: consoleRoleKey, password: passwordSchema });
 
-export function AdminsView({ rows, meId }: { rows: AdminRow[]; meId: string }) {
+export function AdminsView({ rows, meId, roles }: { rows: AdminRow[]; meId: string; roles: ConsoleRole[] }) {
+  // Roles come from Console > Roles (built-in and custom), so a new role can be given straight away.
+  const ROLE_OPTIONS = roles.filter((r) => !r.archived).map((r) => [r.key, `${r.name}: ${r.description}`] as const);
+  const roleName = new Map(roles.map((r) => [r.key, r]));
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -39,7 +36,7 @@ export function AdminsView({ rows, meId }: { rows: AdminRow[]; meId: string }) {
             {rows.map((a) => (
               <TR key={a.id}>
                 <TD><div className="font-medium">{a.fullName}</div><div className="text-xs text-fg-subtle">{a.email}</div></TD>
-                <TD title={(PLATFORM_ROLE_CAPABILITIES as Record<string, readonly string[]>)[a.role]?.join(', ')}>{a.role.replace('_', ' ')}</TD>
+                <TD title={roleName.get(a.role)?.permissions.join(', ')}>{roleName.get(a.role)?.name ?? a.role.replace('_', ' ')}</TD>
                 <TD>{a.mfaEnabled ? <Badge tone="success">On</Badge> : <Badge tone="warning">Not enrolled</Badge>}</TD>
                 <TD>
                   <div className="flex flex-wrap gap-1">
@@ -83,13 +80,13 @@ export function AdminsView({ rows, meId }: { rows: AdminRow[]; meId: string }) {
           <Field label="Temporary password" hint="At least 12 characters" error={errors.password} required>{(p) => <Input {...p} name="password" type="password" autoComplete="new-password" />}</Field>
         </form>
       </Dialog>
-      {managing && <ManageAdmin admin={managing} onClose={() => setManaging(null)} onDone={(m) => { setNote(m); setManaging(null); router.refresh(); }} />}
+      {managing && <ManageAdmin roleOptions={ROLE_OPTIONS} admin={managing} onClose={() => setManaging(null)} onDone={(m) => { setNote(m); setManaging(null); router.refresh(); }} />}
     </div>
   );
 }
 
 /** Another admin's account: name and role, a temporary password, two-step reset, unlock, disable or re-enable. */
-function ManageAdmin({ admin, onClose, onDone }: { admin: AdminRow; onClose: () => void; onDone: (message: string) => void }) {
+function ManageAdmin({ admin, onClose, onDone, roleOptions: ROLE_OPTIONS }: { admin: AdminRow; onClose: () => void; onDone: (message: string) => void; roleOptions: (readonly [string, string])[] }) {
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();

@@ -54,10 +54,10 @@ export class TenantControlService {
   // -----------------------------------------------------------------------------------------------------------
 
   /** People in one workspace, or across every workspace when tenantId is left out. */
-  async users(q: { q?: string; status?: string; tenantId?: string; limit: number; offset: number }): Promise<{ items: WorkspaceUserRow[]; total: number; summary: Record<string, number> }> {
+  async users(q: { q?: string; status?: string; tenantId?: string; tenantIds?: string[]; limit: number; offset: number }): Promise<{ items: WorkspaceUserRow[]; total: number; summary: Record<string, number> }> {
     return this.db.platform(async (tx) => {
       if (q.tenantId) await this.requireTenant(tx, q.tenantId);
-      const filter: Doc = q.tenantId ? { tenant_id: q.tenantId } : {};
+      const filter: Doc = q.tenantId ? { tenant_id: q.tenantId } : q.tenantIds ? { tenant_id: { $in: q.tenantIds } } : {};
       if (q.q) {
         const re = ilike(q.q);
         const userIds = await tx.collection('users').distinct<string>('id', { $or: [{ full_name: re }, { email: re }] });

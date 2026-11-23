@@ -65,6 +65,10 @@ async function setLimits(admin, planKey, limits, shotName) {
   for (const [key, value] of Object.entries(limits)) await admin.getByTestId(`plan-limit-${key}`).fill(String(value));
   if (shotName) await shot(admin, shotName);
   await admin.getByTestId('plan-contents-save').click();
+  // Removing a module or lowering a limit on a plan in use shows who it affects first; confirm with Save anyway.
+  const saved = admin.getByText(/saved.*Applies now to \d+ workspace/);
+  await saved.or(admin.getByTestId('plan-impact-preview')).first().waitFor({ timeout: 15000 });
+  if (await admin.getByTestId('plan-impact-preview').isVisible()) await admin.getByTestId('plan-contents-save').click();
   const msg = admin.getByText(/saved.*Applies now to \d+ workspace/);
   await msg.waitFor({ timeout: 15000 });
   return msg.textContent();

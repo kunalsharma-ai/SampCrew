@@ -50,7 +50,7 @@ const watch = (p) => {
   await admin.fill('input[name=code]', authenticator.generate(secret));
   await admin.click('text=Turn on and continue');
   await admin.waitForURL(`${CONSOLE}/`);
-  await admin.getByRole('heading', { name: 'Platform overview' }).waitFor();
+  await admin.getByRole('heading', { name: 'Command center' }).waitFor();
   for (const id of ['home-customers', 'home-hr-workspaces', 'home-users', 'home-new', 'console-alerts', 'console-activity']) await admin.getByTestId(id).first().waitFor();
   // The Console Home shows counts only: no employee of any customer workspace is named on it.
   const homeText = await admin.locator('main').innerText();
@@ -59,16 +59,20 @@ const watch = (p) => {
   await admin.getByTestId('console-bell-count').waitFor();
   await admin.getByTestId('console-nav-alert-tenants').waitFor();
   await admin.getByTestId('console-bell').click();
-  await admin.getByTestId('console-bell-panel').getByText('New', { exact: true }).first().waitFor();
-  await admin.getByRole('button', { name: 'Mark all seen' }).click();
+  const bell = admin.getByTestId('console-bell-panel');
+  // Notifications (new companies, payments, tickets...) and system alerts are two tabs of the same bell.
+  if (await bell.getByRole('button', { name: 'Mark all as read' }).count()) await bell.getByRole('button', { name: 'Mark all as read' }).click();
+  await bell.getByRole('button', { name: /^System alerts/ }).click();
+  await bell.getByText('New', { exact: true }).first().waitFor();
+  await bell.getByRole('button', { name: 'Mark all seen' }).click();
   await admin.waitForFunction(() => !document.querySelector('[data-testid=console-bell-count]'), null, { timeout: 10000 });
   await admin.reload();
   if (await admin.getByTestId('console-bell-count').count()) throw new Error('seen alerts came back after a reload');
   ok('Console bell shows new system alerts, marks the menu tabs, and Mark all seen sticks');
   await shot(admin, 'console-overview');
-  ok('MFA enrolled, the platform overview loads with alerts and activity and no employee details');
+  ok('MFA enrolled, the command center loads with alerts and activity and no employee details');
 
-  for (const path of ['/tenants', '/plans', '/statutory-packs', '/integrations', '/health', '/audit', '/admins']) {
+  for (const path of ['/tenants', '/clients', '/clients/new', '/notifications', '/notifications?tab=preferences', '/reports', '/plans', '/billing?tab=refunds', '/statutory-packs', '/integrations', '/health', '/audit', '/security', '/roles', '/settings', '/admins']) {
     const r = await admin.goto(CONSOLE + path);
     if (r.status() !== 200 || (await admin.locator('h1').count()) === 0) throw new Error(`${path} failed`);
   }

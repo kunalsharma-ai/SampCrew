@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { LoginResponse, MeResponse, SignupRequest, TokenPair } from '@crew/contracts';
+import { ConsoleSettingsService } from '../console/console-settings.service';
+import { ConsoleNotifyService } from '../../platform/notify/console-notify.service';
 import { mongo } from '@crew/db';
 import { AuditService } from '../../platform/audit/audit.service';
 import { decryptField, encryptField, hashPassword, randomToken, sha256, verifyPassword } from '../../platform/auth/crypto';
@@ -45,6 +47,8 @@ export class AuthService {
     private readonly entitlements: EntitlementsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly sso: SsoService,
+    private readonly consoleSettings: ConsoleSettingsService,
+    private readonly consoleNotify: ConsoleNotifyService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -57,6 +61,9 @@ export class AuthService {
         throw Errors.conflict('account_exists', 'An account with this email already exists. Sign in to create another workspace.');
       }
       try {
+        // Plan and trial length for self sign-up are Console > Settings > Workspace defaults.
+        const defaults = (await this.consoleSettings.read(tx)).workspaceDefaults;
+        const planKey = defaults.defaultPlan ?? 'professional';
         const t = await mongo.provisionTenantMongo(tx, {
           name: input.companyName,
           slug: input.slug,
@@ -64,9 +71,10 @@ export class AuthService {
           currency: input.currency,
           timezone: input.timezone,
           owner: { email: input.email, fullName: input.fullName, passwordHash },
-          plan: { key: 'professional', seats: 10, billingCycle: 'monthly', trialDays: 14 },
+          plan: { key: planKey, seats: 10, billingCycle: 'monthly', trialDays: defaults.trialDays },
         });
-        await this.audit.record(tx, { tenantId: t.tenantId, action: 'tenant.created', resourceType: 'tenant', resourceId: t.tenantId, metadata: { via: 'self_signup', plan: 'professional', trialDays: 14 } });
+        await this.audit.record(tx, { tenantId: t.tenantId, action: 'tenant.created', resourceType: 'tenant', resourceId: t.tenantId, metadata: { via: 'self_signup', plan: planKey, trialDays: defaults.trialDays } });
+        await this.consoleNotify.emit(tx, { category: 'clients', kind: 'company.created', title: `New company signed up: ${input.companyName}`, body: `Self sign-up, ${defaults.trialDays}-day trial of ${planKey}`, href: '/clients/:company', tenantId: t.tenantId, entityType: 'tenant', entityId: t.tenantId });
         await this.outbox.publish(tx, t.tenantId, 'tenant.created', { tenantId: t.tenantId, ownerUserId: t.ownerUserId });
         const pair = await this.issueSession(tx, { userId: t.ownerUserId, tenantId: t.tenantId, membershipId: t.ownerMembershipId, mfa: false, client });
         return { ...pair, tenantId: t.tenantId };

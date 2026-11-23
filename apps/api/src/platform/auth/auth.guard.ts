@@ -1,6 +1,6 @@
 import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { API_KEY_PREFIX, partForApiPath, PLATFORM_ROLE_CAPABILITIES, type PlatformRole } from '@crew/contracts';
+import { API_KEY_PREFIX, partForApiPath, PLATFORM_ROLE_CAPABILITIES } from '@crew/contracts';
 import { recordMobileUsage, requireMobileRoute } from '../entitlements/mobile-access';
 import type { Request } from 'express';
 import { AuditService } from '../audit/audit.service';
@@ -207,17 +207,26 @@ export class AuthGuard implements CanActivate {
     const row = await this.db.platform(async (tx) => {
       const session = await tx.collection('platform_sessions').findOne({ id: claims.sid, admin_id: claims.sub });
       const admin = session && (await tx.collection('platform_admins').findOne({ id: claims.sub }));
-      return admin
-        ? { ok: !session!.revoked_at && session!.expires_at > new Date() && admin.status === 'active', email: admin.email as string, mustChangePassword: admin.must_change_password === true }
-        : undefined;
+      if (!admin) return undefined;
+      // The role's permissions come from the database on every request, so a role or permission change applies to
+      // signed-in admins at once. An archived custom role gives nothing; a built-in role missing its row (a database
+      // not yet migrated) falls back to the built-in list.
+      const role = String(admin.role);
+      const roleRow = await tx.collection<{ permissions: string[]; archived_at: Date | null }>('platform_roles').findOne({ key: role });
+      const permissions = roleRow ? (roleRow.archived_at ? [] : roleRow.permissions ?? []) : PLATFORM_ROLE_CAPABILITIES[role] ?? [];
+      return { ok: !session!.revoked_at && session!.expires_at > new Date() && admin.status === 'active', email: admin.email as string, mustChangePassword: admin.must_change_password === true, role, permissions };
     });
     if (!row?.ok) throw Errors.unauthorized('Your console session is no longer valid.');
-    requestContext.setActor({ kind: 'platform_admin', adminId: claims.sub, role: claims.role, sessionId: claims.sid, mfa: claims.mfa, label: `SAMPLEDGE ${row.email}` });
+    requestContext.setActor({ kind: 'platform_admin', adminId: claims.sub, role: row.role, permissions: row.permissions, sessionId: claims.sid, mfa: claims.mfa, label: `SAMPLEDGE ${row.email}` });
     // MFA is mandatory for every platform action except enrolling MFA itself.
     if (!claims.mfa && !allowWithoutMfa) throw Errors.mfaRequired();
     // A temporary password (set by another admin or the recovery command) is replaced before anything else.
     if (row.mustChangePassword && !allowWithoutMfa && !allowPendingPassword) throw Errors.passwordChangeRequired();
-    if (capability && !PLATFORM_ROLE_CAPABILITIES[claims.role as PlatformRole]?.includes(capability)) throw Errors.forbidden();
+    if (capability && !row.permissions.includes(capability)) {
+      // Refused Console actions go into the audit log (status "denied"), so Security can show who tried what.
+      await this.db.platform((tx) => this.audit.record(tx, { tenantId: null, action: 'platform.permission_denied', resourceType: 'permission', resourceId: capability, metadata: { role: row.role } })).catch(() => undefined);
+      throw Errors.forbidden();
+    }
     return true;
   }
 }

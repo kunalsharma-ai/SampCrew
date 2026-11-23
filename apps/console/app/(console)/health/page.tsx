@@ -1,6 +1,8 @@
-import { Alert, Badge, Card, CardBody, CardHeader, PageHeader, Stat } from '@crew/ui';
+import { SYSTEM_LEVEL_LABEL, type SystemStatus } from '@crew/contracts';
+import { Alert, Badge, Card, CardBody, CardHeader, PageHeader, Stat, Table, TBody, TD, TH, THead, TR, cn } from '@crew/ui';
 import type { Metadata } from 'next';
-import { load } from '@/lib/api';
+import { TrendChart } from '@/components/charts';
+import { api, load } from '@/lib/api';
 
 export const metadata: Metadata = { title: 'System health' };
 
@@ -30,10 +32,51 @@ const ago = (h: number) => (h < 1 ? `${Math.round(h * 60)} min ago` : h < 48 ? `
 const dur = (s: number) => (s < 120 ? `${s}s` : s < 7200 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`);
 
 export default async function HealthPage() {
-  const h = await load<Health>('/platform/health');
+  const [h, st] = await Promise.all([load<Health>('/platform/health'), api<SystemStatus>('/platform/status').catch(() => null)]);
+  const LEVEL_TONE = { operational: 'success', warning: 'warning', critical: 'danger' } as const;
   return (
     <>
       <PageHeader title="System health" description="Live readings from this API instance and its database. Refresh the page to update." />
+      {st && (
+        <div className="mb-5 grid gap-4" data-testid="system-status">
+          <Card>
+            <CardHeader title={<span className="flex items-center gap-2">Platform status <Badge tone={LEVEL_TONE[st.level]} dot>{SYSTEM_LEVEL_LABEL[st.level]}</Badge></span>} description={`Checked ${when(st.checkedAt)}. The worst component sets the overall status.`} />
+            <CardBody className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {st.components.map((c) => (
+                <div key={c.key} className="flex items-start gap-2.5 rounded-lg border border-border px-3 py-2" data-testid={`component-${c.key}`}>
+                  <span aria-hidden className={cn('mt-1.5 size-2 shrink-0 rounded-full', c.level === 'operational' ? 'bg-success' : c.level === 'warning' ? 'bg-warning' : 'bg-danger')} />
+                  <div className="min-w-0"><div className="text-[13px] font-medium">{c.name} <span className="font-normal text-fg-subtle">· {SYSTEM_LEVEL_LABEL[c.level]}</span></div><div className="text-[12px] text-fg-muted">{c.detail}</div></div>
+                </div>
+              ))}
+            </CardBody>
+          </Card>
+          {st.series.length > 0 && (
+            <Card>
+              <CardHeader title="API traffic, last 24 hours" description="Requests and errors per hour, recorded by every API instance." />
+              <CardBody><TrendChart points={st.series} keys={[{ key: 'requests', label: 'Requests' }, { key: 'errors', label: 'Errors' }]} height={180} /></CardBody>
+            </Card>
+          )}
+          {st.traffic.length > 0 && (
+            <Card>
+              <Table aria-label="Traffic by service">
+                <THead><TR><TH>Service</TH><TH className="text-right">Requests (1 h)</TH><TH className="text-right">Errors (1 h)</TH><TH className="text-right">p95 (1 h)</TH><TH className="text-right">Requests (24 h)</TH><TH className="text-right">Errors (24 h)</TH></TR></THead>
+                <TBody>
+                  {st.traffic.map((t) => (
+                    <TR key={t.service}>
+                      <TD className="font-medium">{t.service}</TD>
+                      <TD className="text-right tabular">{t.requests1h}</TD>
+                      <TD className={cn('text-right tabular', t.errorRate1h >= 5 && 'text-danger')}>{t.errorRate1h}%</TD>
+                      <TD className="text-right tabular">{t.p95Ms1h === null ? '—' : `${t.p95Ms1h} ms`}</TD>
+                      <TD className="text-right tabular">{t.requests24h}</TD>
+                      <TD className={cn('text-right tabular', t.errorRate24h >= 5 && 'text-danger')}>{t.errorRate24h}%</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </Card>
+          )}
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="API" value={<Badge tone="success" dot>{h.api.status}</Badge>} hint={`Up ${dur(h.api.uptimeSeconds)} · ${h.api.node} · ${h.api.memoryMb} MB`} />
         <Stat label="Database" value={`${h.database.latencyMs} ms`} hint={`${h.database.size} · ${h.database.connections} connections`} />

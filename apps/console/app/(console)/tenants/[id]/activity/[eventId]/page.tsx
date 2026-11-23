@@ -1,4 +1,4 @@
-import { PLATFORM_ROLE_CAPABILITIES, type ActivityEventDetail } from '@crew/contracts';
+import { type ActivityEventDetail } from '@crew/contracts';
 import { Alert, Badge, buttonClass, Card, CardBody, CardHeader, EmptyState, PageHeader, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { ArrowLeft, Eye, FileClock } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { WorkspaceTabs } from '@/components/neon';
 import { ApiError, load } from '@/lib/api';
+import { capsOf } from '@/lib/caps';
 import type { Admin, TenantDetail } from '@/lib/types';
 
 export const metadata: Metadata = { title: 'Activity event' };
@@ -76,7 +77,7 @@ export default async function ActivityEventPage({ params }: { params: Promise<{ 
         description={`${new Date(ev.createdAt).toLocaleString()} · ${ev.actorLabel ?? ACTOR[ev.actorType] ?? ev.actorType} · ${ev.resourceType}${ev.resourceId ? ` ${ev.resourceId}` : ''}`}
         actions={<Link className={buttonClass('secondary')} href={`/tenants/${id}/activity`}><ArrowLeft className="size-4" aria-hidden />All activity</Link>}
       />
-      <WorkspaceTabs tenantId={id} current="activity" caps={[...(PLATFORM_ROLE_CAPABILITIES[me.role] ?? [])]} />
+      <WorkspaceTabs tenantId={id} current="activity" caps={capsOf(me)} />
       <Alert tone="info" title="This view is recorded" className="mb-6">
         <span className="inline-flex items-center gap-1.5"><Eye className="size-3.5" aria-hidden />Opening this event was written to the customer&apos;s activity trail and the SAMPLEDGE audit log, with your name.</span>
       </Alert>

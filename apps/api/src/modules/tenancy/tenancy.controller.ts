@@ -8,6 +8,7 @@ import { MongoService as DatabaseService, type TenantTx } from '../../platform/d
 import { Errors } from '../../platform/http/errors';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
+import { ConsoleNotifyService } from '../../platform/notify/console-notify.service';
 
 /** The workspace's settings as the API shows them. */
 async function settings(tx: TenantTx) {
@@ -69,6 +70,7 @@ export class SupportAccessController {
   constructor(
     private readonly db: DatabaseService,
     private readonly audit: AuditService,
+    private readonly consoleNotify: ConsoleNotifyService,
   ) {}
 
   @Get()
@@ -115,9 +117,9 @@ export class SupportAccessController {
     return this.decide(id, 'revoked');
   }
 
-  private decide(id: string, status: 'approved' | 'rejected' | 'revoked') {
+  private async decide(id: string, status: 'approved' | 'rejected' | 'revoked') {
     const actor = requestContext.tenantActor();
-    return this.db.tenant(async (tx) => {
+    const result = await this.db.tenant(async (tx) => {
       const g = await tx.collection('support_access_grants').findOne({ id });
       if (!g) throw Errors.notFound('Support request');
       const allowed = status === 'revoked' ? g.status === 'approved' : g.status === 'pending';
@@ -129,5 +131,11 @@ export class SupportAccessController {
       await this.audit.record(tx, { action: `support_access.${status}`, resourceType: 'support_access_grant', resourceId: id });
       return { id, status };
     });
+    // The Console hears about it at once (the View as button opens on approval).
+    await this.consoleNotify.later({
+      category: 'support', kind: `support_access.${status}`, priority: status === 'approved' ? 'high' : 'normal',
+      title: `Support access ${status === 'approved' ? 'approved' : status === 'rejected' ? 'declined' : 'ended'} by the client`, href: '/clients/:company/workspaces', tenantId: actor.tenantId, entityType: 'support_access_grant', entityId: id,
+    });
+    return result;
   }
 }

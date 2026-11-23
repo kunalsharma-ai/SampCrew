@@ -3737,6 +3737,8 @@ export const TABLES: Record<string, TableSpec> = {
       last_raiser_message_at: {"type": "timestamp"},
       number: {"required": true, "type": "int"},
       page: {"type": "string"},
+      // Console triage: low, normal, high or urgent (set by whoever handles it).
+      priority: {"default": "normal", "enum": ["low", "normal", "high", "urgent"], "type": "string"},
       raised_by_membership_id: {"type": "uuid"},
       raiser_email: {"type": "string"},
       raiser_level: {"enum": ["super", "hr", "employee"], "required": true, "type": "string"},
@@ -5599,7 +5601,8 @@ export const TABLES: Record<string, TableSpec> = {
       data: {"default": {"json": {}}, "required": true, "type": "json"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       membership_ids: {"required": true, "type": "uuid[]"},
-      tenant_id: {"required": true, "type": "uuid"},
+      // Null for Console-wide events (Console notifications that belong to no workspace).
+      tenant_id: {"type": "uuid"},
       type: {"required": true, "type": "string"},
     },
     unique: [
@@ -6062,6 +6065,8 @@ export const TABLES: Record<string, TableSpec> = {
       // Per limit: { policy: 'block' | 'overage', prices: { INR: '0.50' } } (see planBillingUpdate).
       overage: {"default": {"json": {}}, "type": "json"},
       quote_only: {"default": false, "required": true, "type": "bool"},
+      // Retired: closed to new subscriptions and plan changes into it; clients already on it keep it unchanged.
+      retired_at: {"type": "timestamp"},
       sort_order: {"default": 0, "required": true, "type": "int"},
       tagline: {"type": "string"},
       trial_days: {"default": 0, "type": "int"},
@@ -6166,7 +6171,13 @@ export const TABLES: Record<string, TableSpec> = {
       // Set when another admin (or the recovery command) gave a temporary password: the console asks for a new one.
       must_change_password: {"default": false, "required": true, "type": "bool"},
       password_hash: {"required": true, "type": "string"},
-      role: {"enum": ["super_admin", "support", "billing_ops", "viewer"], "required": true, "type": "string"},
+      // A Console role key: a built-in role (super_admin, admin, billing_ops, support, operations, viewer) or a custom
+      // role in platform_roles. Its permissions are read from platform_roles on every request.
+      role: {"required": true, "type": "string"},
+      // Console notifications: muted categories, sound and desktop choices (console.ts ConsoleNotificationPrefs).
+      notification_prefs: {"default": {"json": {}}, "type": "json"},
+      // Every notification created before this moment counts as read ("Mark all as read").
+      notifications_read_before: {"type": "timestamp"},
       // Console bell: the system alerts (key and count) this admin has already seen, so only new ones are marked.
       seen_alerts: {"default": {"json": []}, "type": "string[]"},
       status: {"default": "active", "enum": ["active", "disabled"], "required": true, "type": "string"},
@@ -6187,7 +6198,7 @@ export const TABLES: Record<string, TableSpec> = {
       enabled: {"default": false, "required": true, "type": "bool"},
       // Every value lives only here (never in the server's environment); secrets_enc is encrypted with the field key.
       imported_from: {"type": "string[]"},
-      key: {"enum": ["ai", "email", "push", "scanning", "mobile_sso", "razorpay", "stripe", "backups"], "required": true, "type": "string"},
+      key: {"enum": ["ai", "email", "push", "scanning", "mobile_sso", "razorpay", "stripe", "backups", "company_data"], "required": true, "type": "string"},
       last_test_at: {"type": "timestamp"},
       last_test_detail: {"type": "string"},
       last_test_hash: {"type": "string"},
@@ -7565,6 +7576,10 @@ export const TABLES: Record<string, TableSpec> = {
       // The Console Admin who answered last ("handled by").
       handled_by_admin_id: {"type": "uuid"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Console triage: the admin it is assigned to, its priority, a ticket it was turned into, and "mark unread".
+      assigned_admin_id: {"type": "uuid"},
+      priority: {"default": "normal", "enum": ["low", "normal", "high", "urgent"], "type": "string"},
+      help_query_id: {"type": "uuid"},
       last_console_message_at: {"type": "timestamp"},
       last_message: {"type": "json"},
       last_message_at: {"type": "timestamp"},
@@ -7774,6 +7789,8 @@ export const TABLES: Record<string, TableSpec> = {
     }, touch: true,
     columns: {
       brand_color: {"type": "string"},
+      // The client company this Super Workspace belongs to (companies). Console only; a workspace never reads it.
+      company_id: {"type": "uuid"},
       company_size: {"enum": ["1-10", "11-50", "51-200", "201-500", "501-1000", "1000+"], "type": "string"},
       contact_email: {"type": "citext"},
       contact_phone: {"type": "string"},
@@ -7800,8 +7817,12 @@ export const TABLES: Record<string, TableSpec> = {
       {"cols": [{"col": "id"}], "name": "tenants_pkey", "primary": true},
       {"cols": [{"col": "slug"}], "name": "tenants_slug_key"},
     ],
-    fks: [],
-    indexes: [],
+    fks: [
+      {"cols": ["company_id"], "onDelete": "set_null", "ref": "companies", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"name": "tenants_by_company", "cols": [{"col": "company_id"}]},
+    ],
     checks: [
       "CHECK (((slug ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'::citext) AND ((length((slug)::text) >= 3) AND (length((slug)::text) <= 40))))",
       "CHECK (((length(name) >= 1) AND (length(name) <= 160)))",
@@ -8666,5 +8687,221 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     checks: [
     ],
+  },
+  platform_roles: {
+    // Console roles: the six built-in ones (is_system, synced from contracts CONSOLE_SYSTEM_ROLES) and custom roles
+    // made in Console > Security > Roles. platform_admins.role holds the key. Archived roles are kept for the trail.
+    access: "platform", grants: [], touch: true,
+    columns: {
+      archived_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // When a Console admin last changed a built-in role; the catalogue sync then leaves its permissions alone.
+      customised_at: {"type": "timestamp"},
+      description: {"default": "", "required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      is_system: {"default": false, "required": true, "type": "bool"},
+      key: {"required": true, "type": "string"},
+      name: {"required": true, "type": "string"},
+      permissions: {"default": {"json": []}, "required": true, "type": "string[]"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "platform_roles_pkey", "primary": true},
+      {"cols": [{"col": "key"}], "name": "platform_roles_key"},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [
+      "CHECK ((key ~ '^[a-z][a-z0-9_]{1,39}$'::text))",
+      "CHECK (((length(name) >= 1) AND (length(name) <= 60)))",
+    ],
+  },
+  companies: {
+    // A client company: the profile SAMPLEDGE keeps about a customer (legal name, address, contacts, account
+    // manager, logo) and the Super Workspaces it owns (tenants.company_id). Managed in the Console only; a workspace's
+    // own settings (tenants) stay the workspace's. field_sources records which fields came from a company-data
+    // integration and when, so nothing is shown as fact without its source.
+    access: "platform", grants: [], touch: true,
+    columns: {
+      account_manager_admin_id: {"type": "uuid"},
+      address: {"type": "json"},
+      archived_at: {"type": "timestamp"},
+      company_size: {"enum": ["1-10", "11-50", "51-200", "201-500", "501-1000", "1000+"], "type": "string"},
+      country_code: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_admin_id: {"type": "uuid"},
+      description: {"type": "string"},
+      email: {"type": "citext"},
+      field_sources: {"default": {"json": {}}, "required": true, "type": "json"},
+      founded_year: {"type": "int"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      industry: {"enum": ["it_services", "manufacturing", "retail", "healthcare", "staffing", "financial_services", "education", "logistics", "hospitality", "construction", "other"], "type": "string"},
+      is_demo: {"default": false, "required": true, "type": "bool"},
+      legal_name: {"type": "string"},
+      linkedin: {"type": "string"},
+      logo_url: {"type": "string"},
+      name: {"required": true, "type": "string"},
+      phone: {"type": "string"},
+      primary_contact: {"type": "json"},
+      tags: {"default": {"json": []}, "required": true, "type": "string[]"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      website: {"type": "string"},
+      whatsapp: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "companies_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["account_manager_admin_id"], "onDelete": "set_null", "ref": "platform_admins", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"name": "companies_by_name", "cols": [{"col": "name"}]},
+      {"name": "companies_by_created", "cols": [{"col": "created_at", "desc": true}]},
+    ],
+    checks: [
+      "CHECK (((length(name) >= 1) AND (length(name) <= 160)))",
+      "CHECK (((website IS NULL) OR ((website ~ '^https?://'::text) AND (length(website) <= 200))))",
+      "CHECK (((linkedin IS NULL) OR ((linkedin ~ '^https?://'::text) AND (length(linkedin) <= 200))))",
+      "CHECK (((logo_url IS NULL) OR ((logo_url ~ '^https://'::text) AND (length(logo_url) <= 500))))",
+      "CHECK (((founded_year IS NULL) OR ((founded_year >= 1800) AND (founded_year <= 2100))))",
+    ],
+  },
+  platform_notifications: {
+    // Console notifications: one row per event (new company, payment failed, support message...). Who sees one is
+    // worked out from its category's permission (contracts CONSOLE_NOTIFICATION_CAP); reads are per admin in
+    // platform_notification_reads. dedupe_key stops the same event being notified twice (renewal reminders).
+    access: "platform", grants: [],
+    columns: {
+      body: {"type": "string"},
+      category: {"enum": ["clients", "workspaces", "users", "subscriptions", "payments", "support", "security", "system", "admin"], "required": true, "type": "string"},
+      company_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      dedupe_key: {"type": "string"},
+      entity_id: {"type": "string"},
+      entity_type: {"type": "string"},
+      href: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"required": true, "type": "string"},
+      priority: {"default": "normal", "enum": ["low", "normal", "high", "urgent"], "required": true, "type": "string"},
+      tenant_id: {"type": "uuid"},
+      title: {"required": true, "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "platform_notifications_pkey", "primary": true},
+      {"cols": [{"col": "dedupe_key"}], "name": "platform_notifications_dedupe", "where": [{"col": "dedupe_key", "op": "notnull"}]},
+    ],
+    fks: [],
+    indexes: [
+      {"name": "platform_notifications_recent", "cols": [{"col": "created_at", "desc": true}]},
+      {"name": "platform_notifications_by_category", "cols": [{"col": "category"}, {"col": "created_at", "desc": true}]},
+    ],
+    checks: [],
+  },
+  platform_notification_reads: {
+    // Which Console notifications an admin has read (one row each; "Mark all as read" moves
+    // platform_admins.notifications_read_before instead of writing a row per notification).
+    access: "platform", grants: [],
+    columns: {
+      admin_id: {"required": true, "type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      notification_id: {"required": true, "type": "uuid"},
+      read_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "platform_notification_reads_pkey", "primary": true},
+      {"cols": [{"col": "admin_id"}, {"col": "notification_id"}], "name": "platform_notification_reads_once"},
+    ],
+    fks: [
+      {"cols": ["admin_id"], "onDelete": "cascade", "ref": "platform_admins", "refCols": ["id"]},
+      {"cols": ["notification_id"], "onDelete": "cascade", "ref": "platform_notifications", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  platform_settings: {
+    // Console global settings, one row per section (contracts consoleSettingsInput). Read by the API where each one
+    // applies (trial length, session length, lockout, renewal notices...).
+    access: "platform", grants: [], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_admin_id: {"type": "uuid"},
+      value: {"default": {"json": {}}, "required": true, "type": "json"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "platform_settings_pkey", "primary": true},
+      {"cols": [{"col": "key"}], "name": "platform_settings_key"},
+    ],
+    fks: [],
+    indexes: [],
+    checks: [],
+  },
+  credit_notes: {
+    // Refunds and credits against a client's invoices, issued from the Console (billing:refund). A refund returns
+    // money (through the gateway the invoice was paid with, or recorded as a bank transfer); a credit is a balance
+    // the client can use on later invoices. The invoice keeps its own number and total; these rows say what came back.
+    access: "tenant", grants: ["select"],
+    columns: {
+      amount: {"required": true, "scale": 2, "type": "decimal"},
+      applied_amount: {"default": 0, "required": true, "scale": 2, "type": "decimal"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_admin_id: {"type": "uuid"},
+      currency: {"required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      invoice_id: {"type": "uuid"},
+      kind: {"enum": ["refund", "credit"], "required": true, "type": "string"},
+      method: {"enum": ["gateway", "bank_transfer", "account_credit"], "required": true, "type": "string"},
+      number: {"required": true, "type": "string"},
+      provider_ref: {"type": "string"},
+      reason: {"required": true, "type": "string"},
+      status: {"default": "issued", "enum": ["issued", "void"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      void_reason: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "credit_notes_pkey", "primary": true},
+      {"cols": [{"col": "number"}], "name": "credit_notes_number"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["invoice_id"], "onDelete": "set_null", "ref": "invoices", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"name": "credit_notes_by_tenant", "cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}]},
+      {"name": "credit_notes_by_invoice", "cols": [{"col": "invoice_id"}]},
+    ],
+    checks: [
+      "CHECK ((amount > (0)::numeric))",
+      "CHECK ((applied_amount >= (0)::numeric))",
+      "CHECK ((length(reason) >= 3))",
+    ],
+  },
+  platform_request_metrics: {
+    // API response times and errors per minute and route group, written by the API (RequestMetricsService) and read
+    // by System health. Kept 30 days.
+    access: "platform", grants: [],
+    columns: {
+      count: {"default": 0, "required": true, "type": "int"},
+      errors: {"default": 0, "required": true, "type": "int"},
+      client_errors: {"default": 0, "required": true, "type": "int"},
+      // Counts per response-time bucket (contracts-free: upper bounds 50, 100, 250, 500, 1000, 2500, 5000 ms, +inf).
+      histogram: {"default": {"json": []}, "required": true, "type": "int[]"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      instance: {"required": true, "type": "string"},
+      max_ms: {"default": 0, "required": true, "type": "int"},
+      minute: {"required": true, "type": "timestamp"},
+      service: {"required": true, "type": "string"},
+      total_ms: {"default": 0, "required": true, "type": "int"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "platform_request_metrics_pkey", "primary": true},
+      {"cols": [{"col": "minute"}, {"col": "service"}, {"col": "instance"}], "name": "platform_request_metrics_minute"},
+    ],
+    fks: [],
+    indexes: [
+      {"name": "platform_request_metrics_recent", "cols": [{"col": "minute", "desc": true}]},
+    ],
+    checks: [],
   },
 };

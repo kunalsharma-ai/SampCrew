@@ -1,9 +1,10 @@
-import { PLATFORM_ROLE_CAPABILITIES, type WorkspaceUserRow } from '@crew/contracts';
+import { type WorkspaceUserRow } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { WorkspaceTabs } from '@/components/neon';
 import { UsersView } from '@/components/users-view';
+import { capsOf } from '@/lib/caps';
 import { load } from '@/lib/api';
 import type { Admin, TenantDetail } from '@/lib/types';
 
@@ -29,7 +30,7 @@ export default async function TenantUsersPage({ params, searchParams }: { params
         title="Users"
         description="Everyone this workspace's admins have added, with their roles, sign-ins and open sessions. Sign people out, suspend or reactivate them, reset two-step verification or resend an invitation; each action needs a reason and is recorded in both audit trails."
       />
-      <WorkspaceTabs tenantId={id} current="users" caps={[...(PLATFORM_ROLE_CAPABILITIES[me.role] ?? [])]} />
+      <WorkspaceTabs tenantId={id} current="users" caps={capsOf(me)} />
       <UsersView data={data} query={{ q, status, page }} basePath={`/tenants/${id}/users`} showWorkspace={false} pageSize={PAGE_SIZE} />
     </>
   );

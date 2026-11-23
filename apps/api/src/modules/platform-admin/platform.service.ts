@@ -16,6 +16,8 @@ import { PlatformIntegrationsService } from '../../platform/integrations/platfor
 import { MailerService } from '../../platform/notify/mailer.service';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { decodeCursor, page } from '../../platform/http/pagination';
+import { ConsoleSettingsService } from '../console/console-settings.service';
+import { ConsoleNotifyService } from '../../platform/notify/console-notify.service';
 
 /**
  * SAMPLEDGE Super Admin operations. Runs with the platform database role, so every method here is written
@@ -32,6 +34,8 @@ export class PlatformService {
     private readonly integrations: PlatformIntegrationsService,
     private readonly notifications: NotificationService,
     private readonly mailer: MailerService,
+    private readonly settings: ConsoleSettingsService,
+    private readonly consoleNotify: ConsoleNotifyService,
   ) {}
 
   async metrics() {
@@ -184,7 +188,7 @@ export class PlatformService {
    * is not connected the invitation link is returned to the console so SAMPLEDGE can hand it over; without it the
    * owner would have no way to set a password at all.
    */
-  async createTenant(input: z.infer<typeof platformCreateTenantRequest>) {
+  async createTenant(input: z.infer<typeof platformCreateTenantRequest>, extra: { companyId?: string | null; company?: Record<string, unknown> } = {}) {
     const token = randomToken(32);
     const temporary = input.ownerAccess === 'password' && input.ownerPassword ? await hashPassword(input.ownerPassword) : null;
     const mailReady = await this.mailer.isConfigured();
@@ -199,7 +203,10 @@ export class PlatformService {
           timezone: input.timezone,
           owner: { email: input.ownerEmail, fullName: input.ownerName, passwordHash: temporary, mustChangePassword: true },
           plan: { key: input.planKey, seats: input.seats, billingCycle: 'annual', trialDays: input.trialDays },
+          companyId: extra.companyId ?? null,
+          company: extra.company,
         });
+        const inviteDays = (await this.settings.read(tx)).userDefaults.inviteExpiryDays;
         const footer = 'SampCrew by SAMPLEDGE. You received this because SAMPLEDGE set up a SampCrew workspace for your company.';
         let ownerInviteUrl: string | undefined;
         if (t.existingUser) {
@@ -212,11 +219,11 @@ export class PlatformService {
             `SAMPLEDGE set up the ${input.companyName} workspace on SampCrew with you as its owner.\n\nSign in at ${web}/login with this email and the temporary password SAMPLEDGE gave you. You will choose your own password the first time you sign in.`, 'workspace_ready', footer);
         } else {
           await tx.collection('invitations').insert({
-            tenant_id: t.tenantId, membership_id: t.ownerMembershipId, email: input.ownerEmail, token_hash: sha256(token), expires_at: new Date(Date.now() + 7 * DAY),
+            tenant_id: t.tenantId, membership_id: t.ownerMembershipId, email: input.ownerEmail, token_hash: sha256(token), expires_at: new Date(Date.now() + inviteDays * DAY),
           });
           const url = `${web}/accept-invite?token=${token}`;
           await this.notifications.queueEmail(tx, t.tenantId, input.ownerEmail, `Set your password for ${input.companyName} on SampCrew`,
-            `SAMPLEDGE set up the ${input.companyName} workspace on SampCrew with you as its owner.\n\nSet your password and sign in: ${url}\n\nThe link expires in 7 days.`, 'invitation', footer);
+            `SAMPLEDGE set up the ${input.companyName} workspace on SampCrew with you as its owner.\n\nSet your password and sign in: ${url}\n\nThe link expires in ${inviteDays} days.`, 'invitation', footer);
           // Shown to the console when the email cannot go out (no SMTP yet) or outside production.
           if (!mailReady || !this.config.isProductionLike) ownerInviteUrl = url;
         }
@@ -226,8 +233,13 @@ export class PlatformService {
           metadata: { slug: input.slug, plan: input.planKey, ownerAccess: t.existingUser ? 'existing_account' : temporary ? 'temporary_password' : 'invitation' },
         });
         await this.outbox.publish(tx, t.tenantId, 'tenant.created', { tenantId: t.tenantId });
+        await this.consoleNotify.emit(tx, extra.companyId
+          ? { category: 'workspaces', kind: 'workspace.created', title: `New Super Workspace: ${input.companyName}`, body: `Added to an existing company by ${requestContext.platformActor().label.replace(/^SAMPLEDGE /, '')}`, href: '/clients/:company/workspaces', tenantId: t.tenantId, entityType: 'tenant', entityId: t.tenantId }
+          : { category: 'clients', kind: 'company.created', title: `New company: ${input.companyName}`, body: `Created in the Console on the ${input.planKey} plan`, href: '/clients/:company', tenantId: t.tenantId, entityType: 'tenant', entityId: t.tenantId });
+        const companyId = (await tx.collection<{ company_id: string }>('tenants').findOne({ id: t.tenantId }, { projection: { company_id: 1 } }))?.company_id ?? null;
         return {
           tenantId: t.tenantId,
+          companyId,
           ownerInviteUrl,
           ownerAlreadyHadAccount: t.existingUser,
           ownerAccess: t.existingUser ? ('existing_account' as const) : temporary ? ('temporary_password' as const) : ('invitation' as const),
@@ -235,6 +247,7 @@ export class PlatformService {
         };
       } catch (e) {
         if (e instanceof mongo.SlugTakenError) throw Errors.conflict('slug_taken', e.message);
+        if (e instanceof mongo.CompanyNotFoundError) throw Errors.notFound('Company');
         throw e;
       }
     });
@@ -247,6 +260,11 @@ export class PlatformService {
       if (status === 'suspended') await tx.collection('sessions').update({ tenant_id: id, revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'tenant_suspended' } });
       await this.audit.record(tx, { tenantId: id, action: `tenant.${status === 'active' ? 'reactivated' : 'suspended'}`, resourceType: 'tenant', resourceId: id, metadata: { reason, by: 'SAMPLEDGE' } });
       await this.audit.record(tx, { tenantId: null, action: `platform.tenant_${status === 'active' ? 'reactivated' : 'suspended'}`, resourceType: 'tenant', resourceId: id, metadata: { reason } });
+      const t = await tx.collection<{ name: string }>('tenants').findOne({ id }, { projection: { name: 1 } });
+      await this.consoleNotify.emit(tx, {
+        category: 'workspaces', kind: `workspace.${status === 'active' ? 'activated' : 'suspended'}`, priority: status === 'active' ? 'normal' : 'high',
+        title: `Workspace ${status === 'active' ? 'activated' : 'suspended'}: ${t?.name ?? id}`, body: reason, href: '/clients/:company/workspaces', tenantId: id, entityType: 'tenant', entityId: id,
+      });
       return { id, status };
     });
   }
@@ -614,11 +632,18 @@ export class PlatformService {
     const hash = await hashPassword(input.password);
     return this.db.platform(async (tx) => {
       if (await tx.collection('platform_admins').exists({ email: input.email })) throw Errors.conflict('admin_exists', 'An admin with this email exists');
+      await this.requireRole(tx, input.role);
       // The password was chosen by someone else, so the new admin picks their own at first sign-in.
       const r = await tx.collection<{ id: string }>('platform_admins').insert({ email: input.email, full_name: input.fullName, role: input.role, password_hash: hash, must_change_password: true });
       await this.audit.record(tx, { tenantId: null, action: 'platform.admin_created', resourceType: 'platform_admin', resourceId: r.id, changes: { email: input.email, role: input.role } });
       return { id: r.id };
     });
+  }
+
+  /** A role an admin can be given: a built-in role or a custom one that is not archived. */
+  private async requireRole(tx: PlatformTx, key: string) {
+    const row = await tx.collection<{ archived_at: Date | null }>('platform_roles').findOne({ key });
+    if (!row || row.archived_at) throw Errors.badRequest('unknown_role', 'Pick one of the Console roles');
   }
 
   /**
@@ -637,6 +662,7 @@ export class PlatformService {
       }
       const role = input.role ?? target.role;
       const status = input.status ?? target.status;
+      if (input.role && input.role !== target.role) await this.requireRole(tx, input.role);
       if (target.role === 'super_admin' && target.status === 'active' && (role !== 'super_admin' || status !== 'active')) await this.keepOneSuperAdmin(tx, id);
       const changes: Record<string, unknown> = {};
       if (input.fullName !== undefined && input.fullName !== target.full_name) changes.full_name = input.fullName;
@@ -647,7 +673,7 @@ export class PlatformService {
       // A new role or a disabled account takes effect now, not when the current tokens run out.
       if (changes.role || status === 'disabled') await this.revokeSessions(tx, id);
       const action = changes.status ? (status === 'disabled' ? 'platform.admin_disabled' : 'platform.admin_enabled') : 'platform.admin_updated';
-      await this.audit.record(tx, { tenantId: null, action, resourceType: 'platform_admin', resourceId: id, changes: { ...changes, email: target.email } });
+      await this.audit.record(tx, { tenantId: null, action, resourceType: 'platform_admin', resourceId: id, changes: { ...Object.fromEntries(Object.entries(changes).map(([k, v]) => [k, { from: (target as unknown as Record<string, unknown>)[k] ?? null, to: v }])), email: target.email } });
       return this.adminView({ ...target, ...changes } as AdminRecord);
     });
   }

@@ -90,7 +90,24 @@ export const supportListQuery = z.object({
   state: z.enum(SUPPORT_STATES).optional(),
   /** Console only: one Super Workspace's conversations. */
   tenantId: z.uuid().optional(),
+  /** Console only: assigned to me, to nobody, or anyone. */
+  assigned: z.enum(['me', 'nobody']).optional(),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
 });
+/** Console: start a conversation with a company's Super Workspace. */
+export const supportConsoleStartInput = z.object({
+  tenantId: z.uuid(),
+  subject: z.string().trim().min(3, 'Give the conversation a short subject').max(120),
+  category: z.enum(SUPPORT_CATEGORIES).default('question'),
+  body,
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+});
+/** Console: triage a conversation. */
+export const supportTriageInput = z.object({
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+  /** An admin's id, or null to unassign. */
+  assignedAdminId: z.uuid().nullable().optional(),
+}).strict().refine((v) => v.priority !== undefined || v.assignedAdminId !== undefined, 'Nothing to change');
 export type SupportListQuery = z.infer<typeof supportListQuery>;
 
 /** Sent: saved. Delivered: the other side's app has it. Read: someone on the other side opened it. */
@@ -125,6 +142,9 @@ export interface SupportConversationView {
   unread: number;
   /** Console only: the Console Admin who answered last. */
   handledBy: string | null;
+  /** Console only: triage (priority, the admin it is assigned to). */
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  assignedTo?: { id: string; name: string } | null;
   createdAt: string;
   updatedAt: string;
 }
