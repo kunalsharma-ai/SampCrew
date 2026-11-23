@@ -1490,8 +1490,12 @@ export class LeaveService implements OnModuleInit {
       const open = await tx.collection('leave_requests').find({ employee_id: { $in: ids }, status: 'pending', start_date: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } }, { projection: { employee_id: 1, leave_type_id: 1, days: 1 } });
       const departments = await fieldById(tx, 'departments', people.map((p) => p.department_id));
       const sums = new Map<string, number>();
+      // Only typed quantities ('adjustment') and leave taken or given back count; old automatic lines are history.
+      const assigned = new Set<string>();
       for (const l of ledger) {
         const k = `${l.employee_id}|${l.leave_type_id}`;
+        if (l.kind === 'adjustment') assigned.add(k);
+        else if (l.kind !== 'taken' && l.kind !== 'reversal') continue;
         sums.set(k, (sums.get(k) ?? 0) + toH(l.quantity as string));
         if (l.kind === 'taken' || l.kind === 'reversal') sums.set(`${k}|taken`, (sums.get(`${k}|taken`) ?? 0) - toH(l.quantity as string));
       }
@@ -1502,7 +1506,7 @@ export class LeaveService implements OnModuleInit {
         for (const [typeId, ent] of entitlementsOf(book, e)) {
           shown.add(typeId);
           const k = `${e.id}|${typeId}`;
-          const tracked = ent.policy.accrualMethod !== 'none';
+          const tracked = assigned.has(k);
           const bal = sums.get(k) ?? 0;
           const pend = sums.get(`${k}|pending`) ?? 0;
           balances[typeId] = { balance: tracked ? fromH(bal) : null, available: tracked ? fromH(bal - pend) : null, taken: fromH(sums.get(`${k}|taken`) ?? 0), pending: fromH(pend) };
