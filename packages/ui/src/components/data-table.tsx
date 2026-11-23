@@ -107,8 +107,7 @@ export function DataTable<T>(p: DataTableProps<T>) {
             </thead>
             <tbody className="divide-y divide-border">
               {p.rows.map((r) => (
-                <tr key={p.rowKey(r)} className={cn('transition-colors hover:bg-bg-subtle/60 focus-within:bg-bg-subtle/60', p.onRowClick && 'cursor-pointer')} onClick={p.onRowClick ? () => p.onRowClick!(r) : undefined}>
-                <tr key={p.rowKey(r)} className={cn('transition-colors hover:bg-bg-subtle/60', p.onRowClick && 'cursor-pointer', p.selection?.selected.has(p.rowKey(r)) && 'bg-accent-subtle/40')} onClick={p.onRowClick ? () => p.onRowClick!(r) : undefined}>
+                <tr key={p.rowKey(r)} className={cn('transition-colors hover:bg-bg-subtle/60 focus-within:bg-bg-subtle/60', p.onRowClick && 'cursor-pointer', p.selection?.selected.has(p.rowKey(r)) && 'bg-accent-subtle/40')} onClick={p.onRowClick ? () => p.onRowClick!(r) : undefined}>
                   {p.selection && (
                     <td className={cn('w-10 pl-5', compact ? 'py-1.5' : 'py-3')} onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" className="size-4 accent-[var(--accent)]" aria-label="Choose this row" data-testid="row-select"

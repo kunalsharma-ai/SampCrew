@@ -79,8 +79,8 @@ export async function apiForm<T = unknown>(path: string, form: FormData, opts: {
 }
 
 /** Fetches an API path without auth and returns the raw response (used to stream signed file downloads). */
-export function apiRaw(path: string) {
-  return fetch(`${API_URL}${path}`, { cache: 'no-store' });
+export function apiRaw(path: string, headers?: Record<string, string>) {
+  return fetch(`${API_URL}${path}`, { cache: 'no-store', headers });
 }
 
 /**

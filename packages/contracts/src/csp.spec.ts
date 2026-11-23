@@ -10,6 +10,9 @@ describe('content security policy', () => {
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("frame-src 'self' https://www.youtube-nocookie.com https://player.vimeo.com");
+    expect(csp).toContain("media-src 'self' blob: https:");
+    expect(csp).not.toMatch(/frame-src[^;]*\*/);
     expect(contentSecurityPolicy({ nonce, dev: true, frameAncestors: "'self'" })).toMatch(/'unsafe-eval'/);
   });
 

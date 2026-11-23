@@ -736,16 +736,70 @@ export const WEB_HELP: HelpContent = {
       where: 'Opened from a notification or Reviews.',
     },
     '/learning': {
-      title: 'Learning',
-      what: 'Courses and learning paths assigned to you, and your team’s progress.',
-      how: 'Open a course to start it and mark it complete when done. Managers can assign learning to their team.',
-      where: 'For every employee.',
+      title: 'My learning',
+      what: 'Learning assigned to you and learning you enrolled in, with progress, scores, deadlines and certificates.',
+      how: 'Open a module and work through its steps in order. The learning library lists modules you can join yourself.',
+      where: 'For every employee. You only ever see your own learning.',
+    },
+    '/learning/my/[id]': {
+      title: 'Learning module',
+      what: 'One module, step by step: videos, reading, documents, quizzes and assignments, with your progress.',
+      how: 'Finish each required step. Videos count when watched, quizzes when passed and assignments when approved.',
+    },
+    '/learning/my/[id]/certificate': {
+      title: 'Certificate',
+      what: 'Your completion certificate or record for a finished module.',
+      how: 'Print it or save it as a PDF from the print dialog.',
+    },
+    '/learning/manage': {
+      title: 'Learning dashboard',
+      what: 'Modules, learners, completion, scores, overdue learning and reviews waiting, for the people you look after.',
+      where: 'For the Super Workspace and HR Workspaces with Learning powers.',
+    },
+    '/learning/manage/library': {
+      title: 'Learning library',
+      what: 'Every learning module you can see: drafts, scheduled, published and archived.',
+      how: 'Search and filter by status, category, skill, level or content type. Open a module to edit, publish or assign it.',
+    },
+    '/learning/manage/new': {
+      title: 'New learning module',
+      what: 'Create a module in three steps: details, content and settings.',
+      how: 'Add content in the order people learn it. It saves as a draft; publish it when ready.',
+    },
+    '/learning/manage/modules/[id]': {
+      title: 'Learning module',
+      what: 'A module with its content, who it is assigned to, its learners and its published versions.',
+      how: 'Edit and publish changes as a new version. Assign it to everyone, HR Workspaces, departments, job roles, locations or people.',
+    },
+    '/learning/manage/reviews': {
+      title: 'Learning reviews',
+      what: 'Assignment submissions and written quiz answers waiting for a reviewer.',
+      how: 'Approve with a score, ask for a resubmission or mark it not passed, with feedback. The learner is told.',
+    },
+    '/learning/manage/reports': {
+      title: 'Learning reports',
+      what: 'Every enrolment you may report on, by employee, module, HR Workspace, department and job role.',
+      how: 'Filter, then export to Excel. Exports are recorded in the audit log.',
+    },
+    '/learning/manage/learners/[employeeId]': {
+      title: 'Learning profile',
+      what: 'One employee’s learning: every module, status, score, deadline, certificate and time spent.',
+    },
+    '/learning/manage/enrolments/[id]': {
+      title: 'Learning progress',
+      what: 'One person’s progress through one module: each item, quiz attempts and assignment submissions.',
+    },
+    '/learning/manage/settings': {
+      title: 'Learning permissions',
+      what: 'What each HR Workspace may do in Learning, and your own learning categories.',
+      how: 'Switch powers on per HR Workspace. Only viewing is on by default.',
+      where: 'For the Super Workspace only.',
     },
     '/learning/catalogue': {
-      title: 'Course catalogue',
-      what: 'All courses and learning paths in your workspace.',
-      how: 'Add courses and group them into paths, then assign them.',
-      where: 'For HR and L&D teams.',
+      title: 'Learning paths',
+      what: 'Simple courses and learning paths that group modules in an order.',
+      how: 'Add a course from a link, group courses into a path, then assign the path.',
+      where: 'For HR and L&D teams. Build full modules under Learning management.',
     },
     '/recognition': {
       title: 'Recognition',
@@ -1128,6 +1182,21 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+
+    // Learning
+    'Module details': { what: 'What learners see: title, descriptions, category, skills, level, length, language, creator and cover.' },
+    'Enrolment and certificate': { what: 'Whether the module issues a certificate, whether anyone can enrol, and the default deadline.' },
+    'About this module': { what: 'What the module covers. Only its owner can change it.' },
+    'Published versions': { what: 'Every published version, with what changed. People keep the version they were enrolled on.' },
+    'Assign this module': { what: 'Choose who takes the module, a due date and whether new people who match are added automatically.' },
+    'Assigned to': { what: 'Each time the module was assigned, with how many people it enrolled.' },
+    'Quiz results': { what: 'Attempts, average score and pass rate for each quiz.' },
+    'Recent completions': { what: 'People who finished a module most recently.' },
+    'Overdue learning': { what: 'Learning past its due date that is not finished, oldest first.' },
+    'Learning history': { what: 'Every module this person was enrolled in, including finished earlier versions.' },
+    'Each item': { what: 'Each step of the module and how far this person got with it.' },
+    'What each HR Workspace can do in Learning': { what: 'Learning powers per HR Workspace. All but viewing are off until the Super Workspace switches them on.', how: 'Switch a power on or off; it applies at once.' },
+    'Learning categories': { what: 'The categories modules can use: the built-in list and your own.' },
     "Today's attention": { what: 'What needs you today, most urgent first: a missing punch, leave waiting, overdue learning, notices to acknowledge and approvals.', how: 'Open an item to deal with it. It disappears once it is done.' },
     'Action required': { what: 'Items waiting on you, most urgent first.', how: 'Open an item to deal with it.' },
     'HR action center': { what: 'Requests waiting in the workforce you look after: leave, corrections, profile changes, missing punches and overdue learning.', how: 'Open an item to go straight to the filtered list.' },

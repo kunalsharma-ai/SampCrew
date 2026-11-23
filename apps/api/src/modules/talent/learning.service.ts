@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { AssignInput, CourseInput, PathInput } from '@crew/contracts';
+import { legacyCourseBlocks, type AssignInput, type CourseInput, type PathInput } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { can, hasPermission } from '../../platform/authz/policy';
@@ -9,6 +9,7 @@ import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
 import { employeeNames, fieldById } from '../employees/employee-view';
+import { parseBlocks, versionOf } from '../learning/learning-common';
 import { attrsOf, needEmployee, talentEmployee } from './talent-common';
 
 interface AssignmentRow {
@@ -56,6 +57,7 @@ async function assignmentViews(tx: TenantTx, rows: Doc[]) {
       contentUrl: c.content_url ?? null, durationMinutes: c.duration_minutes ?? null, pathId: a.path_id ?? null, pathTitle: paths.get(a.path_id) ?? null, source: a.source,
       dueOn: a.due_on ?? null, status: a.status as string, startedAt: a.started_at ?? null, completedOn: a.completed_on ?? null, completionNote: a.completion_note ?? null,
       expiresOn: a.expires_on ?? null, createdAt: a.created_at,
+      progressPercent: (a.progress_percent as number | undefined) ?? (a.status === 'completed' ? 100 : 0), scorePercent: a.score_percent === null || a.score_percent === undefined ? null : Number(a.score_percent),
       overdue: ['assigned', 'in_progress'].includes(a.status) && !!a.due_on && a.due_on < now,
       expired: a.status === 'completed' && !!a.expires_on && a.expires_on < now,
     };
@@ -82,7 +84,8 @@ export class LearningService {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
       const all = includeArchived && hasPermission(s, 'learning:configure').allowed;
-      const courses = await tx.collection('courses').find(all ? {} : { archived_at: null });
+      // Drafts and scheduled learning modules are never shown here; this list is the published catalogue.
+      const courses = await tx.collection('courses').find(all ? { status: { $in: ['published', 'archived'] } } : { archived_at: null, status: 'published' });
       courses.sort((a, b) => Number(!!a.archived_at) - Number(!!b.archived_at) || String(a.category).localeCompare(String(b.category)) || String(a.title).localeCompare(String(b.title)));
       const ids = courses.map((c) => c.id as string);
       const completions = await countBy(tx, 'course_assignments', 'course_id', ids, { status: 'completed' });
@@ -94,10 +97,14 @@ export class LearningService {
   createCourse(input: CourseInput) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
+      const blocks = legacyCourseBlocks({ title: input.title, description: input.description, format: input.format, content_url: input.contentUrl, duration_minutes: input.durationMinutes });
       const r = await tx.collection('courses').insert({
         title: input.title, description: input.description, format: input.format, content_url: input.contentUrl, duration_minutes: input.durationMinutes,
         validity_months: input.validityMonths, category: input.category, self_enrol: input.selfEnrol, created_by_membership_id: actor.membershipId,
+        status: 'published', blocks, version: 1, published_at: new Date(), published_by_membership_id: actor.membershipId,
       });
+      const v = await tx.collection('learning_module_versions').insert({ course_id: r.id, version: 1, title: input.title, description: input.description, duration_minutes: input.durationMinutes, blocks, note: 'Course added', published_by_membership_id: actor.membershipId });
+      await tx.collection('courses').updateOne({ id: r.id }, { $set: { published_version_id: v.id } });
       await this.audit.record(tx, { action: 'course.created', resourceType: 'course', resourceId: r.id, changes: input });
       return { id: r.id as string };
     });
@@ -105,13 +112,22 @@ export class LearningService {
 
   updateCourse(id: string, input: CourseInput) {
     return this.db.tenant(async (tx) => {
-      const r = await tx.collection('courses').updateOne({ id, archived_at: null }, {
+      const c = await tx.collection('courses').findOne({ id, archived_at: null });
+      if (!c) throw Errors.notFound('Course');
+      const old = parseBlocks(c.blocks);
+      // A module built in Learning management (several items, quizzes) is changed there, never through this form.
+      if (!(old.length === 1 && old[0]!.id === 'course' && old[0]!.kind !== 'quiz' && old[0]!.kind !== 'assignment')) {
+        throw Errors.conflict('learning_module', 'This is a learning module with its own content. Change it in Learning management.');
+      }
+      const blocks = legacyCourseBlocks({ title: input.title, description: input.description, format: input.format, content_url: input.contentUrl, duration_minutes: input.durationMinutes });
+      const version = ((c.version as number) ?? 0) + 1;
+      const v = await tx.collection('learning_module_versions').insert({ course_id: id, version, title: input.title, description: input.description, duration_minutes: input.durationMinutes, blocks, note: 'Course changed', published_by_membership_id: requestContext.tenantActor().membershipId });
+      await tx.collection('courses').updateOne({ id }, {
         $set: {
           title: input.title, description: input.description, format: input.format, content_url: input.contentUrl, duration_minutes: input.durationMinutes,
-          validity_months: input.validityMonths, category: input.category, self_enrol: input.selfEnrol,
+          validity_months: input.validityMonths, category: input.category, self_enrol: input.selfEnrol, blocks, version, published_version_id: v.id, status: 'published', unpublished_changes: false,
         },
       });
-      if (!r) throw Errors.notFound('Course');
       await this.audit.record(tx, { action: 'course.updated', resourceType: 'course', resourceId: id, changes: input });
       return { id };
     });
@@ -119,7 +135,7 @@ export class LearningService {
 
   archiveCourse(id: string) {
     return this.db.tenant(async (tx) => {
-      const r = await tx.collection('courses').updateOne({ id, archived_at: null }, { $set: { archived_at: new Date() } });
+      const r = await tx.collection('courses').updateOne({ id, archived_at: null }, { $set: { archived_at: new Date(), status: 'archived' } });
       if (!r) throw Errors.notFound('Course');
       // Open assignments stay so people keep their record; nobody new can be assigned.
       await this.audit.record(tx, { action: 'course.archived', resourceType: 'course', resourceId: id });
@@ -210,11 +226,11 @@ export class LearningService {
       if (input.pathId) {
         if (await tx.collection('learning_paths').exists({ id: input.pathId, archived_at: null })) {
           const links = await tx.collection('learning_path_courses').find({ path_id: input.pathId }, { sort: { position: 1 } });
-          const live = new Map((await tx.collection('courses').find({ id: { $in: links.map((l) => l.course_id) }, archived_at: null })).map((c) => [c.id as string, c.title as string]));
+          const live = new Map((await tx.collection('courses').find({ id: { $in: links.map((l) => l.course_id) }, archived_at: null, status: 'published' })).map((c) => [c.id as string, c.title as string]));
           courses = links.filter((l) => live.has(l.course_id)).map((l) => ({ id: l.course_id as string, title: live.get(l.course_id)! }));
         }
       } else {
-        const c = await tx.collection('courses').findOne({ id: input.courseId, archived_at: null }, { projection: { title: 1 } });
+        const c = await tx.collection('courses').findOne({ id: input.courseId, archived_at: null, status: 'published' }, { projection: { title: 1 } });
         if (c) courses = [{ id: c.id, title: c.title }];
       }
       if (!courses.length) throw Errors.notFound(input.pathId ? 'Learning path' : 'Course');
@@ -234,7 +250,8 @@ export class LearningService {
           const table = tx.collection('course_assignments');
           const open = await table.exists({ employee_id: e.id, course_id: c.id, status: { $in: ['assigned', 'in_progress'] } });
           if (!open) {
-            await table.insert({ employee_id: e.id, course_id: c.id, path_id: input.pathId ?? null, source: 'assigned', assigned_by_membership_id: actor.membershipId, due_on: input.dueOn ?? null });
+            const cur = await tx.collection('courses').findOne({ id: c.id }, { projection: { version: 1, published_version_id: 1 } });
+            await table.insert({ employee_id: e.id, course_id: c.id, path_id: input.pathId ?? null, source: 'assigned', assigned_by_membership_id: actor.membershipId, due_on: input.dueOn ?? null, version: cur?.version ?? 1, version_id: cur?.published_version_id ?? null });
             mine++;
           } else skipped.push(`${e.name}: ${c.title} (already assigned)`);
         }
@@ -256,14 +273,14 @@ export class LearningService {
       const s = await this.authz.subject(tx);
       const e = await talentEmployee(tx, needEmployee(s.employeeId));
       await this.authz.require('learning:read', attrsOf(e), tx);
-      const c = await tx.collection('courses').findOne({ id: courseId, archived_at: null }, { projection: { title: 1, self_enrol: 1 } });
+      const c = await tx.collection('courses').findOne({ id: courseId, archived_at: null, status: 'published' }, { projection: { title: 1, self_enrol: 1, version: 1, published_version_id: 1 } });
       if (!c) throw Errors.notFound('Course');
       if (!c.self_enrol) throw Errors.forbidden('This course is assigned by your manager or HR');
       const table = tx.collection('course_assignments');
       if (await table.exists({ employee_id: e.id, course_id: courseId, status: { $in: ['assigned', 'in_progress'] } })) {
         throw Errors.conflict('already_enrolled', 'You already have this course in progress');
       }
-      const r = await table.insert({ employee_id: e.id, course_id: courseId, source: 'self_enrolled', status: 'in_progress', started_at: new Date() });
+      const r = await table.insert({ employee_id: e.id, course_id: courseId, source: 'self_enrolled', status: 'in_progress', started_at: new Date(), version: c.version ?? 1, version_id: c.published_version_id ?? null });
       await this.audit.record(tx, { action: 'learning.enrolled', resourceType: 'course', resourceId: courseId });
       return { id: r.id as string };
     });
@@ -305,6 +322,10 @@ export class LearningService {
       // Classroom attendance is confirmed by a manager or HR, not self-reported.
       if (a.format === 'classroom' && !manages) throw Errors.forbidden('Your manager or HR confirms classroom attendance');
       if (!['assigned', 'in_progress'].includes(a.status)) throw Errors.conflict('invalid_state', `This course is ${a.status.replace('_', ' ')}`);
+      // Quizzes, assignments and watched media are completed by doing them in the module, not by saying so.
+      const raw = (await tx.collection('course_assignments').findOne({ id }))!;
+      const tracked = (await versionOf(tx, raw)).blocks.some((b) => b.kind === 'quiz' || b.kind === 'assignment' || ((b.kind === 'video' || b.kind === 'audio') && (b.completion === 'full' || b.completion === 'percent')));
+      if (tracked) throw Errors.conflict('complete_in_module', 'This learning has quizzes, assignments or videos to finish. Complete it in the module.');
       const now = today();
       const on = completedOn ?? now;
       if (on > now) throw Errors.badRequest('future_date', 'The completion date cannot be in the future');
@@ -312,7 +333,7 @@ export class LearningService {
       const started = (await table.findOne({ id }, { projection: { started_at: 1 } }))?.started_at ?? new Date();
       await table.updateOne({ id }, {
         $set: {
-          status: 'completed', completed_on: on, completion_note: note || null, completed_by_membership_id: actor.membershipId, started_at: started,
+          status: 'completed', completed_on: on, completion_note: note || null, completed_by_membership_id: actor.membershipId, started_at: started, completed_at: new Date(), progress_percent: 100,
           expires_on: a.validity_months === null ? null : addMonths(on, a.validity_months),
         },
       });

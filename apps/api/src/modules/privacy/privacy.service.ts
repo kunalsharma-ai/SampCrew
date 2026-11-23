@@ -318,6 +318,9 @@ export class PrivacyService {
       { employee_id: employeeId, $or: [{ completion_note: { $ne: null } }, { cancelled_reason: { $ne: null } }] },
       { $set: { completion_note: null, cancelled_reason: null } },
     );
+    // Learning: assignment answers and quiz answers are the person's own words; scores and completion dates stay.
+    total += await t('learning_submissions').update({ employee_id: employeeId, $or: [{ text: { $ne: '' } }, { link: { $ne: null } }] }, { $set: { text: '', link: null } });
+    total += await t('learning_quiz_attempts').update({ employee_id: employeeId, answers: { $ne: {} } }, { $set: { answers: {} } });
     total += await t('approval_requests').update({ subject_employee_id: employeeId, summary: { $ne: ERASED } }, { $set: { summary: ERASED } });
     // Attrition risk is an inference about the person: scores and the notes on them (cascade) go.
     total += await t('attrition_scores').delete({ employee_id: employeeId });

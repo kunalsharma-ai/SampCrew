@@ -2,40 +2,33 @@ import { ModuleNotices } from '@/components/module-notices';
 import { buttonClass, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { load } from '@/lib/api';
 import { allowed, ModuleOverview } from '@/components/module-overview';
+import { load } from '@/lib/api';
 import type { Me } from '@/lib/types';
-import type { Assignment, Course, LearningPath } from '../talent/types';
-import { LearningView } from './learning-view';
+import { MyLearningView } from './my-learning';
+import { MY_TABS, type LearningAccessView, type MyLearning, type MyTab } from './types';
 
-export const metadata: Metadata = { title: 'Learning' };
+export const metadata: Metadata = { title: 'My learning' };
 
-export default async function LearningPage({ searchParams }: { searchParams: Promise<{ view?: string; status?: string }> }) {
-  const { view: v, status } = await searchParams;
-  const me = await load<Me>('/me');
-  const manages = Boolean(me.permissions['learning:manage']);
-  const view = v === 'catalogue' ? 'catalogue' : manages && v === 'team' ? 'team' : 'mine';
-  const filter = view === 'team' && status === 'overdue' ? 'overdue' : undefined;
-  const [assignments, courses, paths, people] = await Promise.all([
-    view === 'catalogue' ? Promise.resolve([]) : load<Assignment[]>(`/learning/assignments?view=${view}${filter ? `&status=${filter}` : ''}`),
-    load<Course[]>('/learning/courses'),
-    load<LearningPath[]>('/learning/paths'),
-    manages && view === 'team' ? load<{ id: string; name: string; departmentName: string | null }[]>('/talent/people?for=learning') : Promise.resolve([]),
-  ]);
+export default async function LearningPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const { tab: t } = await searchParams;
+  const tab: MyTab = (MY_TABS as readonly string[]).includes(t ?? '') ? (t as MyTab) : 'all';
+  const [my, access, me] = await Promise.all([load<MyLearning>('/learning/my'), load<LearningAccessView>('/learning/access'), load<Me>('/me')]);
   return (
     <>
       <PageHeader
-        title="Learning"
-        description="Courses assigned to you, the catalogue you can enrol in, and your team's progress."
-        actions={me.permissions['learning:configure'] ? <Link className={buttonClass('secondary', 'sm')} href="/learning/catalogue">Manage catalogue</Link> : undefined}
+        title="My learning"
+        description="Learning assigned to you and learning you chose, with your progress, scores, deadlines and certificates."
+        actions={access.manager ? <Link className={buttonClass('secondary', 'sm')} href="/learning/manage" data-testid="learning-manage-link">Learning management</Link> : undefined}
       />
-      {view === 'mine' && <ModuleOverview module="learning" actions={allowed(me, [
-        { label: 'Course library', href: '/learning?view=catalogue', icon: 'book-open', permission: 'learning:read' },
-        { label: 'Team progress', href: '/learning?view=team', icon: 'users', permission: 'learning:manage' },
-        { label: 'Manage catalogue', href: '/learning/catalogue', icon: 'graduation-cap', permission: 'learning:configure' },
+      {access.manager && <ModuleOverview module="learning" actions={allowed(me, [
+        { label: 'Learning dashboard', href: '/learning/manage', icon: 'chart', permission: 'learning:manage' },
+        { label: 'Learning library', href: '/learning/manage/library', icon: 'book-open', permission: 'learning:manage' },
+        ...(access.caps.create ? [{ label: 'New module', href: '/learning/manage/new', icon: 'graduation-cap' }] : []),
+        ...(access.caps.reports ? [{ label: 'Reports', href: '/learning/manage/reports', icon: 'file-text' }] : []),
       ])} />}
-      {view === 'mine' && <ModuleNotices category="learning" label="Learning" />}
-      <LearningView view={view} filter={filter} assignments={assignments} courses={courses} paths={paths} people={people} manages={manages} />
+      <ModuleNotices category="learning" label="Learning" />
+      <MyLearningView my={my} tab={tab} learner={access.learner} />
     </>
   );
 }
