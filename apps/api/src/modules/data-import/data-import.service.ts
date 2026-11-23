@@ -40,7 +40,7 @@ import { grantsFor } from '../../platform/authz/policy';
 import { requestContext, type TenantActor } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
-import { parseCsv, readXlsx, toXlsxSheets, type Cell } from '../../platform/export/tabular';
+import { parseCsv, readXlsx, toXlsxBook, type Cell } from '../../platform/export/tabular';
 import { AppError, Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import type { UploadedFile } from '../../platform/storage/uploads';
@@ -828,7 +828,7 @@ export class DataImportService {
       await this.audit.record(tx, { action: 'import.report_downloaded', resourceType: 'import_job', resourceId: id });
       return {
         fileName: `import-${job.number as number}-${job.type as string}-report.xlsx`,
-        content: toXlsxSheets([{ name: 'Summary', rows: summary }, { name: 'Problems', rows: problems }, { name: 'Rows to fix', rows: toFix }, { name: 'All rows', rows: all }]),
+        content: toXlsxBook([{ name: 'Summary', rows: summary }, { name: 'Problems', rows: problems }, { name: 'Rows to fix', rows: toFix }, { name: 'All rows', rows: all }]),
       };
     });
   }
@@ -854,7 +854,7 @@ export class DataImportService {
       instructions.push([], ['How it works'], ['1. Fill in one row per record under the headings. Delete the example row.'], ['2. Columns you do not need can be removed; extra columns of your own can stay and are offered as new fields.'],
         ['3. Upload the file in SampCrew > Data import. Every row is checked before anything is saved, and you decide what happens to records that already exist.']);
       const name = type === 'master_values' && list ? MASTER_LIST_INFO[list].label : IMPORT_TYPE_INFO[type].label;
-      return { fileName: `sampcrew-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-template.xlsx`, content: toXlsxSheets([{ name, rows: [header, example] }, { name: 'Instructions', rows: instructions }]) };
+      return { fileName: `sampcrew-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-template.xlsx`, content: toXlsxBook([{ name, rows: [header, example] }, { name: 'Instructions', rows: instructions }]) };
     });
   }
 

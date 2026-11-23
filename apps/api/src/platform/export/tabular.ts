@@ -50,11 +50,7 @@ export function numeric(v: string) {
   return /^-?(0|[1-9]\d{0,14})(\.\d{1,6})?$/.test(v) && v.replace(/[-.]/g, '').length <= 15;
 }
 
-export function toXlsx(sheetName: string, rows: Cell[][]): Buffer {
-  return toXlsxSheets([{ name: sheetName, rows }]);
-}
-
-function sheetXml(rows: Cell[][]) {
+function sheetXml(rows: Cell[][]): string {
   const widths: number[] = [];
   const body = rows.map((r, ri) => {
     const cells = r.map((v, ci) => {
@@ -69,33 +65,36 @@ function sheetXml(rows: Cell[][]) {
     }).join('');
     return `<row r="${ri + 1}">${cells}</row>`;
   }).join('');
-  const cols = widths.length ? `<cols>${Array.from(widths, (w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w ?? 10}" customWidth="1"/>`).join('')}</cols>` : '';
+  const cols = widths.length ? `<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w ?? 10}" customWidth="1"/>`).join('')}</cols>` : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${cols}<sheetData>${body}</sheetData></worksheet>`;
 }
 
-/** A workbook with several sheets, in order (the first opens first). Sheet names are made safe and unique. */
-export function toXlsxSheets(sheets: { name: string; rows: Cell[][] }[]): Buffer {
-  const used = new Set<string>();
-  const names = sheets.map((sh, i) => {
-    let n = sh.name.replace(/[[\]:*?/\\]/g, ' ').slice(0, 31) || `Sheet${i + 1}`;
-    while (used.has(n.toLowerCase())) n = `${n.slice(0, 28)} ${i + 1}`;
-    used.add(n.toLowerCase());
-    return esc(n);
-  });
+const sheetTitle = (s: string, i: number) => esc(s.replace(/[[\]:*?/\\]/g, ' ').slice(0, 31) || `Sheet${i + 1}`);
+
+export function toXlsx(sheetName: string, rows: Cell[][]): Buffer {
+  return toXlsxBook([{ name: sheetName, rows }]);
+}
+
+/**
+ * A workbook with several sheets (each with a bold frozen header row). Sheet names must differ; they are cut to
+ * Excel's 31 characters and characters Excel refuses are replaced.
+ */
+export function toXlsxBook(sheets: { name: string; rows: Cell[][] }[]): Buffer {
+  const list = sheets.length ? sheets : [{ name: 'Sheet1', rows: [] }];
   const files: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`),
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${list.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`),
     '_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
     'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((n, i) => `<sheet name="${n}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`),
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${list.map((s, i) => `<sheet name="${sheetTitle(s.name, i)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`),
     'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${list.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${list.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
     'xl/styles.xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf fontId="0" xfId="0"/><xf fontId="1" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`),
   };
-  sheets.forEach((sh, i) => { files[`xl/worksheets/sheet${i + 1}.xml`] = strToU8(sheetXml(sh.rows)); });
+  list.forEach((s, i) => { files[`xl/worksheets/sheet${i + 1}.xml`] = strToU8(sheetXml(s.rows)); });
   return Buffer.from(zipSync(files, { level: 6 }));
 }
 
@@ -132,7 +131,7 @@ function columnIndex(ref: string) {
  * (dates come through as Excel serial numbers) and booleans. Formulas give their last calculated value. Nothing is
  * evaluated. Throws on a file that is not a workbook.
  */
-export function readXlsx(buf: Buffer, maxRows = 10_000): string[][] {
+export function readXlsx(buf: Buffer, maxRows = 10_000, sheetIndex = 0): string[][] {
   let files: Record<string, Uint8Array>;
   try {
     files = unzipSync(new Uint8Array(buf), { filter: (f) => f.name.startsWith('xl/') && f.name.endsWith('.xml') || f.name.endsWith('.rels') });
@@ -142,7 +141,8 @@ export function readXlsx(buf: Buffer, maxRows = 10_000): string[][] {
   const text = (name: string) => (files[name] ? strFromU8(files[name]!) : null);
   const workbook = text('xl/workbook.xml');
   if (!workbook) throw new Error('not_xlsx');
-  const firstSheetRid = /<sheet\b[^>]*\br:id="([^"]+)"/.exec(workbook)?.[1];
+  const firstSheetRid = [...workbook.matchAll(/<sheet\b[^>]*\br:id="([^"]+)"/g)][sheetIndex]?.[1];
+  if (sheetIndex > 0 && !firstSheetRid) throw new Error('not_xlsx');
   const rels = text('xl/_rels/workbook.xml.rels') ?? '';
   let target = 'worksheets/sheet1.xml';
   if (firstSheetRid) {

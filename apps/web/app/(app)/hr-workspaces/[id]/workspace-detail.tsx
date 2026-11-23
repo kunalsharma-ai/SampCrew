@@ -16,6 +16,7 @@ const TABS = [
   { key: 'modules', label: 'Modules and details' },
   { key: 'people', label: 'People' },
   { key: 'admins', label: 'Admins' },
+  { key: 'documents', label: 'Documents' },
   { key: 'history', label: 'History' },
 ];
 const STATUS_TONE = { active: 'success', suspended: 'warning', archived: 'neutral' } as const;
@@ -29,6 +30,8 @@ export function WorkspaceDetail(p: {
   w: HrWorkspaceDetail; tab: string; query: string;
   people: HierarchyMemberRow[] | null; history: ConfigVersionRow[] | null; transfers: TransferRow[] | null;
   members: Option[]; others: Option[]; central: HierarchyMemberRow[] | null;
+  /** The Documents tab, rendered on the server (its own documents and the requests sent to it). */
+  documents?: React.ReactNode;
 }) {
   const router = useRouter();
   const { w } = p;
@@ -59,6 +62,7 @@ export function WorkspaceDetail(p: {
       {p.tab === 'modules' && <ModulesTab w={w} />}
       {p.tab === 'people' && p.people && <PeopleTab w={w} rows={p.people} query={p.query} others={p.others} central={p.central} />}
       {p.tab === 'admins' && <AdminsTab w={w} members={p.members} />}
+      {p.tab === 'documents' && p.documents}
       {p.tab === 'history' && <HistoryTab history={p.history ?? []} transfers={p.transfers ?? []} />}
     </div>
   );
