@@ -170,6 +170,21 @@ export class NotificationService {
     if (ids.length) await tx.collection('live_events').insert({ tenant_id: tx.tenantId, membership_ids: ids, type, data });
   }
 
+  /**
+   * A request was decided: its "please act" notices are done for everyone who can no longer act on it, wherever they
+   * are shown (bell, Home, the module page, the phone). Those who still can (`stillActing`) keep theirs.
+   */
+  async resolveByLink(tx: TenantTx, link: string, stillActing: string[] = []) {
+    const rows = await tx.collection('notifications').find({ link, read_at: null, action_required: true, membership_id: { $nin: stillActing } });
+    if (!rows.length) return 0;
+    const n = await tx.collection('notifications').update({ id: { $in: rows.map((r) => r.id as string) } }, { $set: { read_at: new Date() } });
+    // Each person is told which of their own notices closed, so their bell and pages drop exactly those.
+    const byMember = new Map<string, string[]>();
+    for (const r of rows) byMember.set(r.membership_id as string, [...(byMember.get(r.membership_id as string) ?? []), r.id as string]);
+    for (const [m, ids] of byMember) await this.signal(tx, [m], 'notifications.read', { ids });
+    return n;
+  }
+
   /** Marks read the caller's notices about one page or record (called when that page is opened). */
   async markReadByLink(tx: TenantTx, membershipId: string, link: string) {
     const n = await tx.collection('notifications').update({ membership_id: membershipId, link, read_at: null }, { $set: { read_at: new Date() } });

@@ -201,6 +201,10 @@ describe('notifications and approvals', () => {
       ok(await as('mgr').post(`/approvals/${row.id}/approve`).send({ comment: 'Fine by me' }));
       const progressed = await pool.one('notifications', { membership_id: people.emp.membershipId, kind: 'approval.progressed' });
       expect(progressed!.body).toContain('Your request is pending HR approval (Hana HR).');
+      // The manager's "awaiting your approval" notice is done once they decided; HR's, for the next step, is not.
+      const link = `/approvals/${row.id}`;
+      expect(await pool.one('notifications', { membership_id: people.mgr.membershipId, link, kind: 'approval.requested' })).toMatchObject({ read_at: expect.any(Date) });
+      expect(await pool.one('notifications', { membership_id: people.hr.membershipId, link, kind: 'approval.requested' })).toMatchObject({ read_at: null });
       ok(await as('hr').post(`/approvals/${row.id}/reject`).send({ comment: 'Quarter-end freeze' }));
       const d = ok(await as('emp').get(`/approvals/requests/${row.id}`));
       expect(d).toMatchObject({ status: 'rejected', statusMessage: 'Your request has been rejected. Please check the remarks.', canDecide: false, mine: true });
@@ -209,6 +213,7 @@ describe('notifications and approvals', () => {
       const told = await pool.one('notifications', { membership_id: people.emp.membershipId, kind: 'approval.rejected' });
       expect(told!.body).toContain('Remarks: Quarter-end freeze');
       expect(told!.priority).toBe('high');
+      expect(await pool.one('notifications', { membership_id: people.hr.membershipId, link, kind: 'approval.requested' })).toMatchObject({ read_at: expect.any(Date) });
       expect(ok(await as('hr').get('/approvals/overview?view=decided')).categories.find((c: { key: string }) => c.key === 'half_day_leave')).toMatchObject({ rejected: 1 });
       void r;
     });

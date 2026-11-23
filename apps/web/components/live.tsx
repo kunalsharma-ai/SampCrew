@@ -222,6 +222,13 @@ export function LiveProvider({ initial, byCategory: initialByCategory, actionNee
           const d = JSON.parse((e as MessageEvent).data);
           if (type === 'notifications.read') {
             if (typeof d.unread === 'number') setUnread(d.unread);
+            // Notices the server closed itself (a request was decided): read in the bell too.
+            if (Array.isArray(d.ids) && d.ids.length) {
+              const closed = new Set<string>(d.ids);
+              const at = new Date().toISOString();
+              setItems((cur) => cur.map((x) => (closed.has(x.id) && !x.readAt ? { ...x, readAt: at } : x)));
+              setUnread((u) => Math.max(0, u - d.ids.length));
+            }
             refreshCounts();
           }
           // A chat message reached this browser: tell the sender it was delivered (at most every few seconds).

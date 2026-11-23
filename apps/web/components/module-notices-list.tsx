@@ -30,8 +30,9 @@ export function ModuleNoticesList({ categories, category, label, items: initial 
     setItems((cur) => [d.notification, ...cur.filter((x) => x.id !== d.notification.id)].slice(0, 5));
   }), [live, key]);
   // Read somewhere else (the bell, another tab, the phone): drop it here too.
-  useEffect(() => live?.on('notifications.read', () => {
-    const readIds = new Set((live?.items ?? []).filter((n) => n.readAt).map((n) => n.id));
+  useEffect(() => live?.on('notifications.read', (d?: { ids?: string[] }) => {
+    // The server says which notices it closed (a request was decided), else the bell's own list knows.
+    const readIds = new Set([...(d?.ids ?? []), ...(live?.items ?? []).filter((n) => n.readAt).map((n) => n.id)]);
     setItems((cur) => cur.filter((x) => !readIds.has(x.id)));
   }), [live]);
   if (!items.length) return null;

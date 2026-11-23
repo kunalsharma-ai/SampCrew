@@ -490,6 +490,8 @@ export class ApprovalsService {
         }
         await this.notifications.signal(tx, [asker, actor.membershipId], 'approvals.changed');
       }
+      // The "awaiting your approval" notices are done for everyone who can no longer act on this request.
+      await this.notifications.resolveByLink(tx, `/approvals/${requestId}`, final ? [] : await this.currentApprovers(tx, requestId));
       return { id: requestId, status: final ?? 'pending' };
     });
   }
