@@ -48,7 +48,8 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
     // 1. Drag and drop.
     await p.goto(BASE + '/recruitment');
-    await p.getByRole('link', { name: /Quality Engineer/ }).first().click();
+    // The job's own link (the notices strip above the jobs can link to a candidate with the same job title).
+    await p.locator('a[href^="/recruitment/jobs/"]', { hasText: 'Quality Engineer' }).first().click();
     await p.waitForURL(/\/recruitment\/jobs\/[0-9a-f-]{36}$/);
     const jobUrl = p.url();
     const column = (name) => p.getByRole('region', { name, exact: true });
