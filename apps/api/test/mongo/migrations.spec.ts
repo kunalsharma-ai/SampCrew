@@ -91,6 +91,22 @@ describe('MongoDB migrations', () => {
     expect((await scratch.collection('leave_requests').findOne({ tenant_id: tenant }))!.document_ids).toEqual([]);
   });
 
+  it('adds the workspace limits to plans on a database whose catalogue does not have them yet', async () => {
+    const m = mongo.MONGO_MIGRATIONS.find((x) => x.name === '0130_workspace_limits')!;
+    const planId = 'eeeeeeee-0000-4000-8000-000000000001';
+    // An existing install: the catalogue sync that adds the new limits runs only after the migrations.
+    await scratch.collection('features').insertOne({ key: 'max_employees', name: 'Employees', module: 'Organization', kind: 'limit', unit: 'employees' });
+    await scratch.collection('plans').insertOne({ _id: planId as never, key: 'old_plan', name: 'Old plan' });
+    await scratch.collection('plan_features').insertOne({ plan_id: planId, feature_key: 'max_employees', limit_value: 50 });
+    await m.up!(scratch);
+    await m.up!(scratch);
+    expect((await scratch.collection('features').find({ key: { $in: ['max_hr_workspaces', 'max_employee_workspaces'] } }).toArray()).map((f) => f.kind)).toEqual(['limit', 'limit']);
+    const rows = await scratch.collection('plan_features').find({ plan_id: planId }).toArray();
+    const limit = (k: string) => rows.filter((r) => r.feature_key === k).map((r) => r.limit_value);
+    expect(limit('max_employee_workspaces')).toEqual([50]);
+    expect(limit('max_hr_workspaces')).toHaveLength(1);
+  });
+
   it('reads the database name from the URL', () => {
     expect(mongo.databaseName('mongodb://localhost:27017/crew_prod?replicaSet=rs0')).toBe('crew_prod');
     expect(mongo.databaseName('mongodb+srv://u:p@cluster0.example.net/?retryWrites=true')).toBe('crew');

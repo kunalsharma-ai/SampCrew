@@ -1,4 +1,4 @@
-import { UNLIMITED } from '@crew/contracts';
+import { FEATURES, UNLIMITED } from '@crew/contracts';
 import type { MongoMigration } from '../migrator';
 import { Table } from '../table';
 
@@ -10,6 +10,9 @@ import { Table } from '../table';
  * enforced on logins), and a missing HR Workspaces limit starts unlimited, as it behaved. SAMPLEDGE then sets the real
  * figures in Console > Plans. Built-in plans not edited in the Console get the catalogue figures from the next
  * catalogue sync. Safe to run again: a plan that already has the limit is left alone.
+ *
+ * The two limits are added to the feature catalogue first: on an existing database the catalogue sync runs after the
+ * migrations, and a plan row may only name a feature that exists.
  */
 export const m0130WorkspaceLimits: MongoMigration = {
   name: '0130_workspace_limits',
@@ -17,6 +20,11 @@ export const m0130WorkspaceLimits: MongoMigration = {
     const session = db.client.startSession();
     try {
       await session.withTransaction(async () => {
+        const features = new Table(db, 'features', session, { scope: null });
+        for (const f of FEATURES.filter((x) => x.key === 'max_hr_workspaces' || x.key === 'max_employee_workspaces')) {
+          const row = { key: f.key, name: f.name, module: f.module, kind: f.kind, unit: 'unit' in f ? f.unit : null };
+          await features.upsert({ key: f.key }, row, { $set: { name: row.name, module: row.module, kind: row.kind, unit: row.unit } });
+        }
         const planFeatures = new Table(db, 'plan_features', session, { scope: null });
         const plans = await db.collection('plans').find({}, { session, projection: { _id: 1 } }).toArray();
         for (const p of plans) {
