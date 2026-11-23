@@ -7,7 +7,7 @@ import { NAV } from './nav';
 
 const APP = path.join(__dirname, '..', 'app', '(app)');
 /** Pages with no screen of their own (they redirect or only explain a missing permission). */
-const NO_HELP = new Set(['/no-access', '/recruitment/offers/[id]']);
+const NO_HELP = new Set(['/no-access', '/recruitment/offers/[id]', '/employees/import']);
 
 function walk(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));

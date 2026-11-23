@@ -8,6 +8,8 @@ import {
   type BidSendInput,
   type BidStatus,
   type BidTemplateInput,
+  type ClientContact,
+  type ClientContactInput,
   type ClientInput,
   formatAmount,
   type RateCard,
@@ -223,22 +225,91 @@ export class BidsService implements OnModuleInit {
   }
 
   async createClient(input: ClientInput) {
-    return this.db.tenant(async (tx) => {
-      const c = await tx.collection('clients')
-        .insert({ ...this.clientFields(input), created_by_membership_id: requestContext.tenantActor().membershipId })
-        .catch(uniqueAs('client_exists', 'A client with that name already exists'));
-      await this.audit.record(tx, { action: 'client.created', resourceType: 'client', resourceId: c.id, changes: { name: input.name } });
-      return clientView(c);
-    });
+    return this.db.tenant((tx) => this.createClientIn(tx, input));
+  }
+
+  /** createClient() inside a transaction the caller holds (a data import adds the client and its fields together). */
+  async createClientIn(tx: TenantTx, input: ClientInput, extra: { sourceImportId?: string } = {}) {
+    const c = await tx.collection('clients')
+      .insert({ ...this.clientFields(input), created_by_membership_id: requestContext.tenantActor().membershipId, ...(extra.sourceImportId ? { source_import_id: extra.sourceImportId } : {}) })
+      .catch(uniqueAs('client_exists', 'A client with that name already exists'));
+    await this.audit.record(tx, { action: 'client.created', resourceType: 'client', resourceId: c.id, changes: { name: input.name }, ...(extra.sourceImportId ? { metadata: { importId: extra.sourceImportId } } : {}) });
+    return clientView(c);
   }
 
   async updateClient(id: string, input: ClientInput) {
+    return this.db.tenant((tx) => this.updateClientIn(tx, id, input));
+  }
+
+  /** updateClient() inside a transaction the caller holds. Fields left out of a partial update keep their values. */
+  async updateClientIn(tx: TenantTx, id: string, input: ClientInput | Partial<ClientInput>) {
+    const before = await tx.collection('clients').findOne({ id });
+    if (!before) throw Errors.notFound('Client');
+    const full = { ...clientInputOf(before), ...Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) } as ClientInput;
+    await tx.collection('clients').updateOne({ id }, { $set: this.clientFields(full) }).catch(uniqueAs('client_exists', 'A client with that name already exists'));
+    await this.audit.record(tx, { action: 'client.updated', resourceType: 'client', resourceId: id });
+    return clientView((await tx.collection('clients').findOne({ id }))!);
+  }
+
+  // Contacts -------------------------------------------------------------------------------------------
+
+  async contacts(clientId: string) {
     return this.db.tenant(async (tx) => {
-      const n = await tx.collection('clients').updateOne({ id }, { $set: this.clientFields(input) }).catch(uniqueAs('client_exists', 'A client with that name already exists'));
-      if (!n) throw Errors.notFound('Client');
-      await this.audit.record(tx, { action: 'client.updated', resourceType: 'client', resourceId: id });
-      return clientView((await tx.collection('clients').findOne({ id }))!);
+      if (!(await tx.collection('clients').exists({ id: clientId }))) throw Errors.notFound('Client');
+      const rows = await tx.collection('client_contacts').find({ client_id: clientId, archived_at: null }, { sort: { is_primary: -1, first_name: 1 } });
+      return rows.map(contactView);
     });
+  }
+
+  async createContact(clientId: string, input: ClientContactInput) {
+    return this.db.tenant((tx) => this.createContactIn(tx, clientId, input));
+  }
+
+  /** createContact() inside a transaction the caller holds. A new main contact replaces the client's previous one. */
+  async createContactIn(tx: TenantTx, clientId: string, input: ClientContactInput, extra: { sourceImportId?: string } = {}) {
+    const client = await tx.collection('clients').findOne({ id: clientId, archived_at: null });
+    if (!client) throw Errors.notFound('Client');
+    if (input.isPrimary) await tx.collection('client_contacts').update({ client_id: clientId, is_primary: true }, { $set: { is_primary: false } });
+    const row = await tx.collection('client_contacts').insert({
+      client_id: clientId, first_name: input.firstName, last_name: input.lastName, email: input.email ?? null, phone: input.phone ?? null, job_title: input.jobTitle ?? null,
+      is_primary: input.isPrimary, notes: input.notes ?? null, created_by_membership_id: requestContext.tenantActor().membershipId,
+      ...(extra.sourceImportId ? { source_import_id: extra.sourceImportId } : {}),
+    }).catch(uniqueAs('contact_exists', 'This client already has a contact with that email'));
+    if (input.isPrimary) await this.syncMainContact(tx, clientId, row);
+    await this.audit.record(tx, { action: 'client_contact.created', resourceType: 'client', resourceId: clientId, changes: { contactId: row.id, name: `${input.firstName} ${input.lastName}`.trim() }, ...(extra.sourceImportId ? { metadata: { importId: extra.sourceImportId } } : {}) });
+    return contactView(row);
+  }
+
+  async updateContact(clientId: string, contactId: string, input: Partial<ClientContactInput>) {
+    return this.db.tenant((tx) => this.updateContactIn(tx, clientId, contactId, input));
+  }
+
+  async updateContactIn(tx: TenantTx, clientId: string, contactId: string, input: Partial<ClientContactInput>) {
+    const before = await tx.collection('client_contacts').findOne({ id: contactId, client_id: clientId, archived_at: null });
+    if (!before) throw Errors.notFound('Contact');
+    const set: Record<string, unknown> = {};
+    const cols: Record<string, string> = { firstName: 'first_name', lastName: 'last_name', email: 'email', phone: 'phone', jobTitle: 'job_title', isPrimary: 'is_primary', notes: 'notes' };
+    for (const [k, col] of Object.entries(cols)) if (input[k as keyof ClientContactInput] !== undefined) set[col] = input[k as keyof ClientContactInput];
+    if (!Object.keys(set).length) return contactView(before);
+    if (set.is_primary === true) await tx.collection('client_contacts').update({ client_id: clientId, is_primary: true, id: { $ne: contactId } }, { $set: { is_primary: false } });
+    await tx.collection('client_contacts').updateOne({ id: contactId }, { $set: set }).catch(uniqueAs('contact_exists', 'This client already has a contact with that email'));
+    const after = (await tx.collection('client_contacts').findOne({ id: contactId }))!;
+    if (after.is_primary) await this.syncMainContact(tx, clientId, after);
+    await this.audit.record(tx, { action: 'client_contact.updated', resourceType: 'client', resourceId: clientId, changes: { contactId, fields: Object.keys(set) } });
+    return contactView(after);
+  }
+
+  async archiveContact(clientId: string, contactId: string) {
+    return this.db.tenant(async (tx) => {
+      const n = await tx.collection('client_contacts').updateOne({ id: contactId, client_id: clientId, archived_at: null }, { $set: { archived_at: new Date(), is_primary: false } });
+      if (!n) throw Errors.notFound('Contact');
+      await this.audit.record(tx, { action: 'client_contact.archived', resourceType: 'client', resourceId: clientId, changes: { contactId } });
+    });
+  }
+
+  /** The client's main contact fields (used on bids and proposals) follow its main contact. */
+  private async syncMainContact(tx: TenantTx, clientId: string, c: Record<string, unknown>) {
+    await tx.collection('clients').updateOne({ id: clientId }, { $set: { contact_name: `${c.first_name as string} ${(c.last_name as string) ?? ''}`.trim(), contact_email: c.email ?? null, contact_phone: c.phone ?? null } });
   }
 
   async archiveClient(id: string) {
@@ -686,4 +757,21 @@ export class BidsService implements OnModuleInit {
     for await (const c of stream) chunks.push(c as Buffer);
     return Buffer.concat(chunks);
   }
+}
+
+/** A stored client as the input that would write it, so a partial update keeps what it does not name. */
+function clientInputOf(c: Record<string, unknown>): ClientInput {
+  const v = (k: string) => (c[k] === null || c[k] === undefined ? undefined : (c[k] as string));
+  return {
+    name: c.name as string, legalName: v('legal_name'), industry: v('industry'), contactName: v('contact_name'), contactEmail: v('contact_email'),
+    contactPhone: v('contact_phone'), address: v('address'), currency: (c.currency as string) ?? 'INR', notes: v('notes'),
+  } as ClientInput;
+}
+
+function contactView(c: Record<string, any>): ClientContact { // eslint-disable-line @typescript-eslint/no-explicit-any
+  return {
+    id: c.id, clientId: c.client_id, firstName: c.first_name, lastName: c.last_name ?? '', name: `${c.first_name} ${c.last_name ?? ''}`.trim(), email: c.email ?? null,
+    phone: c.phone ?? null, jobTitle: c.job_title ?? null, isPrimary: !!c.is_primary, notes: c.notes ?? null,
+    archivedAt: c.archived_at ? new Date(c.archived_at).toISOString() : null, importId: c.source_import_id ?? null,
+  };
 }

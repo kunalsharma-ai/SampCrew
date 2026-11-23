@@ -1,6 +1,7 @@
 import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { API_KEY_PREFIX, partForApiPath, PLATFORM_ROLE_CAPABILITIES, type PlatformRole } from '@crew/contracts';
+import { recordMobileUsage, requireMobileRoute } from '../entitlements/mobile-access';
 import type { Request } from 'express';
 import { AuditService } from '../audit/audit.service';
 import { AuthzService } from '../authz/authz.service';
@@ -116,6 +117,12 @@ export class AuthGuard implements CanActivate {
     const feature = this.meta<string>(FEATURE_KEY, ctx);
     if (feature) await this.entitlements.requireFeature(feature);
     await this.requirePart(req);
+    // The phone shows only what the Super Workspace published for the mobile app; routes of a hidden module stay
+    // closed to phones even when called directly. The Web Portal is never affected.
+    if (row.client === 'mobile') {
+      const used = await this.db.tenant((tx) => requireMobileRoute(tx, claims.mid, apiPath(req), req.method));
+      if (used) await this.db.tenant((tx) => recordMobileUsage(tx, claims.mid, used)).catch(() => undefined);
+    }
 
     const permission = this.meta<string>(PERMISSION_KEY, ctx);
     if (permission) {
@@ -156,7 +163,7 @@ export class AuthGuard implements CanActivate {
    * while any level switched that page or button off, also when called directly.
    */
   private async requirePart(req: Request) {
-    const part = partForApiPath((req.path ?? '').replace(/^.*?\/api\/v\d+\//, ''), req.method);
+    const part = partForApiPath(apiPath(req), req.method);
     if (part) await this.entitlements.requireFeature(part.key);
   }
 
@@ -200,4 +207,9 @@ export class AuthGuard implements CanActivate {
     if (capability && !PLATFORM_ROLE_CAPABILITIES[claims.role as PlatformRole]?.includes(capability)) throw Errors.forbidden();
     return true;
   }
+}
+
+/** The request path after /api/v1/. */
+function apiPath(req: Request) {
+  return (req.path ?? '').replace(/^.*?\/api\/v\d+\//, '');
 }

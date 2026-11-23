@@ -151,7 +151,32 @@ export interface HrWorkspaceDetail extends HrWorkspaceSummary {
   parentFeatures: string[];
   usage: { employees: number; limit: number; companyEmployees: number; companyLimit: number | null };
   can: { manage: boolean; assignModules: boolean; transfer: boolean };
+  /** What this HR Workspace's admins may do with employee records (the Super Workspace switches these). */
+  permissions: HrWorkspacePermissionState[];
 }
+
+/**
+ * The Super Workspace's switches for what an HR Workspace's admins may do with employee data. They apply to admins
+ * limited to HR Workspaces (an admin of several keeps a permission while any of them has it on); company-wide HR is
+ * governed by Feature management instead. Viewing records cannot be switched off: the HR Workspace exists to look
+ * after its people. Enforced when the person's permissions are loaded, so the API refuses what the screen hides.
+ */
+export const HR_WORKSPACE_PERMISSION_SWITCHES = [
+  { key: 'employees:read', label: 'View employee records', locked: true },
+  { key: 'employees:update', label: 'Edit employee records', locked: false },
+  { key: 'employees:create', label: 'Create employee records', locked: false },
+  { key: 'imports:run', label: 'Import employee data', locked: false },
+  { key: 'employees:export', label: 'Export employee data', locked: false },
+  { key: 'fields:manage', label: 'Manage custom fields', locked: false },
+] as const;
+export type HrWorkspacePermissionKey = (typeof HR_WORKSPACE_PERMISSION_SWITCHES)[number]['key'];
+/** Switching one off also takes away what depends on it (import history goes with import). */
+export const HR_WORKSPACE_PERMISSION_DEPENDENTS: Record<string, string[]> = { 'imports:run': ['imports:read'] };
+export interface HrWorkspacePermissionState { key: HrWorkspacePermissionKey; label: string; on: boolean; locked: boolean; reason: string | null }
+export const hrWorkspacePermissionsInput = z.object({
+  changes: z.array(z.object({ key: z.enum(HR_WORKSPACE_PERMISSION_SWITCHES.map((p) => p.key) as [HrWorkspacePermissionKey, ...HrWorkspacePermissionKey[]]), enabled: z.boolean() }).strict()).min(1).max(10),
+  version: z.number().int().min(1),
+}).strict();
 
 export interface HierarchyMemberRow {
   employeeId: string; membershipId: string | null; name: string; code: string; email: string | null;

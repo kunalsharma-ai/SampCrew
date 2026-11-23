@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res } from '@nestjs/common';
 import {
-  bidInput, type BidInput, bidListQuery, bidOutcomeInput, bidSendInput, type BidSendInput, bidTemplateInput, type BidTemplateInput, clientInput, type ClientInput,
+  bidInput, type BidInput, bidListQuery, bidOutcomeInput, bidSendInput, type BidSendInput, bidTemplateInput, type BidTemplateInput, clientContactInput, type ClientContactInput, clientInput, type ClientInput,
   proposalAcceptInput, type ProposalAcceptInput, proposalDeclineInput, type ProposalDeclineInput, rateCardInput, type RateCardInput,
 } from '@crew/contracts';
 import type { Response } from 'express';
@@ -50,6 +50,35 @@ export class BidsController {
   @Doc({ summary: 'Archive a client (their bids are kept)' })
   archiveClient(@Param('id', UuidPipe) id: string) {
     return this.bids.archiveClient(id);
+  }
+
+  @Get('clients/:id/contacts')
+  @RequirePermission('bids:read')
+  @Doc({ summary: 'The people at a client' })
+  contacts(@Param('id', UuidPipe) id: string) {
+    return this.bids.contacts(id);
+  }
+
+  @Post('clients/:id/contacts')
+  @RequirePermission('bids:manage')
+  @Doc({ summary: 'Add a contact to a client (a new main contact replaces the previous one)', body: clientContactInput })
+  createContact(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(clientContactInput)) body: ClientContactInput) {
+    return this.bids.createContact(id, body);
+  }
+
+  @Put('clients/:id/contacts/:contactId')
+  @RequirePermission('bids:manage')
+  @Doc({ summary: 'Change a contact', body: clientContactInput })
+  updateContact(@Param('id', UuidPipe) id: string, @Param('contactId', UuidPipe) contactId: string, @Body(new ZodPipe(clientContactInput)) body: ClientContactInput) {
+    return this.bids.updateContact(id, contactId, body);
+  }
+
+  @Delete('clients/:id/contacts/:contactId')
+  @HttpCode(204)
+  @RequirePermission('bids:manage')
+  @Doc({ summary: 'Remove a contact (kept in the history)' })
+  archiveContact(@Param('id', UuidPipe) id: string, @Param('contactId', UuidPipe) contactId: string) {
+    return this.bids.archiveContact(id, contactId);
   }
 
   // Templates ---------------------------------------------------------------------------------------------

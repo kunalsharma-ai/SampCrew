@@ -12,6 +12,42 @@ export interface MobileHelpEntry {
 }
 
 export const MOBILE_HELP = {
+  help: {
+    title: 'Help & Support',
+    what: 'Guides, FAQs, tutorials and quick starts for the features you can use, and Raise a Query.',
+    how: 'Search, tap a quick button or a category. Articles you open appear under Recently viewed.',
+    where: 'What you see depends on your level, your company\'s features and your permissions.',
+  },
+  'help.search': {
+    title: 'Search help',
+    what: 'Help articles that match your words: feature names, questions and error messages.',
+    how: 'Type and tap Search. Open an article to read it.',
+  },
+  'help.category': {
+    title: 'Help category',
+    what: 'The topics and articles in one help category.',
+  },
+  'help.article': {
+    title: 'Help article',
+    what: 'One help article: the answer, or steps you can tick off as you go.',
+    how: 'Tap a step to mark it done (saved for you) and say whether it helped.',
+  },
+  'help.ask': {
+    title: 'Raise a Query',
+    what: 'Ask for help: a category (or Other), a subject, a description and photos.',
+    how: 'Submit to get a ticket ID. You are notified of every reply.',
+    where: 'It goes to your HR Workspace, or the level above yours.',
+  },
+  'help.queries': {
+    title: 'My queries',
+    what: 'The queries you raised, with ticket IDs and statuses.',
+    how: 'Tap one to read replies and answer.',
+  },
+  'help.query': {
+    title: 'Query',
+    what: 'One query: what you asked, the replies and its status.',
+    how: 'Reply, close it when sorted, reopen a resolved one within the allowed days, or rate the answer.',
+  },
   // Screens (shown in the header)
   home: {
     title: 'Home',
@@ -160,6 +196,24 @@ export const MOBILE_HELP = {
     how: 'Sign out any device you no longer use or do not recognise.',
     where: 'Check it if you lose a phone.',
   },
+
+  more: { title: 'More', what: 'Every module your company turned on for you that is not in the bottom bar.', how: 'Tap a module to open it.', where: 'Your company’s Super Workspace decides what is listed here and in the bottom bar.' },
+  chat: { title: 'Chat', what: 'Your conversations with colleagues and groups, newest first.', how: 'Tap a conversation to read and reply, or start a new one.', where: 'Unread conversations show a count.' },
+  'chat.conversation': { title: 'Conversation', what: 'The messages in this conversation.', how: 'Write at the bottom and send. Ticks show when your message was delivered and read.' },
+  'chat.new': { title: 'New conversation', what: 'Start a one-to-one chat with a colleague.', how: 'Search by name and tap the person.' },
+  email: { title: 'Email', what: 'Emails HR sent you, and for HR the emails you sent and your drafts.', how: 'Tap an email to read it.' },
+  'email.read': { title: 'Email', what: 'One email and its attachments.' },
+  'email.compose': { title: 'New email', what: 'Write an email to employees through SampCrew.', how: 'Choose the people, write a subject and the message, then send.', where: 'Delivery needs the company’s email settings in the Super Workspace.' },
+  documents: { title: 'Documents', what: 'Documents on your own employee record, by category.', how: 'Tap a document to open it. A short-lived link is made for you and the download is recorded.' },
+  learning: { title: 'Learning', what: 'Courses assigned to you and the course library.', how: 'Start a course, then mark it complete when you finish.' },
+  'attendance.history': { title: 'Attendance history', what: 'Your attendance for the month: each day’s status, check-in, check-out, breaks and hours.', how: 'Move between months with the arrows.' },
+  'attendance.team': { title: 'Team attendance', what: 'Today’s attendance of the people you may see, with counts by status.', where: 'Your own permissions decide whom you see.' },
+  'attendance.breaks': { title: 'Breaks', what: 'Start a break when you step away and end it when you are back.', how: 'Break time is not counted as worked time.' },
+  announcements: { title: 'Announcements', what: 'Company announcements addressed to you.', how: 'Tap one to read it, and acknowledge it if asked.' },
+  payslips: { title: 'Payslips', what: 'Your published payslips, newest first.' },
+  directory: { title: 'Directory', what: 'Colleagues you may see, with their department and designation.', how: 'Search by name.' },
+  sessions: { title: 'Login and sessions', what: 'Your last sign-in, recent sign-ins and the devices signed in now.', how: 'Sign out other devices if you see one you do not recognise.' },
+  search: { title: 'Search', what: 'Search people, messages, documents, learning and announcements you can see.', how: 'Type at least two letters.' },
 
   // Sections
   'home.today': { title: 'Today', what: 'Your shift today and whether you have punched in.', how: 'Tap Punch in or Punch out.' },

@@ -20,6 +20,8 @@ export interface Clock {
 
 export interface PunchDraft {
   direction?: 'in' | 'out';
+  /** What the punch is for: a break starts with an out and ends with an in marked 'break'. */
+  purpose?: 'work' | 'break';
   latitude?: number;
   longitude?: number;
   accuracyM?: number;

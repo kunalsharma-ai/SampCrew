@@ -72,6 +72,7 @@ export const PERMISSIONS = [
   { key: 'hierarchy:manage', module: 'Organization', description: 'Create, change, suspend and archive HR Workspaces and decide which modules each one gets (Super Workspace)', phase: 29, scopes: TENANT_ONLY, action: 'manage' },
   { key: 'employees:transfer', module: 'People', description: 'Move employees between HR Workspaces and the central group, keeping their history', phase: 29, scopes: TENANT_ONLY, action: 'manage' },
   { key: 'modules:assign', module: 'People', description: "Choose which of the HR Workspace's modules each employee gets", phase: 29, scopes: ['department', 'entity', 'tenant'], action: 'manage' },
+  { key: 'mobileapp:manage', module: 'Administration', description: 'Decide which modules and features the SampCrew mobile app shows to each level, and publish or restore its configuration (Super Workspace)', phase: 30, scopes: TENANT_ONLY, action: 'manage' },
   { key: 'org:manage', module: 'Organization', description: 'Create and change legal entities, business units, locations and departments', phase: 1, scopes: TENANT_ONLY },
   { key: 'users:read', module: 'Administration', description: 'View workspace members', phase: 1, scopes: ALL },
   { key: 'users:invite', module: 'Administration', description: 'Invite people to the workspace', phase: 1, scopes: TENANT_ONLY },
@@ -182,6 +183,11 @@ export const PERMISSIONS = [
   { key: 'tasks:assign', module: 'People', description: 'Assign Manager Tasks to people in scope and review their progress', phase: 28, scopes: ['team', 'department', 'entity', 'tenant'] },
   { key: 'tasks:hr', module: 'People', description: 'Assign HR Tasks (documents, forms, acknowledgements) and verify the documents people upload', phase: 28, scopes: ['department', 'entity', 'tenant'] },
   { key: 'profiles:review', module: 'People', description: 'Review the profile changes employees submit: compare, approve, reject or ask for more', phase: 28, scopes: ['department', 'entity', 'tenant'] },
+  // Phase 30: data import and master data
+  { key: 'employees:export', module: 'People', description: 'Download the employee list as CSV or Excel', phase: 30, scopes: ['team', 'department', 'entity', 'tenant'], action: 'export' },
+  { key: 'imports:read', module: 'Data import', description: 'See the data imports of the workspace (or of your HR Workspaces) and download their reports', phase: 30, scopes: TENANT_ONLY, action: 'view' },
+  { key: 'imports:run', module: 'Data import', description: 'Import employees, candidates, clients and other records from Excel or CSV', phase: 30, scopes: TENANT_ONLY, action: 'create' },
+  { key: 'masterdata:manage', module: 'Organization', description: 'Add, rename, categorise and disable master data: industries, job titles, job roles, skills, education and other dropdown values', phase: 30, scopes: TENANT_ONLY, action: 'manage' },
 ] as const satisfies readonly PermissionDefinition[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

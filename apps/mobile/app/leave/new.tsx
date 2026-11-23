@@ -6,6 +6,7 @@ import { useSession } from '../../src/lib/session';
 import type { Balance } from '../../src/lib/types';
 import { Button, Card, Choice, Field, Notice, Screen, Text, useLoad } from '../../src/ui';
 import { DateField } from '../../src/ui/calendar';
+import { ModuleGate } from '../../src/ui/kit';
 
 type Route = 'hr' | 'super' | 'both';
 interface Preview {
@@ -20,7 +21,7 @@ const localToday = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-export default function NewLeave() {
+function NewLeaveBody() {
   const { api } = useSession();
   const router = useRouter();
   // A day chosen on the leave calendar starts the request on that day.
@@ -160,5 +161,13 @@ export default function NewLeave() {
         <Button title="Send request" onPress={submit} busy={busy} disabled={!valid} testID="send-leave" />
       </Card>
     </Screen>
+  );
+}
+
+export default function NewLeave() {
+  return (
+    <ModuleGate module="leave" feature="apply">
+      <NewLeaveBody />
+    </ModuleGate>
   );
 }

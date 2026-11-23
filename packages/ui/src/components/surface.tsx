@@ -1,3 +1,4 @@
+import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react';
 import { type HTMLAttributes, type ReactNode, useId } from 'react';
 import { cn } from '../cn';
 import { AutoHelp, type HelpProp } from './help';
@@ -107,9 +108,9 @@ export function Avatar({ name, size = 32, className, src }: { name: string; size
 export function Stat({ label, value, hint, icon }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode }) {
   return (
     <Card className="p-5">
-      <div className="flex items-center justify-between text-[0.8125rem] text-fg-muted">
+      <div className="flex items-center justify-between gap-2 text-[0.8125rem] text-fg-muted">
         <span>{label}</span>
-        {icon && <span className="text-fg-subtle">{icon}</span>}
+        {icon && <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-subtle text-accent [&_svg]:size-4" aria-hidden>{icon}</span>}
       </div>
       <div className="mt-2 text-[1.75rem] font-semibold tracking-tight tabular text-fg">{value}</div>
       {hint && <div className="mt-1 text-xs text-fg-subtle">{hint}</div>}
@@ -120,7 +121,14 @@ export function Stat({ label, value, hint, icon }: { label: string; value: React
 export function EmptyState({ icon, title, description, action }: { icon?: ReactNode; title: string; description?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-      {icon && <div className="mb-4 flex size-12 items-center justify-center rounded-xl bg-accent-subtle text-accent">{icon}</div>}
+      {icon && (
+        // The icon on two soft rings, the same empty-state picture the mobile app draws.
+        <div className="relative mb-5 flex size-20 items-center justify-center" aria-hidden>
+          <span className="absolute inset-0 rounded-full bg-accent/8" />
+          <span className="absolute inset-3 rounded-full bg-accent/12" />
+          <span className="relative flex size-11 items-center justify-center rounded-xl bg-accent text-accent-fg shadow-card [&_svg]:size-5">{icon}</span>
+        </div>
+      )}
       <h3 className="text-[0.9375rem] font-semibold text-fg">{title}</h3>
       {description && <p className="mt-1 max-w-sm text-[0.8125rem] text-fg-muted">{description}</p>}
       {action && <div className="mt-5">{action}</div>}
@@ -128,15 +136,22 @@ export function EmptyState({ icon, title, description, action }: { icon?: ReactN
   );
 }
 
+/** A placeholder with the size of what it waits for; a light sweep shows it is loading (still under reduced motion). */
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-md bg-bg-subtle', className)} aria-hidden />;
+  return <div className={cn('crew-skeleton rounded-md bg-bg-subtle', className)} aria-hidden />;
 }
 
+const ALERT_ICON = { info: Info, warning: AlertTriangle, danger: XCircle, success: CheckCircle2 } as const;
+
 export function Alert({ tone = 'info', title, children, className }: { tone?: 'info' | 'warning' | 'danger' | 'success'; title?: ReactNode; children?: ReactNode; className?: string }) {
+  const Glyph = ALERT_ICON[tone];
   return (
-    <div role={tone === 'danger' ? 'alert' : 'status'} className={cn('rounded-md border px-4 py-3 text-[0.8125rem]', tones[tone], 'border-current/15', className)}>
-      {title && <div className="font-semibold">{title}</div>}
-      {children && <div className={cn(title && 'mt-0.5')}>{children}</div>}
+    <div role={tone === 'danger' ? 'alert' : 'status'} className={cn('flex gap-2.5 rounded-md border px-4 py-3 text-[0.8125rem]', tones[tone], 'border-current/15', className)}>
+      <Glyph className="mt-px size-4 shrink-0" aria-hidden />
+      <div className="min-w-0 flex-1">
+        {title && <div className="font-semibold">{title}</div>}
+        {children && <div className={cn(title && 'mt-0.5')}>{children}</div>}
+      </div>
     </div>
   );
 }

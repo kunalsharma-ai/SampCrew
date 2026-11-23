@@ -20,6 +20,10 @@ const NAV: (NavItem & { cap?: string })[] = [
   { href: '/password-resets', label: 'Password resets', icon: 'key', cap: 'audit:read' },
   { href: '/audit', label: 'Platform audit', icon: 'scroll', cap: 'audit:read' },
   { href: '/admins', label: 'Console admins', icon: 'shield', cap: 'admins:manage' },
+  // Help & Support: the Console's own help, the queries that reach SampCrew Support, and the content every level sees.
+  { href: '/help-queries', label: 'Help queries', icon: 'ticket', cap: 'help:answer' },
+  { href: '/help-content', label: 'Help content', icon: 'book', cap: 'help:manage' },
+  { href: '/help', label: 'Help & Support', icon: 'lifebuoy' },
 ];
 
 export default async function ConsoleLayout({ children }: { children: React.ReactNode }) {
@@ -34,4 +38,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   // System alerts for the bell and the menu markers (admins who can see workspaces).
   const alerts = hasCap(me, 'tenants:read') ? await api<ConsoleAlerts>('/platform/alerts').catch(() => null) : null;
   return <Shell me={me} nav={nav} alerts={alerts} live={hasCap(me, 'support:chat')}>{children}</Shell>;
+  // The help queries badge: queries waiting for SampCrew Support's first answer.
+  const help = hasCap(me, 'help:answer') ? await load<{ waiting: number }>('/platform/help/queries/waiting').catch(() => null) : null;
+  const nav = NAV.filter((n) => !n.cap || hasCap(me, n.cap)).map(({ cap: _c, ...n }) => (n.href === '/support' && support?.unread ? { ...n, badge: support.unread } : n.href === '/help-queries' && help?.waiting ? { ...n, badge: help.waiting } : n));
+  return <Shell me={me} nav={nav} live={hasCap(me, 'support:chat')}>{children}</Shell>;
 }

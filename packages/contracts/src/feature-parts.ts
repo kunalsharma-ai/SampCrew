@@ -34,12 +34,17 @@ export const FEATURE_PARTS = [
   { key: 'core_hr.structure', feature: 'core_hr', name: 'Company structure', audience: 'hr', web: ['/organization'] },
   { key: 'core_hr.import', feature: 'core_hr', name: 'Import employees', audience: 'hr', web: ['/employees/import'], api: ['employees/import'] },
   { key: 'core_hr.custom_fields', feature: 'core_hr', name: 'Custom fields', audience: 'admin', web: ['/settings/custom-fields'] },
+  { key: 'core_hr.master_data', feature: 'core_hr', name: 'Master data', audience: 'admin', web: ['/settings/master-data'], api: ['master-data'] },
   { key: 'core_hr.tasks', feature: 'core_hr', name: 'My tasks', audience: 'employee', web: ['/tasks'] },
   { key: 'core_hr.analytics', feature: 'core_hr', name: 'HR analytics', audience: 'hr', web: ['/insights'] },
   { key: 'core_hr.privacy', feature: 'core_hr', name: 'Privacy requests', audience: 'admin', web: ['/privacy'], api: ['privacy/requests'] },
   { key: 'core_hr.audit', feature: 'core_hr', name: 'Audit trail', audience: 'admin', web: ['/settings/audit'], api: ['audit-events'] },
   { key: 'core_hr.approval_settings', feature: 'core_hr', name: 'Approval settings', audience: 'admin', web: ['/settings/approvals'] },
   { key: 'self_service.profile_updates', feature: 'self_service', name: 'Profile update reviews', audience: 'hr', web: ['/profile/updates'] },
+  // Help & Support: the help centre, raising and following queries, and the inbox where queries are answered.
+  { key: 'core_hr.help_centre', feature: 'core_hr', name: 'Help & Support: guides, FAQs and tutorials', audience: 'employee', web: ['/help'], api: ['help'] },
+  { key: 'core_hr.help_queries', feature: 'core_hr', name: 'Help & Support: raise and track queries', audience: 'employee', web: ['/help/queries'], api: ['help/queries', 'help/files'] },
+  { key: 'core_hr.help_inbox', feature: 'core_hr', name: 'Help & Support: answer queries (inbox)', audience: 'hr', web: ['/help/inbox'], api: ['help/inbox'] },
   { key: 'onboarding.checklists', feature: 'onboarding', name: 'Onboarding checklists', audience: 'hr', web: ['/settings/onboarding'] },
   // Leave
   { key: 'leave.requests', feature: 'leave', name: 'My leave and requests', audience: 'employee', web: ['/leave'] },

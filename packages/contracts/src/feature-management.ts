@@ -50,7 +50,7 @@ export interface FeatureCell {
   on: boolean;
   indicator: FeatureIndicator;
   /** Who restricts it when it is restricted: SAMPLEDGE (Console or plan), the Super Workspace or the company switch. */
-  restrictedBy?: 'console' | 'plan' | 'super' | 'company' | 'hr_workspace';
+  restrictedBy?: 'console' | 'plan' | 'super' | 'company' | 'hr_workspace' | 'level';
   /** Who switched it off when it is inactive: the Super Workspace or HR Workspace. */
   setBy?: 'super' | 'hr';
   /** Whether the person looking can change it. */

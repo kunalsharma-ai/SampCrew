@@ -352,6 +352,36 @@ export class ProfileService implements OnModuleInit {
     });
   }
 
+  /**
+   * A data import writes profile sections inside the transaction that creates or updates the employee: each part is
+   * merged with what the record already holds, checked by the section's own rules and written like an HR edit. Bank
+   * and identity details are never imported. Returns the sections that changed.
+   */
+  async importSections(tx: TenantTx, employeeId: string, parts: Partial<Record<'personal' | 'address' | 'emergency' | 'education' | 'skills', Doc>>) {
+    const written: string[] = [];
+    for (const [section, patch] of Object.entries(parts) as [ProfileSection, Doc][]) {
+      if (!patch) continue;
+      const e = await this.employee(tx, employeeId);
+      await this.authz.require('employees:update', attrsOf(e), tx);
+      const before = await this.current(tx, e, section);
+      const merged = section === 'address'
+        ? { ...before, current: { ...(before.current ?? {}), ...(patch.current ?? {}) } }
+        : section === 'emergency'
+          ? { contacts: [...(patch.contacts ?? []), ...((before.contacts ?? []) as Doc[]).filter((c) => !(patch.contacts ?? []).some((p: Doc) => String(p.phone) === String(c.phone)))].slice(0, 3) }
+          : section === 'skills'
+            ? { ...before, skills: [...new Set([...((before.skills ?? []) as string[]), ...((patch.skills ?? []) as string[])])].slice(0, 40) }
+            : { ...before, ...patch };
+      const r = PROFILE_SECTION_SCHEMAS[section].safeParse(merged);
+      if (!r.success) throw Errors.validation(r.error.issues.map((i) => ({ path: [section, ...i.path].join('.'), message: i.message })));
+      const data = r.data as Doc;
+      if (!compare(section, before, data).length) continue;
+      await this.apply(tx, e, section, data);
+      written.push(section);
+    }
+    if (written.length) await this.audit.record(tx, { action: 'profile.updated', resourceType: 'employee', resourceId: employeeId, metadata: { sections: written, via: 'import' } });
+    return written;
+  }
+
   /** HR changes a section of someone else's profile directly (audited, and the employee is told). */
   async edit(employeeId: string, section: ProfileSection, raw: unknown) {
     const actor = requestContext.tenantActor();

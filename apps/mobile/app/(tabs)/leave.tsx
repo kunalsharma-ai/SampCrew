@@ -5,6 +5,7 @@ import { useSession } from '../../src/lib/session';
 import type { Balance, LeaveCalendar, LeaveRequest } from '../../src/lib/types';
 import { type DayMark, MonthCalendar, monthBounds } from '../../src/ui/calendar';
 import { Badge, Button, Card, CardTitle, Empty, errorText, fmt, ListItem, Meter, Notice, Row, Screen, Text, Tile, TileGrid, Title, useLoad, useReloadOnFocus } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
 const AUTH_STATUS: Record<string, string> = { approved: 'approved', rejected: 'rejected', pending: 'waiting', waiting: 'not yet reached', withdrawn: 'withdrawn' };
 
@@ -15,7 +16,7 @@ function authorityText(r: LeaveRequest): string {
   return r.status === 'pending' && r.waitingOn ? ` · waiting for ${r.waitingOn}` : '';
 }
 
-export default function Leave() {
+function LeaveBody() {
   const { api, hasFeature } = useSession();
   const router = useRouter();
   const { data, error, loading, reload } = useLoad(async () => {
@@ -120,5 +121,13 @@ export default function Leave() {
         })}
       </Card>
     </Screen>
+  );
+}
+
+export default function Leave() {
+  return (
+    <ModuleGate module="leave">
+      <LeaveBody />
+    </ModuleGate>
   );
 }

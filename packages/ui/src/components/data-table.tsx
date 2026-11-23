@@ -37,6 +37,8 @@ interface DataTableProps<T> {
   /** Shown instead of the table when there are no rows. */
   empty?: ReactNode;
   footer?: ReactNode;
+  /** Rows can be picked for a bulk change: a checkbox column, with one in the header for every row on the page. */
+  selection?: { selected: ReadonlySet<string>; onChange: (next: Set<string>) => void };
 }
 
 /**
@@ -71,8 +73,15 @@ export function DataTable<T>(p: DataTableProps<T>) {
       ) : (
         <div className="max-h-[70vh] overflow-auto">
           <table className="w-full text-left text-[0.8125rem]" aria-label={p.label}>
-            <thead className="sticky top-0 z-10 bg-surface text-xs text-fg-subtle">
+            <thead className="sticky top-0 z-10 bg-surface text-xs text-fg-muted shadow-[inset_0_-1px_0_var(--border)]">
               <tr>
+                {p.selection && (
+                  <th className={cn('w-10 border-b border-border pl-5', compact ? 'py-1.5' : 'py-2.5')}>
+                    <input type="checkbox" className="size-4 accent-[var(--accent)]" aria-label="Choose every row on this page"
+                      checked={p.rows.length > 0 && p.rows.every((r) => p.selection!.selected.has(p.rowKey(r)))}
+                      onChange={(e) => { const next = new Set(p.selection!.selected); for (const r of p.rows) { if (e.target.checked) next.add(p.rowKey(r)); else next.delete(p.rowKey(r)); } p.selection!.onChange(next); }} />
+                  </th>
+                )}
                 {cols.map((c) => {
                   const active = c.sort && p.sort === c.sort;
                   const ariaSort = active ? (p.dir === 'desc' ? 'descending' : 'ascending') : undefined;
@@ -98,7 +107,15 @@ export function DataTable<T>(p: DataTableProps<T>) {
             </thead>
             <tbody className="divide-y divide-border">
               {p.rows.map((r) => (
-                <tr key={p.rowKey(r)} className={cn('transition-colors hover:bg-bg-subtle/60', p.onRowClick && 'cursor-pointer')} onClick={p.onRowClick ? () => p.onRowClick!(r) : undefined}>
+                <tr key={p.rowKey(r)} className={cn('transition-colors hover:bg-bg-subtle/60 focus-within:bg-bg-subtle/60', p.onRowClick && 'cursor-pointer')} onClick={p.onRowClick ? () => p.onRowClick!(r) : undefined}>
+                <tr key={p.rowKey(r)} className={cn('transition-colors hover:bg-bg-subtle/60', p.onRowClick && 'cursor-pointer', p.selection?.selected.has(p.rowKey(r)) && 'bg-accent-subtle/40')} onClick={p.onRowClick ? () => p.onRowClick!(r) : undefined}>
+                  {p.selection && (
+                    <td className={cn('w-10 pl-5', compact ? 'py-1.5' : 'py-3')} onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" className="size-4 accent-[var(--accent)]" aria-label="Choose this row" data-testid="row-select"
+                        checked={p.selection.selected.has(p.rowKey(r))}
+                        onChange={(e) => { const next = new Set(p.selection!.selected); if (e.target.checked) next.add(p.rowKey(r)); else next.delete(p.rowKey(r)); p.selection!.onChange(next); }} />
+                    </td>
+                  )}
                   {cols.map((c) => (
                     <td key={c.key} className={cn('px-5 align-middle text-fg', compact ? 'py-1.5' : 'py-3', c.className)}>{c.render(r)}</td>
                   ))}

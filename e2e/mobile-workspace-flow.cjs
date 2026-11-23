@@ -121,7 +121,7 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     ok('Home shows open tasks and the self-appraisal waiting');
 
     // 3. Tasks.
-    await p.getByTestId('qa-tasks').click();
+    await p.getByTestId('home-tasks').click();
     await p.getByTestId('tasks-list').waitFor();
     await p.getByTestId('tasks-list').getByText(`Read the safety handbook ${run}`).click();
     await p.getByTestId('task-ack').click();
@@ -174,9 +174,11 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     const n = await radios.count();
     assert(n >= 5, `score choices shown (${n})`);
     for (let i = 0; i < n; i++) await radios.nth(i).click();
+    for (const box of await p.locator('textarea').all()) if (!(await box.inputValue())) await box.fill('Cut changeover time on line 2 and trained two new joiners.');
+    await p.getByText('Every required question is answered.').waitFor();
+    // The draft keeps the scores and the written answers after the form reloads from the server.
     await p.getByTestId('appraisal-save').click();
     await p.getByText('Draft saved.').waitFor();
-    for (const box of await p.locator('textarea').all()) if (!(await box.inputValue())) await box.fill('Cut changeover time on line 2 and trained two new joiners.');
     await p.getByText('Every required question is answered.').waitFor();
     await p.getByTestId('appraisal-submit').click();
     await p.getByText('Submitted. Your manager has been told.').waitFor();
@@ -214,6 +216,7 @@ const soon = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     await p.getByLabel('Bank name').fill('HDFC Bank');
     await p.getByLabel('Account number', { exact: true }).fill(account);
     await p.getByLabel('Account number again').fill(`${account.slice(0, -1)}${(Number(account.slice(-1)) + 1) % 10}`); // always a different last digit
+    await p.getByLabel('Account number again').fill(`${account.slice(0, -1)}${account.endsWith("0") ? "1" : "0"}`);
     await p.getByLabel('IFSC').fill('HDFC0000123');
     await p.getByTestId('send-bank').click();
     await p.getByText('The two account numbers do not match. Type them again.').waitFor();

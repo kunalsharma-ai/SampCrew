@@ -40,7 +40,7 @@ const EMPLOYEE_SELF: Partial<Record<PermissionKey, Scope>> = {
 
 const MANAGER_TEAM: Partial<Record<PermissionKey, Scope>> = {
   'users:read': 'team',
-  'employees:read': 'team',
+  'employees:read': 'team', 'employees:export': 'team',
   'documents:read': 'team',
   'leave:read': 'team',
   'leave:approve': 'team',
@@ -76,7 +76,7 @@ const SUPER_GRANTS = everything('tenant');
 const HR_WORKSPACE_EXCLUDED = new Set<string>([
   // Leave types, policies and approval rules belong to the Super Workspace; HR Workspaces allocate and approve.
   'leave:configure',
-  'tenant:manage', 'roles:manage', 'billing:manage', 'hierarchy:manage', 'employees:transfer', 'modules:manage',
+  'tenant:manage', 'roles:manage', 'billing:manage', 'hierarchy:manage', 'employees:transfer', 'modules:manage', 'mobileapp:manage',
   'integrations:manage', 'security:manage', 'ai:configure', 'audit:export',
 ]);
 
@@ -134,7 +134,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'tenant:read': 'tenant', 'tenant:manage': 'tenant', 'org:read': 'tenant', 'org:manage': 'tenant',
       'users:read': 'tenant', 'users:invite': 'tenant', 'users:manage': 'tenant',
       'roles:read': 'tenant', 'roles:manage': 'tenant', 'audit:read': 'tenant', 'billing:read': 'tenant',
-      'employees:read': 'tenant', 'integrations:manage': 'tenant', 'automation:manage': 'tenant', 'ai:configure': 'tenant',
+      'employees:read': 'tenant', 'employees:export': 'tenant', 'integrations:manage': 'tenant', 'automation:manage': 'tenant', 'ai:configure': 'tenant',
       'reports:read': 'tenant', 'modules:manage': 'tenant', 'fields:manage': 'tenant',
       'hierarchy:read': 'tenant', 'hierarchy:manage': 'tenant', 'employees:transfer': 'tenant', 'modules:assign': 'tenant',
     },
@@ -158,7 +158,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
       'requisitions:read': 'tenant', 'requisitions:approve': 'tenant', 'candidates:read': 'tenant', 'offers:approve': 'tenant', 'recruitment:configure': 'tenant',
       'privacy:manage': 'tenant', 'bids:read': 'tenant', 'bids:approve': 'tenant',
       'tasks:assign': 'tenant', 'tasks:hr': 'tenant', 'profiles:review': 'tenant',
-      'fields:manage': 'tenant',
+      'fields:manage': 'tenant', 'masterdata:manage': 'tenant', 'imports:read': 'tenant', 'imports:run': 'tenant', 'employees:export': 'tenant',
       'bgv:view': 'tenant', 'bgv:create': 'tenant', 'bgv:edit': 'tenant', 'bgv:delete': 'tenant', 'bgv:approve': 'tenant', 'bgv:export': 'tenant', 'bgv:manage': 'tenant',
       'assets:view': 'tenant', 'assets:create': 'tenant', 'assets:edit': 'tenant', 'assets:delete': 'tenant', 'assets:approve': 'tenant', 'assets:export': 'tenant', 'assets:manage': 'tenant',
       'hierarchy:read': 'tenant', 'modules:assign': 'tenant',
@@ -171,7 +171,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
     grants: {
       ...EMPLOYEE_SELF,
       'org:read': 'tenant', 'users:read': 'tenant', 'users:invite': 'tenant', 'users:manage': 'tenant',
-      'employees:read': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant', 'employees:lifecycle': 'tenant',
+      'employees:read': 'tenant', 'employees:export': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant', 'employees:lifecycle': 'tenant',
       'documents:read': 'tenant', 'documents:manage': 'tenant',
       'leave:read': 'tenant', 'leave:approve': 'tenant', 'leave:allocate': 'tenant',
       'attendance:read': 'tenant', 'attendance:correct': 'tenant', 'attendance:approve': 'tenant', 'shifts:read': 'tenant', 'shifts:manage': 'tenant',
@@ -189,7 +189,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
     grants: {
       ...EMPLOYEE_SELF,
       'org:read': 'tenant', 'users:read': 'entity', 'users:manage': 'entity',
-      'employees:read': 'entity', 'employees:create': 'entity', 'employees:update': 'entity', 'employees:lifecycle': 'entity',
+      'employees:read': 'entity', 'employees:export': 'entity', 'employees:create': 'entity', 'employees:update': 'entity', 'employees:lifecycle': 'entity',
       'documents:read': 'entity', 'documents:manage': 'entity', 'leave:read': 'entity', 'leave:approve': 'entity',
       'attendance:read': 'entity', 'attendance:approve': 'entity', 'shifts:read': 'entity', 'shifts:manage': 'entity',
       'performance:read': 'entity', 'performance:manage': 'entity', 'learning:read': 'entity', 'learning:manage': 'entity',
@@ -206,7 +206,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
     grants: {
       ...EMPLOYEE_SELF,
       'org:read': 'tenant', 'users:read': 'tenant',
-      'employees:read': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant',
+      'employees:read': 'tenant', 'employees:export': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant',
       'documents:read': 'tenant', 'documents:manage': 'tenant', 'leave:read': 'tenant', 'attendance:read': 'tenant', 'shifts:read': 'tenant',
       'helpdesk:manage': 'tenant', 'tasks:hr': 'tenant',
       'bgv:view': 'tenant', 'bgv:create': 'tenant', 'bgv:edit': 'tenant',
@@ -241,7 +241,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
     description: 'Prepares and runs payroll; finalisation still needs an approver.',
     grants: {
       ...EMPLOYEE_SELF,
-      'org:read': 'tenant', 'users:read': 'tenant', 'employees:read': 'tenant', 'employees:sensitive:read': 'tenant',
+      'org:read': 'tenant', 'users:read': 'tenant', 'employees:read': 'tenant', 'employees:export': 'tenant', 'employees:sensitive:read': 'tenant',
       'attendance:read': 'tenant', 'leave:read': 'tenant',
       'payroll:read': 'tenant', 'payroll:run': 'tenant', 'payroll:configure': 'tenant', 'payslips:read': 'tenant',
       'expenses:approve': 'tenant', 'reports:read': 'tenant',
@@ -264,7 +264,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
     description: 'Configures attendance policies, devices, shifts and corrections.',
     grants: {
       ...EMPLOYEE_SELF,
-      'org:read': 'tenant', 'users:read': 'tenant', 'employees:read': 'tenant',
+      'org:read': 'tenant', 'users:read': 'tenant', 'employees:read': 'tenant', 'employees:export': 'tenant',
       'attendance:read': 'tenant', 'attendance:correct': 'tenant', 'attendance:approve': 'tenant', 'attendance:configure': 'tenant',
       'devices:manage': 'tenant', 'shifts:read': 'tenant', 'shifts:manage': 'tenant',
     },
@@ -281,7 +281,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
     description: 'Approves leave, attendance and expenses for their direct and indirect reports and sees their records. No rosters, requisitions or settings.',
     grants: {
       ...EMPLOYEE_SELF, 'org:read': 'tenant',
-      'users:read': 'team', 'employees:read': 'team', 'documents:read': 'team', 'leave:read': 'team', 'leave:approve': 'team',
+      'users:read': 'team', 'employees:read': 'team', 'employees:export': 'team', 'documents:read': 'team', 'leave:read': 'team', 'leave:approve': 'team',
       'attendance:read': 'team', 'attendance:approve': 'team', 'shifts:read': 'team', 'expenses:approve': 'team',
       'performance:read': 'team', 'performance:manage': 'team', 'assets:view': 'team',
     },
@@ -324,7 +324,19 @@ const HR_WORKSPACE_GRANTS: Partial<Record<PermissionKey, Scope>> = (() => {
 })();
 
 /** Permissions only company-wide HR holds: an HR Workspace admin of named HR Workspaces does not see the whole company's audit trail. */
-export const COMPANY_HR_ONLY: ReadonlySet<string> = new Set(['audit:read']);
+export const COMPANY_HR_ONLY: ReadonlySet<string> = new Set(['audit:read', 'masterdata:manage']);
+
+/**
+ * Permissions added after people's old roles were migrated to the levels (LevelConstraints.grants keeps exactly what
+ * they had). Each follows the permission it was split from, so nobody loses what they could already do: export came
+ * with reading the employee list, import came with adding employees one by one, master data with the organisation.
+ */
+export const SPLIT_PERMISSIONS: Record<string, string> = {
+  'employees:export': 'employees:read',
+  'imports:read': 'employees:create',
+  'imports:run': 'employees:create',
+  'masterdata:manage': 'org:manage',
+};
 
 /**
  * Limits on a Super Workspace or HR Workspace assignment (role_assignments.constraints). Besides the record limits
@@ -357,7 +369,10 @@ export interface LevelConstraints {
 const AUDIT_TRAIL = new Set(['audit:read']);
 
 /** Permissions added after the four access levels, and the earlier ones whose holders get them too. */
-const FOLLOWS: Record<string, string[]> = { 'leave:allocate': ['leave:configure', 'leave:approve'] };
+const FOLLOWS: Record<string, string[]> = {
+  'leave:allocate': ['leave:configure', 'leave:approve'],
+  ...Object.fromEntries(Object.entries(SPLIT_PERMISSIONS).map(([k, from]) => [k, [from]])),
+};
 
 /** Every area (permission module) a level can look after, in catalogue order. */
 export const ACCESS_AREAS: readonly string[] = [...new Set(PERMISSIONS.map((p) => p.module))];
@@ -515,8 +530,8 @@ export const PLATFORM_ROLES = ['super_admin', 'support', 'billing_ops', 'viewer'
 export type PlatformRole = (typeof PLATFORM_ROLES)[number];
 
 export const PLATFORM_ROLE_CAPABILITIES: Record<PlatformRole, readonly string[]> = {
-  super_admin: ['tenants:read', 'tenants:manage', 'access:manage', 'integrations:manage', 'billing:read', 'billing:manage', 'plans:manage', 'statutory:manage', 'support:request', 'support:chat', 'admins:manage', 'audit:read', 'health:read'],
-  support: ['tenants:read', 'support:request', 'support:chat', 'health:read', 'audit:read'],
+  super_admin: ['tenants:read', 'tenants:manage', 'access:manage', 'integrations:manage', 'billing:read', 'billing:manage', 'plans:manage', 'statutory:manage', 'support:request', 'support:chat', 'help:manage', 'help:answer', 'admins:manage', 'audit:read', 'health:read'],
+  support: ['tenants:read', 'support:request', 'support:chat', 'help:answer', 'health:read', 'audit:read'],
   billing_ops: ['tenants:read', 'billing:read', 'billing:manage', 'plans:manage'],
   viewer: ['tenants:read', 'billing:read', 'health:read'],
 };
