@@ -58,6 +58,9 @@ describe('Role-based home dashboards', () => {
     const setup = await api(app, res.body.accessToken).post('/platform/auth/mfa/setup');
     consoleToken = (await api(app, res.body.accessToken).post('/platform/auth/mfa/enable').send({ code: currentTotp(setup.body.secret) })).body.accessToken;
   });
+  /** The work day the staff member's check-in was counted on. */
+  const punchDay = async () => (await pool.find('attendance_days', { employee_id: staffEmployee })).find((d) => d.first_in)?.work_date as string | undefined;
+
   afterAll(async () => {
     await app.close();
     await pool.end();
@@ -74,7 +77,9 @@ describe('Role-based home dashboards', () => {
     expect(punch.status, JSON.stringify(punch.body)).toBe(201);
     const after = await api(app, staffToken).get('/home/employee');
     expect(after.body.activity[0]).toMatchObject({ kind: 'punch.in', title: 'Checked in' });
-    const day = after.body.attendance.days.find((d: { date: string }) => d.date === after.body.today);
+    // Just after midnight a check-in still belongs to the previous work day (attendance.spec.ts), so look at that day.
+    const workDay = await punchDay();
+    const day = after.body.attendance.days.find((d: { date: string }) => d.date === workDay);
     if (day && day.dayType === 'working') expect(day.firstIn).not.toBeNull();
     // Another month by parameter, still only their own.
     const prev = await api(app, staffToken).get('/home/employee?month=2026-01');
@@ -115,7 +120,7 @@ describe('Role-based home dashboards', () => {
     expect((await api(app, hrToken).get(`/home/workforce?hrWorkspaceId=${otherWs}`)).status).toBe(404);
     expect((await api(app, hrToken).get('/home/organization')).status).toBe(403);
     // Today's workforce counts the employee who checked in as working now; the card opens the same filter.
-    if (r.body.today && r.body.today.expected > 0) {
+    if (r.body.today && r.body.today.expected > 0 && (await punchDay()) === r.body.date) {
       expect(r.body.today.workingNow + r.body.today.present).toBeGreaterThan(0);
       const team = await api(app, hrToken).get(`/attendance/team?date=${r.body.date}&filter=working_now`);
       expect(team.status).toBe(200);
