@@ -1,6 +1,7 @@
 'use client';
 import { Alert, Button, Card, CardHeader, Dialog, Field, Textarea } from '@crew/ui';
 import { Download, FileUp } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import type { ActionResult } from '@/lib/api';
@@ -12,8 +13,8 @@ const ACTION_LABEL: Record<string, string> = {
   assigned: 'Assigned', edited: 'Edited', progress: 'Progress updated', acknowledged: 'Acknowledged', accepted: 'Accepted', reopened: 'Reopened', cancelled: 'Cancelled',
   uploaded: 'Document uploaded', document_verified: 'Document verified', document_rejected: 'Document rejected',
 };
-const FORMAT_LABEL: Record<string, string> = { pdf: 'PDF', image: 'PNG, JPEG or WebP', word: 'Word (.docx)', text: 'plain text' };
-const ACCEPT: Record<string, string> = { pdf: '.pdf,application/pdf', image: '.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp', word: '.docx', text: '.txt,text/plain' };
+const FORMAT_LABEL: Record<string, string> = { pdf: 'PDF', image: 'PNG, JPEG or WebP', word: 'Word (.doc, .docx)', excel: 'Excel (.xls, .xlsx)', text: 'plain text' };
+const ACCEPT: Record<string, string> = { pdf: '.pdf,application/pdf', image: '.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp', word: '.doc,.docx', excel: '.xls,.xlsx', text: '.txt,text/plain' };
 const when = (iso: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }).format(new Date(iso));
 
 type Ask = null | { kind: 'reopen' | 'cancel' | 'reject' | 'review' | 'complete' | 'accept'; title: string; label: string; required: boolean; submit: string };
@@ -73,6 +74,11 @@ export function TaskDetail({ task }: { task: WorkTaskDetail }) {
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="grid min-w-0 content-start gap-6">
         {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
+        {task.requestId && (
+          <Alert tone="info" title="Document request">
+            This task comes from a document request. <Link className="font-medium text-accent hover:underline" href={`/documents/requests/${task.requestId}`}>Open the request</Link> to see every version, the verification and its history.
+          </Alert>
+        )}
         {task.reviewerRemarks && task.status === 'reopened' && <Alert tone="warning" title="Sent back to you">{task.reviewerRemarks}</Alert>}
 
         <Card>

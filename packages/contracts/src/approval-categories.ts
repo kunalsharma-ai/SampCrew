@@ -56,7 +56,7 @@ export const BUILT_IN_APPROVAL_CATEGORIES: ApprovalCategoryDef[] = [
   { key: 'expense', label: 'Expense', description: 'Expense claims', icon: 'receipt', color: '#ea580c', rule: { resourceTypes: ['expense_claim'] }, builtIn: true },
   { key: 'attendance_correction', label: 'Attendance correction', description: 'Missed punch and attendance corrections, overtime and shift swaps', icon: 'clock', color: '#0284c7', rule: { resourceTypes: ['attendance_correction', 'overtime_claim', 'shift_swap'] }, builtIn: true },
   { key: 'profile_update', label: 'Profile update', description: 'Changes employees asked for on their own profile', icon: 'contact', color: '#9333ea', rule: { resourceTypes: ['profile_update'] }, builtIn: true },
-  { key: 'document_verification', label: 'Document verification', description: 'Documents waiting to be verified', icon: 'file-text', color: '#be123c', rule: { resourceTypes: ['document_verification'] }, builtIn: true },
+  { key: 'document_verification', label: 'Document verification', description: 'Documents waiting to be verified', icon: 'file-text', color: '#be123c', rule: { resourceTypes: ['document_verification', 'document_request'] }, builtIn: true },
   { key: 'recruitment', label: 'Recruitment', description: 'Job requisitions and offers', icon: 'briefcase', color: '#0f766e', rule: { resourceTypes: ['job_requisition', 'offer', 'staffing_bid'] }, builtIn: true },
   { key: 'payroll', label: 'Payroll', description: 'Payroll runs', icon: 'wallet', color: '#15803d', rule: { resourceTypes: ['payroll_run'] }, builtIn: true },
   { key: 'other', label: 'Other HR requests', description: 'Workflow approvals and anything else', icon: 'inbox', color: '#475569', rule: { resourceTypes: [] }, builtIn: true },

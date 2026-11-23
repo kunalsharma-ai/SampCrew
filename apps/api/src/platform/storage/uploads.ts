@@ -26,7 +26,7 @@ export interface StoredFile {
  */
 export async function storeUpload(storage: StorageService, tenantId: string, file: UploadedFile | undefined): Promise<StoredFile> {
   if (!file) throw Errors.badRequest('file_required', 'Attach a file');
-  if (!(DOCUMENT_TYPES as readonly string[]).includes(file.mimetype)) throw Errors.badRequest('unsupported_type', 'Upload a PDF, PNG, JPEG, WebP, Word document or plain text file');
+  if (!(DOCUMENT_TYPES as readonly string[]).includes(file.mimetype)) throw Errors.badRequest('unsupported_type', 'Upload a PDF, PNG, JPEG, WebP, Word, Excel or plain text file');
   if (file.size <= 0 || file.size > DOCUMENT_MAX_BYTES) throw Errors.badRequest('file_too_large', 'Files can be up to 10 MB');
   if (!sniffMatches(file.mimetype, file.buffer.subarray(0, 512))) throw Errors.badRequest('content_mismatch', 'The file content does not match its type');
   const key = storage.newKey(tenantId);

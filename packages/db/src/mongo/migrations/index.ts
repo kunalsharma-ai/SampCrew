@@ -11,6 +11,7 @@ import { m0035FeatureManagement } from './0035_feature_management';
 import { m0040LeaveRebuild } from './0040_leave_rebuild';
 import { m0080LearningNotifications } from './0080_learning_notifications';
 import { m0081ConsoleAlertsSeen } from './0081_console_alerts_seen';
+import { m0100DocumentCenter } from './0100_document_center';
 import { m0110CandidateCrm } from './0110_candidate_crm';
 import { m0130WorkspaceLimits } from './0130_workspace_limits';
 
@@ -28,6 +29,7 @@ export const MONGO_MIGRATIONS: MongoMigration[] = [
   m0040LeaveRebuild,
   m0080LearningNotifications,
   m0081ConsoleAlertsSeen,
+  m0100DocumentCenter,
   m0110CandidateCrm,
   m0130WorkspaceLimits,
 ];

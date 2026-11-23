@@ -4,7 +4,7 @@ import {
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService, loadSubject } from '../../platform/authz/authz.service';
-import { can, hasPermission, type ResourceAttributes } from '../../platform/authz/policy';
+import { can, hasPermission, type ResourceAttributes, type Subject } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, membershipUserNames, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
@@ -65,6 +65,14 @@ export interface ApprovalHandler {
    * one-person workspace would otherwise wait forever). Recorded in the audit trail as approval.auto_approved.
    */
   autoApproveSoleOwner?: boolean;
+  /**
+   * Who may decide, when the permission over the record is not the whole answer (document requests: the level that
+   * asked verifies, within the document access switches Super Workspace set). Replaces the permission check for
+   * finding approvers and at decision time; the level of the step and "nobody decides their own request" still apply.
+   */
+  decider?: (tx: TenantTx, resourceId: string, subject: Subject) => Promise<boolean>;
+  /** The module tells people about submissions and decisions itself (with its own wording), so the engine does not. */
+  quiet?: boolean;
   /** The module sets the chain of each request itself (leave: on each leave type), so the shared chain editor is closed. */
   chainSetByModule?: string;
 }
@@ -188,7 +196,7 @@ export class ApprovalsService {
     // The person asking hears straight away that it went for approval, and to whom, so a request is never sent
     // into silence. When they cannot see it themselves (an offer, say), nobody is told here.
     const tellRequester = subject.membership_id ?? (input.subjectEmployeeId ? null : requester);
-    if (tellRequester && !approvers.includes(tellRequester)) {
+    if (tellRequester && !approvers.includes(tellRequester) && !h.quiet) {
       const who = (await this.waitingOn(tx, [req.id])).get(req.id);
       await this.notifications.notify(tx, {
         membershipIds: [tellRequester],
@@ -326,7 +334,7 @@ export class ApprovalsService {
         if (s.employeeId && s.employeeId === req.subject_employee_id) continue;
         // They decide as someone on that level: what their Employee Workspace gives them (their own team) does not count.
         const own = { ...s, grants: s.grants.filter((g) => g.roleKey === level) };
-        if (coverage ? can(own, h.permission, await attrs()).allowed : hasPermission(own, h.permission).allowed) out.push(holder.membership_id);
+        if (h.decider ? await h.decider(tx, req.resource_id, own) : coverage ? can(own, h.permission, await attrs()).allowed : hasPermission(own, h.permission).allowed) out.push(holder.membership_id);
       }
       return out;
     };
@@ -417,9 +425,10 @@ export class ApprovalsService {
       if (!mine) throw Errors.notFound('Approval');
       const step = mine.step;
       // Re-check the permission with the caller's live session (including MFA requirements). The admins of a named HR
-      // Workspace, a named Super Workspace administrator and escalation reach beyond the record's usual scope.
+      // Workspace, a named Super Workspace administrator, escalation and a module's own decider reach beyond the record's
+      // usual scope.
       const beyondScope = (step.kind === 'hr_workspace' && step.approver_hr_workspace_id) || step.kind === 'super_workspace' || step.escalated_at;
-      if (beyondScope) await this.authz.require(h.permission, undefined, tx);
+      if (h.decider || beyondScope) await this.authz.require(h.permission, undefined, tx);
       else await this.authz.require(h.permission, await h.attributes(tx, req.resource_id), tx);
 
       await tx.collection('approval_steps').updateOne(
@@ -447,7 +456,7 @@ export class ApprovalsService {
         else await h.onRejected(tx, updated);
         const subjectEmployee = req.subject_employee_id ? await tx.collection('employees').findOne({ id: req.subject_employee_id }) : undefined;
         const requesterIds = [req.requested_by_membership_id, subjectEmployee?.membership_id as string | null | undefined];
-        await this.notifications.notify(tx, {
+        if (!h.quiet) await this.notifications.notify(tx, {
           membershipIds: requesterIds,
           kind: `approval.${final}`,
           title: `${h.label} ${final}`,
@@ -483,6 +492,19 @@ export class ApprovalsService {
       }
       return { id: requestId, status: final ?? 'pending' };
     });
+  }
+
+  /** Who can decide the request's current step now (empty when it is not pending). */
+  approversOf(tx: TenantTx, requestId: string): Promise<string[]> {
+    return this.currentApprovers(tx, requestId);
+  }
+
+  /** Pending requests of one type that this person can decide now. */
+  async waitingFor(tx: TenantTx, membershipId: string, resourceType: string): Promise<string[]> {
+    const reqs = await tx.collection('approval_requests').find({ resource_type: resourceType, status: 'pending' }, { projection: { _id: 1 }, limit: 1000 });
+    const out: string[] = [];
+    for (const r of reqs) if ((await this.currentApprovers(tx, r.id)).includes(membershipId)) out.push(r.id as string);
+    return out;
   }
 
   /** Withdraws a pending request (called by the owning module, e.g. when leave is cancelled). */
