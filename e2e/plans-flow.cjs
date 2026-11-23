@@ -60,6 +60,10 @@ async function setModules(admin, planKey, want) {
     if ((await sw.getAttribute('aria-checked')) !== String(on)) await sw.click();
   }
   await admin.getByTestId('plan-contents-save').click();
+  // Removing a module or lowering a limit on a plan in use shows who it affects first; confirm with Save anyway.
+  const saved = admin.getByText(/saved.*Applies now to \d+ workspace/);
+  await saved.or(admin.getByTestId('plan-impact-preview')).first().waitFor({ timeout: 15000 });
+  if (await admin.getByTestId('plan-impact-preview').isVisible()) await admin.getByTestId('plan-contents-save').click();
   await admin.getByText(/saved.*Applies now to \d+ workspace/).waitFor({ timeout: 15000 });
 }
 

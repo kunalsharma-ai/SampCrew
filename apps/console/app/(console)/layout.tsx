@@ -28,7 +28,7 @@ const NAV: (Omit<NavGroup, 'items'> & { items: (NavGroup['items'][number] & { ca
   ] },
   { label: 'Support', items: [
     { href: '/support', label: 'Support inbox', icon: 'headset', cap: 'support:chat' },
-    { href: '/help-queries', label: 'Tickets', icon: 'ticket', cap: 'help:answer' },
+    { href: '/help-queries', label: 'Help queries', icon: 'ticket', cap: 'help:answer' },
     { href: '/help-content', label: 'Help content', icon: 'book', cap: 'help:manage' },
   ] },
   { label: 'Security', items: [
@@ -56,7 +56,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const [support, help, alerts, summary, settings] = await Promise.all([
     // The support inbox badge: unread messages from Super Workspaces.
     hasCap(me, 'support:chat') ? api<{ unread: number }>('/platform/support/unread').catch(() => null) : null,
-    // The tickets badge: tickets waiting for SampCrew Support's first answer.
+    // The help queries badge: queries waiting for SampCrew Support's first answer.
     hasCap(me, 'help:answer') ? api<{ waiting: number }>('/platform/help/queries/waiting').catch(() => null) : null,
     // System alerts for the bell (admins who can see workspaces).
     hasCap(me, 'tenants:read') ? api<ConsoleAlerts>('/platform/alerts').catch(() => null) : null,

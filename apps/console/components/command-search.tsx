@@ -61,9 +61,9 @@ export function CommandSearch({ pages, compact = false, hotkey = true }: { pages
   let lastGroup = '';
   return (
     <>
-      {compact ? <button type="button" onClick={() => setOpen(true)} aria-label="Search" className="rounded-lg p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg"><Search className="size-[18px]" aria-hidden /></button> : <button type="button" onClick={() => setOpen(true)} data-testid="console-search" className="flex h-9 w-full max-w-md items-center gap-2 rounded-lg border border-border bg-bg-subtle/60 px-3 text-left text-[13px] text-fg-subtle hover:border-border-strong hover:text-fg-muted">
+      {compact ? <button type="button" onClick={() => setOpen(true)} aria-label="Find anything (Ctrl+K)" className="rounded-lg p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg"><Search className="size-[18px]" aria-hidden /></button> : <button type="button" onClick={() => setOpen(true)} data-testid="console-search" className="flex h-9 w-full max-w-md items-center gap-2 rounded-lg border border-border bg-bg-subtle/60 px-3 text-left text-[13px] text-fg-subtle hover:border-border-strong hover:text-fg-muted">
         <Search className="size-4 shrink-0" aria-hidden />
-        <span className="flex-1 truncate">Search companies, workspaces, users, invoices…</span>
+        <span className="flex-1 truncate">Find companies, workspaces, users, invoices…</span>
         <span className="hidden gap-0.5 sm:flex"><Kbd>Ctrl</Kbd><Kbd>K</Kbd></span>
       </button>}
       {open && createPortal(

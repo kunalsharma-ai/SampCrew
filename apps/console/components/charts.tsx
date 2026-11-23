@@ -171,7 +171,7 @@ export function Donut({ items, size = 150, centre, testId }: { items: { label: s
   }, [items, total, c]);
   return (
     <div className="flex flex-wrap items-center gap-5" data-testid={testId}>
-      <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-label={items.map((i) => `${i.label} ${i.value}`).join(', ')} className="shrink-0 -rotate-90">
+      <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-label={items.length ? items.map((i) => `${i.label} ${i.value}`).join(', ') : 'No data yet'} className="shrink-0 -rotate-90">
         <circle cx="50" cy="50" r={r} fill="none" stroke="var(--chart-grid)" strokeWidth="12" />
         {arcs.map((a) => <circle key={a.label} cx="50" cy="50" r={r} fill="none" stroke={COLOR(a.i)} strokeWidth="12" strokeDasharray={a.dash} strokeDashoffset={a.offset} />)}
         {centre && (

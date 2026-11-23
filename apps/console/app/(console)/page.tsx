@@ -140,11 +140,11 @@ export default async function CommandCenterPage({ searchParams }: { searchParams
           <CardHeader title="Subscription overview" description={cc.subscriptions.mostPopular ? `Most popular: ${cc.subscriptions.mostPopular}` : 'No subscriptions yet'} />
           <CardBody>
             <Donut testId="chart-plans" items={cc.plans.map((p) => ({ label: p.name, value: p.companies, href: `/clients?plan=${p.key}` }))} centre={{ value: String(cc.plans.reduce((a, p) => a + p.companies, 0)), label: 'companies' }} />
-            <dl className="mt-4 grid grid-cols-4 gap-2 border-t border-border pt-3 text-center text-[12px]">
+            <ul className="mt-4 grid grid-cols-4 gap-2 border-t border-border pt-3 text-center text-[12px]">
               {[['Paid', cc.subscriptions.paid, '/clients?paid=paid'], ['Free', cc.subscriptions.free, '/clients?paid=free'], ['Trial', cc.subscriptions.trial, '/clients?status=trial'], ['Enterprise', cc.subscriptions.enterprise, '/clients?paid=enterprise']].map(([l, v, h]) => (
-                <Link key={l as string} href={h as string} className="rounded-lg py-1 hover:bg-bg-subtle"><dd className="text-lg font-semibold tabular">{v}</dd><dt className="text-fg-subtle">{l}</dt></Link>
+                <li key={l as string}><Link href={h as string} className="block rounded-lg py-1 hover:bg-bg-subtle"><span className="block text-lg font-semibold tabular">{v}</span><span className="block text-fg-subtle">{l}</span></Link></li>
               ))}
-            </dl>
+            </ul>
           </CardBody>
         </Card>
         <Card>
