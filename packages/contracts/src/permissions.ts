@@ -94,7 +94,8 @@ export const PERMISSIONS = [
   { key: 'leave:read', module: 'Leave', description: 'View leave balances and requests', phase: 2, scopes: ALL },
   { key: 'leave:request', module: 'Leave', description: 'Apply for leave', phase: 2, scopes: ['own'] },
   { key: 'leave:approve', module: 'Leave', description: 'Approve or reject leave', phase: 2, scopes: ['team', 'department', 'entity', 'tenant'] },
-  { key: 'leave:configure', module: 'Leave', description: 'Configure leave types, policies and holidays', phase: 2, scopes: TENANT_ONLY },
+  { key: 'leave:configure', module: 'Leave', description: 'Create and change leave types, their policies and approval rules, holidays, and make types available to HR Workspaces (Super Workspace)', phase: 2, scopes: TENANT_ONLY },
+  { key: 'leave:allocate', module: 'Leave', description: 'Allocate leave types to employees (an HR Workspace only the types made available to it, for its own people)', phase: 2, scopes: ['department', 'entity', 'tenant'] },
 
   // Phase 3: attendance and workforce
   { key: 'attendance:read', module: 'Attendance', description: 'View attendance records', phase: 3, scopes: ALL },

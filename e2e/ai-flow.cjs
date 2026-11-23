@@ -210,7 +210,7 @@ const until = async (what, fn, ms = 30000) => {
     await until('the workflow approval to reach the supervisor', async () => (await api(supTok, 'GET', '/approvals/inbox')).body.find((r) => r.resourceType === 'workflow_run'));
     const sup = current = await signIn(b, 'supervisor@demo.crew.local');
     await sup.goto(BASE + '/approvals');
-    const card = sup.locator('div', { hasText: 'Extra check: Arjun Kulkarni asked for 2 days of Casual leave' }).last();
+    const card = sup.locator('div', { hasText: 'Extra check: Arjun Kulkarni asked for 2 days of Casual Leave' }).last();
     await card.locator('button', { hasText: 'Approve' }).click();
     await sup.locator('text=Extra check: Arjun Kulkarni asked for 2 days').waitFor({ state: 'detached', timeout: 10000 });
     await until('the operator to be notified', async () => {

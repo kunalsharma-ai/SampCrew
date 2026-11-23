@@ -1,4 +1,4 @@
-import type { HierarchyOverview } from '@crew/contracts';
+import type { HierarchyOverview, WorkspaceLimits } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load, loadOptional } from '@/lib/api';
@@ -17,10 +17,11 @@ export default async function HrWorkspacesPage({ searchParams }: { searchParams:
   const me = await load<Me>('/me');
   const overview = await load<HierarchyOverview>('/hr-workspaces/overview');
   const manage = can(me, 'hierarchy:manage') && overview.levels.super;
-  const [members, departments, locations] = await Promise.all([
+  const [members, departments, locations, limits] = await Promise.all([
     manage ? loadOptional<Page<Member>>('/members?status=active&limit=200') : null,
     manage ? loadOptional<Department[]>('/org/departments') : null,
     manage ? loadOptional<Location[]>('/org/locations') : null,
+    manage ? loadOptional<WorkspaceLimits>('/workspace-limits') : null,
   ]);
   return (
     <>
@@ -33,6 +34,7 @@ export default async function HrWorkspacesPage({ searchParams }: { searchParams:
       />
       <WorkspacesView
         overview={overview}
+        limits={limits}
         manage={manage}
         transfer={can(me, 'employees:transfer')}
         openCreate={sp.create === 'hr-workspace'}

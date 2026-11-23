@@ -1,5 +1,5 @@
 'use client';
-import type { ChatMessageView, CommFile, ConversationView } from '@crew/contracts';
+import { senderLine, type ChatMessageView, type CommFile, type ConversationView } from '@crew/contracts';
 import { Alert, Badge, Button, Card, Dialog, EmptyState, Input, Select, Textarea, cn } from '@crew/ui';
 import { BellOff, Check, CheckCheck, FileText, Headset, LogOut, MessagesSquare, Paperclip, Plus, Search, Send, Trash2, Users, X } from 'lucide-react';
 import Link from 'next/link';
@@ -19,13 +19,19 @@ const listWhen = (iso: string) => (new Date(iso).toDateString() === new Date().t
 const KIND_ICON = { direct: MessagesSquare, group: Users, department: Users, hr: Headset } as const;
 const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
-export function ChatApp({ list, detail, isHr, departments, startNew, me }: {
+type ChatFilter = 'all' | 'unread' | 'direct' | 'groups' | 'hr';
+const FILTERS: [ChatFilter, string][] = [['all', 'All'], ['unread', 'Unread'], ['direct', 'Direct'], ['groups', 'Groups'], ['hr', 'HR']];
+const inFilter = (c: ConversationView, f: ChatFilter) => f === 'all' || (f === 'unread' ? c.unread > 0 : f === 'direct' ? c.kind === 'direct' : f === 'groups' ? c.kind === 'group' || c.kind === 'department' : c.kind === 'hr');
+
+export function ChatApp({ list, detail, isHr, departments, startNew, me, support }: {
   list: ConversationView[];
   detail: ConversationDetail | null;
   isHr: boolean;
   departments: { id: string; name: string }[];
   startNew: boolean;
   me: string;
+  /** Super Workspace only: the pinned SampCrew Support entry, with its unread replies. */
+  support?: { unread: number } | null;
 }) {
   // New messages, read receipts and deletions show without reloading.
   useRefreshOn(['chat.message', 'chat.read', 'chat.updated']);
@@ -33,7 +39,10 @@ export function ChatApp({ list, detail, isHr, departments, startNew, me }: {
   const [newOpen, setNewOpen] = useState(startNew);
   const [hits, setHits] = useState<Awaited<ReturnType<typeof searchMessagesAction>> | null>(null);
   const [searching, startSearch] = useTransition();
-  const shown = list.filter((c) => !filter || c.title.toLowerCase().includes(filter.toLowerCase()) || c.members.some((m) => (m.name ?? '').toLowerCase().includes(filter.toLowerCase())));
+  const [kind, setKind] = useState<ChatFilter>('all');
+  const needle = filter.toLowerCase();
+  // Search matches names, levels and workspaces, so two people with similar names are told apart.
+  const shown = list.filter((c) => inFilter(c, kind) && (!filter || [c.title, c.subtitle, ...c.members.flatMap((m) => [m.name, m.identity?.workspace, m.identity?.levelLabel])].some((f) => (f ?? '').toLowerCase().includes(needle))));
 
   return (
     <div className="grid gap-4 lg:grid-cols-[20rem_1fr]">
@@ -45,13 +54,28 @@ export function ChatApp({ list, detail, isHr, departments, startNew, me }: {
           </form>
           <Button size="sm" onClick={() => setNewOpen(true)} aria-label="New conversation"><Plus className="size-3.5" /> New</Button>
         </div>
+        <div className="flex flex-wrap gap-1 border-b border-border px-3 py-2" role="radiogroup" aria-label="Show conversations">
+          {FILTERS.map(([k, label]) => (
+            <button key={k} role="radio" aria-checked={kind === k} onClick={() => setKind(k)} className={cn('rounded-full border px-2.5 py-0.5 text-xs', kind === k ? 'border-accent bg-accent-subtle text-accent' : 'border-border text-fg-muted hover:text-fg')}>{label}</button>
+          ))}
+        </div>
+        {support && (
+          <Link href="/support" className="flex items-center gap-3 border-b border-border bg-ember-subtle/40 px-3 py-2.5 hover:bg-bg-subtle" data-testid="support-entry">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ember-subtle text-ember" aria-hidden><Headset className="size-4" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[0.8125rem] font-semibold">SampCrew Support</span>
+              <span className="block truncate text-xs text-fg-muted">Console Admin · Private to the Super Workspace</span>
+            </span>
+            {support.unread > 0 && <span className="shrink-0 rounded-full bg-accent px-1.5 text-[0.625rem] font-semibold leading-4 text-accent-fg">{support.unread}</span>}
+          </Link>
+        )}
         {hits && (
           <div className="border-b border-border p-3" data-testid="message-search-results">
             <div className="mb-1 flex items-center justify-between text-xs font-semibold text-fg-muted">Messages <button onClick={() => setHits(null)} aria-label="Close search"><X className="size-3.5" /></button></div>
             {!hits.ok ? <p className="text-xs text-danger">{hits.message}</p> : hits.data!.items.length === 0 ? <p className="text-xs text-fg-muted">No messages found.</p> : (
               <ul className="grid gap-1">
                 {hits.data!.items.map((h) => (
-                  <li key={h.messageId}><Link href={`/communication/chat/${h.conversationId}`} className="block rounded-md px-2 py-1 text-xs hover:bg-bg-subtle"><span className="font-semibold">{h.conversationTitle}</span> · {h.senderName}: <span className="text-fg-muted">{h.body.slice(0, 80)}</span></Link></li>
+                  <li key={h.messageId}><Link href={`/communication/chat/${h.conversationId}`} className="block rounded-md px-2 py-1 text-xs hover:bg-bg-subtle"><span className="font-semibold">{h.conversationTitle}</span> · {h.senderName}{h.sender ? <span className="text-fg-subtle"> ({senderLine(h.sender)})</span> : null}: <span className="text-fg-muted">{h.body.slice(0, 80)}</span></Link></li>
                 ))}
               </ul>
             )}
@@ -70,6 +94,7 @@ export function ChatApp({ list, detail, isHr, departments, startNew, me }: {
                       <span className={cn('truncate text-[0.8125rem]', c.unread ? 'font-semibold text-fg' : 'font-medium')}>{c.title}</span>
                       {c.lastMessage && <span className="shrink-0 text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>{listWhen(c.lastMessage.at)}</span>}
                     </span>
+                    {c.subtitle && c.lastMessage && <span className="block truncate text-[0.6875rem] text-fg-subtle" data-testid="conversation-identity">{c.subtitle}</span>}
                     <span className="flex items-center justify-between gap-2">
                       <span className="truncate text-xs text-fg-muted">{c.lastMessage ? `${c.lastMessage.senderName ? `${c.lastMessage.senderName.split(' ')[0]}: ` : ''}${c.lastMessage.body}` : c.subtitle}</span>
                       {c.muted && <BellOff className="size-3 shrink-0 text-fg-subtle" aria-label="Muted" />}
@@ -90,6 +115,18 @@ export function ChatApp({ list, detail, isHr, departments, startNew, me }: {
       )}
       <NewConversation open={newOpen} onClose={() => setNewOpen(false)} isHr={isHr} departments={departments} />
     </div>
+  );
+}
+
+/** Who sent a message: name, level badge and workspace, so the reader never has to guess. */
+function SenderTag({ m }: { m: ChatMessageView }) {
+  if (!m.sender) return m.senderName ? <span className="mb-0.5 text-[0.6875rem] font-medium text-fg-muted">{m.senderName}</span> : null;
+  return (
+    <span className="mb-0.5 flex flex-wrap items-center gap-1.5 text-[0.6875rem]" data-testid="message-sender">
+      <span className="font-semibold text-fg">{m.sender.name}</span>
+      <Badge tone={m.sender.level === 'super' ? 'ember' : m.sender.level === 'hr' ? 'info' : 'neutral'}>{m.sender.levelLabel}</Badge>
+      {m.sender.workspace && <span className="text-fg-subtle">{m.sender.workspace}</span>}
+    </span>
   );
 }
 
@@ -179,7 +216,7 @@ function Thread({ d, me }: { d: ConversationDetail; me: string }) {
         <div className="min-w-0">
           <Link href="/communication/chat" className="text-xs text-fg-muted lg:hidden">← Conversations</Link>
           <h2 className="truncate text-sm font-semibold" data-testid="thread-title">{c.title}</h2>
-          <p className="truncate text-xs text-fg-muted">{c.kind === 'group' || c.kind === 'department' ? c.members.map((m) => m.name ?? 'Unnamed').join(', ') : c.subtitle}{c.asHr ? ' · You are answering for the HR team' : ''}</p>
+          <p className="truncate text-xs text-fg-muted" data-testid="thread-identity">{c.kind === 'group' || c.kind === 'department' ? c.members.map((m) => (m.identity ? `${m.name ?? 'Unnamed'} (${m.identity.levelLabel})` : m.name ?? 'Unnamed')).join(', ') : c.subtitle}{c.asHr ? ' · You are answering for the HR team' : ''}</p>
         </div>
         <div className="flex gap-1">
           <Button size="sm" variant="ghost" onClick={() => start(async () => { const r = await muteAction(c.id, !c.muted); if (!r.ok) setError(r.message); router.refresh(); })}>{c.muted ? 'Unmute' : 'Mute'}</Button>
@@ -201,7 +238,7 @@ function Thread({ d, me }: { d: ConversationDetail; me: string }) {
                 {sep && <div className="my-2 text-center text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>{d0}</div>}
                 {m.system ? <p className="text-center text-xs italic text-fg-muted" data-testid="system-message">{m.body}</p> : (
                   <div className={cn('group flex max-w-[85%] flex-col', mine ? 'items-end justify-self-end' : 'items-start')} data-testid="message">
-                    {!mine && c.kind !== 'direct' && <span className="mb-0.5 text-[0.6875rem] font-medium text-fg-muted">{m.senderName}</span>}
+                    {!mine && <SenderTag m={m} />}
                     <div className={cn('rounded-2xl px-3 py-2 text-[0.8125rem]', mine ? 'rounded-br-sm bg-accent text-accent-fg' : 'rounded-bl-sm bg-bg-subtle text-fg', m.deleted && 'italic opacity-70')}>
                       {m.deleted ? 'Message deleted' : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
                       <Files files={m.files} mine={mine} />

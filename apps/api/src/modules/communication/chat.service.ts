@@ -9,6 +9,7 @@ import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
 import { memberNames } from '../employees/employee-view';
 import { CURRENT_STATUSES } from './audience';
+import { memberIdentities, storedIdentity } from './identity';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Doc = Record<string, any>;
@@ -120,6 +121,7 @@ export class ChatService {
     const ids = convs.map((c) => c.id as string);
     const members = await tx.collection('chat_members').find({ conversation_id: { $in: ids }, left_at: null }, { projection: { conversation_id: 1, membership_id: 1, role: 1, muted: 1, last_read_at: 1 } });
     const names = await memberNames(tx, [...members.map((m) => m.membership_id), ...convs.map((c) => c.employee_membership_id), ...convs.map((c) => c.last_message?.senderMembershipId)]);
+    const who = await memberIdentities(tx, [...members.map((m) => m.membership_id), ...convs.map((c) => c.employee_membership_id)]);
     const deptNames = new Map((await tx.collection('departments').find({ id: { $in: convs.map((c) => c.department_id).filter(Boolean) } }, { projection: { name: 1 } })).map((d) => [d.id as string, d.name as string]));
     const out: ConversationView[] = [];
     for (const c of convs) {
@@ -131,21 +133,27 @@ export class ChatService {
       });
       let title = c.title as string;
       let subtitle: string | null = null;
+      let counterpart: ConversationView['counterpart'] = null;
+      const line = (id: string | undefined) => { const i = id ? who.get(id) : undefined; return i ? (i.workspace ? `${i.levelLabel} · ${i.workspace}` : i.levelLabel) : null; };
+      const plain = (id: string | undefined) => { const i = id ? who.get(id) : undefined; return i ? { name: i.name, level: i.level, levelLabel: i.levelLabel, workspace: i.workspace } : null; };
       if (c.kind === 'direct') {
         const other = people.find((m) => m.membership_id !== s.membershipId);
         title = (other && names.get(other.membership_id)) || 'Former colleague';
-        subtitle = 'Direct message';
+        counterpart = plain(other?.membership_id);
+        subtitle = line(other?.membership_id) ?? 'Direct message';
       } else if (c.kind === 'hr') {
         const asEmployee = c.employee_membership_id === s.membershipId;
         title = asEmployee ? 'HR team' : names.get(c.employee_membership_id) ?? 'Employee';
-        subtitle = asEmployee ? 'Your conversation with HR' : 'Message to HR';
+        if (!asEmployee) counterpart = plain(c.employee_membership_id);
+        subtitle = asEmployee ? 'Your conversation with HR' : `Message to HR · ${line(c.employee_membership_id) ?? 'Employee Workspace'}`;
       } else if (c.kind === 'department') {
         title = title || deptNames.get(c.department_id) || 'Department';
         subtitle = `Department · ${people.length} people`;
       } else subtitle = `Group · ${people.length} people`;
       out.push({
         id: c.id, kind: c.kind, title, subtitle, memberCount: people.length,
-        members: people.map((m) => ({ membershipId: m.membership_id, name: names.get(m.membership_id) ?? null })),
+        members: people.map((m) => ({ membershipId: m.membership_id, name: names.get(m.membership_id) ?? null, identity: plain(m.membership_id) })),
+        counterpart,
         lastMessage: c.last_message ? { body: c.last_message.body, senderName: c.last_message.senderMembershipId ? names.get(c.last_message.senderMembershipId) ?? null : null, at: iso(c.last_message.at)! } : null,
         unread, muted: !!mine?.muted,
         canManage: c.kind === 'group' ? mine?.role === 'owner' : c.kind === 'department' ? this.isHr(s) : false,
@@ -302,6 +310,8 @@ export class ChatService {
 
   private async messageViews(tx: TenantTx, conv: Doc, rows: Doc[], s: Subject): Promise<ChatMessageView[]> {
     const names = await memberNames(tx, rows.map((m) => m.sender_membership_id));
+    // Older messages have no recorded level: they show the sender's current one.
+    const current = await memberIdentities(tx, rows.filter((m) => m.sender_membership_id && !m.sender_level).map((m) => m.sender_membership_id));
     const files = await fileViews(tx, rows.flatMap((m) => (m.deleted_at ? [] : (m.file_ids as string[]))));
     // Read and received positions of everyone else, for the ticks on your own messages.
     const others = (await tx.collection('chat_members').find({ conversation_id: conv.id, left_at: null, membership_id: { $ne: s.membershipId } }, { projection: { membership_id: 1, last_read_at: 1, last_delivered_at: 1 } }));
@@ -328,6 +338,7 @@ export class ChatService {
     return rows.map((m) => ({
       id: m.id, conversationId: m.conversation_id, senderMembershipId: m.sender_membership_id ?? null,
       senderName: m.sender_membership_id ? names.get(m.sender_membership_id) ?? null : null,
+      sender: m.sender_membership_id && !m.system ? storedIdentity(m, names.get(m.sender_membership_id) ?? null, current.get(m.sender_membership_id)) : null,
       body: m.deleted_at ? '' : m.body, files: m.deleted_at ? [] : (m.file_ids as string[]).map((f) => files.get(f)).filter((f): f is CommFile => !!f),
       createdAt: iso(m.created_at)!, editedAt: iso(m.edited_at), deleted: !!m.deleted_at, system: !!m.system,
       delivery: m.sender_membership_id === s.membershipId && !m.system ? delivery(m) : null,
@@ -336,13 +347,20 @@ export class ChatService {
 
   /** Stores a message and tells everyone else in the conversation. */
   private async post(tx: TenantTx, conv: Doc, sender: string | null, body: string, fileIds: string[], system = false, clientId?: string) {
-    const m = await tx.collection('chat_messages').insert({ conversation_id: conv.id, sender_membership_id: sender, body, file_ids: fileIds, system, client_id: clientId ?? null });
+    // The sender's level and workspace are kept with the message, so the history shows who they were when they wrote.
+    const id = sender && !system ? (await memberIdentities(tx, [sender])).get(sender) : undefined;
+    const m = await tx.collection('chat_messages').insert({
+      conversation_id: conv.id, sender_membership_id: sender, body, file_ids: fileIds, system, client_id: clientId ?? null,
+      sender_level: id?.level ?? null, sender_workspace: id?.workspace ?? null,
+    });
     const now = new Date(m.created_at ?? Date.now());
     await tx.collection('chat_conversations').updateOne({ id: conv.id }, { $set: { last_message_at: now, last_message: { body: preview(body, fileIds.length), senderMembershipId: sender, at: now } } });
     const audience = (await this.audience(tx, conv)).filter((a) => a.id !== sender);
     await this.notifications.signal(tx, [...audience.map((a) => a.id), sender], 'chat.message', { conversationId: conv.id, messageId: m.id, senderMembershipId: sender });
     if (!system && sender) {
-      const name = (await memberNames(tx, [sender])).get(sender) ?? 'Someone';
+      // The level helps tell people apart; an HR team reply already says "(HR team)".
+      const forHrTeam = conv.kind === 'hr' && sender !== conv.employee_membership_id;
+      const name = id ? (forHrTeam ? id.name : `${id.name} (${id.levelLabel})`) : (await memberNames(tx, [sender])).get(sender) ?? 'Someone';
       const where = conv.kind === 'group' || conv.kind === 'department' ? ` in ${conv.title}` : conv.kind === 'hr' && sender !== conv.employee_membership_id ? ' (HR team)' : conv.kind === 'hr' ? ' to HR' : '';
       await this.notifications.notify(tx, {
         membershipIds: audience.filter((a) => !a.muted).map((a) => a.id),
@@ -508,21 +526,26 @@ export class ChatService {
         { sort: { created_at: -1 }, limit: 50 },
       );
       const names = await memberNames(tx, hits.map((h) => h.sender_membership_id));
+      const current = await memberIdentities(tx, hits.map((h) => h.sender_membership_id));
       return {
         items: hits.map((h) => ({
           messageId: h.id, conversationId: h.conversation_id, conversationTitle: views.get(h.conversation_id)?.title ?? '',
-          senderName: names.get(h.sender_membership_id) ?? null, body: h.body, createdAt: iso(h.created_at),
+          senderName: names.get(h.sender_membership_id) ?? null, sender: storedIdentity(h, names.get(h.sender_membership_id) ?? null, current.get(h.sender_membership_id)),
+          body: h.body, createdAt: iso(h.created_at),
         })),
       };
     });
   }
 
-  /** People you can message, for the new-conversation picker. */
+  /**
+   * People you can message, for the new-conversation picker: name, level (Super, HR or Employee Workspace), workspace,
+   * employee ID, email, department and designation, so the right person is chosen. Search matches any of them.
+   */
   people(q: string | undefined) {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
       const members = await tx.collection('memberships').find({ status: 'active', id: { $ne: s.membershipId } }, { projection: { employee_id: 1, user_id: 1 }, limit: 2000 });
-      const names = await memberNames(tx, members.map((m) => m.id));
+      const who = await memberIdentities(tx, members.map((m) => m.id));
       const emps = new Map((await tx.collection('employees').find({ id: { $in: members.map((m) => m.employee_id).filter(Boolean) } }, { projection: { current_department_id: 1, current_designation_id: 1 } })).map((e) => [e.id as string, e]));
       const [depts, desigs] = await Promise.all([
         tx.collection('departments').find({}, { projection: { name: 1 } }),
@@ -535,9 +558,15 @@ export class ChatService {
         items: members
           .map((m) => {
             const e = m.employee_id ? emps.get(m.employee_id) : undefined;
-            return { membershipId: m.id as string, name: names.get(m.id) ?? 'Unnamed', department: e ? dn.get(e.current_department_id) ?? null : null, designation: e ? gn.get(e.current_designation_id) ?? null : null };
+            const i = who.get(m.id as string);
+            return {
+              membershipId: m.id as string, name: i?.name ?? 'Unnamed',
+              level: i?.level ?? 'employee', levelLabel: i?.levelLabel ?? 'Employee Workspace', workspace: i?.workspace ?? null,
+              employeeCode: i?.employeeCode ?? null, email: i?.email ?? null,
+              department: e ? dn.get(e.current_department_id) ?? null : null, designation: e ? gn.get(e.current_designation_id) ?? null : null,
+            };
           })
-          .filter((p) => !needle || p.name.toLowerCase().includes(needle) || (p.department ?? '').toLowerCase().includes(needle) || (p.designation ?? '').toLowerCase().includes(needle))
+          .filter((p) => !needle || [p.name, p.department, p.designation, p.email, p.employeeCode, p.workspace, p.levelLabel].some((f) => (f ?? '').toLowerCase().includes(needle)))
           .sort((a, b) => a.name.localeCompare(b.name))
           .slice(0, 100),
       };

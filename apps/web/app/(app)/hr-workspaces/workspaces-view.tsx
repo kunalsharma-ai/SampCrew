@@ -1,10 +1,11 @@
 'use client';
-import { HR_WORKSPACE_KIND_LABEL, HR_WORKSPACE_KINDS, type HierarchyOverview, type HrWorkspaceSummary } from '@crew/contracts';
+import { HR_WORKSPACE_KIND_LABEL, HR_WORKSPACE_KINDS, type HierarchyOverview, type HrWorkspaceSummary, type WorkspaceLimits } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Stat, Textarea } from '@crew/ui';
 import { Building2, ChevronRight, Network, Plus, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
+import { WorkspaceLimitsCard } from '@/components/workspace-limits';
 import { createHrWorkspaceAction } from './actions';
 import { ModulePicker } from './module-picker';
 import { moduleStates } from './modules';
@@ -13,8 +14,10 @@ type Option = { id: string; name: string; email?: string };
 
 const STATUS_TONE = { active: 'success', suspended: 'warning', archived: 'neutral' } as const;
 
-export function WorkspacesView({ overview, manage, transfer, openCreate, members, departments, locations }: {
+export function WorkspacesView({ overview, limits, manage, transfer, openCreate, members, departments, locations }: {
   overview: HierarchyOverview;
+  /** The company's plan-based HR Workspace and Employee Workspace limits (Super Workspace only). */
+  limits: WorkspaceLimits | null;
   manage: boolean;
   transfer: boolean;
   openCreate: boolean;
@@ -25,17 +28,20 @@ export function WorkspacesView({ overview, manage, transfer, openCreate, members
   const [creating, setCreating] = useState(openCreate && manage);
   const { company, central, hrWorkspaces } = overview;
   const delegable = company.features.filter((k) => !company.nonDelegable.includes(k)).length;
-  const atLimit = company.hrWorkspaceLimit !== null && hrWorkspaces.length >= company.hrWorkspaceLimit;
+  // The API decides (and refuses at the limit); the screen shows the same Used / Maximum and closes the button.
+  const atLimit = limits ? limits.hr.reached : company.hrWorkspaceLimit !== null && hrWorkspaces.length >= company.hrWorkspaceLimit;
   return (
     <div className="grid gap-6">
       {manage && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="HR Workspaces" value={company.hrWorkspaceLimit === null ? hrWorkspaces.length : `${hrWorkspaces.length} of ${company.hrWorkspaceLimit}`} icon={<Network className="size-4" />} />
+          <Stat label="HR Workspaces" value={limits ? limits.hr.text : company.hrWorkspaceLimit === null ? hrWorkspaces.length : `${hrWorkspaces.length} / ${company.hrWorkspaceLimit}`} icon={<Network className="size-4" />} />
           <Stat label="Central group" value={central.employees} hint="People the company runs itself" icon={<Building2 className="size-4" />} />
           <Stat label="Employees" value={company.employeeLimit === null ? company.employees : `${company.employees} of ${company.employeeLimit}`} icon={<Users className="size-4" />} />
           <Stat label="Modules you can pass down" value={`${delegable} of ${company.features.length}`} hint={company.nonDelegable.length ? `${company.nonDelegable.length} kept at company level by SAMPLEDGE` : undefined} />
         </div>
       )}
+
+      {manage && limits && <WorkspaceLimitsCard limits={limits} />}
 
       {manage && (
         <Card>
@@ -60,14 +66,14 @@ export function WorkspacesView({ overview, manage, transfer, openCreate, members
         <CardHeader
           title={manage ? 'Your HR Workspaces' : 'HR Workspaces you run'}
           description={manage ? 'Open one to change its modules, admins and people.' : 'Open one to look after its people and choose the modules each of them gets.'}
-          action={manage ? <Button onClick={() => setCreating(true)} disabled={atLimit} title={atLimit ? 'Your plan’s limit of HR Workspaces is reached' : undefined}><Plus className="size-4" aria-hidden />New HR Workspace</Button> : undefined}
+          action={manage ? <Button onClick={() => setCreating(true)} disabled={atLimit} title={atLimit ? `HR Workspaces limit reached (${limits?.hr.text ?? 'plan limit'}). Upgrade the plan to add more.` : undefined} data-testid="new-hr-workspace"><Plus className="size-4" aria-hidden />New HR Workspace</Button> : undefined}
         />
         {hrWorkspaces.length === 0 ? (
           <EmptyState
             icon={<Network className="size-5" />}
             title={manage ? 'No HR Workspaces yet' : 'You do not run an HR Workspace'}
             description={manage ? 'Everyone is in the central group. Create an HR Workspace for a branch, department or region when someone else should look after its people.' : 'The Super Workspace names the admins of each HR Workspace.'}
-            action={manage ? <Button onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden />New HR Workspace</Button> : undefined}
+            action={manage ? <Button onClick={() => setCreating(true)} disabled={atLimit}><Plus className="size-4" aria-hidden />New HR Workspace</Button> : undefined}
           />
         ) : (
           <ul className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">

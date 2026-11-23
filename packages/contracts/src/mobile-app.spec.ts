@@ -26,7 +26,8 @@ describe('mobile app catalogue', () => {
     expect(mobileRouteFor('communication/emails/inbox', 'GET')?.owners).toEqual(['email.inbox']);
     expect(mobileRouteFor('communication/emails/send', 'POST')?.owners).toEqual(['email.compose']);
     expect(mobileRouteFor('employees/abc/documents?x=1', 'GET')?.owners).toEqual(['documents.mine']);
-    expect(mobileRouteFor('employees/abc/photo', 'PUT')).toBeUndefined();
+    // The person's own photo stays open with the profile, which is always on.
+    expect(mobileRouteFor('employees/abc/photo', 'PUT')?.owners).toEqual(['profile']);
     expect(mobileRouteFor('me', 'GET')).toBeUndefined();
     expect(mobileRouteFor('mobile/devices', 'POST')).toBeUndefined();
     expect(mobileRouteFor('mobile/app', 'GET')).toBeUndefined();
@@ -40,8 +41,10 @@ describe('mobile app configuration', () => {
     expect(app.more).toContain('leave');
     expect(app.more).toContain('email');
     expect(app.quickActions.map((q) => q.key)).toContain('attendance.punch');
+    // Approvals is offered on every level: managers in the Employee Workspace approve their team from the phone.
+    expect(app.quickActions.map((q) => q.key)).toContain('approvals.open');
     // Admin-only shortcuts stay off an Employee Workspace phone.
-    expect(app.quickActions.map((q) => q.key)).not.toContain('approvals.open');
+    expect(app.quickActions.map((q) => q.key)).not.toContain('attendance.team');
     expect(resolve(undefined, 'hr').quickActions.map((q) => q.key)).toContain('approvals.open');
     expect(validateMobileConfig(defaultMobileConfig()).filter((i) => i.severity === 'error')).toEqual([]);
   });

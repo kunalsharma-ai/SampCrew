@@ -62,7 +62,7 @@ export class LeavePenaltiesController {
   constructor(private readonly discipline: DisciplineService) {}
 
   @Put('same-day-policy')
-  @RequirePermission('leave:configure')
+  @RequirePermission('leave:allocate')
   @Doc({ summary: 'Set the same-day leave penalty: automatic or by the manager, and the days of pay deducted', body: sameDayLeavePolicyInput })
   savePolicy(@Body(new ZodPipe(sameDayLeavePolicyInput)) body: SameDayLeavePolicyInput) {
     return this.discipline.saveSameDayPolicy(body);

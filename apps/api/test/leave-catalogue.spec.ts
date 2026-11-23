@@ -17,11 +17,12 @@ type Bal = { code: string; balance: string; available: string | null; taken: str
  * home, loss of pay), policies scoped by department, designation and location, changing requests, adjustment history
  * and the balance overview.
  */
-describe('leave upgrade', () => {
+describe('leave catalogue, allocations and changes', () => {
   let app: INestApplication;
   let pool: TestDb;
   let t: TestTenant;
   let hr: string;
+  let sup: string;
   let eng: string;
   let ops: string;
   let senior: string;
@@ -43,6 +44,7 @@ describe('leave upgrade', () => {
     people.mark = await addMember(pool, t, { departmentId: eng, managerId: people.lead.membershipId, name: 'Mark Moss' });
     people.oscar = await addMember(pool, t, { departmentId: ops, name: 'Oscar Ops' });
     hr = (await loginWithMfa(app, pool, people.hr.email)).accessToken;
+    sup = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
     const hire = async (who: string, body: Record<string, unknown>) => {
       const res = await api(app, hr).post('/employees').send({ legalEntityId: t.legalEntityId, dateOfJoining: '2024-01-15', probationMonths: 0, membershipId: people[who]!.membershipId, ...body });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
@@ -59,26 +61,32 @@ describe('leave upgrade', () => {
     await pool.end();
   });
 
-  it('adds types from the standard catalogue with starting policies, once', async () => {
-    const list = await api(app, hr).get('/leave/types/standard');
+  it('adds types from the templates, once, and only the Super Workspace can', async () => {
+    const list = await api(app, sup).get('/leave/types/standard');
     expect(list.status).toBe(200);
-    expect(list.body.map((x: { code: string }) => x.code)).toEqual(expect.arrayContaining(['ML', 'PTL', 'BL', 'CO', 'OH', 'WFH', 'LOP', 'PL']));
+    expect(list.body.map((x: { code: string }) => x.code)).toEqual(expect.arrayContaining(['PL', 'CL', 'SL', 'ML', 'PTL', 'BL', 'CO', 'OH', 'WFH', 'LWP']));
     expect(list.body.every((x: { added: boolean }) => !x.added)).toBe(true);
-    const add = await api(app, hr).post('/leave/types/standard').send({ codes: ['CL', 'ML', 'PTL', 'BL', 'CO', 'OH', 'WFH', 'LOP'] });
+    expect((await api(app, hr).post('/leave/types/standard').send({ codes: ['CL'] })).status).toBe(403);
+    const add = await api(app, sup).post('/leave/types/standard').send({ codes: ['CL', 'ML', 'PTL', 'BL', 'CO', 'OH', 'WFH', 'LWP'] });
     expect(add.status, JSON.stringify(add.body)).toBe(201);
     expect(add.body.added).toHaveLength(8);
-    const again = await api(app, hr).post('/leave/types/standard').send({ codes: ['ML', 'WFH'] });
+    const again = await api(app, sup).post('/leave/types/standard').send({ codes: ['ML', 'WFH'] });
     expect(again.body).toMatchObject({ added: [], skipped: ['ML', 'WFH'] });
-    expect((await api(app, hr).post('/leave/types/standard').send({ codes: ['NOPE'] })).status).toBe(400);
+    expect((await api(app, sup).post('/leave/types/standard').send({ codes: ['NOPE'] })).status).toBe(400);
     expect((await api(app, await token('fiona')).post('/leave/types/standard').send({ codes: ['PL'] })).status).toBe(403);
-    for (const x of (await api(app, hr).get('/leave/types')).body as { id: string; code: string; kind: string; eligibleGender: string; countsCalendarDays: boolean }[]) types[x.code] = x.id;
-    const ml = ((await api(app, hr).get('/leave/types')).body as { code: string; kind: string; eligibleGender: string; countsCalendarDays: boolean }[]).find((x) => x.code === 'ML');
-    expect(ml).toMatchObject({ kind: 'standard', eligibleGender: 'female', countsCalendarDays: true });
-    expect((await api(app, hr).get('/leave/types/standard')).body.find((x: { code: string }) => x.code === 'ML').added).toBe(true);
+    const all = (await api(app, sup).get('/leave/types')).body as { id: string; code: string; kind: string; eligibleGender: string; countsCalendarDays: boolean }[];
+    for (const x of all) types[x.code] = x.id;
+    expect(all.find((x) => x.code === 'ML')).toMatchObject({ kind: 'standard', eligibleGender: 'female', countsCalendarDays: true });
+    expect((await api(app, sup).get('/leave/types/standard')).body.find((x: { code: string }) => x.code === 'ML').added).toBe(true);
+    // Created is not allocated: give each to everyone eligible, with the company HR team reviewing.
+    for (const id of Object.values(types)) {
+      expect((await api(app, sup).post('/leave/allocations').send({ target: 'hr_workspace', leaveTypeId: id, hrWorkspaceId: null })).status).toBe(201);
+      expect((await api(app, sup).post('/leave/allocations').send({ target: 'employees', leaveTypeId: id, criteria: { all: true } })).status).toBe(201);
+    }
   });
 
   it('shows each person only the types open to them, with comp-off kept as a balance HR credits', async () => {
-    expect((await api(app, hr).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` })).status).toBe(201);
+    expect((await api(app, sup).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` })).status).toBe(201);
     const f = await balances('fiona');
     const m = await balances('mark');
     expect(f.map((b) => b.code)).toContain('ML');
@@ -92,18 +100,16 @@ describe('leave upgrade', () => {
     expect(f.find((b) => b.code === 'WFH')).toMatchObject({ tracked: false, available: null, kind: 'wfh' });
   });
 
-  it('applies the most specific policy: designation over department over the whole workspace', async () => {
-    const save = (body: Record<string, unknown>) => api(app, hr).post('/leave/policies').send({ leaveTypeId: types.CL, accrualMethod: 'annual_upfront', ...body });
-    expect((await save({ annualEntitlement: '10', departmentId: eng })).status).toBe(201);
-    expect((await save({ annualEntitlement: '12', designationId: senior })).status).toBe(201);
-    // Saving the same scope again replaces it.
-    expect((await save({ annualEntitlement: '12.5', designationId: senior })).status).toBe(201);
-    expect((await save({ annualEntitlement: '5', departmentId: '00000000-0000-4000-8000-000000000000' })).status).toBe(400);
-    const cl = ((await api(app, hr).get('/leave/policies')).body as { leaveTypeCode: string; departmentName: string | null; designationName: string | null; annualEntitlement: string }[]).filter((p) => p.leaveTypeCode === 'CL');
-    expect(cl.map((p) => [p.departmentName, p.designationName, p.annualEntitlement])).toEqual([[null, null, '8.00'], ['Engineering', null, '10.00'], [null, 'Senior engineer', '12.50']]);
-    await api(app, hr).post('/leave/accruals/run').send({ asOf: `${Y}-01-02` });
-    // Accruals for a year are posted once per period, so a policy change shows from the next credit; this tenant's
-    // CL was credited at 8 on 1 January before the scoped policies existed. New people get the scoped amount.
+  it('applies the most specific allocation: designation over department over everyone', async () => {
+    const save = (body: Record<string, unknown>) => api(app, sup).post('/leave/allocations').send({ target: 'employees', leaveTypeId: types.CL, ...body });
+    expect((await save({ criteria: { departmentIds: [eng] }, entitlementDays: '10' })).status).toBe(201);
+    expect((await save({ criteria: { designationIds: [senior] }, entitlementDays: '12.5' })).status).toBe(201);
+    expect((await save({ criteria: { departmentIds: ['00000000-0000-4000-8000-000000000000'] }, entitlementDays: '5' })).status).toBe(400);
+    const cl = ((await api(app, sup).get(`/leave/allocations?leaveTypeId=${types.CL}`)).body as { target: string; summary: string; entitlementDays: string | null }[]).filter((a) => a.target === 'employees');
+    expect(cl.map((a) => [a.summary, a.entitlementDays])).toEqual([['Designations: Senior engineer', '12.50'], ['Departments: Engineering', '10.00'], ['Everyone eligible', null]]);
+    await api(app, sup).post('/leave/accruals/run').send({ asOf: `${Y}-01-02` });
+    // Accruals for a year are posted once per period, so a change shows from the next credit; this tenant's CL was
+    // credited at 8 on 1 January before the narrower allocations existed. New people get the specific amount.
     const lines = await pool.find('leave_ledger', { employee_id: people.mark!.employeeId, leave_type_id: types.CL, leave_year: Y, kind: 'accrual' });
     expect(lines.map((l) => l.quantity)).toEqual(['8.00']);
     const late = await addMember(pool, t, { departmentId: eng, name: 'Nia New' });
@@ -111,12 +117,12 @@ describe('leave upgrade', () => {
     const res = await api(app, hr).post('/employees').send({ legalEntityId: t.legalEntityId, dateOfJoining: '2024-01-15', probationMonths: 0, membershipId: late.membershipId, firstName: 'Nia', lastName: 'New', departmentId: eng, designationId: senior });
     expect(res.status).toBe(201);
     people.nia.employeeId = res.body.employee.id;
-    await api(app, hr).post('/leave/accruals/run').send({ asOf: `${Y}-01-03` });
+    await api(app, sup).post('/leave/accruals/run').send({ asOf: `${Y}-01-03` });
     expect((await balances('nia')).find((b) => b.code === 'CL')!.balance).toBe('12.50');
     const dept = await addMember(pool, t, { departmentId: eng, name: 'Dev Dept' });
     const d = await api(app, hr).post('/employees').send({ legalEntityId: t.legalEntityId, dateOfJoining: '2024-01-15', probationMonths: 0, membershipId: dept.membershipId, firstName: 'Dev', lastName: 'Dept', departmentId: eng });
     people.dev = { ...dept, employeeId: d.body.employee.id };
-    await api(app, hr).post('/leave/accruals/run').send({ asOf: `${Y}-01-03` });
+    await api(app, sup).post('/leave/accruals/run').send({ asOf: `${Y}-01-03` });
     expect((await balances('dev')).find((b) => b.code === 'CL')!.balance).toBe('10.00');
   });
 
@@ -148,7 +154,7 @@ describe('leave upgrade', () => {
     expect(ok.body.balances.find((b: Bal) => b.code === 'CO').balance).toBe('1.00');
     const history = await api(app, hr).get(`/leave/adjustments?employeeId=${fiona}`);
     expect(history.status).toBe(200);
-    expect(history.body).toEqual([expect.objectContaining({ employeeName: 'Fiona Field', leaveTypeName: 'Compensatory off', quantity: '1.00', note: 'Worked the Sunday release', by: 'Hana HR', opening: false })]);
+    expect(history.body).toEqual([expect.objectContaining({ employeeName: 'Fiona Field', leaveTypeName: 'Compensatory Off', quantity: '1.00', note: 'Worked the Sunday release', by: 'Hana HR', opening: false })]);
     expect((await api(app, await token('fiona')).get('/leave/adjustments')).body).toHaveLength(1);
     expect((await api(app, await token('oscar')).get(`/leave/adjustments?employeeId=${fiona}`)).body).toEqual([]);
   });
@@ -168,15 +174,13 @@ describe('leave upgrade', () => {
     expect((await api(app, f).post(`/leave/requests/${first.id}/modify`).send({ leaveTypeId: types.CL, startDate: day, endDate: plus(day, 1), reason: 'Two days after all' })).body.error.code).toBe('no_change');
     // Someone else in another department cannot change it.
     expect((await api(app, await token('oscar')).post(`/leave/requests/${first.id}/modify`).send({ leaveTypeId: types.CL, startDate: day, endDate: day })).status).toBe(404);
-    const lead = await token('lead');
-    const ok = await api(app, lead).post(`/approvals/${changed.body.approvalId}/approve`).send({});
+    const ok = await api(app, hr).post(`/approvals/${changed.body.approvalId}/approve`).send({});
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
     expect((await balances('fiona')).find((b) => b.code === 'CL')!.taken).toBe('2.00');
   });
 
   it('changes approved leave through a new request that replaces it only once approved', async () => {
     const f = await token('fiona');
-    const lead = await token('lead');
     const day = weekday(3, 1, 1);
     const original = ((await api(app, f).get('/leave/requests?scope=mine')).body as { id: string; status: string; startDate: string }[]).find((r) => r.startDate === day && r.status === 'approved')!;
     const change = await api(app, f).post(`/leave/requests/${original.id}/modify`).send({ leaveTypeId: types.CL, startDate: plus(day, 2), endDate: plus(day, 2) });
@@ -185,13 +189,13 @@ describe('leave upgrade', () => {
     expect((await api(app, f).get(`/leave/requests/${original.id}`)).body.status).toBe('approved');
     expect((await api(app, f).post(`/leave/requests/${original.id}/modify`).send({ leaveTypeId: types.CL, startDate: plus(day, 3), endDate: plus(day, 3) })).body.error.code).toBe('change_pending');
     // Rejected: the original stands.
-    expect((await api(app, lead).post(`/approvals/${change.body.approvalId}/reject`).send({ comment: 'Release week' })).status).toBe(200);
+    expect((await api(app, hr).post(`/approvals/${change.body.approvalId}/reject`).send({ comment: 'Release week' })).status).toBe(200);
     expect((await api(app, f).get(`/leave/requests/${original.id}`)).body.status).toBe('approved');
     expect((await balances('fiona')).find((b) => b.code === 'CL')!.taken).toBe('2.00');
     // Asked again and approved: the original is cancelled and its days given back.
     const again = await api(app, f).post(`/leave/requests/${original.id}/modify`).send({ leaveTypeId: types.CL, startDate: plus(day, 2), endDate: plus(day, 2) });
     expect(again.status, JSON.stringify(again.body)).toBe(201);
-    expect((await api(app, lead).post(`/approvals/${again.body.approvalId}/approve`).send({})).status).toBe(200);
+    expect((await api(app, hr).post(`/approvals/${again.body.approvalId}/approve`).send({})).status).toBe(200);
     expect((await api(app, f).get(`/leave/requests/${original.id}`)).body).toMatchObject({ status: 'cancelled', cancelReason: 'Replaced by an approved change' });
     expect((await api(app, f).get(`/leave/requests/${again.body.id}`)).body.status).toBe('approved');
     const kinds = (await pool.find('leave_ledger', { leave_request_id: original.id }, { sort: { created_at: 1 } })).map((l) => [l.kind, l.quantity]);
@@ -201,10 +205,9 @@ describe('leave upgrade', () => {
 
   it('withdraws a waiting change when the leave it changes is cancelled', async () => {
     const f = await token('fiona');
-    const lead = await token('lead');
     const day = weekday(4, 2, 2);
     const r = await api(app, f).post('/leave/requests').send({ leaveTypeId: types.CL, startDate: day, endDate: day });
-    await api(app, lead).post(`/approvals/${r.body.approvalId}/approve`).send({});
+    await api(app, hr).post(`/approvals/${r.body.approvalId}/approve`).send({});
     const change = await api(app, f).post(`/leave/requests/${r.body.id}/modify`).send({ leaveTypeId: types.CL, startDate: plus(day, 1), endDate: plus(day, 1) });
     expect(change.status).toBe(201);
     expect((await api(app, f).post(`/leave/requests/${r.body.id}/cancel`).send({ reason: 'Not travelling' })).status).toBe(201);
@@ -214,14 +217,13 @@ describe('leave upgrade', () => {
 
   it('counts approved work from home as present in attendance, not as leave', async () => {
     const f = await token('fiona');
-    const lead = await token('lead');
     // A recent past working day.
     const d = new Date();
     do d.setUTCDate(d.getUTCDate() - 1); while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
     const day = d.toISOString().slice(0, 10);
     const r = await api(app, f).post('/leave/requests').send({ leaveTypeId: types.WFH, startDate: day, endDate: day });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
-    expect((await api(app, lead).post(`/approvals/${r.body.approvalId}/approve`).send({})).status).toBe(200);
+    expect((await api(app, hr).post(`/approvals/${r.body.approvalId}/approve`).send({})).status).toBe(200);
     const att = await pool.one('attendance_days', { employee_id: people.fiona!.employeeId, work_date: day });
     expect(att?.status).toBe('present');
     // Work from home is not unpaid leave and keeps no balance.
