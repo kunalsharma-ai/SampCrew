@@ -28,14 +28,22 @@ describe('Console command center', () => {
   }
   const as = (role: string) => api(app, tokens[role]);
 
+  let savedSettings: Array<Record<string, unknown> & { id?: string }> = [];
   beforeAll(async () => {
     app = await createApp();
     pool = adminPool();
     for (const r of ['super_admin', 'admin', 'billing_ops', 'support', 'operations', 'viewer']) await signIn(r);
     tenant = await createTenant(pool);
     clientId = (await pool.platform((tx) => tx.collection<{ company_id: string }>('tenants').findOne({ id: tenant.id })))!.company_id;
+    savedSettings = await pool.platform((tx) => tx.collection<Record<string, unknown>>('platform_settings').find({}));
   });
   afterAll(async () => {
+    // Global settings changed here (default plan, trial days, support reply) must not reach later test files.
+    await pool.platform(async (tx) => {
+      const settings = tx.collection<Record<string, unknown>>('platform_settings');
+      await settings.delete({});
+      if (savedSettings.length) await settings.insertMany(savedSettings);
+    });
     await app.close();
     await pool.end();
   });
