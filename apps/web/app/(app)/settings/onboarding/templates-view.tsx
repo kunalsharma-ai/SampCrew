@@ -25,7 +25,7 @@ export function TemplatesView({ templates }: { templates: OnboardingTemplate[] }
             description={t.description ?? `${t.tasks.length} tasks`}
             action={<span className="flex gap-1">
               <Button size="sm" variant="ghost" onClick={() => setEditing(t)}>Edit</Button>
-              <Button size="sm" variant="ghost" disabled={pending} onClick={() => confirm(`Archive ${t.name}?`) && start(async () => { const r = await archiveTemplateAction(t.id); if (r.ok) router.refresh(); else setError(r.message); })}>Archive</Button>
+              <Button data-delete-area="people" data-delete={`checklist ${t.name}`} size="sm" variant="ghost" disabled={pending} onClick={() => confirm(`Archive ${t.name}?`) && start(async () => { const r = await archiveTemplateAction(t.id); if (r.ok) router.refresh(); else setError(r.message); })}>Archive</Button>
             </span>}
           />
           <ol className="divide-y divide-border">

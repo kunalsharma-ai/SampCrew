@@ -16,6 +16,7 @@
  * 10. The phone layout opens the menu and the Clients page without sideways scrolling.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 
 const CONSOLE = process.env.CONSOLE_URL ?? 'http://localhost:3001';

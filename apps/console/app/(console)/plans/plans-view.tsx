@@ -88,7 +88,7 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
                   <Button size="sm" variant="secondary" onClick={() => setBilling(p)} data-testid={`plan-edit-billing-${p.key}`}><Hourglass className="size-3.5" />Trial & overage</Button>
                   <Button size="sm" variant="secondary" onClick={() => setImpact(p)} data-testid={`plan-impact-${p.key}`}><BarChart3 className="size-3.5" />Impact</Button>
                   <Button size="sm" variant="secondary" onClick={() => setCopying(p)} data-testid={`plan-duplicate-${p.key}`}><Copy className="size-3.5" />Duplicate</Button>
-                  {!p.retiredAt && <Button size="sm" variant="ghost" disabled={pending} onClick={() => {
+                  {!p.retiredAt && <Button data-delete-area={p.archivedAt ? undefined : 'console'} data-delete={p.archivedAt ? undefined : `plan ${p.name} (archive)`} size="sm" variant="ghost" disabled={pending} onClick={() => {
                     if (!p.archivedAt && !confirm(`Stop offering ${p.name}? The ${p.tenants} workspace(s) on it keep it until they change plan, and open requests for it are declined.`)) return;
                     start(async () => { const r = await archivePlanAction(p.key, !p.archivedAt); done(r, r.ok ? r.data?.note : undefined); });
                   }} data-testid={`plan-archive-${p.key}`}>{p.archivedAt ? <><RotateCcw className="size-3.5" />Restore</> : <><Archive className="size-3.5" />Archive</>}</Button>}
@@ -477,7 +477,7 @@ function ImpactDialog({ plan, onClose, onDeleted }: { plan: PlatformPlan; onClos
     <Dialog open onClose={onClose} size="lg" title={`${plan.name}: impact`} description={impact ? PLAN_LIFECYCLE_LABEL[impact.lifecycle] : 'Loading…'}
       footer={<>
         {impact && !LAUNCH.has(plan.key) && (
-          <Button variant="danger" className="mr-auto" disabled={!impact.canDelete} loading={pending} title={impact.canDelete ? undefined : 'Retire or archive it instead'} data-testid="plan-delete" onClick={() => {
+          <Button data-delete-area="console" data-delete={`plan ${plan.name}`} variant="danger" className="mr-auto" disabled={!impact.canDelete} loading={pending} title={impact.canDelete ? undefined : 'Retire or archive it instead'} data-testid="plan-delete" onClick={() => {
             if (!confirm(`Delete ${plan.name}? This cannot be undone.`)) return;
             start(async () => { const r = await deletePlanAction(plan.key); if (!r.ok) { setError(r.message ?? 'Not deleted'); return; } onDeleted(`${plan.name} deleted.`); });
           }}><Trash2 className="size-3.5" />Delete plan</Button>

@@ -88,7 +88,7 @@ export function SkillCatalogue({ skills, canManage }: { skills: SkillCatalogueEn
                             () => setEdits(({ [s.id]: _, ...rest }) => rest),
                           )}><Save className="size-3.5" /> Save</Button>
                         )}
-                        <Button size="sm" variant="ghost" aria-label={`Remove ${s.name}`} disabled={pending} onClick={() => {
+                        <Button data-delete-area="people" data-delete={`skill ${s.name}`} size="sm" variant="ghost" aria-label={`Remove ${s.name}`} disabled={pending} onClick={() => {
                           if (confirm(`Remove “${s.name}”? It is taken off ${s.people} person(s) and ${s.requisitions} job(s).`)) run(() => deleteSkillAction(s.id));
                         }}><Trash2 className="size-3.5" /></Button>
                       </div>

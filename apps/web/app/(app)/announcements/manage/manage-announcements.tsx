@@ -51,9 +51,9 @@ export function ManageAnnouncements({ items, deleted }: { items: Announcement[];
                   {!deleted && a.status !== 'archived' && <Link className={buttonClass('ghost', 'sm')} href={`/announcements/manage/${a.id}/edit`}>Edit</Link>}
                   {a.status === 'draft' && <Button data-feature="announcements.publish" size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Publish "${a.title}" now and notify ${a.audienceLabel}?`) && run(() => publishAnnouncementAction(a.id))}>Publish</Button>}
                   {a.status === 'scheduled' && <Button size="sm" variant="ghost" loading={pending} onClick={() => run(() => unscheduleAnnouncementAction(a.id))}>Unschedule</Button>}
-                  {a.status === 'published' && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Take it off the feed? Read receipts are kept.') && run(() => archiveAnnouncementAction(a.id))}>Archive</Button>}
+                  {a.status === 'published' && <Button data-delete-area="communication" data-delete="announcement" size="sm" variant="ghost" loading={pending} onClick={() => confirm('Take it off the feed? Read receipts are kept.') && run(() => archiveAnnouncementAction(a.id))}>Archive</Button>}
                   {!deleted && (
-                    <Button size="sm" variant="ghost" loading={pending}
+                    <Button data-delete-area="communication" data-delete="announcement" size="sm" variant="ghost" loading={pending}
                       onClick={() => confirm(a.status === 'draft' || a.status === 'scheduled' ? 'Delete this announcement for good?' : 'Delete it? It leaves everyone\'s feed; its read receipts and acknowledgements are kept.') && run(() => deleteAnnouncementAction(a.id))}>Delete</Button>
                   )}
                 </TD>

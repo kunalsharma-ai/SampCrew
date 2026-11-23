@@ -18,6 +18,7 @@
  */
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { MongoClient } = require(require.resolve('mongodb', { paths: [path.join(__dirname, '../apps/api')] }));
 
 const WEB = process.env.WEB_URL ?? 'http://localhost:3000';

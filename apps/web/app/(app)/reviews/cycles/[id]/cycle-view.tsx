@@ -52,7 +52,7 @@ export function CycleView({ cycle, entities, departments }: { cycle: CycleDetail
             <div className="flex flex-wrap gap-2">
               {cycle.status === 'draft' && (
                 <>
-                  <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Delete this draft?') && run(() => deleteCycleAction(cycle.id), () => router.push('/reviews/cycles'))}>Delete</Button>
+                  <Button data-delete-area="performance" data-delete="draft review cycle" size="sm" variant="ghost" loading={pending} onClick={() => confirm('Delete this draft?') && run(() => deleteCycleAction(cycle.id), () => router.push('/reviews/cycles'))}>Delete</Button>
                   <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>Edit</Button>
                   <Button size="sm" loading={pending} onClick={() => confirm(`Launch for ${cycle.preview?.length ?? 0} people? They and their managers will be notified.`) && run(() => cycleStepAction(cycle.id, 'launch'))}>Launch cycle</Button>
                 </>

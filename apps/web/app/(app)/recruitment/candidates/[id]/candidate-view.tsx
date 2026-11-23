@@ -192,7 +192,7 @@ export function CandidateView({ detail, stages, people, openJobs, designations }
           <Card>
             <CardHeader title="Erase personal details" description="For a candidate who asks to be forgotten. Their name, contact details, files, notes and scorecard comments are removed for good. The anonymous pipeline history stays for reporting." />
             <CardBody>
-              <Button variant="danger" size="sm" loading={pending} onClick={() => {
+              <Button data-delete-area="recruitment" data-delete="candidate's personal details" variant="danger" size="sm" loading={pending} onClick={() => {
                 const reason = prompt('Why are you erasing this candidate? (for example: asked by email on 3 October)');
                 if (reason && reason.trim().length >= 3 && confirm('This cannot be undone. Erase now?')) run(() => eraseCandidateAction(c.id, reason.trim()));
               }}>Erase candidate</Button>

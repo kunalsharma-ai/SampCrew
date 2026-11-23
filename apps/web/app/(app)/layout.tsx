@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 import { DemoBanner } from '@crew/ui';
 import Link from 'next/link';
 import { loadOptional, loadSession } from '@/lib/api';
+import { DeletePasswordProvider } from '@/components/delete-guard';
 import { MfaStepUpProvider } from '@/components/mfa-step-up';
 import { LiveProvider } from '@/components/live';
 import { appearanceFromCookie } from '@/lib/appearance-cookie';
@@ -58,11 +59,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       )}
       <MfaStepUpProvider mfaEnabled={me.user.mfaEnabled}>
+        <DeletePasswordProvider>
         <LiveProvider initial={notifications ? { unread: notifications.unread, items: notifications.items } : null} byCategory={byCategory} prefs={notificationPrefs}>
         <Shell me={me} nav={visibleNav(me)} notifications={notifications} prefs={prefs} cookieAppearance={cookieAppearance} counts={counts} quick={quickActions(me)} workflows={workflowActions(me)}>
           {children}
         </Shell>
         </LiveProvider>
+        </DeletePasswordProvider>
       </MfaStepUpProvider>
     </>
   );

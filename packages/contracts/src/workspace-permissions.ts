@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CENTRAL_GROUP, EMPLOYEE_LEVEL_PERMISSIONS, HR_LEVEL_PERMISSIONS } from './attendance-overview';
+import { DELETE_AREA_LIST, deleteSwitchKey } from './delete-permissions';
 import { PERMISSIONS } from './permissions';
 import { SYSTEM_ROLES } from './roles';
 
@@ -41,6 +42,8 @@ export interface WorkspacePermissionItem {
   default: boolean;
   /** Always on: follows from the level itself. Shown, never switchable. */
   locked?: boolean;
+  /** A delete permission (delete-permissions.ts): the area it opens. Enforced by the delete check, not as a permission. */
+  deleteArea?: string;
 }
 
 export interface WorkspacePermissionCategory {
@@ -68,7 +71,7 @@ const HR_CURATED: WorkspacePermissionCategory[] = [
       item('employees.view', 'View employees', 'See the profiles of the people this HR Workspace looks after. An HR Workspace exists to look after its people, so this stays on.', ['employees:read'], { locked: true }),
       item('employees.create', 'Create employees', 'Add employee records (the hire form).', ['employees:create']),
       item('employees.edit', 'Edit employees', 'Change employee records.', ['employees:update']),
-      item('employees.delete', 'Delete or exit employees', 'Run exits, confirmations, promotions and transfers inside the HR Workspace.', ['employees:lifecycle']),
+      item('employees.delete', 'Exit, confirm, promote or transfer employees', 'Run exits, confirmations, promotions and transfers inside the HR Workspace. Deleting records is under Delete permissions.', ['employees:lifecycle']),
       item('employees.profiles', 'Manage employee profiles', 'Review the profile changes employees submit: approve, reject or ask for more.', ['profiles:review']),
       item('employees.sensitive', 'View bank, tax and ID details', 'Sensitive personal data (needs two-step verification).', ['employees:sensitive:read']),
       item('employees.import', 'Import employee data', 'Bring employees in from Excel or CSV and see the import history.', ['imports:run', 'imports:read']),
@@ -108,7 +111,6 @@ const HR_CURATED: WorkspacePermissionCategory[] = [
       item('departments.view', 'View departments', 'See departments, locations and legal entities. Many screens need them, so this stays on.', ['org:read'], { locked: true }),
       item('departments.create', 'Create departments', 'Add departments.', [], { routes: [{ method: 'POST', path: '/org/departments' }] }),
       item('departments.edit', 'Edit departments', 'Rename and move departments.', [], { routes: [{ method: 'PATCH', path: '/org/departments/*' }] }),
-      item('departments.delete', 'Delete departments', 'Remove departments nobody is in.', [], { routes: [{ method: 'DELETE', path: '/org/departments/*' }] }),
       item('organization.manage', 'Manage locations and legal entities', 'Add and change locations, business units and legal entities.', [], {
         routes: ['legal-entities', 'business-units', 'locations'].flatMap((r) => [{ method: 'POST' as const, path: `/org/${r}` }, { method: 'PATCH' as const, path: `/org/${r}/*` }, { method: 'DELETE' as const, path: `/org/${r}/*` }]),
       }),
@@ -143,6 +145,16 @@ const HR_CURATED: WorkspacePermissionCategory[] = [
     ],
   },
 ];
+
+/**
+ * Delete permissions: one switch per area, off until the Super Workspace switches it on. Without it the level has no
+ * delete option in that area and the API refuses; with it, every delete still asks for the person's own password.
+ */
+const deleteCategory = (level: 'hr' | 'employee'): WorkspacePermissionCategory => ({
+  key: 'delete_permissions', label: 'Delete permissions', feature: null,
+  description: `What ${level === 'hr' ? 'HR Workspace' : 'Employee Workspace'} people may delete. Off by default; every delete also asks for their password. Areas the Console Admin has not allowed for your company stay off.`,
+  items: DELETE_AREA_LIST.filter((a) => a.levels.includes(level)).map((a) => ({ key: deleteSwitchKey(a.key), label: `Delete: ${a.label}`, description: a.description, permissions: [], default: false, deleteArea: a.key })),
+});
 
 const EMPLOYEE_CURATED: WorkspacePermissionCategory[] = [
   {
@@ -212,7 +224,7 @@ let cache: Record<WorkspacePermissionLevel, WorkspacePermissionCategory[]> | nul
 
 /** The categories of a level, in page order. */
 export function workspacePermissionCategories(level: WorkspacePermissionLevel): readonly WorkspacePermissionCategory[] {
-  cache ??= { hr: build(HR_CURATED, 'hr_workspace'), employee: build(EMPLOYEE_CURATED, 'employee_workspace') };
+  cache ??= { hr: [...build(HR_CURATED, 'hr_workspace'), deleteCategory('hr')], employee: [...build(EMPLOYEE_CURATED, 'employee_workspace'), deleteCategory('employee')] };
   return cache[level];
 }
 
@@ -310,7 +322,11 @@ export interface WorkspacePermissionsView {
     key: string; label: string; description: string; feature: string | null;
     /** The module is off for this level (Console or Super Workspace): switches have no effect until it is on. */
     moduleOff: boolean;
-    items: { key: string; label: string; description: string; on: boolean; default: boolean; locked: boolean; enforced: 'permission' | 'route' | 'setting' | 'always' }[];
+    items: {
+      key: string; label: string; description: string; on: boolean; default: boolean; locked: boolean; enforced: 'permission' | 'route' | 'setting' | 'always' | 'delete';
+      /** Delete permissions only: the Console Admin has not allowed the company to delete in this area, so it stays off. */
+      blockedByConsole?: boolean;
+    }[];
   }[];
   groups: { id: string; name: string; level: WorkspacePermissionLevel }[];
   templates: { key: PermissionTemplateKey; label: string; permissions: Record<string, boolean> | null }[];

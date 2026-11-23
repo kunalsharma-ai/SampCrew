@@ -15,6 +15,7 @@
  * 5. Business gets its modules back.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 
 const CONSOLE = process.env.CONSOLE_URL ?? 'http://localhost:3001';

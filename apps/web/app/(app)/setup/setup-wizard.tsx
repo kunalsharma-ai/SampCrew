@@ -319,7 +319,7 @@ function StructureStep({ kind, existing, suggestions, onNext, onBack }: {
                       <span className="flex-1">{x.name}</span>
                       {x.detail && <span className="text-xs text-fg-subtle">{x.detail}</span>}
                       <Button size="sm" variant="ghost" aria-label={`Rename ${x.name}`} onClick={() => setEditing({ id: x.id, name: x.name })}><Pencil className="size-3.5" /></Button>
-                      <Button size="sm" variant="ghost" aria-label={`Remove ${x.name}`} disabled={pending} onClick={() => start(async () => {
+                      <Button data-delete-area="organization" data-delete={x.name} size="sm" variant="ghost" aria-label={`Remove ${x.name}`} disabled={pending} onClick={() => start(async () => {
                         const r = await removeAction(kind, x.id);
                         setMessage(r.ok ? { tone: 'success', text: `${x.name} removed.` } : { tone: 'danger', text: r.message });
                         router.refresh();

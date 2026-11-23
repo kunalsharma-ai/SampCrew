@@ -25,6 +25,7 @@
  */
 const { readFileSync } = require('node:fs');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const stub = require('./oidc-stub.cjs');
 

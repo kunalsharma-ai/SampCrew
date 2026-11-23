@@ -11,6 +11,7 @@
  * the recruiter cannot open billing. Uses Playwright and otplib from the workspace.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 const PASSWORD = process.env.CREW_DEMO_PASSWORD;
 if (!PASSWORD) throw new Error('Set CREW_DEMO_PASSWORD (source .env)');

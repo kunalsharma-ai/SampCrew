@@ -198,6 +198,7 @@ import { EntitlementsService } from './platform/entitlements/entitlements.servic
 import { OutboxService } from './platform/events/outbox.service';
 import { contextMiddleware } from './platform/http/context.middleware';
 import { ErrorEnvelopeFilter } from './platform/http/exception.filter';
+import { DeleteAuditInterceptor } from './platform/http/delete-audit.interceptor';
 import { IdempotencyInterceptor } from './platform/http/idempotency.interceptor';
 import { PlatformIntegrationsService } from './platform/integrations/platform-integrations.service';
 import { MailerService } from './platform/notify/mailer.service';
@@ -466,6 +467,7 @@ export const CONTROLLERS = [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: DeleteAuditInterceptor },
     { provide: APP_FILTER, useClass: ErrorEnvelopeFilter },
   ],
 })

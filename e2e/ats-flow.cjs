@@ -16,6 +16,7 @@
  */
 const fs = require('node:fs');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 const PASSWORD = process.env.CREW_DEMO_PASSWORD;

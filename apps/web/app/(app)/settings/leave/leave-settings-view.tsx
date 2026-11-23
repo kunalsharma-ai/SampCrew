@@ -89,7 +89,7 @@ function CalendarBlock({ c, run, onEdit }: { c: HolidayCalendar; run: Run; onEdi
         <span className="text-xs text-fg-subtle">{c.locationName ?? c.legalEntityName ?? 'Workspace'} · off: {c.weeklyOffs.map((d) => DAYS[d]).join(', ') || 'none'}</span>
         <span className="ml-auto flex gap-1">
           <Button size="sm" variant="ghost" onClick={onEdit}>Edit</Button>
-          {!c.isDefault && <Button size="sm" variant="ghost" onClick={() => confirm(`Delete ${c.name} and its holidays?`) && run(() => deleteCalendarAction(c.id))}>Delete</Button>}
+          {!c.isDefault && <Button data-delete-area="leave" data-delete={`holiday calendar ${c.name}`} size="sm" variant="ghost" onClick={() => confirm(`Delete ${c.name} and its holidays?`) && run(() => deleteCalendarAction(c.id))}>Delete</Button>}
         </span>
       </div>
       <ul className="divide-y divide-border">
@@ -97,7 +97,7 @@ function CalendarBlock({ c, run, onEdit }: { c: HolidayCalendar; run: Run; onEdi
           <li key={h.id} className="flex items-center gap-3 px-4 py-2 text-sm">
             <span className="w-28 tabular-nums text-fg-muted">{h.date}</span>
             <span className="flex-1">{h.name}{h.isOptional && <Badge className="ml-2">Optional</Badge>}</span>
-            <button className="text-fg-subtle hover:text-danger" aria-label={`Remove ${h.name}`} onClick={() => run(() => removeHolidayAction(c.id, h.id))}><Trash2 className="size-4" /></button>
+            <button data-delete-area="leave" data-delete={`holiday ${h.name}`} className="text-fg-subtle hover:text-danger" aria-label={`Remove ${h.name}`} onClick={() => run(() => removeHolidayAction(c.id, h.id))}><Trash2 className="size-4" /></button>
           </li>
         ))}
         {!shown.length && <li className="px-4 py-3 text-sm text-fg-subtle">No upcoming holidays.</li>}

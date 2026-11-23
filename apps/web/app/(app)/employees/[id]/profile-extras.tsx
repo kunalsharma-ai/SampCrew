@@ -64,7 +64,7 @@ export function PhotoAvatar({ e, size = 56 }: { e: EmployeeProfile; size?: numbe
         <span className="mt-1 flex gap-2 text-[0.6875rem] font-normal">
           <button type="button" className="text-accent hover:underline" disabled={pending} onClick={() => input.current?.click()}>{src ? 'Change' : 'Add photo'}</button>
           {src && (
-            <button
+            <button data-delete-area="people" data-delete="profile photo"
               type="button"
               className="text-fg-subtle hover:text-danger"
               disabled={pending}

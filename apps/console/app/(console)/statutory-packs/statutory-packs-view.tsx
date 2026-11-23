@@ -110,7 +110,7 @@ export function StatutoryPacksView({ packs: listed, canManage }: { packs: Statut
               <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
                 <Button loading={pending} onClick={save}>Save pack</Button>
                 {current?.builtIn && current.customisedAt && <Button variant="secondary" loading={pending} onClick={reset}>Reset to SampCrew&apos;s values</Button>}
-                {current && !current.builtIn && <Button variant="ghost" loading={pending} onClick={remove}>Remove pack</Button>}
+                {current && !current.builtIn && <Button data-delete-area="console" data-delete={`${current.country} payroll pack`} variant="ghost" loading={pending} onClick={remove}>Remove pack</Button>}
                 <Button variant="ghost" onClick={() => { setDraft(null); setIsNew(false); }}>Close</Button>
               </div>
             )}

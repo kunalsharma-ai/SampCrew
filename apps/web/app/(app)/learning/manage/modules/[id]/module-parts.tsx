@@ -23,7 +23,7 @@ export function ModuleActions({ module: m }: { module: ModuleDetail }) {
       <div className="flex flex-wrap gap-2">
         {canPublish && <Button size="sm" onClick={() => setPublishOpen(true)} data-testid="publish-module"><Send className="size-4" aria-hidden />{m.status === 'published' ? 'Publish changes' : 'Publish'}</Button>}
         {m.status === 'scheduled' && <Button size="sm" variant="secondary" loading={pending} onClick={() => run(() => unscheduleModuleAction(m.id))}>Back to draft</Button>}
-        {m.status !== 'archived' ? <Button size="sm" variant="ghost" onClick={() => setArchiveOpen(true)}><Archive className="size-4" aria-hidden />Archive</Button>
+        {m.status !== 'archived' ? <Button data-delete-area="learning" size="sm" variant="ghost" onClick={() => setArchiveOpen(true)}><Archive className="size-4" aria-hidden />Archive</Button>
           : <Button size="sm" variant="secondary" loading={pending} onClick={() => run(() => archiveModuleAction(m.id, true))}><RotateCcw className="size-4" aria-hidden />Restore</Button>}
       </div>
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
@@ -47,7 +47,7 @@ export function ModuleActions({ module: m }: { module: ModuleDetail }) {
         </div>
       </Dialog>
       <Dialog open={archiveOpen} onClose={() => setArchiveOpen(false)} title="Archive this module?" description="Nobody new can be enrolled. People keep their records and can finish what they started. You can restore it later."
-        footer={<><Button variant="secondary" onClick={() => setArchiveOpen(false)}>Cancel</Button><Button variant="danger" loading={pending} onClick={() => run(() => archiveModuleAction(m.id, false), () => setArchiveOpen(false))}>Archive</Button></>}>
+        footer={<><Button variant="secondary" onClick={() => setArchiveOpen(false)}>Cancel</Button><Button data-delete-area="learning" data-delete="learning module" variant="danger" loading={pending} onClick={() => run(() => archiveModuleAction(m.id, false), () => setArchiveOpen(false))}>Archive</Button></>}>
         <p className="text-[0.8125rem] text-fg-muted">{m.assigned} enrolment{m.assigned === 1 ? '' : 's'} stay on record.</p>
       </Dialog>
     </div>

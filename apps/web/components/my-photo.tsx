@@ -39,7 +39,7 @@ export function MyPhoto({ employee, name }: { employee: { id: string; photoUpdat
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="secondary" loading={pending} onClick={() => input.current?.click()}><Camera className="size-3.5" /> {src ? 'Change photo' : 'Upload photo'}</Button>
               {src && (
-                <Button size="sm" variant="ghost" disabled={pending} onClick={() => start(async () => {
+                <Button data-delete-area="people" data-delete="your profile photo" size="sm" variant="ghost" disabled={pending} onClick={() => start(async () => {
                   const r = await removePhotoAction(employee.id);
                   setMsg(r.ok ? { tone: 'success', text: 'Your photo is removed.' } : { tone: 'danger', text: r.message });
                   router.refresh();

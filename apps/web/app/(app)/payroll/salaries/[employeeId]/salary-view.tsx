@@ -52,7 +52,7 @@ export function SalaryView({ employeeId, revisions, structures, canEdit, statuto
             <CardHeader
               title={<span className="flex items-center gap-2">{amount(r.annualCtc, r.currency)} a year {i === 0 && <Badge tone="success">Latest</Badge>}</span>}
               description={`From ${r.effectiveFrom} · ${r.structureName}${r.createdBy ? ` · saved by ${r.createdBy}` : ''}`}
-              action={canEdit && !r.usedByPayroll && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Remove this revision? Only possible because payroll has not used it.') && run(() => removeSalaryAction(employeeId, r.id))}>Remove</Button>}
+              action={canEdit && !r.usedByPayroll && <Button data-delete-area="payroll" data-delete="salary revision" size="sm" variant="ghost" loading={pending} onClick={() => confirm('Remove this revision? Only possible because payroll has not used it.') && run(() => removeSalaryAction(employeeId, r.id))}>Remove</Button>}
             />
             <Table>
               <THead><tr><TH>Component</TH><TH className="text-right">Monthly</TH><TH className="text-right">Yearly</TH></tr></THead>

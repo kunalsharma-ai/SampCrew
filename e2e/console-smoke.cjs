@@ -14,6 +14,7 @@
  * disables and re-enables them and resets their two-step verification, and changes their own password.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 
 const CONSOLE = process.env.CONSOLE_URL ?? 'http://localhost:3001';

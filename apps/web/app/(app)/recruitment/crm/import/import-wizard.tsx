@@ -218,7 +218,7 @@ export function ImportWizard({ ctx, history }: { ctx: CrmContext; history: Impor
         <Card>
           <CardHeader title="Saved mappings" description="Mappings saved for this workspace." />
           <ul className="divide-y divide-border">
-            {up.templates.map((t) => <li key={t.id} className="flex items-center justify-between px-5 py-2.5 text-[0.8125rem]"><span>{t.name}</span><Button size="sm" variant="ghost" onClick={() => call(() => deleteTemplateAction(t.id), () => setUp({ ...up, templates: up.templates.filter((x) => x.id !== t.id) }))}>Delete</Button></li>)}
+            {up.templates.map((t) => <li key={t.id} className="flex items-center justify-between px-5 py-2.5 text-[0.8125rem]"><span>{t.name}</span><Button data-delete-area="recruitment" data-delete={`import mapping ${t.name}`} size="sm" variant="ghost" onClick={() => call(() => deleteTemplateAction(t.id), () => setUp({ ...up, templates: up.templates.filter((x) => x.id !== t.id) }))}>Delete</Button></li>)}
           </ul>
         </Card>
       )}

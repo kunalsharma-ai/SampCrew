@@ -39,7 +39,7 @@ export function RecruitmentSettingsView({ stages, site }: { stages: Stage[]; sit
                       {!fixed && idx > 1 && <Button size="sm" variant="ghost" aria-label={`Move ${s.name} up`} disabled={pending} onClick={() => move(idx, -1)}><ArrowUp className="size-3.5" /></Button>}
                       {!fixed && idx < stages.length - 2 && <Button size="sm" variant="ghost" aria-label={`Move ${s.name} down`} disabled={pending} onClick={() => move(idx, 1)}><ArrowDown className="size-3.5" /></Button>}
                       <Button size="sm" variant="ghost" onClick={() => setDialog(s)}>Rename</Button>
-                      {!fixed && <Button size="sm" variant="ghost" disabled={pending} onClick={() => confirm(`Remove ${s.name}? Move its candidates to another stage first.`) && run(() => archiveStageAction(s.id))}>Remove</Button>}
+                      {!fixed && <Button data-delete-area="recruitment" data-delete={`stage ${s.name}`} size="sm" variant="ghost" disabled={pending} onClick={() => confirm(`Remove ${s.name}? Move its candidates to another stage first.`) && run(() => archiveStageAction(s.id))}>Remove</Button>}
                     </div>
                   </TD>
                 </TR>

@@ -1,5 +1,5 @@
 import {
-  DEFAULT_IN_STATUTORY, leaveApprovalRules, leaveEligibility, leaveMath, leaveTypePolicy, legacyCourseBlocks, payrollEngine, startingStatutory,
+  DEFAULT_IN_STATUTORY, DELETE_AREA_LIST, deleteSwitchKey, leaveApprovalRules, leaveEligibility, leaveMath, leaveTypePolicy, legacyCourseBlocks, payrollEngine, startingStatutory,
 } from '@crew/contracts';
 import type { ClientSession, Db, MongoClient } from 'mongodb';
 import { appendAuditEvent, applyAccessLevelsMongo, linkAuditChain, provisionTenantMongo, Table, type Row } from '../src/mongo';
@@ -155,6 +155,15 @@ async function seed(db: Db, session: ClientSession, passwordHash: string): Promi
   // The demo people are written with the roles of the time before the four access levels, then moved the same way
   // every existing workspace was: so the demo also shows the migration's result.
   await applyAccessLevelsMongo(unscoped);
+  // The demo's Super Workspace has given HR Workspace and Employee Workspace delete permission in every area they can
+  // have it (a new workspace starts with none), so the demo shows deleting with a password. Every delete still asks
+  // for the person's password; Settings > Workspace Permissions > Delete permissions switches them off.
+  for (const [subjectType, subjectId, level] of [['hr_workspace', 'central', 'hr'], ['employee_workspace', 'all', 'employee']] as const) {
+    const permissions = Object.fromEntries(DELETE_AREA_LIST.filter((a) => (a.levels as readonly string[]).includes(level)).map((a) => [deleteSwitchKey(a.key), true]));
+    const existing = await ws.findOne('level_permissions', { subject_type: subjectType, subject_id: subjectId });
+    if (existing) await ws.set('level_permissions', { id: existing.id }, { permissions: { ...(existing.permissions as Row), ...permissions } });
+    else await ws.insert('level_permissions', { subject_type: subjectType, subject_id: subjectId, permissions, scope_hr_workspace_ids: null });
+  }
 
   await appendAuditEvent(db, session, {
     tenant_id: tid, actor_type: 'system', actor_id: null, actor_label: 'demo seed', action: 'tenant.created', resource_type: 'tenant', resource_id: tid,

@@ -237,7 +237,7 @@ export function SsoView({ sso, scim, groups, roles, tested, failure }: { sso: Ss
                 )}
                 {c.status === 'active' && c.enforced && <Button variant="secondary" disabled={pending} onClick={() => run(() => ssoStatusAction('active', false))}>Allow passwords again</Button>}
                 {c.status === 'active' && <Button variant="ghost" disabled={pending} onClick={() => run(() => ssoStatusAction('disabled', false))}>Switch off</Button>}
-                <Button variant="danger" disabled={pending} onClick={() => { if (confirm('Remove the connection? Single sign-on stops and the email domains are released.')) run(() => removeSsoAction()); }}>Remove</Button>
+                <Button data-delete-area="settings" data-delete="single sign-on connection" variant="danger" disabled={pending} onClick={() => { if (confirm('Remove the connection? Single sign-on stops and the email domains are released.')) run(() => removeSsoAction()); }}>Remove</Button>
               </div>
               {!c.verifiedAt && <p className="text-xs text-fg-subtle">Switching on needs a passing test sign-in first.</p>}
               <p className="text-xs text-fg-subtle">The SampCrew mobile app signs in through the same provider: people choose “Sign in with single sign-on” in the app.</p>

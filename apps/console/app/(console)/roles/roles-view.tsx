@@ -68,7 +68,7 @@ function RoleDialog({ role, onClose }: { role: ConsoleRole | null; onClose: () =
   return (
     <Dialog open onClose={onClose} size="lg" title={role ? `Edit ${role.name}` : 'New role'} description={role?.system ? 'A built-in role: you can change its permissions; it cannot be archived.' : 'A custom role. Give it only what the job needs.'}
       footer={<>
-        {role && !role.system && <Button variant="ghost" className="mr-auto" disabled={role.admins > 0} title={role.admins > 0 ? 'Move its admins to another role first' : undefined} onClick={() => start(async () => { const r = await archiveRoleAction(role.key); if (!r.ok) { setError(r.message ?? 'Not archived'); return; } onClose(); router.refresh(); })}>Archive role</Button>}
+        {role && !role.system && <Button data-delete-area="console" data-delete={`role ${role.name}`} variant="ghost" className="mr-auto" disabled={role.admins > 0} title={role.admins > 0 ? 'Move its admins to another role first' : undefined} onClick={() => start(async () => { const r = await archiveRoleAction(role.key); if (!r.ok) { setError(r.message ?? 'Not archived'); return; } onClose(); router.refresh(); })}>Archive role</Button>}
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button disabled={name.trim().length < 2} loading={pending} data-testid="role-save" onClick={() => start(async () => {
           const r = await saveRoleAction(role?.key ?? null, { name: name.trim(), description: description.trim(), permissions: perms });

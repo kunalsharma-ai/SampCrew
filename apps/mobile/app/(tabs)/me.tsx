@@ -2,6 +2,7 @@ import { buildTheme, DEFAULT_APPEARANCE, designLevelOf, presetChoices, THEME_TEM
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, View } from 'react-native';
+import { ApiError } from '../../src/lib/api';
 import { useAppearance } from '../../src/lib/appearance';
 import { biometricEnabled, biometricSupport, type BiometricSupport, setBiometric } from '../../src/lib/biometric';
 import { pickPhoto, uploadPhoto } from '../../src/lib/photo';
@@ -62,7 +63,8 @@ export default function Me() {
       await refreshMe();
       setMsg({ tone: 'ok', text: 'Your photo is removed.' });
     } catch (e) {
-      setMsg({ tone: 'danger', text: errorText(e) });
+      // Cancelling the password sheet deletes nothing and is not an error.
+      if (!(e instanceof ApiError && e.code === 'delete_cancelled')) setMsg({ tone: 'danger', text: errorText(e) });
     } finally {
       setBusy(null);
     }
@@ -117,7 +119,7 @@ export default function Me() {
           <Text muted size={13}>Shown on your profile and to your colleagues. PNG, JPEG or WebP, up to 5 MB.</Text>
           <Button title={photo ? 'Change photo' : 'Choose a photo'} kind="secondary" busy={busy === 'photo'} onPress={() => void changePhoto('library')} testID="photo-choose" />
           {Platform.OS !== 'web' && <Button title="Take a photo" kind="secondary" disabled={!!busy} onPress={() => void changePhoto('camera')} testID="photo-camera" />}
-          {employee.photoUpdatedAt && <Button title="Remove photo" kind="danger" busy={busy === 'photo-remove'} onPress={() => void removePhoto()} testID="photo-remove" />}
+          {employee.photoUpdatedAt && (me?.deleteAreas ?? []).includes('people') && <Button title="Remove photo" kind="danger" busy={busy === 'photo-remove'} onPress={() => void removePhoto()} testID="photo-remove" />}
         </Card>
       )}
 

@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import {
+  DELETE_AREA_LIST,
+  type DeleteRightsInput,
+  type DeleteRightsView,
   BOOLEAN_FEATURES,
   FEATURE_PARTS,
   featurePart,
@@ -94,6 +97,42 @@ export class AccessControlsService {
     });
     await this.recalculate(tenantId);
     return this.delegation(tenantId);
+  }
+
+  /**
+   * Console > Features & permissions > Delete permissions: the areas the company (its Super Workspace and everyone
+   * below it) may delete in. All are allowed until the Console switches one off; HR and Employee Workspace get only what
+   * the Super Workspace gives them on top, never more than this.
+   */
+  async deleteRights(tenantId: string): Promise<DeleteRightsView> {
+    return this.db.platform(async (tx) => {
+      await this.requireTenant(tx, tenantId);
+      const row = await tx.collection('tenant_access_controls').findOne({ tenant_id: tenantId });
+      const off = new Set((row?.delete_areas_off ?? []) as string[]);
+      return {
+        areas: DELETE_AREA_LIST.map((a) => ({ key: a.key, label: a.label, description: a.description, allowed: !off.has(a.key) })),
+        updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : null,
+      };
+    });
+  }
+
+  async setDeleteRights(tenantId: string, input: DeleteRightsInput): Promise<DeleteRightsView> {
+    await this.db.platform(async (tx) => {
+      await this.requireTenant(tx, tenantId);
+      await this.ensureRow(tx, tenantId);
+      const controls = tx.collection('tenant_access_controls');
+      const row = await controls.findOne({ tenant_id: tenantId });
+      const before = ((row?.delete_areas_off ?? []) as string[]).slice().sort();
+      const after = [...new Set(input.areasOff)].sort();
+      if (JSON.stringify(before) === JSON.stringify(after)) return;
+      const adminId = requestContext.get()?.actor?.kind === 'platform_admin' ? (requestContext.get()!.actor as { adminId: string }).adminId : null;
+      await controls.updateOne({ tenant_id: tenantId }, { $set: { delete_areas_off: after, updated_by_admin_id: adminId } });
+      await this.record(tx, tenantId, 'access.delete_rights_changed', 'tenant', tenantId, {
+        deleteAreasOff: { from: before, to: after }, ...(input.reason ? { reason: input.reason } : {}),
+      });
+    });
+    await this.recalculate(tenantId);
+    return this.deleteRights(tenantId);
   }
 
   async workspace(tenantId: string): Promise<WorkspaceAccess> {

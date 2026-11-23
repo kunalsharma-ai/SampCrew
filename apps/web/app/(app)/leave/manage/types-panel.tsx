@@ -75,7 +75,7 @@ export function TypesPanel({ types, options, isSuper, canCreate, canVisibility }
                       {isSuper && <Button size="sm" variant="ghost" onClick={() => setRules(t)}><SlidersHorizontal className="size-3.5" /> Rules</Button>}
                       {t.canManage && <Button size="sm" variant="ghost" onClick={() => setStatus(t)}>{t.active ? 'Turn off' : 'Turn on'}</Button>}
                       {isSuper && !t.used && (
-                        <Button size="sm" variant="ghost" onClick={() => { if (confirm(`Remove ${t.name}? Nobody has applied for it yet.`)) run(() => deleteLeaveTypeAction(t.id), () => `${t.name} removed`); }}>Remove</Button>
+                        <Button data-delete-area="leave" data-delete={`leave type ${t.name}`} size="sm" variant="ghost" onClick={() => { if (confirm(`Remove ${t.name}? Nobody has applied for it yet.`)) run(() => deleteLeaveTypeAction(t.id), () => `${t.name} removed`); }}>Remove</Button>
                       )}
                     </div>
                   </TD>

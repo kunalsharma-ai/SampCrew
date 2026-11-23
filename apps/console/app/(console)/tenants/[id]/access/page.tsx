@@ -1,4 +1,4 @@
-import { type MemberAccessRow, type WorkspaceAccess } from '@crew/contracts';
+import { type DeleteRightsView, type MemberAccessRow, type WorkspaceAccess } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -15,13 +15,14 @@ const PAGE_SIZE = 25;
 export default async function AccessPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; q?: string; page?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
-  const tab: AccessTab = sp.tab === 'permissions' || sp.tab === 'people' || sp.tab === 'apps' ? sp.tab : 'modules';
+  const tab: AccessTab = sp.tab === 'permissions' || sp.tab === 'people' || sp.tab === 'apps' || sp.tab === 'delete' ? sp.tab : 'modules';
   const [me, t, access] = await Promise.all([
     load<Admin>('/platform/auth/me'),
     load<TenantDetail>(`/platform/tenants/${id}`),
     load<WorkspaceAccess>(`/platform/tenants/${id}/access`),
   ]);
   const canManage = hasCap(me, 'access:manage');
+  const deleteRights = tab === 'delete' ? await load<DeleteRightsView>(`/platform/tenants/${id}/access/delete-rights`) : null;
   const page = Math.max(1, Number(sp.page) || 1);
   const q = (sp.q ?? '').slice(0, 100);
   const members = tab === 'people' && canManage
@@ -35,7 +36,7 @@ export default async function AccessPage({ params, searchParams }: { params: Pro
         description="Switch SampCrew modules, the Web Portal and the mobile app, and permissions active or inactive for this workspace, and choose which modules each person may use. The API enforces every switch, and the web and mobile apps hide what is off."
       />
       <WorkspaceTabs tenantId={id} current="access" caps={capsOf(me)} />
-      <AccessView tenantId={id} tab={tab} access={access} members={members} page={page} pageSize={PAGE_SIZE} q={q} canManage={canManage} />
+      <AccessView tenantId={id} tab={tab} access={access} members={members} page={page} pageSize={PAGE_SIZE} q={q} canManage={canManage} deleteRights={deleteRights} />
     </>
   );
 }

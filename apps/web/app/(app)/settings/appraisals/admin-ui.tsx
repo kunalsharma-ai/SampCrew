@@ -54,9 +54,9 @@ export function FormRowActions({ form }: { form: AppraisalForm }) {
   return (
     <div className="flex flex-wrap justify-end gap-2">
       <Button size="sm" variant="ghost" loading={pending} onClick={() => run(() => duplicateFormAction(form.id))}>Copy</Button>
-      <Button size="sm" variant="ghost" onClick={() => setAsk(true)}>Remove</Button>
+      <Button data-delete-area="performance" size="sm" variant="ghost" onClick={() => setAsk(true)}>Remove</Button>
       {notice?.tone === 'danger' && <span role="alert" className="basis-full text-right text-xs text-danger">{notice.text}</span>}
-      <Dialog open={ask} onClose={() => setAsk(false)} title={`Remove ${form.name}?`} footer={<><Button variant="secondary" onClick={() => setAsk(false)}>Back</Button><Button variant="danger" loading={pending} onClick={() => run(() => archiveFormAction(form.id), () => setAsk(false))}>Remove form</Button></>}>
+      <Dialog open={ask} onClose={() => setAsk(false)} title={`Remove ${form.name}?`} footer={<><Button variant="secondary" onClick={() => setAsk(false)}>Back</Button><Button data-delete-area="performance" data-delete={`appraisal form ${form.name}`} variant="danger" loading={pending} onClick={() => run(() => archiveFormAction(form.id), () => setAsk(false))}>Remove form</Button></>}>
         <p className="text-sm text-fg-muted">Appraisals already started keep their own copy of the form. A form that a draft or active cycle uses cannot be removed.</p>
       </Dialog>
     </div>

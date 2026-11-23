@@ -90,7 +90,7 @@ export function OrgView(props: Props) {
     canManage && (
       <div className="flex justify-end gap-1">
         <Button variant="ghost" size="sm" onClick={() => setEditing({ id, initial: row as Record<string, unknown> })} aria-label={`Edit ${name}`}><Pencil className="size-3.5" /></Button>
-        <Button variant="ghost" size="sm" disabled={pending} onClick={() => archive(id, name)} aria-label={`Archive ${name}`}><Archive className="size-3.5" /></Button>
+        <Button data-delete-area="organization" data-delete={name} variant="ghost" size="sm" disabled={pending} onClick={() => archive(id, name)} aria-label={`Archive ${name}`}><Archive className="size-3.5" /></Button>
       </div>
     );
 

@@ -28,7 +28,6 @@ describe('notifications and approvals', () => {
 
   beforeAll(async () => {
     app = await createApp();
-    await new Promise<void>((resolve) => app.getHttpServer().listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
     svc = app.get(NotificationService);
     pool = adminPool();

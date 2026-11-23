@@ -11,6 +11,7 @@
  * roughly a third to a half of accessibility problems; keyboard and screen reader passes by people are still needed.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { createReadStream, existsSync, readFileSync, statSync, writeFileSync } = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');

@@ -17,6 +17,7 @@
  * Fails on any browser error.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const { createReadStream, existsSync, readFileSync, statSync } = require('node:fs');
 const http = require('node:http');

@@ -64,7 +64,7 @@ export function HelpContentManager({ data, insights, tab }: { data: ManageData; 
 
 function Confirm({ open, title, body, onClose, onConfirm, pending }: { open: boolean; title: string; body: string; onClose: () => void; onConfirm: () => void; pending: boolean }) {
   return (
-    <Dialog open={open} onClose={onClose} title={title} size="sm" footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="danger" onClick={onConfirm} loading={pending} data-testid="confirm-delete">Delete</Button></>}>
+    <Dialog open={open} onClose={onClose} title={title} size="sm" footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button data-delete-area="console" data-delete={title.replace(/^Delete (this )?|\?$/g, '')} variant="danger" onClick={onConfirm} loading={pending} data-testid="confirm-delete">Delete</Button></>}>
       <p className="text-sm text-fg-muted">{body}</p>
     </Dialog>
   );

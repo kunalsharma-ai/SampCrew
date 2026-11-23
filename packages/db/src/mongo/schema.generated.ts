@@ -6225,6 +6225,8 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       admin_id: {"required": true, "type": "uuid"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Password-confirmed deletion in the Console: until when this session may run one delete.
+      delete_confirmed_until: {"type": "timestamp"},
       expires_at: {"required": true, "type": "timestamp"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       ip: {"type": "string"},
@@ -6943,6 +6945,8 @@ export const TABLES: Record<string, TableSpec> = {
     columns: {
       client: {"default": "web", "enum": ["web", "mobile", "api"], "required": true, "type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Password-confirmed deletion: until when this session may run one delete (set by POST /me/delete-confirmation).
+      delete_confirmed_until: {"type": "timestamp"},
       expires_at: {"required": true, "type": "timestamp"},
       family_id: {"required": true, "type": "uuid"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
@@ -7757,6 +7761,8 @@ export const TABLES: Record<string, TableSpec> = {
     access: "tenant", grants: ["select"],
     columns: {
       device_vendors_disabled: {"default": {"json": []}, "required": true, "type": "string[]"},
+      // Console: delete areas (contracts delete-permissions.ts) the company may not delete in, at any level.
+      delete_areas_off: {"default": {"json": []}, "required": true, "type": "string[]"},
       disabled_permissions: {"default": {"json": []}, "required": true, "type": "string[]"},
       // Console: modules the company holds but may not pass down to its HR Workspaces (kept at company level).
       non_delegable_features: {"default": {"json": []}, "required": true, "type": "string[]"},

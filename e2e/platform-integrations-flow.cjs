@@ -19,6 +19,7 @@
 const http = require('node:http');
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const { SMTPServer } = require(require.resolve('smtp-server', { paths: [path.join(__dirname, '../apps/api')] }));
 

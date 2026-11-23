@@ -9,6 +9,7 @@ import { appRoute } from '../src/lib/format';
 import { configureForeground } from '../src/lib/push';
 import { AppearanceProvider, useAppearanceTheme } from '../src/lib/appearance';
 import { BadgesProvider } from '../src/lib/badges';
+import { DeletePasswordHost } from '../src/ui/delete-password';
 import { MobileAppProvider } from '../src/lib/mobile-app';
 import { API_URL, SessionProvider, useSession } from '../src/lib/session';
 import { hostOf } from '../src/lib/startup';
@@ -152,6 +153,7 @@ export default function RootLayout() {
             <BadgesProvider>
               <ThemedStatusBar />
               <Gate />
+              <DeletePasswordHost />
             </BadgesProvider>
           </MobileAppProvider>
         </AppearanceProvider>

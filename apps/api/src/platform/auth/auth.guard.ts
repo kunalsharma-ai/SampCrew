@@ -1,6 +1,6 @@
 import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { API_KEY_PREFIX, partForApiPath, PLATFORM_ROLE_CAPABILITIES } from '@crew/contracts';
+import { API_KEY_PREFIX, CONSOLE_DELETE_ACTIONS, CONSOLE_DELETE_PERMISSION, DELETE_AREA_INFO, deleteActionFor, partForApiPath, PLATFORM_ROLE_CAPABILITIES, WORKSPACE_DELETE_ACTIONS, type DeleteAction, type DeleteArea } from '@crew/contracts';
 import { recordMobileUsage, requireMobileRoute } from '../entitlements/mobile-access';
 import type { Request } from 'express';
 import { AuditService } from '../audit/audit.service';
@@ -75,7 +75,7 @@ export class AuthGuard implements CanActivate {
     const allowWithoutMfa = this.meta<boolean>(ALLOW_WITHOUT_MFA_KEY, ctx) ?? false;
 
     const realm = this.meta<{ realm: 'platform' | 'scim'; capability?: string }>(REALM_KEY, ctx);
-    if (realm?.realm === 'platform') return this.platform(token, realm.capability, allowWithoutMfa, this.meta<boolean>(ALLOW_PENDING_PASSWORD_KEY, ctx) ?? false);
+    if (realm?.realm === 'platform') return this.platform(req, token, realm.capability, allowWithoutMfa, this.meta<boolean>(ALLOW_PENDING_PASSWORD_KEY, ctx) ?? false);
     if (realm?.realm === 'scim') return this.scim(token);
     if (token.startsWith(API_KEY_PREFIX)) return this.apiKey(token, req, ctx);
 
@@ -134,7 +134,55 @@ export class AuthGuard implements CanActivate {
       }
     }
     await this.requireRouteOn(req);
+    const del = deleteActionFor(WORKSPACE_DELETE_ACTIONS, apiPath(req), req.method, req.body);
+    if (del) await this.requireDelete(req, del);
     return true;
+  }
+
+  /**
+   * Password-confirmed, permission-gated deletion (contracts delete-permissions.ts). Runs last, after every other
+   * check, so a refused request never uses up the typed password:
+   *  1. the level above must have given the person's level this delete area (Console > Super Workspace > HR and
+   *     Employee Workspace), else delete_not_permitted, audited as delete.denied;
+   *  2. the session must hold a password confirmation from the last two minutes, which this delete uses up, else
+   *     delete_password_required (the apps then ask for the password and send the delete again).
+   * The delete is audited once it has run (DeleteAuditInterceptor).
+   */
+  private async requireDelete(req: Request, action: DeleteAction) {
+    const s = await this.authz.subject();
+    const area = DELETE_AREA_INFO[action.area as DeleteArea];
+    if (!s.deleteAreas?.has(action.area)) {
+      const isSuper = s.grants.some((g) => g.roleKey === 'super_workspace');
+      const isHr = s.grants.some((g) => g.roleKey === 'hr_workspace');
+      const message = isSuper
+        ? `Console Admin has not allowed your Super Workspace to delete ${area.label.toLowerCase()}.`
+        : `Your Super Workspace has not given ${isHr ? 'HR Workspace' : 'Employee Workspace'} permission to delete ${area.label.toLowerCase()}. Ask your Super Workspace to switch it on in Settings > Workspace Permissions.`;
+      await this.db.tenant((tx) => this.audit.record(tx, {
+        action: 'delete.denied', resourceType: 'delete_area', resourceId: null,
+        metadata: { area: action.area, what: action.label, reason: 'not_permitted', method: req.method, route: req.route?.path ?? req.path, level: isSuper ? 'super' : isHr ? 'hr' : 'employee' },
+      })).catch(() => undefined);
+      throw Errors.deleteNotPermitted(message);
+    }
+    const actor = requestContext.tenantActor();
+    if (actor.apiKey) throw Errors.deleteNotPermitted('Deleting needs a person to confirm with their password, so API keys cannot delete.');
+    const used = await this.db.platform((tx) => tx.collection('sessions').updateOne(
+      { id: actor.sessionId, delete_confirmed_until: { $gt: new Date() } }, { $set: { delete_confirmed_until: null } },
+    ));
+    if (!used) throw Errors.deletePasswordRequired(action.label);
+    (req as Request & { crewDelete?: unknown }).crewDelete = { realm: 'workspace', area: action.area, label: action.label };
+  }
+
+  /** The Console: deleting needs records:delete and the admin's password, typed just before (one delete each). */
+  private async requireConsoleDelete(req: Request, action: DeleteAction, permissions: readonly string[], sessionId: string) {
+    if (!permissions.includes(CONSOLE_DELETE_PERMISSION)) {
+      await this.db.platform((tx) => this.audit.record(tx, { tenantId: null, action: 'delete.denied', resourceType: 'delete_area', resourceId: null, metadata: { what: action.label, reason: 'not_permitted', method: req.method, route: req.route?.path ?? req.path } })).catch(() => undefined);
+      throw Errors.deleteNotPermitted('Your Console role does not include Delete records. Ask a Super Admin to add it in Roles & permissions.');
+    }
+    const used = await this.db.platform((tx) => tx.collection('platform_sessions').updateOne(
+      { id: sessionId, delete_confirmed_until: { $gt: new Date() } }, { $set: { delete_confirmed_until: null } },
+    ));
+    if (!used) throw Errors.deletePasswordRequired(action.label);
+    (req as Request & { crewDelete?: unknown }).crewDelete = { realm: 'console', area: action.area, label: action.label };
   }
 
   /** Settings > Workspace Permissions: a route switched off for the person's level is refused, also when called directly. */
@@ -168,6 +216,8 @@ export class AuthGuard implements CanActivate {
     await this.requirePart(req);
     await this.authz.require(permission);
     await this.requireRouteOn(req);
+    const del = deleteActionFor(WORKSPACE_DELETE_ACTIONS, apiPath(req), req.method, req.body);
+    if (del) await this.requireDelete(req, del);
     return true;
   }
 
@@ -200,7 +250,7 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 
-  private async platform(token: string, capability: string | undefined, allowWithoutMfa: boolean, allowPendingPassword: boolean): Promise<boolean> {
+  private async platform(req: Request, token: string, capability: string | undefined, allowWithoutMfa: boolean, allowPendingPassword: boolean): Promise<boolean> {
     const claims = await this.tokens.verifyPlatform(token).catch(() => {
       throw Errors.unauthorized('Your console session has expired. Sign in again.');
     });
@@ -227,6 +277,8 @@ export class AuthGuard implements CanActivate {
       await this.db.platform((tx) => this.audit.record(tx, { tenantId: null, action: 'platform.permission_denied', resourceType: 'permission', resourceId: capability, metadata: { role: row.role } })).catch(() => undefined);
       throw Errors.forbidden();
     }
+    const del = deleteActionFor(CONSOLE_DELETE_ACTIONS, apiPath(req), req.method, req.body);
+    if (del) await this.requireConsoleDelete(req, del, row.permissions, claims.sid);
     return true;
   }
 }

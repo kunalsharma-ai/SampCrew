@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import type { ActionResult } from '@/lib/api';
 import { mfaEnableAction, mfaSetupAction, mfaStepUpAction } from '@/app/(app)/settings/actions';
+import { DELETE_PASSWORD_REQUIRED } from '@crew/contracts';
+import { DeletePasswordContext } from './delete-guard';
 
 /**
  * Some actions (billing, payroll settings, roles, sensitive records) need a session verified with an authenticator
@@ -137,12 +139,15 @@ export function MfaStepUpProvider({ mfaEnabled, children }: { mfaEnabled: boolea
  */
 export function useMfaRetry() {
   const ask = useContext(MfaContext);
+  const askDelete = useContext(DeletePasswordContext);
   return useCallback(
     async <T extends { ok: boolean; code?: string }>(fn: () => Promise<T>): Promise<T> => {
-      const r = await fn();
-      if (r.ok || r.code !== 'mfa_required' || !ask) return r;
-      return (await ask()) ? fn() : r;
+      let r = await fn();
+      if (!r.ok && r.code === 'mfa_required' && ask) r = (await ask()) ? await fn() : r;
+      // A delete sent without the password (delete-guard.tsx): ask for it and send the delete again.
+      if (!r.ok && r.code === DELETE_PASSWORD_REQUIRED && askDelete) r = (await askDelete('this item')) ? await fn() : r;
+      return r;
     },
-    [ask],
+    [ask, askDelete],
   );
 }

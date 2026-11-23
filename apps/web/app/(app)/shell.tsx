@@ -1,5 +1,5 @@
 'use client';
-import { DEFAULT_APPEARANCE, FEATURE_ACTION_KEYS, NOTIFICATION_NAV, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
+import { DEFAULT_APPEARANCE, DELETE_AREAS, FEATURE_ACTION_KEYS, NOTIFICATION_NAV, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
 import { AutoHelp, Avatar, Badge, CrewLogo, Dialog, HelpProvider, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronDown, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
@@ -221,7 +221,12 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
 
   // Feature management, buttons: a button switched off at any level (Console, Super Workspace, HR Workspace) leaves
   // every page it is on. The server refuses its request too; this only keeps it out of sight.
-  const hiddenActions = useMemo(() => FEATURE_ACTION_KEYS.filter((k) => !me.features.includes(k)).map((k) => `[data-feature="${k}"]`).join(','), [me.features]);
+  // Delete permissions: delete buttons of areas the level above has not given this person leave every page (the API
+  // refuses those deletes too). Every other delete asks for the password first (DeletePasswordProvider).
+  const hiddenActions = useMemo(() => [
+    ...FEATURE_ACTION_KEYS.filter((k) => !me.features.includes(k)).map((k) => `[data-feature="${k}"]`),
+    ...DELETE_AREAS.filter((a) => !(me.deleteAreas ?? []).includes(a)).map((a) => `[data-delete-area="${a}"]`),
+  ].join(','), [me.features, me.deleteAreas]);
 
   const sidebar = (rail: boolean) => <Sidebar me={me} nav={nav} counts={counts} unread={unreadByHref} rail={rail} pathname={pathname} allHrefs={allHrefs} onCollapse={() => void update({ sidebar: rail ? 'expanded' : 'collapsed' })} />;
 

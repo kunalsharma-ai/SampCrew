@@ -78,7 +78,7 @@ export function CatalogueView({ courses, paths }: { courses: Course[]; paths: Le
                     {!c.archivedAt && (
                       <>
                         <Button size="sm" variant="ghost" onClick={() => setCourse(c)}>Edit</Button>
-                        <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Archive this course? People keep their records; nobody new can be assigned.') && run(() => archiveCourseAction(c.id))}>Archive</Button>
+                        <Button data-delete-area="learning" data-delete="course" size="sm" variant="ghost" loading={pending} onClick={() => confirm('Archive this course? People keep their records; nobody new can be assigned.') && run(() => archiveCourseAction(c.id))}>Archive</Button>
                       </>
                     )}
                   </TD>
@@ -100,7 +100,7 @@ export function CatalogueView({ courses, paths }: { courses: Course[]; paths: Le
                   <div className="text-xs text-fg-muted">{p.courses.map((c) => c.title).join(' → ')}</div>
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => setPath(p)}>Edit</Button>
-                <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Archive this path?') && run(() => archivePathAction(p.id))}>Archive</Button>
+                <Button data-delete-area="learning" data-delete="learning path" size="sm" variant="ghost" loading={pending} onClick={() => confirm('Archive this path?') && run(() => archivePathAction(p.id))}>Archive</Button>
               </li>
             ))}
           </ul>

@@ -134,7 +134,7 @@ export function CompanySignatureView({ settings, people, agents, banners }: { se
             <CardBody className="flex flex-wrap items-center gap-3">
               {logoSrc ? <img src={logoSrc} alt="Company signature logo" className="max-h-14 max-w-48 rounded border border-border bg-white p-1" /> : <span className="text-[0.8125rem] text-fg-muted">No logo yet.</span>}
               <Button size="sm" variant="secondary" loading={pending} onClick={() => input.current?.click()}><ImageUp className="size-3.5" /> {logoSrc ? 'Change logo' : 'Upload logo'}</Button>
-              {logoSrc && <Button size="sm" variant="ghost" disabled={pending} onClick={() => start(async () => {
+              {logoSrc && <Button data-delete-area="documents" data-delete="signature logo" size="sm" variant="ghost" disabled={pending} onClick={() => start(async () => {
                 const r = await removeSignatureLogoAction();
                 setMsg(r.ok ? { tone: 'success', text: r.message! } : { tone: 'danger', text: r.message });
                 router.refresh();
@@ -173,7 +173,7 @@ export function CompanySignatureView({ settings, people, agents, banners }: { se
                             <li key={a.id} className="flex items-center gap-2">
                               <span>{a.name}{a.computerName ? ` (${a.computerName})` : ''}</span>
                               {a.lastError ? <Badge tone="danger">Failed</Badge> : !a.lastAppliedAt ? <Badge tone="neutral">Waiting</Badge> : null}
-                              <Button size="sm" variant="ghost" aria-label={`Disconnect ${a.name} for ${p.name}`} disabled={pending} onClick={() => start(async () => {
+                              <Button data-delete-area="documents" data-delete={`Outlook add-in ${a.name}`} size="sm" variant="ghost" aria-label={`Disconnect ${a.name} for ${p.name}`} disabled={pending} onClick={() => start(async () => {
                                 const r = await adminRevokeComputerAction(a.id);
                                 setMsg(r.ok ? { tone: 'success', text: r.message! } : { tone: 'danger', text: r.message });
                                 router.refresh();

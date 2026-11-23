@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Header, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
+  deleteConfirmationInput,
   acceptInviteRequest,
   changePasswordRequest,
   loginRequest,
@@ -263,6 +264,14 @@ export class MeController {
   @Doc({ summary: 'Verify this session with a 6-digit authenticator code (step-up); returns an MFA-verified session', body: mfaEnableRequest })
   mfaStepUp(@Body(new ZodPipe(mfaEnableRequest)) body: z.infer<typeof mfaEnableRequest>) {
     return this.auth.mfaStepUp(body.code);
+  }
+
+  @Post('delete-confirmation')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Doc({ summary: 'Confirm a delete with your own password: this session may then run one delete in the next two minutes. Wrong passwords count toward the account lock.', body: deleteConfirmationInput })
+  confirmDelete(@Body(new ZodPipe(deleteConfirmationInput)) body: z.infer<typeof deleteConfirmationInput>) {
+    return this.auth.confirmDelete(body.password);
   }
 
   @Post('password')

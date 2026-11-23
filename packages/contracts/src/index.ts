@@ -93,3 +93,4 @@ export * from './candidate-crm';
 export * from './help';
 export * from './workspace-permissions';
 export * from './console';
+export * from './delete-permissions';

@@ -16,6 +16,7 @@
  *    "Paused by SAMPLEDGE"), resumes it, then switches the Hikvision integration off and on again.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 
 const CONSOLE = process.env.CONSOLE_URL ?? 'http://localhost:3001';

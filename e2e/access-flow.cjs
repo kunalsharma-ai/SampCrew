@@ -16,6 +16,7 @@
  * 5. Everything is switched back (reset to plan, activate all, allow all) and the recruiter has the modules again.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 
 const CONSOLE = process.env.CONSOLE_URL ?? 'http://localhost:3001';

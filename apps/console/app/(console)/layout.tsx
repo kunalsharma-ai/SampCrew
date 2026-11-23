@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation';
-import type { ConsoleAlerts, ConsoleNotificationSummary, ConsoleSettings } from '@crew/contracts';
+import { CONSOLE_DELETE_PERMISSION, type ConsoleAlerts, type ConsoleNotificationSummary, type ConsoleSettings } from '@crew/contracts';
+import { DeletePasswordProvider } from '@crew/ui';
 import { api, load } from '@/lib/api';
 import { hasCap } from '@/lib/caps';
 import type { Admin } from '@/lib/types';
+import { confirmDeleteAction } from './delete-actions';
 import { Shell, type NavGroup } from './shell';
 
 /**
@@ -68,5 +70,12 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     label: g.label,
     items: g.items.filter((n) => !n.cap || hasCap(me, n.cap)).map(({ cap: _c, ...n }) => (n.href === '/support' && support?.unread ? { ...n, badge: support.unread } : n.href === '/help-queries' && help?.waiting ? { ...n, badge: help.waiting } : n)),
   })).filter((g) => g.items.length);
-  return <Shell me={me} nav={nav} alerts={alerts} summary={summary} live={hasCap(me, 'support:chat')} branding={settings?.branding ?? null}>{children}</Shell>;
+  // Password-confirmed deletion: delete buttons (data-delete-area="console") are hidden without "Delete records", and
+  // every delete asks for the admin's own password first (the API refuses both cases too).
+  return (
+    <DeletePasswordProvider confirm={confirmDeleteAction}>
+      {!hasCap(me, CONSOLE_DELETE_PERMISSION) && <style>{'[data-delete-area="console"]{display:none!important}'}</style>}
+      <Shell me={me} nav={nav} alerts={alerts} summary={summary} live={hasCap(me, 'support:chat')} branding={settings?.branding ?? null}>{children}</Shell>
+    </DeletePasswordProvider>
+  );
 }

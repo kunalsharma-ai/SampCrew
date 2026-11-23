@@ -143,6 +143,13 @@ export async function switchAppsAction(id: string, body: { web?: boolean; mobile
   return r;
 }
 
+/** Delete permissions of a company: the areas its Super Workspace (and every level below it) may delete in. */
+export async function setDeleteRightsAction(id: string, areasOff: string[]) {
+  const r = await act(() => api(`/platform/tenants/${id}/access/delete-rights`, { method: 'PUT', body: { areasOff } }), 'Delete permissions saved.');
+  revalidatePath(`/tenants/${id}/access`);
+  return r;
+}
+
 export async function memberAction(id: string, membershipId: string, action: string, reason: string) {
   const r = await act(() => api<{ sessionsEnded?: number; inviteUrl?: string; temporaryPassword?: string }>(`/platform/tenants/${id}/users/${membershipId}/actions`, { method: 'POST', body: { action, reason } }));
   revalidatePath(`/tenants/${id}/users`);

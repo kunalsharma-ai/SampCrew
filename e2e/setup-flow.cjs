@@ -18,6 +18,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const { deletePassword } = require('./delete-password.cjs');
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 
 const ok = (m) => console.log(`ok - ${m}`);
@@ -38,6 +39,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   const adminPassword = 'Setup-Admin-Pass-2026!';
   const ctx = await b.newContext({ viewport: { width: 1360, height: 900 } });
   const admin = await ctx.newPage();
+  deletePassword(admin, adminPassword);
   watch(admin, 'admin');
   try {
     // 1. Sign up.
@@ -146,6 +148,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
       await emp.waitForURL((u) => u.pathname === '/', { timeout: 15000 });
     };
     await chooseOwn(temp, 'Ravi-Own-Password-2026');
+    deletePassword(emp, 'Ravi-Own-Password-2026');
     ok('the employee signed in with the temporary password and had to choose their own first');
 
     // A regular employee's menu leaves out the organization pages; their own record and sign-in sit behind their avatar.
@@ -177,8 +180,18 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await mine.getByLabel('Choose your photo').setInputFiles(shot2);
     await mine.getByText('Your photo is saved').waitFor({ timeout: 15000 });
     await emp.waitForFunction((before) => [...document.querySelectorAll('[data-testid="account-menu-header"] img')].some((i) => i.getAttribute('src') !== before), topBefore, { timeout: 15000 });
+    // A new workspace gives Employee Workspace no delete permission: no Remove until the Super Workspace allows it.
+    expect((await mine.getByRole('button', { name: 'Remove' }).isVisible()) === false, 'Employee Workspace can remove its photo before the Super Workspace allowed deletes');
+    await admin.goto(BASE + '/settings/workspace-permissions?level=employee');
+    const delCat = admin.getByTestId('perm-category-delete_permissions');
+    if (!(await delCat.getByTestId('perm-switch-delete.people').count())) await delCat.getByRole('button', { name: /Delete permissions/ }).first().click();
+    await delCat.getByTestId('perm-switch-delete.people').click();
+    await admin.getByTestId('perm-save').click();
+    await admin.getByText('Permissions saved').waitFor();
+    await emp.reload();
     await mine.getByRole('button', { name: 'Remove' }).click();
     await mine.getByText('Your photo is removed').waitFor();
+    ok('the employee could remove their photo only after the Super Workspace switched on the delete permission, and confirmed with their password');
     await mine.getByRole('button', { name: 'Upload photo' }).waitFor();
     expect((await emp.locator('[data-testid="account-menu-header"] img').count()) === 0, 'the top bar still shows a removed photo');
     await mine.getByLabel('Choose your photo').setInputFiles(shot2);

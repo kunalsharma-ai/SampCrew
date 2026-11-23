@@ -63,6 +63,7 @@ export const CONSOLE_PERMISSIONS: readonly ConsolePermission[] = [
   { key: 'admins:manage', area: 'security', label: 'Console admins', description: 'Add, disable and reset Console admins.' },
   { key: 'roles:manage', area: 'security', label: 'Roles and permissions', description: 'Create custom Console roles and change what each role can do.', needs: 'admins:manage' },
   { key: 'security:manage', area: 'security', label: 'Sessions and security', description: 'See every admin\'s sign-ins and sessions and sign them out.' },
+  { key: 'records:delete', area: 'security', label: 'Delete records', description: 'Delete or archive in the Console: client companies, plans, Console roles, help content, payroll country packs and integration keys (each also needs its own manage permission). Every delete asks for the admin\'s password.' },
 ];
 
 export const CONSOLE_PERMISSION_KEYS = CONSOLE_PERMISSIONS.map((p) => p.key);
@@ -87,7 +88,7 @@ export const CONSOLE_SYSTEM_ROLES: readonly ConsoleSystemRole[] = [
   },
   {
     key: 'billing_ops', name: 'Finance Admin', description: 'Revenue, subscriptions, invoices, refunds, plans and financial reports.',
-    permissions: ['tenants:read', 'billing:read', 'billing:manage', 'billing:refund', 'plans:manage', 'reports:read', 'reports:export'],
+    permissions: ['tenants:read', 'billing:read', 'billing:manage', 'billing:refund', 'plans:manage', 'reports:read', 'reports:export', 'records:delete'],
   },
   {
     key: 'support', name: 'Support Admin', description: 'Client conversations, tickets and support access; reads companies, users and health.',
@@ -95,7 +96,7 @@ export const CONSOLE_SYSTEM_ROLES: readonly ConsoleSystemRole[] = [
   },
   {
     key: 'operations', name: 'Operations Admin', description: 'Companies, workspaces, access, onboarding, country packs and system health.',
-    permissions: ['tenants:read', 'tenants:manage', 'users:read', 'access:manage', 'health:read', 'statutory:manage', 'audit:read', 'reports:read'],
+    permissions: ['tenants:read', 'tenants:manage', 'users:read', 'access:manage', 'health:read', 'statutory:manage', 'audit:read', 'reports:read', 'records:delete'],
   },
   { key: 'viewer', name: 'Read Only Admin', description: 'Sees companies, billing, reports and health; changes nothing.', permissions: ['tenants:read', 'billing:read', 'health:read', 'reports:read'] },
 ];

@@ -247,7 +247,7 @@ function Thread({ d, me }: { d: ConversationDetail; me: string }) {
                       <span suppressHydrationWarning>{time(m.createdAt)}</span>
                       {mine && <Delivery m={m} />}
                       {mine && !m.deleted && (
-                        <button className="opacity-0 transition group-hover:opacity-100 focus:opacity-100" aria-label="Delete message" onClick={() => start(async () => { const r = await deleteMessageAction(c.id, m.id); if (!r.ok) setError(r.message); router.refresh(); })}><Trash2 className="size-3" /></button>
+                        <button data-delete-area="communication" data-delete="chat message" className="opacity-0 transition group-hover:opacity-100 focus:opacity-100" aria-label="Delete message" onClick={() => start(async () => { const r = await deleteMessageAction(c.id, m.id); if (!r.ok) setError(r.message); router.refresh(); })}><Trash2 className="size-3" /></button>
                       )}
                     </span>
                   </div>

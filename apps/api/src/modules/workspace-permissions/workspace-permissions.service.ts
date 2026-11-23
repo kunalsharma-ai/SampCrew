@@ -101,6 +101,8 @@ export class WorkspacePermissionsService {
           key: k, label: PERMISSION_TEMPLATE_LABEL[k], permissions: await templateSwitches(tx, level, { template: k }),
         })))
         : [];
+      // Delete areas the Console Admin has not allowed for the company: shown off, and never in effect.
+      const consoleDeleteOff = new Set(((await tx.collection('tenant_access_controls').findOne({}))?.delete_areas_off ?? []) as string[]);
       const by = row?.updated_by_membership_id ? (await membershipUserNames(tx, [row.updated_by_membership_id])).get(row.updated_by_membership_id) ?? null : null;
       return {
         level, groupId: group,
@@ -110,7 +112,8 @@ export class WorkspacePermissionsService {
           key: c.key, label: c.label, description: c.description, feature: c.feature, moduleOff: !has(c.feature),
           items: c.items.map((i) => ({
             key: i.key, label: i.label, description: i.description, on: workspacePermissionOn(i, row?.permissions), default: i.default, locked: Boolean(i.locked),
-            enforced: i.locked ? 'always' as const : i.permissions.length ? 'permission' as const : i.routes?.length ? 'route' as const : 'setting' as const,
+            enforced: i.locked ? 'always' as const : i.deleteArea ? 'delete' as const : i.permissions.length ? 'permission' as const : i.routes?.length ? 'route' as const : 'setting' as const,
+            ...(i.deleteArea ? { blockedByConsole: consoleDeleteOff.has(i.deleteArea) } : {}),
           })),
         })),
         groups: [...hrGroups.map((g) => ({ ...g, level: 'hr' as const })), ...(allowed === 'all' ? [{ id: 'all', name: 'All Employee Workspaces', level: 'employee' as const }] : [])],

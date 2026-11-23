@@ -70,8 +70,8 @@ export function FieldsView({ fields, roles, history, entity }: { fields: FieldRo
                     <Button size="sm" variant="ghost" aria-label={`Move ${f.label} up`} disabled={i === 0 || pending} onClick={() => move(i, -1)}><ArrowUp className="size-3.5" aria-hidden /></Button>
                     <Button size="sm" variant="ghost" aria-label={`Move ${f.label} down`} disabled={i === active.length - 1 || pending} onClick={() => move(i, 1)}><ArrowDown className="size-3.5" aria-hidden /></Button>
                     <Button size="sm" variant="ghost" onClick={() => setEditing(f)}>Edit</Button>
-                    <Button size="sm" variant="ghost" loading={pending} onClick={() => start(async () => say(await archiveFieldAction(f.id, true)))}>Archive</Button>
-                    {!f.valueCount && <Button size="sm" variant="ghost" aria-label={`Delete ${f.label}`} onClick={() => start(async () => say(await deleteFieldAction(f.id)))}><Trash2 className="size-3.5" aria-hidden /></Button>}
+                    <Button data-delete-area="people" data-delete={`custom field ${f.label}`} size="sm" variant="ghost" loading={pending} onClick={() => start(async () => say(await archiveFieldAction(f.id, true)))}>Archive</Button>
+                    {!f.valueCount && <Button data-delete-area="people" data-delete={`custom field ${f.label}`} size="sm" variant="ghost" aria-label={`Delete ${f.label}`} onClick={() => start(async () => say(await deleteFieldAction(f.id)))}><Trash2 className="size-3.5" aria-hidden /></Button>}
                   </TD>
                 </TR>
               ))}

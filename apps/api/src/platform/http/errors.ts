@@ -17,6 +17,10 @@ export const Errors = {
   /** A refusal with its own code (for example exceeds_parent), so screens can explain it. */
   forbiddenCode: (code: string, message: string, details?: unknown) => new AppError(HttpStatus.FORBIDDEN, code, message, details),
   forbidden: (message = 'You do not have permission to do that') => new AppError(HttpStatus.FORBIDDEN, 'forbidden', message),
+  /** A delete needs the person's password, typed just before it (POST /me/delete-confirmation), and was sent without it. */
+  deletePasswordRequired: (what: string) => new AppError(HttpStatus.FORBIDDEN, 'delete_password_required', `Enter your password to delete this (${what}).`),
+  /** The level above has not given this person permission to delete in this area. */
+  deleteNotPermitted: (message: string) => new AppError(HttpStatus.FORBIDDEN, 'delete_not_permitted', message),
   mfaRequired: () => new AppError(HttpStatus.FORBIDDEN, 'mfa_required', 'This action needs multi-factor authentication. Verify with your authenticator app and try again.'),
   passwordChangeRequired: () => new AppError(HttpStatus.FORBIDDEN, 'password_change_required', 'Choose a new password before you continue. Yours was set by another admin.'),
   featureSwitchedOff: (feature: string) => new AppError(HttpStatus.FORBIDDEN, 'feature_disabled', `${feature} is switched off for this workspace by SAMPLEDGE.`, { feature }),

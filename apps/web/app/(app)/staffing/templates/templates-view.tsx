@@ -29,7 +29,7 @@ export function TemplatesView({ templates }: { templates: BidTemplate[] }) {
               <p className="mt-3 line-clamp-3 whitespace-pre-line text-sm text-fg-muted">{t.coverNote || 'No cover note.'}</p>
               {!t.isDefault && (
                 <div className="mt-3 flex justify-end">
-                  <Button size="sm" variant="ghost" loading={pending} onClick={() => start(async () => { const r = await archiveTemplateAction(t.id); setMsg(r.ok ? { tone: 'success', text: `${t.name} archived` } : { tone: 'danger', text: r.message }); router.refresh(); })}>Archive</Button>
+                  <Button data-delete-area="recruitment" data-delete={`template ${t.name}`} size="sm" variant="ghost" loading={pending} onClick={() => start(async () => { const r = await archiveTemplateAction(t.id); setMsg(r.ok ? { tone: 'success', text: `${t.name} archived` } : { tone: 'danger', text: r.message }); router.refresh(); })}>Archive</Button>
                 </div>
               )}
             </Card>

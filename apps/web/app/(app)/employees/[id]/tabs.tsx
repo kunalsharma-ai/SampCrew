@@ -488,7 +488,7 @@ export function DocumentsTab({ e, documents, requests, catalogue }: { e: Employe
         {error && <div className="px-5"><Alert tone="danger">{error}</Alert></div>}
         <DocumentTable rows={documents} filterable empty={e.isSelf ? 'Documents you upload or are asked for appear here.' : 'Documents uploaded to this profile appear here.'}
           rowAction={e.can.manageDocuments ? (d) => (
-            <button className="text-xs text-fg-subtle hover:text-danger" disabled={pending} onClick={() => {
+            <button data-delete-area="documents" data-delete={`document ${d.title}`} className="text-xs text-fg-subtle hover:text-danger" disabled={pending} onClick={() => {
               if (!confirm(`Archive "${d.title}"? The file is kept for records but hidden from the profile.`)) return;
               start(async () => { const r = await archiveDocumentAction(e.id, d.id); if (r.ok) router.refresh(); else setError(r.message); });
             }}>Archive</button>

@@ -8,6 +8,7 @@
  * real deployment set SMOKE_STRICT_TLS=1 and the certificates must be valid.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const https = require('node:https');
 
 const WEB = process.env.WEB_URL;

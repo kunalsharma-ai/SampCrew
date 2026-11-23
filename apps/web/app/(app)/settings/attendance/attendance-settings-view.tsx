@@ -87,7 +87,7 @@ function ShiftsCard({ shifts, run }: Props & { run: Run }) {
                 <TD>{s.overtimeEnabled ? `From ${hm(s.overtimeMinMinutes)}` : 'Not counted'}</TD>
                 <TD className="whitespace-nowrap text-right">
                   <Button size="sm" variant="ghost" onClick={() => setEditing(s)}>Edit</Button>
-                  <Button size="sm" variant="ghost" onClick={() => confirm(`Archive ${s.name}? Days already worked keep it; it can no longer be assigned.`) && run(() => archiveShiftAction(s.id))}>Archive</Button>
+                  <Button data-delete-area="attendance" data-delete={`shift ${s.name}`} size="sm" variant="ghost" onClick={() => confirm(`Archive ${s.name}? Days already worked keep it; it can no longer be assigned.`) && run(() => archiveShiftAction(s.id))}>Archive</Button>
                 </TD>
               </TR>
             ))}
@@ -149,7 +149,7 @@ function PoliciesCard({ policies, shifts, locations, run }: Props & { run: Run }
               <TD>{p.correctionWindowDays} days</TD>
               <TD className="whitespace-nowrap text-right">
                 <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>Edit</Button>
-                {p.locationId && <Button size="sm" variant="ghost" onClick={() => confirm(`Remove the override for ${p.locationName}?`) && run(() => removePolicyAction(p.locationId!))}>Remove</Button>}
+                {p.locationId && <Button data-delete-area="attendance" data-delete={`attendance rules for ${p.locationName}`} size="sm" variant="ghost" onClick={() => confirm(`Remove the override for ${p.locationName}?`) && run(() => removePolicyAction(p.locationId!))}>Remove</Button>}
               </TD>
             </TR>
           ))}

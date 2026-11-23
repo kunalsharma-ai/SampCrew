@@ -22,6 +22,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 
 const API = (process.env.CREW_API_URL ?? 'http://localhost:4000') + '/api/v1';
 const PORT = Number(process.env.MOBILE_PORT ?? 8081);

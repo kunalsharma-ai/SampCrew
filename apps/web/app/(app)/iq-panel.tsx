@@ -98,7 +98,7 @@ export function IqPanel({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="mb-3 flex items-center gap-2">
             <button type="button" onClick={() => setHistory(null)} className="inline-flex items-center gap-1 text-[0.8125rem] text-accent hover:underline"><ArrowLeft className="size-3.5" /> Back</button>
             <span className="flex-1" />
-            {history.length > 0 && <button type="button" onClick={() => forget(null)} className="text-xs text-danger hover:underline">Delete all</button>}
+            {history.length > 0 && <button data-delete-area="personal" data-delete="all your AI conversations" type="button" onClick={() => forget(null)} className="text-xs text-danger hover:underline">Delete all</button>}
           </div>
           {history.length ? (
             <ul className="grid gap-1.5">
@@ -108,7 +108,7 @@ export function IqPanel({ open, onClose }: { open: boolean; onClose: () => void 
                     <span className="block font-medium">{c.title}</span>
                     <span className="text-xs text-fg-subtle">{c.questions} question{c.questions === 1 ? '' : 's'} · {new Date(c.updatedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                   </button>
-                  <button type="button" onClick={() => forget(c.id)} className="p-2 text-fg-subtle hover:text-danger" aria-label={`Delete “${c.title}”`}><Trash2 className="size-3.5" /></button>
+                  <button data-delete-area="personal" data-delete={`conversation ${c.title}`} type="button" onClick={() => forget(c.id)} className="p-2 text-fg-subtle hover:text-danger" aria-label={`Delete “${c.title}”`}><Trash2 className="size-3.5" /></button>
                 </li>
               ))}
             </ul>

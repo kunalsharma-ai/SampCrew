@@ -24,7 +24,8 @@ export function PermissionsEditor({ view, canEdit }: { view: WorkspacePermission
   const [template, setTemplate] = useState<string | undefined>(undefined);
   const [open, setOpen] = useState<Set<string>>(() => new Set(view.categories.slice(0, 2).map((c) => c.key)));
   const [q, setQ] = useState('');
-  const editable = (i: Item) => canEdit && !i.locked;
+  // A delete area the Console Admin has not allowed the company stays off (the API would refuse it anyway).
+  const editable = (i: Item) => canEdit && !i.locked && !i.blockedByConsole;
   const all = view.categories.flatMap((c) => c.items);
   const dirty = all.some((i) => on[i.key] !== initial[i.key]);
   const match = (c: Category, i: Item) => !q || `${c.label} ${i.label} ${i.description}`.toLowerCase().includes(q.toLowerCase());
@@ -120,6 +121,7 @@ export function PermissionsEditor({ view, canEdit }: { view: WorkspacePermission
                 </span>
               </button>
               {c.moduleOff && <Badge tone="warning">Module off above: these have no effect</Badge>}
+              {c.key === 'delete_permissions' && <Badge tone="danger">Every delete asks for the person's password</Badge>}
               {canEdit && (
                 <span className="flex gap-1">
                   <Button size="sm" variant="ghost" onClick={() => setMany(c.items, true)}>Select all</Button>
@@ -132,7 +134,7 @@ export function PermissionsEditor({ view, canEdit }: { view: WorkspacePermission
                 {c.items.map((i) => (
                   <li key={i.key} className="flex items-center gap-3 px-4 py-2.5" data-testid={`perm-item-${i.key}`}>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 text-sm">{i.label}{i.locked && <Lock className="size-3.5 text-fg-subtle" aria-label="Always on" />}{on[i.key] !== initial[i.key] && <Badge tone="accent">Changed</Badge>}</div>
+                      <div className="flex items-center gap-2 text-sm">{i.label}{i.locked && <Lock className="size-3.5 text-fg-subtle" aria-label="Always on" />}{i.blockedByConsole && <Badge tone="warning">Not allowed by Console Admin</Badge>}{on[i.key] !== initial[i.key] && <Badge tone="accent">Changed</Badge>}</div>
                       <div className="text-xs text-fg-muted">{i.description}</div>
                     </div>
                     <Switch checked={Boolean(on[i.key])} disabled={!editable(i) || pending} label={i.label} testId={`perm-switch-${i.key}`}

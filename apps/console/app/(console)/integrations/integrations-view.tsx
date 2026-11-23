@@ -354,7 +354,7 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
               <div className="flex flex-wrap items-center gap-2">
                 {def.key !== 'mobile_sso' && <Button type="button" variant="secondary" loading={pending} onClick={runTest}>Test connection</Button>}
                 <Button type="submit" loading={pending}>Save</Button>
-                {view.source === 'console' && <Button type="button" variant="ghost" disabled={pending} onClick={reset}>Remove setting</Button>}
+                {view.source === 'console' && <Button data-delete-area="console" data-delete={`saved setting for ${def.name}`} type="button" variant="ghost" disabled={pending} onClick={reset}>Remove setting</Button>}
               </div>
             )}
           </form>

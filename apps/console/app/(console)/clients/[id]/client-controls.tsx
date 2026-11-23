@@ -125,11 +125,11 @@ export function ArchiveButton({ c }: { c: ClientDetail }) {
   const archived = !!c.profile.archivedAt;
   return (
     <>
-      <Button variant="ghost" onClick={() => setOpen(true)}>{archived ? <ArchiveRestore className="size-4" aria-hidden /> : <Archive className="size-4" aria-hidden />}{archived ? 'Restore' : 'Archive'}</Button>
+      <Button data-delete-area={archived ? undefined : 'console'} variant="ghost" onClick={() => setOpen(true)}>{archived ? <ArchiveRestore className="size-4" aria-hidden /> : <Archive className="size-4" aria-hidden />}{archived ? 'Restore' : 'Archive'}</Button>
       {open && (
         <Dialog open onClose={() => setOpen(false)} title={archived ? 'Restore this company' : 'Archive this company'}
           description={archived ? 'It comes back into the active lists.' : 'Archiving takes the company out of the active lists. Every record, invoice and workspace is kept. Suspend its Super Workspaces first.'}
-          footer={<><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button variant={archived ? 'primary' : 'danger'} disabled={reason.trim().length < 3} loading={pending} onClick={() => start(async () => {
+          footer={<><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button data-delete={archived ? undefined : `company ${c.profile.name} (archive)`} variant={archived ? 'primary' : 'danger'} disabled={reason.trim().length < 3} loading={pending} onClick={() => start(async () => {
             const r = await archiveClientAction(c.profile.id, !archived, reason.trim());
             if (!r.ok) { setError(r.message ?? 'Not changed'); return; }
             setOpen(false);

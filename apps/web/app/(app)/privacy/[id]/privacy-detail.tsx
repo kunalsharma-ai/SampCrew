@@ -90,7 +90,7 @@ export function PrivacyDetail({ r }: { r: PrivacyRequest }) {
                 <Field label={`Type ${r.employeeCode} to confirm`} hint="Erasure cannot be undone." required>
                   {(p) => <Input {...p} name="confirm" value={confirmName} onChange={(e) => setConfirmName(e.target.value)} />}
                 </Field>
-                <div><Button variant="danger" loading={pending} disabled={!noteOk || confirmName.trim() !== r.employeeCode} onClick={() => run(() => eraseAction(r.id, note.trim()))}>Erase their data</Button></div>
+                <div><Button data-delete-area="people" data-delete="this person's personal data" variant="danger" loading={pending} disabled={!noteOk || confirmName.trim() !== r.employeeCode} onClick={() => run(() => eraseAction(r.id, note.trim()))}>Erase their data</Button></div>
               </>
             )}
           </CardBody>

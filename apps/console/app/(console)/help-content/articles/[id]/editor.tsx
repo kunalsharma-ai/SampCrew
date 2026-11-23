@@ -89,7 +89,7 @@ export function ArticleEditor({ article, categories, slugs }: { article: Editabl
           <Button onClick={() => save('published')} loading={pending} data-testid="article-publish">Save and publish</Button>
           <Button variant="secondary" onClick={() => save('draft')} loading={pending} data-testid="article-draft">Save as draft</Button>
           <Link href="/help-content?tab=articles" className={buttonClass('ghost', 'md')}>Cancel</Link>
-          {article && <Button variant="ghost" className="ml-auto text-danger" disabled={pending} onClick={() => start(async () => { const r = await deleteArticleAction(article.id); if (r.ok) router.push('/help-content?tab=articles'); else setError(r.message); })}><Trash2 className="size-3.5" aria-hidden />Delete</Button>}
+          {article && <Button data-delete-area="console" data-delete="help article" variant="ghost" className="ml-auto text-danger" disabled={pending} onClick={() => start(async () => { const r = await deleteArticleAction(article.id); if (r.ok) router.push('/help-content?tab=articles'); else setError(r.message); })}><Trash2 className="size-3.5" aria-hidden />Delete</Button>}
         </div>
       </Card>
       <div className="grid h-fit gap-4">

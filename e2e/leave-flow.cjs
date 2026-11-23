@@ -21,6 +21,7 @@
  */
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { MongoClient } = require(require.resolve('mongodb', { paths: [path.join(__dirname, '../apps/api')] }));
 const MONGODB_URL = process.env.MONGODB_URL ?? 'mongodb://localhost:27017/crew?replicaSet=rs0';
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';

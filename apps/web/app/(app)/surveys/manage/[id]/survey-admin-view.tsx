@@ -54,7 +54,7 @@ export function SurveyAdminView({ survey, results, entities, departments }: { su
             <div className="flex flex-wrap gap-2">
               {survey.status === 'draft' && (
                 <>
-                  <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Delete this draft?') && run(() => deleteSurveyAction(survey.id), () => router.push('/surveys/manage'))}>Delete</Button>
+                  <Button data-delete-area="performance" data-delete="draft survey" size="sm" variant="ghost" loading={pending} onClick={() => confirm('Delete this draft?') && run(() => deleteSurveyAction(survey.id), () => router.push('/surveys/manage'))}>Delete</Button>
                   <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>Edit</Button>
                   <Button size="sm" loading={pending} onClick={() => confirm('Open the survey? Everyone in its audience is invited and the questions can no longer change.') && run(() => surveyStepAction(survey.id, 'open'))}>Open survey</Button>
                 </>

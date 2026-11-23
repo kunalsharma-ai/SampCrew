@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { DELETE_CONFIRMATION_TTL_MS } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { decryptField, encryptField, hashPassword, randomToken, sha256, verifyPassword } from '../../platform/auth/crypto';
 import { generateMfaSecret, mfaUri, verifyTotp } from '../../platform/auth/mfa';
@@ -146,6 +147,26 @@ export class PlatformAuthService {
    * The signed-in admin changes their own password (also how a temporary one is replaced). Needs the current password
    * and an MFA-verified session; every other console session of theirs is signed out.
    */
+  /** Password-confirmed deletion in the Console: the admin's password lets this session run ONE delete in two minutes. */
+  async confirmDelete(password: string) {
+    const a = requestContext.platformActor();
+    const admin = await this.db.platform((tx) => tx.collection<AdminRow>('platform_admins').findOne({ id: a.adminId }));
+    if (!admin) throw Errors.unauthorized();
+    if (admin.locked_until && admin.locked_until > new Date()) throw Errors.tooMany();
+    if (!(await verifyPassword(admin.password_hash, password))) {
+      await this.failed(admin.id);
+      await this.db.platform((tx) => this.audit.record(tx, { tenantId: null, action: 'delete.password_failed', resourceType: 'platform_admin', resourceId: admin.id })).catch(() => undefined);
+      throw Errors.badRequest('wrong_password', 'That password is not correct. Nothing was deleted.');
+    }
+    const until = new Date(Date.now() + DELETE_CONFIRMATION_TTL_MS);
+    await this.db.platform(async (tx) => {
+      await tx.collection('platform_sessions').updateOne({ id: a.sessionId }, { $set: { delete_confirmed_until: until } });
+      await tx.collection('platform_admins').updateOne({ id: admin.id }, { $set: { failed_login_count: 0 } });
+      await this.audit.record(tx, { tenantId: null, action: 'delete.password_confirmed', resourceType: 'platform_session', resourceId: a.sessionId });
+    });
+    return { confirmedUntil: until.toISOString() };
+  }
+
   async changePassword(currentPassword: string, newPassword: string) {
     const a = requestContext.platformActor();
     const admin = await this.db.platform((tx) => tx.collection<AdminRow>('platform_admins').findOne({ id: a.adminId }));

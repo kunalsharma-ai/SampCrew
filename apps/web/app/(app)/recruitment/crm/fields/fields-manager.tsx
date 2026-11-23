@@ -93,7 +93,7 @@ export function FieldsManager({ fields, canCreate, owners }: { fields: CrmField[
                         <Button size="sm" variant="ghost" aria-label={`Move ${f.label} up`} disabled={i <= 0 || pending} onClick={() => move(i, -1)}><ArrowUp className="size-3.5" /></Button>
                         <Button size="sm" variant="ghost" aria-label={`Move ${f.label} down`} disabled={i === editable.length - 1 || pending} onClick={() => move(i, 1)}><ArrowDown className="size-3.5" /></Button>
                         <Button size="sm" variant="ghost" onClick={() => { setErrors({}); setD(draftOf(f)); }}>Edit</Button>
-                        <Button size="sm" variant="ghost" onClick={() => run(() => archiveFieldAction(f.id, true))}>Archive</Button>
+                        <Button data-delete-area="recruitment" data-delete={`candidate field ${f.label}`} size="sm" variant="ghost" onClick={() => run(() => archiveFieldAction(f.id, true))}>Archive</Button>
                       </>}
                     </TD>
                   </TR>

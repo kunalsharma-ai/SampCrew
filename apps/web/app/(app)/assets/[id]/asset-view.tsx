@@ -154,7 +154,7 @@ function Acknowledgement({ ack }: { ack: NonNullable<AssetDetail['assignments'][
 
 function DeleteButton({ id, onDone }: { id: string; onDone: Done }) {
   const [pending, start] = useTransition();
-  return <Button variant="danger" loading={pending} onClick={() => start(async () => onDone(await deleteAssetAction(id)))}>Delete asset</Button>;
+  return <Button data-delete-area="assets" data-delete="asset" variant="danger" loading={pending} onClick={() => start(async () => onDone(await deleteAssetAction(id)))}>Delete asset</Button>;
 }
 
 function AssignDialog({ id, condition, onClose, onDone }: { id: string; condition: string; onClose: () => void; onDone: Done }) {
@@ -273,5 +273,5 @@ function UploadAssetFile({ id, onDone }: { id: string; onDone: Done }) {
 
 function RemoveAssetFile({ id, fileId, title, onDone }: { id: string; fileId: string; title: string; onDone: Done }) {
   const [pending, start] = useTransition();
-  return <Button size="sm" variant="ghost" aria-label={`Remove ${title}`} loading={pending} onClick={() => start(async () => onDone(await removeAssetFileAction(id, fileId)))}><Trash2 className="size-4" aria-hidden /></Button>;
+  return <Button data-delete-area="assets" data-delete={`file ${title}`} size="sm" variant="ghost" aria-label={`Remove ${title}`} loading={pending} onClick={() => start(async () => onDone(await removeAssetFileAction(id, fileId)))}><Trash2 className="size-4" aria-hidden /></Button>;
 }

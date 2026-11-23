@@ -23,6 +23,7 @@
  */
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const { MongoClient } = require(require.resolve('mongodb', { paths: [path.join(__dirname, '../apps/api')] }));
 const { hashPassword } = require(path.join(__dirname, '../apps/api/dist/platform/auth/crypto.js'));

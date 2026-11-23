@@ -1386,6 +1386,57 @@
         }
       }
     },
+    "/api/v1/me/delete-confirmation": {
+      "post": {
+        "tags": [
+          "Me"
+        ],
+        "summary": "Confirm a delete with your own password: this session may then run one delete in the next two minutes. Wrong passwords count toward the account lock.",
+        "operationId": "Me_confirmDelete",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/password": {
       "post": {
         "tags": [
@@ -72762,6 +72813,58 @@
         }
       }
     },
+    "/api/v1/platform/auth/delete-confirmation": {
+      "post": {
+        "tags": [
+          "Platform: Auth"
+        ],
+        "summary": "Confirm a Console delete with your own password: this session may then run one delete in the next two minutes",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "PlatformAuth_confirmDelete",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/auth/password": {
       "post": {
         "tags": [
@@ -73996,6 +74099,128 @@
                 },
                 "required": [
                   "changes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/tenants/{id}/access/delete-rights": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Delete permissions of a company: the areas its Super Workspace (and the levels below it) may delete in",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_deleteRights",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Switch delete areas off (or on again) for a company; an area off here is off for every level of it",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_setDeleteRights",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "areasOff": {
+                    "maxItems": 13,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "people",
+                        "organization",
+                        "leave",
+                        "attendance",
+                        "payroll",
+                        "recruitment",
+                        "performance",
+                        "learning",
+                        "documents",
+                        "communication",
+                        "assets",
+                        "settings",
+                        "personal"
+                      ]
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "areasOff"
                 ],
                 "additionalProperties": false
               }
@@ -80890,7 +81115,7 @@
                     "maxLength": 300
                   },
                   "permissions": {
-                    "maxItems": 24,
+                    "maxItems": 25,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -80918,7 +81143,8 @@
                         "settings:manage",
                         "admins:manage",
                         "roles:manage",
-                        "security:manage"
+                        "security:manage",
+                        "records:delete"
                       ]
                     }
                   }
@@ -80991,7 +81217,7 @@
                     "maxLength": 300
                   },
                   "permissions": {
-                    "maxItems": 24,
+                    "maxItems": 25,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -81019,7 +81245,8 @@
                         "settings:manage",
                         "admins:manage",
                         "roles:manage",
-                        "security:manage"
+                        "security:manage",
+                        "records:delete"
                       ]
                     }
                   }

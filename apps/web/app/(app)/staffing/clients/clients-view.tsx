@@ -43,7 +43,7 @@ export function ClientsView({ clients, archived, canManage }: { clients: Client[
                         <div className="flex justify-end gap-1">
                           <Link href={`/staffing/bids/new?mode=quick&clientId=${c.id}`} className={buttonClass('ghost', 'sm')}>New bid</Link>
                           <Button size="sm" variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => { setEditing(c); setOpen(true); }}><Pencil className="size-3.5" /></Button>
-                          <Button size="sm" variant="ghost" loading={pending} onClick={() => {
+                          <Button data-delete-area="recruitment" data-delete={`client ${c.name}`} size="sm" variant="ghost" loading={pending} onClick={() => {
                             if (!confirm(`Archive ${c.name}? Their bids are kept.`)) return;
                             start(async () => { const r = await archiveClientAction(c.id); setMsg(r.ok ? { tone: 'success', text: `${c.name} archived` } : { tone: 'danger', text: r.message }); router.refresh(); });
                           }}>Archive</Button>

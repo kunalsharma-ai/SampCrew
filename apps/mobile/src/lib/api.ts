@@ -48,6 +48,13 @@ const isRaw = (b: unknown): b is RawBody => typeof b === 'object' && b !== null 
 /** When the app last sent a change (any POST, PUT, DELETE or upload): screens coming back into view reload after it. */
 export const lastChange = { at: 0 };
 
+/**
+ * Password-confirmed deletion: every delete asks for the person's own password (contracts delete-permissions.ts).
+ * DeletePasswordHost sets `ask`, which shows the password sheet and resolves with the password, or null when the
+ * person cancels. `error` is the message of a wrong try.
+ */
+export const deletePrompt: { ask: ((what: string, error?: string) => Promise<string | null>) | null } = { ask: null };
+
 export class Api {
   private refreshing: Promise<boolean> | null = null;
   /** GETs in flight, so screens and widgets asking for the same thing at once share one request. */
@@ -120,7 +127,25 @@ export class Api {
       }
       res = await this.raw(method, path, body, (await this.tokens.get())!.accessToken, idempotencyKey);
     }
-    return this.parse<T>(res);
+    try {
+      return await this.parse<T>(res);
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.code !== 'delete_password_required' || !deletePrompt.ask) throw e;
+      // The server asks for the password before this delete: ask, confirm it, then send the delete once more.
+      let error: string | undefined;
+      for (let tries = 0; ; tries++) {
+        const password = await deletePrompt.ask(e.message.replace(/^Enter your password to delete this \((.*)\)\.$/, '$1'), error);
+        if (password === null) throw new ApiError(403, 'delete_cancelled', 'Nothing was deleted.');
+        try {
+          await this.parse(await this.raw('POST', '/me/delete-confirmation', { password }, (await this.tokens.get())?.accessToken ?? null));
+          break;
+        } catch (c) {
+          if (c instanceof ApiError && c.code === 'wrong_password' && tries < 4) { error = c.message; continue; }
+          throw c;
+        }
+      }
+      return this.parse<T>(await this.raw(method, path, body, (await this.tokens.get())?.accessToken ?? null, idempotencyKey));
+    }
   }
 
   /** A GET. Identical GETs already on their way share that request instead of sending another. */

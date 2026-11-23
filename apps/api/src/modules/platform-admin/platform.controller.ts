@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
+  deleteConfirmationInput,
+  deleteRightsInput,
   passwordResetCheck,
   passwordResetComplete,
   passwordResetRequest,
@@ -197,6 +199,15 @@ export class PlatformAuthController {
   }
 
   @PlatformRealm()
+  @Post('delete-confirmation')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Doc({ summary: 'Confirm a Console delete with your own password: this session may then run one delete in the next two minutes', body: deleteConfirmationInput })
+  confirmDelete(@Body(new ZodPipe(deleteConfirmationInput)) body: z.infer<typeof deleteConfirmationInput>) {
+    return this.auth.confirmDelete(body.password);
+  }
+
+  @PlatformRealm()
   @AllowPendingPassword()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('password')
@@ -341,6 +352,20 @@ export class PlatformController {
   @Doc({ summary: 'Switch modules on or off for a workspace, or back to the plan default', body: featureSwitchUpdate })
   switchModules(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(featureSwitchUpdate)) body: z.infer<typeof featureSwitchUpdate>) {
     return this.access.setFeatures(id, body.changes);
+  }
+
+  @PlatformRealm('tenants:read')
+  @Get('tenants/:id/access/delete-rights')
+  @Doc({ summary: 'Delete permissions of a company: the areas its Super Workspace (and the levels below it) may delete in' })
+  deleteRights(@Param('id', UuidPipe) id: string) {
+    return this.access.deleteRights(id);
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('tenants/:id/access/delete-rights')
+  @Doc({ summary: 'Switch delete areas off (or on again) for a company; an area off here is off for every level of it', body: deleteRightsInput })
+  setDeleteRights(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(deleteRightsInput)) body: z.infer<typeof deleteRightsInput>) {
+    return this.access.setDeleteRights(id, body);
   }
 
   @PlatformRealm('tenants:read')
