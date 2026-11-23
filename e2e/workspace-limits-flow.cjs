@@ -197,6 +197,9 @@ async function createHr(owner, name) {
     await setLimits(admin, 'business', original);
     for (const name of made) {
       const w = await db.collection('hr_workspaces').findOne({ tenant_id: tenant._id, name });
+      // Archiving an HR Workspace is a delete: the owner confirms with their password first, as in the app.
+      const confirm = await fetch(`${API}/me/delete-confirmation`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${login.accessToken}` }, body: JSON.stringify({ password: PASSWORD }) });
+      expect(confirm.ok, `password confirmation failed: ${confirm.status}`);
       const r = await fetch(`${API}/hr-workspaces/${w._id}/status`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${login.accessToken}` }, body: JSON.stringify({ status: 'archived', reason: 'Workspace limits e2e clean-up' }) });
       expect(r.ok, `archiving ${name} failed: ${r.status} ${await r.text()}`);
     }
