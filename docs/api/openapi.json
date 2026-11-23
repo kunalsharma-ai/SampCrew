@@ -62143,6 +62143,4527 @@
         }
       }
     },
+    "/api/v1/learning/access": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "What you can do in Learning: your level and the powers the Super Workspace gave your HR Workspace",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_access",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/options": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Categories, skills, languages and (for managers) the people and groups you can assign to",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_options",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/categories": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Add a learning category (Super Workspace)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_addCategory",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/categories/{id}": {
+      "delete": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Remove a learning category from the list (Super Workspace); modules keep their category",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_removeCategory",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/permissions": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "What each HR Workspace may do in Learning (Super Workspace)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_permissions",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Switch Learning powers on or off for an HR Workspace, or for company-wide HR (Super Workspace)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_setPermissions",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "hrWorkspaceId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "caps": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "view",
+                        "create",
+                        "edit",
+                        "publish",
+                        "assign",
+                        "quiz",
+                        "assignment",
+                        "grade",
+                        "reports",
+                        "export"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "hrWorkspaceId",
+                  "caps"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/modules": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "The learning library for managers, with search and filters",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_modules",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "draft",
+                "scheduled",
+                "published",
+                "archived",
+                "all"
+              ]
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 60
+            }
+          },
+          {
+            "name": "skill",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 60
+            }
+          },
+          {
+            "name": "difficulty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "beginner",
+                "intermediate",
+                "advanced",
+                "expert",
+                "custom"
+              ]
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "online",
+                "video",
+                "document",
+                "classroom",
+                "audio",
+                "text",
+                "presentation",
+                "external",
+                "mixed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Create a learning module (a draft)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_create",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 160
+                  },
+                  "shortDescription": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "description": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "category": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "topic": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "skills": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 60
+                    }
+                  },
+                  "difficulty": {
+                    "default": "beginner",
+                    "type": "string",
+                    "enum": [
+                      "beginner",
+                      "intermediate",
+                      "advanced",
+                      "expert",
+                      "custom"
+                    ]
+                  },
+                  "customDifficulty": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "durationMinutes": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "creatorName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "creatorDesignation": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "coverFileId": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tags": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  },
+                  "language": {
+                    "default": "English",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "selfEnrol": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "certificate": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "defaultDueDays": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 365
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "hrWorkspaceId": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "blocks": {
+                    "default": [],
+                    "maxItems": 60,
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "text"
+                            },
+                            "body": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 100000
+                            },
+                            "attachmentFileIds": {
+                              "default": [],
+                              "maxItems": 10,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              }
+                            },
+                            "completion": {
+                              "default": "manual",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "video"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "durationMinutes": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "coverFileId": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "completion": {
+                              "default": "full",
+                              "type": "string",
+                              "enum": [
+                                "full",
+                                "percent",
+                                "manual",
+                                "open"
+                              ]
+                            },
+                            "minPercent": {
+                              "default": 90,
+                              "type": "integer",
+                              "minimum": 10,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "audio"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "durationMinutes": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "coverFileId": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "completion": {
+                              "default": "full",
+                              "type": "string",
+                              "enum": [
+                                "full",
+                                "percent",
+                                "manual",
+                                "open"
+                              ]
+                            },
+                            "minPercent": {
+                              "default": 90,
+                              "type": "integer",
+                              "minimum": 10,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "document"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "coverFileId": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "completion": {
+                              "default": "manual",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "presentation"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "completion": {
+                              "default": "manual",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "external"
+                            },
+                            "url": {
+                              "type": "string",
+                              "maxLength": 1000,
+                              "format": "uri"
+                            },
+                            "completion": {
+                              "default": "open",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "url"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "image"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "caption": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            "completion": {
+                              "default": "open",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "quiz"
+                            },
+                            "settings": {
+                              "default": {
+                                "passPercent": 70,
+                                "maxAttempts": 3,
+                                "timeLimitMinutes": 0,
+                                "randomizeQuestions": false,
+                                "randomizeOptions": false,
+                                "showCorrectAnswers": true,
+                                "showScore": true,
+                                "allowRetake": true,
+                                "finalAssessment": false
+                              },
+                              "type": "object",
+                              "properties": {
+                                "passPercent": {
+                                  "default": 70,
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                },
+                                "maxAttempts": {
+                                  "default": 3,
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 20
+                                },
+                                "timeLimitMinutes": {
+                                  "default": 0,
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 600
+                                },
+                                "randomizeQuestions": {
+                                  "default": false,
+                                  "type": "boolean"
+                                },
+                                "randomizeOptions": {
+                                  "default": false,
+                                  "type": "boolean"
+                                },
+                                "showCorrectAnswers": {
+                                  "default": true,
+                                  "type": "boolean"
+                                },
+                                "showScore": {
+                                  "default": true,
+                                  "type": "boolean"
+                                },
+                                "allowRetake": {
+                                  "default": true,
+                                  "type": "boolean"
+                                },
+                                "finalAssessment": {
+                                  "default": false,
+                                  "type": "boolean"
+                                }
+                              }
+                            },
+                            "questions": {
+                              "minItems": 1,
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9_-]{1,40}$"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "single",
+                                      "multiple",
+                                      "true_false",
+                                      "exact",
+                                      "short",
+                                      "long",
+                                      "matching",
+                                      "scenario"
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 2000
+                                  },
+                                  "scenario": {
+                                    "default": "",
+                                    "type": "string",
+                                    "maxLength": 4000
+                                  },
+                                  "options": {
+                                    "default": [],
+                                    "maxItems": 12,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "pattern": "^[a-z0-9_-]{1,40}$"
+                                        },
+                                        "text": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 500
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "text"
+                                      ]
+                                    }
+                                  },
+                                  "correct": {
+                                    "default": [],
+                                    "maxItems": 12,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 500
+                                    }
+                                  },
+                                  "accepted": {
+                                    "default": [],
+                                    "maxItems": 10,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    }
+                                  },
+                                  "pairs": {
+                                    "default": [],
+                                    "maxItems": 12,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "left": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 300
+                                        },
+                                        "right": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 300
+                                        }
+                                      },
+                                      "required": [
+                                        "left",
+                                        "right"
+                                      ]
+                                    }
+                                  },
+                                  "explanation": {
+                                    "default": "",
+                                    "type": "string",
+                                    "maxLength": 2000
+                                  },
+                                  "marks": {
+                                    "default": 1,
+                                    "type": "number",
+                                    "minimum": 0.5,
+                                    "maximum": 100
+                                  },
+                                  "difficulty": {
+                                    "default": "medium",
+                                    "type": "string",
+                                    "enum": [
+                                      "easy",
+                                      "medium",
+                                      "hard"
+                                    ]
+                                  },
+                                  "required": {
+                                    "default": true,
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "type",
+                                  "text"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "questions"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "assignment"
+                            },
+                            "settings": {
+                              "type": "object",
+                              "properties": {
+                                "instructions": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 8000
+                                },
+                                "startOn": {
+                                  "default": null,
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "dueOn": {
+                                  "default": null,
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "maxScore": {
+                                  "default": 100,
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000
+                                },
+                                "passScore": {
+                                  "default": 50,
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 1000
+                                },
+                                "submissionTypes": {
+                                  "default": [
+                                    "text"
+                                  ],
+                                  "minItems": 1,
+                                  "maxItems": 3,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "text",
+                                      "file",
+                                      "link"
+                                    ]
+                                  }
+                                },
+                                "referenceFileIds": {
+                                  "default": [],
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
+                                },
+                                "gradingMethod": {
+                                  "default": "score",
+                                  "type": "string",
+                                  "enum": [
+                                    "score",
+                                    "pass_fail"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instructions"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "settings"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "title",
+                  "category",
+                  "creatorName"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/modules/{id}": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "A learning module with its content (for people who may edit it), versions and assignments",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_module",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Change a module. A published module keeps serving its published version until the changes are published.",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_update",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 160
+                  },
+                  "shortDescription": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "description": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "category": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "topic": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "skills": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 60
+                    }
+                  },
+                  "difficulty": {
+                    "default": "beginner",
+                    "type": "string",
+                    "enum": [
+                      "beginner",
+                      "intermediate",
+                      "advanced",
+                      "expert",
+                      "custom"
+                    ]
+                  },
+                  "customDifficulty": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "durationMinutes": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "creatorName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "creatorDesignation": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "coverFileId": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tags": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  },
+                  "language": {
+                    "default": "English",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "selfEnrol": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "certificate": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "defaultDueDays": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 365
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "hrWorkspaceId": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "blocks": {
+                    "default": [],
+                    "maxItems": 60,
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "text"
+                            },
+                            "body": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 100000
+                            },
+                            "attachmentFileIds": {
+                              "default": [],
+                              "maxItems": 10,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              }
+                            },
+                            "completion": {
+                              "default": "manual",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "video"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "durationMinutes": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "coverFileId": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "completion": {
+                              "default": "full",
+                              "type": "string",
+                              "enum": [
+                                "full",
+                                "percent",
+                                "manual",
+                                "open"
+                              ]
+                            },
+                            "minPercent": {
+                              "default": 90,
+                              "type": "integer",
+                              "minimum": 10,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "audio"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "durationMinutes": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "coverFileId": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "completion": {
+                              "default": "full",
+                              "type": "string",
+                              "enum": [
+                                "full",
+                                "percent",
+                                "manual",
+                                "open"
+                              ]
+                            },
+                            "minPercent": {
+                              "default": 90,
+                              "type": "integer",
+                              "minimum": 10,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "document"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "coverFileId": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "completion": {
+                              "default": "manual",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "presentation"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "completion": {
+                              "default": "manual",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "external"
+                            },
+                            "url": {
+                              "type": "string",
+                              "maxLength": 1000,
+                              "format": "uri"
+                            },
+                            "completion": {
+                              "default": "open",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "url"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "image"
+                            },
+                            "source": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "upload"
+                                    },
+                                    "fileId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "fileId"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "url"
+                                    },
+                                    "url": {
+                                      "type": "string",
+                                      "maxLength": 1000,
+                                      "format": "uri"
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "url"
+                                  ]
+                                }
+                              ]
+                            },
+                            "caption": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            "completion": {
+                              "default": "open",
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "manual"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "source"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "quiz"
+                            },
+                            "settings": {
+                              "default": {
+                                "passPercent": 70,
+                                "maxAttempts": 3,
+                                "timeLimitMinutes": 0,
+                                "randomizeQuestions": false,
+                                "randomizeOptions": false,
+                                "showCorrectAnswers": true,
+                                "showScore": true,
+                                "allowRetake": true,
+                                "finalAssessment": false
+                              },
+                              "type": "object",
+                              "properties": {
+                                "passPercent": {
+                                  "default": 70,
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                },
+                                "maxAttempts": {
+                                  "default": 3,
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 20
+                                },
+                                "timeLimitMinutes": {
+                                  "default": 0,
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 600
+                                },
+                                "randomizeQuestions": {
+                                  "default": false,
+                                  "type": "boolean"
+                                },
+                                "randomizeOptions": {
+                                  "default": false,
+                                  "type": "boolean"
+                                },
+                                "showCorrectAnswers": {
+                                  "default": true,
+                                  "type": "boolean"
+                                },
+                                "showScore": {
+                                  "default": true,
+                                  "type": "boolean"
+                                },
+                                "allowRetake": {
+                                  "default": true,
+                                  "type": "boolean"
+                                },
+                                "finalAssessment": {
+                                  "default": false,
+                                  "type": "boolean"
+                                }
+                              }
+                            },
+                            "questions": {
+                              "minItems": 1,
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9_-]{1,40}$"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "single",
+                                      "multiple",
+                                      "true_false",
+                                      "exact",
+                                      "short",
+                                      "long",
+                                      "matching",
+                                      "scenario"
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 2000
+                                  },
+                                  "scenario": {
+                                    "default": "",
+                                    "type": "string",
+                                    "maxLength": 4000
+                                  },
+                                  "options": {
+                                    "default": [],
+                                    "maxItems": 12,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "pattern": "^[a-z0-9_-]{1,40}$"
+                                        },
+                                        "text": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 500
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "text"
+                                      ]
+                                    }
+                                  },
+                                  "correct": {
+                                    "default": [],
+                                    "maxItems": 12,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "maxLength": 500
+                                    }
+                                  },
+                                  "accepted": {
+                                    "default": [],
+                                    "maxItems": 10,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    }
+                                  },
+                                  "pairs": {
+                                    "default": [],
+                                    "maxItems": 12,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "left": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 300
+                                        },
+                                        "right": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 300
+                                        }
+                                      },
+                                      "required": [
+                                        "left",
+                                        "right"
+                                      ]
+                                    }
+                                  },
+                                  "explanation": {
+                                    "default": "",
+                                    "type": "string",
+                                    "maxLength": 2000
+                                  },
+                                  "marks": {
+                                    "default": 1,
+                                    "type": "number",
+                                    "minimum": 0.5,
+                                    "maximum": 100
+                                  },
+                                  "difficulty": {
+                                    "default": "medium",
+                                    "type": "string",
+                                    "enum": [
+                                      "easy",
+                                      "medium",
+                                      "hard"
+                                    ]
+                                  },
+                                  "required": {
+                                    "default": true,
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "type",
+                                  "text"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "questions"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9_-]{1,40}$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "default": "",
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            "required": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "assignment"
+                            },
+                            "settings": {
+                              "type": "object",
+                              "properties": {
+                                "instructions": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 8000
+                                },
+                                "startOn": {
+                                  "default": null,
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "dueOn": {
+                                  "default": null,
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "maxScore": {
+                                  "default": 100,
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000
+                                },
+                                "passScore": {
+                                  "default": 50,
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 1000
+                                },
+                                "submissionTypes": {
+                                  "default": [
+                                    "text"
+                                  ],
+                                  "minItems": 1,
+                                  "maxItems": 3,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "text",
+                                      "file",
+                                      "link"
+                                    ]
+                                  }
+                                },
+                                "referenceFileIds": {
+                                  "default": [],
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
+                                },
+                                "gradingMethod": {
+                                  "default": "score",
+                                  "type": "string",
+                                  "enum": [
+                                    "score",
+                                    "pass_fail"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instructions"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "kind",
+                            "settings"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "title",
+                  "category",
+                  "creatorName"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/modules/{id}/publish": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Publish the module now as its next version, or schedule the first publication",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_publish",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "publishAt": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "note": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/modules/{id}/unschedule": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Take a scheduled module back to draft",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_unschedule",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/modules/{id}/archive": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Archive a module (records stay; nobody new is enrolled), or restore it",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_archive",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "restore": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/modules/{id}/assign": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Assign a published module to people, HR Workspaces, departments, job roles, locations or employment types",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_assign",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "audience": {
+                    "type": "object",
+                    "properties": {
+                      "all": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "employeeIds": {
+                        "default": [],
+                        "maxItems": 2000,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "hrWorkspaceIds": {
+                        "default": [],
+                        "maxItems": 200,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "central": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "departmentIds": {
+                        "default": [],
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "designationIds": {
+                        "default": [],
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "locationIds": {
+                        "default": [],
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
+                      },
+                      "employmentTypes": {
+                        "default": [],
+                        "maxItems": 5,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "full_time",
+                            "part_time",
+                            "contract",
+                            "intern",
+                            "temporary"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "dueOn": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "keepEnrolling": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "audience"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/modules/{id}/audiences/{audienceId}/stop": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Stop enrolling new people into an assignment that keeps enrolling",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_stop",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "audienceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/modules/{id}/learners": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Learners of a module that you can see, with progress and scores",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_learners",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/modules/{id}/enrol": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Enrol yourself in a module open to everyone",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_enrol",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/enrolments/{id}": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "One learner’s enrolment in detail: each item, quiz attempts and submissions (HR and Super Workspace)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_enrolment",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/enrolments/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Remove a person’s unfinished enrolment (history stays)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_cancel",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/my": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "My learning: assigned and finished modules with progress, scores and deadlines, and modules I can enrol in",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_my",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/my/{id}": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "A module I am enrolled in: its content in order and my progress",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_player",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/my/{id}/items/{blockId}/progress": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Report what I did with a video, audio, reading or link (the server decides whether it is complete)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_progress",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "blockId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "duration": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "complete",
+                      "heartbeat"
+                    ]
+                  },
+                  "seconds": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 600
+                  }
+                },
+                "required": [
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/my/{id}/items/{blockId}/attempts": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Start (or continue) a quiz attempt",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_start",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "blockId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Save quiz answers so far",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_save",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "blockId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "answers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "maxItems": 12,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        },
+                        {
+                          "type": "string",
+                          "maxLength": 8000
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "answers"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/my/{id}/items/{blockId}/attempts/submit": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Submit a quiz attempt; it is marked on the server",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_submitQuiz",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "blockId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "answers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "maxItems": 12,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        },
+                        {
+                          "type": "string",
+                          "maxLength": 8000
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "answers"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/my/{id}/items/{blockId}/submissions": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Submit an assignment",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_submit",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "blockId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 20000
+                  },
+                  "link": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fileIds": {
+                    "default": [],
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/my/{id}/certificate": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "My completion record and certificate for a finished module",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_certificate",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/files": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Upload a learning file (content for module creators, or a file for your own assignment)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_upload",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "purpose",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "content",
+              "type": "string",
+              "enum": [
+                "content",
+                "submission"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/files/{id}/link": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "A short signed link to a learning file you may see",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_link",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/dashboard": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Learning dashboard for the Super Workspace or an HR Workspace, from the records it may see",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_dashboard",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/reports": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Learning report: every enrolment you may report on, with filters",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_report",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "moduleId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "employeeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "hrWorkspaceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                {
+                  "type": "string",
+                  "const": "central"
+                }
+              ]
+            }
+          },
+          {
+            "name": "departmentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "designationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_started",
+                "in_progress",
+                "completed",
+                "overdue"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "minScore",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "maxScore",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/reports/workspaces": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Learning by HR Workspace, department and job role",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_byWorkspace",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/reports/export.xlsx": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "The learning report as Excel (same filters and limits as the report)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_export",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "moduleId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "employeeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "hrWorkspaceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                {
+                  "type": "string",
+                  "const": "central"
+                }
+              ]
+            }
+          },
+          {
+            "name": "departmentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "designationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_started",
+                "in_progress",
+                "completed",
+                "overdue"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "minScore",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "maxScore",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/learners/{employeeId}": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "One employee’s learning profile (HR and Super Workspace)",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_learnerProfile",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "employeeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/reviews/submissions": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Assignment submissions to review",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_submissions",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "submitted",
+              "type": "string",
+              "enum": [
+                "submitted",
+                "approved",
+                "rejected",
+                "resubmit",
+                "all"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/reviews/submissions/{id}": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Approve, reject or ask for a resubmission, with a score and feedback",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_review",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approved",
+                      "rejected",
+                      "resubmit"
+                    ]
+                  },
+                  "score": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feedback": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "decision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/reviews/attempts": {
+      "get": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Quiz attempts with written answers waiting for marks",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_attempts",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/reviews/attempts/{id}": {
+      "post": {
+        "tags": [
+          "Lms"
+        ],
+        "summary": "Mark the written answers of a quiz attempt",
+        "description": "Requires permission `learning:read`.\n\nRequires plan feature `learning`.",
+        "operationId": "Lms_grade",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "marks": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "feedback": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "marks"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/files/learning/{id}": {
+      "get": {
+        "tags": [
+          "LearningFiles"
+        ],
+        "summary": "Open a learning file through a signed link (supports Range requests)",
+        "operationId": "LearningFiles_file",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/mobile/app": {
       "get": {
         "tags": [
