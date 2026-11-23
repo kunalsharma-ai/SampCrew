@@ -1,4 +1,4 @@
-import { ACCRUAL_METHOD_LABELS, LEAVE_EMPLOYMENT_TYPE_LABELS, type AccrualMethod, type LeaveEmploymentType } from '@crew/contracts';
+import { LEAVE_EMPLOYMENT_TYPE_LABELS, type LeaveEmploymentType } from '@crew/contracts';
 import type { LeaveType } from '@/lib/types';
 import type { LeaveOptions } from './pickers';
 
@@ -12,11 +12,10 @@ export function byLine(who: { name: string | null; level: string | null; at: str
   return `${who.name ?? 'Someone'}${level && who.level !== 'system' ? ` – ${level}` : ''}${at}`;
 }
 
-/** One line per rule that is switched on, in plain words. */
+/** One line per rule that is switched on, in plain words. Days come only from typed quantities, so no yearly number or accrual is shown. */
 export function policyLines(t: Pick<LeaveType, 'policy' | 'allowHalfDay' | 'countsCalendarDays' | 'paid'>): string[] {
   const p = t.policy;
   return [
-    `${p.annualEntitlement} days a year · ${ACCRUAL_METHOD_LABELS[p.accrualMethod as AccrualMethod]}`,
     t.paid ? 'Paid' : 'Unpaid',
     t.allowHalfDay ? 'Half days allowed' : 'Full days only',
     t.countsCalendarDays ? 'Counts calendar days' : 'Counts working days',
