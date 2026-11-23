@@ -1,21 +1,11 @@
-import { WELCOME_COPY, WORKSPACE_WELCOME_CHOICES, type WelcomeScene } from '@crew/contracts';
+import { SIGN_IN_PALETTES, WELCOME_COPY, WELCOME_HELLOS, WORKSPACE_WELCOME_CHOICES, timeGreeting, type SignInMode, type WelcomeScene } from '@crew/contracts';
+import { WORLDS, type World } from '../lib/signin-theme';
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Image, Platform, Pressable, Text, useWindowDimensions, View, type ViewStyle } from 'react-native';
-import { gradient } from './index';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { gradient, useTheme } from './index';
 
-/**
- * Each level's world, the same as the Web Portal and Console sign-in: the Super Admin Console is a night-blue command
- * centre, the Super Workspace emerald and gold, the HR Workspace violet and coral, the Employee Workspace warm daylight
- * (and the team welcome a fresher daylight).
- */
-interface World { bg: string; base: string; ink: string; ink2: string; name: [string, string]; glowA: string; glowB: string; light: boolean; chip: string; accent: string }
-export const WORLDS: Record<WelcomeScene, World> = {
-  console: { bg: 'radial-gradient(circle at 85% 0%, #0f2a5c, #050a16 60%, #02040b)', base: '#050a16', ink: '#ffffff', ink2: 'rgba(224,242,254,0.78)', name: ['#67e8f9', '#3b82f6'], glowA: '#1d4ed8', glowB: '#06b6d4', light: false, chip: 'rgba(255,255,255,0.1)', accent: '#2563eb' },
-  super: { bg: 'radial-gradient(circle at 15% 0%, #14532d, #0c2620 50%, #04110d)', base: '#0c2620', ink: '#ffffff', ink2: 'rgba(254,243,199,0.8)', name: ['#fde68a', '#e3b341'], glowA: '#059669', glowB: '#e3b341', light: false, chip: 'rgba(227,179,65,0.16)', accent: '#047857' },
-  hr: { bg: 'linear-gradient(140deg, #2e1065, #5b21b6 42%, #a21caf 72%, #e8697a)', base: '#5b21b6', ink: '#ffffff', ink2: 'rgba(255,255,255,0.85)', name: ['#ffffff', '#fdba74'], glowA: '#fb8a7e', glowB: '#a78bfa', light: false, chip: 'rgba(255,255,255,0.16)', accent: '#7c3aed' },
-  employee: { bg: 'linear-gradient(160deg, #fff7ed, #fdf2f8 45%, #eef2ff)', base: '#fff7ed', ink: '#1e1b4b', ink2: '#475569', name: ['#4f46e5', '#f97316'], glowA: '#fdba74', glowB: '#a5b4fc', light: true, chip: 'rgba(255,255,255,0.8)', accent: '#4f46e5' },
-  team: { bg: 'linear-gradient(160deg, #ecfdf5, #eef2ff 55%, #fff7ed)', base: '#ecfdf5', ink: '#1e1b4b', ink2: '#475569', name: ['#059669', '#4f46e5'], glowA: '#6ee7b7', glowB: '#a5b4fc', light: true, chip: 'rgba(255,255,255,0.8)', accent: '#4f46e5' },
-};
+export { WORLDS } from '../lib/signin-theme';
 /** The colour dot beside each level on the level chips. */
 const CHOICE_DOT: Record<string, string> = { super: '#e3b341', hr: '#fb8a7e', employee: '#4f46e5' };
 const LOGO_DARK = require('../../assets/logo-dark.png');
@@ -73,12 +63,12 @@ function useCycle(ms: number, run: boolean, delay = 0) {
  * when the phone asks for reduced motion, and never blocks the form below (no waiting, no touch capture except the
  * level chips).
  */
-export function WelcomeHero({ scene, onChoose }: { scene: WelcomeScene; onChoose?: (s: WelcomeScene) => void }) {
+export function WelcomeHero({ scene, onChoose, world }: { scene: WelcomeScene; onChoose?: (s: WelcomeScene) => void; world?: World }) {
   const { width, height } = useWindowDimensions();
   const landscape = width > height;
   const heroH = Math.round(Math.min(landscape ? height * 0.7 : height * 0.44, 390));
   const reduced = useReducedMotion();
-  const w = WORLDS[scene];
+  const w = world ?? WORLDS[scene];
   const copy = WELCOME_COPY[scene];
   const reveal = useRef(new Animated.Value(reduced ? 1 : 0)).current;
   const name = useRef(new Animated.Value(reduced ? 1 : 0)).current;
@@ -96,7 +86,8 @@ export function WelcomeHero({ scene, onChoose }: { scene: WelcomeScene; onChoose
     ]).start();
   }, [scene, reduced, reveal, name, words]);
   const logoW = Math.min(width - 120, 190);
-  const nameSize = landscape ? 30 : Math.min(40, Math.max(28, width / 10.5));
+  // The workspace name always fits on one line, so it never runs into the chips or the moving scene below it.
+  const nameSize = landscape ? 30 : Math.min(40, Math.max(24, width / 10.5), (width - 56) / (copy.level.length * 0.6));
   return (
     <View testID="welcome-hero" style={[{ height: heroH, overflow: 'hidden', borderRadius: 24, marginHorizontal: -4 }, gradient(w.bg, w.base)]} accessibilityLabel={`${copy.level} welcome`}>
       <Glow color={w.glowA} size={heroH * 1.1} style={{ left: -heroH * 0.35, top: -heroH * 0.5 }} run={!reduced} light={w.light} />
@@ -339,5 +330,77 @@ export function WelcomeIntro({ scene, name, workspace, onDone }: { scene: Welcom
         <Text style={{ color: w.ink2, fontSize: 13, marginTop: 4 }}>Preparing your Home…</Text>
       </View>
     </Animated.View>
+  );
+}
+
+/**
+ * The greeting above the phone sign-in form: a waving hand, "Good morning / afternoon / evening" by the phone's clock
+ * and "Hello" in turn in the languages SampCrew's customers speak (Namaste, Marhaba, Bonjour, Hola, Vanakkam).
+ */
+export function SignInGreeting({ scene }: { scene: WelcomeScene }) {
+  const t = useTheme();
+  const reduced = useReducedMotion();
+  const [i, setI] = useState(0);
+  const fade = useRef(new Animated.Value(1)).current;
+  const wave = useSwing(700, !reduced);
+  useEffect(() => {
+    if (reduced) return;
+    const id = setInterval(() => {
+      Animated.timing(fade, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => {
+        setI((n) => (n + 1) % WELCOME_HELLOS.length);
+        Animated.timing(fade, { toValue: 1, duration: 320, useNativeDriver: true }).start();
+      });
+    }, 2200);
+    return () => clearInterval(id);
+  }, [reduced, fade]);
+  const copy = WELCOME_COPY[scene];
+  return (
+    <View testID="signin-greeting" style={{ gap: 2, marginTop: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Animated.Text accessibilityElementsHidden importantForAccessibility="no" style={{ fontSize: 22, transform: [{ rotate: wave.interpolate({ inputRange: [0, 1], outputRange: ['-12deg', '18deg'] }) }] }}>👋</Animated.Text>
+        <Text style={{ color: t.fg, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }} testID="signin-greeting-time">{timeGreeting(new Date().getHours())}</Text>
+        <Animated.Text style={{ opacity: fade, color: t.accent, fontSize: 18, fontWeight: '800' }} testID="signin-greeting-hello">· {WELCOME_HELLOS[i]}</Animated.Text>
+      </View>
+      <Text style={{ color: t.muted, fontSize: 14 }}>
+        Sign in to your <Text style={{ color: t.fg, fontWeight: '800' }}>{copy.level}</Text> with your work email.
+      </Text>
+    </View>
+  );
+}
+
+const MODE_ICON: Record<SignInMode, keyof typeof Ionicons.glyphMap> = { auto: 'contrast', light: 'sunny', dark: 'moon' };
+const MODE_LABEL: Record<SignInMode, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
+
+/** Light, dark or auto, and the colour palettes, under the hero. The choice is kept on the phone. */
+export function SignInThemeBar({ scene, mode, palette, onMode, onPalette }: { scene: WelcomeScene; mode: SignInMode; palette: string; onMode: (m: SignInMode) => void; onPalette: (p: string) => void }) {
+  const t = useTheme();
+  const own = WORLDS[scene];
+  const swatches = [{ key: 'signature', label: 'Signature', colors: [own.glowA, own.accent, own.glowB] }, ...SIGN_IN_PALETTES];
+  return (
+    <View testID="signin-theme-bar" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+      <View style={{ flexDirection: 'row', borderRadius: 99, borderWidth: 1, borderColor: t.border, padding: 2 }} accessibilityRole="radiogroup" accessibilityLabel="Light or dark">
+        {(['auto', 'light', 'dark'] as const).map((m) => {
+          const on = m === mode;
+          return (
+            <Pressable key={m} testID={`signin-mode-${m}`} onPress={() => onMode(m)} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={MODE_LABEL[m]} hitSlop={4}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: on ? t.accent : 'transparent' }}>
+              <Ionicons name={MODE_ICON[m]} size={13} color={on ? t.accentFg : t.muted} />
+              {on && <Text style={{ color: t.accentFg, fontSize: 12, fontWeight: '700' }}>{MODE_LABEL[m]}</Text>}
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={{ flexDirection: 'row', gap: 6 }} accessibilityRole="radiogroup" accessibilityLabel="Colours">
+        {swatches.map((p) => {
+          const on = p.key === palette;
+          return (
+            <Pressable key={p.key} testID={`signin-palette-${p.key}`} onPress={() => onPalette(p.key)} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={p.label} hitSlop={4}
+              style={{ width: 24, height: 24, borderRadius: 12, padding: 2, borderWidth: 2, borderColor: on ? t.fg : 'transparent' }}>
+              <View style={[{ flex: 1, borderRadius: 10 }, gradient(`linear-gradient(135deg, ${p.colors[0]}, ${p.colors[1]} 55%, ${p.colors[2]})`, p.colors[1])]} />
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }

@@ -1,4 +1,4 @@
-import { pickWelcomeScene, WELCOME_COPY, WELCOME_SCENE_COOKIE, type WelcomeScene } from '@crew/contracts';
+import { pickWelcomeScene, WELCOME_SCENE_COOKIE, type SignInMode, type WelcomeScene } from '@crew/contracts';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform } from 'react-native';
@@ -6,7 +6,8 @@ import { ApiError } from '../src/lib/api';
 import { type SignInStep, useSession } from '../src/lib/session';
 import { kv, secureStorageAvailable } from '../src/lib/storage';
 import { Button, Card, Field, ListItem, Notice, Screen, Text } from '../src/ui';
-import { WelcomeHero } from '../src/ui/welcome';
+import { parseSignInTheme, SIGN_IN_THEME_KEY, signInWorld } from '../src/lib/signin-theme';
+import { SignInGreeting, SignInThemeBar, WelcomeHero } from '../src/ui/welcome';
 
 /**
  * Sign-in: email and password, then a 6-digit code when two-step sign-in is on, then a workspace if there are several.
@@ -41,6 +42,16 @@ export default function Login() {
     if (params.space) return;
     void kv.get(WELCOME_SCENE_COOKIE).then((v) => setScene(pickWelcomeScene(null, v))).catch(() => undefined);
   }, [params.space]);
+  // Light, dark or auto and the colour palette for the hero, kept on the phone (the same choice the web pages keep).
+  const [look, setLook] = useState<{ mode: SignInMode; palette: string }>({ mode: 'auto', palette: 'signature' });
+  useEffect(() => {
+    void kv.get(SIGN_IN_THEME_KEY).then((v) => setLook(parseSignInTheme(v))).catch(() => undefined);
+  }, []);
+  const changeLook = (next: Partial<{ mode: SignInMode; palette: string }>) => {
+    const v = { ...look, ...next };
+    setLook(v);
+    void kv.set(SIGN_IN_THEME_KEY, JSON.stringify(v)).catch(() => undefined);
+  };
 
   const run = async (fn: () => Promise<SignInStep>) => {
     setBusy(true);
@@ -124,9 +135,9 @@ export default function Login() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Screen>
-        <WelcomeHero scene={scene} onChoose={step ? undefined : setScene} />
-        <Text size={22} weight="800" style={{ marginTop: 4, letterSpacing: -0.4 }} testID="login-title">{WELCOME_COPY[scene].formTitle}</Text>
-        <Text muted>Welcome back. Use your work email.</Text>
+        <WelcomeHero scene={scene} onChoose={step ? undefined : setScene} world={signInWorld(scene, look.mode, look.palette)} />
+        <SignInThemeBar scene={scene} mode={look.mode} palette={look.palette} onMode={(mode) => changeLook({ mode })} onPalette={(palette) => changeLook({ palette })} />
+        <SignInGreeting scene={scene} />
         {notice && <Notice tone="warn">{notice}</Notice>}
         {!secureStorageAvailable && (
           <Notice tone="warn" testID="web-preview-notice">

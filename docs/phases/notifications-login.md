@@ -61,7 +61,7 @@ The colours follow the product the person is about to enter (the level design sy
 
 - **Greeting.** A waving hand, "Good morning / afternoon / evening" by the browser's clock, and a rotating "Hello, Namaste, Marhaba, Bonjour, Hola, Vanakkam". The Console adds "SAMPLEDGE team" and a "SAMPLEDGE staff only" badge. The workspace name is bold and large; the end-to-end flow checks that the greeting, name and words never overlap the picture (1440 and 1280 px wide).
 - **Sign-in box.** A glass card with a rotating colour border, the level's badge and name in bold, a Secure (or Staff only) chip, email and lock icons in the boxes and a trust strip (multi-factor, encrypted, audited).
-- **Light, dark and palettes.** Sun and moon buttons (Auto, Light, Dark) and "Colours" (Signature, Aurora, Sunset, Ocean, Forest, Candy, Graphite). Kept per device in `localStorage` (`crew-signin-theme`).
+- **Light, dark and palettes.** Sun and moon buttons (Auto, Light, Dark) and "Colours" (Signature, Aurora, Sunset, Ocean, Forest, Candy, Graphite). Kept per device in `localStorage` (`crew-signin-theme`). The phone sign-in has the same choice under its hero (kept on the phone under the same key) and the same greeting (`SignInGreeting`, `SignInThemeBar`, `signInWorld` in `apps/mobile/src/lib/signin-theme.ts`). The workspace name on the phone is sized to stay on one line.
 - **Eye button.** `PasswordInput` in `@crew/ui` on every password box: sign-in, reset, change password, sign-up, invitations, Console setup. The phone `Field` shows one on every hidden field.
 - **Forgot password.** A link under the password on the web portal, the Console and the phone app, and on an invitation for an existing account.
 - **Validation and feedback.** The email gets a green tick once it is a complete address and a red cross with a plain message when it is not. A new password shows its rules ticking off and a strength bar; a confirmation shows whether it matches. A wrong password draws a red cross in the box, turns the card border red and shakes it; a right one draws ticks, turns the border green and plays a "Signed in" burst.
@@ -84,7 +84,7 @@ The colours follow the product the person is about to enter (the level design sy
 ## Working end to end
 
 - Everything above on the web portal and Console, checked by the end-to-end flow: no overlap, theme choice kept after reload, email check, eye button, wrong password cross and shake, Forgot password link, tick and burst then the welcome after sign-in, the public Help & Support page with search and an article.
-- The phone screens (eye button, tick and cross, welcome after sign-in) are checked by typecheck and the mobile unit suite only.
+- The phone screens (eye button, tick and cross, greeting, light/dark and palettes, welcome after sign-in) are checked by typecheck, the mobile unit suite (`signin-theme.spec.ts`) and screenshots of the web build only.
 
 ## Not yet verified
 
