@@ -235,6 +235,8 @@ export const employeeListQuery = z.object({
   status: z.enum(EMPLOYEE_STATUSES).optional(),
   departmentId: z.uuid().optional(),
   legalEntityId: z.uuid().optional(),
+  /** People added or updated by one data import. */
+  importId: z.uuid().optional(),
   includeExited: z.enum(['true', 'false']).optional(),
   sort: z.enum(['name', 'code', 'joined', 'department', 'location', 'status']).default('name'),
   dir: z.enum(['asc', 'desc']).default('asc'),

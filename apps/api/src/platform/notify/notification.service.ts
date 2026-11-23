@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  categoryOfKind, resolveNotificationPreferences, type NotificationCategory, type NotificationPriority, type NotificationView,
+  categoryOfKind, inQuietHours, resolveNotificationPreferences, type NotificationCategory, type QuietHours, type NotificationPriority, type NotificationView,
 } from '@crew/contracts';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { requestContext } from '../context/request-context';
@@ -76,10 +76,11 @@ export class NotificationService {
     const priority = notice.priority ?? 'normal';
     const memberships = await tx.collection('memberships').find({ id: { $in: ids } });
     const emails = new Map((await (await usersTable(tx)).find({ id: { $in: memberships.map((m) => m.user_id) } }, { projection: { email: 1 } })).map((u) => [u.id as string, u.email as string]));
-    const prefs = new Map(
+    const resolved = new Map(
       (await tx.collection('member_preferences').find({ membership_id: { $in: ids } }, { projection: { membership_id: 1, notifications: 1 } }))
-        .map((p) => [p.membership_id as string, resolveNotificationPreferences(p.notifications).categories[category]]),
+        .map((p) => [p.membership_id as string, resolveNotificationPreferences(p.notifications)]),
     );
+    const prefs = new Map([...resolved].map(([id, p]) => [id, p.categories[category]]));
     const active = memberships.filter((m) => m.status === 'active').map((m) => ({ id: m.id as string, tenant_id: m.tenant_id as string, email: emails.get(m.user_id)! }));
     const live: Doc[] = [];
     // Who caused it, so their own open page does not pop up a notice about what they just did.
@@ -92,7 +93,12 @@ export class NotificationService {
         if (!n.folded) {
           // A push to each signed-in phone. It carries only the notification id; the app loads the text after sign-in.
           const devices = await tx.collection('mobile_devices').find({ membership_id: r.id, push_token: { $ne: null }, revoked_at: null }, { projection: { _id: 1, tenant_id: 1 } });
-          if (devices.length) await tx.collection('push_messages').insertMany(devices.map((d) => ({ tenant_id: d.tenant_id, mobile_device_id: d.id, notification_id: n.id })));
+          if (devices.length) {
+            // Quiet hours hold a phone push until they end (urgent notices go at once); the notice is in the app meanwhile.
+            const quiet = resolved.get(r.id)?.quiet;
+            const holdUntil = quiet && priority !== 'urgent' ? await this.quietUntil(tx, r.tenant_id, quiet) : null;
+            await tx.collection('push_messages').insertMany(devices.map((d) => ({ tenant_id: d.tenant_id, mobile_device_id: d.id, notification_id: n.id, ...(holdUntil ? { next_attempt_at: holdUntil } : {}) })));
+          }
         }
       }
       if (notice.email && (channel.email || category === 'system')) {
@@ -102,6 +108,22 @@ export class NotificationService {
     }
     if (live.length) await tx.collection('live_events').insertMany(live);
     return active.length;
+  }
+
+  /** When the person's quiet hours end, if they are in them now (read in the workspace's time zone), else null. */
+  private async quietUntil(tx: TenantTx | PlatformTx, tenantId: string, q: QuietHours): Promise<Date | null> {
+    if (!q.enabled) return null;
+    let tz = 'UTC';
+    try {
+      tz = ((await tx.collection('tenants').findOne({ id: tenantId }, { projection: { timezone: 1 } }))?.timezone as string | undefined) ?? 'UTC';
+    } catch {
+      // Outside a workspace (Console) there is no tenant to read: UTC.
+    }
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+    const now = Number(parts.find((x) => x.type === 'hour')!.value) * 60 + Number(parts.find((x) => x.type === 'minute')!.value);
+    if (!inQuietHours(q, now)) return null;
+    const end = Number(q.to.slice(0, 2)) * 60 + Number(q.to.slice(3, 5));
+    return new Date(Date.now() + (((end - now + 1440) % 1440) || 1440) * 60_000);
   }
 
   /** Inserts the notice, or folds it into the person's unread notice with the same dedupe key. */

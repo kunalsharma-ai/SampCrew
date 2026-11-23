@@ -53,6 +53,7 @@ const RESTRICTED_BY: Record<string, string> = {
   super: 'Switched off by the Super Workspace',
   hr_workspace: 'Its module or page is switched off here',
   module: 'Its module or page is off for this company',
+  level: 'For HR and the Super Workspace only: never given to the Employee Workspace',
 };
 const SET_BY: Record<string, string> = { super: 'Switched off by the Super Workspace', hr: 'Switched off by HR Workspace', console: 'Switched off by SAMPLEDGE for this company' };
 const AUDIENCE: Record<string, string> = { employee: 'Employees', hr: 'HR', admin: 'Admins' };

@@ -7,6 +7,7 @@ import { photoBytes, pickDocumentFile, pickDocumentPhoto, type PickedPhoto } fro
 import { useSession } from '../../src/lib/session';
 import type { MyTask } from '../../src/lib/types';
 import { Badge, Button, Card, CardTitle, Field, fmt, Loading, Notice, Row, Screen, Text, useLoad } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
 const ACTION: Record<string, string> = {
   assigned: 'Assigned', edited: 'Edited', progress: 'Progress updated', acknowledged: 'Acknowledged', accepted: 'Accepted', reopened: 'Reopened', cancelled: 'Cancelled',
@@ -16,7 +17,7 @@ const ACTION: Record<string, string> = {
 const FORMAT: Record<string, string> = { pdf: 'PDF', image: 'a photo (PNG, JPEG or WebP)', word: 'Word (.docx)', text: 'plain text' };
 
 /** One task: what it asks for, and the step the person takes next (start, finish, acknowledge or upload). */
-export default function TaskScreen() {
+function TaskScreenBody() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api } = useSession();
   const { data: task, error, reload } = useLoad(() => api.get<MyTask & { document: (MyTask['document'] & { verificationStatus?: string | null; verificationRemarks?: string | null }) | null }>(`/tasks/${id}`), [api, id]);
@@ -142,5 +143,13 @@ export default function TaskScreen() {
         ))}
       </Card>
     </Screen>
+  );
+}
+
+export default function TaskScreen() {
+  return (
+    <ModuleGate module="tasks">
+      <TaskScreenBody />
+    </ModuleGate>
   );
 }

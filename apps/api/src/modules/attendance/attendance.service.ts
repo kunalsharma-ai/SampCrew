@@ -13,6 +13,7 @@ import {
   type PunchInput,
   type PunchSyncInput,
   mobileSync,
+  type AttendanceViewFilter,
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -333,6 +334,21 @@ export class AttendanceService implements OnModuleInit {
           const win = await this.days.window(tx, e, workDate);
           const last = (await this.days.punches(tx, e.id, win.from, at)).at(-1);
           direction = last && last.direction !== 'out' ? 'out' : 'in';
+        } else if (p.purpose) {
+          // Newer apps say what the punch is for; then it must follow the day's punches.
+          const win = await this.days.window(tx, e, workDate);
+          const last = (await this.days.punches(tx, e.id, win.from, at)).at(-1);
+          const inside = Boolean(last && last.direction !== 'out');
+          const lastBreak = last?.purpose === 'break';
+          const why = direction === 'in' && inside ? ['already_in', 'You are already checked in.']
+            : direction === 'out' && !inside ? ['not_in', 'You are not checked in, so there is nothing to end.']
+            : p.purpose === 'break' && direction === 'in' && !(last && last.direction === 'out' && lastBreak) ? ['no_break', 'There is no break to end.']
+            : p.purpose === 'work' && direction === 'in' && last && last.direction === 'out' && lastBreak ? ['on_break', 'You are on a break. End the break instead.']
+            : null;
+          if (why) {
+            refuse(why[0]!, why[1]!);
+            continue;
+          }
         }
         const row = await tx.collection('attendance_events').insert({
           employee_id: e.id,
@@ -349,7 +365,7 @@ export class AttendanceService implements OnModuleInit {
           recorded_by_membership_id: actor.membershipId,
           note: p.note ?? null,
           remote_ip: ctx?.ip ?? null,
-          raw: { timeBasis: capture.basis, phoneTime: p.capturedAt, capturedElapsedMs: p.capturedElapsedMs ?? null, sentElapsedMs: input.sentElapsedMs ?? null, sameRun: p.capturedRunId !== undefined && p.capturedRunId === input.sentRunId },
+          raw: { ...(p.purpose ? { purpose: p.purpose } : {}), timeBasis: capture.basis, phoneTime: p.capturedAt, capturedElapsedMs: p.capturedElapsedMs ?? null, sentElapsedMs: input.sentElapsedMs ?? null, sameRun: p.capturedRunId !== undefined && p.capturedRunId === input.sentRunId },
           mobile_device_id: device.id,
           risk_flags: flags,
           arrived_after_lock: locked,
@@ -560,7 +576,10 @@ export class AttendanceService implements OnModuleInit {
         dayType: plan.dayType,
         holidayName: plan.holidayName,
         nextDirection: last && last.direction !== 'out' ? 'out' : 'in',
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), flags: p.risk_flags })),
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), note: p.note ?? null, flags: p.risk_flags })),
+        // Working, on a break (the last punch was an out for a break) or not checked in.
+        state: last && last.direction !== 'out' ? 'working' : last && last.purpose === 'break' ? 'on_break' : last ? 'checked_out' : 'not_started',
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), flags: p.risk_flags, purpose: p.purpose })),
         day: await this.dayRow(tx, e.id, date),
         allowed: { web: policy.web_punch, mobile: policy.mobile_punch, qr: policy.qr_punch },
         geofence: { mode: policy.geofence_mode, configured: Boolean(e.fence), radiusM: e.fence?.radiusM ?? null },
@@ -671,7 +690,7 @@ export class AttendanceService implements OnModuleInit {
   }
 
   /** Everyone the caller can see on one date, with a status summary. Recent days are refreshed first. */
-  async team(q: { date: string; status?: string; departmentId?: string; locationId?: string }) {
+  async team(q: { date: string; status?: string; filter?: AttendanceViewFilter; departmentId?: string; locationId?: string }) {
     return this.db.tenant(async (tx) => {
       const scope = await this.access.visibleFilter(tx, await this.access.viewer(tx));
       const and: Record<string, unknown>[] = [scope, { date_of_joining: { $lte: q.date } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: q.date } }] }];
@@ -686,7 +705,19 @@ export class AttendanceService implements OnModuleInit {
       await this.refreshDate(tx, employees, q.date);
       if (!ids.length) return { date: q.date, summary: {}, rows: [] };
       const allDays = await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: q.date });
-      const views = await dayViews(tx, q.status ? allDays.filter((d) => d.status === q.status) : allDays);
+      // Home's cards open this list with a view beyond the stored status: late, left early, working now, not in yet, WFH.
+      const wfh = q.filter === 'wfh' ? await remoteOn(tx, ids, q.date) : null;
+      const view = (d: Record<string, any>) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        switch (q.filter) {
+          case 'late': return d.late_minutes > 0;
+          case 'early_leave': return d.early_leave_minutes > 0;
+          case 'working_now': return d.status === 'in_progress' && !!d.first_in && !d.last_out;
+          case 'not_in_yet': return d.status === 'in_progress' && !d.first_in;
+          case 'wfh': return wfh!.has(d.employee_id) || (Array.isArray(d.explanation) && d.explanation.some((x: unknown) => /from home/i.test(String(x))));
+          default: return true;
+        }
+      };
+      const views = await dayViews(tx, allDays.filter((d) => (!q.status || d.status === q.status) && view(d)));
       const byId = new Map(employees.map((e) => [e.id as string, e]));
       const departments = await fieldById(tx, 'departments', employees.map((e) => e.current_department_id));
       const locations = await fieldById(tx, 'locations', employees.map((e) => e.current_location_id));
@@ -1083,4 +1114,11 @@ export class AttendanceService implements OnModuleInit {
     const end = to > today ? today : to;
     if (from <= end) await this.days.recompute(tx, employeeId, from < e.date_of_joining ? e.date_of_joining : from, end);
   }
+}
+
+/** People with approved work from home covering a date. */
+async function remoteOn(tx: TenantTx, employeeIds: string[], date: string): Promise<Set<string>> {
+  const types = await tx.collection('leave_types').distinct<string>('id', { kind: 'wfh' });
+  if (!types.length) return new Set();
+  return new Set(await tx.collection('leave_requests').distinct<string>('employee_id', { employee_id: { $in: employeeIds }, status: 'approved', leave_type_id: { $in: types }, start_date: { $lte: date }, end_date: { $gte: date } }));
 }

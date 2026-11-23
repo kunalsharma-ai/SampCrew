@@ -9,10 +9,14 @@ import { m0033LeaveUpgrade } from './0033_leave_upgrade';
 import { m0034RewardPayouts } from './0034_reward_payouts';
 import { m0035FeatureManagement } from './0035_feature_management';
 import { m0040LeaveRebuild } from './0040_leave_rebuild';
+import { m0060DataImport } from './0060_data_import';
 import { m0070LearningModules } from './0070_learning_modules';
+import { m0080LearningNotifications } from './0080_learning_notifications';
+import { m0081ConsoleAlertsSeen } from './0081_console_alerts_seen';
 import { m0100DocumentCenter } from './0100_document_center';
 import { m0110CandidateCrm } from './0110_candidate_crm';
 import { m0130WorkspaceLimits } from './0130_workspace_limits';
+import { m0140HelpCentre } from './0140_help_centre';
 
 /** Every MongoDB migration, in order. Append new ones; never edit or reorder one that has shipped. */
 export const MONGO_MIGRATIONS: MongoMigration[] = [
@@ -26,8 +30,12 @@ export const MONGO_MIGRATIONS: MongoMigration[] = [
   m0034RewardPayouts,
   m0035FeatureManagement,
   m0040LeaveRebuild,
+  m0060DataImport,
   m0070LearningModules,
+  m0080LearningNotifications,
+  m0081ConsoleAlertsSeen,
   m0100DocumentCenter,
   m0110CandidateCrm,
   m0130WorkspaceLimits,
+  m0140HelpCentre,
 ];

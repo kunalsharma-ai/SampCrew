@@ -13,6 +13,10 @@ import {
   type HrWorkspaceStatus,
   type HrWorkspaceSummary,
   type HrWorkspaceUpdate,
+  HR_WORKSPACE_PERMISSION_DEPENDENTS,
+  HR_WORKSPACE_PERMISSION_SWITCHES,
+  type HrWorkspacePermissionKey,
+  type HrWorkspacePermissionState,
   type PlatformLevel,
   type TransferRow,
 } from '@crew/contracts';
@@ -227,8 +231,62 @@ export class HierarchyService {
           assignModules: w.status === 'active' && hasPermission(s, 'modules:assign').allowed,
           transfer: hasPermission(s, 'employees:transfer').allowed && w.status !== 'archived',
         },
+        permissions: await this.permissionStates(tx, w),
       };
     });
+  }
+
+  /** The Super Workspace's employee-data switches for one HR Workspace, with why one is off when it is not theirs. */
+  private async permissionStates(tx: TenantTx, w: Doc): Promise<HrWorkspacePermissionState[]> {
+    const off = new Set((w.permissions_off ?? []) as string[]);
+    const controls = await tx.collection('tenant_access_controls').findOne({}, { projection: { disabled_permissions: 1 } });
+    const console = new Set((controls?.disabled_permissions ?? []) as string[]);
+    const given = new Set((w.features ?? []) as string[]);
+    return HR_WORKSPACE_PERMISSION_SWITCHES.map((p) => {
+      const reason = console.has(p.key) ? 'Switched off for the company by SAMPLEDGE'
+        : p.key === 'imports:run' && !given.has('data_import') ? 'Give this HR Workspace the Data import module first'
+          : null;
+      return { key: p.key, label: p.label, locked: p.locked, on: !reason && (p.locked || !off.has(p.key)), reason };
+    });
+  }
+
+  /**
+   * Super Workspace: switches what an HR Workspace's admins may do with employee data (edit, create, import, export,
+   * manage custom fields). Applied when each admin's permissions are loaded (loadSubject), so it reaches open sessions
+   * at once and the API refuses what the screen hides. HR Workspace admins cannot change their own switches.
+   */
+  setPermissions(id: string, input: { changes: { key: HrWorkspacePermissionKey; enabled: boolean }[]; version: number }) {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      if (this.levelOf(s) !== 'super') {
+        await this.recordRefusal({ action: 'delegation.denied', resourceType: 'hr_workspace', resourceId: id, metadata: { reason: 'not_super_workspace', switches: input.changes } });
+        throw Errors.forbidden('Only the Super Workspace decides what an HR Workspace may do');
+      }
+      const w = await tx.collection('hr_workspaces').findOne({ id });
+      if (!w || w.status === 'archived') throw Errors.notFound('HR Workspace');
+      if (input.version !== (w.version ?? 1)) throw Errors.conflict('version_conflict', 'Someone else changed this HR Workspace while you were editing. Reload to see their change, then try again.');
+      const before = [...new Set((w.permissions_off ?? []) as string[])].sort();
+      const off = new Set(before);
+      for (const c of input.changes) {
+        const def = HR_WORKSPACE_PERMISSION_SWITCHES.find((p) => p.key === c.key)!;
+        if (def.locked && !c.enabled) throw Errors.badRequest('permission_locked', `${def.label} cannot be switched off: the HR Workspace exists to look after its people.`);
+        const keys = [c.key, ...(HR_WORKSPACE_PERMISSION_DEPENDENTS[c.key] ?? [])];
+        for (const k of keys) {
+          if (c.enabled) off.delete(k);
+          else off.add(k);
+        }
+      }
+      const after = [...off].sort();
+      if (JSON.stringify(before) === JSON.stringify(after)) return this.get(id);
+      const version = (w.version ?? 1) + 1;
+      const n = await tx.collection('hr_workspaces').update({ id, version: w.version ?? 1 }, { $set: { permissions_off: after, version } });
+      if (!n) throw Errors.conflict('version_conflict', 'Someone else changed this HR Workspace at the same moment. Reload and try again.');
+      const changes = { permissionsOff: { from: before, to: after } };
+      await this.version(tx, s, { level: 'super', targetType: 'hr_workspace', targetId: id, version, action: 'permissions_changed', changes });
+      await this.audit.record(tx, { action: 'hr_workspace.permissions_changed', resourceType: 'hr_workspace', resourceId: id, changes, metadata: { level: 'super', version, name: w.name as string } });
+      await this.notifications.signal(tx, await this.affected(tx, id), 'access.changed', { hrWorkspaceId: id });
+      return null;
+    }).then((r) => r ?? this.get(id));
   }
 
   // Super Workspace: HR Workspaces ---------------------------------------------------------------------------------------

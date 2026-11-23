@@ -275,6 +275,18 @@
   }
 }
 
+/* Skeleton: a soft sweep over the placeholder. The motion settings above stop it like any other animation. */
+.crew-skeleton {
+  background-image: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--surface) 55%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: crew-sweep 1.3s ease-in-out infinite;
+}
+@keyframes crew-sweep {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
 @keyframes crew-drift {
   from { background-position: 0% 0%; }
   to { background-position: 100% 60%; }

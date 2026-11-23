@@ -4,10 +4,11 @@ import { taskStatusLabel, taskTone } from '../../src/lib/labels';
 import { useSession } from '../../src/lib/session';
 import type { MyTask, TaskCounts } from '../../src/lib/types';
 import { Badge, Card, CardTitle, Choice, Empty, fmt, ListItem, Loading, Notice, Screen, Text, Tile, TileGrid, useLoad, useReloadOnFocus } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
 
 /** My HR Tasks and Manager Tasks, open ones first. */
-export default function TasksScreen() {
+function TasksScreenBody() {
   const { api } = useSession();
   const router = useRouter();
   const [category, setCategory] = useState<'hr' | 'manager'>('hr');
@@ -50,5 +51,13 @@ export default function TasksScreen() {
       </Card>
       {data && <Text muted size={12}>Overdue tasks are open tasks past their due date.</Text>}
     </Screen>
+  );
+}
+
+export default function TasksScreen() {
+  return (
+    <ModuleGate module="tasks">
+      <TasksScreenBody />
+    </ModuleGate>
   );
 }

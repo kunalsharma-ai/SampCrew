@@ -1,5 +1,5 @@
 'use client';
-import { checkFieldValue, CUSTOM_FIELD_ENTITIES, CUSTOM_FIELD_ENTITY_LABEL, CUSTOM_FIELD_TYPE_LABEL, CUSTOM_FIELD_TYPES, type CustomFieldType, OPTION_TYPES } from '@crew/contracts';
+import { checkFieldValue, FIELD_OPTION_LISTS, MASTER_LIST_INFO, CUSTOM_FIELD_ENTITIES, CUSTOM_FIELD_ENTITY_LABEL, CUSTOM_FIELD_TYPE_LABEL, CUSTOM_FIELD_TYPES, type CustomFieldType, OPTION_TYPES } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Table, TBody, TD, TH, THead, TR, Textarea, cn } from '@crew/ui';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -64,7 +64,7 @@ export function FieldsView({ fields, roles, history, entity }: { fields: FieldRo
                   <TD className="font-medium">{f.label}<div className="font-mono text-[0.6875rem] font-normal text-fg-subtle">{f.key}{f.section ? ` · ${f.section}` : ''}</div></TD>
                   <TD>{CUSTOM_FIELD_TYPE_LABEL[f.type]}{f.options.length ? <div className="text-xs text-fg-muted">{f.options.filter((o) => !o.archived).map((o) => o.label).join(', ')}</div> : null}</TD>
                   <TD className="text-xs">{[f.required ? 'Required' : 'Optional', f.enabled ? null : 'Switched off', f.defaultValue !== null && f.defaultValue !== undefined && f.defaultValue !== '' ? `Default: ${String(f.defaultValue)}` : null].filter(Boolean).join(' · ')}</TD>
-                  <TD className="text-xs text-fg-muted">{f.viewRoles.length ? `Seen by ${names(f.viewRoles)}` : 'Everyone with the record'}{f.editRoles.length ? ` · changed by ${names(f.editRoles)}` : ''}{f.employeeEditable ? ' · employee can fill in' : ''}</TD>
+                  <TD className="text-xs text-fg-muted">{f.viewRoles.length ? `Seen by ${names(f.viewRoles)}` : 'Everyone with the record'}{f.editRoles.length ? ` · changed by ${names(f.editRoles)}` : ''}{f.employeeEditable ? ' · employee can fill in' : ''}{f.searchable ? ' · searchable' : ''}{f.importable ? '' : ' · not imported'}{f.config.masterList ? ` · options from ${f.config.masterList.replace(/_/g, ' ')}` : ''}</TD>
                   <TD>{f.valueCount ?? 0}</TD>
                   <TD className="whitespace-nowrap text-right">
                     <Button size="sm" variant="ghost" aria-label={`Move ${f.label} up`} disabled={i === 0 || pending} onClick={() => move(i, -1)}><ArrowUp className="size-3.5" aria-hidden /></Button>
@@ -123,11 +123,15 @@ function FieldDialog({ field, entity, roles, onClose, onSaved }: { field: FieldR
   const [required, setRequired] = useState(field?.required ?? false);
   const [enabled, setEnabled] = useState(field?.enabled ?? true);
   const [employeeEditable, setEmployeeEditable] = useState(field?.employeeEditable ?? false);
+  const [searchable, setSearchable] = useState(field?.searchable ?? false);
+  const [importable, setImportable] = useState(field?.importable ?? true);
+  const [masterList, setMasterList] = useState<string>(field?.config.masterList ?? '');
   const [error, setError] = useState<string | null>(null);
   const [fe, setFe] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
   const hasOptions = OPTION_TYPES.includes(type);
-  const numeric = type === 'number' || type === 'currency';
+  const numeric = type === 'number' || type === 'currency' || type === 'decimal';
+  const ownOptions = hasOptions && !masterList;
   // A new type starts with no old messages (an error from the previous type would otherwise stay on screen).
   const setType = (t: CustomFieldType) => { setTypeRaw(t); setFe({}); setError(null); };
   const toggle = (list: string[], set: (v: string[]) => void, k: string) => set(list.includes(k) ? list.filter((x) => x !== k) : [...list, k]);
@@ -140,11 +144,11 @@ function FieldDialog({ field, entity, roles, onClose, onSaved }: { field: FieldR
         const f = new FormData(e.currentTarget);
         const v = (k: string) => String(f.get(k) ?? '').trim();
         const num = (k: string) => (v(k) === '' ? undefined : Number(v(k)));
-        const config = Object.fromEntries(Object.entries({ min: numeric ? num('min') : undefined, max: numeric ? num('max') : undefined, maxLength: type === 'short_text' || type === 'long_text' ? num('maxLength') : undefined, currency: type === 'currency' && v('currency') ? v('currency').toUpperCase() : undefined }).filter(([, x]) => x !== undefined));
+        const config = Object.fromEntries(Object.entries({ min: numeric ? num('min') : undefined, max: numeric ? num('max') : undefined, maxLength: type === 'short_text' || type === 'long_text' ? num('maxLength') : undefined, currency: type === 'currency' && v('currency') ? v('currency').toUpperCase() : undefined, decimals: type === 'decimal' ? num('decimals') : undefined, masterList: hasOptions && masterList ? masterList : undefined }).filter(([, x]) => x !== undefined));
         const rawDefault = v('defaultValue');
         const body: Record<string, unknown> = {
-          label: v('label'), type, helpText: v('helpText') || null, required, enabled, section: v('section') || null, viewRoles, editRoles, employeeEditable: entity === 'employee' && employeeEditable, config,
-          options: hasOptions ? options.filter((o) => o.label.trim()).map((o) => ({ ...o, value: o.value || o.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') })) : [],
+          label: v('label'), type, helpText: v('helpText') || null, required, enabled, section: v('section') || null, viewRoles, editRoles, employeeEditable: entity === 'employee' && employeeEditable, searchable, importable, config,
+          options: ownOptions ? options.filter((o) => o.label.trim()).map((o) => ({ ...o, value: o.value || o.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') })) : [],
           ...(rawDefault ? { defaultValue: numeric ? Number(rawDefault) : type === 'checkbox' ? rawDefault === 'true' : rawDefault } : { defaultValue: null }),
           ...(field ? {} : { entity, ...(v('key') ? { key: v('key') } : {}) }),
         };
@@ -155,7 +159,7 @@ function FieldDialog({ field, entity, roles, onClose, onSaved }: { field: FieldR
         if (!v('label')) local.label = 'Enter a label';
         const cfg = config as { min?: number; max?: number; maxLength?: number };
         if (cfg.min !== undefined && cfg.max !== undefined && cfg.min > cfg.max) local.max = 'Must be at least the smallest value';
-        if (hasOptions && !options.some((o) => o.label.trim())) local.options = 'Add at least one option';
+        if (ownOptions && !options.some((o) => o.label.trim())) local.options = 'Add at least one option';
         if (rawDefault && type !== 'file') {
           const opts = hasOptions ? (body.options as { value: string; label: string }[]) : [];
           const c = checkFieldValue({ type, required: false, options: opts, config: cfg, label: v('label') || 'Default value' }, (body as { defaultValue: unknown }).defaultValue);
@@ -177,6 +181,14 @@ function FieldDialog({ field, entity, roles, onClose, onSaved }: { field: FieldR
         <Field label="Section" hint="Groups fields on the form" error={fe.section}>{(p) => <Input {...p} name="section" maxLength={80} defaultValue={field?.section ?? ''} />}</Field>
         <Field label="Help text" className="sm:col-span-2" error={fe.helpText}>{(p) => <Input {...p} name="helpText" maxLength={300} defaultValue={field?.helpText ?? ''} />}</Field>
         {hasOptions && (
+          <Field label="Options from" hint="A Master data list keeps the options in one place for every field and import" className="sm:col-span-2">{(p) => (
+            <Select {...p} value={masterList} onChange={(e) => setMasterList(e.target.value)}>
+              <option value="">This field's own options</option>
+              {FIELD_OPTION_LISTS.map((l) => <option key={l} value={l}>Master data: {MASTER_LIST_INFO[l].label}</option>)}
+            </Select>
+          )}</Field>
+        )}
+        {ownOptions && (
           <fieldset className="grid gap-2 sm:col-span-2">
             <legend className="mb-1 text-[0.8125rem] font-medium">Options</legend>
             {options.map((o, i) => (
@@ -193,12 +205,15 @@ function FieldDialog({ field, entity, roles, onClose, onSaved }: { field: FieldR
           </fieldset>
         )}
         {numeric && <><Field label="Smallest value" error={fe.min}>{(p) => <Input {...p} name="min" type="number" defaultValue={field?.config.min ?? ''} />}</Field><Field label="Largest value" error={fe.max}>{(p) => <Input {...p} name="max" type="number" defaultValue={field?.config.max ?? ''} />}</Field></>}
+        {type === 'decimal' && <Field label="Decimal places" hint="1 to 6. Empty: 2.">{(p) => <Input {...p} name="decimals" type="number" min={1} max={6} defaultValue={field?.config.decimals ?? ''} />}</Field>}
         {type === 'currency' && <Field label="Currency" hint="Three letters, such as INR">{(p) => <Input {...p} name="currency" maxLength={3} defaultValue={field?.config.currency ?? ''} className="uppercase" />}</Field>}
         {(type === 'short_text' || type === 'long_text') && <Field label="Maximum length" hint="Characters. Empty: 200 for short text, 5,000 for long text." error={fe['config.maxLength']}>{(p) => <Input {...p} name="maxLength" type="number" min={1} max={10000} defaultValue={field?.config.maxLength ?? ''} />}</Field>}
         {type !== 'file' && <Field label="Default value" hint={type === 'checkbox' ? 'true or false' : hasOptions ? 'The option label as a key, such as o_positive' : numeric ? 'Optional. A number within the smallest and largest value.' : 'Optional.'} error={fe.defaultValue}>{(p) => <Input {...p} name="defaultValue" defaultValue={field?.defaultValue === null || field?.defaultValue === undefined ? '' : String(field.defaultValue)} />}</Field>}
         <div className="grid gap-2 sm:col-span-2">
           <Checkbox label="Required" description="The record cannot be saved without it (the default fills it in when there is one)." checked={required} onChange={(e) => setRequired(e.target.checked)} />
           <Checkbox label="Switched on" description="A switched-off field is hidden from forms; its values are kept." checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          <Checkbox label="Searchable" description="Typing a value in the list's search box finds the record." checked={searchable} onChange={(e) => setSearchable(e.target.checked)} />
+          <Checkbox label="Available during import" description="Offered as a column to fill in Data import and in its templates." checked={importable} onChange={(e) => setImportable(e.target.checked)} />
           {entity === 'employee' && <Checkbox label="Employees fill it in themselves" description="They can change it on their own profile." checked={employeeEditable} onChange={(e) => setEmployeeEditable(e.target.checked)} />}
         </div>
         <RolePicker label="Who can see it" hint="Workspace access. None ticked: everyone who can see the record." roles={roles.filter((r) => r.key !== 'super_workspace')} picked={viewRoles} onToggle={(k) => toggle(viewRoles, setViewRoles, k)} />

@@ -201,3 +201,9 @@ export async function createShiftAction(name: string, startTime: string, endTime
   revalidatePath('/attendance');
   return r;
 }
+
+export async function bulkChangeEmployeesAction(body: import('@crew/contracts').EmployeeBulkInput) {
+  const r = await act(() => api<import('@crew/contracts').EmployeeBulkResult>('/employees/bulk', { method: 'POST', body }));
+  revalidatePath('/employees');
+  return r;
+}

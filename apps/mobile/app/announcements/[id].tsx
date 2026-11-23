@@ -4,8 +4,9 @@ import { ApiError } from '../../src/lib/api';
 import { useSession } from '../../src/lib/session';
 import type { Announcement } from '../../src/lib/types';
 import { Badge, Button, Card, fmt, Loading, Notice, Screen, Text, useLoad } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
-export default function AnnouncementScreen() {
+function AnnouncementScreenBody() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api } = useSession();
   // Opening it records that I have read it.
@@ -45,5 +46,13 @@ export default function AnnouncementScreen() {
           </Card>
         ))}
     </Screen>
+  );
+}
+
+export default function AnnouncementScreen() {
+  return (
+    <ModuleGate module="announcements">
+      <AnnouncementScreenBody />
+    </ModuleGate>
   );
 }

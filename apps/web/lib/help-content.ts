@@ -82,6 +82,53 @@ export const WEB_HELP: HelpContent = {
   },
 
   pages: {
+    '/help': {
+      title: 'Help & Support',
+      what: 'Guides, FAQs, tutorials and quick starts for the features you can use, plus Raise a Query.',
+      how: 'Search by feature, question or error message, open a category, or use the quick buttons. Articles you open appear under Recently viewed.',
+      where: 'What you see depends on your level (Super, HR or Employee Workspace), your company\'s features and your permissions.',
+    },
+    '/help/search': {
+      title: 'Search help',
+      what: 'Help articles that match your words: feature and module names, questions and error messages.',
+      how: 'Filter by kind (FAQs, guides, tutorials, troubleshooting, quick starts). Open one to read it.',
+    },
+    '/help/categories/[key]': {
+      title: 'Help category',
+      what: 'The articles and topics in one help category, grouped by kind.',
+      how: 'Open an article, or a topic for its own articles. Still stuck? Raise a query at the bottom.',
+    },
+    '/help/articles/[slug]': {
+      title: 'Help article',
+      what: 'One help article: the answer, or numbered steps you can tick off as you go.',
+      how: 'Use Go to this page or a step\'s Open to jump there, mark steps done (saved for you) and say whether it helped.',
+    },
+    '/help/queries': {
+      title: 'My queries',
+      what: 'The queries you raised, with their ticket IDs and statuses: Open, In Progress, Awaiting User Response, Resolved and Closed.',
+      how: 'Open one to read replies and answer. You are notified of every reply.',
+    },
+    '/help/queries/new': {
+      title: 'Raise a Query',
+      what: 'Ask for help: choose a category (or Other), add a subject, a description, the page and any screenshots.',
+      how: 'Submit to get a ticket ID. Your contact details come from your account.',
+      where: 'It goes to your HR Workspace; an HR Workspace\'s goes to the Super Workspace; a Super Workspace\'s goes to SampCrew Support.',
+    },
+    '/help/queries/[id]': {
+      title: 'Query',
+      what: 'One query: what you asked, the replies and its status.',
+      how: 'Reply with more information, close it when it is sorted, reopen a resolved one within the allowed days, and rate the answer.',
+    },
+    '/help/inbox': {
+      title: 'Queries inbox',
+      what: 'Queries from the people you look after: an HR Workspace answers its employees, the Super Workspace answers HR Workspaces and company-wide employees.',
+      how: 'Filter by status, assigned to you or unassigned, or search by ticket ID, subject or person. Open one to answer it.',
+    },
+    '/help/inbox/[id]': {
+      title: 'Answer a query',
+      what: 'One query you handle, with the conversation and internal notes only handlers see.',
+      how: 'Reply (it moves to Awaiting User Response), add a note, assign it, change the status or escalate it to the level above.',
+    },
     '/': {
       title: 'Home',
       what: 'Your dashboard: clock in and out, your hours, leave balances, attendance this month, rewards, your calendar and tasks, then what needs you today, key numbers, announcements and shortcuts.',
@@ -165,6 +212,12 @@ export const WEB_HELP: HelpContent = {
       what: 'Every notification SampCrew sent you, by category, with important ones first. It updates live.',
       how: 'Filter by category, unread or priority, search, mark read or unread, and open a notice to go to its record.',
       where: 'Also reachable from the bell. Change what you are told about in Notification settings.',
+    },
+    '/settings/mobile-app': {
+      title: 'Mobile app',
+      what: 'Decide what the one SampCrew mobile app shows to Super Workspace, HR Workspace and Employee Workspace people: modules, features, menu, quick actions and home cards.',
+      how: 'Switch modules and features, choose levels and menu places, preview each level, save a draft, then publish. Restore an older version from History.',
+      where: 'Phones follow the published version within a minute. Hiding never deletes data and never changes the Web Portal.',
     },
     '/settings/notifications': {
       title: 'Notification settings',
@@ -1084,11 +1137,23 @@ export const WEB_HELP: HelpContent = {
       how: 'Tick people and move them into an HR Workspace. Their records and history go with them.',
       where: 'For Super Workspace admins.',
     },
-    '/employees/import': {
-      title: 'Import existing employees',
-      what: 'Add many people who already work here at once from the Excel or CSV template, with leave balances and the assets they hold.',
-      how: 'Download the template, fill in one row per person, then check the file. Fix any rows marked with problems and import.',
-      where: 'For people who can create employees. Nobody gets a login until you send one.',
+    '/imports': {
+      title: 'Data import',
+      what: 'Bring employees, candidates, clients, contacts, departments, job titles and other lists in from Excel or CSV, with the history of every import.',
+      how: 'Choose what to import, download its template or use your own file, then follow the steps. Nothing is saved until you press Import.',
+      where: 'For Super Workspace and HR Workspace people with import access. The Employee Workspace never imports.',
+    },
+    '/imports/new': {
+      title: 'Upload a file',
+      what: 'The first step of an import: the Excel (.xlsx) or CSV file whose first row holds the column headings.',
+      how: 'Drop the file or click to choose it. Old .xls files must be saved as .xlsx or CSV first.',
+      where: 'Up to 20 MB and 20,000 rows. The file is checked before anything is saved.',
+    },
+    '/imports/[id]': {
+      title: 'Import',
+      what: 'One import: match its columns, check every row, decide what happens to records you already have, import, then download the report.',
+      how: 'Confirm each suggested match, create a field for a new column or ignore it, then check. Rows with errors are left out until fixed.',
+      where: 'Only the person who started an import can run it. Each row is saved on its own, so a failure never leaves half a record.',
     },
     '/employee-features': {
       title: 'Employee features',
@@ -1101,6 +1166,12 @@ export const WEB_HELP: HelpContent = {
       what: 'One place to decide which modules and pages the company, the HR Workspace level and the Employee Workspace level get, what each access level can do, and every module\'s settings.',
       how: 'Use the tabs: Feature management, Module access, Access levels and Module settings. Changes apply at once and are kept in the audit trail.',
       where: 'For workspace admins. Nobody gets access unless an admin grants it.',
+    },
+    '/settings/master-data': {
+      title: 'Master data',
+      what: 'The ready-made lists behind SampCrew’s dropdowns: industries, departments, job titles, job roles, skills, education, candidate sources and more.',
+      how: 'Pick a list, then add your own values, add ready-made ones from the library, rename, group or disable them. Values in use are disabled, never deleted.',
+      where: 'Everyone with structure access can see the lists. Changing them needs master data access (departments: structure access).',
     },
     '/settings/custom-fields': {
       title: 'Custom fields',
@@ -1126,9 +1197,39 @@ export const WEB_HELP: HelpContent = {
     'Each item': { what: 'Each step of the module and how far this person got with it.' },
     'What each HR Workspace can do in Learning': { what: 'Learning powers per HR Workspace. All but viewing are off until the Super Workspace switches them on.', how: 'Switch a power on or off; it applies at once.' },
     'Learning categories': { what: 'The categories modules can use: the built-in list and your own.' },
+    "Today's attention": { what: 'What needs you today, most urgent first: a missing punch, leave waiting, overdue learning, notices to acknowledge and approvals.', how: 'Open an item to deal with it. It disappears once it is done.' },
+    'Action required': { what: 'Items waiting on you, most urgent first.', how: 'Open an item to deal with it.' },
+    'HR action center': { what: 'Requests waiting in the workforce you look after: leave, corrections, profile changes, missing punches and overdue learning.', how: 'Open an item to go straight to the filtered list.' },
+    'Requires attention': { what: 'HR Workspaces below the attendance target, with missing punches, piled-up requests, overdue learning or no HR user.', how: 'Open an alert for that HR Workspace’s own dashboard.' },
+    'Attendance calendar': { what: 'Your attendance for each day of the month, coloured by status, with holidays and deadlines.', how: 'Click a day for its punches and hours. Use the legend to show one status, the arrows to change month.' },
+    'Attendance monitoring': { what: 'Who is working now, not in yet, late, left early or working from home today.', how: 'Use the filters for department, location or date. Open a row to see the matching employees.' },
+    'Attendance trend': { what: 'Attendance for each day of the period: the present, absent and on-leave share, or one bar per day with the attendance % of everyone shown (green from 90%, amber from 75%, red below).', how: 'On Home, switch between a week, two weeks and a month.' },
+    'Attendance trends': { what: 'Present, absent and on-leave share across the whole organization for each day of the period.', how: 'Switch between a week, two weeks and a month.' },
+    Leave: { what: 'Your leave balances, requests waiting for approval and leave coming up.', how: 'Use Apply leave to send a new request.' },
+    'Leave management': { what: 'Leave in the workforce you look after: waiting for approval, approved and rejected this month, on leave today and coming up.' },
+    'Employee overview': { what: 'New joiners, people with attendance issues, absent today, incomplete profiles and profile updates waiting.', how: 'Open a figure to see the people behind it.' },
+    'Learning & development': { what: 'Courses assigned in your workforce: completed, in progress, overdue and the average score.', where: 'Create and assign buttons show only if you may manage learning.' },
+    'Learning overview': { what: 'Learning completion across the organization and for each HR Workspace.' },
+    Communication: { what: 'Unread chats, conversations waiting for HR and the latest announcements.' },
+    'Communication overview': { what: 'Unread chats and the latest announcements across the organization.' },
+    'Recent HR activity': { what: 'Recent changes made by HR users across HR Workspaces, newest first.' },
+    'Recent activity': { what: 'What you did recently: punches, leave requests, corrections and profile changes.' },
+    'Workspace health': { what: 'Each HR Workspace today: present share against the target, late, missing punches, pending requests and learning.', how: 'Open a card for that HR Workspace’s own dashboard.' },
+    'HR Workspace performance': { what: 'The same figures side by side for every HR Workspace, in name order. It is for visibility, not a ranking.' },
+    'Quick actions': { what: 'Shortcuts to the tasks you may do. Only actions your permissions allow are shown.' },
+    'Super Workspace quick actions': { what: 'Shortcuts for the Super Workspace: HR Workspaces, employees, attendance, leave, learning, announcements and reports.' },
+    'Employee data permissions': { what: 'What this HR Workspace may do with employee data: view, edit, create, import, export and manage fields. Off here means off for everyone in it.', how: 'Switch one off and its admins lose it at once. A switch can only take away access a role gives, never add it.' },
+    'What do you want to import?': { what: 'Each kind of record you can import, with its template. A kind you may not import says why.', how: 'Press Import to start, or Template for an Excel file with the columns and an instructions sheet.' },
+    'Import history': { what: 'Every import with who ran it, when, its status and how many rows were added, updated or not imported.', how: 'Open one to see its rows or download its report.' },
+    'Upload your file': { what: 'The spreadsheet to import. Its first row must hold the column headings.', how: 'Drop an .xlsx or CSV file, or download the template first.' },
+    'Match your columns': { what: 'Each column of your file and the SampCrew field it fills. Sure matches are made for you; likely ones wait for you to confirm.', how: 'For a new column, create a field (its type is suggested from the values) or ignore it.' },
+    'Records you already have': { what: 'How SampCrew finds a record that is already there (by employee ID, email or phone) and whether to skip, update, add anyway or ask for each row.' },
+    'Check every row': { what: 'Every row with the problems the check found, each with a suggested correction, and the existing record it matches.', how: 'Use the filters to see only problems. Decide each match, or all of them at once.' },
+    'Importing': { what: 'The import running in the background, row by row.', how: 'You can leave the page: a notification tells you when it finishes. Stopping keeps the rows already imported.' },
+    'Import finished': { what: 'What the import added, updated, skipped and could not import.', how: 'Download the report: it has every problem with a suggested correction and the rows to fix.' },
+    'What happened to each row': { what: 'Each row of the file and what the import did with it, with a link to the record.' },
     'My attendance': { what: 'Your attendance in the period: working days, present, absent, leave, late days and your attendance %.', how: 'Attendance % is present days out of working days. Weekends, holidays and days not counted yet are left out.' },
     'Attendance history': { what: 'Each of your days in the period, newest first, with check-in, check-out and hours.', how: 'Open a day to see its punches and how it was counted.' },
-    'Attendance trend': { what: 'One bar per day: the attendance % of everyone shown, green from 90%, amber from 75%, red below.' },
     'Employee-wise attendance': { what: 'One row per person with period totals and status today.', how: 'Open a name for that person’s month.' },
     'Date-wise attendance': { what: 'One row per person and day, with status, check-in and check-out times and hours worked.' },
     'HR Workspace people': { what: 'The people who look after this HR Workspace and their own attendance.' },
@@ -1174,6 +1275,8 @@ export const WEB_HELP: HelpContent = {
     'What you are told about': { what: 'Each category of notification, in SampCrew and by email.', how: 'Switch a category off to stop it. Approvals and workspace notices always show in SampCrew.' },
     Sound: { what: 'A short, quiet tone for new notices while SampCrew is open. It never plays when a page loads.', how: 'Switch it on, set the volume and which notices make a sound, and try the preview.' },
     'Pop-ups': { what: 'A small pop-up in the corner when a notice arrives while SampCrew is open.' },
+    'Desktop notifications': { what: 'A system notification on your computer for notices that arrive while SampCrew is in a background tab.', how: 'Switch it on and allow notifications when the browser asks.' },
+    'Quiet hours': { what: 'Hours when no sound, pop-up or desktop notification is played. Notices still wait in the bell; urgent ones still come through.' },
     'Approval categories': { what: 'The cards on the Approvals page. Built-in ones cover the usual requests; yours are checked first.', how: 'Add a category for some request types, leave types or expense categories.' },
     // HR Workspace Admin, assets and verification
     'Module access': { what: 'Every module in your plan and whether it is on for this workspace.', how: 'Switch a module off to hide it for everyone. Core modules are always on.' },
@@ -1524,6 +1627,15 @@ export const WEB_HELP: HelpContent = {
   },
 
   routes: {
+    '/settings/mobile-app': {
+      sections: {
+        Preview: { what: 'A read-only phone showing what a level gets from your draft: bottom bar, More menu, quick actions and home cards.', how: 'Pick Super, HR or Employee. Each person’s own permissions can hide more on their phone.' },
+        'Welcome line': { what: 'A short line under the greeting on every home screen.', how: 'Type it, save the draft and publish. Leave it empty for none.' },
+        'Quick actions': { what: 'The big buttons at the top of the phone’s home screen.', how: 'Switch them on, choose levels and order. Up to 8 show; each needs its module on.' },
+        'Home widgets': { what: 'The cards on the phone’s home screen, such as today’s attendance or leave balance.', how: 'Switch them on, choose levels and order. Up to 10 show.' },
+        'Published versions': { what: 'Every mobile app configuration you published, who did and what changed.', how: 'Restore one to publish it again as a new version.' },
+      },
+    },
     '/attendance/hr-workspaces': {
       sections: {
         'HR Workspaces': { what: 'Each HR Workspace you may see, and the central group, with today’s numbers and attendance % for the period.', how: 'Open one for its people. Someone who looks after an HR Workspace is counted in it.' },

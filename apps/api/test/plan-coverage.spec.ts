@@ -24,6 +24,7 @@ const FOUNDATION: Record<string, string> = {
   DesignationsController: 'Core HR (always included)',
   EmployeesController: 'Core HR (always included); module tabs inside the profile are gated in the service',
   DashboardController: 'Home dashboard; each card is shown only when its module is in the plan',
+  HomeController: 'Role-based Home dashboards; each section is read only when its module is in the plan and the person may see it',
   OverviewController: 'Home overview; each block checks its module',
   PreferencesController: 'Personal appearance, favourites and notes',
   ViewsController: 'Saved list views',
@@ -33,7 +34,8 @@ const FOUNDATION: Record<string, string> = {
   HierarchyController: 'Company structure: HR Workspaces and module delegation (the max_hr_workspaces limit is checked in WorkspaceLimitsService and a database guard)',
   WorkspaceLimitsController: 'Plan-based workspace limits (HR Workspaces, Employee Workspaces): used / allowed, shown wherever they are created',
   HrAdminController: 'HR Workspace Admin: module switches (within the plan) and the role permission matrix',
-  EmployeeImportController: 'Core HR (always included): adding existing employees; leave balances and assets check their modules',
+  EmployeeBulkController: 'Core HR (always included): the same job changes as one by one, for several people',
+  MasterDataController: 'Core HR (always included): the lists behind every dropdown; changing them needs masterdata:manage or org:manage',
   RolesController: 'Viewing roles; creating custom roles is the custom_roles module',
   PermissionsController: 'The permission catalogue',
   NotificationsController: 'In-app notifications from every module',
@@ -47,7 +49,10 @@ const FOUNDATION: Record<string, string> = {
   SetupController: 'First-run setup wizard',
   TenancyController: 'Workspace settings',
   SupportAccessController: 'Approving SAMPLEDGE support access',
+  MobileAppController: 'The mobile app menu for the signed-in person; each module in it checks its own plan module',
+  MobileAppAdminController: 'Mobile app configuration (Super Workspace): it only hides modules on phones, within what the plan includes',
   SupportChatController: 'The Super Workspace contacting SampCrew Support (Console Admin team) is part of every plan',
+  HelpController: 'Help & Support (guides, FAQs, Raise a Query) is part of every plan; its three People parts can be switched per level',
   AiController: 'AI governance (status, settings, usage, history) shared by the Copilot and IQ modules; the Copilot actions are gated',
 };
 

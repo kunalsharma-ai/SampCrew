@@ -4,8 +4,9 @@ import { caseStatus, target } from '../../src/lib/labels';
 import { useSession } from '../../src/lib/session';
 import type { CaseRow } from '../../src/lib/types';
 import { Badge, Button, Card, Choice, Empty, fmt, ListItem, Notice, Row, Screen, Text, Title, useLoad, useReloadOnFocus, CardTitle } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
-export default function Helpdesk() {
+function HelpdeskBody() {
   const { api, can } = useSession();
   const router = useRouter();
   // The HR team answers questions rather than asking them: they get the queue of employees' cases.
@@ -44,5 +45,13 @@ export default function Helpdesk() {
         ))}
       </Card>
     </Screen>
+  );
+}
+
+export default function Helpdesk() {
+  return (
+    <ModuleGate module="help">
+      <HelpdeskBody />
+    </ModuleGate>
   );
 }

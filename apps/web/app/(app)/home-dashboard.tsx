@@ -53,6 +53,8 @@ export function HomeDashboard(props: {
   recruiter?: boolean;
   /** The person's own day, shown first. */
   myDay?: React.ReactNode;
+  /** Below a level's own Home: no greeting, KPIs or attention list of its own (the level's Home has them). */
+  embedded?: boolean;
 }) {
   const { dashboard: d } = props;
   const { openThemes, openAssistant } = useExperience();
@@ -69,9 +71,11 @@ export function HomeDashboard(props: {
       case 'helpdesk': return Boolean(props.helpdesk);
       case 'setup': return props.steps.length > 0;
       case 'headcount': return Boolean(d && (d.funnel || d.attendance));
+      // Kept below a level's Home too: its rows approve with one click, which the action centre only links to.
       case 'attention': return Boolean(d);
       // The My day panel already shows HR and manager tasks for an employee.
-      case 'tasks': return Boolean(d) && !props.myDay;
+      case 'tasks': return Boolean(d) && !props.myDay && !props.embedded;
+      case 'quick-actions': return !props.embedded;
       default: return true;
     }
   };
@@ -116,6 +120,56 @@ export function HomeDashboard(props: {
     }
   };
 
+  const widget = (w: DashboardWidget) => (
+          <section
+            key={w}
+            aria-label={WIDGET_LABEL[w]}
+            className={cn('min-w-0', WIDE.includes(w) && 'xl:col-span-2', editing && 'rounded-xl outline-2 outline-dashed outline-offset-4 outline-border-strong', editing && layout.hidden.includes(w) && 'opacity-50')}
+            draggable={editing}
+            onDragStart={() => { dragging.current = w; }}
+            onDragOver={(e) => editing && e.preventDefault()}
+            onDrop={() => dragging.current && drop(dragging.current, w)}
+          >
+            {editing && (
+              <div className="mb-2 flex items-center gap-1 text-[0.8125rem]">
+                <GripVertical className="size-4 cursor-grab text-fg-subtle" aria-hidden />
+                <span className="flex-1 font-medium">{WIDGET_LABEL[w]}</span>
+                <button type="button" className="rounded p-1 hover:bg-bg-subtle" onClick={() => move(w, -1)} aria-label={`Move ${WIDGET_LABEL[w]} up`}><ArrowUp className="size-3.5" /></button>
+                <button type="button" className="rounded p-1 hover:bg-bg-subtle" onClick={() => move(w, 1)} aria-label={`Move ${WIDGET_LABEL[w]} down`}><ArrowDown className="size-3.5" /></button>
+                <button type="button" className="rounded p-1 hover:bg-bg-subtle" onClick={() => toggleHidden(w)} aria-label={layout.hidden.includes(w) ? `Show ${WIDGET_LABEL[w]}` : `Hide ${WIDGET_LABEL[w]}`}>
+                  {layout.hidden.includes(w) ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                </button>
+              </div>
+            )}
+            {render(w)}
+          </section>
+  );
+  const customize = editing ? (
+    <>
+      <Button variant="secondary" size="sm" onClick={() => { setLayout(resolveLayout(props.layout)); setEditing(false); }}>Cancel</Button>
+      <Button size="sm" onClick={save} loading={saving}>Save layout</Button>
+    </>
+  ) : (
+    <Button variant="secondary" size="sm" onClick={() => { setSaved(null); setEditing(true); }}><LayoutGrid className="size-3.5" /> Customize</Button>
+  );
+  if (props.embedded) {
+    return (
+      <section aria-labelledby="more-for-you" className="mt-8" data-testid="more-for-you">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 id="more-for-you" className="text-base font-semibold">More for you</h2>
+            <p className="text-[0.8125rem] text-fg-muted">Optional widgets. Reorder or hide them; attendance, alerts and notifications above always stay.</p>
+          </div>
+          <div className="flex items-center gap-2">{saved && !editing && <span className="text-xs text-fg-subtle" role="status">{saved}</span>}{!editing && <Button variant="secondary" size="sm" onClick={openThemes}><Palette className="size-3.5" /> Themes</Button>}{customize}</div>
+        </div>
+        {d && d.kpis.length > 0 && <KpiStrip kpis={d.kpis} />}
+        {d && <Spotlight d={d} actions={props.actions} openAssistant={openAssistant} recruiter={!!props.recruiter} />}
+        {editing && <p className="mb-3 text-[0.8125rem] text-fg-muted">Drag widgets to reorder them, or use the arrow buttons. Hidden widgets stay here while you edit.</p>}
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">{visible.map((w) => widget(w))}</div>
+      </section>
+    );
+  }
+
   return (
     <>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between animate-fade-in">
@@ -154,30 +208,7 @@ export function HomeDashboard(props: {
 
       {editing && <p className="mb-3 text-[0.8125rem] text-fg-muted">Drag widgets to reorder them, or use the arrow buttons. Hidden widgets stay here while you edit.</p>}
       <div className="grid gap-5 xl:grid-cols-2">
-        {visible.map((w) => (
-          <section
-            key={w}
-            aria-label={WIDGET_LABEL[w]}
-            className={cn('min-w-0', WIDE.includes(w) && 'xl:col-span-2', editing && 'rounded-xl outline-2 outline-dashed outline-offset-4 outline-border-strong', editing && layout.hidden.includes(w) && 'opacity-50')}
-            draggable={editing}
-            onDragStart={() => { dragging.current = w; }}
-            onDragOver={(e) => editing && e.preventDefault()}
-            onDrop={() => dragging.current && drop(dragging.current, w)}
-          >
-            {editing && (
-              <div className="mb-2 flex items-center gap-1 text-[0.8125rem]">
-                <GripVertical className="size-4 cursor-grab text-fg-subtle" aria-hidden />
-                <span className="flex-1 font-medium">{WIDGET_LABEL[w]}</span>
-                <button type="button" className="rounded p-1 hover:bg-bg-subtle" onClick={() => move(w, -1)} aria-label={`Move ${WIDGET_LABEL[w]} up`}><ArrowUp className="size-3.5" /></button>
-                <button type="button" className="rounded p-1 hover:bg-bg-subtle" onClick={() => move(w, 1)} aria-label={`Move ${WIDGET_LABEL[w]} down`}><ArrowDown className="size-3.5" /></button>
-                <button type="button" className="rounded p-1 hover:bg-bg-subtle" onClick={() => toggleHidden(w)} aria-label={layout.hidden.includes(w) ? `Show ${WIDGET_LABEL[w]}` : `Hide ${WIDGET_LABEL[w]}`}>
-                  {layout.hidden.includes(w) ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-                </button>
-              </div>
-            )}
-            {render(w)}
-          </section>
-        ))}
+        {visible.map((w) => widget(w))}
       </div>
     </>
   );
@@ -277,7 +308,7 @@ function Spotlight({ d, actions, openAssistant, recruiter }: { d: Dashboard; act
   return (
     <div className="mb-6 grid gap-5">
       {(trend.length > 1 || slices.length > 0) && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           {trend.length > 1 && head && (
             <ChartPanel title="Workforce overview" action={<span className="text-[0.75rem] text-fg-subtle">{head.value} now{typeof head.delta === 'number' ? `, ${head.delta >= 0 ? '+' : ''}${head.delta} in 6 months` : ''}</span>}>
               <LineChart points={trend} />

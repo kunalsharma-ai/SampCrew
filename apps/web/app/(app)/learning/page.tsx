@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { buttonClass, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -26,6 +27,7 @@ export default async function LearningPage({ searchParams }: { searchParams: Pro
         ...(access.caps.create ? [{ label: 'New module', href: '/learning/manage/new', icon: 'graduation-cap' }] : []),
         ...(access.caps.reports ? [{ label: 'Reports', href: '/learning/manage/reports', icon: 'file-text' }] : []),
       ])} />}
+      <ModuleNotices category="learning" label="Learning" />
       <MyLearningView my={my} tab={tab} learner={access.learner} />
     </>
   );

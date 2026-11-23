@@ -1,5 +1,5 @@
 'use client';
-import { DEFAULT_APPEARANCE, FEATURE_ACTION_KEYS, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
+import { DEFAULT_APPEARANCE, FEATURE_ACTION_KEYS, NOTIFICATION_NAV, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
 import { AutoHelp, Avatar, Badge, CrewLogo, Dialog, HelpProvider, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronDown, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
@@ -27,6 +27,7 @@ import { IqPanel } from './iq-panel';
 import { ThemePanel } from './theme-panel';
 import { logoutAction, switchTenantAction } from './shell-actions';
 import { NotificationBell } from '@/components/notification-bell';
+import { useOptionalLive } from '@/components/live';
 import { FeatureGate } from '@/components/feature-gate';
 import { useDesignLevel } from '@/lib/design-level';
 
@@ -141,6 +142,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const live = useOptionalLive();
   const [themesOpen, setThemesOpen] = useState(false);
   const [iqOpen, setIqOpen] = useState(false);
   const hasIq = me.features.includes('crew_iq');
@@ -154,6 +156,19 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   const collapsed = appearance.sidebar === 'collapsed';
   const allItems = useMemo(() => nav.flatMap((g) => g.items), [nav]);
   const allHrefs = allItems.map((i) => i.href);
+  // Unread notices per module (Leave ●1, Attendance ●5 ...) on the first menu tab this person has for the category,
+  // and the total on Notifications, kept live by the stream.
+  const hrefKey = allHrefs.join('|');
+  const unreadByHref = useMemo(() => {
+    const out: Record<string, number> = {};
+    const mine = new Set(hrefKey.split('|'));
+    for (const [cat, n] of Object.entries(live?.byCategory ?? {})) {
+      const href = NOTIFICATION_NAV[cat as keyof typeof NOTIFICATION_NAV]?.find((h) => mine.has(h));
+      if (href && n) out[href] = (out[href] ?? 0) + n;
+    }
+    if (live?.unread) out['/notifications'] = live.unread;
+    return out;
+  }, [live?.byCategory, live?.unread, hrefKey]);
 
   useEffect(() => setMobileOpen(false), [pathname]);
   // Each level has its own design system (colours, shape, motion): see data-level in @crew/ui styles.css.
@@ -208,7 +223,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   // every page it is on. The server refuses its request too; this only keeps it out of sight.
   const hiddenActions = useMemo(() => FEATURE_ACTION_KEYS.filter((k) => !me.features.includes(k)).map((k) => `[data-feature="${k}"]`).join(','), [me.features]);
 
-  const sidebar = (rail: boolean) => <Sidebar me={me} nav={nav} counts={counts} rail={rail} pathname={pathname} allHrefs={allHrefs} onCollapse={() => void update({ sidebar: rail ? 'expanded' : 'collapsed' })} />;
+  const sidebar = (rail: boolean) => <Sidebar me={me} nav={nav} counts={counts} unread={unreadByHref} rail={rail} pathname={pathname} allHrefs={allHrefs} onCollapse={() => void update({ sidebar: rail ? 'expanded' : 'collapsed' })} />;
 
   return (
     <HelpProvider content={WEB_HELP} pathname={pathname}>
@@ -252,6 +267,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               </Link>
               <Link href="/tasks" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="My tasks" title="My tasks"><ListChecks className="size-4" /></Link>
               {me.permissions['leave:request'] && me.features.includes('leave') && <Link href="/leave" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="Leave calendar" title="Leave calendar"><CalendarDays className="size-4" /></Link>}
+              {!(me.features.includes('core_hr') && !me.features.includes('core_hr.help_centre')) && <Link href="/help" className="rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg" aria-label="Help & Support" title="Help & Support" data-testid="header-help"><LifeBuoy className="size-4" /></Link>}
               {notifications && <NotificationBell />}
               <ThemeMenu />
               <HeaderUser me={me} />
@@ -276,7 +292,7 @@ const GROUPS_KEY = 'crew-nav-collapsed';
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
-function Sidebar({ me, nav, counts, rail, pathname, allHrefs, onCollapse }: { me: Me; nav: NavGroup[]; counts: Record<string, number>; rail: boolean; pathname: string; allHrefs: string[]; onCollapse: () => void }) {
+function Sidebar({ me, nav, counts, unread, rail, pathname, allHrefs, onCollapse }: { me: Me; nav: NavGroup[]; counts: Record<string, number>; unread: Record<string, number>; rail: boolean; pathname: string; allHrefs: string[]; onCollapse: () => void }) {
   const { favourites, toggleFavourite } = useExperience();
   const uid = useId();
   const [filter, setFilter] = useState('');
@@ -298,6 +314,7 @@ function Sidebar({ me, nav, counts, rail, pathname, allHrefs, onCollapse }: { me
     const Icon = ICONS[item.icon] ?? Home;
     const active = isActive(item.href, pathname, allHrefs);
     const count = counts[item.href];
+    const fresh = count ? 0 : (unread[item.href] ?? 0);
     const fav = favourites.includes(item.href);
     return (
       <li key={key} className="group/item relative">
@@ -316,6 +333,7 @@ function Sidebar({ me, nav, counts, rail, pathname, allHrefs, onCollapse }: { me
           {rail ? <span className="sr-only">{item.label}{item.locked ? ' (not in your plan)' : ''}</span> : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
           {item.locked && !rail && <span className="flex items-center gap-1 text-[0.6875rem] text-fg-muted" data-testid="nav-locked" title="Not in your plan. Upgrade to use this."><Lock className="size-3" aria-hidden /><span className="sr-only">Not in your plan. Upgrade to use this.</span></span>}
           {count ? <span className={cn('rounded-full bg-accent px-1.5 text-[0.625rem] font-semibold leading-4 text-accent-fg tabular', rail && 'absolute right-1 top-0.5')} aria-label={`${count} waiting`}>{count > 99 ? '99+' : count}</span> : null}
+          {fresh ? <span data-testid={`nav-unread-${item.href.slice(1).replace(/\//g, '-')}`} className={cn('inline-flex items-center gap-1 text-[0.6875rem] font-semibold text-accent tabular', rail && 'absolute right-1 top-0.5')} aria-label={`${fresh} unread notification${fresh === 1 ? '' : 's'}`}><span aria-hidden className="size-1.5 rounded-full bg-accent" />{rail ? null : fresh > 99 ? '99+' : fresh}</span> : null}
         </Link>
         {star && !rail && !item.locked && (
           <button

@@ -27,3 +27,9 @@ export async function markNotificationReadAction(id: string) {
 export async function markAllNotificationsReadAction() {
   return act(() => api('/notifications/read-all', { method: 'POST' }));
 }
+
+/** Unread notices per category, for the menu's unread markers (refetched when notices arrive or are read). */
+export async function notificationCountsAction(): Promise<Record<string, number> | null> {
+  const s = await api<{ categories: { category: string; unread: number }[] }>('/notifications/summary').catch(() => null);
+  return s ? Object.fromEntries(s.categories.filter((c) => c.unread > 0).map((c) => [c.category, c.unread])) : null;
+}

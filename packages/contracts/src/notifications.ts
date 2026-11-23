@@ -22,6 +22,7 @@ export const NOTIFICATION_CATEGORIES = [
   { key: 'hr_tasks', label: 'HR tasks', description: 'Tasks HR assigned to you, such as onboarding steps', icon: 'list-checks' },
   { key: 'manager_tasks', label: 'Manager tasks', description: 'Tasks your manager assigned to you', icon: 'clipboard-list' },
   { key: 'appraisal', label: 'Appraisals', description: 'Reviews, goals, feedback and recognition', icon: 'target' },
+  { key: 'learning', label: 'Learning', description: 'Courses assigned to you, due dates and completions', icon: 'graduation-cap' },
   { key: 'profile', label: 'Employee profile', description: 'Profile changes and joiners', icon: 'contact' },
   { key: 'documents', label: 'Document verification', description: 'Document requests and verification results', icon: 'file-text' },
   { key: 'verification', label: 'Background verification', description: 'Background check progress and results', icon: 'shield' },
@@ -59,8 +60,8 @@ const PREFIXES: [string, NotificationCategory][] = [
   ['goal.', 'appraisal'],
   ['recognition.', 'appraisal'],
   ['survey.', 'appraisal'],
-  ['learning.', 'appraisal'],
-  ['course.', 'appraisal'],
+  ['learning.', 'learning'],
+  ['course.', 'learning'],
   ['profile_update.', 'profile'],
   ['employee.', 'profile'],
   ['probation', 'profile'],
@@ -102,6 +103,10 @@ export const notificationSoundSettings = z.object({
 });
 export type NotificationSoundSettings = z.infer<typeof notificationSoundSettings>;
 
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM');
+export const quietHours = z.object({ enabled: z.boolean().default(false), from: hhmm.default('20:00'), to: hhmm.default('08:00') });
+export type QuietHours = z.infer<typeof quietHours>;
+
 const channelSetting = z.object({ inApp: z.boolean().default(true), email: z.boolean().default(true) });
 
 export const notificationPreferencesInput = z.object({
@@ -110,6 +115,10 @@ export const notificationPreferencesInput = z.object({
   sound: notificationSoundSettings.default({ enabled: false, volume: 60, minPriority: 'normal' }),
   /** Show a toast in the corner when a notice arrives while the portal is open. */
   toasts: z.boolean().default(true),
+  /** Also show a system (browser) notification when the portal is in a background tab; needs the browser's permission. */
+  desktop: z.boolean().default(false),
+  /** Quiet hours: no sound, pop-up or system notification (urgent notices still show). Times are the person's local time. */
+  quiet: quietHours.default({ enabled: false, from: '20:00', to: '08:00' }),
 });
 export type NotificationPreferencesInput = z.infer<typeof notificationPreferencesInput>;
 
@@ -117,6 +126,8 @@ export interface NotificationPreferences {
   categories: Record<NotificationCategory, { inApp: boolean; email: boolean }>;
   sound: NotificationSoundSettings;
   toasts: boolean;
+  desktop: boolean;
+  quiet: QuietHours;
 }
 
 /** A person's preferences with every category filled in; mandatory categories are always on in the app. */
@@ -129,7 +140,7 @@ export function resolveNotificationPreferences(raw: unknown): NotificationPrefer
       return [k, { inApp: MANDATORY_CATEGORIES.includes(k) ? true : c.inApp, email: c.email }];
     }),
   ) as NotificationPreferences['categories'];
-  return { categories, sound: p.sound, toasts: p.toasts };
+  return { categories, sound: p.sound, toasts: p.toasts, desktop: p.desktop, quiet: p.quiet };
 }
 
 export const PRIORITY_RANK: Record<NotificationPriority, number> = { low: 0, normal: 1, high: 2, urgent: 3 };
@@ -138,6 +149,40 @@ export const PRIORITY_RANK: Record<NotificationPriority, number> = { low: 0, nor
 export function shouldPlaySound(sound: NotificationSoundSettings, priority: NotificationPriority): boolean {
   return sound.enabled && sound.volume > 0 && PRIORITY_RANK[priority] >= PRIORITY_RANK[sound.minPriority];
 }
+
+/** Whether a local time (minutes after midnight) falls in quiet hours; a range past midnight (20:00 to 08:00) wraps. */
+export function inQuietHours(q: QuietHours, minutesNow: number): boolean {
+  if (!q.enabled) return false;
+  const m = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  const from = m(q.from);
+  const to = m(q.to);
+  if (from === to) return true;
+  return from < to ? minutesNow >= from && minutesNow < to : minutesNow >= from || minutesNow < to;
+}
+
+/**
+ * The menu tab that marks each category's unread notices (Leave ●1, Attendance ●5 ...). The first tab the person
+ * has in their menu wins, so an employee's Payroll notices mark Payslips and a payroll admin's mark Payroll runs. A
+ * category with no tab in someone's menu is still counted on Notifications.
+ */
+export const NOTIFICATION_NAV: Record<NotificationCategory, string[]> = {
+  approvals: ['/approvals'],
+  leave: ['/leave'],
+  attendance: ['/attendance', '/attendance/team'],
+  communication: ['/communication', '/helpdesk/queue', '/helpdesk'],
+  announcements: ['/announcements'],
+  hr_tasks: ['/tasks'],
+  manager_tasks: ['/tasks'],
+  appraisal: ['/appraisal', '/reviews', '/goals'],
+  learning: ['/learning'],
+  profile: ['/profile/updates', '/employees'],
+  documents: ['/tasks'],
+  verification: ['/verification'],
+  assets: ['/assets/mine', '/assets'],
+  recruitment: ['/recruitment', '/recruitment/candidates'],
+  payroll: ['/payslips', '/payroll', '/expenses'],
+  system: ['/settings/security', '/settings/workspace'],
+};
 
 export const notificationListQuery = z.object({
   unread: z.enum(['true', 'false']).optional(),

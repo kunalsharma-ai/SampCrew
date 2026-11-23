@@ -37,6 +37,22 @@ export const clientInput = z.object({
 }).strict();
 export type ClientInput = z.infer<typeof clientInput>;
 
+/** A person at a client: added by hand on the client or imported (Data import > Contacts). */
+export const clientContactInput = z.object({
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().max(80).default(''),
+  email: email.optional(),
+  phone: optionalText(30),
+  jobTitle: optionalText(120),
+  isPrimary: z.boolean().default(false),
+  notes: optionalText(1000),
+}).strict();
+export type ClientContactInput = z.infer<typeof clientContactInput>;
+export interface ClientContact {
+  id: string; clientId: string; firstName: string; lastName: string; name: string; email: string | null; phone: string | null;
+  jobTitle: string | null; isPrimary: boolean; notes: string | null; archivedAt: string | null; importId: string | null;
+}
+
 // Templates --------------------------------------------------------------------------------------------
 
 export const bidTemplateInput = z.object({

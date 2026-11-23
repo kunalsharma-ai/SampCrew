@@ -5,8 +5,9 @@ import { randomId } from '../../src/lib/clock';
 import { useSession } from '../../src/lib/session';
 import type { Article, Category } from '../../src/lib/types';
 import { Button, Card, Choice, Field, ListItem, Notice, Screen, Text, useLoad } from '../../src/ui';
+import { ModuleGate } from '../../src/ui/kit';
 
-export default function NewCase() {
+function NewCaseBody() {
   const { api } = useSession();
   const router = useRouter();
   const { data: categories, error: loadError } = useLoad(() => api.get<Category[]>('/helpdesk/categories'), [api]);
@@ -75,5 +76,13 @@ export default function NewCase() {
         <Button title="Send to HR" onPress={submit} busy={busy} testID="send-case" />
       </Card>
     </Screen>
+  );
+}
+
+export default function NewCase() {
+  return (
+    <ModuleGate module="help" feature="cases">
+      <NewCaseBody />
+    </ModuleGate>
   );
 }
