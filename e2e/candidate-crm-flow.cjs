@@ -72,7 +72,7 @@ async function setCentralAccess(p, on) {
 
 (async () => {
   const b = await chromium.launch();
-  // The demo owner is the Super Workspace; an earlier flow (mfa-step-up) may have turned on their MFA.
+  // The demo owner is the Super Workspace; an earlier flow (e2e:web) turned on their MFA. Off for this run, restored after.
   const mongo = new MongoClient(MONGODB_URL);
   await mongo.connect();
   const users = mongo.db().collection('users');
