@@ -132,6 +132,13 @@ export class ConsoleController {
     return this.companies.options();
   }
 
+  @PlatformRealm('tenants:read')
+  @Get('clients/managers')
+  @Doc({ summary: 'Active Console admins who can be account managers (id and name)' })
+  clientManagers() {
+    return this.companies.managers();
+  }
+
   @PlatformRealm('tenants:manage')
   @Post('clients')
   @Doc({ summary: 'Create a client company with its first Super Workspace (owner invite, plan, trial)', body: createClientInput })

@@ -112,7 +112,7 @@ export class RefundsService {
       await this.audit.record(tx, { tenantId: inv.tenant_id, action: 'billing.refund_issued', resourceType: 'credit_note', resourceId: id, metadata: { number, invoice: inv.number, amount: input.amount, currency: inv.currency } });
       await this.consoleNotify.emit(tx, {
         category: 'payments', kind: 'payments.refund_issued', priority: 'normal', title: `Refund ${inv.currency} ${input.amount} on ${inv.number}`, body: `${number} · ${input.method === 'gateway' ? `through ${inv.provider}` : 'bank transfer'} · ${input.reason}`,
-        tenantId: inv.tenant_id, href: '/clients/:company?tab=billing', entityType: 'credit_note', entityId: id,
+        tenantId: inv.tenant_id, href: '/clients/:company/billing', entityType: 'credit_note', entityId: id,
       });
       await this.engine.notifyAdmins(tx, inv.tenant_id, 'billing.refund_issued', `Refund of ${inv.currency} ${input.amount} on invoice ${inv.number}`, `Credit note ${number}. ${input.method === 'gateway' ? 'The money goes back to the card or account that paid; banks usually take 5 to 10 working days.' : 'Sent by bank transfer.'}`);
       return (await this.views(tx, [(await tx.collection<NoteRow>('credit_notes').findOne({ id }))!]))[0]!;

@@ -2,7 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/platform/auth/crypto';
 import { currentTotp } from '../src/platform/auth/mfa';
-import { adminPool, api, createApp, createTenant, PASSWORD, type TestDb, type TestTenant } from './helpers';
+import { adminPool, api, createApp, createTenant, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 /**
  * The Console command center: roles enforced on the API, clients (companies) with masking, notifications, the
@@ -221,6 +221,38 @@ describe('Console command center', () => {
     const log = await as('super_admin').get('/platform/audit-log').query({ action: 'platform.settings_updated' });
     expect(log.body.items[0].before.workspaceDefaults.trialDays).toBe(14);
     expect(log.body.items[0].after.workspaceDefaults.trialDays).toBe(21);
+  });
+
+  it('account managers, company activity in the audit log, and the automatic support reply from Settings', async () => {
+    const managers = await as('operations').get('/platform/clients/managers');
+    expect(managers.status).toBe(200);
+    expect(managers.body.map((m: { id: string }) => m.id)).toContain(ids.super_admin);
+    expect(Object.keys(managers.body[0]).sort()).toEqual(['id', 'name']);
+    // A profile change on the company is found by its company id, Console events only unless scope is all.
+    await as('admin').put(`/platform/clients/${clientId}/profile`).send({ name: `Acme ${stamp}`, companySize: '11-50' });
+    const mine = await as('super_admin').get('/platform/audit-log').query({ clientId });
+    expect(mine.status).toBe(200);
+    expect(mine.body.items.some((r: { action: string }) => r.action === 'platform.company_updated')).toBe(true);
+    expect(mine.body.items.every((r: { tenantId: string | null }) => r.tenantId === null)).toBe(true);
+    const other = await as('super_admin').get('/platform/audit-log').query({ clientId: '00000000-0000-4000-8000-000000000000' });
+    expect(other.body.items).toEqual([]);
+    // Settings > Client communication: the automatic reply (with support hours) is posted when a conversation starts.
+    const before = (await as('super_admin').get('/platform/settings')).body.communication;
+    await as('super_admin').patch('/platform/settings').send({ communication: { ...before, autoReply: 'Thanks, we will answer soon.', supportHours: 'Mon-Fri 9:00-18:00 IST' } });
+    try {
+      const owner = (await loginWithMfa(app, pool, tenant.ownerEmail)).accessToken;
+      const started = await api(app, owner).post('/support/conversations').send({ subject: 'Invoice question', category: 'billing', body: 'Where is our invoice?' });
+      expect(started.status).toBe(201);
+      const thread = await api(app, owner).get(`/support/conversations/${started.body.id}`);
+      const bodies = thread.body.messages.map((m: { body: string }) => m.body);
+      expect(bodies).toContain('Where is our invoice?');
+      expect(bodies.some((b: string) => b.includes('Thanks, we will answer soon.') && b.includes('Mon-Fri 9:00-18:00 IST'))).toBe(true);
+      // With scope all, the company's activity also holds what happened inside its Super Workspace.
+      const all = await as('super_admin').get('/platform/audit-log').query({ clientId, scope: 'all' });
+      expect(all.body.items.some((r: { tenantId: string | null; action: string }) => r.tenantId === tenant.id && r.action === 'support_chat.started')).toBe(true);
+    } finally {
+      await as('super_admin').patch('/platform/settings').send({ communication: before });
+    }
   });
 
   it('View as needs a client-approved grant, and Exit ends it', async () => {

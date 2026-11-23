@@ -211,7 +211,7 @@ export class BillingEngine {
     const invoice = typeof e.detail?.invoice === 'string' ? ` · invoice ${e.detail.invoice}` : '';
     await this.consoleNotify.emit(tx, {
       category: n.category, kind: `billing.${e.kind}`, priority: n.priority, title: `${n.title}: ${t.name}`, body: `${plan.trim()}${amount}${invoice}`.replace(/^ · /, '') || null,
-      href: '/clients/:company?tab=billing', tenantId, entityType: 'billing_event', entityId: row.id as string,
+      href: '/clients/:company/billing', tenantId, entityType: 'billing_event', entityId: row.id as string,
     });
   }
 

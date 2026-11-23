@@ -234,7 +234,7 @@ export class PlatformService {
         });
         await this.outbox.publish(tx, t.tenantId, 'tenant.created', { tenantId: t.tenantId });
         await this.consoleNotify.emit(tx, extra.companyId
-          ? { category: 'workspaces', kind: 'workspace.created', title: `New Super Workspace: ${input.companyName}`, body: `Added to an existing company by ${requestContext.platformActor().label.replace(/^SAMPLEDGE /, '')}`, href: '/clients/:company?tab=workspaces', tenantId: t.tenantId, entityType: 'tenant', entityId: t.tenantId }
+          ? { category: 'workspaces', kind: 'workspace.created', title: `New Super Workspace: ${input.companyName}`, body: `Added to an existing company by ${requestContext.platformActor().label.replace(/^SAMPLEDGE /, '')}`, href: '/clients/:company/workspaces', tenantId: t.tenantId, entityType: 'tenant', entityId: t.tenantId }
           : { category: 'clients', kind: 'company.created', title: `New company: ${input.companyName}`, body: `Created in the Console on the ${input.planKey} plan`, href: '/clients/:company', tenantId: t.tenantId, entityType: 'tenant', entityId: t.tenantId });
         const companyId = (await tx.collection<{ company_id: string }>('tenants').findOne({ id: t.tenantId }, { projection: { company_id: 1 } }))?.company_id ?? null;
         return {
@@ -263,7 +263,7 @@ export class PlatformService {
       const t = await tx.collection<{ name: string }>('tenants').findOne({ id }, { projection: { name: 1 } });
       await this.consoleNotify.emit(tx, {
         category: 'workspaces', kind: `workspace.${status === 'active' ? 'activated' : 'suspended'}`, priority: status === 'active' ? 'normal' : 'high',
-        title: `Workspace ${status === 'active' ? 'activated' : 'suspended'}: ${t?.name ?? id}`, body: reason, href: '/clients/:company?tab=workspaces', tenantId: id, entityType: 'tenant', entityId: id,
+        title: `Workspace ${status === 'active' ? 'activated' : 'suspended'}: ${t?.name ?? id}`, body: reason, href: '/clients/:company/workspaces', tenantId: id, entityType: 'tenant', entityId: id,
       });
       return { id, status };
     });

@@ -390,6 +390,8 @@ export const consoleAuditQuery = z.object({
   actorType: z.enum(['user', 'platform_admin', 'system', 'ai_agent', 'integration']).optional(),
   actorId: z.uuid().optional(),
   tenantId: z.uuid().optional(),
+  /** A client company: its own Console events and everything in its Super Workspaces. */
+  clientId: z.uuid().optional(),
   area: z.enum(['companies', 'workspaces', 'users', 'plans', 'billing', 'admins', 'security', 'communication', 'settings', 'other']).optional(),
   status: z.enum(['success', 'denied', 'failed']).optional(),
   from: z.iso.date().optional(),

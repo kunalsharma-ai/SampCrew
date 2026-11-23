@@ -1,9 +1,9 @@
-import { PLATFORM_ROLE_CAPABILITIES, type WorkspaceLimits } from '@crew/contracts';
+import { type WorkspaceLimits } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { api, ApiError, load } from '@/lib/api';
-import { hasCap } from '@/lib/caps';
+import { capsOf, hasCap } from '@/lib/caps';
 import { WorkspaceTabs } from '@/components/neon';
 import type { Admin, HistoryRow, PlanSummary, TenantDetail } from '@/lib/types';
 import { TenantView, type SupportSnapshot } from './tenant-view';
@@ -28,7 +28,7 @@ export default async function TenantPage({ params }: { params: Promise<{ id: str
   return (
     <>
       <PageHeader eyebrow={<Link href="/tenants" className="hover:underline">Workspaces</Link>} title={t.name} description={`${t.slug} · ${t.region} · ${t.countryCode} · created ${new Date(t.createdAt).toLocaleDateString()}`} />
-      <WorkspaceTabs tenantId={id} current="overview" caps={[...(PLATFORM_ROLE_CAPABILITIES[me.role] ?? [])]} />
+      <WorkspaceTabs tenantId={id} current="overview" caps={capsOf(me)} />
       <TenantView
         t={t}
         plans={plans}

@@ -6,14 +6,14 @@ export const runtime = 'nodejs';
 const API_URL = process.env.CREW_API_URL ?? 'http://localhost:4000';
 
 /**
- * Live support inbox updates for the signed-in Console Admin (new messages from Super Workspaces, reads, status
- * changes). The browser never talks to the API directly: this relays the API's event stream with the session's
+ * Live Console updates for the signed-in admin: new notifications their role may see and, with the support inbox,
+ * new messages, reads and status changes from Super Workspaces. The browser never talks to the API directly: this relays the API's event stream with the session's
  * token. The API closes the stream after a while and the EventSource reconnects, picking up a refreshed token.
  */
 export async function GET(req: Request) {
   const token = await accessToken();
   if (!token) return new Response('Sign in again', { status: 401 });
-  const upstream = await fetch(`${API_URL}/api/v1/platform/support/stream`, {
+  const upstream = await fetch(`${API_URL}/api/v1/platform/console/stream`, {
     headers: { authorization: `Bearer ${token}`, 'x-crew-client': 'console', accept: 'text/event-stream' },
     cache: 'no-store',
     signal: req.signal,

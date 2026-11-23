@@ -404,6 +404,11 @@ export class CompaniesService {
     return this.db.platform(async (tx) => (await tx.collection<{ id: string; name: string }>('companies').find({ archived_at: null }, { sort: { name: 1 }, projection: { id: 1, name: 1 }, limit: 2000 })).map((c) => ({ id: c.id, name: c.name })));
   }
 
+  /** Active Console admins who can be a company's account manager (id and name only). */
+  async managers() {
+    return this.db.platform(async (tx) => (await tx.collection<{ id: string; full_name: string }>('platform_admins').find({ status: 'active' }, { sort: { full_name: 1 }, projection: { id: 1, full_name: 1 }, limit: 500 })).map((a) => ({ id: a.id, name: a.full_name })));
+  }
+
   private async requireOpenPlan(key: string) {
     const p = await this.db.platform((tx) => tx.collection<{ archived_at: Date | null; retired_at: Date | null }>('plans').findOne({ key }));
     if (!p) throw Errors.badRequest('unknown_plan', 'Unknown plan');

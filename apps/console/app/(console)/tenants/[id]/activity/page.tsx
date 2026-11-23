@@ -1,9 +1,10 @@
-import { PLATFORM_ROLE_CAPABILITIES, type ActivityRow } from '@crew/contracts';
+import { type ActivityRow } from '@crew/contracts';
 import { Badge, buttonClass, Card, CardBody, CardHeader, EmptyState, Input, PageHeader, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Activity, Globe, LogIn, Smartphone, Users } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Tile, TileRow, WorkspaceTabs } from '@/components/neon';
+import { capsOf } from '@/lib/caps';
 import { load } from '@/lib/api';
 import type { Admin, TenantDetail } from '@/lib/types';
 
@@ -43,7 +44,7 @@ export default async function ActivityPage({ params, searchParams }: { params: P
         title="Activity"
         description="What happened in this workspace, who did it, when and from which app. Open an event to see what changed (before and after values); each one you open is recorded in the customer's activity trail."
       />
-      <WorkspaceTabs tenantId={id} current="activity" caps={[...(PLATFORM_ROLE_CAPABILITIES[me.role] ?? [])]} />
+      <WorkspaceTabs tenantId={id} current="activity" caps={capsOf(me)} />
       <TileRow>
         <Tile tone="violet" icon={<Activity className="size-5" />} label="Events in 7 days" value={s.events7d.toLocaleString()} testId="tile-events" />
         <Tile tone="teal" icon={<Users className="size-5" />} label="Active people in 7 days" value={s.activeUsers7d} hint={`${s.activeUsers30d} in 30 days`} />

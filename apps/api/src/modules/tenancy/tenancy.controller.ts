@@ -134,7 +134,7 @@ export class SupportAccessController {
     // The Console hears about it at once (the View as button opens on approval).
     await this.consoleNotify.later({
       category: 'support', kind: `support_access.${status}`, priority: status === 'approved' ? 'high' : 'normal',
-      title: `Support access ${status === 'approved' ? 'approved' : status === 'rejected' ? 'declined' : 'ended'} by the client`, href: '/clients/:company?tab=access', tenantId: actor.tenantId, entityType: 'support_access_grant', entityId: id,
+      title: `Support access ${status === 'approved' ? 'approved' : status === 'rejected' ? 'declined' : 'ended'} by the client`, href: '/clients/:company/workspaces', tenantId: actor.tenantId, entityType: 'support_access_grant', entityId: id,
     });
     return result;
   }

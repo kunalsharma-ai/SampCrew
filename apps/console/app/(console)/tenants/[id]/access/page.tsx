@@ -1,10 +1,10 @@
-import { PLATFORM_ROLE_CAPABILITIES, type MemberAccessRow, type WorkspaceAccess } from '@crew/contracts';
+import { type MemberAccessRow, type WorkspaceAccess } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load } from '@/lib/api';
 import { WorkspaceTabs } from '@/components/neon';
-import { hasCap } from '@/lib/caps';
+import { capsOf, hasCap } from '@/lib/caps';
 import type { Admin, TenantDetail } from '@/lib/types';
 import { AccessView, type AccessTab } from './access-view';
 
@@ -34,7 +34,7 @@ export default async function AccessPage({ params, searchParams }: { params: Pro
         title="Features & permissions"
         description="Switch SampCrew modules, the Web Portal and the mobile app, and permissions active or inactive for this workspace, and choose which modules each person may use. The API enforces every switch, and the web and mobile apps hide what is off."
       />
-      <WorkspaceTabs tenantId={id} current="access" caps={[...(PLATFORM_ROLE_CAPABILITIES[me.role] ?? [])]} />
+      <WorkspaceTabs tenantId={id} current="access" caps={capsOf(me)} />
       <AccessView tenantId={id} tab={tab} access={access} members={members} page={page} pageSize={PAGE_SIZE} q={q} canManage={canManage} />
     </>
   );

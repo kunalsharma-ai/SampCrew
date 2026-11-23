@@ -1,3 +1,4 @@
+import { ConsoleSettingsService } from '../console/console-settings.service';
 import { Injectable } from '@nestjs/common';
 import {
   CONSOLE_TEAM_NAME,
@@ -49,6 +50,7 @@ export class SupportChatService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationService,
     private readonly consoleNotify: ConsoleNotifyService,
+    private readonly settings: ConsoleSettingsService,
   ) {}
 
   // ----------------------------------------------------------------------------------------- shared views
@@ -212,6 +214,9 @@ export class SupportChatService {
 
   async workspaceStart(input: SupportConversationInput) {
     const tenantId = requestContext.tenantActor().tenantId;
+    // The automatic reply and support hours from Console > Settings > Client communication (none when left empty).
+    const comms = (await this.settings.get()).communication;
+    const autoReply = [comms.autoReply.trim(), comms.supportHours.trim() ? `Support hours: ${comms.supportHours.trim()}.` : ''].filter(Boolean).join('\n\n');
     const r = await this.db.tenant(async (tx) => {
       const viewer = await this.workspaceViewer(tx);
       if (input.clientId) {
@@ -223,6 +228,7 @@ export class SupportChatService {
         tenant_id: tx.tenantId, number, subject: input.subject, category: input.category, status: 'open', started_by_membership_id: viewer.membershipId,
       });
       await this.workspaceSendIn(tx, c, viewer, input.body, input.clientId);
+      if (comms.autoReply.trim()) await this.store(tx, c, { kind: 'system', name: CONSOLE_TEAM_NAME, level: 'console', workspace: CONSOLE_TEAM_NAME, body: autoReply });
       await this.audit.record(tx, { action: 'support_chat.started', resourceType: 'support_conversation', resourceId: c.id, changes: { subject: input.subject, category: input.category } });
       return { id: c.id as string, created: true };
     });

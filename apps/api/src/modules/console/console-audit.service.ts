@@ -72,9 +72,9 @@ const AREA_ACTIONS: Record<string, RegExp> = {
 export class ConsoleAuditService {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly settings: ConsoleSettingsService) {}
 
-  private filter(q: ConsoleAuditQuery) {
+  private filter(q: ConsoleAuditQuery, clientTenants?: string[]) {
     const f: Record<string, unknown> = {};
-    if (q.scope === 'platform') f.tenant_id = null;
+    if (q.scope === 'platform' && !q.clientId) f.tenant_id = null;
     if (q.tenantId) f.tenant_id = q.tenantId;
     if (q.actorType) f.actor_type = q.actorType;
     if (q.actorId) f.actor_id = q.actorId;
@@ -92,6 +92,11 @@ export class ConsoleAuditService {
       const [at, id] = q.cursor.split('|');
       const d = new Date(at ?? '');
       if (!Number.isNaN(d.getTime())) and.push({ $or: [{ created_at: { $lt: d } }, { created_at: d, id: { $lt: id } }] });
+    }
+    if (q.clientId) {
+      // The company's own Console events, and (scope "all") what happened inside its Super Workspaces.
+      const ids = clientTenants ?? [];
+      and.push({ $or: [{ tenant_id: null, resource_id: { $in: [q.clientId, ...ids] } }, ...(q.scope === 'all' && ids.length ? [{ tenant_id: { $in: ids } }] : [])] });
     }
     if (Object.keys(created).length) f.created_at = created;
     if (and.length) f.$and = and;
@@ -135,9 +140,13 @@ export class ConsoleAuditService {
     });
   }
 
+  private async clientTenants(tx: PlatformTx, q: ConsoleAuditQuery) {
+    return q.clientId ? tx.collection('tenants').distinct<string>('id', { company_id: q.clientId }) : undefined;
+  }
+
   list(q: ConsoleAuditQuery) {
     return this.db.platform(async (tx) => {
-      const docs = await tx.collection<AuditDoc>('audit_events').find({ ...this.filter(q), pending: { $exists: false } }, { sort: { created_at: -1, id: -1 }, limit: q.limit + 1 });
+      const docs = await tx.collection<AuditDoc>('audit_events').find({ ...this.filter(q, await this.clientTenants(tx, q)), pending: { $exists: false } }, { sort: { created_at: -1, id: -1 }, limit: q.limit + 1 });
       const page = docs.slice(0, q.limit);
       const last = page.at(-1);
       return { items: await this.rows(tx, page), next: docs.length > q.limit && last ? `${last.created_at.toISOString()}|${last.id}` : null };
@@ -145,7 +154,7 @@ export class ConsoleAuditService {
   }
 
   async export(q: ConsoleAuditQuery, format: 'csv' | 'xlsx' | 'pdf') {
-    const items = await this.db.platform(async (tx) => this.rows(tx, await tx.collection<AuditDoc>('audit_events').find({ ...this.filter({ ...q, cursor: undefined }), pending: { $exists: false } }, { sort: { created_at: -1 }, limit: 10_000 })));
+    const items = await this.db.platform(async (tx) => this.rows(tx, await tx.collection<AuditDoc>('audit_events').find({ ...this.filter({ ...q, cursor: undefined }, await this.clientTenants(tx, q)), pending: { $exists: false } }, { sort: { created_at: -1 }, limit: 10_000 })));
     await this.db.platform((tx) => this.audit.record(tx, { tenantId: null, action: 'platform.audit_exported', resourceType: 'audit_events', resourceId: null, metadata: { format, rows: items.length, filters: { ...q, cursor: undefined } } }));
     const json = (v: unknown) => (v == null ? '' : JSON.stringify(v));
     const rows = [

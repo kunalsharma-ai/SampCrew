@@ -1,5 +1,5 @@
 import { PageHeader } from '@crew/ui';
-import type { BillingSettingsInput } from '@crew/contracts';
+import type { BillingSettingsInput, CreditNoteView } from '@crew/contracts';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { cn } from '@crew/ui';
@@ -7,6 +7,7 @@ import type { ConsoleInvoice } from '@/components/invoice-table';
 import { load } from '@/lib/api';
 import { hasCap } from '@/lib/caps';
 import type { Admin } from '@/lib/types';
+import { RefundsPanel } from './refunds-panel';
 import { AddonsPanel, CouponsPanel, EventsPanel, InvoicesPanel, RevenuePanel, SettingsPanel, type ConsoleAddon, type ConsoleCoupon, type PaymentEvent, type Revenue } from './billing-view';
 
 export const metadata: Metadata = { title: 'Billing & revenue' };
@@ -14,6 +15,7 @@ export const metadata: Metadata = { title: 'Billing & revenue' };
 const TABS = [
   { key: 'revenue', label: 'Revenue' },
   { key: 'invoices', label: 'Invoices' },
+  { key: 'refunds', label: 'Refunds & credit notes' },
   { key: 'addons', label: 'Add-ons' },
   { key: 'coupons', label: 'Coupons' },
   { key: 'settings', label: 'Settings' },
@@ -31,7 +33,10 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   let body: React.ReactNode;
   if (tab === 'revenue') body = <RevenuePanel revenue={await load<Revenue>('/platform/billing/revenue')} canManage={canManage} />;
   else if (tab === 'invoices') body = <InvoicesPanel invoices={await load<ConsoleInvoice[]>(`/platform/billing/invoices${status ? `?status=${status}` : ''}`)} status={status} canManage={canManage} />;
-  else if (tab === 'addons') {
+  else if (tab === 'refunds') {
+    const [notes, paid] = await Promise.all([load<CreditNoteView[]>('/platform/credit-notes'), load<ConsoleInvoice[]>('/platform/billing/invoices?status=paid')]);
+    body = <RefundsPanel notes={notes} paid={paid} canRefund={hasCap(me, 'billing:refund')} />;
+  } else if (tab === 'addons') {
     const [addons, plans] = await Promise.all([load<ConsoleAddon[]>('/platform/billing/addons'), load<{ key: string; name: string }[]>('/platform/plans')]);
     body = <AddonsPanel addons={addons} plans={plans.map((p) => ({ key: p.key, name: p.name }))} canManage={canPlans} />;
   } else if (tab === 'coupons') {

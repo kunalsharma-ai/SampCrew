@@ -79597,6 +79597,36 @@
         }
       }
     },
+    "/api/v1/platform/clients/managers": {
+      "get": {
+        "tags": [
+          "Platform: Console"
+        ],
+        "summary": "Active Console admins who can be account managers (id and name)",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Console_clientManagers",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/clients/bulk": {
       "post": {
         "tags": [
@@ -81445,6 +81475,16 @@
             }
           },
           {
+            "name": "clientId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
             "name": "area",
             "in": "query",
             "required": false,
@@ -81607,6 +81647,16 @@
           },
           {
             "name": "tenantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "clientId",
             "in": "query",
             "required": false,
             "schema": {
