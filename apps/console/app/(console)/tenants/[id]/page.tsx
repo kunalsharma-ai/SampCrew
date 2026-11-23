@@ -7,6 +7,7 @@ import { capsOf, hasCap } from '@/lib/caps';
 import { WorkspaceTabs } from '@/components/neon';
 import type { Admin, HistoryRow, PlanSummary, TenantDetail } from '@/lib/types';
 import { TenantView, type SupportSnapshot } from './tenant-view';
+import { CrumbName } from '@/components/crumb-name';
 
 export const metadata: Metadata = { title: 'Workspace' };
 
@@ -27,6 +28,7 @@ export default async function TenantPage({ params }: { params: Promise<{ id: str
   }
   return (
     <>
+      <CrumbName id={t.id} name={t.name} />
       <PageHeader eyebrow={<Link href="/tenants" className="hover:underline">Workspaces</Link>} title={t.name} description={`${t.slug} · ${t.region} · ${t.countryCode} · created ${new Date(t.createdAt).toLocaleDateString()}`} />
       <WorkspaceTabs tenantId={id} current="overview" caps={capsOf(me)} />
       <TenantView

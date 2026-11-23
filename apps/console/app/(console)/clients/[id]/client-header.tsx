@@ -1,5 +1,6 @@
 import { Avatar, Badge, cn } from '@crew/ui';
 import Link from 'next/link';
+import { CrumbName } from '@/components/crumb-name';
 import { CLIENT_TONE } from '../client-types';
 import type { ClientDetail } from '../client-types';
 
@@ -17,6 +18,7 @@ export function ClientHeader({ c, current, caps, actions }: { c: ClientDetail; c
   ];
   return (
     <div className="mb-5 grid gap-4">
+      <CrumbName id={p.id} name={p.name} />
       <div className="flex flex-wrap items-start gap-4">
         <Avatar name={p.name} src={p.logoUrl} size={56} className="shrink-0" />
         <div className="min-w-0 flex-1">

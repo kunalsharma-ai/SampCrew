@@ -21,6 +21,8 @@ function niceMax(v: number) {
 
 export const compact = (n: number) => new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 /** Axis and tooltip numbers: compact counts, or compact money when a currency is given (props stay serialisable). */
+/** Date labels under a chart: every n-th one, and the last one only when it does not crowd the one before it. */
+const showTick = (i: number, n: number, every: number) => (i === n - 1 ? (n - 1) % every === 0 || (n - 1) % every >= every * 0.6 : i % every === 0);
 const formatter = (currency?: string) => (currency ? (n: number) => { try { return new Intl.NumberFormat('en', { style: 'currency', currency, notation: 'compact', maximumFractionDigits: 1 }).format(n); } catch { return compact(n); } } : compact);
 
 function Legend({ keys, hidden, toggle }: { keys: SeriesKey[]; hidden: Set<string>; toggle: (k: string) => void }) {
@@ -75,7 +77,7 @@ export function TrendChart({ points, keys, height = 220, currency, area = true, 
               <text x={pad.l - 6} y={y(max * f) + 3} textAnchor="end" className="fill-fg-subtle text-[10px]">{format(max * f)}</text>
             </g>
           ))}
-          {points.map((p, i) => (i % every === 0 || i === points.length - 1 ? <text key={p.label + i} x={x(i)} y={H - 6} textAnchor="middle" className="fill-fg-subtle text-[10px]">{p.label}</text> : null))}
+          {points.map((p, i) => (showTick(i, points.length, every) ? <text key={p.label + i} x={x(i)} y={H - 6} textAnchor={i === points.length - 1 && i > 0 ? 'end' : i === 0 ? 'start' : 'middle'} className="fill-fg-subtle text-[10px]">{p.label}</text> : null))}
           {shown.map((k, si) => {
             const ci = keys.indexOf(k);
             const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.values[k.key] ?? 0).toFixed(1)}`).join('');
@@ -138,7 +140,7 @@ export function BarChart({ points, keys, height = 200, currency, testId }: { poi
                   const v = p.values[k.key] ?? 0;
                   return <rect key={k.key} x={x0 + si * bw} y={y(v)} width={bw - 1} height={Math.max(0, y(0) - y(v))} rx="2" fill={COLOR(keys.indexOf(k))} />;
                 })}
-                {(i % every === 0 || i === points.length - 1) && <text x={pad.l + i * slot + slot / 2} y={H - 6} textAnchor="middle" className="fill-fg-subtle text-[10px]">{p.label}</text>}
+                {showTick(i, points.length, every) && <text x={pad.l + i * slot + slot / 2} y={H - 6} textAnchor="middle" className="fill-fg-subtle text-[10px]">{p.label}</text>}
               </g>
             );
           })}

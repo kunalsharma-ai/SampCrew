@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Fragment, useEffect, useMemo, useState, useTransition } from 'react';
 import { CommandSearch } from '@/components/command-search';
+import { useCrumbNames } from '@/components/crumb-name';
 import { NotificationBell, useConsoleFeed } from '@/components/console-notifications';
 import { CONSOLE_HELP } from '@/lib/help-content';
 import type { Admin } from '@/lib/types';
@@ -56,20 +57,21 @@ export function Shell({ me, nav, alerts, summary, live, branding, children }: { 
 
   const flat = useMemo(() => nav.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label }))), [nav]);
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`));
-  // Breadcrumbs: the menu group, the page, then each deeper part (an id shows as "Details").
+  // Breadcrumbs: the menu group, the page, then each deeper part (an id shows its name when the page gives one).
+  const [crumbNames, crumbVersion] = useCrumbNames();
   const crumbs = useMemo(() => {
     const page = [...flat].sort((a, b) => b.href.length - a.href.length).find((i) => isActive(i.href));
     if (!page) return [];
-    const out: { label: string; href?: string }[] = [{ label: page.group }, { label: page.label, href: page.href }];
+    const out: { label: string; href?: string }[] = [...(page.group === page.label ? [] : [{ label: page.group }]), { label: page.label, href: page.href }];
     const rest = pathname.slice(page.href.length).split('/').filter(Boolean);
     let at = page.href;
     for (const part of rest) {
       at = `${at.replace(/\/$/, '')}/${part}`;
-      out.push({ label: CRUMB[part] ?? (/^[0-9a-f-]{20,}$/i.test(part) ? 'Details' : decodeURIComponent(part).replace(/[-_]/g, ' ')), href: at });
+      out.push({ label: CRUMB[part] ?? crumbNames.get(part) ?? (/^[0-9a-f-]{20,}$/i.test(part) ? 'Details' : decodeURIComponent(part).replace(/[-_]/g, ' ')), href: at });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flat, pathname]);
+  }, [flat, pathname, crumbVersion]);
 
   const sidebar = (
     <nav aria-label="Console" className="flex h-full flex-col gap-4 overflow-y-auto px-3 py-4">
