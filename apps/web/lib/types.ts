@@ -177,7 +177,8 @@ export interface AttendanceMonth {
   employee: { id: string; name: string; code: string; timeZone: string };
   from: string;
   to: string;
-  summary: { present: number; halfDay: number; absent: number; missingPunch: number; onLeave: number; late: number; workedMinutes: number; overtimeMinutes: number; approvedOvertimeMinutes: number };
+  summary: { workingDays: number; attendancePercent: number | null; present: number; halfDay: number; absent: number; missingPunch: number; onLeave: number; late: number; workedMinutes: number; overtimeMinutes: number; approvedOvertimeMinutes: number };
+  totals?: import('@crew/contracts').AttendanceTotals;
   days: AttendanceDay[];
   corrections: AttendanceCorrection[];
   overtimeClaims: OvertimeClaim[];

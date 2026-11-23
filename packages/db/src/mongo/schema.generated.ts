@@ -3114,6 +3114,33 @@ export const TABLES: Record<string, TableSpec> = {
     indexes: [],
     checks: [],
   },
+  level_permissions: {
+    // Permissions the Super Workspace sets per level: for one HR Workspace (subject_id its id, or "central" for
+    // company-wide HR people) or for every Employee Workspace (subject_id "all"). permissions maps a key from the
+    // contracts registry (HR_LEVEL_PERMISSIONS, EMPLOYEE_LEVEL_PERMISSIONS) to on or off; a key not saved has its
+    // default. scope_hr_workspace_ids lists the other HR Workspaces view_other_hr reaches (null: all of them).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      permissions: {"default": {"json": {}}, "required": true, "type": "json"},
+      scope_hr_workspace_ids: {"type": "string[]"},
+      subject_id: {"required": true, "type": "string"},
+      subject_type: {"enum": ["hr_workspace", "employee_workspace"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "level_permissions_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "subject_type"}, {"col": "subject_id"}], "name": "level_permissions_subject"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
   employee_transfers: {
     // Every move of an employee between HR Workspaces (or to and from the central group). Attendance, leave and
     // payroll records stay with the person; only who looks after them changes.
