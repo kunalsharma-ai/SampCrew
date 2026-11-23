@@ -182,6 +182,10 @@ export const CONSOLE_HELP: HelpContent = {
   },
 
   sections: {
+    'System alerts': { what: 'Platform problems that need a Console Admin: failed backups, migrations, integrations, the audit chain, plan requests and support access waiting.', how: 'Open an alert to go to the page that fixes it. Critical items come first.' },
+    'Workspace health': { what: 'How many customer workspaces are active, trialing, past due, inactive or suspended, and how many need attention.', where: 'Counts only. Console never shows employee-level information here.' },
+    'Administrative activity': { what: 'Recent platform changes: workspaces created, access and permission changes, imports and security events.', how: 'Open the audit trail for the full, tamper-evident record.' },
+    'Recently created': { what: 'The newest customer workspaces, with their plan and status.', how: 'Open one to see its details in Workspaces.' },
     'Workspace limits': { what: 'How many HR Workspaces and Employee Workspaces this company may have on its plan, and how many it uses.', how: 'Change the plan or add an extra to raise a limit.' },
     'Workspace hierarchy': { what: 'This company’s four levels: Console Admin (SAMPLEDGE), Super Workspace, HR Workspace and Employee Workspace, with how many people hold each.', where: 'People are counted once, at their highest level. Names are shown only for Super Workspace.' },
     'Country packs': { what: 'Every country with ready-made starting values, whether it is offered, and whether it was changed in Console.', how: 'Open one to edit it, or add a country below the list.' },

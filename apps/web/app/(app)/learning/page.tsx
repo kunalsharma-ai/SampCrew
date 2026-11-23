@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { buttonClass, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -33,6 +34,7 @@ export default async function LearningPage({ searchParams }: { searchParams: Pro
         { label: 'Team progress', href: '/learning?view=team', icon: 'users', permission: 'learning:manage' },
         { label: 'Manage catalogue', href: '/learning/catalogue', icon: 'graduation-cap', permission: 'learning:configure' },
       ])} />}
+      {view === 'mine' && <ModuleNotices category="learning" label="Learning" />}
       <LearningView view={view} filter={filter} assignments={assignments} courses={courses} paths={paths} people={people} manages={manages} />
     </>
   );

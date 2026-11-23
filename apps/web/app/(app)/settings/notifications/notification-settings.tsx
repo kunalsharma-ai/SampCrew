@@ -2,7 +2,7 @@
 import { MANDATORY_CATEGORIES, NOTIFICATION_CATEGORIES, type NotificationPreferences, type NotificationPriority } from '@crew/contracts';
 import { Alert, Button, Card, CardBody, CardHeader, Select, Switch } from '@crew/ui';
 import { Volume2 } from 'lucide-react';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useOptionalLive } from '@/components/live';
 import { playNotificationSound } from '@/lib/notification-sound';
 import { saveNotificationPreferencesAction } from '../../notifications/actions';
@@ -27,6 +27,17 @@ export function NotificationSettings({ initial }: { initial: NotificationPrefere
       live?.setPrefs(r.data!);
     }
   });
+  // Whether this browser lets SampCrew show system notifications ('unsupported' on browsers without them).
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  useEffect(() => setPermission(typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'), []);
+  const setDesktop = async (v: boolean) => {
+    if (v && permission === 'default') {
+      const r = await Notification.requestPermission().catch(() => 'denied' as const);
+      setPermission(r);
+      if (r !== 'granted') return;
+    }
+    setP((cur) => ({ ...cur, desktop: v }));
+  };
   const setChannel = (key: string, channel: 'inApp' | 'email', v: boolean) =>
     setP((cur) => ({ ...cur, categories: { ...cur.categories, [key]: { ...cur.categories[key as keyof typeof cur.categories], [channel]: v } } }));
 
@@ -82,6 +93,24 @@ export function NotificationSettings({ initial }: { initial: NotificationPrefere
           <CardHeader title="Pop-ups" />
           <CardBody>
             <Row text="Show a pop-up in the corner when a notice arrives"><Switch label="Show a pop-up in the corner when a notice arrives" checked={p.toasts} onChange={(v) => setP((cur) => ({ ...cur, toasts: v }))} /></Row>
+          </CardBody>
+        </Card>
+        <Card data-testid="desktop-notifications">
+          <CardHeader title="Desktop notifications" description="A system notification on your computer when a notice arrives while SampCrew is in a background tab." />
+          <CardBody className="grid gap-2">
+            <Row text="Show desktop notifications"><Switch label="Show desktop notifications" checked={p.desktop} disabled={permission === 'unsupported' || permission === 'denied'} onChange={(v) => void setDesktop(v)} testId="desktop-enabled" /></Row>
+            {permission === 'denied' && <p className="text-xs text-fg-muted">Your browser blocks notifications from SampCrew. Allow them in the browser's site settings, then switch this on.</p>}
+            {permission === 'unsupported' && <p className="text-xs text-fg-muted">This browser cannot show desktop notifications.</p>}
+          </CardBody>
+        </Card>
+        <Card data-testid="quiet-hours">
+          <CardHeader title="Quiet hours" description="No sound, pop-up or desktop notification in these hours. Notices still wait in the bell, and urgent ones still come through." />
+          <CardBody className="grid gap-3">
+            <Row text="Turn on quiet hours"><Switch label="Turn on quiet hours" checked={p.quiet.enabled} onChange={(v) => setP((cur) => ({ ...cur, quiet: { ...cur.quiet, enabled: v } }))} testId="quiet-enabled" /></Row>
+            <div className="grid grid-cols-2 gap-3 text-[0.8125rem]">
+              <label className="grid gap-1"><span>From</span><input type="time" className="h-9 rounded-md border border-border bg-surface px-2" value={p.quiet.from} disabled={!p.quiet.enabled} onChange={(e) => e.target.value && setP((cur) => ({ ...cur, quiet: { ...cur.quiet, from: e.target.value.slice(0, 5) } }))} data-testid="quiet-from" /></label>
+              <label className="grid gap-1"><span>Until</span><input type="time" className="h-9 rounded-md border border-border bg-surface px-2" value={p.quiet.to} disabled={!p.quiet.enabled} onChange={(e) => e.target.value && setP((cur) => ({ ...cur, quiet: { ...cur.quiet, to: e.target.value.slice(0, 5) } }))} data-testid="quiet-to" /></label>
+            </div>
           </CardBody>
         </Card>
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}

@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { Alert, Card, CardHeader, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
@@ -59,6 +60,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
         { label: 'Leave management', href: '/leave/manage', icon: 'sliders', permission: 'leave:allocate' },
         { label: 'Holidays and leave rules', href: '/settings/leave', icon: 'calendar', permission: 'leave:allocate' },
       ])} />
+      <ModuleNotices category="leave" label="Leave" />
       <div className="grid gap-6">
         {sent && (
           <Alert tone={sent.status === 'pending' ? 'info' : 'success'} title="Leave request sent">

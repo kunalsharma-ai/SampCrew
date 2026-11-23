@@ -225,7 +225,8 @@ const alertText = (p, re) => p.getByText(re).first().waitFor();
 
     current = neha;
     await neha.goto(BASE + '/');
-    const item = neha.getByRole('listitem').filter({ hasText: title });
+    // The announcements widget under "More for you" (Home's own announcements card links to the list instead).
+    const item = neha.getByTestId('more-for-you').getByRole('listitem').filter({ hasText: title });
     await item.getByText('Please acknowledge').waitFor();
     await item.getByRole('link', { name: title }).click();
     await neha.locator('.prose-email b', { hasText: 'Packed lunches' }).waitFor();

@@ -27614,6 +27614,7 @@
                 "hr_tasks",
                 "manager_tasks",
                 "appraisal",
+                "learning",
                 "profile",
                 "documents",
                 "verification",
@@ -27853,6 +27854,7 @@
                       "hr_tasks",
                       "manager_tasks",
                       "appraisal",
+                      "learning",
                       "profile",
                       "documents",
                       "verification",
@@ -27950,6 +27952,7 @@
                         "hr_tasks",
                         "manager_tasks",
                         "appraisal",
+                        "learning",
                         "profile",
                         "documents",
                         "verification",
@@ -28006,6 +28009,34 @@
                   "toasts": {
                     "default": true,
                     "type": "boolean"
+                  },
+                  "desktop": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "quiet": {
+                    "default": {
+                      "enabled": false,
+                      "from": "20:00",
+                      "to": "08:00"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "from": {
+                        "default": "20:00",
+                        "type": "string",
+                        "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                      },
+                      "to": {
+                        "default": "08:00",
+                        "type": "string",
+                        "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                      }
+                    }
                   }
                 }
               }
@@ -32369,6 +32400,233 @@
         }
       }
     },
+    "/api/v1/home/employee": {
+      "get": {
+        "tags": [
+          "Home"
+        ],
+        "summary": "Your own Home: attendance month and calendar, leave, learning, announcements, what needs you and recent activity",
+        "operationId": "Home_employee",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/home/workforce": {
+      "get": {
+        "tags": [
+          "Home"
+        ],
+        "summary": "Today's workforce for HR and the Super Workspace: attendance, actions, leave, people, learning and communication, limited to the people you look after",
+        "operationId": "Home_workforce",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "departmentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "hrWorkspaceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                {
+                  "type": "string",
+                  "const": "central"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/home/workforce/trend": {
+      "get": {
+        "tags": [
+          "Home"
+        ],
+        "summary": "Daily attendance, absence, late, leave and missing punches over the last 7, 14 or 30 days for the people you look after",
+        "operationId": "Home_trend",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "departmentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "hrWorkspaceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                {
+                  "type": "string",
+                  "const": "central"
+                }
+              ]
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/home/organization": {
+      "get": {
+        "tags": [
+          "Home"
+        ],
+        "summary": "Super Workspace only: every HR Workspace's attendance, pending actions, learning and communication, with alerts",
+        "operationId": "Home_organization",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/dashboard/modules/{module}": {
       "get": {
         "tags": [
@@ -32733,6 +32991,21 @@
                 "weekly_off",
                 "in_progress",
                 "not_joined"
+              ]
+            }
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "late",
+                "early_leave",
+                "working_now",
+                "wfh",
+                "not_in_yet"
               ]
             }
           },
@@ -69480,6 +69753,96 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/alerts": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Console bell: current system alerts, each marked new unless you have seen it",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_alerts",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/alerts/seen": {
+      "post": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Mark every current system alert seen in your Console bell",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_alertsSeen",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/home": {
+      "get": {
+        "tags": [
+          "Platform: "
+        ],
+        "summary": "Console Home: customers, workspaces and users (counts only), workspaces needing attention, system alerts and administrative activity",
+        "description": "SAMPLEDGE platform realm (console token, MFA required).",
+        "operationId": "Platform_home",
+        "security": [
+          {
+            "platformBearer": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"

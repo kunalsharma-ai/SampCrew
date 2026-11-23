@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { mongo } from '@crew/db';
 import type { z } from 'zod';
-import type { platformCreateTenantRequest } from '@crew/contracts';
+import { ATTENTION_RANK, type AttentionLevel, type ConsoleAlerts, type HomeAction, type PlatformHome, type platformCreateTenantRequest } from '@crew/contracts';
+import { actorName, humanAction } from '../home/home.service';
 import { AuditService } from '../../platform/audit/audit.service';
 import { hashPassword, randomToken, sha256 } from '../../platform/auth/crypto';
 import { requestContext } from '../../platform/context/request-context';
@@ -440,6 +441,113 @@ export class PlatformService {
     };
   }
 
+  /**
+   * The Console bell: the current system alerts, each marked new unless this admin has seen it with the same count.
+   * Alerts are worked out live from health and pending requests, so one disappears once its cause is fixed.
+   */
+  async alerts(): Promise<ConsoleAlerts> {
+    const [{ alerts }, seen] = await Promise.all([this.home(), this.seenAlerts()]);
+    const items = alerts.map((a) => ({ ...a, seen: seen.has(alertId(a)) }));
+    return { items, unseen: items.filter((a) => !a.seen).length };
+  }
+
+  /** Marks every current alert seen for this admin (resolved ones drop off the list, so it never grows). */
+  async markAlertsSeen(): Promise<ConsoleAlerts> {
+    const { alerts } = await this.home();
+    const adminId = requestContext.platformActor().adminId;
+    await this.db.platform((tx) => tx.collection('platform_admins').updateOne({ id: adminId }, { $set: { seen_alerts: alerts.map(alertId), updated_at: new Date() } }));
+    return { items: alerts.map((a) => ({ ...a, seen: true })), unseen: 0 };
+  }
+
+  private async seenAlerts(): Promise<Set<string>> {
+    const adminId = requestContext.platformActor().adminId;
+    const a = await this.db.platform((tx) => tx.collection('platform_admins').findOne({ id: adminId }, { projection: { seen_alerts: 1 } }));
+    return new Set((a?.seen_alerts as string[] | undefined) ?? []);
+  }
+
+  /**
+   * The Console's Home: customers, workspaces at every level and users (counts only, never employee records), workspaces
+   * that need attention, system alerts worked out from health and pending requests, and recent administrative events.
+   */
+  async home(): Promise<PlatformHome> {
+    const health = await this.health();
+    return this.db.platform(async (tx) => {
+      const now = Date.now();
+      const dayStart = new Date(new Date().toISOString().slice(0, 10));
+      const tenants = await tx.collection<{ id: string; name: string; status: string; is_demo: boolean; created_at: Date }>('tenants').find({}, { projection: { name: 1, status: 1, is_demo: 1, created_at: 1 } });
+      const names = new Map(tenants.map((t) => [t.id, t.name]));
+      const real = tenants.filter((t) => !t.is_demo);
+      const subs = await tx.collection<{ tenant_id: string; status: string; trial_ends_on: string | null }>('subscriptions').find({}, { projection: { tenant_id: 1, status: 1, trial_ends_on: 1 } });
+      const recentUsers = new Set(await tx.collection('sessions').distinct<string>('tenant_id', { created_at: { $gte: new Date(now - 30 * DAY) } }));
+      const activeToday = (await tx.collection('sessions').distinct<string>('user_id', { $or: [{ created_at: { $gte: dayStart } }, { rotated_at: { $gte: dayStart } }] })).length;
+      const integrationErrors = await tx.collection<{ tenant_id: string; provider?: string; status: string }>('integration_connections').find({ status: 'error' }, { projection: { tenant_id: 1, provider: 1 } });
+      const planRequests = await tx.collection('plan_requests').count({ status: 'pending' });
+      const supportPending = await tx.collection('support_access_grants').count({ status: 'pending' });
+      const weekOut = isoDay(new Date(now + 3 * DAY));
+
+      const attention: PlatformHome['health']['attention'] = [];
+      for (const t of tenants.filter((x) => x.status === 'suspended')) attention.push({ id: t.id, name: t.name, reason: 'Suspended', level: 'warning' });
+      for (const x of subs.filter((y) => y.status === 'past_due')) attention.push({ id: x.tenant_id, name: names.get(x.tenant_id) ?? 'Workspace', reason: 'Invoice overdue', level: 'warning' });
+      for (const x of subs.filter((y) => y.status === 'trialing' && y.trial_ends_on && y.trial_ends_on <= weekOut)) attention.push({ id: x.tenant_id, name: names.get(x.tenant_id) ?? 'Workspace', reason: `Trial ends ${x.trial_ends_on}`, level: 'attention' });
+      for (const c of integrationErrors) attention.push({ id: c.tenant_id, name: names.get(c.tenant_id) ?? 'Workspace', reason: `Integration error${c.provider ? `: ${c.provider}` : ''}`, level: 'warning' });
+      for (const t of real.filter((x) => x.status === 'active' && !recentUsers.has(x.id) && x.created_at.getTime() < now - 30 * DAY)) attention.push({ id: t.id, name: t.name, reason: 'Nobody signed in for 30 days', level: 'info' });
+
+      const alerts: HomeAction[] = [];
+      if (health.migrations.pending.length) alerts.push({ key: 'migrations', level: 'critical', count: health.migrations.pending.length, title: `${health.migrations.pending.length} database migration(s) not applied`, detail: health.migrations.pending.slice(0, 3).join(', '), href: '/health', cta: 'Open health' });
+      if (!health.platformAuditChain.intact) alerts.push({ key: 'audit-chain', level: 'critical', count: null, title: 'The platform audit trail failed its integrity check', detail: null, href: '/health', cta: 'Open health' });
+      if ((health.outbox.oldestPendingSeconds ?? 0) > 600) alerts.push({ key: 'outbox', level: 'warning', count: health.outbox.pending, title: `${health.outbox.pending} background events waiting`, detail: `Oldest waiting ${Math.round((health.outbox.oldestPendingSeconds ?? 0) / 60)} minutes`, href: '/health', cta: 'Open health' });
+      const lastBackup = health.backups.archives.lastSuccessHoursAgo;
+      if (lastBackup === null || lastBackup > 26) alerts.push({ key: 'backups', level: 'warning', count: null, title: lastBackup === null ? 'No successful backup recorded' : `Last good backup ${lastBackup} hours ago`, detail: null, href: '/health', cta: 'Open health' });
+      if (health.uploadScanning.configured && !health.uploadScanning.reachable) alerts.push({ key: 'scanner', level: 'warning', count: null, title: 'The upload virus scanner is not answering', detail: null, href: '/health', cta: 'Open health' });
+      if (integrationErrors.length) alerts.push({ key: 'integrations', level: 'warning', count: integrationErrors.length, title: `${integrationErrors.length} workspace integration(s) disconnected with an error`, detail: null, href: '/tenants', cta: 'View workspaces' });
+      if (planRequests) alerts.push({ key: 'plan-requests', level: 'attention', count: planRequests, title: `${planRequests} plan change request(s) waiting`, detail: null, href: '/plans', cta: 'Review' });
+      if (supportPending) alerts.push({ key: 'support', level: 'info', count: supportPending, title: `${supportPending} support access request(s) waiting for customers`, detail: null, href: '/tenants', cta: 'View' });
+      const created = tenants.filter((t) => t.created_at.getTime() > now - DAY);
+      if (created.length) alerts.push({ key: 'new-workspaces', level: 'info', count: created.length, title: created.length === 1 ? `New Super Workspace: ${created[0]!.name}` : `${created.length} new Super Workspaces today`, detail: null, href: created.length === 1 ? `/tenants/${created[0]!.id}` : '/tenants', cta: 'Open' });
+      alerts.sort((a, b) => ATTENTION_RANK[b.level] - ATTENTION_RANK[a.level]);
+
+      // Administrative and security events across the platform; never the content of HR records.
+      const interesting = /^(platform\.|tenant\.|hr_workspace\.|employees?\.import|import\.|role|access|member\.access|membership\.(invited|removed)|authz\.denied|delegation\.denied|sso\.|mfa\.|auth\.(locked|password_reset)|support_access\.|subscription\.|integration\.)/;
+      const events = (await tx.collection('audit_events').find({ created_at: { $gte: new Date(now - 14 * DAY) } }, { sort: { created_at: -1 }, limit: 400, projection: { action: 1, actor_label: 1, created_at: 1, tenant_id: 1 } }))
+        .filter((e) => interesting.test(String(e.action))).slice(0, 15);
+      const levelOf = (a: string): AttentionLevel => (/denied|locked|failed|broken/.test(a) ? 'warning' : /suspend|deleted|removed/.test(a) ? 'attention' : 'normal');
+
+      const memberships = tx.collection('memberships');
+      const today = isoDay(new Date());
+      return {
+        generatedAt: new Date().toISOString(),
+        overview: {
+          customers: real.length,
+          superWorkspaces: tenants.length,
+          hrWorkspaces: await tx.collection('hr_workspaces').count({ status: { $ne: 'archived' } }),
+          employeeWorkspaces: await tx.collection('employees').count({ status: { $ne: 'exited' }, membership_id: { $ne: null } }),
+          activeUsers: await memberships.count({ status: 'active' }),
+          activeToday,
+          newWorkspaces: tenants.filter((t) => t.created_at.getTime() > now - 30 * DAY).length,
+          suspended: tenants.filter((t) => t.status === 'suspended').length,
+          demo: tenants.length - real.length,
+          pendingActions: planRequests + supportPending + attention.filter((a) => a.level !== 'info').length,
+        },
+        health: {
+          active: real.filter((t) => t.status === 'active' && recentUsers.has(t.id)).length,
+          inactive: real.filter((t) => t.status === 'active' && !recentUsers.has(t.id)).length,
+          trialing: subs.filter((x) => x.status === 'trialing').length,
+          pastDue: subs.filter((x) => x.status === 'past_due').length,
+          recent: [...tenants].sort((a, b) => b.created_at.getTime() - a.created_at.getTime()).slice(0, 5).map((t) => ({ id: t.id, name: t.name, createdAt: t.created_at.toISOString(), status: t.status })),
+          attention: attention.slice(0, 12),
+          integrations: health.integrations,
+        },
+        alerts,
+        activity: events.map((e) => ({ at: (e.created_at as Date).toISOString(), action: e.action as string, title: humanAction(e.action as string), workspace: e.tenant_id ? (names.get(e.tenant_id) ?? null) : null, // People inside a customer workspace are not named on the Console Home; platform admins and the system are.
+        actor: e.tenant_id ? null : actorName(e.actor_label), level: levelOf(e.action as string) })),
+        signups: Array.from({ length: 30 }, (_, i) => {
+          const day = isoDay(new Date(Date.parse(today) - (29 - i) * DAY));
+          return { day, count: tenants.filter((t) => isoDay(t.created_at) === day).length };
+        }),
+      };
+    });
+  }
+
   async platformAudit(limit = 100) {
     return this.db.platform(async (tx) =>
       (await tx.collection('audit_events').find({ tenant_id: null }, { sort: { chain_seq: -1 }, limit })).map((e) => ({
@@ -700,3 +808,6 @@ function prettyBytes(n: number): string {
   }
   return `${Math.round(n)} ${units[i]}`;
 }
+
+/** An alert as seen: its key and count, so the same alert with a new count shows as new again. */
+const alertId = (a: { key: string; count: number | null }) => `${a.key}:${a.count ?? ''}`;

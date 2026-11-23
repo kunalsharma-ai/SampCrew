@@ -13,6 +13,7 @@ import {
   type PunchInput,
   type PunchSyncInput,
   mobileSync,
+  type AttendanceViewFilter,
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -575,6 +576,7 @@ export class AttendanceService implements OnModuleInit {
         dayType: plan.dayType,
         holidayName: plan.holidayName,
         nextDirection: last && last.direction !== 'out' ? 'out' : 'in',
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), note: p.note ?? null, flags: p.risk_flags })),
         // Working, on a break (the last punch was an out for a break) or not checked in.
         state: last && last.direction !== 'out' ? 'working' : last && last.purpose === 'break' ? 'on_break' : last ? 'checked_out' : 'not_started',
         punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), flags: p.risk_flags, purpose: p.purpose })),
@@ -688,7 +690,7 @@ export class AttendanceService implements OnModuleInit {
   }
 
   /** Everyone the caller can see on one date, with a status summary. Recent days are refreshed first. */
-  async team(q: { date: string; status?: string; departmentId?: string; locationId?: string }) {
+  async team(q: { date: string; status?: string; filter?: AttendanceViewFilter; departmentId?: string; locationId?: string }) {
     return this.db.tenant(async (tx) => {
       const scope = await this.access.visibleFilter(tx, await this.access.viewer(tx));
       const and: Record<string, unknown>[] = [scope, { date_of_joining: { $lte: q.date } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: q.date } }] }];
@@ -703,7 +705,19 @@ export class AttendanceService implements OnModuleInit {
       await this.refreshDate(tx, employees, q.date);
       if (!ids.length) return { date: q.date, summary: {}, rows: [] };
       const allDays = await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: q.date });
-      const views = await dayViews(tx, q.status ? allDays.filter((d) => d.status === q.status) : allDays);
+      // Home's cards open this list with a view beyond the stored status: late, left early, working now, not in yet, WFH.
+      const wfh = q.filter === 'wfh' ? await remoteOn(tx, ids, q.date) : null;
+      const view = (d: Record<string, any>) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        switch (q.filter) {
+          case 'late': return d.late_minutes > 0;
+          case 'early_leave': return d.early_leave_minutes > 0;
+          case 'working_now': return d.status === 'in_progress' && !!d.first_in && !d.last_out;
+          case 'not_in_yet': return d.status === 'in_progress' && !d.first_in;
+          case 'wfh': return wfh!.has(d.employee_id) || (Array.isArray(d.explanation) && d.explanation.some((x: unknown) => /from home/i.test(String(x))));
+          default: return true;
+        }
+      };
+      const views = await dayViews(tx, allDays.filter((d) => (!q.status || d.status === q.status) && view(d)));
       const byId = new Map(employees.map((e) => [e.id as string, e]));
       const departments = await fieldById(tx, 'departments', employees.map((e) => e.current_department_id));
       const locations = await fieldById(tx, 'locations', employees.map((e) => e.current_location_id));
@@ -1100,4 +1114,11 @@ export class AttendanceService implements OnModuleInit {
     const end = to > today ? today : to;
     if (from <= end) await this.days.recompute(tx, employeeId, from < e.date_of_joining ? e.date_of_joining : from, end);
   }
+}
+
+/** People with approved work from home covering a date. */
+async function remoteOn(tx: TenantTx, employeeIds: string[], date: string): Promise<Set<string>> {
+  const types = await tx.collection('leave_types').distinct<string>('id', { kind: 'wfh' });
+  if (!types.length) return new Set();
+  return new Set(await tx.collection('leave_requests').distinct<string>('employee_id', { employee_id: { $in: employeeIds }, status: 'approved', leave_type_id: { $in: types }, start_date: { $lte: date }, end_date: { $gte: date } }));
 }

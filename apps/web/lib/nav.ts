@@ -258,3 +258,26 @@ export function visibleNav(me: Me): NavGroup[] {
 const NOT_SOLD = new Set(['email_signatures']);
 
 export const can = (me: Me, permission: string) => Boolean(me.permissions[permission]);
+
+/**
+ * Quick actions on the HR and Super Workspace Home. Each one shows only when the person holds the permission and the
+ * module behind it (the API refuses the rest anyway); Super Workspace actions need the Super Workspace level too.
+ */
+export function homeActions(me: Me, level: 'super' | 'hr'): QuickAction[] {
+  const has = (p: string, f?: string) => Boolean(me.permissions[p]) && (!f || me.features.includes(f));
+  const wide = (p: string) => Boolean(me.permissions[p]) && me.permissions[p] !== 'own';
+  const out: QuickAction[] = [];
+  if (level === 'super' && me.levels?.super && has('hierarchy:read')) out.push({ key: 'hr-workspaces', label: 'Manage HR Workspaces', href: '/hr-workspaces', icon: 'network' });
+  if (level === 'super' && has('modules:assign')) out.push({ key: 'employee-features', label: 'Manage Employee Workspaces', href: '/employee-features', icon: 'toggle-right' });
+  if (has('employees:create')) out.push({ key: 'employee', label: 'Add employee', href: '/employees?create=employee', icon: 'user-plus' });
+  if (has('attendance:approve', 'attendance_basic')) out.push({ key: 'attendance', label: level === 'super' ? 'Manage attendance' : 'Mark attendance', href: '/attendance/team', icon: 'users-round' });
+  if (has('leave:approve', 'leave')) out.push({ key: 'leave', label: 'Manage leave', href: '/leave/balances', icon: 'calendar' });
+  if (has('learning:configure', 'learning')) out.push({ key: 'learning-create', label: 'Create learning', href: '/learning/catalogue', icon: 'book-open' });
+  if (has('learning:manage', 'learning')) out.push({ key: 'learning-assign', label: 'Assign learning', href: '/learning?view=team', icon: 'graduation-cap' });
+  if (has('announcements:manage', 'announcements')) out.push({ key: 'announce', label: 'Send announcement', href: '/announcements/manage/new', icon: 'megaphone' });
+  if (wide('employees:read')) out.push({ key: 'employees', label: 'View employees', href: '/employees', icon: 'contact' });
+  if (level === 'super' && has('roles:read')) out.push({ key: 'permissions', label: 'Manage permissions', href: '/people', icon: 'shield' });
+  if (wide('employees:read')) out.push({ key: 'reports', label: 'View reports', href: '/insights', icon: 'chart' });
+  if (wide('employees:read')) out.push({ key: 'export', label: 'Export report', href: '/employees-export?format=xlsx', icon: 'upload' });
+  return out;
+}

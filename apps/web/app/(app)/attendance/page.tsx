@@ -2,6 +2,7 @@ import type { AttendanceOverview, AttendanceRecordRow, Paged } from '@crew/contr
 import { Alert, Card, CardHeader, EmptyState, PageHeader, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { CalendarDays } from 'lucide-react';
 import type { Metadata } from 'next';
+import { ModuleNotices } from '@/components/module-notices';
 import Link from 'next/link';
 import { ApiError, api, load } from '@/lib/api';
 import { allowed, ModuleOverview } from '@/components/module-overview';
@@ -77,6 +78,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         actions={caps.export && o.me ? <ExportButton period={period} filters={{ employeeId: o.me.employeeId }} label="Export my attendance" /> : undefined}
       />
       <PeriodBar period={period} path="/attendance" />
+      <ModuleNotices category="attendance" label="Attendance" />
 
       {/* 1. Personal attendance, always first. */}
       <section aria-labelledby="my-attendance" className="mb-8 grid gap-6">

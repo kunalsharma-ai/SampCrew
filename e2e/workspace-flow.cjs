@@ -83,8 +83,8 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
 
     // 1. Home.
     const e = (current = await signIn(b, 'operator2@demo.crew.local'));
-    await e.getByRole('button', { name: /Clock (in|out)/ }).first().waitFor();
-    for (const t of ['This month', 'Attendance rewards', 'My calendar']) await e.getByText(t, { exact: true }).first().waitFor();
+    await e.getByTestId('attendance-hero').getByRole('button', { name: /^(Check in|Check out|Start break|End break|Check in again)$/ }).first().waitFor();
+    for (const t of ['This month', 'Attendance rewards', 'Attendance calendar']) await e.getByText(t, { exact: true }).first().waitFor();
     await e.getByText('Perfect attendance').first().waitFor();
     // Recent notifications, live: HR's new task for Neha is among them.
     await e.getByTestId('recent-notifications').getByText(`Upload your degree certificate ${run}`).first().waitFor();

@@ -24,6 +24,7 @@ const FOUNDATION: Record<string, string> = {
   DesignationsController: 'Core HR (always included)',
   EmployeesController: 'Core HR (always included); module tabs inside the profile are gated in the service',
   DashboardController: 'Home dashboard; each card is shown only when its module is in the plan',
+  HomeController: 'Role-based Home dashboards; each section is read only when its module is in the plan and the person may see it',
   OverviewController: 'Home overview; each block checks its module',
   PreferencesController: 'Personal appearance, favourites and notes',
   ViewsController: 'Saved list views',
