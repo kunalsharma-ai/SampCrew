@@ -107,7 +107,7 @@ const pdf = (name) => ({ name, mimeType: 'application/pdf', buffer: Buffer.from(
     await hr.getByRole('button', { name: /New group/ }).click();
     d = dialogOf(hr);
     await d.getByLabel('Name').fill(groupName);
-    await d.getByPlaceholder('Name, department or designation').fill('Arjun');
+    await d.getByLabel('Find people').fill('Arjun');
     await d.getByTestId('people-picker').getByRole('button', { name: /Arjun/ }).first().click();
     await d.getByRole('button', { name: 'Save group' }).click();
     await hr.getByTestId('group-card').filter({ hasText: groupName }).waitFor();

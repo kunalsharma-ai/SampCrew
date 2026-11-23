@@ -153,7 +153,7 @@ export function LiveProvider({ initial, prefs: initialPrefs, children }: { initi
       // What this person may use changed at a level above them (Console, Super Workspace or HR Workspace): reload the
       // page, so menus and screens follow at once. The API already refuses what was taken away.
       es.addEventListener('access.changed', () => router.refresh());
-      for (const type of ['notifications.read', 'chat.message', 'chat.read', 'chat.updated', 'approvals.changed', 'announcements.changed', 'leave.changed', 'documents.changed']) {
+      for (const type of ['notifications.read', 'chat.message', 'chat.read', 'chat.updated', 'approvals.changed', 'announcements.changed', 'leave.changed', 'documents.changed', 'support.message', 'support.read', 'support.changed']) {
         es.addEventListener(type, (e) => {
           const d = JSON.parse((e as MessageEvent).data);
           if (type === 'notifications.read' && typeof d.unread === 'number') setUnread(d.unread);

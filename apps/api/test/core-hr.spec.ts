@@ -2,7 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HrJobsService } from '../src/modules/hr-jobs/hr-jobs.service';
 import { MailerService } from '../src/platform/notify/mailer.service';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
+import { addMember, leaveType, adminPool, api, createApp, createTenant, department, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 const Y = new Date().getUTCFullYear() + 1; // leave tests use next year so every date is in the future
 const weekday = (month: number, nth = 1, dow = 1) => {
@@ -177,15 +177,13 @@ describe('core HR', () => {
     let unpaid: string;
 
     it('sets up leave types, a policy and holidays', async () => {
-      const type = await api(app, hrAdmin).post('/leave/types').send({ code: 'cl', name: 'Casual leave' });
-      expect(type.status).toBe(201);
-      expect(type.body.code).toBe('CL');
-      cl = type.body.id;
-      unpaid = (await api(app, hrAdmin).post('/leave/types').send({ code: 'LWP', name: 'Unpaid', paid: false })).body.id;
-      const pol = await api(app, hrAdmin).post('/leave/policies').send({ leaveTypeId: cl, accrualMethod: 'annual_upfront', annualEntitlement: '6', maxConsecutiveDays: '4' });
-      expect(pol.status).toBe(201);
-      expect(pol.body.annualEntitlement).toBe('6.00');
-      expect((await api(app, hrAdmin).post('/leave/policies').send({ leaveTypeId: unpaid, accrualMethod: 'none', annualEntitlement: 0 })).status).toBe(201);
+      // HR Workspaces allocate and approve leave; only the Super Workspace creates types.
+      expect((await api(app, hrAdmin).post('/leave/types').send({ code: 'cl', name: 'Casual leave' })).status).toBe(403);
+      const approval = { managerFirst: true, routes: ['hr'] };
+      cl = await leaveType(app, owner, { code: 'cl', name: 'Casual leave', policy: { accrualMethod: 'annual_upfront', annualEntitlement: '6', maxDaysPerRequest: '4' }, approval });
+      const type = await api(app, owner).get(`/leave/types/${cl}`);
+      expect(type.body).toMatchObject({ code: 'CL', policy: { annualEntitlement: '6' } });
+      unpaid = await leaveType(app, owner, { code: 'LWP', name: 'Unpaid', paid: false, category: 'unpaid', policy: { accrualMethod: 'none', annualEntitlement: '0' }, approval });
       const cal = (await api(app, hrAdmin).get('/leave/calendars')).body.find((c: { isDefault: boolean }) => c.isDefault);
       const hol = await api(app, hrAdmin).post(`/leave/calendars/${cal.id}/holidays`).send({ date: weekday(3, 1, 3), name: 'Test holiday' });
       expect(hol.status).toBe(201);
@@ -193,9 +191,9 @@ describe('core HR', () => {
     });
 
     it('posts accruals once, however many times the job runs', async () => {
-      const first = await api(app, hrAdmin).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` });
+      const first = await api(app, owner).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` });
       expect(first.body.posted).toBe(5);
-      const again = await api(app, hrAdmin).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` });
+      const again = await api(app, owner).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` });
       expect(again.body.posted).toBe(0);
       const bal = await api(app, await token('operator')).get(`/leave/balances?year=${Y}`);
       const c = bal.body.balances.find((b: { code: string }) => b.code === 'CL');
@@ -218,7 +216,7 @@ describe('core HR', () => {
     });
 
     let requestId: string;
-    it('routes a request to the manager, who approves it; the balance moves through the ledger', async () => {
+    it('routes a request to the manager and then HR, who approve it; the balance moves through the ledger', async () => {
       const op = await token('operator');
       const day = weekday(2, 2, 2);
       const res = await api(app, op).post('/leave/requests').send({ leaveTypeId: cl, startDate: day, endDate: plus(day, 1), endHalf: 'first_half', reason: 'Family visit' });
@@ -243,8 +241,11 @@ describe('core HR', () => {
       expect(inbox.body.map((i: { id: string }) => i.id)).toEqual([approvalId]);
       const ok = await api(app, sup).post(`/approvals/${approvalId}/approve`).send({ comment: 'Enjoy' });
       expect(ok.status, JSON.stringify(ok.body)).toBe(200);
-      expect(ok.body.status).toBe('approved');
-      expect((await api(app, sup).post(`/approvals/${approvalId}/approve`).send({})).status).toBe(409);
+      expect(ok.body.status).toBe('pending');
+      expect((await api(app, sup).post(`/approvals/${approvalId}/approve`).send({})).status).toBe(404);
+      const hr = await api(app, hrAdmin).post(`/approvals/${approvalId}/approve`).send({});
+      expect(hr.body.status, JSON.stringify(hr.body)).toBe('approved');
+      expect((await api(app, hrAdmin).post(`/approvals/${approvalId}/approve`).send({})).status).toBe(409);
 
       const after = await api(app, op).get(`/leave/requests/${requestId}`);
       expect(after.body.status).toBe('approved');
@@ -282,7 +283,7 @@ describe('core HR', () => {
       const day = weekday(6, 1, 1);
       const res = await api(app, hrAdmin).post('/leave/requests').send({ leaveTypeId: cl, startDate: day, endDate: day });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
-      // No manager, and the only HR admin is the requester, so it falls back to the workspace owner.
+      // No manager, and the only HR person is the requester, so the Super Workspace decides.
       expect((await api(app, hrAdmin).get('/approvals/inbox')).body).toEqual([]);
       expect((await api(app, hrAdmin).post(`/approvals/${res.body.approvalId}/approve`).send({})).status).toBe(403);
       const inbox = await api(app, owner).get('/approvals/inbox');
@@ -290,18 +291,19 @@ describe('core HR', () => {
       expect((await api(app, owner).post(`/approvals/${res.body.approvalId}/approve`).send({})).body.status).toBe('approved');
     });
 
-    it('supports multi-step chains configured per workspace', async () => {
-      const set = await api(app, hrAdmin).put('/approvals/policies/leave_request').send({ steps: [{ type: 'manager' }, { type: 'role', role: 'hr_admin' }] });
-      expect(set.status).toBe(200);
+    it('takes its approval chain from the leave type, not from the approvals settings', async () => {
+      expect((await api(app, owner).put('/approvals/policies/leave_request').send({ steps: [{ type: 'manager' }] })).body.error.code).toBe('chain_set_by_module');
+      // Unpaid leave now goes to the Super Workspace without the manager.
+      const v = (await api(app, owner).get(`/leave/types/${unpaid}`)).body.version;
+      const up = await api(app, owner).patch(`/leave/types/${unpaid}`).send({ approval: { routes: ['super'] }, version: v });
+      expect(up.status, JSON.stringify(up.body)).toBe(200);
       const op = await token('operator');
       const day = weekday(7, 1, 1);
       const res = await api(app, op).post('/leave/requests').send({ leaveTypeId: unpaid, startDate: day, endDate: day });
       const id = res.body.approvalId;
+      expect((await api(app, await token('supervisor')).get('/approvals/inbox')).body.map((i: { id: string }) => i.id)).not.toContain(id);
       expect((await api(app, hrAdmin).get('/approvals/inbox')).body.map((i: { id: string }) => i.id)).not.toContain(id);
-      expect((await api(app, await token('supervisor')).post(`/approvals/${id}/approve`).send({})).body.status).toBe('pending');
-      expect((await api(app, hrAdmin).get('/approvals/inbox')).body.map((i: { id: string }) => i.id)).toContain(id);
-      expect((await api(app, hrAdmin).post(`/approvals/${id}/approve`).send({})).body.status).toBe('approved');
-      await api(app, hrAdmin).put('/approvals/policies/leave_request').send({ steps: [{ type: 'manager' }] });
+      expect((await api(app, owner).post(`/approvals/${id}/approve`).send({})).body.status).toBe('approved');
     });
 
     it('lets HR adjust balances with a note, but not their own', async () => {

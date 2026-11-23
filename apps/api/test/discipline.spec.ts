@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { addMember, adminPool, api, leaveType, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const istToday = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
 const plus = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
@@ -235,9 +235,11 @@ describe('late coming and attendance penalties', () => {
     const inboxItem = async (who: string, requestId: string) => (ok(await as(who).get('/approvals/inbox')) as unknown as { id: string; resourceId: string; summary: string; details: any }[]).find((i) => i.resourceId === requestId)!;
 
     beforeAll(async () => {
-      casual = ok(await as('hr').post('/leave/types').send({ code: 'CL', name: 'Casual leave' }), 201).id;
-      sick = ok(await as('hr').post('/leave/types').send({ code: 'SL', name: 'Sick leave' }), 201).id;
-      for (const id of [casual, sick]) ok(await as('hr').post('/leave/policies').send({ leaveTypeId: id, accrualMethod: 'none', annualEntitlement: '0' }), 201);
+      // The Super Workspace creates the types; the manager reviews first, then HR.
+      const owner = (await loginWithMfa(app, pool, t.ownerEmail)).accessToken;
+      const rules = { policy: { accrualMethod: 'none', annualEntitlement: '0' }, approval: { managerFirst: true, routes: ['hr'] } };
+      casual = await leaveType(app, owner, { code: 'CL', name: 'Casual leave', ...rules });
+      sick = await leaveType(app, owner, { code: 'SL', name: 'Sick leave', category: 'medical', ...rules });
     });
 
     it('is marked on the request even with no penalty rule, and future leave is not', async () => {
@@ -265,6 +267,7 @@ describe('late coming and attendance penalties', () => {
       const changed = ok(await as('manager').post(`/leave/requests/${r.id}/penalty`).send({ days: '3.5', reason: 'Third time this quarter' }), 201);
       expect(changed).toMatchObject({ value: '3.5', source: 'manual', status: 'active', deduction: "3.5 days' pay" });
       ok(await as('manager').post(`/approvals/${item.id}/approve`).send({}));
+      ok(await as('hr').post(`/approvals/${item.id}/approve`).send({}));
       // Sick leave is exempt; a rejected request loses its penalty.
       const s = await apply('asha', `${MONTH}-25`, `${MONTH}-25`, sick);
       expect(s).toMatchObject({ sameDay: true, penalty: null });

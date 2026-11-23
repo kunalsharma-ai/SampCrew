@@ -1,4 +1,4 @@
-import { PLATFORM_ROLE_CAPABILITIES } from '@crew/contracts';
+import { PLATFORM_ROLE_CAPABILITIES, type WorkspaceLimits } from '@crew/contracts';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -12,10 +12,11 @@ export const metadata: Metadata = { title: 'Workspace' };
 
 export default async function TenantPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [me, t, plans] = await Promise.all([
+  const [me, t, plans, limits] = await Promise.all([
     load<Admin>('/platform/auth/me'),
     load<TenantDetail>(`/platform/tenants/${id}`),
     load<PlanSummary[]>('/platform/plans').catch(() => []),
+    load<WorkspaceLimits>(`/platform/tenants/${id}/workspace-limits`).catch(() => null),
   ]);
   const history = hasCap(me, 'billing:read') ? await load<HistoryRow[]>(`/platform/tenants/${id}/subscription/history`) : [];
   // The support snapshot exists only while the customer has an approved, unexpired grant for this admin.
@@ -31,6 +32,7 @@ export default async function TenantPage({ params }: { params: Promise<{ id: str
       <TenantView
         t={t}
         plans={plans}
+        limits={limits}
         history={history}
         snapshot={snapshot}
         caps={{ manage: hasCap(me, 'tenants:manage'), billing: hasCap(me, 'billing:manage'), support: hasCap(me, 'support:request') }}

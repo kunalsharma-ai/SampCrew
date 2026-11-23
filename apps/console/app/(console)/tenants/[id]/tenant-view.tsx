@@ -1,5 +1,5 @@
 'use client';
-import { SUBSCRIPTION_STATUSES, supportAccessRequest } from '@crew/contracts';
+import { SUBSCRIPTION_STATUSES, supportAccessRequest, type WorkspaceLimits } from '@crew/contracts';
 import { Alert, Badge, Button, buttonClass, Card, CardBody, CardHeader, Dialog, Field, Input, Select, Stat, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
 import { Activity, CreditCard, Eye, LifeBuoy, PauseCircle, PlayCircle, SlidersHorizontal, ToggleRight, Users } from 'lucide-react';
 import Link from 'next/link';
@@ -37,7 +37,7 @@ const HISTORY_LABEL: Record<string, string> = {
 const describe = (changes: Record<string, unknown>) =>
   Object.entries(changes).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(' · ').slice(0, 220);
 
-export function TenantView({ t, plans, history, snapshot, caps }: { t: TenantDetail; plans: PlanSummary[]; history: HistoryRow[]; snapshot: SupportSnapshot | null; caps: { manage: boolean; billing: boolean; support: boolean } }) {
+export function TenantView({ t, plans, limits, history, snapshot, caps }: { t: TenantDetail; plans: PlanSummary[]; limits: WorkspaceLimits | null; history: HistoryRow[]; snapshot: SupportSnapshot | null; caps: { manage: boolean; billing: boolean; support: boolean } }) {
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [flash, setFlash] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const s = t.subscription;
@@ -68,6 +68,8 @@ export function TenantView({ t, plans, history, snapshot, caps }: { t: TenantDet
         <Tile tone="orange" icon={<ToggleRight className="size-5" />} label="Module switches" value={Object.values(s?.featureOverrides ?? {}).filter((v) => typeof v === 'boolean').length} hint="Set by SAMPLEDGE" href={`/tenants/${t.id}/access`} />
         <Tile tone="blue" icon={<Activity className="size-5" />} label="Last activity" value={t.lastActivityAt ? <LocalTime value={t.lastActivityAt} dateOnly /> : 'Never'} hint={`${t.aiCreditsThisMonth} AI credits this month`} href={`/tenants/${t.id}/activity`} />
       </TileRow>
+
+      {limits && <WorkspaceLimitsCard limits={limits} />}
 
       {t.hierarchy && <HierarchyCard h={t.hierarchy} />}
 
@@ -312,6 +314,35 @@ function HierarchyCard({ h }: { h: NonNullable<TenantDetail['hierarchy']> }) {
           </Table>
         )}
       </CardBody>
+    </Card>
+  );
+}
+
+/**
+ * The company's plan-based workspace limits: Used / Maximum for HR Workspaces and Employee Workspaces, and where each
+ * figure comes from (plan, add-ons, a per-company figure). Changing the plan's limits in Plans applies here at once.
+ */
+function WorkspaceLimitsCard({ limits }: { limits: WorkspaceLimits }) {
+  const rows = (['hr', 'employee'] as const).map((k) => ({ k, u: limits[k], src: limits.sources[k] }));
+  const fig = (n: number | null) => (n === null ? 'Unlimited' : String(n));
+  return (
+    <Card data-testid="console-workspace-limits">
+      <CardHeader title="Workspace limits" description={`Carried from the ${limits.plan?.name ?? 'company'} plan. Edit the plan's limits in Plans; companies on it get the new figures straight away. Lowering a limit never removes a workspace.`} action={<Link href="/plans" className={buttonClass('secondary', 'sm')}>Plans</Link>} />
+      <Table>
+        <THead><tr><TH>Workspace type</TH><TH>Used / Maximum</TH><TH>Plan</TH><TH>Add-ons</TH><TH>Agreed for this company</TH><TH>State</TH></tr></THead>
+        <TBody>
+          {rows.map(({ k, u, src }) => (
+            <TR key={k} data-testid={`console-workspace-limit-${k}`}>
+              <TD className="font-medium">{u.label}</TD>
+              <TD className="tabular font-semibold">{u.text}</TD>
+              <TD className="tabular">{fig(src.plan)}</TD>
+              <TD className="tabular">{src.addons ? `+${src.addons}` : '—'}</TD>
+              <TD className="tabular">{src.override === null ? '—' : src.override}</TD>
+              <TD>{u.over ? <Badge tone="danger">Over the limit</Badge> : u.reached ? <Badge tone="warning">Limit reached</Badge> : <Badge tone="success">{u.remaining === null ? 'No limit' : `${u.remaining} left`}</Badge>}</TD>
+            </TR>
+          ))}
+        </TBody>
+      </Table>
     </Card>
   );
 }

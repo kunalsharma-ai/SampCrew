@@ -1,3 +1,4 @@
+import type { LeaveAllocationCriteria, LeaveApprovalRules, LeaveEligibility, LeaveTypePolicy } from '@crew/contracts';
 import type { MeResponse, MemberAccess } from '@crew/contracts';
 
 export type Me = MeResponse;
@@ -79,14 +80,47 @@ export interface EmployeeProfile extends Employee {
 export interface Designation { id: string; name: string; code: string | null; level: number | null; employeeCount: number }
 export interface JobRecord { id: string; effectiveFrom: string; effectiveTo: string | null; reason: string; note: string | null; legalEntityName: string | null; departmentName: string | null; locationName: string | null; designationName: string | null; managerName: string | null; grade: string | null; employmentType: string; scheduled: boolean }
 export interface LifecycleEvent { id: string; kind: string; effectiveOn: string; details: Record<string, unknown>; createdAt: string; by: string | null }
-export interface LeaveType { id: string; code: string; name: string; description: string | null; paid: boolean; allowHalfDay: boolean; color: string; kind: string; eligibleGender: string; countsCalendarDays: boolean }
-export interface StandardLeaveType { code: string; name: string; kind: string; paid: boolean; allowHalfDay: boolean; eligibleGender: string; countsCalendarDays: boolean; accrualMethod: string; annualEntitlement: string; added: boolean }
-export interface LeavePolicy { id: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; legalEntityId: string | null; legalEntityName: string | null; departmentId: string | null; departmentName: string | null; designationId: string | null; designationName: string | null; locationId: string | null; locationName: string | null; accrualMethod: string; annualEntitlement: string; carryForwardMax: string; allowNegativeBalance: boolean; minNoticeDays: number; maxConsecutiveDays: string | null; availableDuringProbation: boolean; rounding: string }
-export interface LeaveBalance { leaveTypeId: string; code: string; name: string; color: string; paid: boolean; allowHalfDay: boolean; kind?: string; tracked: boolean; annualEntitlement: string; accrualMethod: string; accrued: string; carriedForward: string; adjusted: string; taken: string; lapsed: string; balance: string; pending: string; available: string | null }
-export interface LeaveRequest { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; leaveTypeKind?: string; color: string; startDate: string; endDate: string; startHalf: string; endHalf: string; days: string; reason: string | null; status: string; approvalId: string | null; waitingOn?: string | null; createdAt: string; decidedAt: string | null; cancelReason: string | null; requestedBy: string | null; approvalTrail?: ApprovalStep[]; sameDay?: boolean; appliedOn?: string | null; penalty?: { id: string; days: string; source: string; status: string; statusReason: string | null } | null; replacesRequestId?: string | null; modifications?: { at: string; by: string | null; leaveTypeName: string | null; startDate: string; endDate: string; days: string; reason: string | null }[] }
+export interface LeaveType {
+  id: string; code: string; name: string; description: string | null; category: string; paid: boolean; allowHalfDay: boolean; color: string; kind: string;
+  eligibleGender: string; countsCalendarDays: boolean; effectiveFrom: string | null; hrAllocatable: boolean; active: boolean; archivedAt: string | null;
+  deactivatedReason: string | null; version: number; eligibility: LeaveEligibility; policy: LeaveTypePolicy; approval: LeaveApprovalRules;
+  createdBy: { name: string | null; level: string | null; at: string | null }; updatedBy: { name: string | null; level: string | null; at: string | null };
+  allocations: { employees: number; hrWorkspaces: { id: string | null; name: string | null }[] }; used: boolean;
+  history?: LeaveHistoryRow[];
+}
+export interface StandardLeaveType { code: string; name: string; kind: string; category: string; paid: boolean; allowHalfDay: boolean; eligibleGender: string; countsCalendarDays: boolean; accrualMethod: string; annualEntitlement: string; description: string; starter: boolean; added: boolean }
+export interface LeaveAllocation {
+  id: string; leaveTypeId: string; leaveTypeName: string | null; leaveTypeCode: string | null; target: 'employees' | 'hr_workspace'; hrWorkspaceId: string | null; hrWorkspaceName: string | null;
+  criteria: LeaveAllocationCriteria; summary: string; entitlementDays: string | null; note: string; byName: string | null; byLevel: string; createdAt: string | null;
+  revokedAt: string | null; revokedByName: string | null; revokedReason: string | null; reach: number | null;
+}
+export interface LeaveHistoryRow { id: string; at: string; kind: string; leaveTypeId: string; leaveTypeName: string | null; version: number | null; byName: string | null; byLevel: string; changes: string[]; note: string | null }
+export interface LeaveAuthorityStatus { authority: 'manager' | 'hr' | 'super' | 'other'; label: string; status: string; decidedBy: string | null; decidedAt: string | null; comment: string | null; escalated: boolean }
+export interface LeaveRouteOption { route: 'hr' | 'super' | 'both'; label: string; reviewers: string[] }
+export interface LeaveApprovalOptions { routes: LeaveRouteOption[]; employeeChooses: boolean; order: 'simultaneous' | 'sequential'; managerFirst: boolean; superRequiredOverDays: string | null }
+export interface LeaveMineType extends LeaveBalance {
+  description: string | null; policy: LeaveTypePolicy; countsCalendarDays: boolean; effectiveFrom: string | null; category: string; approval: LeaveApprovalOptions;
+  createdBy: { name: string | null; level: string | null; at: string | null }; allocatedBy: { name: string | null; level: string; at: string | null; hrWorkspaceName: string | null }; managedBy: string;
+}
+export interface LeaveMine { employeeId: string; year: number; hrWorkspaceId: string | null; types: LeaveMineType[]; summary: { pending: number; approved: number; rejected: number; cancelled: number }; upcoming: LeaveRequest[]; pending: LeaveRequest[] }
+export interface LeaveDashboard {
+  year: number; level: 'super' | 'hr'; hrWorkspaces: { id: string; name: string }[]; reach: { company: boolean; hrWorkspaceIds: string[] };
+  counts: { types: number; activeTypes: number; inactiveTypes: number; allocations: number; employees: number; pending: number; waitingForMe: number; approved: number; rejected: number; cancelled: number; onLeaveToday: number };
+  upcoming: LeaveRequest[];
+  byType: { id: string; code: string; name: string; color: string; active: boolean; holders: number; credited: string; taken: string; utilisation: number | null; pending: number; approved: number; rejected: number }[];
+  byHrWorkspace: { id: string | null; name: string; employees: number; types: string[]; pending: number; approved: number; rejected: number; takenDays: string }[];
+}
+export interface LeaveReport {
+  year: number; types: { id: string; code: string; name: string; color: string }[];
+  byType: { id: string; code: string; name: string; active: boolean; holders: number; allocations: number; credited: string; taken: string; utilisation: number | null; pending: number; approved: number; rejected: number; cancelled: number }[];
+  byDepartment: { departmentId: string | null; name: string; employees: number; credited: string; taken: string; utilisation: number | null }[];
+  employees: { employeeId: string; name: string; code: string; departmentName: string | null; hrWorkspaceName: string | null; cells: Record<string, { entitlement: string; used: string; pending: string; balance: string }> }[];
+}
+export interface LeaveBalance { leaveTypeId: string; code: string; name: string; color: string; paid: boolean; allowHalfDay: boolean; kind?: string; tracked: boolean; annualEntitlement: string; accrualMethod: string; accrued: string; carriedForward: string; adjusted: string; taken: string; lapsed: string; balance: string; pending: string; available: string | null; entitlement?: string; used?: string; upcomingApproved?: string }
+export interface LeaveRequest { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string; leaveTypeCode: string; leaveTypeKind?: string; color: string; startDate: string; endDate: string; startHalf: string; endHalf: string; days: string; reason: string | null; status: string; approvalId: string | null; waitingOn?: string | null; createdAt: string; decidedAt: string | null; cancelReason: string | null; requestedBy: string | null; approvalTrail?: ApprovalStep[]; sameDay?: boolean; appliedOn?: string | null; penalty?: { id: string; days: string; source: string; status: string; statusReason: string | null } | null; replacesRequestId?: string | null; reference?: string; approvalRoute?: 'hr' | 'super' | 'both' | null; approvalRouteLabel?: string; approvalOrder?: string | null; reviewerHrWorkspaceName?: string | null; hrWorkspaceName?: string | null; authorities?: LeaveAuthorityStatus[]; documentCount?: number; documents?: { id: string; name: string; href: string }[]; leaveTypeActive?: boolean; policyVersion?: number | null; policySnapshot?: { code: string; name: string; policy: LeaveTypePolicy; approval: LeaveApprovalRules; annualEntitlement: string; reviewers: string[] } | null; modifications?: { at: string; by: string | null; leaveTypeName: string | null; startDate: string; endDate: string; days: string; reason: string | null }[] }
 export interface LeaveAdjustment { id: string; employeeId: string; employeeName: string; employeeCode: string; leaveTypeId: string; leaveTypeName: string | null; year: number; quantity: string; note: string | null; opening: boolean; by: string | null; createdAt: string }
 export interface LeaveOverview { year: number; truncated: boolean; types: { id: string; code: string; name: string; color: string; kind: string }[]; rows: { employeeId: string; name: string; code: string; departmentId: string | null; departmentName: string | null; balances: Record<string, { balance: string | null; available: string | null; taken: string; pending: string }> }[] }
-export interface ApprovalStep { seq: number; kind: string; status: string; role: string | null; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null }
+export interface ApprovalStep { seq: number; kind: string; status: string; role: string | null; approver: string | null; decidedBy: string | null; decidedAt: string | null; comment: string | null; stage?: number; authority?: string; hrWorkspaceName?: string | null; escalatedAt?: string | null }
 export interface HolidayCalendar { id: string; name: string; legalEntityId: string | null; legalEntityName: string | null; locationId: string | null; locationName: string | null; isDefault: boolean; weeklyOffs: number[]; holidays: { id: string; date: string; name: string; isOptional: boolean }[] }
 export interface InboxItem { id: string; resourceType: string; resourceId: string; summary: string; createdAt: string; stepSeq: number; stepCount: number; requestedBy: string | null; subjectName: string | null; viaRole: string | null; link: string; label: string; details?: { sameDayLeave?: SameDayLeaveDetails } | null; category?: string; ref?: string }
 export interface SameDayLeaveDetails { sameDay: boolean; appliedOn: string | null; policyEnabled: boolean; mode: 'auto' | 'manual'; exempt: boolean; suggestedDays: string | null; penalty: { id: string; days: string; source: string; status: string } | null }

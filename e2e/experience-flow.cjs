@@ -70,7 +70,7 @@ function leaveDay() {
     await op.waitForURL((u) => u.pathname === '/leave');
     await op.locator('dialog[open] select[name=leaveTypeId]').waitFor();
     expect(!op.url().includes('create='), 'the create parameter should be removed once the form opens');
-    const cl = await op.$eval('dialog select[name=leaveTypeId]', (s) => [...s.options].find((o) => o.text.startsWith('Casual leave'))?.value);
+    const cl = await op.$eval('dialog select[name=leaveTypeId]', (s) => [...s.options].find((o) => o.text.startsWith('Casual Leave'))?.value);
     const day = leaveDay();
     await op.selectOption('dialog select[name=leaveTypeId]', cl);
     await op.fill('dialog input[name=startDate]', day);
@@ -84,7 +84,7 @@ function leaveDay() {
     // 2. The supervisor approves it from Home.
     const sup = await signIn(b, 'supervisor@demo.crew.local');
     const attention = sup.getByRole('region', { name: 'Needs your attention' });
-    const item = attention.getByRole('listitem').filter({ hasText: `Neha Deshmukh: Casual leave, ${day}` });
+    const item = attention.getByRole('listitem').filter({ hasText: `Neha Deshmukh: Casual Leave, ${day}` });
     await item.waitFor();
     const approvals = sup.getByRole('link', { name: /^Pending approvals [1-9]/ });
     await approvals.waitFor();
@@ -92,7 +92,7 @@ function leaveDay() {
     await item.getByText('Approved', { exact: true }).waitFor({ timeout: 10000 });
     await sup.goto(BASE + '/approvals');
     await sup.getByRole('heading', { name: 'Approvals' }).waitFor();
-    expect((await sup.getByText(`Neha Deshmukh: Casual leave, ${day}`).count()) === 0, 'the approved request is still in the inbox');
+    expect((await sup.getByText(`Neha Deshmukh: Casual Leave, ${day}`).count()) === 0, 'the approved request is still in the inbox');
     ok('supervisor approved the request from "Needs your attention" on Home');
 
     // 3. Theme Studio: changes apply live, persist, and follow the member to another browser.

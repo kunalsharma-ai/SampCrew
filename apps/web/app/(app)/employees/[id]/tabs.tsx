@@ -5,6 +5,7 @@ import { CheckCircle2, Circle, Download, Eye, FileText, Lock, Pencil, Upload } f
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMfaRetry } from '@/components/mfa-step-up';
+import { AuthorityStatus } from '../../leave/authority-status';
 import { useState, useTransition, type ReactNode } from 'react';
 import type { ActionResult } from '@/lib/api';
 import type { Catalogue, DocRow, RequestRow } from '../../documents/types';
@@ -375,7 +376,7 @@ export function JobTab({ e, history, reports, departments, entities, locations, 
 // -------------------------------------------------------------------------------------------------------------
 
 export function BalanceCards({ balances }: { balances: LeaveBalance[] }) {
-  if (!balances.length) return <EmptyState title="No leave types apply yet" description="HR sets up leave types and policies under Leave settings." />;
+  if (!balances.length) return <EmptyState title="No leave types apply yet" description="Leave types reach people once the Super Workspace or their HR Workspace allocates them." />;
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {balances.map((b) => (
@@ -415,13 +416,17 @@ export function RequestsTable({ requests, actions }: { requests: LeaveRequest[];
       <TBody>
         {requests.map((r) => (
           <TR key={r.id}>
-            <TD><span className="flex items-center gap-2"><span className="size-2 rounded-full" style={{ background: r.color }} />{r.leaveTypeName}</span></TD>
+            <TD>
+              <Link href={`/leave/requests/${r.id}`} className="flex items-center gap-2 font-medium hover:underline"><span className="size-2 rounded-full" style={{ background: r.color }} />{r.leaveTypeName}</Link>
+              {r.reference && <span className="block text-xs text-fg-subtle">{r.reference}{r.approvalRouteLabel ? ` · to ${r.approvalRouteLabel}` : ''}</span>}
+            </TD>
             <TD className="whitespace-nowrap">{range(r)}</TD>
             <TD className="tabular-nums">{r.days}</TD>
             <TD className="max-w-xs truncate text-fg-muted">{r.reason ?? '—'}{r.cancelReason && <span className="block text-xs">Cancelled: {r.cancelReason}</span>}</TD>
             <TD>
               <StatusPill status={r.status} />
               {r.status === 'pending' && r.waitingOn && <span className="mt-1 block text-xs text-fg-muted" data-testid="leave-waiting-on">Waiting for {r.waitingOn}</span>}
+              {(r.authorities?.length ?? 0) > 1 && <AuthorityStatus authorities={r.authorities} className="mt-1" />}
               {r.sameDay && <span className="mt-1 block text-xs text-warning">Same-day leave</span>}
               {r.penalty && <span className={`block text-xs ${r.penalty.status === 'active' ? 'text-danger' : 'text-fg-subtle'}`}>Penalty {r.penalty.days} day(s) of pay{r.penalty.status === 'active' ? '' : `, ${r.penalty.status}`}</span>}
             </TD>

@@ -8,6 +8,7 @@
  * - A half day on a non-working day counts as zero.
  * - Monthly accrual credits entitlement / 12 on the first of each month; the month someone joins or leaves is
  *   prorated by calendar days employed in that month.
+ * - Quarterly accrual credits entitlement / 4 on the first day of each quarter, prorated like monthly accrual.
  * - Up-front accrual credits the full entitlement on 1 January, or on the joining date prorated by calendar
  *   days remaining in the year.
  * - Rounding 'half_day' rounds each credit to the nearest 0.5 day (halves round up); 'none' keeps 2 decimals.
@@ -88,7 +89,7 @@ export function countLeaveDays(
 }
 
 export interface AccrualPolicy {
-  accrualMethod: 'annual_upfront' | 'monthly' | 'granted' | 'none';
+  accrualMethod: 'annual_upfront' | 'quarterly' | 'monthly' | 'granted' | 'none';
   annualEntitlement: Hundredths;
   rounding: 'none' | 'half_day';
 }
@@ -127,6 +128,20 @@ export function accrualsDue(policy: AccrualPolicy, emp: Employment, asOf: string
 
   const credits: AccrualCredit[] = [];
   const lastMonth = Number(asOf.slice(5, 7));
+  if (policy.accrualMethod === 'quarterly') {
+    for (let q = 1; q <= Math.ceil(lastMonth / 3); q++) {
+      const qs = monthStart(year, 3 * q - 2);
+      const qe = monthEnd(year, 3 * q);
+      const a = maxDate(qs, from);
+      const b = minDate(qe, to);
+      if (a > b) continue;
+      const employed = daysBetweenInclusive(a, b);
+      const full = daysBetweenInclusive(qs, qe);
+      const quantity = applyRounding(divRound(policy.annualEntitlement * employed, 4 * full), policy.rounding);
+      if (quantity > 0) credits.push({ key: `Q${year}-${q}`, effectiveOn: a, quantity });
+    }
+    return credits;
+  }
   for (let m = 1; m <= lastMonth; m++) {
     const ms = monthStart(year, m);
     const me = monthEnd(year, m);

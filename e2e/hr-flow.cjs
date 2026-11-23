@@ -52,7 +52,7 @@ function leaveDay() {
 
   // 1. HR hires and invites.
   const hr = await signIn(b, 'hr.admin@demo.crew.local');
-  for (const path of ['/employees', '/approvals', '/leave', '/tasks', '/settings/leave', '/settings/onboarding']) {
+  for (const path of ['/employees', '/approvals', '/leave', '/leave/manage', '/tasks', '/settings/leave', '/settings/onboarding']) {
     await hr.goto(BASE + path);
     if (hr.url().includes('/no-access') || hr.url().includes('/login')) throw new Error(`HR admin could not open ${path}`);
   }
@@ -115,7 +115,7 @@ function leaveDay() {
   await joiner.getByTestId('leave-calendar').locator(`button[data-date="${day}"]`).click();
   await joiner.waitForSelector('dialog[open]');
   if ((await joiner.inputValue('dialog input[name=startDate]')) !== day) throw new Error('the calendar day did not start the request on that day');
-  const cl = await joiner.$eval('dialog select[name=leaveTypeId]', (s) => [...s.options].find((o) => o.text.startsWith('Casual leave'))?.value);
+  const cl = await joiner.$eval('dialog select[name=leaveTypeId]', (s) => [...s.options].find((o) => o.text.startsWith('Casual Leave'))?.value);
   await joiner.selectOption('dialog select[name=leaveTypeId]', cl);
   await joiner.fill('dialog input[name=endDate]', day);
   await joiner.fill('dialog textarea[name=reason]', 'Browser test');
@@ -125,17 +125,23 @@ function leaveDay() {
   // The page says who it went to, the request row too, and the calendar marks the day as waiting.
   await joiner.getByTestId('leave-sent').getByText(/waiting for approval from \S/).waitFor();
   await joiner.getByTestId('leave-waiting-on').first().waitFor();
-  await joiner.getByTestId('leave-calendar').locator(`[data-date="${day}"] [data-day-text]`, { hasText: 'Casual leave pending' }).waitFor({ state: 'attached' });
+  await joiner.getByTestId('leave-calendar').locator(`[data-date="${day}"] [data-day-text]`, { hasText: 'Casual Leave pending' }).waitFor({ state: 'attached' });
   ok(`leave requested for ${day} from the leave calendar with preview; told who approves it`);
 
   // 4. The supervisor approves it.
   const sup = await signIn(b, 'supervisor@demo.crew.local');
   await sup.goto(BASE + '/approvals');
-  const card = sup.locator('div', { hasText: `Riya Tester ${stamp % 10000}: Casual leave` }).last();
+  const card = sup.locator('div', { hasText: `Riya Tester ${stamp % 10000}: Casual Leave` }).last();
   await card.locator('button', { hasText: 'Approve' }).click();
   // The decision shows briefly, then the item leaves the inbox.
-  await sup.locator(`text=Riya Tester ${stamp % 10000}: Casual leave`).waitFor({ state: 'detached', timeout: 10000 });
+  await sup.locator(`text=Riya Tester ${stamp % 10000}: Casual Leave`).waitFor({ state: 'detached', timeout: 10000 });
   ok('supervisor approved from the inbox');
+
+  // 4b. After the reporting manager, the application goes to HR, who approves it on Leave management.
+  await hr.goto(BASE + '/leave/manage?tab=approvals');
+  await hr.getByTestId('leave-review-row').filter({ hasText: `Riya Tester ${stamp % 10000}` }).getByTestId('leave-approve').click();
+  await hr.getByText(/application is approved/).waitFor({ timeout: 10000 });
+  ok('HR approved it on Leave management');
 
   // 5. The joiner sees the result.
   await joiner.goto(BASE + '/leave');

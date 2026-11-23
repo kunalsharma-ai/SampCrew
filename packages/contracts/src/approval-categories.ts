@@ -46,7 +46,7 @@ const LEAVE = ['leave_request'];
 export const BUILT_IN_APPROVAL_CATEGORIES: ApprovalCategoryDef[] = [
   { key: 'half_day_leave', label: 'Half-day leave', description: 'Half-day leave requests', icon: 'clock', color: '#0891b2', rule: { resourceTypes: LEAVE, halfDay: true }, builtIn: true },
   { key: 'wfh', label: 'Work from home', description: 'Work-from-home requests', icon: 'home', color: '#7c3aed', rule: { resourceTypes: LEAVE, leaveTypeCodes: ['WFH'] }, builtIn: true },
-  { key: 'privilege_leave', label: 'Privilege leave', description: 'Privilege and earned leave', icon: 'calendar', color: '#059669', rule: { resourceTypes: LEAVE, leaveTypeCodes: ['PL', 'EL'] }, builtIn: true },
+  { key: 'privilege_leave', label: 'Permanent & earned leave', description: 'Permanent (PL), privilege and earned leave', icon: 'calendar', color: '#059669', rule: { resourceTypes: LEAVE, leaveTypeCodes: ['PL', 'EL'] }, builtIn: true },
   { key: 'sick_leave', label: 'Sick leave', description: 'Sick leave requests', icon: 'heart', color: '#dc2626', rule: { resourceTypes: LEAVE, leaveTypeCodes: ['SL'] }, builtIn: true },
   { key: 'casual_leave', label: 'Casual leave', description: 'Casual leave requests', icon: 'calendar', color: '#2563eb', rule: { resourceTypes: LEAVE, leaveTypeCodes: ['CL'] }, builtIn: true },
   { key: 'unpaid_leave', label: 'Unpaid leave', description: 'Leave without pay (LOP)', icon: 'wallet', color: '#6b7280', rule: { resourceTypes: LEAVE, paid: false }, builtIn: true },
@@ -109,12 +109,14 @@ export const approvalListQuery = z.object({
 });
 
 /** Status messages shown to the person who asked, worded once here so every screen says the same thing. */
-export function approvalStatusMessage(status: string, waitingOn: { stage: 'manager' | 'hr' | 'other'; who?: string | null } | null): string {
+export function approvalStatusMessage(status: string, waitingOn: { stage: 'manager' | 'hr' | 'super' | 'both' | 'other'; who?: string | null } | null): string {
   if (status === 'approved') return 'Your request has been approved.';
   if (status === 'rejected') return 'Your request has been rejected. Please check the remarks.';
   if (status === 'cancelled') return 'Your request was cancelled.';
   if (!waitingOn) return 'Your request has been submitted successfully.';
   if (waitingOn.stage === 'manager') return `Your request is awaiting manager approval${waitingOn.who ? ` (${waitingOn.who})` : ''}.`;
   if (waitingOn.stage === 'hr') return `Your request is pending HR approval${waitingOn.who ? ` (${waitingOn.who})` : ''}.`;
+  if (waitingOn.stage === 'super') return `Your request is pending Super Workspace approval${waitingOn.who ? ` (${waitingOn.who})` : ''}.`;
+  if (waitingOn.stage === 'both') return `Your request is pending HR Workspace and Super Workspace approval${waitingOn.who ? ` (${waitingOn.who})` : ''}.`;
   return `Your request is awaiting approval${waitingOn.who ? ` from ${waitingOn.who}` : ''}.`;
 }

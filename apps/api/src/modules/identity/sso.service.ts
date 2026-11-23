@@ -517,8 +517,11 @@ export class SsoService {
       }
       if (!c.jit_provisioning) throw Errors.forbidden('You are not a member of this workspace yet. Ask your HR team to add you.');
       const seats = await tx.collection('memberships').count({ tenant_id: c.tenant_id, status: { $ne: 'suspended' } });
-      const limit = (await this.db.tenant((ttx) => loadEntitlements(ttx), { tenantId: c.tenant_id })).limits.max_employees;
+      const limits = (await this.db.tenant((ttx) => loadEntitlements(ttx), { tenantId: c.tenant_id })).limits;
+      const limit = limits.max_employees;
       if (limit !== undefined && limit !== UNLIMITED && seats >= limit) throw Errors.forbidden('This workspace has no seats left. Ask your HR team to add you.');
+      const accounts = limits.max_employee_workspaces;
+      if (accounts !== undefined && accounts !== UNLIMITED && seats >= accounts) throw Errors.forbidden('This workspace has no Employee Workspaces left on its plan. Ask your HR team to add you.');
       const userId = (u ?? (await tx.collection('users').insert({ email, full_name: name.slice(0, 160) }))).id as string;
       const entity = await tx.collection('legal_entities').findOne({ tenant_id: c.tenant_id, archived_at: null }, { sort: { created_at: 1 } });
       const membershipId = (await tx.collection('memberships').insert({ tenant_id: c.tenant_id, user_id: userId, status: 'active', legal_entity_id: entity?.id ?? null, provisioned_by: 'sso' })).id as string;
