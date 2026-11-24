@@ -78,7 +78,7 @@ async function mobileScreens(b, theme, found, checked) {
   found.push(...(await check(p, `Mobile /login (${theme})`)));
   checked.push(`Mobile /login (${theme})`);
   await p.getByLabel('Work email').fill('operator2@demo.crew.local');
-  await p.getByLabel('Password').fill(PASSWORD);
+  await p.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await p.getByRole('button', { name: 'Sign in', exact: true }).click();
   await p.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 20000 });
   for (const route of ['/', '/attendance', '/leave', '/helpdesk', '/me']) {
