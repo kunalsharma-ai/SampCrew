@@ -219,7 +219,8 @@ describe('help centre', () => {
       expect(ok(await as('esha').post('/help/queries').send(body), 201)).toMatchObject({ id: q1, created: false });
       const row = (await pool.one('help_queries', { id: q1 }))!;
       expect(row).toMatchObject({ route: 'hr', hr_workspace_id: space, status: 'open', raiser_name: 'Esha Employee', raiser_level: 'employee', raiser_workspace: 'Mumbai Branch', category_label: 'Other', raiser_email: m.esha.email });
-      expect(await pool.find('notifications', { membership_id: m.esha.membershipId, kind: 'help.query_submitted' })).toHaveLength(1);
+      // Nobody is notified about what they did themselves.
+      expect(await pool.find('notifications', { membership_id: m.esha.membershipId, kind: 'help.query_submitted' })).toHaveLength(0);
       expect(await pool.find('notifications', { membership_id: m.hari.membershipId, kind: 'help.query_new' })).toHaveLength(1);
       // The other HR Workspace is not told and cannot open it.
       expect(await pool.find('notifications', { membership_id: m.bina.membershipId, kind: 'help.query_new' })).toHaveLength(0);

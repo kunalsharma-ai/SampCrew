@@ -339,6 +339,8 @@ export class DisciplineService implements OnModuleInit {
       membershipIds: [e.membership_id], kind: 'leave.same_day_penalty', title: `Same-day leave penalty: ${deductionText('days', p.sameDayLeave.penaltyDays)}`,
       body: `Your leave from ${req.start_date} was applied on ${appliedOn}. Under your workspace's rules ${deductionText('days', p.sameDayLeave.penaltyDays)} will be deducted from your salary for ${monthOf(req.start_date)} if the leave is approved. Your manager can change or waive it.`,
       link: '/leave', email: true,
+      // Decided by the workspace rule, not by the applicant: they are told even though they applied.
+      includeActor: true,
     });
     return `Same-day leave: ${deductionText('days', p.sameDayLeave.penaltyDays)} penalty applied automatically. You can change or waive it.`;
   }
