@@ -101,12 +101,9 @@ const count = async (p) => {
       return (await c.count()) ? Number((await c.innerText()).match(/(\d+)\s*pending/)?.[1] ?? 0) : 0;
     };
     const pendingBefore = await pendingOn();
-    // Opening Approvals marks its notices read, so the other tab's bell is read again before counting.
-    await board.waitForTimeout(1500);
     await sup.reload();
     await sup.getByTestId('notification-bell').waitFor();
     await sup.waitForTimeout(1500); // the live stream connects
-    const before = await count(sup);
 
     const day = leaveDay();
     await op.goto(BASE + `/leave?month=${day.slice(0, 7)}`);
@@ -117,14 +114,17 @@ const count = async (p) => {
     await op.fill('dialog input[name=endDate]', day);
     await op.fill('dialog textarea[name=reason]', 'Notification browser test');
     await op.waitForSelector('dialog >> text=/1\\.00 working day/', { timeout: 10000 });
+    const supToast = sup.getByTestId('notification-toasts').getByText(/awaiting your approval/).waitFor({ timeout: 20000 });
     await op.click('dialog >> text=Submit request');
     await op.getByTestId('leave-sent').waitFor({ timeout: 10000 });
 
-    await sup.waitForFunction((n) => {
+    // The pop-up proves the notice arrived live; the bell then counts it. (The other tab on Approvals marks that
+    // category read when it opens, so the count is not compared with the one taken before.)
+    await supToast;
+    await sup.waitForFunction(() => {
       const el = document.querySelector('[data-testid=notification-count]');
-      return el && Number(el.textContent.replace(/\D/g, '')) > n;
-    }, before, { timeout: 15000 });
-    await sup.getByTestId('notification-toasts').getByText(/awaiting your approval/).waitFor({ timeout: 5000 });
+      return el && Number(el.textContent.replace(/\D/g, '')) > 0;
+    }, null, { timeout: 15000 });
     await board.waitForFunction((n) => {
       const c = document.querySelector('[data-testid=approval-card-casual_leave]');
       return c && Number((c.textContent.match(/(\d+)\s*pending/) || [])[1] || 0) > n;
