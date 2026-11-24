@@ -71,7 +71,7 @@ export function RosterEditor({ roster, shifts }: { roster: RosterGrid; shifts: S
             {roster.status === 'draft' && (
               <>
                 <Button data-feature="shift_scheduling.publish_roster" variant="secondary" loading={pending} disabled={Object.keys(changes).length > 0} onClick={() => { if (confirm('Publish this roster? Its shifts apply and everyone on it is notified.')) run(() => publishRosterAction(roster.id)); }}>Publish</Button>
-                <Button variant="ghost" loading={pending} onClick={() => { if (confirm('Delete this draft roster?')) run(() => deleteRosterAction(roster.id), () => router.push('/shifts')); }}>Delete draft</Button>
+                <Button data-delete-area="attendance" data-delete="draft roster" variant="ghost" loading={pending} onClick={() => { if (confirm('Delete this draft roster?')) run(() => deleteRosterAction(roster.id), () => router.push('/shifts')); }}>Delete draft</Button>
               </>
             )}
           </div>

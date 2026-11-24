@@ -115,7 +115,7 @@ export function RunView({ run, people }: { run: PayrollRunDetail; people: { id: 
                   <TD>{a.label} <span className="text-xs text-fg-muted">{a.kind === 'earning' ? (a.taxable ? 'earning, taxable' : 'earning, not taxable') : 'deduction'}</span></TD>
                   <TD className="whitespace-nowrap text-right tabular-nums">{a.kind === 'deduction' ? '-' : ''}{money(a.amount)}</TD>
                   <TD className="text-fg-muted">{a.reason}</TD>
-                  <TD className="text-right">{editable && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Remove this adjustment?') && go(() => removeAdjustmentAction(run.id, a.id))}>Remove</Button>}</TD>
+                  <TD className="text-right">{editable && <Button data-delete-area="payroll" data-delete="payroll adjustment" size="sm" variant="ghost" loading={pending} onClick={() => confirm('Remove this adjustment?') && go(() => removeAdjustmentAction(run.id, a.id))}>Remove</Button>}</TD>
                 </TR>
               ))}
             </TBody>

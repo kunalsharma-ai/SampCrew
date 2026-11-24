@@ -28,7 +28,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
       <>
         <PageHeader title="Leave" />
         <Alert tone="info" title="No employee record linked">Your login is not linked to an employee record yet, so there is no leave balance to show. Ask your HR Workspace to link it from your employee profile.</Alert>
-        {can(me, 'leave:allocate') && <Alert tone="info" className="mt-4">Leave types, allocation and approvals are on <a className="underline" href="/leave/manage">Leave management</a>.</Alert>}
+        {can(me, 'leave:allocate') && <Alert tone="info" className="mt-4">Leave types, quantities and approvals are on <a className="underline" href="/leave/manage">Leave management</a>.</Alert>}
       </>
     );
   }
@@ -73,8 +73,8 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
         )}
         {balances.balances.length === 0 && (
           <Alert tone="warning" title="No leave types apply to you yet">
-            You cannot apply for leave until the Super Workspace or your HR Workspace allocates leave types to you.
-            {can(me, 'leave:allocate') && <> Allocate them on <a className="underline" href="/leave/manage?tab=allocation">Leave management</a>.</>}
+            No leave type is visible to you yet. One appears here as soon as the Super Workspace or your HR Workspace creates it for your workspace.
+            {can(me, 'leave:allocate') && <> Create one on <a className="underline" href="/leave/manage?tab=types">Leave management</a>.</>}
           </Alert>
         )}
         <BalanceCards balances={balances.balances} />

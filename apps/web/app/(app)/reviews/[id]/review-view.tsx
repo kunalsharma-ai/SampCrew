@@ -196,7 +196,7 @@ export function ReviewView({ review }: { review: ReviewDetail }) {
                     <span className="font-medium">{f.reviewerName}</span>
                     <Badge tone={FEEDBACK_TONE[f.status] ?? 'neutral'} dot>{FEEDBACK_STATUS[f.status] ?? f.status}</Badge>
                     {f.status === 'requested' && review.can.requestFeedback && (
-                      <Button className="ml-auto" size="sm" variant="ghost" loading={pending} onClick={() => run(() => withdrawFeedbackAction(review.id, f.id))}>Withdraw</Button>
+                      <Button data-delete-area="performance" data-delete="feedback request" className="ml-auto" size="sm" variant="ghost" loading={pending} onClick={() => run(() => withdrawFeedbackAction(review.id, f.id))}>Withdraw</Button>
                     )}
                   </div>
                   {f.status === 'submitted' && review.peerQuestions.map((q) => (

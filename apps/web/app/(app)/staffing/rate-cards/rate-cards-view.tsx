@@ -31,7 +31,7 @@ export function RateCardsView({ cards, clients, canManage }: { cards: RateCard[]
             {canManage && (
               <span className="ml-auto flex gap-1">
                 <Button size="sm" variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing(c)}><Pencil className="size-3.5" /></Button>
-                <Button size="sm" variant="ghost" aria-label={`Archive ${c.name}`} disabled={pending} onClick={() => {
+                <Button data-delete-area="recruitment" data-delete={`rate card ${c.name}`} size="sm" variant="ghost" aria-label={`Archive ${c.name}`} disabled={pending} onClick={() => {
                   if (!confirm(`Archive “${c.name}”? Bids that used it keep their rates.`)) return;
                   start(async () => { const r = await archiveRateCardAction(c.id); setMsg(r.ok ? { tone: 'success', text: `${c.name} archived` } : { tone: 'danger', text: r.message }); router.refresh(); });
                 }}><Trash2 className="size-3.5" /></Button>

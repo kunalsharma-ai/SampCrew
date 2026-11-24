@@ -35,7 +35,7 @@ export function HelpdeskSettings({ categories, handlers, articles }: { categorie
                   {!c.archivedAt && (
                     <>
                       <Button size="sm" variant="ghost" onClick={() => setCat(c)}>Edit</Button>
-                      <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive "${c.name}"? Existing cases keep it.`) && run(() => archiveCategoryAction(c.id))}>Archive</Button>
+                      <Button data-delete-area="communication" data-delete={`helpdesk category ${c.name}`} size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive "${c.name}"? Existing cases keep it.`) && run(() => archiveCategoryAction(c.id))}>Archive</Button>
                     </>
                   )}
                 </TD>
@@ -58,7 +58,7 @@ export function HelpdeskSettings({ categories, handlers, articles }: { categorie
                 <TD><Badge tone={a.published ? 'success' : 'neutral'}>{a.published ? 'Published' : 'Draft'}</Badge></TD>
                 <TD className="whitespace-nowrap text-right">
                   <Button size="sm" variant="ghost" onClick={() => setArt(a)}>Edit</Button>
-                  <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Delete "${a.title}"?`) && run(() => deleteArticleAction(a.id))}>Delete</Button>
+                  <Button data-delete-area="communication" data-delete={`article ${a.title}`} size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Delete "${a.title}"?`) && run(() => deleteArticleAction(a.id))}>Delete</Button>
                 </TD>
               </TR>
             ))}

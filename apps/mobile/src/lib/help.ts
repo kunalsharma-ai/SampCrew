@@ -176,8 +176,13 @@ export const MOBILE_HELP = {
   },
   notifications: {
     title: 'Notifications',
-    what: 'Everything SampCrew has told you about: decisions, announcements, replies and reminders.',
-    how: 'Tap a notification to open what it is about.',
+    what: 'Everything SampCrew has told you about: decisions, announcements, replies and reminders. The same list as the bell on the web.',
+    how: 'Tap a notification to open what it is about. Use Action needed to see what waits for you; the envelope marks one read or unread.',
+  },
+  'notification-settings': {
+    title: 'Notification settings',
+    what: 'Which notices show in the app, which are pushed to this phone, and which make a sound.',
+    how: 'Switch a category on or off and save. A locked switch was set by your organisation. Your phone’s own settings still apply.',
   },
   payslip: {
     title: 'Payslip',

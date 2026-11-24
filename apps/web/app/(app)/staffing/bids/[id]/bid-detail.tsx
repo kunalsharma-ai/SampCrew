@@ -61,7 +61,7 @@ export function BidDetail({ bid, myApproval, notice, senderName, workspace }: { 
             {bid.can.decide && <Button variant="secondary" onClick={() => setOutcome('won')}><Trophy className="size-4" /> Mark won</Button>}
             {bid.can.decide && <Button variant="secondary" onClick={() => setOutcome('lost')}>Mark lost</Button>}
             {bid.can.withdraw && <Button variant="ghost" onClick={() => setOutcome('withdrawn')}><Undo2 className="size-4" /> Withdraw</Button>}
-            {bid.can.delete && <Button variant="ghost" onClick={() => { if (confirm('Delete this draft?')) start(async () => { const r = await bidAction(bid.id, 'delete'); if (r.ok) router.push('/staffing/bids'); else setMsg({ tone: 'danger', text: r.message }); }); }}><Trash2 className="size-4" /> Delete</Button>}
+            {bid.can.delete && <Button data-delete-area="recruitment" data-delete="draft bid" variant="ghost" onClick={() => { if (confirm('Delete this draft?')) start(async () => { const r = await bidAction(bid.id, 'delete'); if (r.ok) router.push('/staffing/bids'); else setMsg({ tone: 'danger', text: r.message }); }); }}><Trash2 className="size-4" /> Delete</Button>}
           </div>
         )}
       />

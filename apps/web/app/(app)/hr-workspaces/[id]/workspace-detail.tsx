@@ -113,7 +113,7 @@ function PermissionsCard({ w }: { w: HrWorkspaceDetail }) {
   });
   return (
     <Card>
-      <CardHeader title="Employee data permissions" description={w.can.manage ? 'What this HR Workspace’s admins may do with the records of its people. Switching one off takes effect on their next page, and the server refuses it too.' : 'What the Super Workspace allows this HR Workspace’s admins to do with the records of its people.'} />
+      <CardHeader title="Employee data permissions" action={w.can.manage ? <a className="text-xs font-medium text-accent hover:underline" href={`/settings/workspace-permissions?level=hr&groupId=${w.id}`}>All permissions</a> : undefined} description={w.can.manage ? 'What this HR Workspace’s admins may do with the records of its people. Switching one off takes effect on their next page, and the server refuses it too.' : 'What the Super Workspace allows this HR Workspace’s admins to do with the records of its people.'} />
       <CardBody className="grid gap-3">
         {flash && <Alert tone={flash.tone}>{flash.text}</Alert>}
         <ul className="grid gap-2 sm:grid-cols-2">
@@ -171,7 +171,7 @@ function DetailsCard({ w }: { w: HrWorkspaceDetail }) {
           <div className="flex flex-wrap gap-2">
             {w.status === 'active' && <Button variant="secondary" onClick={() => setStatus('suspended')}>Suspend</Button>}
             {w.status === 'suspended' && <Button variant="secondary" onClick={() => setStatus('active')}>Reactivate</Button>}
-            <Button variant="danger" onClick={() => setStatus('archived')}>Archive</Button>
+            <Button data-delete-area="organization" variant="danger" onClick={() => setStatus('archived')}>Archive</Button>
           </div>
           <Button onClick={save} loading={pending}>Save details</Button>
         </div>
@@ -200,7 +200,7 @@ function StatusDialog({ w, status, onClose }: { w: HrWorkspaceDetail; status: 'a
   });
   return (
     <Dialog open={status !== null} onClose={onClose} size="sm" title={title} description={about}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant={status === 'archived' ? 'danger' : 'primary'} onClick={go} loading={pending}>{status === 'archived' ? 'Archive' : status === 'suspended' ? 'Suspend' : 'Reactivate'}</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button data-delete={status === 'archived' ? `HR Workspace ${w.name} (archive)` : undefined} variant={status === 'archived' ? 'danger' : 'primary'} onClick={go} loading={pending}>{status === 'archived' ? 'Archive' : status === 'suspended' ? 'Suspend' : 'Reactivate'}</Button></>}>
       <div className="grid gap-3">
         {error && <Alert tone="danger">{error}</Alert>}
         <Field label="Reason" required hint="Kept in the history and the audit trail">{(f) => <Textarea {...f} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} />}</Field>

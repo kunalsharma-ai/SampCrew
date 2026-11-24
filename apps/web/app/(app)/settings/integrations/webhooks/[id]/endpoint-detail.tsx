@@ -29,7 +29,7 @@ export function EndpointDetail({ endpoint: w, deliveries, events, status }: { en
           : <Button disabled={pending} onClick={() => run(() => webhookControlAction(w.id, 'enable'))}>Switch on</Button>}
         <Button variant="secondary" disabled={pending || w.status !== 'active'} onClick={() => run(() => webhookControlAction(w.id, 'test'), () => setTimeout(() => router.refresh(), 3000))}>Send test event</Button>
         <Button variant="secondary" disabled={pending} onClick={() => { if (confirm('Create a new signing secret? The old one stops working from the next attempt.')) run(async () => { const r = await rotateWebhookSecretAction(w.id); if (r.ok) setSecret(r.data!.secret); return r; }); }}>Rotate secret</Button>
-        <Button variant="danger" disabled={pending} onClick={() => { if (confirm(`Delete "${w.name}" and its delivery log?`)) run(async () => { const r = await deleteWebhookAction(w.id); if (r.ok) router.push('/settings/integrations/webhooks'); return r; }); }}>Delete</Button>
+        <Button data-delete-area="settings" data-delete={`webhook ${w.name}`} variant="danger" disabled={pending} onClick={() => { if (confirm(`Delete "${w.name}" and its delivery log?`)) run(async () => { const r = await deleteWebhookAction(w.id); if (r.ok) router.push('/settings/integrations/webhooks'); return r; }); }}>Delete</Button>
       </div>
       <Card>
         <CardHeader

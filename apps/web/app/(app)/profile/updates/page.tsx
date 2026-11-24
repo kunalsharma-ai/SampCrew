@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { Badge, buttonClass, Card, CardHeader, EmptyState, PageHeader, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -17,6 +18,7 @@ export default async function ProfileUpdatesPage({ searchParams }: { searchParam
   return (
     <>
       <PageHeader title="Profile updates" description="Changes employees made to their profiles. Compare old and new values, open any proof, then approve, reject or ask for more information." />
+      <ModuleNotices category="profile" label="Profile" />
       <SubNav label="Profile update views" items={[{ href: '/profile/updates', label: 'Waiting', count: all ? undefined : rows.filter((r) => r.status === 'pending').length }, { href: '/profile/updates?status=all', label: 'All updates' }]} current={all ? '/profile/updates?status=all' : '/profile/updates'} />
       <Card>
         <CardHeader title={all ? 'All profile updates' : 'Waiting for review'} />

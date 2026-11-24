@@ -2,17 +2,20 @@ import * as Notifications from 'expo-notifications';
 import { type ErrorBoundaryProps, Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { appRoute } from '../src/lib/format';
 import { configureForeground } from '../src/lib/push';
 import { AppearanceProvider, useAppearanceTheme } from '../src/lib/appearance';
 import { BadgesProvider } from '../src/lib/badges';
+import { DeletePasswordHost } from '../src/ui/delete-password';
 import { MobileAppProvider } from '../src/lib/mobile-app';
 import { API_URL, SessionProvider, useSession } from '../src/lib/session';
 import { hostOf } from '../src/lib/startup';
 import { screenHelp, useTheme } from '../src/ui';
+import { WelcomeIntro } from '../src/ui/welcome';
+import { welcomeSceneFor } from '@crew/contracts';
 
 try {
   configureForeground();
@@ -70,10 +73,17 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 
 /** Sends the person to sign-in, the lock screen or the app, depending on the session. */
 function Gate() {
-  const { status } = useSession();
+  const { status, me } = useSession();
   const segments = useSegments();
   const router = useRouter();
   const t = useTheme();
+  // The welcome plays after a real sign-in (signed out, then ready), not when the app opens with a saved session.
+  const prevStatus = useRef(status);
+  const [intro, setIntro] = useState(false);
+  useEffect(() => {
+    if (prevStatus.current === 'signedOut' && status === 'ready') setIntro(true);
+    prevStatus.current = status;
+  }, [status]);
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -98,6 +108,8 @@ function Gate() {
 
   if (status === 'loading') return <Starting />;
   return (
+    <>
+    {intro && me && <WelcomeIntro scene={welcomeSceneFor(me.levels)} name={me.user.fullName} workspace={me.tenant.name} onDone={() => setIntro(false)} />}
     <Stack screenOptions={{ headerStyle: { backgroundColor: t.neon ? t.bg : t.card }, headerShadowVisible: !t.neon, headerTitleStyle: { fontWeight: t.neon ? '700' : '600' }, headerTintColor: t.fg, contentStyle: { backgroundColor: t.bg } }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -105,6 +117,7 @@ function Gate() {
       <Stack.Screen name="sso" options={{ headerShown: false }} />
       <Stack.Screen name="approvals" options={{ title: 'Approvals', ...screenHelp('approvals') }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications', ...screenHelp('notifications') }} />
+      <Stack.Screen name="notification-settings" options={{ title: 'Notification settings', ...screenHelp('notification-settings') }} />
       <Stack.Screen name="leave/new" options={{ title: 'Apply for leave', ...screenHelp('leave.new') }} />
       <Stack.Screen name="helpdesk/new" options={{ title: 'Ask HR', ...screenHelp('helpdesk.new') }} />
       <Stack.Screen name="helpdesk/[id]" options={{ title: 'Case', ...screenHelp('helpdesk.case') }} />
@@ -135,6 +148,7 @@ function Gate() {
       <Stack.Screen name="help/queries/index" options={{ title: 'My queries', ...screenHelp('help.queries') }} />
       <Stack.Screen name="help/queries/[id]" options={{ title: 'Query', ...screenHelp('help.query') }} />
     </Stack>
+    </>
   );
 }
 
@@ -152,6 +166,7 @@ export default function RootLayout() {
             <BadgesProvider>
               <ThemedStatusBar />
               <Gate />
+              <DeletePasswordHost />
             </BadgesProvider>
           </MobileAppProvider>
         </AppearanceProvider>

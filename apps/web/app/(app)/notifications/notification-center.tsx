@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { useLive, useRefreshOn } from '@/components/live';
-import { CATEGORY_LABEL, NotificationIcon, when } from '@/components/notification-bell';
+import { ActionBadge, CATEGORY_LABEL, NotificationIcon, originOf, when } from '@/components/notification-bell';
 import { ICONS } from '@/lib/icons';
 import { markNotificationReadAction } from '../shell-actions';
 import { loadMoreNotificationsAction, markCategoryReadAction, markUnreadAction } from './actions';
@@ -23,7 +23,7 @@ export function NotificationCenter({ list, summary, query, filter, category, sea
   list: { unread: number; items: NotificationView[]; nextBefore: string | null };
   summary: NotificationSummary;
   query: string;
-  filter: 'all' | 'unread' | 'read';
+  filter: 'all' | 'unread' | 'read' | 'action';
   category: string | null;
   search: string;
   priority: string;
@@ -87,8 +87,11 @@ export function NotificationCenter({ list, summary, query, filter, category, sea
         <Card className="p-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex rounded-lg bg-bg-subtle p-1" role="radiogroup" aria-label="Show">
-              {(['all', 'unread', 'read'] as const).map((f) => (
-                <button key={f} role="radio" aria-checked={filter === f} onClick={() => nav({ filter: f === 'all' ? null : f })} className={cn('rounded-md px-3 py-1 text-xs font-medium capitalize', filter === f ? 'bg-surface text-fg shadow-card' : 'text-fg-muted hover:text-fg')}>{f}</button>
+              {(['all', 'unread', 'action', 'read'] as const).map((f) => (
+                <button key={f} role="radio" aria-checked={filter === f} data-testid={`filter-${f}`} onClick={() => nav({ filter: f === 'all' ? null : f })} className={cn('rounded-md px-3 py-1 text-xs font-medium', filter === f ? 'bg-surface text-fg shadow-card' : 'text-fg-muted hover:text-fg')}>
+                  {f === 'action' ? 'Action needed' : f[0]!.toUpperCase() + f.slice(1)}
+                  {f === 'action' && (summary.actionNeeded ?? 0) > 0 && <span className="ml-1 rounded-full bg-ember px-1.5 text-[0.625rem] font-semibold text-white">{summary.actionNeeded}</span>}
+                </button>
               ))}
             </div>
             <Select aria-label="Priority" className="h-8 w-36" value={priority} onChange={(e) => nav({ priority: e.target.value || null })}>
@@ -112,7 +115,7 @@ export function NotificationCenter({ list, summary, query, filter, category, sea
           </div>
         </Card>
         {items.length === 0 ? (
-          <Card><EmptyState icon={<Bell className="size-5" />} title={filter === 'unread' ? 'No unread notifications' : 'No notifications here'} description="When something needs you, it shows here and on the bell." /></Card>
+          <Card><EmptyState icon={<Bell className="size-5" />} title={filter === 'unread' ? 'No unread notifications' : filter === 'action' ? 'Nothing waiting for you' : 'No notifications here'} description="When something needs you, it shows here, on Home and on the bell." /></Card>
         ) : (
           <Card className="divide-y divide-border p-0" data-testid="notification-list">
             {items.map((n) => (
@@ -123,11 +126,12 @@ export function NotificationCenter({ list, summary, query, filter, category, sea
                     {!n.readAt && <span className="size-2 rounded-full bg-accent" aria-label="Unread" />}
                     <span className="text-[0.8125rem] font-semibold text-fg">{n.title}</span>
                     {PRIORITY_BADGE[n.priority] && <Badge tone={PRIORITY_BADGE[n.priority]!.tone}>{PRIORITY_BADGE[n.priority]!.label}</Badge>}
+                    {n.actionRequired && !n.readAt && <ActionBadge />}
                     {n.count > 1 && <Badge>{n.count} updates</Badge>}
                   </span>
                   {n.body && <span className="mt-0.5 block whitespace-pre-line text-xs text-fg-muted">{n.body}</span>}
                   <span className="mt-1 block text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>
-                    {CATEGORY_LABEL[n.category]}{n.actorName ? ` · from ${n.actorName}` : ''} · {when(n.updatedAt)}
+                    {originOf(n)}{n.actorName ? ` · from ${n.actorName}` : ''} · {when(n.updatedAt)}
                   </span>
                 </button>
                 <button className="self-start rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label={n.readAt ? 'Mark unread' : 'Mark read'} title={n.readAt ? 'Mark unread' : 'Mark read'} onClick={() => toggle(n)}>

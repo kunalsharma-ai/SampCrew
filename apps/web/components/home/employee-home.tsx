@@ -353,7 +353,7 @@ export function TodayStatus({ home, today }: { home: EmployeeHome; today: Attend
 
 export function LeaveCard({ home, balances }: { home: EmployeeHome; balances: LeaveBalance[] | null }) {
   const l = home.leave;
-  const shown = (balances ?? []).filter((b) => b.tracked).slice(0, 4);
+  const shown = (balances ?? []).filter((b) => b.kind !== 'wfh').slice(0, 4);
   return (
     <Card data-testid="leave-card">
       <CardHeader title="Leave" description="Balance, requests waiting and leave coming up." action={<Link href="/leave?create=leave" className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-xs font-semibold text-accent-fg hover:opacity-90" data-testid="apply-leave">Apply leave</Link>} />
@@ -361,18 +361,20 @@ export function LeaveCard({ home, balances }: { home: EmployeeHome; balances: Le
         {shown.length > 0 ? (
           <ul className="grid grid-cols-1 gap-2">
             {shown.map((b) => {
-              const total = Number(b.accrued) + Number(b.carriedForward) + Number(b.adjusted) || Number(b.annualEntitlement) || 0;
-              const used = Number(b.taken);
+              const total = b.assigned === null ? 0 : Number(b.assigned);
+              const used = Number(b.used);
               return (
                 <li key={b.leaveTypeId} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1">
                   <span className="flex items-center gap-2 text-[0.8125rem]"><span className="size-2.5 rounded-full" style={{ background: b.color }} aria-hidden />{b.name}{Number(b.pending) > 0 && <Badge tone="warning">{b.pending} pending</Badge>}</span>
-                  <span className="text-sm font-bold tabular">{b.available ?? b.balance}<span className="ml-1 text-[0.6875rem] font-normal text-fg-subtle">left</span></span>
-                  <Progress value={total ? (used / total) * 100 : 0} label={`${b.name} used`} className="col-span-2 h-1.5" />
+                  {b.notAssigned
+                    ? <span className="text-xs text-fg-subtle" data-testid="not-assigned">Not Assigned</span>
+                    : <span className="text-sm font-bold tabular">{b.available ?? b.balance}<span className="ml-1 text-[0.6875rem] font-normal text-fg-subtle">left</span></span>}
+                  {!b.notAssigned && <Progress value={total ? (used / total) * 100 : 0} label={`${b.name} used`} className="col-span-2 h-1.5" />}
                 </li>
               );
             })}
           </ul>
-        ) : <p className="text-[0.8125rem] text-fg-muted">No leave balances are tracked for you yet.</p>}
+        ) : <p className="text-[0.8125rem] text-fg-muted">No leave type is visible to you yet.</p>}
         {l && (l.pending.length > 0 || l.upcoming.length > 0) && (
           <div className="grid grid-cols-1 gap-2 border-t border-border pt-3 text-[0.8125rem]">
             {l.pending.map((r) => <div key={r.id} className="flex items-center justify-between gap-2"><span>{r.type}: {shortDate(r.startDate)}{r.endDate !== r.startDate ? ` to ${shortDate(r.endDate)}` : ''}</span><Badge tone="warning">Waiting</Badge></div>)}

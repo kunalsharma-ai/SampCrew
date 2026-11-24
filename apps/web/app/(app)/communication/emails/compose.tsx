@@ -98,7 +98,7 @@ export function Compose({ id, initial, files: initialFiles, options, knownNames 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
           <div className="flex gap-2">
             <Button variant="secondary" loading={pending && !confirm} onClick={save}>Save draft</Button>
-            {draftId && <Button variant="ghost" onClick={() => start(async () => { const r = await deleteDraftAction(draftId); if (r.ok) router.push('/communication/emails'); else setMsg({ tone: 'danger', text: r.message }); })}><Trash2 className="size-3.5" /> Delete draft</Button>}
+            {draftId && <Button data-delete-area="communication" data-delete="email draft" variant="ghost" onClick={() => start(async () => { const r = await deleteDraftAction(draftId); if (r.ok) router.push('/communication/emails'); else setMsg({ tone: 'danger', text: r.message }); })}><Trash2 className="size-3.5" /> Delete draft</Button>}
           </div>
           {confirm ? (
             <div className="flex items-center gap-2" data-testid="send-confirm">

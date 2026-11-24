@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load, loadOptional } from '@/lib/api';
@@ -19,6 +20,7 @@ export default async function PayrollPage() {
   return (
     <>
       <PageHeader title="Payroll" description="Monthly payroll runs per legal entity. Compute, review every payslip, then send for approval; the approver finalises." />
+      <ModuleNotices category="payroll" label="Payroll" />
       <ModuleOverview module="payroll" actions={allowed(me, [
         { label: 'Salaries', href: '/payroll/salaries', icon: 'banknote', permission: 'payroll:read' },
         { label: 'Pay slips', href: '/payslips', icon: 'file-text', permission: 'payslips:read' },

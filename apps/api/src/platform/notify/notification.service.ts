@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  categoryOfKind, inQuietHours, resolveNotificationPreferences, type NotificationCategory, type QuietHours, type NotificationPriority, type NotificationView,
+  categoryOfKind, inQuietHours, kindNeedsAction, resolveNotificationPreferences, type NotificationCategory, type QuietHours, type NotificationPriority, type NotificationView,
 } from '@crew/contracts';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { requestContext } from '../context/request-context';
@@ -37,6 +37,11 @@ export interface Notice {
   resource?: { type: string; id: string };
   /** Who caused it; shown as "from" in the Notification Center. Defaults to nobody. */
   actorMembershipId?: string | null;
+  /**
+   * The notice asks the person to do something (decide, complete, acknowledge). Shown as "Action needed" in the bell,
+   * Home and the module's page. Worked out from the kind when left out (contracts kindNeedsAction).
+   */
+  action?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,6 +59,7 @@ export function notificationView(n: Doc, names?: Map<string, string | null>): No
     link: n.link ?? null,
     count: n.count ?? 1,
     actorName: n.actor_membership_id ? names?.get(n.actor_membership_id) ?? null : null,
+    actionRequired: typeof n.action_required === 'boolean' ? n.action_required : kindNeedsAction(n.kind),
     readAt: n.read_at ?? null,
     createdAt: n.created_at,
     updatedAt: n.updated_at ?? n.created_at,
@@ -76,28 +82,38 @@ export class NotificationService {
     const priority = notice.priority ?? 'normal';
     const memberships = await tx.collection('memberships').find({ id: { $in: ids } });
     const emails = new Map((await (await usersTable(tx)).find({ id: { $in: memberships.map((m) => m.user_id) } }, { projection: { email: 1 } })).map((u) => [u.id as string, u.email as string]));
-    const resolved = new Map(
+    // The organisation's policy (Super Workspace) sits above each person's own choices.
+    const policies = new Map<string, unknown>();
+    for (const t of new Set(memberships.map((m) => m.tenant_id as string))) {
+      policies.set(t, (await tx.collection('notification_policies').findOne({ tenant_id: t }, { projection: { policy: 1 } }))?.policy);
+    }
+    const tenantOf = new Map(memberships.map((m) => [m.id as string, m.tenant_id as string]));
+    const saved = new Map(
       (await tx.collection('member_preferences').find({ membership_id: { $in: ids } }, { projection: { membership_id: 1, notifications: 1 } }))
-        .map((p) => [p.membership_id as string, resolveNotificationPreferences(p.notifications)]),
+        .map((p) => [p.membership_id as string, p.notifications]),
     );
+    const resolved = new Map(ids.map((id) => [id, resolveNotificationPreferences(saved.get(id), policies.get(tenantOf.get(id) ?? ''))]));
     const prefs = new Map([...resolved].map(([id, p]) => [id, p.categories[category]]));
     const active = memberships.filter((m) => m.status === 'active').map((m) => ({ id: m.id as string, tenant_id: m.tenant_id as string, email: emails.get(m.user_id)! }));
     const live: Doc[] = [];
     // Who caused it, so their own open page does not pop up a notice about what they just did.
     const by = (() => { const a = requestContext.get()?.actor; return a?.kind === 'user' ? a.membershipId : null; })();
     for (const r of active) {
-      const channel = prefs.get(r.id) ?? { inApp: true, email: true };
+      const channel = prefs.get(r.id) ?? { inApp: true, email: true, push: true, sound: true };
       if (channel.inApp) {
         const n = await this.store(tx, r, notice, category, priority);
         live.push({ tenant_id: r.tenant_id, membership_ids: [r.id], type: 'notification', data: { notificationId: n.id, folded: n.folded, by } });
-        if (!n.folded) {
+        if (!n.folded && channel.push) {
           // A push to each signed-in phone. It carries only the notification id; the app loads the text after sign-in.
           const devices = await tx.collection('mobile_devices').find({ membership_id: r.id, push_token: { $ne: null }, revoked_at: null }, { projection: { _id: 1, tenant_id: 1 } });
           if (devices.length) {
             // Quiet hours hold a phone push until they end (urgent notices go at once); the notice is in the app meanwhile.
             const quiet = resolved.get(r.id)?.quiet;
             const holdUntil = quiet && priority !== 'urgent' ? await this.quietUntil(tx, r.tenant_id, quiet) : null;
-            await tx.collection('push_messages').insertMany(devices.map((d) => ({ tenant_id: d.tenant_id, mobile_device_id: d.id, notification_id: n.id, ...(holdUntil ? { next_attempt_at: holdUntil } : {}) })));
+            await tx.collection('push_messages').insertMany(devices.map((d) => ({
+              tenant_id: d.tenant_id, mobile_device_id: d.id, notification_id: n.id, category, priority, silent: !channel.sound,
+              ...(holdUntil ? { next_attempt_at: holdUntil } : {}),
+            })));
           }
         }
       }
@@ -132,6 +148,7 @@ export class NotificationService {
     const fields = {
       kind: notice.kind, title: notice.title, body: notice.body ?? null, link: notice.link ?? null, category, priority,
       resource_type: notice.resource?.type ?? null, resource_id: notice.resource?.id ?? null, actor_membership_id: notice.actorMembershipId ?? null, updated_at: now,
+      action_required: notice.action ?? kindNeedsAction(notice.kind),
     };
     if (notice.dedupeKey) {
       const folded = await tx.collection('notifications').updateAndGet(
@@ -151,6 +168,21 @@ export class NotificationService {
   async signal(tx: TenantTx, membershipIds: (string | null | undefined)[], type: string, data: Record<string, unknown> = {}) {
     const ids = [...new Set(membershipIds.filter((x): x is string => !!x))];
     if (ids.length) await tx.collection('live_events').insert({ tenant_id: tx.tenantId, membership_ids: ids, type, data });
+  }
+
+  /**
+   * A request was decided: its "please act" notices are done for everyone who can no longer act on it, wherever they
+   * are shown (bell, Home, the module page, the phone). Those who still can (`stillActing`) keep theirs.
+   */
+  async resolveByLink(tx: TenantTx, link: string, stillActing: string[] = []) {
+    const rows = await tx.collection('notifications').find({ link, read_at: null, action_required: true, membership_id: { $nin: stillActing } });
+    if (!rows.length) return 0;
+    const n = await tx.collection('notifications').update({ id: { $in: rows.map((r) => r.id as string) } }, { $set: { read_at: new Date() } });
+    // Each person is told which of their own notices closed, so their bell and pages drop exactly those.
+    const byMember = new Map<string, string[]>();
+    for (const r of rows) byMember.set(r.membership_id as string, [...(byMember.get(r.membership_id as string) ?? []), r.id as string]);
+    for (const [m, ids] of byMember) await this.signal(tx, [m], 'notifications.read', { ids });
+    return n;
   }
 
   /** Marks read the caller's notices about one page or record (called when that page is opened). */

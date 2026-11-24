@@ -1,3 +1,4 @@
+import { ConsoleNotifyService } from '../../platform/notify/console-notify.service';
 import { countWorkspaces } from '../workspace-limits/workspace-limits.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { permissionHolderIds } from '../../platform/authz/authz.service';
@@ -97,6 +98,23 @@ export function activeDeal(sub: Row, on = today()): Row | null {
  * only by SampCrew, never directly by a workspace). Calls to a payment gateway are made outside transactions, since
  * a transaction may run again.
  */
+/** Which billing events reach the Console bell, and how loudly. */
+const BILLING_NOTICE: Record<string, { category: 'payments' | 'subscriptions'; priority: 'low' | 'normal' | 'high' | 'urgent'; title: string }> = {
+  new: { category: 'subscriptions', priority: 'normal', title: 'New subscription' },
+  upgrade: { category: 'subscriptions', priority: 'normal', title: 'Subscription upgraded' },
+  downgrade: { category: 'subscriptions', priority: 'high', title: 'Subscription downgraded' },
+  renewal: { category: 'subscriptions', priority: 'low', title: 'Subscription renewed' },
+  cancelled: { category: 'subscriptions', priority: 'high', title: 'Subscription cancelled' },
+  reactivated: { category: 'subscriptions', priority: 'normal', title: 'Subscription reactivated' },
+  trial_started: { category: 'subscriptions', priority: 'low', title: 'Trial started' },
+  trial_converted: { category: 'subscriptions', priority: 'normal', title: 'Trial converted to paid' },
+  trial_expired: { category: 'subscriptions', priority: 'high', title: 'Trial expired' },
+  payment_received: { category: 'payments', priority: 'normal', title: 'Payment received' },
+  payment_failed: { category: 'payments', priority: 'urgent', title: 'Payment failed' },
+  locked: { category: 'payments', priority: 'high', title: 'Workspace read-only for an unpaid invoice' },
+  unlocked: { category: 'payments', priority: 'normal', title: 'Workspace unlocked' },
+};
+
 @Injectable()
 export class BillingEngine {
   private readonly logger = new Logger('Billing');
@@ -108,6 +126,7 @@ export class BillingEngine {
     private readonly notifications: NotificationService,
     private readonly integrations: PlatformIntegrationsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly consoleNotify: ConsoleNotifyService,
   ) {}
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -177,9 +196,22 @@ export class BillingEngine {
   }
 
   async event(tx: PlatformTx, tenantId: string, e: { kind: string; planKey?: string | null; fromPlanKey?: string | null; currency?: string | null; mrrDelta?: string; detail?: Row; at?: Date }) {
-    await tx.collection('billing_events').insert({
+    const row = await tx.collection('billing_events').insert({
       tenant_id: tenantId, kind: e.kind, plan_key: e.planKey ?? null, from_plan_key: e.fromPlanKey ?? null, currency: e.currency ?? null,
       mrr_delta: e.mrrDelta ?? '0', detail: e.detail ?? {}, ...(e.at ? { occurred_at: e.at } : {}),
+    });
+    // Every billing event is also a Console notification (payments, subscriptions), leading to the client's billing.
+    const n = BILLING_NOTICE[e.kind];
+    if (!n) return;
+    const t = await tx.collection<{ name: string; is_demo: boolean }>('tenants').findOne({ id: tenantId }, { projection: { name: 1, is_demo: 1 } });
+    if (!t || t.is_demo) return;
+    const plan = e.planKey ? ` (${e.planKey}${e.fromPlanKey ? ` from ${e.fromPlanKey}` : ''})` : '';
+    const money = e.detail?.total ?? e.detail?.amount;
+    const amount = (typeof money === 'string' || typeof money === 'number') && e.currency ? ` · ${e.currency} ${money}` : '';
+    const invoice = typeof e.detail?.invoice === 'string' ? ` · invoice ${e.detail.invoice}` : '';
+    await this.consoleNotify.emit(tx, {
+      category: n.category, kind: `billing.${e.kind}`, priority: n.priority, title: `${n.title}: ${t.name}`, body: `${plan.trim()}${amount}${invoice}`.replace(/^ · /, '') || null,
+      href: '/clients/:company/billing', tenantId, entityType: 'billing_event', entityId: row.id as string,
     });
   }
 

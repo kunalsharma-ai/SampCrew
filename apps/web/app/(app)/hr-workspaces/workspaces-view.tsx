@@ -145,6 +145,7 @@ function CreateDialog({ open, onClose, companyFeatures, nonDelegable, members, d
   const [adminQuery, setAdminQuery] = useState('');
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [locIds, setLocIds] = useState<string[]>([]);
+  const [template, setTemplate] = useState<'hr_default' | 'all' | 'custom'>('hr_default');
   const modules = useMemo(() => moduleStates(features, companyFeatures, nonDelegable), [features, companyFeatures, nonDelegable]);
   const shownMembers = members.filter((m) => `${m.name} ${m.email ?? ''}`.toLowerCase().includes(adminQuery.toLowerCase())).slice(0, 30);
   const toggle = (list: string[], set: (v: string[]) => void, id: string, on: boolean) => set(on ? [...list, id] : list.filter((x) => x !== id));
@@ -159,7 +160,7 @@ function CreateDialog({ open, onClose, companyFeatures, nonDelegable, members, d
     start(async () => {
       const r = await createHrWorkspaceAction({
         name: name.trim(), code: code.trim() || undefined, kind, description: description.trim(), features,
-        maxEmployees: limit.trim() ? Number(limit) : -1, adminMembershipIds: admins, departmentIds: deptIds, locationIds: locIds,
+        maxEmployees: limit.trim() ? Number(limit) : -1, adminMembershipIds: admins, departmentIds: deptIds, locationIds: locIds, permissionTemplate: { template },
       });
       if (!r.ok) { setError(r.message); if (r.fieldErrors) setErrors(r.fieldErrors); return; }
       onClose();
@@ -185,6 +186,13 @@ function CreateDialog({ open, onClose, companyFeatures, nonDelegable, members, d
           <Field label="Employee limit" hint="Empty for no limit of its own" error={errors.maxEmployees}>{(f) => <Input {...f} inputMode="numeric" value={limit} onChange={(e) => setLimit(e.target.value.replace(/\D/g, ''))} />}</Field>
         </div>
         <Field label="Description">{(f) => <Textarea {...f} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />}</Field>
+        <Field label="Permissions template" hint={template === 'custom' ? 'Starts from the defaults; fine-tune it in Settings, Workspace Permissions, once created' : 'You can change any switch later in Settings, Workspace Permissions'}>{(f) => (
+          <Select {...f} value={template} onChange={(e) => setTemplate(e.target.value as typeof template)} data-testid="hr-workspace-template">
+            <option value="hr_default">Default HR template</option>
+            <option value="all">All permitted permissions</option>
+            <option value="custom">Custom permissions</option>
+          </Select>
+        )}</Field>
 
         <section className="grid gap-2">
           <h3 className="text-sm font-semibold">Modules</h3>

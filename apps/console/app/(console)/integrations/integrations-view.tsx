@@ -1,7 +1,7 @@
 'use client';
 import type { PlatformIntegrationDef, PlatformIntegrationKey, PlatformIntegrationView } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, Checkbox, Field, Input, Select, Switch, Textarea, cn } from '@crew/ui';
-import { BellRing, Bot, ChevronDown, Copy, CreditCard, DatabaseBackup, ExternalLink, IndianRupee, Mail, ShieldCheck, Smartphone, type LucideIcon } from 'lucide-react';
+import { BellRing, Bot, Building2, ChevronDown, Copy, CreditCard, DatabaseBackup, ExternalLink, IndianRupee, Mail, ShieldCheck, Smartphone, type LucideIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { resetIntegrationAction, saveIntegrationAction, testIntegrationAction } from '../actions';
@@ -10,7 +10,7 @@ import { LocalTime } from '@/components/local-time';
 type Values = Record<string, unknown>;
 type Flash = { tone: 'success' | 'danger' | 'warning'; text: string } | null;
 
-const ICON: Record<PlatformIntegrationKey, LucideIcon> = { ai: Bot, email: Mail, push: BellRing, scanning: ShieldCheck, mobile_sso: Smartphone, razorpay: IndianRupee, stripe: CreditCard, backups: DatabaseBackup };
+const ICON: Record<PlatformIntegrationKey, LucideIcon> = { ai: Bot, email: Mail, push: BellRing, scanning: ShieldCheck, mobile_sso: Smartphone, razorpay: IndianRupee, stripe: CreditCard, backups: DatabaseBackup, company_data: Building2 };
 const SOURCE: Record<PlatformIntegrationView['source'], { label: string; tone: 'accent' | 'neutral' | 'warning' }> = {
   console: { label: 'Set in Console', tone: 'accent' },
   default: { label: 'Built-in default', tone: 'neutral' },
@@ -56,6 +56,7 @@ function initialValues(v: PlatformIntegrationView): Values {
       enabled: v.enabled, provider: s.provider ?? 's3', bucket: s.bucket ?? '', region: s.region ?? '', endpoint: s.endpoint ?? '', accessKeyId: s.accessKeyId ?? '', secretAccessKey: '',
       account: s.account ?? '', accountKey: '', host: s.host ?? '', port: s.port ?? 22, user: s.user ?? '', privateKey: '', password: '', path: s.path ?? 'sampcrew', keepDays: s.keepDays ?? 30, alertWebhook: '',
     };
+    case 'company_data': return { enabled: v.enabled, apiKey: '', baseUrl: s.baseUrl ?? '' };
   }
 }
 
@@ -353,7 +354,7 @@ function IntegrationCard({ def, view, canManage }: { def: PlatformIntegrationDef
               <div className="flex flex-wrap items-center gap-2">
                 {def.key !== 'mobile_sso' && <Button type="button" variant="secondary" loading={pending} onClick={runTest}>Test connection</Button>}
                 <Button type="submit" loading={pending}>Save</Button>
-                {view.source === 'console' && <Button type="button" variant="ghost" disabled={pending} onClick={reset}>Remove setting</Button>}
+                {view.source === 'console' && <Button data-delete-area="console" data-delete={`saved setting for ${def.name}`} type="button" variant="ghost" disabled={pending} onClick={reset}>Remove setting</Button>}
               </div>
             )}
           </form>

@@ -3,6 +3,7 @@ import { CheckCircle2, MailCheck } from 'lucide-react';
 import { useState, useTransition } from 'react';
 import { Button, buttonClass } from './button';
 import { Field, Input } from './form';
+import { PasswordInput } from './password-input';
 import { Alert } from './surface';
 
 /** What a server action returns to these forms (the shape of ActionResult in the web and console apps). */
@@ -179,10 +180,10 @@ function PasswordFields({ errors, autoFocus }: { errors: Record<string, string>;
   return (
     <>
       <Field label="New password" error={errors.newPassword} hint={PASSWORD_HINT} required>
-        {(p) => <Input {...p} name="newPassword" type="password" autoComplete="new-password" required autoFocus={autoFocus} />}
+        {(p) => <PasswordInput {...p} name="newPassword" autoComplete="new-password" required autoFocus={autoFocus} rules />}
       </Field>
       <Field label="Confirm new password" error={errors.confirmPassword} required>
-        {(p) => <Input {...p} name="confirmPassword" type="password" autoComplete="new-password" required />}
+        {(p) => <PasswordInput {...p} name="confirmPassword" autoComplete="new-password" required matches="newPassword" />}
       </Field>
     </>
   );

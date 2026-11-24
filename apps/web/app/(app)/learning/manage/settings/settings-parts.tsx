@@ -54,7 +54,7 @@ export function CategoriesCard({ predefined, custom }: { predefined: string[]; c
       <CardBody className="grid gap-4">
         <div className="flex flex-wrap gap-1.5">{predefined.map((c) => <Badge key={c} tone="neutral">{c}</Badge>)}</div>
         <div className="flex flex-wrap gap-1.5">
-          {custom.map((c) => <Badge key={c.id} tone="info">{c.name}<button type="button" aria-label={`Remove ${c.name}`} disabled={pending} onClick={() => run(() => removeCategoryAction(c.id))}><X className="size-3" /></button></Badge>)}
+          {custom.map((c) => <Badge key={c.id} tone="info">{c.name}<button data-delete-area="learning" data-delete={`category ${c.name}`} type="button" aria-label={`Remove ${c.name}`} disabled={pending} onClick={() => run(() => removeCategoryAction(c.id))}><X className="size-3" /></button></Badge>)}
           {!custom.length && <span className="text-xs text-fg-muted">No custom categories yet.</span>}
         </div>
         <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (name.trim()) run(() => addCategoryAction(name.trim()), () => setName('')); }}>

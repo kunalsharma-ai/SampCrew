@@ -220,7 +220,7 @@ function FileShare({ caseId, id, shared, disabled, onDone }: { caseId: string; i
 
 function RemoveFile({ caseId, id, title, onDone }: { caseId: string; id: string; title: string; onDone: (r: { ok: boolean; message?: string }) => void }) {
   const [pending, start] = useTransition();
-  return <Button size="sm" variant="ghost" aria-label={`Remove ${title}`} loading={pending} onClick={() => start(async () => onDone(await removeFileAction(caseId, id)))}><Trash2 className="size-4" aria-hidden /></Button>;
+  return <Button data-delete-area="people" data-delete={`file ${title}`} size="sm" variant="ghost" aria-label={`Remove ${title}`} loading={pending} onClick={() => start(async () => onDone(await removeFileAction(caseId, id)))}><Trash2 className="size-4" aria-hidden /></Button>;
 }
 
 function AgencyCard({ c, agencies, onDone }: { c: CaseDetail; agencies: Agency[]; onDone: (r: { ok: boolean; message?: string }) => void }) {

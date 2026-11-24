@@ -3,8 +3,10 @@ import {
   SUPPORT_CATEGORY_LABEL, SUPPORT_STATE_LABEL,
   type SupportConversationDetail, type SupportMessageView, type SupportState,
 } from '@crew/contracts';
-import { Alert, Avatar, Badge, Button, Card, EmptyState, Input, Textarea, cn } from '@crew/ui';
-import { Building2, Check, CheckCheck, CheckCircle2, Headset, Mail, MailOpen, RotateCcw, Search, Send } from 'lucide-react';
+import { Alert, Avatar, Badge, Button, Card, Dialog, EmptyState, Field, Input, Select, Textarea, cn } from '@crew/ui';
+import { Building2, Check, CheckCheck, CheckCircle2, Headset, Mail, MailOpen, MessageSquarePlus, RotateCcw, Search, Send } from 'lucide-react';
+import { SUPPORT_CATEGORIES } from '@crew/contracts';
+import { startConversationAction, triageConversationAction } from '../console-actions';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
@@ -21,9 +23,12 @@ const when = (iso: string) => {
   if (d.toDateString() === y.toDateString()) return 'Yesterday';
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 };
+const PRIORITY_LABEL = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' } as const;
+const PRIORITY_TONE = { low: 'neutral', normal: 'neutral', high: 'warning', urgent: 'danger' } as const;
+type Priority = keyof typeof PRIORITY_LABEL;
 const TONE: Record<SupportState, 'info' | 'warning' | 'success' | 'neutral'> = { unread: 'info', waiting: 'warning', replied: 'success', resolved: 'neutral' };
 const FILTERS: [SupportState | 'all', string][] = [['all', 'All'], ['unread', 'Unread'], ['waiting', 'Waiting for reply'], ['replied', 'Replied'], ['resolved', 'Resolved']];
-type Search = { q?: string; state?: string; tenant?: string };
+type Search = { q?: string; state?: string; tenant?: string; start?: string };
 
 const href = (base: string, s: Search) => {
   const p = new URLSearchParams(Object.entries(s).filter(([, v]) => v && v !== 'all') as [string, string][]);
@@ -32,9 +37,10 @@ const href = (base: string, s: Search) => {
 };
 
 /** The Console Admin team's support inbox: conversations from every Super Workspace, and one open thread. */
-export function SupportInbox({ inbox, detail, search }: { inbox: Inbox; detail: SupportConversationDetail | null; search: Search }) {
+export function SupportInbox({ inbox, detail, search, team = [], tenantName }: { inbox: Inbox; detail: SupportConversationDetail | null; search: Search; team?: { id: string; name: string }[]; tenantName?: string | null }) {
   const router = useRouter();
   const [q, setQ] = useState(search.q ?? '');
+  const [starting, setStarting] = useState(search.start === '1' && !!search.tenant);
   const state = search.state ?? 'all';
   const keep = { q: search.q, state: search.state, tenant: search.tenant };
   return (
@@ -52,7 +58,7 @@ export function SupportInbox({ inbox, detail, search }: { inbox: Inbox; detail: 
               </Link>
             ))}
           </nav>
-          {search.tenant && <p className="text-xs text-fg-muted">One workspace only · <Link className="text-accent hover:underline" href={href('/support', { ...keep, tenant: undefined })}>Show all</Link></p>}
+          {search.tenant && <p className="flex flex-wrap items-center gap-1 text-xs text-fg-muted">{tenantName ?? 'One workspace'} only · <Link className="text-accent hover:underline" href={href('/support', { ...keep, tenant: undefined })}>Show all</Link><Button size="sm" variant="secondary" className="ml-auto" onClick={() => setStarting(true)} data-testid="support-start"><MessageSquarePlus className="size-3.5" aria-hidden />New conversation</Button></p>}
         </div>
         <div className="hidden grid-cols-[1fr_auto] gap-2 border-b border-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-fg-subtle sm:grid"><span>Super Workspace · last message</span><span>Status · last activity</span></div>
         <ul className="flex-1 divide-y divide-border overflow-y-auto" aria-label="Support conversations" data-testid="support-inbox">
@@ -66,6 +72,7 @@ export function SupportInbox({ inbox, detail, search }: { inbox: Inbox; detail: 
                   <span className="block truncate text-xs text-fg-muted">{c.lastMessage ? `${c.lastMessage.fromConsole ? 'You (team)' : c.lastMessage.senderName}: ${c.lastMessage.body}` : ''}</span>
                 </span>
                 <span className="flex flex-col items-end gap-1">
+                  {c.priority && (c.priority === 'high' || c.priority === 'urgent') && <Badge tone={PRIORITY_TONE[c.priority]}>{PRIORITY_LABEL[c.priority]}</Badge>}
                   {c.unread > 0 ? <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold leading-4 text-accent-fg" data-testid="support-row-unread">{c.unread} unread</span> : <Badge tone={TONE[c.state]}>{SUPPORT_STATE_LABEL[c.state]}</Badge>}
                   <span className="text-[11px] text-fg-subtle" suppressHydrationWarning>{when(c.updatedAt)}</span>
                 </span>
@@ -75,7 +82,8 @@ export function SupportInbox({ inbox, detail, search }: { inbox: Inbox; detail: 
           {!inbox.items.length && <li><EmptyState icon={<Headset className="size-5" />} title={search.q || (state !== 'all') ? 'No conversations match' : 'No support conversations yet'} description="When a Super Workspace uses Contact SampCrew Support, the conversation arrives here." /></li>}
         </ul>
       </Card>
-      {detail ? <Thread key={detail.conversation.id} d={detail} back={href('/support', keep)} /> : (
+      {starting && search.tenant && <StartDialog tenantId={search.tenant} name={tenantName ?? 'this Super Workspace'} onClose={() => setStarting(false)} onStarted={(id) => { setStarting(false); router.push(href(`/support/${id}`, { ...keep, start: undefined })); }} />}
+      {detail ? <Thread key={detail.conversation.id} d={detail} back={href('/support', keep)} team={team} /> : (
         <Card className="hidden min-h-[34rem] items-center justify-center xl:flex">
           <EmptyState icon={<Headset className="size-5" />} title="Choose a conversation" description="Messages from Super Workspaces arrive here as they are sent. Unread ones are highlighted." />
         </Card>
@@ -111,7 +119,7 @@ function Message({ m }: { m: SupportMessageView }) {
   );
 }
 
-function Thread({ d, back }: { d: SupportConversationDetail; back: string }) {
+function Thread({ d, back, team }: { d: SupportConversationDetail; back: string; team: { id: string; name: string }[] }) {
   const router = useRouter();
   const c = d.conversation;
   const info = d.workspaceInfo;
@@ -191,11 +199,43 @@ function Thread({ d, back }: { d: SupportConversationDetail; back: string }) {
           </>}
           {c.startedBy && <div><dt className="text-fg-subtle">Started by</dt><dd>{c.startedBy.name} · {c.startedBy.levelLabel}</dd></div>}
         </dl>
+        <div className="mt-3 grid gap-2 border-t border-border pt-3 text-xs" data-testid="support-triage">
+          <Field label="Priority">{(p) => <Select {...p} value={c.priority ?? 'normal'} disabled={pending} onChange={(e) => run(() => triageConversationAction(c.id, { priority: e.target.value }))} data-testid="triage-priority">{(Object.keys(PRIORITY_LABEL) as Priority[]).map((k) => <option key={k} value={k}>{PRIORITY_LABEL[k]}</option>)}</Select>}</Field>
+          <Field label="Assigned to">{(p) => <Select {...p} value={c.assignedTo?.id ?? ''} disabled={pending} onChange={(e) => run(() => triageConversationAction(c.id, { assignedAdminId: e.target.value || null }))} data-testid="triage-assignee"><option value="">Nobody</option>{c.assignedTo && !team.some((t) => t.id === c.assignedTo!.id) && <option value={c.assignedTo.id}>{c.assignedTo.name}</option>}{team.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select>}</Field>
+        </div>
         <div className="mt-3 grid gap-1 border-t border-border pt-3 text-xs">
           <Link className="text-accent hover:underline" href={`/tenants/${c.workspace.id}`}>Open workspace</Link>
           <Link className="text-accent hover:underline" href={`/support?tenant=${c.workspace.id}`}>All conversations from this workspace</Link>
         </div>
       </Card>
     </div>
+  );
+}
+
+/** The Console starts a conversation with a company's Super Workspace (they see it as from SampCrew Support). */
+function StartDialog({ tenantId, name, onClose, onStarted }: { tenantId: string; name: string; onClose: () => void; onStarted: (id: string) => void }) {
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [category, setCategory] = useState<string>('question');
+  const [priority, setPriority] = useState<Priority>('normal');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <Dialog open onClose={onClose} title={`Message ${name}`} description="Starts a private conversation with this Super Workspace. They are notified and can answer from Contact SampCrew Support."
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={subject.trim().length < 3 || !body.trim()} loading={pending} data-testid="support-start-send" onClick={() => start(async () => {
+        const r = await startConversationAction({ tenantId, subject: subject.trim(), body: body.trim(), category, priority });
+        if (!r.ok) { setError(r.message ?? 'Not sent'); return; }
+        onStarted(r.data!.id);
+      })}>Send</Button></>}>
+      <div className="grid gap-3">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Field label="Subject" required>{(p) => <Input {...p} value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={120} />}</Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Topic">{(p) => <Select {...p} value={category} onChange={(e) => setCategory(e.target.value)}>{SUPPORT_CATEGORIES.map((k) => <option key={k} value={k}>{SUPPORT_CATEGORY_LABEL[k]}</option>)}</Select>}</Field>
+          <Field label="Priority">{(p) => <Select {...p} value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>{(Object.keys(PRIORITY_LABEL) as Priority[]).map((k) => <option key={k} value={k}>{PRIORITY_LABEL[k]}</option>)}</Select>}</Field>
+        </div>
+        <Field label="Message" required>{(p) => <Textarea {...p} value={body} onChange={(e) => setBody(e.target.value)} rows={4} maxLength={4000} />}</Field>
+      </div>
+    </Dialog>
   );
 }

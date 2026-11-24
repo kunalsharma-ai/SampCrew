@@ -1,9 +1,9 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { z } from 'zod';
 import {
-  DEFAULT_LEAVE_TYPES, LEAVE_AUTHORITY_LABELS, leaveAllocationWithin, leaveApprovalRules, leaveEligibility, leaveEligible, leaveMath, leaveRef, leaveRoutesFor,
-  leaveTypePolicy, STANDARD_LEAVE_TYPES,
-  type LeaveAllocationInput, type LeaveAuthority, type LeaveModifyInput, type LeaveRequestInput, type LeaveTemplate, type LeaveTypeInput, type LeaveTypeUpdate, type WorkCalendar,
+  LEAVE_AUTHORITY_LABELS, LEAVE_VISIBILITY_LABELS, leaveApprovalRules, leaveCodeFrom, leaveEligibility, leaveMath, leaveRef, leaveRoutesFor, leaveTypeInput, leaveTypePolicy,
+  type LeaveAuthority, type LeaveModifyInput, type LeaveQuantityInput, type LeaveRequestInput, type LeaveTypeInput, type LeaveTypeSimpleInput, type LeaveTypeUpdate,
+  type LeaveVisibility, type WorkCalendar,
 } from '@crew/contracts';
 import type {
   holidayCalendarInput, holidayInput, leaveAdjustmentInput, leaveAdjustmentsQuery, leaveBalanceOverviewQuery, leaveHistoryQuery, leaveReportQuery,
@@ -25,8 +25,8 @@ import { DisciplineService } from '../discipline/discipline.service';
 import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
 import { employeeNames, fieldById } from '../employees/employee-view';
 import {
-  addDays, allocationReaches, availableTo, cmp, configOf, countLeaveDays, criteriaOf, daysBetweenInclusive, type Doc, type EmployeeLite, entitlementsOf, type Entitlement, fromH,
-  genderOk, groupsByMembership, type LeaveBook, lite, loadBook, loadPeople, personOf, sumBy, today, toH, yearOf,
+  addDays, availableTo, cmp, configOf, countLeaveDays, daysBetweenInclusive, type Doc, type EmployeeLite, entitlementsOf, type Entitlement, fromH,
+  groupsByMembership, type LeaveBook, lite, loadBook, loadPeople, ownerHrWorkspace, sumBy, today, toH, yearOf,
 } from './leave-model';
 
 interface RequestRow {
@@ -54,7 +54,7 @@ interface HrReach { company: boolean; hrWorkspaceIds: string[] }
 interface Authority { authority: 'hr' | 'super'; label: string; hrWorkspaceId: string | null; hrWorkspaceName: string | null; company: boolean; membershipId: string | null; name: string | null }
 
 const TYPE_FIELDS = {
-  code: 'code', name: 'name', description: 'description', category: 'category', paid: 'paid', allowHalfDay: 'allow_half_day', color: 'color', kind: 'kind',
+  code: 'code', name: 'name', visibility: 'visibility', description: 'description', category: 'category', paid: 'paid', allowHalfDay: 'allow_half_day', color: 'color', kind: 'kind',
   eligibleGender: 'eligible_gender', countsCalendarDays: 'counts_calendar_days', effectiveFrom: 'effective_from', hrAllocatable: 'hr_allocatable',
   eligibility: 'eligibility', policy: 'policy', approval: 'approval',
 } as const;
@@ -63,15 +63,16 @@ const iso = (d: unknown) => (d ? new Date(d as string).toISOString() : null);
 const range = (a: string, b: string) => (a === b ? a : `${a} to ${b}`);
 
 /**
- * Leave management (rebuilt). One record for each leave type (with its policy and approval rules, versioned), each
- * allocation, each request and each balance line, used by the Super Workspace, the HR Workspaces and the Employee
- * Workspace through this one service:
- *  - leave:configure (Super Workspace only) creates and changes types and makes them available to HR Workspaces;
- *  - leave:allocate gives a type to employees: the Super Workspace to anyone eligible, an HR Workspace only types made
- *    available to it, only to its own people and never outside the type's eligibility;
- *  - an application goes to the HR Workspace, the Super Workspace or both, as the type's rules (and, where they allow,
- *    the employee) decide, through the shared approvals engine; it is approved when every authority approved it;
- *  - balances come from the append-only ledger: approval writes a 'taken' line, cancelling approved leave a reversal.
+ * Leave management (simplified 2026-11-23). One record for each leave type, request and manual quantity, used by the
+ * Super Workspace, the HR Workspaces and the Employee Workspace through this one service:
+ *  - the Super Workspace creates leave types and chooses where each appears: HR Workspace, Employee Workspace or both.
+ *    An HR Workspace creates its own types only while the Super Workspace allows it (leavetypes:create, switched in
+ *    Settings > Workspace Permissions), visible only to its own people and only where it has the Leave module;
+ *  - a type appears in a workspace's Leave Management as soon as it is active and visible there: no allocation step;
+ *  - nothing is calculated or credited automatically. An administrator assigns a quantity by hand (an 'adjustment'
+ *    line in the ledger); without one, the person sees "Not Assigned" and can still apply;
+ *  - an application goes to the HR Workspace (one step) through the shared approvals engine. Types made before the
+ *    simplification keep the approval rules they had. Old ledger lines (accruals) stay as history and count for nothing.
  */
 @Injectable()
 export class LeaveService implements OnModuleInit {
@@ -91,6 +92,7 @@ export class LeaveService implements OnModuleInit {
   onModuleInit() {
     this.approvals.register('leave_request', {
       permission: 'leave:approve',
+      rejectPermission: 'leave:reject',
       configurePermission: 'leave:configure',
       defaultSteps: [{ type: 'hr_workspace', hrWorkspaceId: null }],
       fallbackRole: 'hr_workspace',
@@ -142,7 +144,7 @@ export class LeaveService implements OnModuleInit {
 
   /** Where an HR person allocates and reviews from: HR Workspaces named in their access, or the company's HR team. */
   private hrReach(s: Subject): HrReach {
-    const grants = s.grants.filter((g) => (g.permission === 'leave:allocate' || g.permission === 'leave:approve') && g.roleKey === 'hr_workspace');
+    const grants = s.grants.filter((g) => ['leave:allocate', 'leave:approve', 'leave:read', 'leave:assign', 'leavetypes:create'].includes(g.permission) && g.roleKey === 'hr_workspace');
     return {
       company: grants.some((g) => !g.constraints.hrWorkspaceIds?.length),
       hrWorkspaceIds: [...new Set(grants.flatMap((g) => g.constraints.hrWorkspaceIds ?? []))],
@@ -177,13 +179,17 @@ export class LeaveService implements OnModuleInit {
   // Leave types
   // ---------------------------------------------------------------------------------------------------------
 
-  private async typeViews(tx: TenantTx, types: Doc[], book?: LeaveBook) {
-    const b = book ?? (await loadBook(tx, { includeInactive: true }));
-    const hrNames = await fieldById(tx, 'hr_workspaces', b.allocations.map((a) => a.hr_workspace_id));
+  private async typeViews(tx: TenantTx, types: Doc[], _book?: LeaveBook) {
+    const hrNames = await fieldById(tx, 'hr_workspaces', types.map((t) => ownerHrWorkspace(t)));
     const used = new Set(await tx.collection('leave_requests').distinct<string>('leave_type_id', { leave_type_id: { $in: types.map((t) => t.id) } }));
+    const s = await this.authz.subject(tx);
+    const superLevel = this.levelOf(s) === 'super';
+    const reach = this.hrReach(s);
+    const mine = (t: Doc) => superLevel || (t.owner_level === 'hr' && (ownerHrWorkspace(t) ? reach.hrWorkspaceIds.includes(ownerHrWorkspace(t)!) || reach.company : reach.company));
     return types.map((t) => {
       const cfg = configOf(t);
-      const allocs = b.allocations.filter((a) => a.leave_type_id === t.id);
+      const owner = ownerHrWorkspace(t);
+      const visibility = ((t.visibility as LeaveVisibility | undefined) ?? 'both');
       return {
         id: t.id as string, code: t.code as string, name: t.name as string, description: (t.description as string | null) ?? null, category: (t.category as string | undefined) ?? 'general',
         paid: Boolean(t.paid), allowHalfDay: Boolean(t.allow_half_day), color: t.color as string, kind: (t.kind as string | undefined) ?? 'standard',
@@ -194,10 +200,10 @@ export class LeaveService implements OnModuleInit {
         eligibility: cfg.eligibility, policy: cfg.policy, approval: cfg.approval,
         createdBy: { name: (t.created_by_name as string | null) ?? null, level: (t.created_by_level as string | null) ?? null, at: iso(t.created_at) },
         updatedBy: { name: (t.updated_by_name as string | null) ?? null, level: (t.updated_by_level as string | null) ?? null, at: iso(t.updated_at) },
-        allocations: {
-          employees: allocs.filter((a) => a.target === 'employees').length,
-          hrWorkspaces: allocs.filter((a) => a.target === 'hr_workspace').map((a) => ({ id: (a.hr_workspace_id as string | null) ?? null, name: a.hr_workspace_id ? hrNames.get(a.hr_workspace_id) ?? null : 'Company HR team' })),
-        },
+        visibility, visibilityLabel: LEAVE_VISIBILITY_LABELS[visibility],
+        owner: { level: (t.owner_level as 'super' | 'hr' | undefined) ?? 'super', hrWorkspaceId: owner, hrWorkspaceName: owner ? hrNames.get(owner) ?? null : t.owner_level === 'hr' ? 'Company HR team' : null },
+        /** Whether the caller may edit it, change its visibility and switch it off (the API checks again). */
+        canManage: mine(t) && (superLevel || hasPermission(s, 'leavetypes:edit').allowed || hasPermission(s, 'leavetypes:visibility').allowed || hasPermission(s, 'leavetypes:disable').allowed),
         used: used.has(t.id),
       };
     });
@@ -209,21 +215,8 @@ export class LeaveService implements OnModuleInit {
    */
   listTypes(includeArchived = false) {
     return this.db.tenant(async (tx) => {
-      const s = await this.authz.subject(tx);
-      const book = await loadBook(tx, { includeInactive: true });
-      let types = book.types.filter((t) => includeArchived || !t.archived_at);
-      if (!hasPermission(s, 'leave:configure').allowed) {
-        const ids = new Set<string>();
-        if (hasPermission(s, 'leave:allocate').allowed) {
-          const reach = this.hrReach(s);
-          for (const a of book.allocations) {
-            if (a.target === 'hr_workspace' && ((a.hr_workspace_id && reach.hrWorkspaceIds.includes(a.hr_workspace_id)) || (!a.hr_workspace_id && reach.company))) ids.add(a.leave_type_id);
-          }
-        }
-        if (s.employeeId) for (const id of entitlementsOf(book, await this.employee(tx, s.employeeId), { includeInactive: includeArchived }).keys()) ids.add(id);
-        types = types.filter((t) => ids.has(t.id));
-      }
-      return this.typeViews(tx, types, book);
+      const types = await this.listTypesIn(tx, includeArchived);
+      return this.typeViews(tx, types);
     });
   }
 
@@ -238,15 +231,73 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
+  /**
+   * Leave types the caller may see: the Super Workspace every one; an HR Workspace every Super Workspace type (it
+   * reviews their applications and assigns quantities) and its own, never another HR Workspace's; anyone else the
+   * types visible to them.
+   */
   private async listTypesIn(tx: TenantTx, includeArchived: boolean) {
     const s = await this.authz.subject(tx);
     const book = await loadBook(tx, { includeInactive: true });
-    if (hasPermission(s, 'leave:configure').allowed) return book.types.filter((t) => includeArchived || !t.archived_at);
+    if (this.levelOf(s) === 'super') return book.types.filter((t) => includeArchived || !t.archived_at);
     const ids = new Set<string>();
     const reach = this.hrReach(s);
-    for (const a of book.allocations) if (a.target === 'hr_workspace' && ((a.hr_workspace_id && reach.hrWorkspaceIds.includes(a.hr_workspace_id)) || (!a.hr_workspace_id && reach.company))) ids.add(a.leave_type_id);
+    if (reach.company || reach.hrWorkspaceIds.length) {
+      for (const t of book.types) {
+        const owner = ownerHrWorkspace(t);
+        if (t.owner_level !== 'hr' || (owner ? reach.hrWorkspaceIds.includes(owner) || reach.company : reach.company)) ids.add(t.id);
+      }
+    }
     if (s.employeeId) for (const id of entitlementsOf(book, await this.employee(tx, s.employeeId), { includeInactive: true }).keys()) ids.add(id);
     return book.types.filter((t) => ids.has(t.id) && (includeArchived || !t.archived_at));
+  }
+
+  /**
+   * The type an HR Workspace person may change: one their HR Workspace created. The Super Workspace may change any.
+   * Anything else looks like a type that does not exist.
+   */
+  private async manageable(tx: TenantTx, id: string): Promise<{ t: Doc; level: Level }> {
+    const t = await tx.collection('leave_types').findOne({ id });
+    if (!t) throw Errors.notFound('Leave type');
+    const s = await this.authz.subject(tx);
+    const level = this.levelOf(s);
+    if (level === 'super') return { t, level };
+    const reach = this.hrReach(s);
+    const owner = ownerHrWorkspace(t);
+    const ours = t.owner_level === 'hr' && (owner ? reach.hrWorkspaceIds.includes(owner) || reach.company : reach.company);
+    if (!ours) {
+      await this.recordRefusal({ action: 'leave_type.change_denied', resourceType: 'leave_type', resourceId: id, metadata: { reason: t.owner_level === 'hr' ? 'other_hr_workspace' : 'super_workspace_type' } });
+      if ((await this.listTypesIn(tx, true)).some((x) => x.id === id)) throw Errors.forbidden('Only the Super Workspace can change this leave type. Your HR Workspace can change the leave types it created.');
+      throw Errors.notFound('Leave type');
+    }
+    return { t, level };
+  }
+
+  /** A refused attempt is recorded in a transaction of its own: the request's transaction rolls back. */
+  private async recordRefusal(input: Parameters<AuditService['record']>[1]) {
+    await this.db.tenant((t) => this.audit.record(t, input)).catch(() => undefined);
+  }
+
+  /**
+   * Where an HR Workspace may make a type appear: HR Workspace, and Employee Workspace only while the Super Workspace
+   * gives Employee Workspace the Leave module. An HR Workspace never goes beyond what it was given.
+   */
+  private async checkHrVisibility(tx: TenantTx, visibility: LeaveVisibility) {
+    if (visibility === 'hr') return;
+    const modules = await tx.collection('workspace_modules').findOne({});
+    if (((modules?.employee_level_off ?? []) as string[]).includes('leave')) {
+      throw Errors.forbidden('The Super Workspace has not given Leave Management to Employee Workspace, so your HR Workspace can only make this leave type visible to HR Workspace.');
+    }
+  }
+
+  /** A code for a new type: the one given, else one made from the name, made unique with a number. */
+  private async codeFor(tx: TenantTx, name: string, given?: string): Promise<string> {
+    if (given) return given;
+    const base = leaveCodeFrom(name).slice(0, 10);
+    const taken = new Set((await tx.collection('leave_types').find({}, { projection: { code: 1 } })).map((t) => t.code as string));
+    if (!taken.has(base)) return base;
+    for (let i = 2; i < 100; i++) if (!taken.has(`${base}${i}`)) return `${base}${i}`;
+    throw Errors.conflict('leave_type_exists', 'Choose a code for this leave type');
   }
 
   private snapshot(t: Doc) {
@@ -274,9 +325,9 @@ export class LeaveService implements OnModuleInit {
     if (a && a.employeeChooses && a.routes.length < 2) throw Errors.badRequest('one_route', 'Let employees choose only when the type allows two or more approval routes');
   }
 
-  private async insertType(tx: TenantTx, input: LeaveTypeInput, by: { level: 'super' | 'system'; membershipId: string | null; name: string | null }, note?: string) {
+  private async insertType(tx: TenantTx, input: LeaveTypeInput, by: { level: 'super' | 'hr' | 'system'; membershipId: string | null; name: string | null; hrWorkspaceId?: string | null }, note?: string) {
     const row = await tx.collection('leave_types').insert({
-      code: input.code, name: input.name, description: input.description ?? null, category: input.category, paid: input.paid, allow_half_day: input.allowHalfDay,
+      code: input.code, visibility: input.visibility, owner_level: by.level === 'hr' ? 'hr' : 'super', owner_hr_workspace_id: by.level === 'hr' ? by.hrWorkspaceId ?? null : null, name: input.name, description: input.description ?? null, category: input.category, paid: input.paid, allow_half_day: input.allowHalfDay,
       color: input.color, kind: input.kind, eligible_gender: input.eligibleGender, counts_calendar_days: input.countsCalendarDays, effective_from: input.effectiveFrom,
       hr_allocatable: input.hrAllocatable, eligibility: input.eligibility, policy: input.policy, approval: input.approval, version: 1,
       ...(input.active ? {} : { archived_at: new Date(), deactivated_reason: 'Created inactive' }),
@@ -286,60 +337,61 @@ export class LeaveService implements OnModuleInit {
     await tx.collection('leave_type_versions').insert({
       leave_type_id: row.id, version: 1, action: 'created', by_level: by.level, by_membership_id: by.membershipId, by_name: by.name, changes: {}, snapshot: this.snapshot(row), note: note ?? null,
     });
-    await this.audit.record(tx, { action: 'leave_type.created', resourceType: 'leave_type', resourceId: row.id, changes: input, metadata: { level: by.level, byName: by.name } });
+    await this.audit.record(tx, { action: 'leave_type.created', resourceType: 'leave_type', resourceId: row.id, changes: input, metadata: { level: by.level, byName: by.name, visibility: input.visibility, hrWorkspaceId: by.hrWorkspaceId ?? null } });
     return row;
   }
 
-  createType(input: LeaveTypeInput) {
+  /**
+   * Create New Leave Type. The simple form (name, description, optional code, visibility, status) for the Super
+   * Workspace and, when allowed, an HR Workspace; the full settings for the Super Workspace only. The type appears in
+   * the workspaces it is visible to at once.
+   */
+  createType(input: LeaveTypeInput | (LeaveTypeSimpleInput & { hrWorkspaceId?: string | null })) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      await this.checkRefs(tx, input);
-      const row = await this.insertType(tx, input, { level: 'super', membershipId: actor.membershipId, name: await this.actorName(tx) });
+      const s = await this.authz.subject(tx);
+      const level = this.levelOf(s);
+      const simple = 'status' in input || !('policy' in input || 'approval' in input || 'eligibility' in input);
+      if (!simple && level !== 'super') throw Errors.forbidden('Only the Super Workspace sets leave policies');
+      const full: LeaveTypeInput = simple
+        ? leaveTypeInput.parse({
+          code: await this.codeFor(tx, input.name, (input as LeaveTypeSimpleInput).code || undefined), name: input.name, description: input.description,
+          visibility: input.visibility, active: 'status' in input ? input.status !== 'inactive' : (input as LeaveTypeInput).active ?? true,
+        })
+        : (input as LeaveTypeInput);
+      let hrWorkspaceId: string | null = null;
+      if (level !== 'super') {
+        // An HR Workspace: its own type, for the HR Workspace it acts for, visible only where it was given Leave.
+        const reach = this.hrReach(s);
+        const wanted = (input as { hrWorkspaceId?: string | null }).hrWorkspaceId;
+        if (wanted !== undefined && wanted !== null && !reach.hrWorkspaceIds.includes(wanted)) throw Errors.forbidden('You do not run that HR Workspace');
+        hrWorkspaceId = wanted ?? (reach.company ? null : reach.hrWorkspaceIds[0] ?? null);
+        if (!reach.company && !hrWorkspaceId) throw Errors.forbidden('Your access is not linked to an HR Workspace');
+        if (!reach.company && reach.hrWorkspaceIds.length > 1 && wanted === undefined) throw Errors.badRequest('choose_hr_workspace', 'Choose which of your HR Workspaces this leave type is for');
+        await this.checkHrVisibility(tx, full.visibility);
+      } else await this.checkRefs(tx, full);
+      const row = await this.insertType(tx, full, { level: level === 'super' ? 'super' : 'hr', membershipId: actor.membershipId, name: await this.actorName(tx), hrWorkspaceId });
       const [view] = await this.typeViews(tx, [row]);
       return view!;
     });
   }
 
-  private templateInput(t: LeaveTemplate): LeaveTypeInput {
-    return {
-      code: t.code, name: t.name, description: t.description, category: t.category, paid: t.paid, allowHalfDay: t.allowHalfDay, color: t.color, kind: t.kind,
-      eligibleGender: t.eligibleGender, countsCalendarDays: t.countsCalendarDays, effectiveFrom: null, active: true, hrAllocatable: true,
-      eligibility: leaveEligibility.parse({}),
-      policy: leaveTypePolicy.parse({ accrualMethod: t.accrualMethod, annualEntitlement: t.annualEntitlement, carryForwardMax: t.carryForwardMax }),
-      approval: leaveApprovalRules.parse({}),
-    } as LeaveTypeInput;
-  }
-
-  /**
-   * Creates types from templates (the starter PL, CL and SL, or any of the catalogue). Codes already used are
-   * skipped. Nothing is allocated: the types reach nobody until they are allocated.
-   */
-  addTemplates(codes: string[]) {
+  /** Where a type appears: HR Workspace, Employee Workspace or both. Applications already made stay as they are. */
+  setVisibility(id: string, visibility: LeaveVisibility) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const wanted = STANDARD_LEAVE_TYPES.filter((t) => codes.includes(t.code));
-      const unknown = codes.filter((c) => !STANDARD_LEAVE_TYPES.some((t) => t.code === c));
-      if (unknown.length) throw Errors.badRequest('unknown_standard_type', `Not in the template list: ${unknown.join(', ')}`);
-      const taken = new Set((await tx.collection('leave_types').find({ code: { $in: wanted.map((t) => t.code) } }, { projection: { code: 1 } })).map((t) => t.code as string));
+      const { t, level } = await this.manageable(tx, id);
+      if (level !== 'super') await this.checkHrVisibility(tx, visibility);
+      const before = (t.visibility as LeaveVisibility | undefined) ?? 'both';
+      if (before === visibility) return (await this.typeViews(tx, [t]))[0]!;
+      const version = ((t.version as number | undefined) ?? 1) + 1;
       const name = await this.actorName(tx);
-      const added: string[] = [];
-      for (const t of wanted) {
-        if (taken.has(t.code)) continue;
-        await this.insertType(tx, this.templateInput(t), { level: 'super', membershipId: actor.membershipId, name }, 'Created from a template');
-        added.push(t.code);
-      }
-      return { added, skipped: wanted.map((t) => t.code).filter((c) => taken.has(c)) };
-    });
-  }
-
-  addStarterTypes() {
-    return this.addTemplates(DEFAULT_LEAVE_TYPES.map((t) => t.code));
-  }
-
-  standardTypes() {
-    return this.db.tenant(async (tx) => {
-      const used = new Set((await tx.collection('leave_types').find({}, { projection: { code: 1 } })).map((t) => t.code as string));
-      return STANDARD_LEAVE_TYPES.map((t) => ({ ...t, starter: DEFAULT_LEAVE_TYPES.some((d) => d.code === t.code), added: used.has(t.code) }));
+      await tx.collection('leave_types').updateOne({ id }, { $set: { visibility, version, updated_by_level: level, updated_by_membership_id: actor.membershipId, updated_by_name: name } });
+      const saved = (await tx.collection('leave_types').findOne({ id }))!;
+      const changes = { visibility: { from: before, to: visibility } };
+      await tx.collection('leave_type_versions').insert({ leave_type_id: id, version, action: 'updated', by_level: level, by_membership_id: actor.membershipId, by_name: name, changes, snapshot: this.snapshot(saved), note: `Visible to: ${LEAVE_VISIBILITY_LABELS[visibility]}` });
+      await this.audit.record(tx, { action: 'leave_type.visibility_changed', resourceType: 'leave_type', resourceId: id, changes, metadata: { level, byName: name } });
+      return (await this.typeViews(tx, [saved]))[0]!;
     });
   }
 
@@ -350,8 +402,16 @@ export class LeaveService implements OnModuleInit {
   updateType(id: string, input: LeaveTypeUpdate) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const t = await tx.collection('leave_types').findOne({ id });
-      if (!t) throw Errors.notFound('Leave type');
+      const { t, level } = await this.manageable(tx, id);
+      if (level !== 'super') {
+        // An HR Workspace changes the name, description and code of its own types; visibility with its own permission.
+        const extra = Object.keys(input).filter((k) => !['name', 'description', 'code', 'visibility', 'version', 'note'].includes(k));
+        if (extra.length) throw Errors.forbidden('Only the Super Workspace sets leave policies');
+        if (input.visibility !== undefined) {
+          await this.authz.require('leavetypes:visibility', undefined, tx);
+          await this.checkHrVisibility(tx, input.visibility);
+        }
+      }
       await tx.collection('leave_types').lock({ id });
       const version = (t.version as number | undefined) ?? 1;
       if (input.version !== undefined && input.version !== version) throw Errors.conflict('stale_version', 'Someone changed this leave type meanwhile. Reload it and make your change again.');
@@ -371,20 +431,13 @@ export class LeaveService implements OnModuleInit {
         return view!;
       }
       const name = await this.actorName(tx);
-      await tx.collection('leave_types').updateOne({ id }, { $set: { ...set, version: version + 1, updated_by_level: 'super', updated_by_membership_id: actor.membershipId, updated_by_name: name } })
+      await tx.collection('leave_types').updateOne({ id }, { $set: { ...set, version: version + 1, updated_by_level: level, updated_by_membership_id: actor.membershipId, updated_by_name: name } })
         .catch(conflictOn('23505', 'leave_type_exists', 'A leave type with this code already exists'));
       const saved = (await tx.collection('leave_types').findOne({ id }))!;
       await tx.collection('leave_type_versions').insert({
-        leave_type_id: id, version: version + 1, action: 'updated', by_level: 'super', by_membership_id: actor.membershipId, by_name: name, changes, snapshot: this.snapshot(saved), note: input.note ?? null,
+        leave_type_id: id, version: version + 1, action: 'updated', by_level: level, by_membership_id: actor.membershipId, by_name: name, changes, snapshot: this.snapshot(saved), note: input.note ?? null,
       });
-      await this.audit.record(tx, { action: 'leave_type.updated', resourceType: 'leave_type', resourceId: id, changes, metadata: { version: version + 1, byName: name } });
-      // HR Workspaces that run the type hear about a change to its rules.
-      const hrIds = (await tx.collection('leave_allocations').find({ leave_type_id: id, target: 'hr_workspace', revoked_at: null })).map((a) => (a.hr_workspace_id as string | null) ?? null);
-      const admins = await this.hrAdmins(tx, hrIds);
-      await this.notifications.notify(tx, {
-        membershipIds: admins.filter((m) => m !== actor.membershipId), kind: 'leave.type_changed', title: `${saved.name} was changed by ${name ?? 'the Super Workspace'}`,
-        body: `Changed: ${Object.keys(changes).join(', ')}. It applies to applications from now on.`, link: `/leave/manage?tab=types&type=${id}`,
-      });
+      await this.audit.record(tx, { action: 'leave_type.updated', resourceType: 'leave_type', resourceId: id, changes, metadata: { version: version + 1, byName: name, level } });
       const [view] = await this.typeViews(tx, [saved]);
       return view!;
     });
@@ -394,17 +447,16 @@ export class LeaveService implements OnModuleInit {
   setTypeStatus(id: string, active: boolean, reason: string) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const t = await tx.collection('leave_types').findOne({ id });
-      if (!t) throw Errors.notFound('Leave type');
+      const { t, level } = await this.manageable(tx, id);
       if (!!t.archived_at === !active) throw Errors.conflict('no_change', active ? 'This leave type is already active' : 'This leave type is already inactive');
       const version = ((t.version as number | undefined) ?? 1) + 1;
       const name = await this.actorName(tx);
       await tx.collection('leave_types').updateOne({ id }, { $set: {
-        archived_at: active ? null : new Date(), deactivated_reason: active ? null : reason, version, updated_by_level: 'super', updated_by_membership_id: actor.membershipId, updated_by_name: name,
+        archived_at: active ? null : new Date(), deactivated_reason: active ? null : reason, version, updated_by_level: level, updated_by_membership_id: actor.membershipId, updated_by_name: name,
       } });
       const saved = (await tx.collection('leave_types').findOne({ id }))!;
       await tx.collection('leave_type_versions').insert({
-        leave_type_id: id, version, action: active ? 'activated' : 'deactivated', by_level: 'super', by_membership_id: actor.membershipId, by_name: name,
+        leave_type_id: id, version, action: active ? 'activated' : 'deactivated', by_level: level, by_membership_id: actor.membershipId, by_name: name,
         changes: { active: { from: !active, to: active } }, snapshot: this.snapshot(saved), note: reason,
       });
       await this.audit.record(tx, { action: active ? 'leave_type.activated' : 'leave_type.deactivated', resourceType: 'leave_type', resourceId: id, metadata: { reason, byName: name } });
@@ -491,7 +543,7 @@ export class LeaveService implements OnModuleInit {
   }
 
   // ---------------------------------------------------------------------------------------------------------
-  // Allocation
+  // HR Workspace admins
   // ---------------------------------------------------------------------------------------------------------
 
   private async hrAdmins(tx: TenantTx, hrWorkspaceIds: (string | null)[]): Promise<string[]> {
@@ -504,183 +556,6 @@ export class LeaveService implements OnModuleInit {
       const ids = ((r.constraints?.hrWorkspaceIds ?? []) as string[]);
       return ids.some((x) => named.includes(x)) || (company && !ids.length);
     }).map((r) => r.membership_id as string))];
-  }
-
-  /** People an allocation reaches now (within the type's eligibility), at most `limit`. */
-  private async reached(tx: TenantTx, book: LeaveBook, a: Doc, limit = 5000): Promise<EmployeeLite[]> {
-    const t = book.types.find((x) => x.id === a.leave_type_id);
-    if (!t) return [];
-    const cfg = configOf(t);
-    const people = await loadPeople(tx, { status: { $ne: 'exited' }, ...(a.hr_workspace_id ? { hr_workspace_id: a.hr_workspace_id } : {}) }, { limit: 20000 });
-    return people.filter((e) => genderOk(t, e) && leaveEligible(cfg.eligibility, personOf(e)) && allocationReaches(book, a, e)).slice(0, limit);
-  }
-
-  private async allocationViews(tx: TenantTx, rows: Doc[], book: LeaveBook) {
-    const types = new Map(book.types.map((t) => [t.id as string, t]));
-    const hrNames = await fieldById(tx, 'hr_workspaces', rows.map((a) => a.hr_workspace_id));
-    const lists = rows.map(criteriaOf);
-    const deps = await fieldById(tx, 'departments', lists.flatMap((c) => c.departmentIds));
-    const desig = await fieldById(tx, 'designations', lists.flatMap((c) => c.designationIds));
-    const locs = await fieldById(tx, 'locations', lists.flatMap((c) => c.locationIds));
-    const ents = await fieldById(tx, 'legal_entities', lists.flatMap((c) => c.legalEntityIds));
-    const groups = await fieldById(tx, 'comm_groups', lists.flatMap((c) => c.groupIds));
-    const people = await employeeNames(tx, lists.flatMap((c) => c.employeeIds));
-    const out = [];
-    for (const a of rows) {
-      const c = criteriaOf(a);
-      const t = types.get(a.leave_type_id);
-      out.push({
-        id: a.id as string, leaveTypeId: a.leave_type_id as string, leaveTypeName: (t?.name as string | undefined) ?? null, leaveTypeCode: (t?.code as string | undefined) ?? null,
-        target: a.target as 'employees' | 'hr_workspace', hrWorkspaceId: (a.hr_workspace_id as string | null) ?? null,
-        hrWorkspaceName: a.hr_workspace_id ? hrNames.get(a.hr_workspace_id) ?? null : a.target === 'hr_workspace' ? 'Company HR team' : null,
-        criteria: c,
-        summary: a.target === 'hr_workspace' ? 'May allocate it to its people and reviews their applications' : c.all ? 'Everyone eligible' : [
-          c.employmentTypes.length ? `Employment: ${c.employmentTypes.join(', ')}` : null,
-          c.departmentIds.length ? `Departments: ${c.departmentIds.map((d) => deps.get(d) ?? '?').join(', ')}` : null,
-          c.designationIds.length ? `Designations: ${c.designationIds.map((d) => desig.get(d) ?? '?').join(', ')}` : null,
-          c.locationIds.length ? `Locations: ${c.locationIds.map((d) => locs.get(d) ?? '?').join(', ')}` : null,
-          c.legalEntityIds.length ? `Legal entities: ${c.legalEntityIds.map((d) => ents.get(d) ?? '?').join(', ')}` : null,
-          c.groupIds.length ? `Groups: ${c.groupIds.map((d) => groups.get(d) ?? '?').join(', ')}` : null,
-          c.employeeIds.length ? `People: ${c.employeeIds.map((d) => people.get(d)?.name ?? '?').join(', ')}` : null,
-        ].filter(Boolean).join(' · '),
-        entitlementDays: a.entitlement_days !== null && a.entitlement_days !== undefined ? String(a.entitlement_days) : null,
-        note: (a.note as string) ?? '',
-        byName: (a.by_name as string | null) ?? null, byLevel: a.by_level as string, createdAt: iso(a.created_at),
-        revokedAt: iso(a.revoked_at), revokedByName: (a.revoked_by_name as string | null) ?? null, revokedReason: (a.revoked_reason as string | null) ?? null,
-        reach: a.target === 'employees' && !a.revoked_at ? (await this.reached(tx, book, a)).length : null,
-      });
-    }
-    return out;
-  }
-
-  /**
-   * Allocations the caller may see: the Super Workspace every one; an HR Workspace what was made available to it and
-   * the allocations made for its people.
-   */
-  listAllocations(q: { leaveTypeId?: string; includeRevoked?: boolean }) {
-    return this.db.tenant(async (tx) => {
-      const s = await this.authz.subject(tx);
-      const book = await loadBook(tx, { includeInactive: true });
-      let rows = await tx.collection('leave_allocations').find({ ...(q.leaveTypeId ? { leave_type_id: q.leaveTypeId } : {}), ...(q.includeRevoked ? {} : { revoked_at: null }) }, { sort: { created_at: -1 }, limit: 500 });
-      if (!hasPermission(s, 'leave:configure').allowed) {
-        const reach = this.hrReach(s);
-        rows = rows.filter((a) => (a.hr_workspace_id ? reach.hrWorkspaceIds.includes(a.hr_workspace_id) : reach.company && (a.target === 'hr_workspace' || a.by_level === 'hr')));
-      }
-      return this.allocationViews(tx, rows, book);
-    });
-  }
-
-  /** The people an allocation would reach, before it is saved (names, at most 200). */
-  previewAllocation(input: LeaveAllocationInput) {
-    return this.db.tenant(async (tx) => {
-      if (input.target !== 'employees') throw Errors.badRequest('preview_employees_only', 'Only an allocation to employees has people to preview');
-      const s = await this.authz.subject(tx);
-      const book = await loadBook(tx);
-      await this.checkAllocation(tx, s, book, input);
-      const draft = { target: 'employees', leave_type_id: input.leaveTypeId, hr_workspace_id: input.hrWorkspaceId, criteria: input.criteria, by_level: this.levelOf(s) === 'super' ? 'super' : 'hr-preview', created_at: new Date() };
-      const people = await this.reached(tx, book, draft);
-      const visible = new Set(await this.visibleEmployeeIds(tx, 'leave:allocate'));
-      const shown = people.filter((p) => visible.has(p.id));
-      return { count: shown.length, people: shown.slice(0, 200).map((p) => ({ id: p.id, name: p.name, code: p.code })) };
-    });
-  }
-
-  /** Checks who may allocate what, and returns the HR Workspace the allocation is limited to. */
-  private async checkAllocation(tx: TenantTx, s: Subject, book: LeaveBook, input: LeaveAllocationInput): Promise<void> {
-    const t = book.types.find((x) => x.id === input.leaveTypeId);
-    if (!t) throw Errors.badRequest('invalid_leave_type', 'That leave type does not exist or is inactive');
-    const level = this.levelOf(s);
-    if (input.target === 'hr_workspace') {
-      if (level !== 'super') throw Errors.forbidden('Only the Super Workspace makes leave types available to HR Workspaces');
-      if (t.hr_allocatable === false) throw Errors.badRequest('not_hr_allocatable', `${t.name} is set so that only the Super Workspace allocates it`);
-      if (input.hrWorkspaceId && !(await tx.collection('hr_workspaces').exists({ id: input.hrWorkspaceId, status: 'active' }))) throw Errors.badRequest('unknown_hr_workspace', 'That HR Workspace does not exist or is not active');
-      if (availableTo(book, t.id, input.hrWorkspaceId)) throw Errors.conflict('already_available', `${t.name} is already available to that HR Workspace`);
-      return;
-    }
-    const c = input.criteria;
-    for (const [ids, table, label] of [[c.departmentIds, 'departments', 'department'], [c.designationIds, 'designations', 'designation'], [c.locationIds, 'locations', 'location'], [c.legalEntityIds, 'legal_entities', 'legal entity'], [c.groupIds, 'comm_groups', 'employee group'], [c.employeeIds, 'employees', 'employee']] as const) {
-      if (ids.length && (await tx.collection(table).count({ id: { $in: ids } })) !== ids.length) throw Errors.badRequest('unknown_reference', `A chosen ${label} does not exist`);
-    }
-    if (input.hrWorkspaceId && !(await tx.collection('hr_workspaces').exists({ id: input.hrWorkspaceId }))) throw Errors.badRequest('unknown_hr_workspace', 'That HR Workspace does not exist');
-    if (level === 'super') return;
-    // An HR Workspace: only a type made available to the HR Workspace it acts for, only its own people, within eligibility.
-    const reach = this.hrReach(s);
-    const acting = input.hrWorkspaceId;
-    if (acting ? !reach.hrWorkspaceIds.includes(acting) : !reach.company) {
-      throw Errors.forbidden(acting ? 'You do not run that HR Workspace' : reach.hrWorkspaceIds.length === 1 ? 'Choose your HR Workspace' : 'Choose which of your HR Workspaces this is for');
-    }
-    if (!availableTo(book, t.id, acting)) throw Errors.forbidden(`${t.name} has not been made available to this HR Workspace by the Super Workspace`);
-    const cfg = configOf(t);
-    const peopleOnly = c.employeeIds.length > 0 && !c.all && c.employmentTypes.length + c.departmentIds.length + c.designationIds.length + c.locationIds.length + c.legalEntityIds.length + c.groupIds.length === 0;
-    if (!peopleOnly && !leaveAllocationWithin(c, cfg.eligibility)) {
-      throw Errors.badRequest('outside_eligibility', `${t.name} is limited by the Super Workspace: choose only departments, designations, employment types or groups inside its eligibility`);
-    }
-    if (c.employeeIds.length) {
-      const named = await loadPeople(tx, { id: { $in: c.employeeIds } });
-      const visible = new Set(await this.visibleEmployeeIds(tx, 'leave:allocate'));
-      for (const e of named) {
-        if (!visible.has(e.id) || (acting && e.hr_workspace_id !== acting)) throw Errors.badRequest('outside_hr_workspace', `${e.name} is not one of this HR Workspace's people`);
-        if (!genderOk(t, e) || !leaveEligible(cfg.eligibility, personOf(e))) throw Errors.badRequest('outside_eligibility', `${e.name} is outside the eligibility of ${t.name} set by the Super Workspace`);
-      }
-    }
-  }
-
-  allocate(input: LeaveAllocationInput) {
-    const actor = requestContext.tenantActor();
-    return this.db.tenant(async (tx) => {
-      const s = await this.authz.subject(tx);
-      const book = await loadBook(tx);
-      await this.checkAllocation(tx, s, book, input);
-      const level = this.levelOf(s);
-      const name = await this.actorName(tx);
-      // An HR person allocating for the company HR team, or the only HR Workspace they run, is recorded with it.
-      const row = await tx.collection('leave_allocations').insert({
-        leave_type_id: input.leaveTypeId, target: input.target, hr_workspace_id: input.hrWorkspaceId,
-        criteria: input.target === 'employees' ? input.criteria : {}, entitlement_days: input.target === 'employees' ? input.entitlementDays : null, note: input.note,
-        by_level: level, by_membership_id: actor.membershipId, by_name: name,
-      }).catch(conflictOn('23505', 'already_available', 'That leave type is already available to that HR Workspace'));
-      const t = book.types.find((x) => x.id === input.leaveTypeId)!;
-      await this.audit.record(tx, {
-        action: input.target === 'hr_workspace' ? 'leave_type.made_available' : 'leave_allocation.created', resourceType: 'leave_allocation', resourceId: row.id,
-        changes: input, metadata: { level, byName: name, leaveType: t.code },
-      });
-      const fresh = await loadBook(tx);
-      if (input.target === 'hr_workspace') {
-        const admins = await this.hrAdmins(tx, [input.hrWorkspaceId]);
-        await this.notifications.notify(tx, {
-          membershipIds: admins.filter((m) => m !== actor.membershipId), kind: 'leave.type_available', title: `${t.name} is now available to your HR Workspace`,
-          body: `${name ?? 'The Super Workspace'} made ${t.name} (${t.code}) available. You can allocate it to your people and you review their applications.`, link: '/leave/manage?tab=allocation',
-        });
-      } else {
-        const people = await this.reached(tx, fresh, row);
-        // Balances are credited at once for the people it reaches.
-        for (const e of people) await this.runAccruals(tx, today(), e.id);
-        await this.notifications.notify(tx, {
-          membershipIds: people.map((p) => p.membership_id).filter((m) => m !== actor.membershipId), kind: 'leave.allocated', title: `You can now apply for ${t.name}`,
-          body: `${name ?? 'HR'} (${level === 'super' ? 'Super Workspace' : 'HR Workspace'}) gave you ${t.name}.`, link: '/leave',
-        });
-      }
-      const [view] = await this.allocationViews(tx, [row], fresh);
-      return view!;
-    });
-  }
-
-  /** Takes an allocation back. Balances already credited stay in the history; the type leaves the people it reached. */
-  revokeAllocation(id: string, reason: string) {
-    const actor = requestContext.tenantActor();
-    return this.db.tenant(async (tx) => {
-      const a = await tx.collection('leave_allocations').findOne({ id, revoked_at: null });
-      if (!a) throw Errors.notFound('Allocation');
-      const s = await this.authz.subject(tx);
-      if (this.levelOf(s) !== 'super') {
-        const reach = this.hrReach(s);
-        const mine = a.by_level === 'hr' && (a.hr_workspace_id ? reach.hrWorkspaceIds.includes(a.hr_workspace_id) : reach.company);
-        if (!mine) throw Errors.forbidden('Only the Super Workspace can take back an allocation it made');
-      }
-      const name = await this.actorName(tx);
-      await tx.collection('leave_allocations').updateOne({ id }, { $set: { revoked_at: new Date(), revoked_by_membership_id: actor.membershipId, revoked_by_name: name, revoked_reason: reason } });
-      await this.audit.record(tx, { action: 'leave_allocation.revoked', resourceType: 'leave_allocation', resourceId: id, metadata: { reason, byName: name, target: a.target, leaveTypeId: a.leave_type_id } });
-    });
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -780,30 +655,33 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
+  /**
+   * The leave types a person can apply for, each with its manually assigned quantity for the year. Nothing is
+   * calculated: assigned is the sum of the quantities administrators entered by hand ('adjustment' lines: assigned
+   * quantities, opening balances typed at hire or import, reward payouts), null when nobody entered one ("Not
+   * Assigned"). Used is the approved leave of the year; remaining is assigned minus used. Old automatic lines (accruals,
+   * carry forward, lapses) stay in the ledger as history and count for nothing.
+   */
   private async balanceRows(tx: TenantTx, e: EmployeeLite, year: number, book?: LeaveBook) {
     const b = book ?? (await loadBook(tx));
     const held = entitlementsOf(b, e);
-    const ledger = await tx.collection('leave_ledger').find({ employee_id: e.id, leave_year: year }, { projection: { leave_type_id: 1, kind: 1, quantity: 1 } });
+    const manual = await tx.collection('leave_ledger').find({ employee_id: e.id, leave_year: year, kind: 'adjustment' }, { projection: { leave_type_id: 1, quantity: 1 } });
     const reqs = await tx.collection('leave_requests').find({ employee_id: e.id, status: { $in: ['pending', 'approved'] }, start_date: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } }, { projection: { leave_type_id: 1, days: 1, status: 1, start_date: 1 } });
     const out = [];
     for (const [typeId, ent] of held) {
       const t = ent.type;
-      const k = (kind: string) => sumBy(ledger.filter((l) => l.leave_type_id === typeId && l.kind === kind), (l) => l.quantity);
-      const accrued = k('accrual');
-      const carried = k('carry_forward');
-      const adjusted = k('adjustment');
-      const taken = -(k('taken') + k('reversal'));
-      const lapsed = -k('lapse');
-      const balance = accrued + carried + adjusted - taken - lapsed;
+      const lines = manual.filter((l) => l.leave_type_id === typeId);
+      const assigned = lines.length ? sumBy(lines, (l) => l.quantity) : null;
+      const used = sumBy(reqs.filter((p) => p.leave_type_id === typeId && p.status === 'approved'), (p) => p.days);
       const pend = sumBy(reqs.filter((p) => p.leave_type_id === typeId && p.status === 'pending'), (p) => p.days);
       const upcoming = sumBy(reqs.filter((p) => p.leave_type_id === typeId && p.status === 'approved' && p.start_date > today()), (p) => p.days);
-      const tracked = ent.policy.accrualMethod !== 'none';
+      const tracked = assigned !== null;
       out.push({
         leaveTypeId: typeId, code: t.code, name: t.name, color: t.color, paid: t.paid, allowHalfDay: t.allow_half_day, kind: (t.kind as string | undefined) ?? 'standard',
-        category: (t.category as string | undefined) ?? 'general',
-        tracked, annualEntitlement: fromH(toH(ent.annualEntitlement)), accrualMethod: ent.policy.accrualMethod,
-        entitlement: fromH(accrued + carried + adjusted), accrued: fromH(accrued), carriedForward: fromH(carried), adjusted: fromH(adjusted), taken: fromH(taken), used: fromH(taken), lapsed: fromH(lapsed),
-        balance: fromH(balance), pending: fromH(pend), upcomingApproved: fromH(upcoming), available: tracked ? fromH(balance - pend) : null,
+        category: (t.category as string | undefined) ?? 'general', visibility: (t.visibility as string | undefined) ?? 'both',
+        tracked, assigned: tracked ? fromH(assigned!) : null, notAssigned: !tracked,
+        entitlement: tracked ? fromH(assigned!) : null, taken: fromH(used), used: fromH(used),
+        balance: tracked ? fromH(assigned! - used) : null, pending: fromH(pend), upcomingApproved: fromH(upcoming), available: tracked ? fromH(assigned! - used - pend) : null,
       });
     }
     return out.sort((a, b2) => cmp(a.name, b2.name));
@@ -937,8 +815,8 @@ export class LeaveService implements OnModuleInit {
     if (!type || type.archived_at) throw Errors.badRequest('invalid_leave_type', type ? `${type.name} is no longer active` : 'Leave type not found');
     const book = await loadBook(tx);
     const ent = entitlementsOf(book, e).get(type.id);
-    // A type the person does not hold looks the same as one that does not exist.
-    if (!ent) throw Errors.badRequest('not_eligible', `${type.name} is not allocated to ${onBehalf ? 'this employee' : 'you'}`);
+    // A type not visible to the person looks the same as one that does not exist.
+    if (!ent) throw Errors.badRequest('not_eligible', `${type.name} is not available to ${onBehalf ? 'this employee' : 'you'}`);
     const p = ent.policy;
     if (type.effective_from && input.startDate < type.effective_from) throw Errors.badRequest('not_yet_effective', `${type.name} can be used from ${type.effective_from}`);
     if (yearOf(input.startDate) !== yearOf(input.endDate)) throw Errors.badRequest('spans_years', 'Split leave that crosses 31 December into one request per year');
@@ -969,13 +847,13 @@ export class LeaveService implements OnModuleInit {
     if (!onBehalf && p.minNoticeDays > 0 && input.startDate < addDays(today(), p.minNoticeDays)) throw Errors.badRequest('short_notice', `${type.name} needs ${p.minNoticeDays} days' notice`);
 
     const balance = (await this.balanceRows(tx, e, yearOf(input.startDate), book)).find((b) => b.leaveTypeId === type.id);
-    const tracked = p.accrualMethod !== 'none';
+    // Only a quantity entered by hand is tracked; with none ("Not Assigned") the person still applies.
+    const tracked = Boolean(balance?.tracked);
     const giveBack = replacing && replacing.leave_type_id === type.id && yearOf(replacing.start_date) === yearOf(input.startDate) && replacing.status !== 'approved' ? toH(replacing.days) : 0;
     // Approved leave being changed: its days come back only when the change is approved, but they count as available.
     const approvedBack = replacing && replacing.status === 'approved' && replacing.leave_type_id === type.id && yearOf(replacing.start_date) === yearOf(input.startDate) ? toH(replacing.days) : 0;
     const availableH = (balance?.available ? toH(balance.available) : 0) + giveBack + approvedBack;
     const afterH = availableH - daysH;
-    if (tracked && afterH < 0 && !p.allowNegativeBalance) throw Errors.badRequest('insufficient_balance', `Not enough ${type.name}: ${fromH(availableH)} available, ${fromH(daysH)} requested`);
 
     // Documents.
     const docs = p.documents;
@@ -1004,7 +882,7 @@ export class LeaveService implements OnModuleInit {
         days: fromH(daysH), tracked, available: tracked ? fromH(availableH) : null, balanceAfter: tracked ? fromH(afterH) : null,
         holidaysInRange: holidays, calendarId: cal.id,
         warnings: [
-          ...(tracked && afterH < 0 ? ['This takes the balance below zero; it will be recovered from future accruals.'] : []),
+          ...(tracked && afterH < 0 ? [`This is more than the ${fromH(availableH)} days of ${type.name} you have left; HR Workspace sees this when it reviews.`] : []),
           ...(docsRequired && !documentIds.length ? [`Attach a supporting document${docs.note ? `: ${docs.note}` : ''}.`] : []),
         ],
         documents: { mode: docs.mode, required: docsRequired, note: docs.note },
@@ -1450,7 +1328,7 @@ export class LeaveService implements OnModuleInit {
       const in30 = addDays(t0, 30);
       const upcomingRows = requests.filter((r) => r.status === 'approved' && r.end_date >= t0 && r.start_date <= in30).sort((a, b) => cmp(a.start_date, b.start_date)).slice(0, 20);
       const byType = book.types.filter((t) => visibleTypes.has(t.id)).map((t) => {
-        const credited = sumBy(ledger.filter((l) => l.leave_type_id === t.id && ['accrual', 'carry_forward', 'adjustment'].includes(l.kind)), (l) => l.quantity);
+        const credited = sumBy(ledger.filter((l) => l.leave_type_id === t.id && l.kind === 'adjustment'), (l) => l.quantity);
         const taken = -sumBy(ledger.filter((l) => l.leave_type_id === t.id && (l.kind === 'taken' || l.kind === 'reversal')), (l) => l.quantity);
         const holders = people.filter((e) => entitlementsOf(book, e).has(t.id)).length;
         const rs = requests.filter((r) => r.leave_type_id === t.id);
@@ -1512,7 +1390,7 @@ export class LeaveService implements OnModuleInit {
       const taken = new Map<string, number>();
       for (const l of ledger) {
         const k = key(l.employee_id, l.leave_type_id);
-        if (['accrual', 'carry_forward', 'adjustment', 'lapse'].includes(l.kind)) credited.set(k, (credited.get(k) ?? 0) + toH(l.quantity));
+        if (l.kind === 'adjustment') credited.set(k, (credited.get(k) ?? 0) + toH(l.quantity));
         if (l.kind === 'taken' || l.kind === 'reversal') taken.set(k, (taken.get(k) ?? 0) - toH(l.quantity));
       }
       const pending = new Map<string, number>();
@@ -1532,13 +1410,13 @@ export class LeaveService implements OnModuleInit {
       const deptRows = [...new Set(people.map((p) => p.department_id))].map((d) => {
         const mem = new Set(people.filter((p) => p.department_id === d).map((p) => p.id));
         const c = ledger.filter((l) => mem.has(l.employee_id) && types.some((t) => t.id === l.leave_type_id));
-        const cr = sumBy(c.filter((l) => ['accrual', 'carry_forward', 'adjustment', 'lapse'].includes(l.kind)), (l) => l.quantity);
+        const cr = sumBy(c.filter((l) => l.kind === 'adjustment'), (l) => l.quantity);
         const tk = -sumBy(c.filter((l) => l.kind === 'taken' || l.kind === 'reversal'), (l) => l.quantity);
         return { departmentId: d, name: d ? departments.get(d) ?? 'Unknown' : 'No department', employees: mem.size, credited: fromH(cr), taken: fromH(tk), utilisation: cr > 0 ? Math.round((tk / cr) * 1000) / 10 : null };
       }).sort((a, b) => cmp(a.name, b.name));
       const typeRows = types.map((t) => {
         const c = ledger.filter((l) => l.leave_type_id === t.id);
-        const cr = sumBy(c.filter((l) => ['accrual', 'carry_forward', 'adjustment', 'lapse'].includes(l.kind)), (l) => l.quantity);
+        const cr = sumBy(c.filter((l) => l.kind === 'adjustment'), (l) => l.quantity);
         const tk = -sumBy(c.filter((l) => l.kind === 'taken' || l.kind === 'reversal'), (l) => l.quantity);
         const rs = requests.filter((r) => r.leave_type_id === t.id);
         return {
@@ -1612,8 +1490,12 @@ export class LeaveService implements OnModuleInit {
       const open = await tx.collection('leave_requests').find({ employee_id: { $in: ids }, status: 'pending', start_date: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } }, { projection: { employee_id: 1, leave_type_id: 1, days: 1 } });
       const departments = await fieldById(tx, 'departments', people.map((p) => p.department_id));
       const sums = new Map<string, number>();
+      // Only typed quantities ('adjustment') and leave taken or given back count; old automatic lines are history.
+      const assigned = new Set<string>();
       for (const l of ledger) {
         const k = `${l.employee_id}|${l.leave_type_id}`;
+        if (l.kind === 'adjustment') assigned.add(k);
+        else if (l.kind !== 'taken' && l.kind !== 'reversal') continue;
         sums.set(k, (sums.get(k) ?? 0) + toH(l.quantity as string));
         if (l.kind === 'taken' || l.kind === 'reversal') sums.set(`${k}|taken`, (sums.get(`${k}|taken`) ?? 0) - toH(l.quantity as string));
       }
@@ -1624,7 +1506,7 @@ export class LeaveService implements OnModuleInit {
         for (const [typeId, ent] of entitlementsOf(book, e)) {
           shown.add(typeId);
           const k = `${e.id}|${typeId}`;
-          const tracked = ent.policy.accrualMethod !== 'none';
+          const tracked = assigned.has(k);
           const bal = sums.get(k) ?? 0;
           const pend = sums.get(`${k}|pending`) ?? 0;
           balances[typeId] = { balance: tracked ? fromH(bal) : null, available: tracked ? fromH(bal - pend) : null, taken: fromH(sums.get(`${k}|taken`) ?? 0), pending: fromH(pend) };
@@ -1650,69 +1532,24 @@ export class LeaveService implements OnModuleInit {
     const out = [];
     for (const b of balances) {
       if (!(await tx.collection('leave_types').exists({ id: b.leaveTypeId, archived_at: null }))) throw Errors.badRequest('invalid_leave_type', 'Leave type not found');
-      const lines = await tx.collection('leave_ledger').find({ employee_id: employeeId, leave_type_id: b.leaveTypeId, leave_year: year }, { projection: { quantity: 1 } });
+      const lines = await tx.collection('leave_ledger').find({ employee_id: employeeId, leave_type_id: b.leaveTypeId, leave_year: year, kind: 'adjustment' }, { projection: { quantity: 1 } });
       const delta = toH(b.days) - sumBy(lines, (l) => l.quantity);
       out.push({ leaveTypeId: b.leaveTypeId, days: b.days, adjustment: fromH(delta) });
-      if (delta === 0) continue;
+      if (delta === 0 && lines.length) continue;
       await tx.collection('leave_ledger').insert({
         employee_id: employeeId, leave_type_id: b.leaveTypeId, leave_year: year, kind: 'adjustment', quantity: fromH(delta), effective_on: on,
-        accrual_key: `OPEN${year}`, note: `Opening balance of ${b.days} days, carried over when the record was added`, created_by: actor.userId,
+        accrual_key: `OPEN${year}`, note: `Quantity of ${b.days} days entered when the record was added`, created_by: actor.userId,
       });
     }
     return out;
   }
 
   /**
-   * Posts every accrual due up to asOf for the types each person holds, and lapses carried-forward days past their
-   * expiry. Idempotent: each period is credited at most once per employee and type.
+   * The hourly leave job: escalation of applications waiting too long. It credits nothing: automatic accruals, carry
+   * forward and lapses were removed on 2026-11-23 (quantities are entered by hand).
    */
-  async runAccruals(tx: TenantTx, asOf: string, employeeId?: string): Promise<number> {
-    const yearStart = `${asOf.slice(0, 4)}-01-01`;
-    const employees = await loadPeople(tx, {
-      date_of_joining: { $lte: asOf },
-      $or: [{ status: { $ne: 'exited' } }, { last_working_day: { $gte: yearStart } }],
-      ...(employeeId ? { id: employeeId } : {}),
-    });
-    const book = await loadBook(tx);
-    const posted_ = new Set(
-      (await tx.collection('leave_ledger').find({ employee_id: { $in: employees.map((e) => e.id) }, accrual_key: { $ne: null } }, { projection: { employee_id: 1, leave_type_id: 1, accrual_key: 1 } }))
-        .map((l) => `${l.employee_id}|${l.leave_type_id}|${l.accrual_key}`),
-    );
-    let posted = 0;
-    const year = yearOf(asOf);
-    for (const e of employees) {
-      for (const [typeId, ent] of entitlementsOf(book, e)) {
-        const p = ent.policy;
-        const credits = leaveMath.accrualsDue({ accrualMethod: p.accrualMethod, annualEntitlement: toH(ent.annualEntitlement), rounding: p.rounding }, { dateOfJoining: e.date_of_joining, lastWorkingDay: e.last_working_day }, asOf);
-        for (const c of credits) {
-          if (posted_.has(`${e.id}|${typeId}|${c.key}`)) continue;
-          await tx.collection('leave_ledger').insert({ employee_id: e.id, leave_type_id: typeId, leave_year: yearOf(c.effectiveOn), kind: 'accrual', quantity: fromH(c.quantity), effective_on: c.effectiveOn, accrual_key: c.key, note: `Accrual ${c.key.slice(1)}` });
-          posted_.add(`${e.id}|${typeId}|${c.key}`);
-          posted++;
-        }
-        // Carried-forward days not used within the months the policy allows lapse.
-        if (p.carriedExpiryMonths) {
-          const expiry = `${year}-${String(p.carriedExpiryMonths + 1).padStart(2, '0')}-01`;
-          const key = `EX${year}`;
-          if (p.carriedExpiryMonths < 12 && asOf >= expiry && !posted_.has(`${e.id}|${typeId}|${key}`)) {
-            const lines = await tx.collection('leave_ledger').find({ employee_id: e.id, leave_type_id: typeId, leave_year: year }, { projection: { kind: 1, quantity: 1, effective_on: 1 } });
-            const carried = sumBy(lines.filter((l) => l.kind === 'carry_forward' && toH(l.quantity) > 0), (l) => l.quantity);
-            const used = -sumBy(lines.filter((l) => (l.kind === 'taken' || l.kind === 'reversal') && l.effective_on < expiry), (l) => l.quantity);
-            const lapse = carried - used;
-            if (lapse > 0) {
-              await tx.collection('leave_ledger').insert({ employee_id: e.id, leave_type_id: typeId, leave_year: year, kind: 'lapse', quantity: fromH(-lapse), effective_on: addDays(expiry, -1), accrual_key: key, note: `Carried-forward days not used by ${addDays(expiry, -1)} lapsed` });
-              posted_.add(`${e.id}|${typeId}|${key}`);
-            }
-          }
-        }
-      }
-    }
-    return posted;
-  }
-
-  /** The hourly leave job: accruals and expiry, then escalation of applications waiting too long. */
-  async runScheduled(tx: TenantTx, asOf: string): Promise<number> {
-    const posted = await this.runAccruals(tx, asOf);
+  async runScheduled(tx: TenantTx, _asOf: string): Promise<number> {
+    const posted = 0;
     const pending = await tx.collection('leave_requests').find({ status: 'pending', approval_request_id: { $ne: null }, 'policy_snapshot.approval.escalation.enabled': true });
     const now = Date.now();
     for (const r of pending) {
@@ -1721,14 +1558,6 @@ export class LeaveService implements OnModuleInit {
       await this.approvals.escalate(tx, r.approval_request_id, `Waiting more than ${after} days`);
     }
     return posted;
-  }
-
-  async runAccrualsNow(asOf = today()) {
-    return this.db.tenant(async (tx) => {
-      const posted = await this.runAccruals(tx, asOf);
-      await this.audit.record(tx, { action: 'leave_accruals.run', resourceType: 'leave', metadata: { asOf, posted } });
-      return { asOf, posted };
-    });
   }
 
   /** Runs escalation now (also hourly), for testing and for an administrator who does not want to wait. */
@@ -1740,46 +1569,97 @@ export class LeaveService implements OnModuleInit {
     });
   }
 
-  /** Closes a leave year: carries balances forward up to each type's cap and lapses the rest. Safe to re-run. */
-  async closeYear(year: number) {
-    if (year >= yearOf(today())) throw Errors.badRequest('year_open', 'Only a past leave year can be closed');
+  // ---------------------------------------------------------------------------------------------------------
+  // Manual leave quantities
+  // ---------------------------------------------------------------------------------------------------------
+
+  /**
+   * Assign Leave Quantities: the people the caller assigns for, one row each, with each leave type they can apply for
+   * and the quantity entered by hand for the year (null: Not Assigned).
+   */
+  quantities(q: { year?: number; leaveTypeId?: string; hrWorkspaceId?: string; q?: string }) {
+    const year = q.year ?? yearOf(today());
     return this.db.tenant(async (tx) => {
-      const lines = await tx.collection('leave_ledger').find({ leave_year: year }, { projection: { employee_id: 1, leave_type_id: 1, quantity: 1 } });
-      const keyed = new Map<string, { employee_id: string; leave_type_id: string; q: number }>();
-      for (const l of lines) {
-        const k = `${l.employee_id}|${l.leave_type_id}`;
-        const cur = keyed.get(k) ?? { employee_id: l.employee_id, leave_type_id: l.leave_type_id, q: 0 };
-        cur.q += toH(l.quantity);
-        keyed.set(k, cur);
+      const scope = await this.authz.filter('leave:assign', EMPLOYEE_FIELDS, tx);
+      const and: Doc[] = [scope, { status: { $ne: 'exited' } }];
+      if (q.hrWorkspaceId) and.push({ hr_workspace_id: q.hrWorkspaceId === 'central' ? null : q.hrWorkspaceId });
+      if (q.q) {
+        const rx = new RegExp(q.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        and.push({ $or: [{ first_name: rx }, { last_name: rx }, { preferred_name: rx }, { employee_code: rx }] });
       }
-      const types = new Map((await tx.collection('leave_types').find({})).map((t) => [t.id as string, t]));
-      const done = new Set((await tx.collection('leave_ledger').find({ accrual_key: { $in: [`L${year}`, `CO${year}`, `CI${year}`] } }, { projection: { employee_id: 1, leave_type_id: 1, accrual_key: 1 } })).map((l) => `${l.employee_id}|${l.leave_type_id}|${l.accrual_key}`));
-      let carried = 0;
-      let lapsed = 0;
-      const ins = async (r: { employee_id: string; leave_type_id: string }, leaveYear: number, kind: string, q: number, on: string, key: string, note: string) => {
-        if (done.has(`${r.employee_id}|${r.leave_type_id}|${key}`)) return;
-        await tx.collection('leave_ledger').insert({ employee_id: r.employee_id, leave_type_id: r.leave_type_id, leave_year: leaveYear, kind, quantity: fromH(q), effective_on: on, accrual_key: key, note });
+      const all = await loadPeople(tx, { $and: and }, { sort: { first_name: 1, last_name: 1 }, limit: 501 });
+      const people = all.slice(0, 500);
+      const book = await loadBook(tx);
+      const visibleTypes = new Set((await this.listTypesIn(tx, false)).map((t) => t.id as string));
+      const ids = people.map((p) => p.id);
+      const manual = await tx.collection('leave_ledger').find({ employee_id: { $in: ids }, leave_year: year, kind: 'adjustment' }, { projection: { employee_id: 1, leave_type_id: 1, quantity: 1 } });
+      const used = await tx.collection('leave_requests').find({ employee_id: { $in: ids }, status: 'approved', start_date: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } }, { projection: { employee_id: 1, leave_type_id: 1, days: 1 } });
+      const departments = await fieldById(tx, 'departments', people.map((p) => p.department_id));
+      const hrNames = await fieldById(tx, 'hr_workspaces', people.map((p) => p.hr_workspace_id));
+      const shown = new Set<string>();
+      const rows = people.map((e) => {
+        const cells: Record<string, { assigned: string | null; used: string; remaining: string | null }> = {};
+        for (const typeId of entitlementsOf(book, e).keys()) {
+          if (!visibleTypes.has(typeId) || (q.leaveTypeId && typeId !== q.leaveTypeId)) continue;
+          shown.add(typeId);
+          const lines = manual.filter((l) => l.employee_id === e.id && l.leave_type_id === typeId);
+          const a = lines.length ? sumBy(lines, (l) => l.quantity) : null;
+          const u = sumBy(used.filter((r) => r.employee_id === e.id && r.leave_type_id === typeId), (r) => r.days);
+          cells[typeId] = { assigned: a === null ? null : fromH(a), used: fromH(u), remaining: a === null ? null : fromH(a - u) };
+        }
+        return { employeeId: e.id, name: e.name, code: e.code, departmentName: e.department_id ? departments.get(e.department_id) ?? null : null, hrWorkspaceName: e.hr_workspace_id ? hrNames.get(e.hr_workspace_id) ?? null : null, cells };
+      });
+      return {
+        year, truncated: all.length > 500,
+        types: book.types.filter((t) => shown.has(t.id)).map((t) => ({ id: t.id as string, code: t.code as string, name: t.name as string, color: t.color as string, visibility: (t.visibility as string | undefined) ?? 'both' })),
+        rows,
       };
-      for (const r of keyed.values()) {
-        if (r.q === 0) continue;
-        const t = types.get(r.leave_type_id);
-        if (!t) continue;
-        const p = configOf(t).policy;
-        if (p.accrualMethod === 'none') continue;
-        const { carry, lapse } = leaveMath.yearEnd(r.q, toH(p.carryForwardMax));
-        if (lapse) {
-          await ins(r, year, 'lapse', -lapse, `${year}-12-31`, `L${year}`, `Lapsed at the end of ${year}`);
-          lapsed++;
-        }
-        if (carry) {
-          await ins(r, year, 'carry_forward', -carry, `${year}-12-31`, `CO${year}`, `Carried to ${year + 1}`);
-          await ins(r, year + 1, 'carry_forward', carry, `${year + 1}-01-01`, `CI${year}`, `Carried from ${year}`);
-          carried++;
-        }
-      }
-      await this.audit.record(tx, { action: 'leave_year.closed', resourceType: 'leave', metadata: { year, carried, lapsed } });
-      return { year, carried, lapsed };
     });
+  }
+
+  /**
+   * Sets the quantity of a leave type an employee has for a year, as typed by an administrator. Stored as one
+   * adjustment line for the difference, so the ledger keeps the whole history; nothing else ever changes it.
+   */
+  assignQuantity(input: LeaveQuantityInput) {
+    const actor = requestContext.tenantActor();
+    return this.db.tenant(async (tx) => {
+      const e = await this.employee(tx, input.employeeId);
+      await this.authz.require('leave:assign', this.attrsOf(e), tx);
+      const s = await this.authz.subject(tx);
+      if (s.employeeId === e.id) throw Errors.forbidden('You cannot assign leave to yourself');
+      const book = await loadBook(tx);
+      const t = book.types.find((x) => x.id === input.leaveTypeId);
+      const visible = new Set((await this.listTypesIn(tx, false)).map((x) => x.id as string));
+      if (!t || !visible.has(t.id)) throw Errors.badRequest('invalid_leave_type', 'Leave type not found');
+      if (!entitlementsOf(book, e).has(t.id)) throw Errors.badRequest('not_eligible', `${t.name} is not available to ${e.name}, so there is nothing to assign`);
+      await tx.collection('employees').lock({ id: e.id });
+      const lines = await tx.collection('leave_ledger').find({ employee_id: e.id, leave_type_id: t.id, leave_year: input.year, kind: 'adjustment' }, { projection: { quantity: 1 } });
+      const before = lines.length ? sumBy(lines, (l) => l.quantity) : null;
+      const delta = toH(input.quantity) - (before ?? 0);
+      if (before !== null && delta === 0) return this.quantityOf(tx, e, t, input.year);
+      const name = await this.actorName(tx);
+      const note = input.note || `Assigned ${input.quantity} days by ${name ?? 'an administrator'}`;
+      await tx.collection('leave_ledger').insert({
+        employee_id: e.id, leave_type_id: t.id, leave_year: input.year, kind: 'adjustment', quantity: fromH(delta), effective_on: today(),
+        note, created_by: actor.userId,
+      });
+      await this.audit.record(tx, {
+        action: 'leave_quantity.assigned', resourceType: 'employee', resourceId: e.id,
+        changes: { quantity: { from: before === null ? null : fromH(before), to: input.quantity } },
+        metadata: { leaveTypeId: t.id, leaveType: t.code, year: input.year, byName: name, note: input.note || null },
+      });
+      await this.notifications.notify(tx, {
+        membershipIds: [e.membership_id], kind: 'leave.quantity_assigned', title: `${t.name}: ${input.quantity} days assigned for ${input.year}`,
+        body: input.note || `${name ?? 'HR'} assigned you ${input.quantity} days of ${t.name} for ${input.year}.`, link: '/leave',
+      });
+      return this.quantityOf(tx, e, t, input.year);
+    });
+  }
+
+  private async quantityOf(tx: TenantTx, e: EmployeeLite, t: Doc, year: number) {
+    const row = (await this.balanceRows(tx, e, year)).find((b) => b.leaveTypeId === t.id);
+    return { employeeId: e.id, leaveTypeId: t.id as string, year, assigned: row?.assigned ?? null, used: row?.used ?? '0', remaining: row?.balance ?? null };
   }
 }
 

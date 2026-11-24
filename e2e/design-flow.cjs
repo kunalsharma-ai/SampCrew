@@ -11,6 +11,7 @@
  * 4. The Console has its own design, Command Center.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 
 const WEB = process.env.WEB_URL ?? 'http://localhost:3000';

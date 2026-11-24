@@ -7,6 +7,7 @@ import { dayStatus, riskFlag, syncReason } from '../../src/lib/labels';
 import type { Today } from '../../src/lib/types';
 import { Badge, Button, Card, CardTitle, Empty, fmt, ListItem, Notice, Screen, Text, Tile, TileGrid, Title, useLoad, useReloadOnFocus } from '../../src/ui';
 import { IconRow, ModuleGate } from '../../src/ui/kit';
+import { ModuleNotices } from '../../src/ui/module-notices';
 
 type Fix = { latitude: number; longitude: number; accuracyM?: number; mockLocation: boolean } | null;
 
@@ -78,6 +79,7 @@ function Attendance() {
 
   return (
     <Screen onRefresh={async () => { await sync(); await reload(); }} refreshing={loading && !!today}>
+      <ModuleNotices category="attendance" label="Attendance" />
       <Title>Attendance</Title>
       {error && <Notice tone="warn">{today ? `Showing what was loaded earlier. ${error}` : error}</Notice>}
       {today && (

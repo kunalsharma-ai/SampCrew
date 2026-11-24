@@ -19,6 +19,7 @@
  *    it. An invoice issued by hand reaches the owner, who pays it online too.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const { createPaymentsStub, RAZORPAY_SECRET } = require('./payments-stub.cjs');
 

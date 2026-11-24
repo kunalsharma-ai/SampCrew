@@ -28,6 +28,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const samlStub = require('./saml-stub.cjs');
 
@@ -195,7 +196,7 @@ const post = (url, body) => fetch(url, { method: 'POST', body: JSON.stringify(bo
     await phone.waitForURL((u) => u.origin === APP && u.pathname === '/sso', { timeout: 30000 });
     const used = new URL(phone.url()).searchParams.get('code');
     expect(used && used.length >= 20, 'the browser came back to the app with a one-time code');
-    await phone.getByText(/^Good (morning|afternoon|evening)/).waitFor({ timeout: 30000 });
+    await phone.getByText(/^Good (morning|afternoon|evening), /).waitFor({ timeout: 30000 });
     expect(!(await phone.evaluate(() => window.sessionStorage.getItem('crew.sso.verifier'))), 'the verifier is removed after use');
     // The code in the address was spent: using it again gets nothing.
     expect((await api(null, 'POST', '/auth/sso/exchange', { code: used, verifier: 'x'.repeat(43) })).status === 401, 'a spent code is refused');

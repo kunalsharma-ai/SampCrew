@@ -1,31 +1,20 @@
-import { CrewLogo } from '@crew/ui';
+import { WELCOME_SCENE_COOKIE } from '@crew/contracts';
+import { cookies } from 'next/headers';
+import { AuthShell } from './welcome';
 
-export default function AuthLayout({ children }: { children: React.ReactNode }) {
+/**
+ * Sign-in, sign-up, password reset and invitations: the level's animated SampCrew welcome and greeting beside the
+ * sign-in card (above it on phones and tablets), the whole page in that workspace's colours, with light and dark and
+ * colour palettes to try. The form never waits for the animation.
+ *
+ * No Suspense boundary here: the layout reads a cookie, so every sign-in page renders on request and the frame's
+ * useSearchParams needs none. A fallback would put the sign-in form in the page twice (once in the fallback, once in
+ * the streamed content).
+ */
+export default async function AuthLayout({ children }: { children: React.ReactNode }) {
+  const remembered = (await cookies()).get(WELCOME_SCENE_COOKIE)?.value ?? null;
+  const footer = <>© {new Date().getFullYear()} SAMPLEDGE · Isolated per company, multi-factor sign-in, tamper-evident audit trail</>;
   return (
-    <div className="grid min-h-dvh lg:grid-cols-[1fr_520px]">
-      <aside className="relative hidden overflow-hidden bg-[#0f0d2e] p-12 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="pointer-events-none absolute -left-24 -top-24 size-[520px] rounded-full bg-[radial-gradient(circle,rgba(99,102,241,0.55),transparent_65%)]" />
-        <div className="pointer-events-none absolute -bottom-40 right-0 size-[520px] rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.30),transparent_65%)]" />
-        <div className="relative"><CrewLogo variant="lockup" tone="dark" height={96} /></div>
-        <div className="relative max-w-lg">
-          <h1 className="text-4xl font-semibold leading-tight tracking-tight">One intelligent platform.<br />Your entire workforce.</h1>
-          <p className="mt-4 text-[0.9375rem] leading-relaxed text-white/70">
-            Recruitment, people, attendance, payroll and workforce intelligence on one connected foundation. Let SampCrew handle the repetitive work, so your people can focus on people.
-          </p>
-          <ul className="mt-8 grid gap-3 text-sm text-white/80">
-            {['Isolated per company at the database level', 'Multi-factor sign-in and a tamper-evident audit trail', 'Permissions that follow your org chart'].map((t) => (
-              <li key={t} className="flex items-center gap-2.5"><span className="size-1.5 rounded-full bg-[#fb923c]" />{t}</li>
-            ))}
-          </ul>
-        </div>
-        <p className="relative text-xs text-white/65">© {new Date().getFullYear()} SAMPLEDGE</p>
-      </aside>
-      <main className="flex items-center justify-center px-4 py-10 sm:px-10">
-        <div className="w-full max-w-sm animate-slide-up">
-          <div className="mb-8 lg:hidden"><CrewLogo variant="lockup" height={60} /></div>
-          {children}
-        </div>
-      </main>
-    </div>
+    <AuthShell remembered={remembered} footer={footer}>{children}</AuthShell>
   );
 }

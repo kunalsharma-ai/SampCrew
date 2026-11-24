@@ -1,10 +1,12 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Put, Query, Req, Res } from '@nestjs/common';
 import {
   chatMessagesQuery,
+  supportConsoleStartInput,
   supportConversationInput,
   supportListQuery,
   supportMessageInput,
   supportStatusInput,
+  supportTriageInput,
   type SupportConversationInput,
   type SupportListQuery,
   type SupportMessageInput,
@@ -90,6 +92,20 @@ export class PlatformSupportChatController {
   @Doc({ summary: 'Support inbox: conversations from every Super Workspace, with state counts; search and filter', query: supportListQuery })
   list(@Query(new ZodPipe(supportListQuery)) q: SupportListQuery) {
     return this.support.consoleList(q);
+  }
+
+  @PlatformRealm('support:chat')
+  @Post('conversations')
+  @Doc({ summary: 'Start a conversation with a company\'s Super Workspace (they are notified)', body: supportConsoleStartInput })
+  start(@Body(new ZodPipe(supportConsoleStartInput)) body: z.infer<typeof supportConsoleStartInput>) {
+    return this.support.consoleStart(body);
+  }
+
+  @PlatformRealm('support:chat')
+  @Put('conversations/:id/triage')
+  @Doc({ summary: 'Set a conversation\'s priority or assign it to a Console admin', body: supportTriageInput })
+  triage(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(supportTriageInput)) body: z.infer<typeof supportTriageInput>) {
+    return this.support.consoleTriage(id, body);
   }
 
   @PlatformRealm('support:chat')

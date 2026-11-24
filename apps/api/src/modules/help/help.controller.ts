@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, UploadedFile as File, UseInterceptors } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   COMM_FILE_MAX_BYTES,
@@ -26,7 +27,7 @@ import {
   type HelpSettings,
 } from '@crew/contracts';
 import { z } from 'zod';
-import { AllowWhenLocked, PlatformRealm } from '../../platform/authz/decorators';
+import { AllowWhenLocked, PlatformRealm, Public } from '../../platform/authz/decorators';
 import { MongoService as DatabaseService } from '../../platform/database/mongo.service';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
@@ -378,5 +379,35 @@ export class PlatformHelpController {
   @Doc({ summary: 'A short-lived download link for a file on a help query' })
   fileLink(@Param('id', UuidPipe) id: string, @Param('fileId', UuidPipe) fileId: string) {
     return this.queries.consoleFileLink(id, fileId);
+  }
+}
+
+/**
+ * The public Help & Support page: anyone can read it before signing in, from every sign-in page (Console, Super
+ * Workspace, HR Workspace and Employee Workspace, and the phone app). Only content a Console Admin gave the public
+ * audience, with no feature or permission; read-only, and nothing about the reader is stored.
+ */
+@Controller('public/help')
+@Public()
+@Throttle({ default: { limit: 120, ttl: 60_000 } })
+export class PublicHelpController {
+  constructor(private readonly content: HelpContentService) {}
+
+  @Get()
+  @Doc({ summary: 'Public Help & Support: feature briefs, FAQs, articles and guides anyone can read before signing in' })
+  home() {
+    return this.content.publicHome();
+  }
+
+  @Get('search')
+  @Doc({ summary: 'Search the public Help & Support content', query: helpSearchQuery })
+  search(@Query(new ZodPipe(helpSearchQuery)) q: HelpSearchQuery) {
+    return this.content.publicSearch(q);
+  }
+
+  @Get('articles/:slug')
+  @Doc({ summary: 'One public help article, feature brief or FAQ' })
+  article(@Param('slug', new ZodPipe(slugParam)) slug: string) {
+    return this.content.publicArticle(slug);
   }
 }

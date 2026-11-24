@@ -81,7 +81,8 @@ export type LeaveEligibility = z.infer<typeof leaveEligibility>;
 
 /** The policy of a leave type. A rule that does not apply is switched off with null (or 0 for notice). */
 export const leaveTypePolicy = z.object({
-  accrualMethod: z.enum(ACCRUAL_METHODS).default('annual_upfront'),
+  /** Kept for leave types made before 2026-11-23. Nothing is credited automatically any more, whatever it says. */
+  accrualMethod: z.enum(ACCRUAL_METHODS).default('none'),
   /** Days a year (the leave year is the calendar year). */
   annualEntitlement: days.default('0'),
   rounding: z.enum(['none', 'half_day']).default('half_day'),
@@ -142,9 +143,57 @@ export type LeaveApprovalRules = z.infer<typeof leaveApprovalRules>;
 
 const code = z.string().trim().toUpperCase().regex(/^[A-Z0-9_]{1,12}$/, 'Use up to 12 capital letters, digits or _');
 
+/**
+ * Where a leave type appears (2026-11-23): in HR Workspace, in Employee Workspace, or in both. A type appears in a
+ * workspace's Leave Management as soon as it is active, visible there and the Leave module is on for that level; no
+ * allocation step. Turning visibility off hides it from new applications there; applications already made stay.
+ */
+export const LEAVE_VISIBILITIES = ['hr', 'employee', 'both'] as const;
+export type LeaveVisibility = (typeof LEAVE_VISIBILITIES)[number];
+export const LEAVE_VISIBILITY_LABELS: Record<LeaveVisibility, string> = { hr: 'HR Workspace Only', employee: 'Employee Workspace Only', both: 'Both Workspaces' };
+export const visibleTo = (v: string | null | undefined, level: 'hr' | 'employee') => (v ?? 'both') === 'both' || v === level;
+
+/** A leave code from a name when none is given: initials, then the first letters (Casual Leave -> CL). */
+export function leaveCodeFrom(name: string): string {
+  const words = name.toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  const initials = words.map((w) => w[0]).join('');
+  const out = initials.length >= 2 ? initials : (words[0] ?? 'LV').slice(0, 3);
+  return out.slice(0, 12) || 'LV';
+}
+
+/**
+ * The simple form (Create New Leave Type): name, description, optional code, visibility and status. The other
+ * settings of leaveTypeInput keep their defaults.
+ */
+export const leaveTypeSimpleInput = z.object({
+  name: z.string().trim().min(1, 'Give the leave type a name').max(80),
+  description: z.string().trim().max(500).optional(),
+  code: z.union([code, z.literal('')]).optional(),
+  visibility: z.enum(LEAVE_VISIBILITIES).default('both'),
+  status: z.enum(['active', 'inactive']).default('active'),
+}).strict();
+export type LeaveTypeSimpleInput = z.infer<typeof leaveTypeSimpleInput>;
+
+/** Changing where a leave type appears. */
+export const leaveVisibilityInput = z.object({ visibility: z.enum(LEAVE_VISIBILITIES) }).strict();
+
+/**
+ * Assigning a leave quantity by hand: days of a leave type an employee has for a leave year (calendar year). Until an
+ * administrator enters one, the employee sees "Not Assigned". Nothing is ever calculated or credited automatically.
+ */
+export const leaveQuantityInput = z.object({
+  employeeId: z.uuid(),
+  leaveTypeId: z.uuid(),
+  year: z.number().int().min(2000).max(2100),
+  quantity: days,
+  note: z.string().trim().max(300).default(''),
+}).strict();
+export type LeaveQuantityInput = z.infer<typeof leaveQuantityInput>;
+
 /** Creating a leave type (Super Workspace). Every setting has a sensible default, so only name and code are needed. */
 export const leaveTypeInput = z.object({
   code,
+  visibility: z.enum(LEAVE_VISIBILITIES).default('both'),
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().max(500).optional(),
   category: z.enum(LEAVE_CATEGORIES).default('general'),
@@ -172,6 +221,7 @@ export type LeaveTypeInput = z.infer<typeof leaveTypeInput>;
  */
 export const leaveTypeUpdate = z.object({
   code: code.optional(),
+  visibility: z.enum(LEAVE_VISIBILITIES).optional(),
   name: z.string().trim().min(1).max(80).optional(),
   description: z.string().trim().max(500).nullable().optional(),
   category: z.enum(LEAVE_CATEGORIES).optional(),

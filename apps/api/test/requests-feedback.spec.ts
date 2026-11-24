@@ -52,11 +52,11 @@ describe('requests feedback, HR helpdesk, announcements and the leave calendar',
     await pool?.end();
   });
 
-  it('starts a new workspace with the starter leave types (Permanent, Casual and Sick Leave), credited to new employees', async () => {
+  it('shows the example leave types as Not Assigned: nothing is credited to new employees by itself', async () => {
     const b = ok(await as('emp').get('/leave/balances'));
     expect(b.balances.map((x: { code: string }) => x.code).sort()).toEqual(['CL', 'LWP', 'PL', 'SL']);
     expect(ok(await as('emp').get('/leave/types')).find((x: { code: string }) => x.code === 'PL')).toMatchObject({ name: 'Permanent Leave' });
-    expect(b.balances.find((x: { code: string }) => x.code === 'CL').available).toBe('8.00');
+    expect(b.balances.find((x: { code: string }) => x.code === 'CL')).toMatchObject({ notAssigned: true, assigned: null, available: null });
   });
 
   it('tells the person who their leave request waits for, and shows it on their calendar', async () => {
@@ -126,25 +126,17 @@ describe('requests feedback, HR helpdesk, announcements and the leave calendar',
     expect(owner.acknowledgedAt).toBeTruthy();
   });
 
-  it('gives an older workspace without leave types the starter set in one step, reaching people once allocated', async () => {
+  it('starts a workspace with no leave types; a type the Super Workspace creates reaches people as Not Assigned', async () => {
     const bare = await createTenant(pool);
     const hr = await addMember(pool, bare, { roles: ['hr_admin'], name: 'Bea HR' });
     const token = (await loginWithMfa(app, pool, hr.email)).accessToken;
     const sup = (await loginWithMfa(app, pool, bare.ownerEmail)).accessToken;
     ok(await api(app, token).post('/employees').send({ legalEntityId: bare.legalEntityId, firstName: 'Bea', lastName: 'HR', dateOfJoining: '2024-01-01', membershipId: hr.membershipId, onboardingTemplateId: null }), 201);
     expect(ok(await api(app, token).get('/leave/balances')).balances).toEqual([]);
-    // Only the Super Workspace creates leave types.
-    expect((await api(app, token).post('/leave/types/starter').send({})).status).toBe(403);
-    const added = ok(await api(app, sup).post('/leave/types/starter').send({}), 201);
-    expect(added.added).toEqual(['PL', 'CL', 'SL']);
-    // Created is not allocated: nobody holds them yet.
-    expect(ok(await api(app, token).get('/leave/balances')).balances).toEqual([]);
-    const sl = (ok(await api(app, sup).get('/leave/types')) as unknown as { id: string; code: string }[]).find((x) => x.code === 'SL')!.id;
-    // HR can allocate it only once the Super Workspace makes it available to them.
-    expect((await api(app, token).post('/leave/allocations').send({ target: 'employees', leaveTypeId: sl, criteria: { all: true } })).status).toBe(403);
-    ok(await api(app, sup).post('/leave/allocations').send({ target: 'hr_workspace', leaveTypeId: sl, hrWorkspaceId: null }), 201);
-    ok(await api(app, token).post('/leave/allocations').send({ target: 'employees', leaveTypeId: sl, criteria: { all: true } }), 201);
-    expect(ok(await api(app, token).get('/leave/balances')).balances.find((x: { code: string }) => x.code === 'SL').available).toBe('8.00');
-    expect(ok(await api(app, sup).post('/leave/types/starter').send({}), 201)).toEqual({ added: [], skipped: ['PL', 'CL', 'SL'] });
+    // The old starter and template endpoints are gone.
+    expect((await api(app, sup).post('/leave/types/starter').send({})).status).toBe(404);
+    const sl = ok(await api(app, sup).post('/leave/types').send({ name: 'Sick Leave', visibility: 'both' }), 201);
+    expect(sl).toMatchObject({ code: 'SL', visibility: 'both' });
+    expect(ok(await api(app, token).get('/leave/balances')).balances.find((x: { code: string }) => x.code === 'SL')).toMatchObject({ notAssigned: true, available: null });
   });
 });

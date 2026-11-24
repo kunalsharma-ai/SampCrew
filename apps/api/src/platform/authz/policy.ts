@@ -46,6 +46,13 @@ export interface Subject {
   mfa: boolean;
   /** Resolves the people of HR Workspaces named in grant constraints (loaded once with the subject). */
   hrWorkspacePeople?: (ids: string[]) => HrWorkspacePeople;
+  /** API routes Settings > Workspace Permissions switched off for the subject's level (creating departments, ...). */
+  offRoutes?: readonly { method: string; path: string }[];
+  /**
+   * Areas the subject may delete in (delete-permissions.ts): the Super Workspace everything the Console allowed it, HR
+   * and Employee Workspace only what the Super Workspace switched on for them (and the Console allowed).
+   */
+  deleteAreas?: ReadonlySet<string>;
 }
 
 /** Attributes of the record being accessed. */

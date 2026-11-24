@@ -107,7 +107,7 @@ export function SavedViews({ page, allLabel, views, activeId, current, onApply }
               <button type="button" className={cn('rounded p-1 hover:text-fg', v.isDefault ? 'text-warning' : 'text-fg-subtle')} onClick={() => toggleDefault(v)} aria-label={v.isDefault ? `Stop opening ${v.name} by default` : `Open ${v.name} by default`}>
                 <Star className={cn('size-3.5', v.isDefault && 'fill-current')} />
               </button>
-              <button type="button" className="rounded p-1 text-fg-subtle hover:text-danger" onClick={() => remove(v)} aria-label={`Delete view ${v.name}`}>
+              <button data-delete-area="personal" data-delete={`saved view ${v.name}`} type="button" className="rounded p-1 text-fg-subtle hover:text-danger" onClick={() => remove(v)} aria-label={`Delete view ${v.name}`}>
                 <Trash2 className="size-3.5" />
               </button>
             </div>

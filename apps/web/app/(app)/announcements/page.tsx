@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { ANNOUNCEMENT_CATEGORIES, ANNOUNCEMENT_CATEGORY_LABELS } from '@crew/contracts';
 import { Badge, Card, CardBody, EmptyState, Input, PageHeader, buttonClass, cn } from '@crew/ui';
 import { Megaphone, Paperclip } from 'lucide-react';
@@ -35,6 +36,7 @@ export default async function AnnouncementsPage({ searchParams }: { searchParams
         description="News and notices from HR addressed to you."
         actions={can(me, 'announcements:manage') ? <Link className={buttonClass('secondary', 'sm')} href="/announcements/manage">Manage announcements</Link> : undefined}
       />
+      <ModuleNotices category="announcements" label="Announcement" />
       <div className="grid max-w-3xl gap-4">
         <div className="grid gap-2">
           <form action="/announcements" className="flex gap-2">

@@ -155,7 +155,7 @@ export function GoalView({ goal, alignable }: { goal: GoalDetail; alignable: Ali
                   <Button size="sm" variant="secondary" loading={pending} onClick={() => run(() => goalStatusAction(goal.id, 'completed'))}>Mark completed</Button>
                   <Button size="sm" variant="ghost" loading={pending} onClick={() => { const why = prompt('Why is this goal being cancelled?'); if (why !== null) run(() => goalStatusAction(goal.id, 'cancelled', why)); }}>Cancel goal</Button>
                   {goal.checkins.length === 0 && goal.children.length === 0 && (
-                    <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Delete this goal? This cannot be undone.') && run(() => deleteGoalAction(goal.id), () => router.push('/goals'))}>Delete</Button>
+                    <Button data-delete-area="performance" data-delete="goal" size="sm" variant="ghost" loading={pending} onClick={() => confirm('Delete this goal? This cannot be undone.') && run(() => deleteGoalAction(goal.id), () => router.push('/goals'))}>Delete</Button>
                   )}
                 </>
               )}

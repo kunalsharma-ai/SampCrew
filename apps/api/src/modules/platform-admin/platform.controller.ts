@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
+  deleteConfirmationInput,
+  deleteRightsInput,
   passwordResetCheck,
   passwordResetComplete,
   passwordResetRequest,
@@ -37,7 +39,7 @@ import {
   platformCreateTenantRequest,
   platformLoginRequest,
   platformTenantStatusRequest,
-  PLATFORM_ROLES,
+  consoleRoleKey,
   refreshRequest,
   supportAccessRequest,
   SUBSCRIPTION_STATUSES,
@@ -84,9 +86,9 @@ const subscriptionOverride = z
     limits: z.partialRecord(z.enum(LIMIT_KEYS as [string, ...string[]]), z.number().int().min(-1).max(10_000_000).nullable()).optional(),
   })
   .strict();
-const createAdmin = z.object({ email, fullName: name, role: z.enum(PLATFORM_ROLES), password });
+const createAdmin = z.object({ email, fullName: name, role: consoleRoleKey, password });
 const updateAdmin = z
-  .object({ fullName: name.optional(), role: z.enum(PLATFORM_ROLES).optional(), status: z.enum(['active', 'disabled']).optional() })
+  .object({ fullName: name.optional(), role: consoleRoleKey.optional(), status: z.enum(['active', 'disabled']).optional() })
   .strict()
   .refine((v) => Object.keys(v).length > 0, 'Nothing to change');
 const resetAdminPassword = z.object({ password }).strict();
@@ -194,6 +196,15 @@ export class PlatformAuthController {
   @Doc({ summary: 'Confirm MFA enrolment and get an MFA-verified console session', body: mfaEnableRequest })
   mfaEnable(@Body(new ZodPipe(mfaEnableRequest)) body: z.infer<typeof mfaEnableRequest>) {
     return this.auth.mfaEnable(body.code);
+  }
+
+  @PlatformRealm()
+  @Post('delete-confirmation')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Doc({ summary: 'Confirm a Console delete with your own password: this session may then run one delete in the next two minutes', body: deleteConfirmationInput })
+  confirmDelete(@Body(new ZodPipe(deleteConfirmationInput)) body: z.infer<typeof deleteConfirmationInput>) {
+    return this.auth.confirmDelete(body.password);
   }
 
   @PlatformRealm()
@@ -341,6 +352,20 @@ export class PlatformController {
   @Doc({ summary: 'Switch modules on or off for a workspace, or back to the plan default', body: featureSwitchUpdate })
   switchModules(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(featureSwitchUpdate)) body: z.infer<typeof featureSwitchUpdate>) {
     return this.access.setFeatures(id, body.changes);
+  }
+
+  @PlatformRealm('tenants:read')
+  @Get('tenants/:id/access/delete-rights')
+  @Doc({ summary: 'Delete permissions of a company: the areas its Super Workspace (and the levels below it) may delete in' })
+  deleteRights(@Param('id', UuidPipe) id: string) {
+    return this.access.deleteRights(id);
+  }
+
+  @PlatformRealm('access:manage')
+  @Put('tenants/:id/access/delete-rights')
+  @Doc({ summary: 'Switch delete areas off (or on again) for a company; an area off here is off for every level of it', body: deleteRightsInput })
+  setDeleteRights(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(deleteRightsInput)) body: z.infer<typeof deleteRightsInput>) {
+    return this.access.setDeleteRights(id, body);
   }
 
   @PlatformRealm('tenants:read')

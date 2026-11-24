@@ -24,6 +24,7 @@
  * Fails on any browser error.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 const API = (process.env.CREW_API_URL ?? 'http://localhost:4000') + '/api/v1';

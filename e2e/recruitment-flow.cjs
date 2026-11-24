@@ -17,6 +17,7 @@
  * Also opens every recruitment screen and fails on any browser error.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 const PASSWORD = process.env.CREW_DEMO_PASSWORD;

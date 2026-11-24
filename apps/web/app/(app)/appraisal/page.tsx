@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { buttonClass, Card, CardHeader, EmptyState, PageHeader, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Award } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -55,6 +56,7 @@ export default async function AppraisalPage({ searchParams }: { searchParams: Pr
         description="Your self-appraisal, your manager's evaluation and HR's final result, stage by stage."
         actions={reviews.isHr && me.permissions['performance:configure'] ? <Link className={buttonClass('secondary')} href="/settings/appraisals">Forms & cycles</Link> : undefined}
       />
+      <ModuleNotices category="appraisal" label="Appraisal" />
       {tabs.length > 1 && <SubNav label="Appraisal views" items={tabs} current={`/appraisal?tab=${tab}`} />}
       {tab === 'team' && <Card><CardHeader title="Team appraisals" description="Evaluate each person once they submit their self-appraisal. Their scores lock when they submit." /><ReviewTable rows={reviews.team} empty="When someone you manage has an appraisal, it appears here." /></Card>}
       {tab === 'hr' && <Card><CardHeader title="Waiting for HR" description="Manager evaluations that are in, and finalised appraisals not yet shared with the employee." /><ReviewTable rows={reviews.hr} empty="Appraisals reach HR after the manager submits." /></Card>}

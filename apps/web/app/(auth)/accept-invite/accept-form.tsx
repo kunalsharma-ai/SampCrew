@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Button, Field, Input } from '@crew/ui';
+import { Alert, Button, Field, Input, PasswordInput } from '@crew/ui';
 import { useState, useTransition } from 'react';
 import { acceptInviteAction } from '../actions';
 
@@ -34,8 +34,13 @@ export function AcceptForm({ token, invite }: { token: string; invite: { email: 
         error={fe.password}
         required
       >
-        {(p) => <Input {...p} name="password" type="password" autoComplete={invite.existingAccount ? 'current-password' : 'new-password'} required />}
+        {(p) => <PasswordInput {...p} name="password" autoComplete={invite.existingAccount ? 'current-password' : 'new-password'} required />}
       </Field>
+      {invite.existingAccount && (
+        <div className="-mt-3 text-right">
+          <a href="/forgot-password" className="text-[0.8125rem] font-medium text-accent hover:underline" data-testid="forgot-password-link">Forgot password?</a>
+        </div>
+      )}
       <Button type="submit" size="lg" loading={pending}>Accept invitation</Button>
     </form>
   );

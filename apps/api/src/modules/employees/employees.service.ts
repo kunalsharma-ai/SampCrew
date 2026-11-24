@@ -740,9 +740,8 @@ export class EmployeesService {
           ? (existing ? undefined : ((await tx.collection('onboarding_templates').findOne({ is_default: true, archived_at: null }))?.id as string | undefined))
           : input.onboardingTemplateId;
       if (templateId) await this.onboarding.instantiate(tx, row.id, templateId);
-      // Credit leave already due (e.g. an up-front annual entitlement) so balances are right from day one.
-      await this.leave.runAccruals(tx, today(), row.id);
-      // Then bring an existing employee's balances to what they have today (from their previous records).
+      // No leave is credited automatically (2026-11-23). HR may type the quantities an existing employee has today:
+      // bring an existing employee's balances to what they have today (from their previous records).
       let opening: Awaited<ReturnType<LeaveService['setOpeningBalances']>> = [];
       if (existing && input.openingLeaveBalances?.length) {
         // Setting balances is a leave decision: the same access as adjusting a balance.

@@ -12,6 +12,7 @@
  * 5. An employee whose access covers only themselves gets no workspace overview.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 const API = process.env.CREW_API_URL ?? 'http://localhost:4000';

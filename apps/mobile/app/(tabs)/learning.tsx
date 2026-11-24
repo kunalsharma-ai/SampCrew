@@ -7,6 +7,7 @@ import { useSession } from '../../src/lib/session';
 import type { Course, LearningAssignment } from '../../src/lib/types';
 import { Badge, Button, Card, Choice, errorText, fmt, Meter, Notice, Screen, Text, Tile, TileGrid, useLoad, useReloadOnFocus } from '../../src/ui';
 import { EmptyState, Icon3D, ModuleGate, Section, SkeletonCard } from '../../src/ui/kit';
+import { ModuleNotices } from '../../src/ui/module-notices';
 
 const STATUS: Record<string, { label: string; tone: 'ok' | 'warn' | 'danger' | 'info' | 'neutral' }> = {
   assigned: { label: 'Not started', tone: 'neutral' }, in_progress: { label: 'In progress', tone: 'info' }, completed: { label: 'Completed', tone: 'ok' }, cancelled: { label: 'Cancelled', tone: 'neutral' },
@@ -48,6 +49,7 @@ function Learning() {
 
   return (
     <Screen onRefresh={() => void mine.reload()} refreshing={mine.loading && !!mine.data}>
+      <ModuleNotices category="learning" label="Learning" />
       {msg && <Notice tone={msg.tone} testID="learning-message">{msg.text}</Notice>}
       {mine.error && <Notice tone={mine.data ? 'warn' : 'danger'}>{mine.error}</Notice>}
       {mine.data && (

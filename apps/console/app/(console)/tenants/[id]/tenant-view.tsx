@@ -59,6 +59,7 @@ export function TenantView({ t, plans, limits, history, snapshot, caps }: { t: T
           : <Button onClick={() => setDialog('status')}><PlayCircle className="size-4" /> Reactivate</Button>)}
         {caps.billing && s && <Button variant="secondary" onClick={() => setDialog('subscription')}><SlidersHorizontal className="size-4" /> Adjust subscription</Button>}
         {caps.support && <Button variant="secondary" onClick={() => setDialog('support')}><LifeBuoy className="size-4" /> Request support access</Button>}
+        {caps.support && snapshot && <Link href={`/tenants/${t.id}/view-as`} className={buttonClass('primary')} data-testid="open-view-as"><Eye className="size-4" /> View as (read only)</Link>}
         <Link href={`/tenants/${t.id}/access`} className={buttonClass('secondary')} data-testid="open-access"><ToggleRight className="size-4" /> Features &amp; permissions</Link>
       </div>
 

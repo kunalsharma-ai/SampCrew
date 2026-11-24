@@ -106,7 +106,7 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
           <Field label="Leave type" className="sm:col-span-2">
             {(p) => (
               <Select {...p} name="leaveTypeId" value={form.leaveTypeId} onChange={(e) => setForm({ ...form, leaveTypeId: e.target.value, route: '' })}>
-                {balances.map((b) => <option key={b.leaveTypeId} value={b.leaveTypeId}>{b.name}{b.tracked ? ` (${b.available} available)` : ''}</option>)}
+                {balances.map((b) => <option key={b.leaveTypeId} value={b.leaveTypeId}>{b.name}{b.tracked ? ` (${b.available} available)` : b.notAssigned ? ' (Not Assigned)' : ''}</option>)}
               </Select>
             )}
           </Field>

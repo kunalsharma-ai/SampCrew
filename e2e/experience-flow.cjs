@@ -12,6 +12,7 @@
  * 6. Home widgets are reordered and personal notes autosave; both survive a reload.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 
 const BASE = process.env.WEB_URL ?? 'http://localhost:3000';
 const PASSWORD = process.env.CREW_DEMO_PASSWORD;

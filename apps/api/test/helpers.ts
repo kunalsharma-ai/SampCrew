@@ -11,7 +11,7 @@ import { hashPassword, sha256 } from '../src/platform/auth/crypto';
 import type { AppConfig } from '../src/platform/config/config';
 import { MongoService, type PlatformTx, type TenantTx } from '../src/platform/database/mongo.service';
 import { PlatformIntegrationsService } from '../src/platform/integrations/platform-integrations.service';
-import { LEVEL_ROLE_KEY, mapLegacyAccess, SYSTEM_ROLES, type PlatformIntegrationKey, type Scope } from '@crew/contracts';
+import { CONSOLE_DELETE_ACTIONS, DELETE_AREA_LIST, deleteActionFor, LEVEL_ROLE_KEY, WORKSPACE_DELETE_ACTIONS, mapLegacyAccess, SYSTEM_ROLES, type PlatformIntegrationKey, type Scope } from '@crew/contracts';
 
 export const PASSWORD = 'Correct-Horse-42!';
 let cachedHash: string | undefined;
@@ -33,7 +33,9 @@ export async function createApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication({ logger: process.env.TEST_LOGS ? ['error'] : false });
   configureApp(app);
-  await app.init();
+  // Listening once for the whole file (closed by app.close()): the request helper sends the password confirmation of
+  // a delete just before the delete, and supertest would otherwise stop its own server between the two requests.
+  await app.listen(0, '127.0.0.1');
   return app;
 }
 
@@ -100,7 +102,11 @@ export interface TestTenant {
 }
 
 /** A test workspace. Leave types are left out unless asked for, so each test sets up exactly the ones it checks. */
-export async function createTenant(db: TestDb, opts: { plan?: string; trialDays?: number; standardLeaveTypes?: boolean } = {}): Promise<TestTenant> {
+/**
+ * Delete permissions are switched on for HR Workspace (central) and Employee Workspace in every area unless
+ * `deletes: false`, so tests of other features can delete; delete-permissions.spec.ts checks the refusals.
+ */
+export async function createTenant(db: TestDb, opts: { plan?: string; trialDays?: number; standardLeaveTypes?: boolean; deletes?: boolean } = {}): Promise<TestTenant> {
   const slug = `t-${randomUUID().slice(0, 8)}`;
   const ownerEmail = `owner@${slug}.test`;
   const owner = { email: ownerEmail, fullName: 'Owner Person', passwordHash: await passwordHash() };
@@ -116,7 +122,11 @@ export async function createTenant(db: TestDb, opts: { plan?: string; trialDays?
       leaveTypes: opts.standardLeaveTypes ? 'standard' : 'none',
     }),
   );
-  return { id: t.tenantId, slug, legalEntityId: t.legalEntityId, ownerEmail, ownerMembershipId: t.ownerMembershipId };
+  const tenant = { id: t.tenantId, slug, legalEntityId: t.legalEntityId, ownerEmail, ownerMembershipId: t.ownerMembershipId };
+  if (opts.deletes !== false) {
+    for (const level of ['hr', 'employee'] as const) await allowDeletes(db, tenant, level, DELETE_AREA_LIST.filter((a) => (a.levels as readonly string[]).includes(level)).map((a) => a.key));
+  }
+  return tenant;
 }
 
 export async function addMember(
@@ -152,14 +162,42 @@ export async function login(app: INestApplication, email: string, password = PAS
   return res.body as { accessToken: string; refreshToken: string };
 }
 
-export const api = (app: INestApplication, token?: string) => {
+/**
+ * Request helper. Every delete action needs the person's password typed just before it (contracts
+ * delete-permissions.ts): like the apps, the helper confirms with the test password right before sending one, so the
+ * tests of each module keep testing their module. Pass { confirmDelete: false } to send a delete without it (the
+ * delete-permissions tests do). The level permission is never filled in: tests switch it on like the Super Workspace.
+ */
+export const api = (app: INestApplication, token?: string, opts: { confirmDelete?: boolean; password?: string } = {}) => {
   const agent = request(app.getHttpServer());
   const wrap = (method: 'get' | 'post' | 'put' | 'patch' | 'delete') => (path: string) => {
     const r = agent[method](`/api/v1${path}`);
-    return token ? r.set('authorization', `Bearer ${token}`) : r;
+    const out = token ? r.set('authorization', `Bearer ${token}`) : r;
+    if (method === 'get' || !token || opts.confirmDelete === false) return out;
+    const then = out.then.bind(out);
+    (out as { then: unknown }).then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => {
+      const body = (out as unknown as { _data?: unknown })._data;
+      const console = path.startsWith('/platform/');
+      const action = deleteActionFor(console ? CONSOLE_DELETE_ACTIONS : WORKSPACE_DELETE_ACTIONS, path, method, body);
+      const confirm = action
+        ? request(app.getHttpServer()).post(console ? '/api/v1/platform/auth/delete-confirmation' : '/api/v1/me/delete-confirmation')
+          .set('authorization', `Bearer ${token}`).send({ password: opts.password ?? PASSWORD }).then(() => undefined, () => undefined)
+        : Promise.resolve();
+      return confirm.then(() => then(resolve, reject));
+    };
+    return out;
   };
   return { get: wrap('get'), post: wrap('post'), put: wrap('put'), patch: wrap('patch'), delete: wrap('delete') };
 };
+
+/** Settings > Workspace Permissions: the Super Workspace switches delete areas on for HR Workspace or Employee Workspace. */
+export async function allowDeletes(db: TestDb, tenant: TestTenant, level: 'hr' | 'employee', areas: string[], groupId = level === 'hr' ? 'central' : 'all') {
+  const subjectType = level === 'hr' ? 'hr_workspace' : 'employee_workspace';
+  const existing = await db.one('level_permissions', { tenant_id: tenant.id, subject_type: subjectType, subject_id: groupId });
+  const permissions = { ...((existing?.permissions ?? {}) as Record<string, boolean>), ...Object.fromEntries(areas.map((a) => [`delete.${a}`, true])) };
+  if (existing) await db.update('level_permissions', { id: existing.id }, { $set: { permissions } });
+  else await db.insert('level_permissions', { tenant_id: tenant.id, subject_type: subjectType, subject_id: groupId, permissions, scope_hr_workspace_ids: null });
+}
 
 export async function department(db: TestDb, tenant: TestTenant, name: string, parentId: string | null = null) {
   return (await db.insert('departments', { tenant_id: tenant.id, name, parent_id: parentId, legal_entity_id: tenant.legalEntityId })).id as string;
@@ -203,26 +241,18 @@ export function accessRows(roles: string[], constraints: Record<string, unknown>
 }
 
 /**
- * A leave type made the way the Super Workspace makes one: created with its policy and approval rules, allocated to
- * everyone eligible (unless allocate is false) and made available to the company's HR team (unless hr is false).
+ * A leave type made the way the Super Workspace makes one (visible to both workspaces unless the body says otherwise).
+ * Since 2026-11-23 nothing is allocated or accrued: give people days with assignLeave.
  */
-export async function leaveType(
-  app: INestApplication,
-  superToken: string,
-  body: Record<string, unknown>,
-  opts: { allocate?: boolean | Record<string, unknown>; hr?: boolean } = {},
-): Promise<string> {
+export async function leaveType(app: INestApplication, superToken: string, body: Record<string, unknown>): Promise<string> {
   const res = await api(app, superToken).post('/leave/types').send(body);
   expect(res.status, JSON.stringify(res.body)).toBe(201);
-  const id = res.body.id as string;
-  if (opts.hr !== false) {
-    const hr = await api(app, superToken).post('/leave/allocations').send({ target: 'hr_workspace', leaveTypeId: id, hrWorkspaceId: null });
-    expect(hr.status, JSON.stringify(hr.body)).toBe(201);
-  }
-  if (opts.allocate !== false) {
-    const criteria = typeof opts.allocate === 'object' ? opts.allocate : { all: true };
-    const al = await api(app, superToken).post('/leave/allocations').send({ target: 'employees', leaveTypeId: id, hrWorkspaceId: null, criteria });
-    expect(al.status, JSON.stringify(al.body)).toBe(201);
-  }
-  return id;
+  return res.body.id as string;
+}
+
+/** Sets, by hand, the days of a leave type an employee has for a year (the only way days are credited). */
+export async function assignLeave(app: INestApplication, token: string, employeeId: string, leaveTypeId: string, quantity: string, year = new Date().getUTCFullYear()) {
+  const res = await api(app, token).put('/leave/quantities').send({ employeeId, leaveTypeId, year, quantity });
+  expect(res.status, JSON.stringify(res.body)).toBe(200);
+  return res.body;
 }

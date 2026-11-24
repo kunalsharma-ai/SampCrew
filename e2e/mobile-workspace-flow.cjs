@@ -22,6 +22,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 
 const API = (process.env.CREW_API_URL ?? 'http://localhost:4000') + '/api/v1';
 const PORT = Number(process.env.MOBILE_PORT ?? 8081);
@@ -72,10 +73,10 @@ async function signIn(p, email) {
   for (let attempt = 0; ; attempt++) {
     await p.goto(APP + '/login');
     await p.getByLabel('Work email').fill(email);
-    await p.getByLabel('Password').fill(PASSWORD);
+    await p.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await p.getByRole('button', { name: 'Sign in', exact: true }).click();
     const r = await Promise.race([
-      p.getByText(/^Good (morning|afternoon|evening)/).waitFor({ timeout: 20000 }).then(() => 'in'),
+      p.getByText(/^Good (morning|afternoon|evening), /).waitFor({ timeout: 20000 }).then(() => 'in'),
       p.getByText('Too many attempts').waitFor({ timeout: 20000 }).then(() => 'limited'),
     ]);
     if (r === 'in') return;

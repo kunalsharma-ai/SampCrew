@@ -3,6 +3,7 @@ import { useFocusEffect } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Image,
   Platform,
   Pressable,
@@ -348,8 +349,39 @@ export function Button({ title, onPress, kind = 'primary', disabled, busy, testI
   );
 }
 
-export function Field({ label, error, hint, help, ...props }: TextInputProps & { label: string; error?: string; hint?: string; help?: HelpKey }) {
+/** An animated green tick (right) or red cross (wrong) that pops into a field. */
+export function CheckMark({ state, testID }: { state: 'ok' | 'bad'; testID?: string }) {
   const t = useTheme();
+  const pop = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    pop.setValue(0);
+    Animated.spring(pop, { toValue: 1, friction: 4, tension: 160, useNativeDriver: Platform.OS !== 'web' }).start();
+  }, [state, pop]);
+  return (
+    <Animated.View
+      accessibilityRole="image"
+      accessibilityLabel={state === 'ok' ? 'Correct' : 'Not correct'}
+      testID={testID ?? (state === 'ok' ? 'mark-ok' : 'mark-bad')}
+      style={{ transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) }, { rotate: pop.interpolate({ inputRange: [0, 1], outputRange: [state === 'ok' ? '-40deg' : '40deg', '0deg'] }) }], opacity: pop }}
+    >
+      <Ionicons name={state === 'ok' ? 'checkmark-circle' : 'close-circle'} size={22} color={state === 'ok' ? t.ok : t.danger} />
+    </Animated.View>
+  );
+}
+
+export function Field({ label, error, hint, help, check, ...props }: TextInputProps & { label: string; error?: string; hint?: string; help?: HelpKey; check?: 'ok' | 'bad' | null }) {
+  const t = useTheme();
+  // A hidden field (password, account number) gets an eye button that shows or hides what was typed.
+  const secret = !!props.secureTextEntry;
+  const [shown, setShown] = useState(false);
+  // A wrong answer shakes the field.
+  const shake = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (check !== 'bad') return;
+    shake.setValue(0);
+    Animated.sequence([-8, 8, -6, 6, -3, 0].map((v) => Animated.timing(shake, { toValue: v, duration: 55, useNativeDriver: Platform.OS !== 'web' }))).start();
+  }, [check, shake]);
+  const right = (secret ? 48 : 12) + (check ? 30 : 0);
   return (
     <View style={{ gap: 4 }}>
       <Row style={{ gap: 6 }}>
@@ -358,15 +390,38 @@ export function Field({ label, error, hint, help, ...props }: TextInputProps & {
         </Text>
         {help && <HelpTip help={help} kind="field" />}
       </Row>
-      <TextInput
-        accessibilityLabel={label}
-        placeholderTextColor={t.muted}
-        {...props}
-        style={[
-          { borderWidth: 1, borderColor: error ? t.danger : t.neon ? alpha(t.accent, 0.22) : t.border, borderRadius: t.neon ? 12 : 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, color: t.fg, backgroundColor: t.card },
-          props.multiline ? { minHeight: 96, textAlignVertical: 'top' } : null,
-        ]}
-      />
+      <Animated.View style={{ position: 'relative', justifyContent: 'center', transform: [{ translateX: shake }] }}>
+        <TextInput
+          accessibilityLabel={label}
+          placeholderTextColor={t.muted}
+          {...props}
+          secureTextEntry={secret && !shown}
+          style={[
+            { borderWidth: 1, borderColor: error ? t.danger : t.neon ? alpha(t.accent, 0.22) : t.border, borderRadius: t.neon ? 12 : 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, color: t.fg, backgroundColor: t.card },
+            props.multiline ? { minHeight: 96, textAlignVertical: 'top' } : null,
+            secret || check ? { paddingRight: right } : null,
+            check === 'ok' ? { borderColor: t.ok } : check === 'bad' ? { borderColor: t.danger } : null,
+          ]}
+        />
+        {check && (
+          <View pointerEvents="none" style={{ position: 'absolute', right: secret ? 48 : 10, top: 0, bottom: 0, justifyContent: 'center' }}>
+            <CheckMark state={check} testID={props.testID ? `${props.testID}-${check}` : undefined} />
+          </View>
+        )}
+        {secret && (
+          <Pressable
+            onPress={() => setShown((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={shown ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+            accessibilityState={{ selected: shown }}
+            hitSlop={8}
+            testID={props.testID ? `${props.testID}-eye` : 'password-eye'}
+            style={{ position: 'absolute', right: 4, top: 0, bottom: 0, width: 44, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Ionicons name={shown ? 'eye-off-outline' : 'eye-outline'} size={22} color={t.muted} />
+          </Pressable>
+        )}
+      </Animated.View>
       {error ? <Text size={13} style={{ color: t.danger }}>{error}</Text> : hint ? <Text size={13} muted>{hint}</Text> : null}
     </View>
   );

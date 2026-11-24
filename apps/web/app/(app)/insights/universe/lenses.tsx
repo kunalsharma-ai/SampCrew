@@ -476,7 +476,7 @@ export function ScenariosLens({ baseline, scenarios, canSave, canRaise }: { base
               <Fragment>
                 <Button onClick={() => save(false)} loading={pending} disabled={!changes.length}><Save className="size-4" /> {d.id ? 'Save changes' : 'Save scenario'}</Button>
                 {d.id && <Button variant="secondary" onClick={() => save(true)} disabled={pending || !changes.length}>Save as new</Button>}
-                {d.id && <Button variant="ghost" onClick={remove} disabled={pending}><Trash2 className="size-4" /> Delete</Button>}
+                {d.id && <Button data-delete-area="performance" data-delete={`scenario ${d.name}`} variant="ghost" onClick={remove} disabled={pending}><Trash2 className="size-4" /> Delete</Button>}
               </Fragment>
             ) : <p className="text-[0.8125rem] text-fg-subtle">You can try changes here; saving scenarios is for managers, HR and finance.</p>}
             <p className="ml-auto text-xs text-fg-subtle">A plan only: nothing here changes headcount or pay. Requisitions are raised only when you ask.</p>

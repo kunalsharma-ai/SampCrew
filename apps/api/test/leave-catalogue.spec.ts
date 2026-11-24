@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, adminPool, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { STANDARD_LEAVE_TYPES } from '@crew/contracts';
+import { addMember, adminPool, assignLeave, api, createApp, createTenant, department, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const Y = new Date().getUTCFullYear() + 1; // dates next year, so notice rules never get in the way
 const weekday = (month: number, nth = 1, dow = 1) => {
@@ -10,14 +11,14 @@ const weekday = (month: number, nth = 1, dow = 1) => {
   return d.toISOString().slice(0, 10);
 };
 const plus = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
-type Bal = { code: string; balance: string; available: string | null; taken: string; tracked: boolean; kind: string };
+type Bal = { code: string; notAssigned?: boolean; balance: string; available: string | null; taken: string; tracked: boolean; kind: string };
 
 /**
  * The leave upgrade: the standard catalogue (maternity, paternity, bereavement, comp-off, optional holiday, work from
  * home, loss of pay), policies scoped by department, designation and location, changing requests, adjustment history
  * and the balance overview.
  */
-describe('leave catalogue, allocations and changes', () => {
+describe('leave catalogue, quantities and changes', () => {
   let app: INestApplication;
   let pool: TestDb;
   let t: TestTenant;
@@ -61,32 +62,24 @@ describe('leave catalogue, allocations and changes', () => {
     await pool.end();
   });
 
-  it('adds types from the templates, once, and only the Super Workspace can', async () => {
-    const list = await api(app, sup).get('/leave/types/standard');
-    expect(list.status).toBe(200);
-    expect(list.body.map((x: { code: string }) => x.code)).toEqual(expect.arrayContaining(['PL', 'CL', 'SL', 'ML', 'PTL', 'BL', 'CO', 'OH', 'WFH', 'LWP']));
-    expect(list.body.every((x: { added: boolean }) => !x.added)).toBe(true);
-    expect((await api(app, hr).post('/leave/types/standard').send({ codes: ['CL'] })).status).toBe(403);
-    const add = await api(app, sup).post('/leave/types/standard').send({ codes: ['CL', 'ML', 'PTL', 'BL', 'CO', 'OH', 'WFH', 'LWP'] });
-    expect(add.status, JSON.stringify(add.body)).toBe(201);
-    expect(add.body.added).toHaveLength(8);
-    const again = await api(app, sup).post('/leave/types/standard').send({ codes: ['ML', 'WFH'] });
-    expect(again.body).toMatchObject({ added: [], skipped: ['ML', 'WFH'] });
-    expect((await api(app, sup).post('/leave/types/standard').send({ codes: ['NOPE'] })).status).toBe(400);
-    expect((await api(app, await token('fiona')).post('/leave/types/standard').send({ codes: ['PL'] })).status).toBe(403);
-    const all = (await api(app, sup).get('/leave/types')).body as { id: string; code: string; kind: string; eligibleGender: string; countsCalendarDays: boolean }[];
-    for (const x of all) types[x.code] = x.id;
-    expect(all.find((x) => x.code === 'ML')).toMatchObject({ kind: 'standard', eligibleGender: 'female', countsCalendarDays: true });
-    expect((await api(app, sup).get('/leave/types/standard')).body.find((x: { code: string }) => x.code === 'ML').added).toBe(true);
-    // Created is not allocated: give each to everyone eligible, with the company HR team reviewing.
-    for (const id of Object.values(types)) {
-      expect((await api(app, sup).post('/leave/allocations').send({ target: 'hr_workspace', leaveTypeId: id, hrWorkspaceId: null })).status).toBe(201);
-      expect((await api(app, sup).post('/leave/allocations').send({ target: 'employees', leaveTypeId: id, criteria: { all: true } })).status).toBe(201);
+  it('creates the catalogue types (maternity, comp-off, optional holiday, work from home...), and only the Super Workspace can', async () => {
+    const make = (x: (typeof STANDARD_LEAVE_TYPES)[number]) => ({ code: x.code, name: x.name, kind: x.kind, category: x.category, paid: x.paid, allowHalfDay: x.allowHalfDay, color: x.color, eligibleGender: x.eligibleGender, countsCalendarDays: x.countsCalendarDays, description: x.description });
+    const codes = ['CL', 'ML', 'PTL', 'BL', 'CO', 'OH', 'WFH', 'LWP'];
+    expect((await api(app, hr).post('/leave/types').send(make(STANDARD_LEAVE_TYPES.find((x) => x.code === 'CL')!))).status).toBe(403);
+    expect((await api(app, await token('fiona')).post('/leave/types').send({ name: 'Fiona Leave' })).status).toBe(403);
+    for (const c of codes) {
+      const res = await api(app, sup).post('/leave/types').send(make(STANDARD_LEAVE_TYPES.find((x) => x.code === c)!));
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      types[c] = res.body.id;
     }
+    expect((await api(app, sup).post('/leave/types').send({ code: 'ML', name: 'Second maternity' })).status).toBe(409);
+    const all = (await api(app, sup).get('/leave/types')).body as { code: string; kind: string; eligibleGender: string; countsCalendarDays: boolean; visibility: string }[];
+    expect(all.find((x) => x.code === 'ML')).toMatchObject({ kind: 'standard', eligibleGender: 'female', countsCalendarDays: true, visibility: 'both' });
+    // Nothing is allocated or credited: there is no such step any more.
+    expect(await pool.count('leave_ledger', { tenant_id: t.id })).toBe(0);
   });
 
-  it('shows each person only the types open to them, with comp-off kept as a balance HR credits', async () => {
-    expect((await api(app, sup).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` })).status).toBe(201);
+  it('shows each person only the types open to them, as Not Assigned until someone types a quantity', async () => {
     const f = await balances('fiona');
     const m = await balances('mark');
     expect(f.map((b) => b.code)).toContain('ML');
@@ -95,35 +88,16 @@ describe('leave catalogue, allocations and changes', () => {
     expect(m.map((b) => b.code)).not.toContain('ML');
     // Oscar has no recorded gender, so neither is closed to him.
     expect((await balances('oscar')).map((b) => b.code)).toEqual(expect.arrayContaining(['ML', 'PTL']));
-    expect(f.find((b) => b.code === 'ML')).toMatchObject({ balance: '182.00', tracked: true });
-    expect(f.find((b) => b.code === 'CO')).toMatchObject({ balance: '0.00', tracked: true, kind: 'comp_off' });
+    expect(f.find((b) => b.code === 'ML')).toMatchObject({ notAssigned: true, available: null });
+    expect(f.find((b) => b.code === 'CO')).toMatchObject({ notAssigned: true, kind: 'comp_off' });
     expect(f.find((b) => b.code === 'WFH')).toMatchObject({ tracked: false, available: null, kind: 'wfh' });
-  });
-
-  it('applies the most specific allocation: designation over department over everyone', async () => {
-    const save = (body: Record<string, unknown>) => api(app, sup).post('/leave/allocations').send({ target: 'employees', leaveTypeId: types.CL, ...body });
-    expect((await save({ criteria: { departmentIds: [eng] }, entitlementDays: '10' })).status).toBe(201);
-    expect((await save({ criteria: { designationIds: [senior] }, entitlementDays: '12.5' })).status).toBe(201);
-    expect((await save({ criteria: { departmentIds: ['00000000-0000-4000-8000-000000000000'] }, entitlementDays: '5' })).status).toBe(400);
-    const cl = ((await api(app, sup).get(`/leave/allocations?leaveTypeId=${types.CL}`)).body as { target: string; summary: string; entitlementDays: string | null }[]).filter((a) => a.target === 'employees');
-    expect(cl.map((a) => [a.summary, a.entitlementDays])).toEqual([['Designations: Senior engineer', '12.50'], ['Departments: Engineering', '10.00'], ['Everyone eligible', null]]);
-    await api(app, sup).post('/leave/accruals/run').send({ asOf: `${Y}-01-02` });
-    // Accruals for a year are posted once per period, so a change shows from the next credit; this tenant's CL was
-    // credited at 8 on 1 January before the narrower allocations existed. New people get the specific amount.
-    const lines = await pool.find('leave_ledger', { employee_id: people.mark!.employeeId, leave_type_id: types.CL, leave_year: Y, kind: 'accrual' });
-    expect(lines.map((l) => l.quantity)).toEqual(['8.00']);
-    const late = await addMember(pool, t, { departmentId: eng, name: 'Nia New' });
-    people.nia = late;
-    const res = await api(app, hr).post('/employees').send({ legalEntityId: t.legalEntityId, dateOfJoining: '2024-01-15', probationMonths: 0, membershipId: late.membershipId, firstName: 'Nia', lastName: 'New', departmentId: eng, designationId: senior });
-    expect(res.status).toBe(201);
-    people.nia.employeeId = res.body.employee.id;
-    await api(app, sup).post('/leave/accruals/run').send({ asOf: `${Y}-01-03` });
-    expect((await balances('nia')).find((b) => b.code === 'CL')!.balance).toBe('12.50');
-    const dept = await addMember(pool, t, { departmentId: eng, name: 'Dev Dept' });
-    const d = await api(app, hr).post('/employees').send({ legalEntityId: t.legalEntityId, dateOfJoining: '2024-01-15', probationMonths: 0, membershipId: dept.membershipId, firstName: 'Dev', lastName: 'Dept', departmentId: eng });
-    people.dev = { ...dept, employeeId: d.body.employee.id };
-    await api(app, sup).post('/leave/accruals/run').send({ asOf: `${Y}-01-03` });
-    expect((await balances('dev')).find((b) => b.code === 'CL')!.balance).toBe('10.00');
+    await assignLeave(app, sup, people.fiona!.employeeId!, types.ML!, '182', Y);
+    await assignLeave(app, sup, people.fiona!.employeeId!, types.CL!, '8', Y);
+    await assignLeave(app, sup, people.mark!.employeeId!, types.CL!, '12.5', Y);
+    expect((await balances('fiona')).find((b) => b.code === 'ML')).toMatchObject({ notAssigned: false, balance: '182.00', tracked: true });
+    expect((await balances('mark')).find((b) => b.code === 'CL')).toMatchObject({ balance: '12.50' });
+    // Mark cannot get maternity leave assigned: it is not open to him.
+    expect((await api(app, sup).put('/leave/quantities').send({ employeeId: people.mark!.employeeId, leaveTypeId: types.ML, year: Y, quantity: '10' })).status).toBe(400);
   });
 
   it('counts maternity in calendar days, keeps it to those it is open to, and limits optional holidays to optional days', async () => {
@@ -154,8 +128,10 @@ describe('leave catalogue, allocations and changes', () => {
     expect(ok.body.balances.find((b: Bal) => b.code === 'CO').balance).toBe('1.00');
     const history = await api(app, hr).get(`/leave/adjustments?employeeId=${fiona}`);
     expect(history.status).toBe(200);
-    expect(history.body).toEqual([expect.objectContaining({ employeeName: 'Fiona Field', leaveTypeName: 'Compensatory Off', quantity: '1.00', note: 'Worked the Sunday release', by: 'Hana HR', opening: false })]);
-    expect((await api(app, await token('fiona')).get('/leave/adjustments')).body).toHaveLength(1);
+    // Assigned quantities are manual adjustments too, so they are in the same history.
+    expect(history.body).toEqual(expect.arrayContaining([expect.objectContaining({ employeeName: 'Fiona Field', leaveTypeName: 'Compensatory Off', quantity: '1.00', note: 'Worked the Sunday release', by: 'Hana HR', opening: false })]));
+    expect(history.body).toHaveLength(3);
+    expect((await api(app, await token('fiona')).get('/leave/adjustments')).body).toHaveLength(3);
     expect((await api(app, await token('oscar')).get(`/leave/adjustments?employeeId=${fiona}`)).body).toEqual([]);
   });
 

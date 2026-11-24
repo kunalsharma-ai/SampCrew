@@ -29,9 +29,11 @@ const actionsFor = (u: WorkspaceUserRow): Action[] => {
 };
 
 /** People in one workspace or all of them, with what SAMPLEDGE can do to each. Account details only. */
-export function UsersView({ data, query, basePath, showWorkspace, pageSize }: {
+export function UsersView({ data, query, basePath, showWorkspace, pageSize, canAct = true }: {
   data: { items: WorkspaceUserRow[]; total: number; summary: Record<string, number> };
   query: { q: string; status: string; page: number }; basePath: string; showWorkspace: boolean; pageSize: number;
+  /** Account actions need access:manage; without it the list is read-only (the API refuses them too). */
+  canAct?: boolean;
 }) {
   const router = useRouter();
   const [dialog, setDialog] = useState<{ user: WorkspaceUserRow; action: Action } | null>(null);
@@ -105,7 +107,7 @@ export function UsersView({ data, query, basePath, showWorkspace, pageSize }: {
                   </TD>
                   <TD className="text-right">
                     <div className="flex flex-wrap justify-end gap-1">
-                      {actionsFor(u).map((a) => (
+                      {(canAct ? actionsFor(u) : []).map((a) => (
                         <Button key={a} size="sm" variant={ACTIONS[a].danger ? 'ghost' : 'secondary'} onClick={() => setDialog({ user: u, action: a })} data-testid={`act-${a}-${u.email}`}>{ACTIONS[a].icon}{ACTIONS[a].label}</Button>
                       ))}
                       {u.status !== 'invited' && <Link className={buttonClass('ghost', 'sm')} href={`/tenants/${u.tenantId}/access?tab=people&q=${encodeURIComponent(u.email)}`}><ToggleRight className="size-3.5" />Modules</Link>}

@@ -18,6 +18,7 @@
  */
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const { MongoClient } = require(require.resolve('mongodb', { paths: [path.join(__dirname, '../apps/api')] }));
 
@@ -65,6 +66,10 @@ async function setLimits(admin, planKey, limits, shotName) {
   for (const [key, value] of Object.entries(limits)) await admin.getByTestId(`plan-limit-${key}`).fill(String(value));
   if (shotName) await shot(admin, shotName);
   await admin.getByTestId('plan-contents-save').click();
+  // Removing a module or lowering a limit on a plan in use shows who it affects first; confirm with Save anyway.
+  const saved = admin.getByText(/saved.*Applies now to \d+ workspace/);
+  await saved.or(admin.getByTestId('plan-impact-preview')).first().waitFor({ timeout: 15000 });
+  if (await admin.getByTestId('plan-impact-preview').isVisible()) await admin.getByTestId('plan-contents-save').click();
   const msg = admin.getByText(/saved.*Applies now to \d+ workspace/);
   await msg.waitFor({ timeout: 15000 });
   return msg.textContent();
@@ -192,6 +197,9 @@ async function createHr(owner, name) {
     await setLimits(admin, 'business', original);
     for (const name of made) {
       const w = await db.collection('hr_workspaces').findOne({ tenant_id: tenant._id, name });
+      // Archiving an HR Workspace is a delete: the owner confirms with their password first, as in the app.
+      const confirm = await fetch(`${API}/me/delete-confirmation`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${login.accessToken}` }, body: JSON.stringify({ password: PASSWORD }) });
+      expect(confirm.ok, `password confirmation failed: ${confirm.status}`);
       const r = await fetch(`${API}/hr-workspaces/${w._id}/status`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${login.accessToken}` }, body: JSON.stringify({ status: 'archived', reason: 'Workspace limits e2e clean-up' }) });
       expect(r.ok, `archiving ${name} failed: ${r.status} ${await r.text()}`);
     }

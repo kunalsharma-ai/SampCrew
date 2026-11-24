@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import type { LoginResponse, MeResponse, SignupRequest, TokenPair } from '@crew/contracts';
+import { DELETE_CONFIRMATION_TTL_MS, type LoginResponse, type MeResponse, type SignupRequest, type TokenPair } from '@crew/contracts';
+import { ConsoleSettingsService } from '../console/console-settings.service';
+import { ConsoleNotifyService } from '../../platform/notify/console-notify.service';
 import { mongo } from '@crew/db';
 import { AuditService } from '../../platform/audit/audit.service';
 import { decryptField, encryptField, hashPassword, randomToken, sha256, verifyPassword } from '../../platform/auth/crypto';
@@ -45,6 +47,8 @@ export class AuthService {
     private readonly entitlements: EntitlementsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly sso: SsoService,
+    private readonly consoleSettings: ConsoleSettingsService,
+    private readonly consoleNotify: ConsoleNotifyService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -57,6 +61,9 @@ export class AuthService {
         throw Errors.conflict('account_exists', 'An account with this email already exists. Sign in to create another workspace.');
       }
       try {
+        // Plan and trial length for self sign-up are Console > Settings > Workspace defaults.
+        const defaults = (await this.consoleSettings.read(tx)).workspaceDefaults;
+        const planKey = defaults.defaultPlan ?? 'professional';
         const t = await mongo.provisionTenantMongo(tx, {
           name: input.companyName,
           slug: input.slug,
@@ -64,9 +71,10 @@ export class AuthService {
           currency: input.currency,
           timezone: input.timezone,
           owner: { email: input.email, fullName: input.fullName, passwordHash },
-          plan: { key: 'professional', seats: 10, billingCycle: 'monthly', trialDays: 14 },
+          plan: { key: planKey, seats: 10, billingCycle: 'monthly', trialDays: defaults.trialDays },
         });
-        await this.audit.record(tx, { tenantId: t.tenantId, action: 'tenant.created', resourceType: 'tenant', resourceId: t.tenantId, metadata: { via: 'self_signup', plan: 'professional', trialDays: 14 } });
+        await this.audit.record(tx, { tenantId: t.tenantId, action: 'tenant.created', resourceType: 'tenant', resourceId: t.tenantId, metadata: { via: 'self_signup', plan: planKey, trialDays: defaults.trialDays } });
+        await this.consoleNotify.emit(tx, { category: 'clients', kind: 'company.created', title: `New company signed up: ${input.companyName}`, body: `Self sign-up, ${defaults.trialDays}-day trial of ${planKey}`, href: '/clients/:company', tenantId: t.tenantId, entityType: 'tenant', entityId: t.tenantId });
         await this.outbox.publish(tx, t.tenantId, 'tenant.created', { tenantId: t.tenantId, ownerUserId: t.ownerUserId });
         const pair = await this.issueSession(tx, { userId: t.ownerUserId, tenantId: t.tenantId, membershipId: t.ownerMembershipId, mfa: false, client });
         return { ...pair, tenantId: t.tenantId };
@@ -321,6 +329,7 @@ export class AuthService {
         companyHr,
         employee: Boolean(employee),
         ownHrWorkspace: own ? { id: own.id as string, name: own.name as string } : null,
+        leadsTeam: await tx.collection('memberships').exists({ manager_membership_id: actor.membershipId, status: 'active' }),
       };
       // Candidate CRM: Super Workspace always; an HR Workspace while Super Workspace has switched it on for it.
       const crmGrants = subject.grants.filter((g) => g.permission === 'candidates:read' && ['super_workspace', 'hr_workspace'].includes(g.roleKey ?? ''));
@@ -350,6 +359,7 @@ export class AuthService {
       employee: data.employee ? { id: data.employee.id, photoUpdatedAt: data.employee.photo_updated_at?.toISOString() ?? null } : null,
       levels: data.levels,
       candidateCrm: data.candidateCrm,
+      deleteAreas: [...(data.subject.deleteAreas ?? [])].sort(),
     };
   }
 
@@ -472,6 +482,32 @@ export class AuthService {
       await this.audit.record(tx, { tenantId: actor.tenantId, action: 'auth.mfa_step_up', resourceType: 'user', resourceId: actor.userId });
       return this.issueSession(tx, { userId: actor.userId, tenantId: actor.tenantId, membershipId: actor.membershipId, mfa: true, client: actor.client ?? 'web' });
     });
+  }
+
+  /**
+   * Password-confirmed deletion: checks the person's own password and lets this session run ONE delete in the next
+   * two minutes (the delete check in AuthGuard uses it up). A wrong password counts toward the account lock, like at
+   * sign-in. People who sign in only with single sign-on have no SampCrew password: they set one first.
+   */
+  async confirmDelete(password: string) {
+    const actor = requestContext.tenantActor();
+    if (actor.apiKey) throw Errors.forbidden('API keys cannot confirm a delete');
+    const user = await this.db.platform((tx) => tx.collection<UserRow>('users').findOne({ id: actor.userId }));
+    if (!user) throw Errors.unauthorized();
+    if (user.locked_until && user.locked_until > new Date()) throw Errors.tooMany();
+    if (!user.password_hash) throw Errors.badRequest('password_not_set', 'Your account signs in with single sign-on and has no SampCrew password yet. Set one with "Forgot password" on the sign-in page, then delete again.');
+    if (!(await verifyPassword(user.password_hash, password))) {
+      await this.recordFailedLogin(user.id);
+      await this.db.tenant((tx) => this.audit.record(tx, { action: 'delete.password_failed', resourceType: 'user', resourceId: actor.userId })).catch(() => undefined);
+      throw Errors.badRequest('wrong_password', 'That password is not correct. Nothing was deleted.');
+    }
+    const until = new Date(Date.now() + DELETE_CONFIRMATION_TTL_MS);
+    await this.db.platform(async (tx) => {
+      await tx.collection('sessions').updateOne({ id: actor.sessionId }, { $set: { delete_confirmed_until: until } });
+      await tx.collection('users').updateOne({ id: actor.userId }, { $set: { failed_login_count: 0 } });
+      await this.audit.record(tx, { tenantId: actor.tenantId, action: 'delete.password_confirmed', resourceType: 'session', resourceId: actor.sessionId });
+    });
+    return { confirmedUntil: until.toISOString() };
   }
 
   async changePassword(currentPassword: string, newPassword: string) {

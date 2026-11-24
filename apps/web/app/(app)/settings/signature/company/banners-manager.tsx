@@ -61,7 +61,7 @@ export function BannersManager({ banners, today, brandColor }: { banners: Compan
                     </div>
                     <div className="flex gap-1">
                       <Button size="sm" variant="ghost" aria-label={`Edit ${b.title}`} onClick={() => setEditing({ id: b.id, form: fromBanner(b) })}><Pencil className="size-3.5" /></Button>
-                      <Button size="sm" variant="ghost" aria-label={`Delete ${b.title}`} disabled={pending} onClick={() => start(async () => done(await deleteBannerAction(b.id)))}><Trash2 className="size-3.5" /></Button>
+                      <Button data-delete-area="documents" data-delete={`banner ${b.title}`} size="sm" variant="ghost" aria-label={`Delete ${b.title}`} disabled={pending} onClick={() => start(async () => done(await deleteBannerAction(b.id)))}><Trash2 className="size-3.5" /></Button>
                     </div>
                   </li>
                 );
@@ -201,7 +201,7 @@ function BannerDialog({ id, initial, banner, today, onClose, onSaved }: {
           <Button size="sm" variant="secondary" onClick={() => input.current?.click()}><ImageUp className="size-3.5" /> {imageSrc || file ? 'Change image' : 'Add an image or GIF'}</Button>
           {filePreview && <img src={filePreview} alt="Chosen banner image" className="max-h-16 max-w-60 rounded border border-border" />}
           {banner?.image && !file && (
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => start(async () => { const r = await removeBannerImageAction(banner.id); if (r.ok) { onSaved(r.message!); onClose(); } else setError(r.message); })}><Trash2 className="size-3.5" /> Remove image</Button>
+            <Button data-delete-area="documents" data-delete="banner image" size="sm" variant="ghost" disabled={pending} onClick={() => start(async () => { const r = await removeBannerImageAction(banner.id); if (r.ok) { onSaved(r.message!); onClose(); } else setError(r.message); })}><Trash2 className="size-3.5" /> Remove image</Button>
           )}
           <span className="text-xs text-fg-subtle">PNG, JPEG or GIF up to 1 MB, about 480 by 100 pixels. Outlook 2013 and 2016 show a GIF&apos;s first frame; Outlook for Microsoft 365 plays it. With an image, the message is its alternative text.</span>
           <input ref={input} type="file" accept="image/png,image/jpeg,image/gif" className="sr-only" aria-label="Choose banner image" tabIndex={-1} onChange={(ev) => { const f = ev.target.files?.[0]; ev.target.value = ''; if (f) pick(f); }} />

@@ -22,6 +22,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const { MongoClient } = require(require.resolve('mongodb', { paths: [path.join(__dirname, '../apps/api')] }));
 
@@ -144,7 +145,7 @@ function serveMobile() {
     await p.fill('input[name=newPassword]', NEW_PASSWORD);
     await p.fill('input[name=confirmPassword]', 'Not-The-Same-Pass-1!');
     await p.getByRole('button', { name: 'Save new password' }).click();
-    await p.getByText('The two passwords do not match').waitFor();
+    await p.getByText('The two passwords do not match', { exact: true }).waitFor();
     await p.fill('input[name=confirmPassword]', NEW_PASSWORD);
     await shot(p, '04-web-choose-new-password');
     await p.getByRole('button', { name: 'Save new password' }).click();

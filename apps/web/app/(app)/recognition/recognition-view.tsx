@@ -99,7 +99,7 @@ export function RecognitionView({ feed, values, moderator }: { feed: Recognition
                   {!v.archivedAt && (
                     <>
                       <Button size="sm" variant="ghost" onClick={() => setValueDialog(v)}>Edit</Button>
-                      <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive "${v.name}"?`) && run(() => archiveValueAction(v.id))}>Archive</Button>
+                      <Button data-delete-area="performance" data-delete={`company value ${v.name}`} size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive "${v.name}"?`) && run(() => archiveValueAction(v.id))}>Archive</Button>
                     </>
                   )}
                 </li>

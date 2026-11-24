@@ -2,7 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HrJobsService } from '../src/modules/hr-jobs/hr-jobs.service';
 import { MailerService } from '../src/platform/notify/mailer.service';
-import { addMember, leaveType, adminPool, api, createApp, createTenant, department, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
+import { addMember, assignLeave, leaveType, adminPool, api, createApp, createTenant, department, login, loginWithMfa, PASSWORD, type TestDb, type TestTenant } from './helpers';
 
 const Y = new Date().getUTCFullYear() + 1; // leave tests use next year so every date is in the future
 const weekday = (month: number, nth = 1, dow = 1) => {
@@ -190,14 +190,15 @@ describe('core HR', () => {
       expect((await api(app, await token('operator')).post('/leave/types').send({ code: 'X', name: 'X' })).status).toBe(403);
     });
 
-    it('posts accruals once, however many times the job runs', async () => {
-      const first = await api(app, owner).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` });
-      expect(first.body.posted).toBe(5);
-      const again = await api(app, owner).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` });
-      expect(again.body.posted).toBe(0);
-      const bal = await api(app, await token('operator')).get(`/leave/balances?year=${Y}`);
-      const c = bal.body.balances.find((b: { code: string }) => b.code === 'CL');
-      expect(c).toMatchObject({ accrued: '6.00', balance: '6.00', available: '6.00', tracked: true });
+    it('credits nothing by itself: days come only from a quantity typed by an administrator', async () => {
+      const op = await token('operator');
+      const before = (await api(app, op).get(`/leave/balances?year=${Y}`)).body.balances.find((b: { code: string }) => b.code === 'CL');
+      expect(before).toMatchObject({ notAssigned: true, assigned: null, available: null });
+      expect((await api(app, owner).post('/leave/accruals/run').send({ asOf: `${Y}-01-01` })).status).toBe(404);
+      await assignLeave(app, owner, people.operator!.employeeId, cl, '6', Y);
+      const bal = await api(app, op).get(`/leave/balances?year=${Y}`);
+      expect(bal.body.balances.find((b: { code: string }) => b.code === 'CL')).toMatchObject({ assigned: '6.00', balance: '6.00', available: '6.00', notAssigned: false });
+      expect(await pool.count('leave_ledger', { kind: 'accrual' })).toBe(0);
     });
 
     it('previews working days, skipping weekends and holidays', async () => {
@@ -267,12 +268,14 @@ describe('core HR', () => {
       expect(bal.body.balances.find((b: { code: string }) => b.code === 'CL').balance).toBe('6.00');
     });
 
-    it('rejects insufficient balance, and handles rejection', async () => {
+    it('warns about going over the assigned quantity, and handles rejection', async () => {
       const op = await token('operator');
       const big = await api(app, op).post('/leave/requests').send({ leaveTypeId: cl, startDate: weekday(4, 1, 1), endDate: plus(weekday(4, 1, 1), 3) });
       expect(big.status).toBe(201);
-      const more = await api(app, op).post('/leave/requests').send({ leaveTypeId: cl, startDate: weekday(5, 1, 1), endDate: plus(weekday(5, 1, 1), 3) });
-      expect(more.body.error.code).toBe('insufficient_balance');
+      // Going over the assigned quantity warns HR instead of blocking the application.
+      const more = await api(app, op).post('/leave/requests/preview').send({ leaveTypeId: cl, startDate: weekday(5, 1, 1), endDate: plus(weekday(5, 1, 1), 3) });
+      expect(more.status).toBe(201);
+      expect(more.body.warnings.join(' ')).toMatch(/more than the/);
       const sup = await token('supervisor');
       const rej = await api(app, sup).post(`/approvals/${big.body.approvalId}/reject`).send({ comment: 'Peak season' });
       expect(rej.body.status).toBe('rejected');

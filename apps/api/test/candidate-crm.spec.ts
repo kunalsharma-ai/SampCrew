@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CrmJobsService } from '../src/modules/candidate-crm/crm-jobs.service';
-import { addMember, adminPool, api, createApp, createTenant, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
+import { addMember, adminPool, allowDeletes, api, createApp, createTenant, login, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
 const inHours = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
@@ -48,6 +48,7 @@ describe('Candidate CRM', () => {
     expect(wb.status, JSON.stringify(wb.body)).toBe(201);
     spaceA = wa.body.id;
     spaceB = wb.body.id;
+    for (const space of [spaceA, spaceB]) await allowDeletes(pool, t, 'hr', ['recruitment'], space);
     hrA = (await loginWithMfa(app, pool, a.email)).accessToken;
     hrB = (await loginWithMfa(app, pool, b.email)).accessToken;
     staff = (await login(app, s.email)).accessToken;

@@ -97,7 +97,7 @@ export function CandidateList({ ctx, list, state, page, views, activeViewId, fil
           <Button size="sm" variant="secondary" disabled={!bulk.recruiter || pending} onClick={() => doBulk({ action: 'assign', membershipId: bulk.recruiter === 'none' ? null : bulk.recruiter })}>Assign</Button>
           <Input aria-label="Tag to add" placeholder="Add tag" className="sm:w-32" value={bulk.tag} onChange={(e) => setBulk({ ...bulk, tag: e.target.value })} />
           <Button size="sm" variant="secondary" disabled={!bulk.tag.trim() || pending} onClick={() => doBulk({ action: 'tag', tag: bulk.tag.trim() })}>Tag</Button>
-          {ctx.caps.includes('archive') && <Button size="sm" variant="secondary" disabled={pending} onClick={() => doBulk({ action: 'archive' })}>Archive</Button>}
+          {ctx.caps.includes('archive') && <Button data-delete-area="recruitment" data-delete={`${ids.length} candidate(s) (archive)`} size="sm" variant="secondary" disabled={pending} onClick={() => doBulk({ action: 'archive' })}>Archive</Button>}
           {ctx.caps.includes('export') && (
             <form method="post" action="/crm-export" className="contents">
               <input type="hidden" name="payload" value={JSON.stringify({ scope: 'selected', ids, columns: CRM_DEFAULT_EXPORT, format: 'xlsx' })} />

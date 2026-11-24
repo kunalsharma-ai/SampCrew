@@ -7,7 +7,7 @@ import { byLine, policyLines } from './manage/policy-text';
 export function MyLeaveTypes({ types }: { types: LeaveMineType[] }) {
   return (
     <Card>
-      <CardHeader title="My leave types" description="The rules of each leave type you hold, where your applications go, and who created and allocated it." />
+      <CardHeader title="My leave types" description="The rules of each leave type you can apply for, where your applications go, and who created it and how many days you have." />
       {types.length ? (
         <div className="grid gap-4 p-5 pt-0 md:grid-cols-2" data-testid="my-leave-types">
           {types.map((t) => (
@@ -28,12 +28,12 @@ export function MyLeaveTypes({ types }: { types: LeaveMineType[] }) {
                 </dd></div>
                 <div><dt className="inline text-fg-subtle">Managed by: </dt><dd className="inline">{t.managedBy}</dd></div>
                 <div><dt className="inline text-fg-subtle">Created by: </dt><dd className="inline">{byLine(t.createdBy)}</dd></div>
-                <div><dt className="inline text-fg-subtle">Allocated by: </dt><dd className="inline">{byLine(t.allocatedBy, t.allocatedBy.hrWorkspaceName)}</dd></div>
+                <div><dt className="inline text-fg-subtle">Your quantity for {new Date().getFullYear()}: </dt><dd className="inline" data-testid="my-quantity">{t.notAssigned ? 'Not Assigned' : `${t.assigned} days, ${t.balance} left`}</dd></div>
               </dl>
             </section>
           ))}
         </div>
-      ) : <EmptyState title="No leave types apply to you yet" description="Leave types reach you once the Super Workspace or your HR Workspace allocates them." />}
+      ) : <EmptyState title="No leave types apply to you yet" description="A leave type shows here as soon as the Super Workspace or your HR Workspace makes it visible to you." />}
     </Card>
   );
 }

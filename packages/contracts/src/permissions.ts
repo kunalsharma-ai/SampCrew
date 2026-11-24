@@ -95,7 +95,14 @@ export const PERMISSIONS = [
   { key: 'leave:request', module: 'Leave', description: 'Apply for leave', phase: 2, scopes: ['own'] },
   { key: 'leave:approve', module: 'Leave', description: 'Approve or reject leave', phase: 2, scopes: ['team', 'department', 'entity', 'tenant'] },
   { key: 'leave:configure', module: 'Leave', description: 'Create and change leave types, their policies and approval rules, holidays, and make types available to HR Workspaces (Super Workspace)', phase: 2, scopes: TENANT_ONLY },
-  { key: 'leave:allocate', module: 'Leave', description: 'Allocate leave types to employees (an HR Workspace only the types made available to it, for its own people)', phase: 2, scopes: ['department', 'entity', 'tenant'] },
+  { key: 'leave:allocate', module: 'Leave', description: 'Manage holiday calendars and see the leave dashboard, history and reports for the people in scope', phase: 2, scopes: ['department', 'entity', 'tenant'] },
+  // Simplified leave (2026-11-23): leave types with visibility, manual quantities, approve and reject apart.
+  { key: 'leave:reject', module: 'Leave', description: 'Reject leave applications', phase: 31, scopes: ['team', 'department', 'entity', 'tenant'], action: 'approve' },
+  { key: 'leave:assign', module: 'Leave', description: 'Assign leave quantities to employees by hand (nothing is calculated)', phase: 31, scopes: ['department', 'entity', 'tenant'], action: 'manage' },
+  { key: 'leavetypes:create', module: 'Leave', description: 'Create leave types (an HR Workspace only when the Super Workspace allows it, visible only within its modules)', phase: 31, scopes: TENANT_ONLY, action: 'create' },
+  { key: 'leavetypes:edit', module: 'Leave', description: 'Edit leave types (an HR Workspace only the ones it created)', phase: 31, scopes: TENANT_ONLY, action: 'edit' },
+  { key: 'leavetypes:disable', module: 'Leave', description: 'Disable and enable leave types (history stays)', phase: 31, scopes: TENANT_ONLY, action: 'delete' },
+  { key: 'leavetypes:visibility', module: 'Leave', description: 'Choose where leave types appear: HR Workspace, Employee Workspace or both', phase: 31, scopes: TENANT_ONLY, action: 'manage' },
 
   // Phase 3: attendance and workforce
   { key: 'attendance:read', module: 'Attendance', description: 'View attendance records', phase: 3, scopes: ALL },

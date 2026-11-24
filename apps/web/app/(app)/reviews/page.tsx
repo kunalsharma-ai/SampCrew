@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { buttonClass, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -21,6 +22,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
         description="Your performance reviews, the reviews you write for your team, and feedback colleagues asked you for."
         actions={me.permissions['performance:configure'] ? <Link className={buttonClass('secondary', 'sm')} href="/reviews/cycles">Review cycles</Link> : undefined}
       />
+      <ModuleNotices category="appraisal" label="Review" />
       {view === 'mine' && <ModuleOverview module="performance" actions={allowed(me, [
         { label: 'Set goals', href: '/goals?create=goal', icon: 'target', permission: 'performance:read' },
         { label: 'Team reviews', href: '/reviews?view=team', icon: 'messages-square', permission: 'performance:read' },

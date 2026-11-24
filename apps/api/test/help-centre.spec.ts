@@ -328,6 +328,48 @@ describe('help centre', () => {
     });
   });
 
+  describe('public Help & Support (before signing in)', () => {
+    it('anyone reads feature briefs, FAQs, articles and guides; nothing for a level, a feature or a draft', async () => {
+      const home = ok(await api(app).get('/public/help'));
+      expect(home.features.length).toBeGreaterThanOrEqual(10);
+      expect(home.features[0]).toMatchObject({ kind: 'feature', audiences: ['public'] });
+      expect(home.features[0].body.length).toBeGreaterThan(40);
+      expect(home.faqs.map((f: any) => f.slug)).toEqual(expect.arrayContaining(['public-forgot-password', 'public-show-password']));
+      expect(home.articles.map((a: any) => a.slug)).toEqual(expect.arrayContaining(['sampcrew-overview', 'our-offerings', 'our-facilities']));
+      expect(home.categories.map((c: any) => c.key)).toEqual(expect.arrayContaining(['our-features', 'about-sampcrew']));
+      // Only public content: no level's articles and no categories of the app.
+      const all = [...home.features, ...home.faqs, ...home.articles, ...home.guides];
+      expect(all.every((a: any) => a.audiences.includes('public'))).toBe(true);
+      expect(home.categories.map((c: any) => c.key)).not.toContain('leave');
+
+      const art = ok(await api(app).get('/public/help/articles/our-offerings'));
+      expect(art).toMatchObject({ kind: 'article', icon: 'briefcase' });
+      expect(art.mine).toBeUndefined();
+      expect((await api(app).get('/public/help/articles/how-to-apply-leave')).status).toBe(404);
+      expect((await api(app).get('/public/help/articles/quickstart-console')).status).toBe(404);
+      const found = ok(await api(app).get('/public/help/search').query({ q: 'forgot password' }));
+      expect(found.items[0].slug).toMatch(/^public-(forgot-password|reset-password-guide)$/);
+      expect(found.items.every((i: any) => i.audiences.includes('public'))).toBe(true);
+    });
+
+    it('a Console Admin publishes a feature brief for everyone; a feature-gated or draft one stays off the public page', async () => {
+      const cats = ok(await api(app, tok.rahul).get('/platform/help/manage')).categories;
+      const features = cats.find((c: any) => c.key === 'our-features');
+      const brief = { slug: `brief-${stamp}`, categoryId: features.id, kind: 'feature', title: 'Canteen menus', body: 'Post the weekly canteen menu so everybody knows what is for lunch today.', audiences: ['public'], icon: 'heart', status: 'published' };
+      // A feature brief needs its text.
+      expect((await api(app, tok.rahul).post('/platform/help/manage/articles').send({ ...brief, body: '' })).status).toBe(400);
+      ok(await api(app, tok.rahul).post('/platform/help/manage/articles').send(brief), 201);
+      const home = ok(await api(app).get('/public/help'));
+      expect(home.features.find((f: any) => f.slug === `brief-${stamp}`)).toMatchObject({ title: 'Canteen menus', icon: 'heart' });
+      // Signed-in people see public content in their help centre too.
+      expect(ok(await as('esha').get(`/help/articles/brief-${stamp}`)).title).toBe('Canteen menus');
+      ok(await api(app, tok.rahul).post('/platform/help/manage/articles').send({ ...brief, slug: `gated-${stamp}`, feature: 'payroll' }), 201);
+      ok(await api(app, tok.rahul).post('/platform/help/manage/articles').send({ ...brief, slug: `draft-${stamp}`, status: 'draft' }), 201);
+      expect((await api(app).get(`/public/help/articles/gated-${stamp}`)).status).toBe(404);
+      expect((await api(app).get(`/public/help/articles/draft-${stamp}`)).status).toBe(404);
+    });
+  });
+
   describe('Console content manager', () => {
     it('creates a category and a draft article, publishes it for one level, edits a built-in one and keeps it on resync', async () => {
       expect((await api(app, tok.sana).get('/platform/help/manage')).status).toBe(403);

@@ -1,11 +1,12 @@
 import { AllowWhenLocked, AllowWithoutMfa } from '../../platform/authz/decorators';
 import { Body, Controller, Get, HttpCode, Param, Post, Put, Query, Req, Res } from '@nestjs/common';
 import {
-  NOTIFICATION_CATEGORY_KEYS, notificationListQuery, notificationPreferencesInput, notificationReadInput, resolveNotificationPreferences,
-  type NotificationCategory,
+  DEFAULT_NOTIFICATION_POLICY, NOTIFICATION_CATEGORY_KEYS, notificationListQuery, notificationPolicyInput, notificationPreferencesInput, notificationReadInput,
+  resolveNotificationPreferences, type NotificationCategory, type NotificationPolicy,
 } from '@crew/contracts';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { AuditService } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
 import { ilike, membershipUserNames, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
@@ -13,6 +14,7 @@ import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { LiveService } from '../../platform/notify/live.service';
 import { NotificationService, notificationView } from '../../platform/notify/notification.service';
 import { Doc } from '../../platform/openapi/openapi';
+import { isSuperWorkspace } from '../communication/identity';
 
 /** Longest a live stream stays open; the browser reconnects at once, which also re-checks the session. */
 const STREAM_MAX_MS = 15 * 60_000;
@@ -23,6 +25,18 @@ type Row = Record<string, any>;
 
 async function unreadCount(tx: TenantTx, me: string) {
   return tx.collection('notifications').count({ membership_id: me, read_at: null });
+}
+
+/** The workspace's notification policy (Super Workspace), or the default one when it never saved one. */
+export async function notificationPolicy(tx: TenantTx): Promise<NotificationPolicy> {
+  const row = await tx.collection('notification_policies').findOne({});
+  return notificationPolicyInput.safeParse(row?.policy ?? {}).data ?? DEFAULT_NOTIFICATION_POLICY;
+}
+
+/** Only what a person chose is stored, never the organisation's locks (they are applied when read). */
+function storable(p: ReturnType<typeof resolveNotificationPreferences>) {
+  const { locks: _locks, customised: _customised, ...rest } = p;
+  return rest;
 }
 
 /**
@@ -36,6 +50,7 @@ export class NotificationsController {
     private readonly db: DatabaseService,
     private readonly live: LiveService,
     private readonly notifications: NotificationService,
+    private readonly audit: AuditService,
   ) {}
 
   @Get()
@@ -47,6 +62,7 @@ export class NotificationsController {
       const filter: Row = { membership_id: me };
       if (q.unread === 'true') filter.read_at = null;
       if (q.unread === 'false') filter.read_at = { $ne: null };
+      if (q.action === 'true') filter.action_required = true;
       if (q.category) filter.category = q.category;
       if (q.priority) filter.priority = q.priority;
       if (q.q) filter.$or = [{ title: ilike(q.q) }, { body: ilike(q.q) }];
@@ -83,6 +99,8 @@ export class NotificationsController {
       const important = await notes.find({ membership_id: me, read_at: null, priority: { $in: ['high', 'urgent'] } }, { sort: { updated_at: -1 }, limit: 5 });
       return {
         unread: await unreadCount(tx, me),
+        /** Unread notices that ask this person to act. */
+        actionNeeded: await notes.count({ membership_id: me, read_at: null, action_required: true }),
         categories: [...by.entries()].map(([category, c]) => ({ category: category as NotificationCategory, ...c })),
         important: important.map((n) => notificationView(n)),
       };
@@ -137,21 +155,56 @@ export class NotificationsController {
 
   @Get('preferences')
   @AllowWithoutMfa()
-  @Doc({ summary: 'Your notification preferences: in-app and email per category, sound and pop-ups' })
+  @Doc({ summary: 'Your notification preferences: in app, email, phone push and sound per category, sound, pop-ups, desktop and quiet hours, with what your organisation locked (`locks`)' })
   preferences() {
     const me = requestContext.tenantActor().membershipId;
-    return this.db.tenant(async (tx) => resolveNotificationPreferences((await tx.collection('member_preferences').findOne({ membership_id: me }))?.notifications));
+    return this.db.tenant(async (tx) => resolveNotificationPreferences((await tx.collection('member_preferences').findOne({ membership_id: me }))?.notifications, await notificationPolicy(tx)));
   }
 
   @Put('preferences')
-  @Doc({ summary: 'Change your notification preferences', body: notificationPreferencesInput })
+  @Doc({ summary: 'Change your notification preferences (anything your organisation locked stays as it decided)', body: notificationPreferencesInput })
   setPreferences(@Body(new ZodPipe(notificationPreferencesInput)) body: z.infer<typeof notificationPreferencesInput>) {
     const me = requestContext.tenantActor().membershipId;
     return this.db.tenant(async (tx) => {
-      const value = resolveNotificationPreferences(body);
+      const policy = await notificationPolicy(tx);
+      // The person's own choices are kept as they made them; the policy is applied when they are read, so a choice
+      // the organisation overrides now comes back if the organisation relaxes its policy later.
+      const value = storable(resolveNotificationPreferences(body));
       await tx.collection('member_preferences').upsert({ membership_id: me }, { membership_id: me, notifications: value }, { $set: { notifications: value, updated_at: new Date() } });
-      return value;
+      return resolveNotificationPreferences(value, policy);
     });
+  }
+
+  @Get('policy')
+  @Doc({ summary: "Your organisation's notification policy (Super Workspace only): categories everyone sees, required emails, whether sound, desktop and phone push are allowed, starting choices" })
+  async policy() {
+    return this.db.tenant(async (tx) => {
+      await this.superOnly(tx);
+      const row = await tx.collection('notification_policies').findOne({});
+      return { policy: await notificationPolicy(tx), updatedAt: row?.updated_at ?? null, members: await tx.collection('memberships').count({ status: 'active' }) };
+    });
+  }
+
+  @Put('policy')
+  @Doc({ summary: "Change your organisation's notification policy (Super Workspace only). It applies to everyone at once, above their own settings.", body: notificationPolicyInput })
+  setPolicy(@Body(new ZodPipe(notificationPolicyInput)) body: z.infer<typeof notificationPolicyInput>) {
+    const me = requestContext.tenantActor().membershipId;
+    return this.db.tenant(async (tx) => {
+      await this.superOnly(tx);
+      const before = await notificationPolicy(tx);
+      const policy = notificationPolicyInput.parse(body);
+      await tx.collection('notification_policies').upsert({}, { policy, updated_by: me }, { $set: { policy, updated_by: me } });
+      await this.audit.record(tx, { action: 'notifications.policy_changed', resourceType: 'notification_policy', resourceId: tx.tenantId, changes: { from: before, to: policy } });
+      // Everyone's open pages pick up the new rules (locked switches, sound) on their next refresh.
+      const everyone = await tx.collection('memberships').distinct<string>('id', { status: 'active' });
+      await this.notifications.signal(tx, everyone, 'notifications.policy');
+      const row = await tx.collection('notification_policies').findOne({});
+      return { policy, updatedAt: row?.updated_at ?? null, members: everyone.length };
+    });
+  }
+
+  private async superOnly(tx: TenantTx) {
+    if (!(await isSuperWorkspace(tx, requestContext.tenantActor().membershipId))) throw Errors.forbidden('Only the Super Workspace can change the notification policy');
   }
 
   /**

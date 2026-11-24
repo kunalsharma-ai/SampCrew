@@ -57,6 +57,8 @@ describe('audit trail', () => {
   it('redacts secrets from change sets', async () => {
     const { redact } = await import('../src/platform/audit/audit.service');
     expect(redact({ name: 'x', password: 'p', nested: { bank_account_number: '123', ok: 1 } })).toEqual({ name: 'x', password: '[redacted]', nested: { bank_account_number: '[redacted]', ok: 1 } });
+    // "pan" only as a whole word: company fields stay readable, PAN numbers do not.
+    expect(redact({ company_size: '51-200', companyName: 'Orbit', pan: 'A', employee_pan: 'B', panNumber: 'C' })).toEqual({ company_size: '51-200', companyName: 'Orbit', pan: '[redacted]', employee_pan: '[redacted]', panNumber: '[redacted]' });
   });
 });
 

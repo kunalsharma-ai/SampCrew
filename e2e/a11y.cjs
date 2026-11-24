@@ -11,6 +11,7 @@
  * roughly a third to a half of accessibility problems; keyboard and screen reader passes by people are still needed.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { createReadStream, existsSync, readFileSync, statSync, writeFileSync } = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
@@ -78,7 +79,7 @@ async function mobileScreens(b, theme, found, checked) {
   found.push(...(await check(p, `Mobile /login (${theme})`)));
   checked.push(`Mobile /login (${theme})`);
   await p.getByLabel('Work email').fill('operator2@demo.crew.local');
-  await p.getByLabel('Password').fill(PASSWORD);
+  await p.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await p.getByRole('button', { name: 'Sign in', exact: true }).click();
   await p.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 20000 });
   for (const route of ['/', '/attendance', '/leave', '/helpdesk', '/me']) {

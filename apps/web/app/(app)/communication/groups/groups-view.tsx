@@ -37,7 +37,7 @@ export function GroupsView({ groups }: { groups: Group[] }) {
                 </div>
                 <div className="flex shrink-0">
                   <button className="rounded p-1.5 text-fg-subtle hover:text-fg" aria-label={`Edit ${g.name}`} onClick={() => { setMsg(null); setEditing({ id: g.id, name: g.name, description: g.description, members: g.members }); }}><Pencil className="size-4" /></button>
-                  <button className="rounded p-1.5 text-fg-subtle hover:text-danger" aria-label={`Remove ${g.name}`} onClick={() => start(async () => { const r = await archiveGroupAction(g.id); setMsg(r.ok ? { tone: 'success', text: `${g.name} removed.` } : { tone: 'danger', text: r.message }); router.refresh(); })}><Trash2 className="size-4" /></button>
+                  <button data-delete-area="communication" data-delete={`group ${g.name}`} className="rounded p-1.5 text-fg-subtle hover:text-danger" aria-label={`Remove ${g.name}`} onClick={() => start(async () => { const r = await archiveGroupAction(g.id); setMsg(r.ok ? { tone: 'success', text: `${g.name} removed.` } : { tone: 'danger', text: r.message }); router.refresh(); })}><Trash2 className="size-4" /></button>
                 </div>
               </div>
               <p className="mt-2 text-xs text-fg-muted">{g.members.length} {g.members.length === 1 ? 'person' : 'people'}: {g.members.slice(0, 5).map((m) => m.name ?? 'Unnamed').join(', ')}{g.members.length > 5 ? ' and others' : ''}</p>

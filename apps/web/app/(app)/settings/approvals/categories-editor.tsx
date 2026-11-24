@@ -71,7 +71,7 @@ export function CategoriesEditor({ categories, types, leaveTypes, expenseCategor
                   key: c.key, label: c.label, description: c.description, icon: c.icon, color: c.color, resourceTypes: c.rule.resourceTypes, leaveTypeCodes: c.rule.leaveTypeCodes ?? [],
                   paid: c.rule.paid ?? null, halfDay: c.rule.halfDay ?? null, expenseCategoryIds: c.rule.expenseCategoryIds ?? [], active: c.active,
                 } })}><Pencil className="size-4" /></button>
-                <button className="rounded p-1.5 text-fg-subtle hover:text-danger" aria-label={`Remove ${c.label}`} onClick={() => start(async () => {
+                <button data-delete-area="settings" data-delete={`approval category ${c.label}`} className="rounded p-1.5 text-fg-subtle hover:text-danger" aria-label={`Remove ${c.label}`} onClick={() => start(async () => {
                   const r = await deleteApprovalCategoryAction(c.key);
                   setMsg(r.ok ? { tone: 'success', text: `${c.label} removed. Its requests moved to the built-in categories.` } : { tone: 'danger', text: r.message });
                   router.refresh();

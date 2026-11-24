@@ -5,7 +5,7 @@ import {
 } from '@crew/contracts';
 import {
   ArrowRight, BookOpen, CheckCircle2, Circle, CircleHelp, Clock3, ExternalLink, Flame, GraduationCap, Inbox, LifeBuoy, ListChecks, MessageSquarePlus, PlayCircle,
-  Rocket, Sparkles, ThumbsDown, ThumbsUp, Ticket, Wrench,
+  Newspaper, Rocket, Sparkles, ThumbsDown, ThumbsUp, Ticket, Wrench,
 } from 'lucide-react';
 import { useState, useTransition, type ReactNode } from 'react';
 import { cn } from '../../cn';
@@ -14,7 +14,7 @@ import { Alert, Badge, Card, EmptyState } from '../surface';
 import { useHelpCentre } from './context';
 import { ArticleRow, CategoryTile, Crumbs, FaqItem, HelpBody, HelpGlyph, HelpSearchBox, KindBadge, SectionTitle, tileTone } from './parts';
 
-const KIND_ICON: Record<HelpArticleKind, typeof BookOpen> = { faq: CircleHelp, guide: BookOpen, tutorial: GraduationCap, troubleshooting: Wrench, quickstart: Rocket };
+const KIND_ICON: Record<HelpArticleKind, typeof BookOpen> = { faq: CircleHelp, guide: BookOpen, tutorial: GraduationCap, troubleshooting: Wrench, quickstart: Rocket, feature: Sparkles, article: Newspaper };
 
 /** The hero: greeting for the level, the big search box and the quick-access buttons. */
 function Hero({ home, children }: { home: HelpHome; children?: ReactNode }) {

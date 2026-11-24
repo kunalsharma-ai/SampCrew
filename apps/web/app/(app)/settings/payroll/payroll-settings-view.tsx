@@ -43,7 +43,7 @@ export function PayrollSettingsView({ statutory, components, structures, categor
                 <TD>{c.pfWage ? 'Yes' : 'No'}</TD>
                 <TD className="whitespace-nowrap text-right">
                   <Button size="sm" variant="ghost" onClick={() => setComponent(c)}>Edit</Button>
-                  {!c.isBasic && !c.inUse && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive ${c.name}?`) && run(() => archiveComponentAction(c.id))}>Archive</Button>}
+                  {!c.isBasic && !c.inUse && <Button data-delete-area="payroll" data-delete={`salary component ${c.name}`} size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive ${c.name}?`) && run(() => archiveComponentAction(c.id))}>Archive</Button>}
                 </TD>
               </TR>
             ))}
@@ -63,7 +63,7 @@ export function PayrollSettingsView({ statutory, components, structures, categor
                 <TD className="text-right tabular-nums">{s.employeeCount}</TD>
                 <TD className="whitespace-nowrap text-right">
                   <Button size="sm" variant="ghost" onClick={() => setStructure(s)}>Edit</Button>
-                  <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive ${s.name}? Existing salaries keep it.`) && run(() => archiveStructureAction(s.id))}>Archive</Button>
+                  <Button data-delete-area="payroll" data-delete={`salary structure ${s.name}`} size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive ${s.name}? Existing salaries keep it.`) && run(() => archiveStructureAction(s.id))}>Archive</Button>
                 </TD>
               </TR>
             ))}
@@ -83,7 +83,7 @@ export function PayrollSettingsView({ statutory, components, structures, categor
                 <TD className="text-right tabular-nums">{c.maxPerClaim ? amount(c.maxPerClaim) : 'No limit'}</TD>
                 <TD className="whitespace-nowrap text-right">
                   <Button size="sm" variant="ghost" onClick={() => setCategory(c)}>Edit</Button>
-                  <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive ${c.name}?`) && run(() => archiveCategoryAction(c.id))}>Archive</Button>
+                  <Button data-delete-area="payroll" data-delete={`expense category ${c.name}`} size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Archive ${c.name}?`) && run(() => archiveCategoryAction(c.id))}>Archive</Button>
                 </TD>
               </TR>
             ))}

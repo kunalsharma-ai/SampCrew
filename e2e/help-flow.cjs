@@ -17,6 +17,7 @@
  * Fails on any browser error.
  */
 const { chromium } = require('playwright');
+require('./delete-password.cjs');
 const { authenticator } = require('otplib');
 const { createReadStream, existsSync, readFileSync, statSync } = require('node:fs');
 const http = require('node:http');
@@ -236,7 +237,7 @@ async function consoleApp(b) {
   assert((await p.locator('main').getByRole('button', { name: 'More about this section', exact: true }).count()) >= 2, 'console overview has no section icons');
   await pageIcon(p).click();
   await openBubble(p).waitFor();
-  assert((await openBubble(p).innerText()).includes('SampCrew across all customers'), 'console overview help text missing');
+  assert((await openBubble(p).innerText()).includes('SampCrew across all clients'), 'console overview help text missing');
   await axeOpen(p, 'console');
   await p.keyboard.press('Escape');
   await p.goto(CONSOLE + '/tenants');

@@ -125,10 +125,10 @@ export function ProfileView({ ctx, profile, tab, saved }: { ctx: CrmContext; pro
               </Select>
             </label>
             <span className="ml-auto flex flex-wrap gap-2">
-              {c.hasPhoto && <Button size="sm" variant="ghost" onClick={() => run(() => removePhotoAction(id))}>Remove photo</Button>}
+              {c.hasPhoto && <Button data-delete-area="recruitment" data-delete="candidate photo" size="sm" variant="ghost" onClick={() => run(() => removePhotoAction(id))}>Remove photo</Button>}
               {can.share && <Button size="sm" variant="ghost" onClick={() => open({ kind: 'share' }, Object.fromEntries(c.sharedWith.map((s) => [`share:${s.id}`, 'yes'])))}><Share2 className="size-3.5" /> Share</Button>}
-              {can.archive && <Button size="sm" variant="ghost" onClick={() => run(() => archiveAction(id, !c.archivedAt))}><Archive className="size-3.5" /> {c.archivedAt ? 'Restore' : 'Archive'}</Button>}
-              {can.archive && <Button size="sm" variant="ghost" onClick={() => open({ kind: 'erase' })}><Trash2 className="size-3.5" /> Erase personal details</Button>}
+              {can.archive && <Button data-delete-area={c.archivedAt ? undefined : 'recruitment'} data-delete={c.archivedAt ? undefined : 'candidate (archive)'} size="sm" variant="ghost" onClick={() => run(() => archiveAction(id, !c.archivedAt))}><Archive className="size-3.5" /> {c.archivedAt ? 'Restore' : 'Archive'}</Button>}
+              {can.archive && <Button data-delete-area="recruitment" size="sm" variant="ghost" onClick={() => open({ kind: 'erase' })}><Trash2 className="size-3.5" /> Erase personal details</Button>}
             </span>
           </div>
         )}
@@ -263,7 +263,7 @@ export function ProfileView({ ctx, profile, tab, saved }: { ctx: CrmContext; pro
                     {r.details && <span className="block text-xs">{r.details}</span>}
                     <span className="block text-xs text-fg-subtle">Added {when(r.createdAt)}{r.createdBy ? ` by ${r.createdBy}` : ''}</span>
                   </span>
-                  {edit && <Button size="sm" variant="ghost" onClick={() => run(() => removeReferenceAction(id, r.id))}>Remove</Button>}
+                  {edit && <Button data-delete-area="recruitment" data-delete="reference" size="sm" variant="ghost" onClick={() => run(() => removeReferenceAction(id, r.id))}>Remove</Button>}
                 </li>
               ))}
             </ul>
@@ -343,7 +343,7 @@ export function ProfileView({ ctx, profile, tab, saved }: { ctx: CrmContext; pro
                       {d.previewable && <a className={buttonClass('ghost', 'sm')} href={`/crm-files/${d.id}?inline=1`} target="_blank" rel="noopener"><Eye className="size-3.5" /> View</a>}
                       <a className={buttonClass('ghost', 'sm')} href={`/crm-files/${d.id}`} download><Download className="size-3.5" /> Download</a>
                       {edit && <Button size="sm" variant="ghost" onClick={() => open({ kind: 'replace', doc: d })}>New version</Button>}
-                      {can.archive && <Button size="sm" variant="ghost" onClick={() => run(() => deleteDocumentAction(id, d.id))}>Delete</Button>}
+                      {can.archive && <Button data-delete-area="recruitment" data-delete="candidate document" size="sm" variant="ghost" onClick={() => run(() => deleteDocumentAction(id, d.id))}>Delete</Button>}
                     </span>
                   </span>
                   {(d.versions ?? []).length > 1 && (
@@ -474,7 +474,7 @@ export function ProfileView({ ctx, profile, tab, saved }: { ctx: CrmContext; pro
       </Dialog>
 
       <Dialog open={dialog?.kind === 'erase'} onClose={close} title="Erase personal details" description="Use this when the candidate asks to be forgotten. Their name, contact details, documents, remarks and references are erased for good; the anonymous history stays for reporting."
-        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button variant="danger" loading={pending} disabled={f('reason').trim().length < 3} onClick={() => run(() => eraseAction(id, f('reason').trim()), close)}>Erase for good</Button></>}>
+        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button data-delete-area="recruitment" data-delete="candidate's personal details" variant="danger" loading={pending} disabled={f('reason').trim().length < 3} onClick={() => run(() => eraseAction(id, f('reason').trim()), close)}>Erase for good</Button></>}>
         <Field label="Reason" required>{(p) => <Input {...p} value={f('reason')} onChange={setF('reason')} placeholder="Candidate asked to be removed" />}</Field>
       </Dialog>
     </div>

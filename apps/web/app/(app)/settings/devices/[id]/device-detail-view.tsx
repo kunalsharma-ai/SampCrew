@@ -50,7 +50,7 @@ export function DeviceDetailView({ device, mappings, employees, locations }: { d
           action={
             <div className="flex gap-2">
               <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Edit</Button>
-              <Button size="sm" variant="ghost" onClick={() => {
+              <Button data-delete-area="attendance" data-delete={`device ${device.name}`} size="sm" variant="ghost" onClick={() => {
                 if (confirm(`Archive ${device.name}? It stops accepting punches. Punches already received are kept.`)) {
                   start(async () => { const r = await archiveDeviceAction(device.id); if (r.ok) router.push('/settings/devices'); else setNotice({ tone: 'danger', text: r.message }); });
                 }
@@ -246,7 +246,7 @@ function PeopleCard({ device, mappings, employees, run, pending }: { device: Dev
                   <TD>{m.employeeName} <span className="text-xs text-fg-muted">{m.employeeCode}</span></TD>
                   <TD>{m.deviceId ? 'This device' : 'Every device'}</TD>
                   <TD className="text-right">
-                    <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Remove the mapping for ${m.deviceUserId}? Their punches stop counting for ${m.employeeName}.`) && run(() => unmapAction(m.id))}>Remove</Button>
+                    <Button data-delete-area="attendance" data-delete={`device mapping for ${m.deviceUserId}`} size="sm" variant="ghost" loading={pending} onClick={() => confirm(`Remove the mapping for ${m.deviceUserId}? Their punches stop counting for ${m.employeeName}.`) && run(() => unmapAction(m.id))}>Remove</Button>
                   </TD>
                 </TR>
               ))}

@@ -25,7 +25,7 @@ const SETTINGS: { href: string; label: string; about: string; permission: string
   { href: '/settings/roles', label: 'Custom roles', about: 'Create roles of your own, such as Payroll checker.', permission: 'roles:read' },
   { href: '/people', label: 'Logins & access', about: 'Who can sign in, and which roles each person holds (and for which departments).', permission: 'users:read' },
   { href: '/organization', label: 'Company structure', about: 'Legal entities, business units, departments and locations.', permission: 'org:read' },
-  { href: '/leave/manage', label: 'Leave management', about: 'Leave types and policies, allocation, approvals, reports and history.', permission: 'leave:allocate', feature: 'leave' },
+  { href: '/leave/manage', label: 'Leave management', about: 'Leave types and who sees them, quantities, approvals, reports and history.', permission: 'leave:allocate', feature: 'leave' },
   { href: '/settings/leave', label: 'Holidays and leave rules', about: 'Holiday calendars and the same-day leave rule.', permission: 'leave:allocate', feature: 'leave' },
   { href: '/settings/attendance', label: 'Attendance settings', about: 'Punching rules, geofences and late-coming rules.', permission: 'attendance:configure', feature: 'attendance_basic' },
   { href: '/settings/payroll', label: 'Payroll settings', about: 'Pay components, statutory settings and payslips.', permission: 'payroll:configure', feature: 'payroll' },

@@ -49,7 +49,7 @@ export function RewardsCard({ rules, leaveTypes, currency }: { rules: RewardRule
                 </div>
                 <div className="flex gap-1">
                   <Button size="sm" variant="ghost" onClick={() => { setErrors(null); setEdit({ ...r }); }}>Edit</Button>
-                  <Button size="sm" variant="ghost" loading={pending} onClick={() => run(() => deleteRewardRuleAction(r.id))}>Remove</Button>
+                  <Button data-delete-area="settings" data-delete="reward rule" size="sm" variant="ghost" loading={pending} onClick={() => run(() => deleteRewardRuleAction(r.id))}>Remove</Button>
                 </div>
               </li>
             ))}

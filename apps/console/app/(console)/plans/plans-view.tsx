@@ -1,14 +1,17 @@
 'use client';
-import { FEATURES, isCoreFeature, isPlannedFeature, PLAN_KEY_PATTERN, planPriceUpdate } from '@crew/contracts';
+import { FEATURES, isCoreFeature, isPlannedFeature, PLAN_KEY_PATTERN, PLAN_LIFECYCLE_LABEL, planPriceUpdate, type PlanImpact } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Switch, Table, TBody, TD, Textarea, TH, THead, TR, cn } from '@crew/ui';
-import { Archive, Hourglass, Inbox, Layers, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Archive, Ban, BarChart3, Copy, Hourglass, Inbox, Layers, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { duplicatePlanAction, planImpactAction, retirePlanAction } from '../console-actions';
+import { fmtMoneyMap } from '@/lib/format';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { archivePlanAction, createPlanAction, decidePlanRequestAction, deletePlanAction, setPlanBillingAction, setPlanEntitlementsAction, setPriceAction, updatePlanAction } from '../actions';
 
 export interface PlatformPlan {
   id: string; key: string; name: string; tagline: string; quoteOnly: boolean; minimumSeats: number; isPublic: boolean; sortOrder: number;
-  tenants: number; activeTenants: number; pendingRequests: number; customisedAt: string | null; customisedBy: string | null; archivedAt: string | null;
+  tenants: number; activeTenants: number; pendingRequests: number; customisedAt: string | null; customisedBy: string | null; archivedAt: string | null; retiredAt?: string | null;
   prices: { currency: string; monthly: string; annualPerMonth: string }[];
   features: { key: string; limitValue: number | null }[];
   trialDays: number; trialFeatures: string[]; overage: Record<string, { policy: string; prices: Record<string, string> }>;
@@ -44,6 +47,9 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
   const [details, setDetails] = useState<PlatformPlan | null>(null);
   const [billing, setBilling] = useState<PlatformPlan | null>(null);
   const [creating, setCreating] = useState(false);
+  const [impact, setImpact] = useState<PlatformPlan | null>(null);
+  const [copying, setCopying] = useState<PlatformPlan | null>(null);
+  const [retiring, setRetiring] = useState<PlatformPlan | null>(null);
   const [note, setNote] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [pending, start] = useTransition();
   const done = (r: { ok: boolean; message?: string }, fallback?: string) => {
@@ -70,7 +76,7 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
                   <code className="text-xs font-normal text-fg-subtle">{p.key}</code>
                   {p.quoteOnly && <Badge>Quote only</Badge>}
                   {!p.isPublic && <Badge tone="warning">Hidden from workspaces</Badge>}
-                  {p.archivedAt && <Badge tone="danger">Archived</Badge>}
+                  {p.retiredAt ? <Badge tone="danger">Retired</Badge> : p.archivedAt ? <Badge tone="danger">Archived</Badge> : null}
                   {p.pendingRequests > 0 && <Badge tone="accent">{p.pendingRequests} request(s)</Badge>}
                 </span>
               }
@@ -80,15 +86,17 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
                   <Button size="sm" onClick={() => setContents(p)} data-testid={`plan-edit-contents-${p.key}`}><SlidersHorizontal className="size-3.5" />Modules & limits</Button>
                   <Button size="sm" variant="secondary" onClick={() => setDetails(p)} data-testid={`plan-edit-details-${p.key}`}><Pencil className="size-3.5" />Details</Button>
                   <Button size="sm" variant="secondary" onClick={() => setBilling(p)} data-testid={`plan-edit-billing-${p.key}`}><Hourglass className="size-3.5" />Trial & overage</Button>
-                  <Button size="sm" variant="ghost" disabled={pending} onClick={() => {
+                  <Button size="sm" variant="secondary" onClick={() => setImpact(p)} data-testid={`plan-impact-${p.key}`}><BarChart3 className="size-3.5" />Impact</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setCopying(p)} data-testid={`plan-duplicate-${p.key}`}><Copy className="size-3.5" />Duplicate</Button>
+                  {!p.retiredAt && <Button data-delete-area={p.archivedAt ? undefined : 'console'} data-delete={p.archivedAt ? undefined : `plan ${p.name} (archive)`} size="sm" variant="ghost" disabled={pending} onClick={() => {
                     if (!p.archivedAt && !confirm(`Stop offering ${p.name}? The ${p.tenants} workspace(s) on it keep it until they change plan, and open requests for it are declined.`)) return;
                     start(async () => { const r = await archivePlanAction(p.key, !p.archivedAt); done(r, r.ok ? r.data?.note : undefined); });
-                  }} data-testid={`plan-archive-${p.key}`}>{p.archivedAt ? <><RotateCcw className="size-3.5" />Restore</> : <><Archive className="size-3.5" />Archive</>}</Button>
+                  }} data-testid={`plan-archive-${p.key}`}>{p.archivedAt ? <><RotateCcw className="size-3.5" />Restore</> : <><Archive className="size-3.5" />Archive</>}</Button>}
+                  {p.retiredAt
+                    ? <Button size="sm" variant="ghost" disabled={pending} onClick={() => start(async () => { const r = await retirePlanAction(p.key, false); done(r, r.ok ? r.data?.note ?? 'Plan reopened. It stays archived until you restore it.' : undefined); })} data-testid={`plan-unretire-${p.key}`}><RotateCcw className="size-3.5" />Reopen</Button>
+                    : <Button size="sm" variant="ghost" onClick={() => setRetiring(p)} data-testid={`plan-retire-${p.key}`}><Ban className="size-3.5" />Retire</Button>}
                   {!LAUNCH.has(p.key) && p.tenants === 0 && (
-                    <Button size="sm" variant="ghost" aria-label={`Delete ${p.name}`} disabled={pending} onClick={() => {
-                      if (!confirm(`Delete ${p.name}? This cannot be undone.`)) return;
-                      start(async () => done(await deletePlanAction(p.key)));
-                    }}><Trash2 className="size-3.5" /></Button>
+                    <Button size="sm" variant="ghost" aria-label={`Delete ${p.name}`} disabled={pending} onClick={() => setImpact(p)}><Trash2 className="size-3.5" /></Button>
                   )}
                 </div>
               ) : undefined}
@@ -138,6 +146,9 @@ export function PlansView({ plans, requests, canEdit }: { plans: PlatformPlan[];
       {contents && <ContentsDialog plan={contents} onClose={() => setContents(null)} onSaved={(t) => { setNote({ tone: 'success', text: t }); setContents(null); router.refresh(); }} />}
       {billing && <BillingDialog plan={billing} onClose={() => setBilling(null)} onSaved={(t) => { setNote({ tone: 'success', text: t }); setBilling(null); router.refresh(); }} />}
       {details && <DetailsDialog plan={details} onClose={() => setDetails(null)} onSaved={(t) => { setNote({ tone: 'success', text: t }); setDetails(null); router.refresh(); }} />}
+      {impact && <ImpactDialog plan={impact} onClose={() => setImpact(null)} onDeleted={(t) => { setImpact(null); done({ ok: true, message: t }); }} />}
+      {copying && <DuplicateDialog plan={copying} onClose={() => setCopying(null)} onSaved={(t) => { setCopying(null); done({ ok: true, message: t }); }} />}
+      {retiring && <RetireDialog plan={retiring} onClose={() => setRetiring(null)} onSaved={(t) => { setRetiring(null); done({ ok: true, message: t }); }} />}
       {creating && <CreateDialog plans={plans} onClose={() => setCreating(false)} onSaved={(t, key) => { setNote({ tone: 'success', text: t }); setCreating(false); router.refresh(); const p = plans.find((x) => x.key === key); if (p) setContents(p); }} />}
     </div>
   );
@@ -197,12 +208,24 @@ function ContentsDialog({ plan, onClose, onSaved }: { plan: PlatformPlan; onClos
   const before = useMemo(() => new Set(plan.features.filter((f) => f.limitValue === null).map((f) => f.key)), [plan]);
   const removed = [...before].filter((k) => !on.has(k));
   const added = [...on].filter((k) => !before.has(k));
-  const toggle = (key: string, next: boolean) => setOn((s) => { const n = new Set(s); if (next) n.add(key); else n.delete(key); return n; });
+  const toggle = (key: string, next: boolean) => { setPreview(null); setOn((s) => { const n = new Set(s); if (next) n.add(key); else n.delete(key); return n; }); };
   const limitErrors = Object.fromEntries(Object.entries(limits).filter(([, v]) => !/^-?\d+$/.test(v.trim()) || Number(v) < -1).map(([k]) => [k, 'A whole number, or -1 for unlimited']));
 
+  const [preview, setPreview] = useState<PlanImpact | null>(null);
+  const proposed = () => ({ features: [...on], limits: Object.fromEntries(Object.entries(limits).map(([k, v]) => [k, Number(v)])) });
+  const lowered = LIMITS.some((l) => {
+    const was = plan.features.find((f) => f.key === l.key)?.limitValue ?? 0;
+    const now = Number(limits[l.key]);
+    if (now === -1) return false;
+    return was === -1 || now < was;
+  });
   const save = () => {
     if (Object.keys(limitErrors).length) return;
-    if (removed.length && plan.activeTenants > 0 && !confirm(`${removed.map(nameOf).join(', ')} will stop working at once for the ${plan.activeTenants} workspace(s) on ${plan.name}. Their data is kept. Continue?`)) return;
+    // Removing a module or lowering a limit on a plan in use: show who it affects first, then save on the second click.
+    if ((removed.length || lowered) && plan.tenants > 0 && !preview) {
+      start(async () => { const r = await planImpactAction(plan.key, proposed()); if (!r.ok) { setError(r.message ?? 'Could not check the impact'); return; } setPreview(r.data!); });
+      return;
+    }
     start(async () => {
       const r = await setPlanEntitlementsAction(plan.key, { features: [...on], limits: Object.fromEntries(Object.entries(limits).map(([k, v]) => [k, Number(v)])) });
       if (!r.ok) { setError(r.message ?? 'Could not save'); return; }
@@ -217,9 +240,19 @@ function ContentsDialog({ plan, onClose, onSaved }: { plan: PlatformPlan; onClos
   return (
     <Dialog open onClose={onClose} size="lg" title={`${plan.name}: modules and limits`}
       description="Switch on what this plan includes. Workspaces on the plan get the change on their next page load; data in a module that is switched off is kept."
-      footer={<><span className="mr-auto text-xs text-fg-subtle">{added.length} added · {removed.length} removed</span><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={pending} onClick={save} data-testid="plan-contents-save">Save plan</Button></>}>
+      footer={<><span className="mr-auto text-xs text-fg-subtle">{added.length} added · {removed.length} removed</span><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={pending} onClick={save} data-testid="plan-contents-save">{preview ? 'Save anyway' : 'Save plan'}</Button></>}>
       <div className="grid gap-5">
         {error && <Alert tone="danger">{error}</Alert>}
+        {preview && (
+          <Alert tone="warning" title="Who this change affects" >
+            <span data-testid="plan-impact-preview">
+              {preview.subscribers.active + preview.subscribers.trialing + preview.subscribers.pastDue} workspace(s) on {plan.name} get it at once ({fmtMoneyMap(preview.mrr, 'no')} monthly recurring).
+              {preview.removed.length > 0 && <> Losing: {preview.removed.map((x) => `${x.label} (${x.workspaces} using it)`).join(', ')}. Their data is kept.</>}
+              {preview.lowered.length > 0 && <> Lower limits: {preview.lowered.map((x) => `${x.label} ${x.from === -1 ? 'unlimited' : x.from} to ${x.to}${x.overLimit ? `, ${x.overLimit} already above it` : ''}`).join('; ')}.</>}
+              {' '}Change something to check again, or Save anyway.
+            </span>
+          </Alert>
+        )}
         <div className="flex gap-2">
           <Button size="sm" variant="secondary" onClick={() => setOn(new Set(MODULES.map((f) => f.key)))}>Include all</Button>
           <Button size="sm" variant="ghost" onClick={() => setOn(new Set(MODULES.filter((f) => isCoreFeature(f.key)).map((f) => f.key)))}>Foundation only</Button>
@@ -250,7 +283,7 @@ function ContentsDialog({ plan, onClose, onSaved }: { plan: PlatformPlan; onClos
               <Field key={l.key} label={`${l.name}${l.unit ? ` (${l.unit})` : ''}`} hint={WORKSPACE_LIMIT_HINTS[l.key] ?? '-1 means unlimited'} error={limitErrors[l.key]}>
                 {(p) => (
                   <div className="flex items-center gap-2">
-                    <Input {...p} inputMode="numeric" value={limits[l.key]} onChange={(e) => setLimits((s) => ({ ...s, [l.key]: e.target.value }))} data-testid={`plan-limit-${l.key}`} />
+                    <Input {...p} inputMode="numeric" value={limits[l.key]} onChange={(e) => { setPreview(null); setLimits((s) => ({ ...s, [l.key]: e.target.value })); }} data-testid={`plan-limit-${l.key}`} />
                     <Checkbox label="Unlimited" checked={limits[l.key] === '-1'} onChange={(e) => setLimits((s) => ({ ...s, [l.key]: e.target.checked ? '-1' : '0' }))} />
                   </div>
                 )}
@@ -428,6 +461,90 @@ function BillingDialog({ plan, onClose, onSaved }: { plan: PlatformPlan; onClose
           })}
         </section>
       </div>
+    </Dialog>
+  );
+}
+
+/** Who is on a plan and what it brings in; delete only when nothing depends on it (never with billing records). */
+function ImpactDialog({ plan, onClose, onDeleted }: { plan: PlatformPlan; onClose: () => void; onDeleted: (text: string) => void }) {
+  const [impact, setImpact] = useState<PlanImpact | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  useEffect(() => {
+    void planImpactAction(plan.key).then((r) => (r.ok ? setImpact(r.data!) : setError(r.message ?? 'Could not load')));
+  }, [plan.key]);
+  return (
+    <Dialog open onClose={onClose} size="lg" title={`${plan.name}: impact`} description={impact ? PLAN_LIFECYCLE_LABEL[impact.lifecycle] : 'Loading…'}
+      footer={<>
+        {impact && !LAUNCH.has(plan.key) && (
+          <Button data-delete-area="console" data-delete={`plan ${plan.name}`} variant="danger" className="mr-auto" disabled={!impact.canDelete} loading={pending} title={impact.canDelete ? undefined : 'Retire or archive it instead'} data-testid="plan-delete" onClick={() => {
+            if (!confirm(`Delete ${plan.name}? This cannot be undone.`)) return;
+            start(async () => { const r = await deletePlanAction(plan.key); if (!r.ok) { setError(r.message ?? 'Not deleted'); return; } onDeleted(`${plan.name} deleted.`); });
+          }}><Trash2 className="size-3.5" />Delete plan</Button>
+        )}
+        <Button variant="ghost" onClick={onClose}>Close</Button>
+      </>}>
+      {error && <Alert tone="danger">{error}</Alert>}
+      {impact && (
+        <div className="grid gap-4 text-[13px]" data-testid="plan-impact">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Box label="Subscribers" value={impact.subscribers.total} hint={`${impact.subscribers.active} active · ${impact.subscribers.trialing} trial`} />
+            <Box label="Monthly recurring" value={fmtMoneyMap(impact.mrr)} />
+            <Box label="Paid to date" value={fmtMoneyMap(impact.revenue)} />
+            <Box label="Invoices" value={impact.invoices} hint={`${impact.billingEvents} billing events`} />
+          </div>
+          {!impact.canDelete && <Alert tone="info">This plan cannot be deleted: {impact.deleteBlockedBy.join('; ')}. Retire it to close it for good while its subscribers keep it, or archive it to stop new sign-ups.</Alert>}
+          {impact.companies.length > 0 && (
+            <Table aria-label="Companies on this plan">
+              <THead><TR><TH>Company</TH><TH>Subscription</TH><TH className="text-right">Seats</TH></TR></THead>
+              <TBody>{impact.companies.slice(0, 50).map((c) => <TR key={c.tenantId}><TD>{c.clientId ? <Link href={`/clients/${c.clientId}`} className="hover:underline">{c.name}</Link> : c.name}</TD><TD>{c.status}</TD><TD className="text-right tabular">{c.seats}</TD></TR>)}</TBody>
+            </Table>
+          )}
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+function Box({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
+  return <div className="rounded-lg border border-border px-3 py-2"><div className="text-[11.5px] text-fg-subtle">{label}</div><div className="text-[16px] font-semibold tabular">{value}</div>{hint && <div className="text-[11px] text-fg-subtle">{hint}</div>}</div>;
+}
+
+function DuplicateDialog({ plan, onClose, onSaved }: { plan: PlatformPlan; onClose: () => void; onSaved: (text: string) => void }) {
+  const [key, setKey] = useState(`${plan.key}_copy`.slice(0, 40));
+  const [name, setName] = useState(`${plan.name} (copy)`);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const okKey = new RegExp(PLAN_KEY_PATTERN).test(key);
+  return (
+    <Dialog open onClose={onClose} title={`Duplicate ${plan.name}`} description="Copies modules, limits, prices, trial and overage. The copy is hidden from workspaces until you make it public, and has no subscribers."
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={!okKey || name.trim().length < 2} loading={pending} data-testid="plan-duplicate-save" onClick={() => start(async () => {
+        const r = await duplicatePlanAction(plan.key, { key, name: name.trim() });
+        if (!r.ok) { setError(r.message ?? 'Not copied'); return; }
+        onSaved(r.message ?? 'Plan copied.');
+      })}>Duplicate</Button></>}>
+      <div className="grid gap-3">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Field label="New key" hint="Start with a letter; lower-case letters, digits or underscores" error={okKey ? undefined : 'Not a valid key'}>{(p) => <Input {...p} value={key} onChange={(e) => setKey(e.target.value)} data-testid="plan-duplicate-key" />}</Field>
+        <Field label="Name">{(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />}</Field>
+      </div>
+    </Dialog>
+  );
+}
+
+function RetireDialog({ plan, onClose, onSaved }: { plan: PlatformPlan; onClose: () => void; onSaved: (text: string) => void }) {
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <Dialog open onClose={onClose} title={`Retire ${plan.name}`} description={`Closes the plan for good: no new sign-ups or plan changes to it, and its open requests are declined. The ${plan.tenants} workspace(s) on it keep it, with their invoices and history. Nothing is deleted.`}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="danger" disabled={reason.trim().length < 3} loading={pending} data-testid="plan-retire-confirm" onClick={() => start(async () => {
+        const r = await retirePlanAction(plan.key, true, reason.trim());
+        if (!r.ok) { setError(r.message ?? 'Not retired'); return; }
+        onSaved(r.data?.note ?? `${plan.name} retired.`);
+      })}>Retire plan</Button></>}>
+      {error && <Alert tone="danger" className="mb-3">{error}</Alert>}
+      <Field label="Reason" hint="Saved in the audit log" required>{(p) => <Textarea {...p} value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} />}</Field>
     </Dialog>
   );
 }

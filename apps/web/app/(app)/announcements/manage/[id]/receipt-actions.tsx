@@ -22,8 +22,8 @@ export function ReceiptActions({ a }: { a: Announcement & { canRemind: boolean; 
         {a.status === 'published' && a.requiresAck && (
           <Button size="sm" variant="secondary" loading={pending} disabled={!a.canRemind} title={a.canRemind ? undefined : 'You can remind people once an hour'} onClick={() => run(() => remindAnnouncementAction(a.id))}>Remind those who have not acknowledged</Button>
         )}
-        {a.status === 'published' && <Button size="sm" variant="ghost" loading={pending} onClick={() => confirm('Take it off the feed? Read receipts are kept.') && run(() => archiveAnnouncementAction(a.id))}>Archive</Button>}
-        <Button size="sm" variant="ghost" loading={pending} onClick={() => {
+        {a.status === 'published' && <Button data-delete-area="communication" data-delete="announcement" size="sm" variant="ghost" loading={pending} onClick={() => confirm('Take it off the feed? Read receipts are kept.') && run(() => archiveAnnouncementAction(a.id))}>Archive</Button>}
+        <Button data-delete-area="communication" data-delete="announcement" size="sm" variant="ghost" loading={pending} onClick={() => {
           if (!confirm(a.status === 'draft' || a.status === 'scheduled' ? 'Delete this announcement for good?' : 'Delete it? It leaves everyone\'s feed; its read receipts and acknowledgements are kept.')) return;
           run(async () => {
             const r = await deleteAnnouncementAction(a.id);

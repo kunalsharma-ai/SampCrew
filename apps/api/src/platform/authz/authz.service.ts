@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ACCESS_LEVEL_ROLES, EMPLOYEE_SELF_GRANTS, levelGrantAllowed, levelGrantScope, type Scope } from '@crew/contracts';
+import { ACCESS_LEVEL_ROLES, CENTRAL_GROUP, DELETE_AREA_LIST, deleteSwitchKey, EMPLOYEE_SELF_GRANTS, levelGrantAllowed, levelGrantScope, routeMatches, type Scope, workspacePermissionsOff, type WorkspacePermissionRoute } from '@crew/contracts';
 import { requestContext } from '../context/request-context';
 import { MongoService as DatabaseService, type TenantTx } from '../database/mongo.service';
 import { Errors } from '../http/errors';
@@ -55,7 +55,10 @@ export async function loadSubject(tx: TenantTx, membershipId: string, userId: st
   if (!m) throw Errors.forbidden('Your membership in this workspace is not active');
 
   // Permissions SAMPLEDGE switched off for the workspace have no effect, whatever the member's roles say.
-  const disabled = new Set<string>((await tx.collection('tenant_access_controls').findOne({}))?.disabled_permissions ?? []);
+  const controls = await tx.collection('tenant_access_controls').findOne({});
+  const disabled = new Set<string>(controls?.disabled_permissions ?? []);
+  // Delete areas the Console Admin has not allowed this company: nobody in it may delete there.
+  const consoleDeleteOff = new Set<string>((controls?.delete_areas_off ?? []) as string[]);
   // Only the four access levels give access (Super, HR and Employee Workspace; Console Admin is the Console's own).
   // Old built-in and custom roles may still be in the database for rollback: they give nothing.
   const held = await tx.collection('role_assignments').find({ membership_id: membershipId });
@@ -77,19 +80,17 @@ export async function loadSubject(tx: TenantTx, membershipId: string, userId: st
     }
   }
 
+  // Settings > Workspace Permissions: what the Super Workspace switched off for HR Workspace (per HR Workspace, or
+  // "central" for company-wide HR people) and for Employee Workspace. Switches only take away: an HR Workspace person
+  // keeps a permission while at least one of their HR Workspaces has it on; the Super Workspace is never limited.
+  const { routes: offRoutes, deleteAreas } = await applyWorkspacePermissions(tx, grants, consoleDeleteOff);
+
   // HR Workspace Admins act only on the people of their HR Workspaces: resolve those once for the request.
   const hrIds = [...new Set(assignments.flatMap((a) => ((a.constraints?.hrWorkspaceIds ?? []) as string[])))];
   const hrPeople = new Map<string, { employees: string[]; memberships: string[] }>();
   if (hrIds.length) {
-    const spaces = await tx.collection('hr_workspaces').find({ id: { $in: hrIds } }, { projection: { status: 1, permissions_off: 1 } });
+    const spaces = await tx.collection('hr_workspaces').find({ id: { $in: hrIds } }, { projection: { status: 1 } });
     const live = new Set(spaces.filter((w) => w.status === 'active').map((w) => w.id as string));
-    // The Super Workspace's employee-data switches per HR Workspace: an admin limited to HR Workspaces keeps a
-    // permission while at least one of their HR Workspaces has it on.
-    const offIn = new Map(spaces.map((w) => [w.id as string, new Set((w.permissions_off ?? []) as string[])]));
-    for (let i = grants.length - 1; i >= 0; i--) {
-      const ids = (grants[i]!.constraints.hrWorkspaceIds ?? []) as string[];
-      if (ids.length && ids.every((id) => offIn.get(id)?.has(grants[i]!.permission) ?? false)) grants.splice(i, 1);
-    }
     const people = await tx.collection('employees').find({ hr_workspace_id: { $in: [...live] } }, { projection: { _id: 1, hr_workspace_id: 1, membership_id: 1 } });
     for (const id of live) hrPeople.set(id, { employees: [], memberships: [] });
     for (const e of people) {
@@ -160,7 +161,60 @@ export async function loadSubject(tx: TenantTx, membershipId: string, userId: st
     grants,
     mfa,
     hrWorkspacePeople,
+    offRoutes,
+    deleteAreas,
   };
+}
+
+/**
+ * Takes out of `grants` what Settings > Workspace Permissions switched off (in place) and returns the API routes that
+ * are switched off for the person's level. HR Workspace grants follow the switches of the person's HR Workspaces
+ * ("central" when not limited to any), Employee Workspace grants the switches for all Employee Workspaces.
+ */
+async function applyWorkspacePermissions(tx: TenantTx, grants: Grant[], consoleDeleteOff: ReadonlySet<string>): Promise<{ routes: WorkspacePermissionRoute[]; deleteAreas: Set<string> }> {
+  const hasSuper = grants.some((g) => g.roleKey === 'super_workspace');
+  const hrGrants = grants.filter((g) => g.roleKey === 'hr_workspace');
+  const groupsOf = (g: Grant) => ((g.constraints.hrWorkspaceIds ?? []) as string[]).length ? (g.constraints.hrWorkspaceIds as string[]) : [CENTRAL_GROUP];
+  const hrGroups = [...new Set(hrGrants.flatMap(groupsOf))];
+  const rows = await tx.collection('level_permissions').find({
+    $or: [{ subject_type: 'employee_workspace', subject_id: 'all' }, ...(hrGroups.length ? [{ subject_type: 'hr_workspace', subject_id: { $in: hrGroups } }] : [])],
+  }, { projection: { subject_type: 1, subject_id: 1, permissions: 1 } });
+  const saved = new Map(rows.map((r) => [`${r.subject_type}:${r.subject_id}`, (r.permissions ?? {}) as Record<string, unknown>]));
+  const employeeOff = workspacePermissionsOff('employee', [saved.get('employee_workspace:all')]);
+  const hrOff = new Map<string, ReturnType<typeof workspacePermissionsOff>>();
+  const hrOffFor = (groups: string[]) => {
+    const key = [...groups].sort().join(',');
+    let v = hrOff.get(key);
+    if (!v) {
+      v = workspacePermissionsOff('hr', groups.map((id) => saved.get(`hr_workspace:${id}`)));
+      hrOff.set(key, v);
+    }
+    return v;
+  };
+  for (let i = grants.length - 1; i >= 0; i--) {
+    const g = grants[i]!;
+    if (g.roleKey === 'hr_workspace' && hrOffFor(groupsOf(g)).permissions.has(g.permission)) grants.splice(i, 1);
+    else if (g.roleKey === 'employee_workspace' && employeeOff.permissions.has(g.permission)) grants.splice(i, 1);
+  }
+  // Delete permissions: the Super Workspace may delete wherever the Console allowed it; HR Workspace people where at
+  // least one of their HR Workspaces has the area switched on; Employee Workspace people where Employee Workspace has.
+  const allowedBy = (level: 'hr' | 'employee', sets: (Record<string, unknown> | undefined)[]) => new Set(
+    DELETE_AREA_LIST.filter((a) => a.levels.includes(level) && sets.some((s) => s?.[deleteSwitchKey(a.key)] === true)).map((a) => a.key as string),
+  );
+  const hasLevel = grants.length > 0;
+  const deleteAreas = !hasLevel ? new Set<string>()
+    : hasSuper ? new Set<string>(DELETE_AREA_LIST.map((a) => a.key))
+      : hrGrants.length ? allowedBy('hr', hrGroups.map((id) => saved.get(`hr_workspace:${id}`)))
+        : allowedBy('employee', [saved.get('employee_workspace:all')]);
+  for (const a of consoleDeleteOff) deleteAreas.delete(a);
+  if (hasSuper) return { routes: [], deleteAreas };
+  if (hrGrants.length) return { routes: hrOffFor(hrGroups).routes, deleteAreas };
+  return { routes: employeeOff.routes, deleteAreas };
+}
+
+/** Is this API call switched off for the person's level in Settings > Workspace Permissions? */
+export function routeSwitchedOff(s: Subject, path: string, method: string): boolean {
+  return Boolean(s.offRoutes?.length) && routeMatches(s.offRoutes as WorkspacePermissionRoute[], path, method);
 }
 
 /** Everyone below `rootId` in a reporting tree, level by level (at most 50 levels, as the SQL version). */

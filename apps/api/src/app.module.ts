@@ -35,6 +35,8 @@ import { MasterDataService } from './modules/master-data/master-data.service';
 import { HrAdminService } from './modules/hr-admin/hr-admin.service';
 import { HierarchyController } from './modules/hierarchy/hierarchy.controller';
 import { WorkspaceLimitsController } from './modules/workspace-limits/workspace-limits.controller';
+import { WorkspacePermissionsController } from './modules/workspace-permissions/workspace-permissions.controller';
+import { WorkspacePermissionsService } from './modules/workspace-permissions/workspace-permissions.service';
 import { WorkspaceLimitsService } from './modules/workspace-limits/workspace-limits.service';
 import { HierarchyService } from './modules/hierarchy/hierarchy.service';
 import { FeatureLevelsService } from './modules/hierarchy/feature-levels.service';
@@ -93,6 +95,20 @@ import {
   OrganizationController,
 } from './modules/organization/organization.controller';
 import { OrganizationService } from './modules/organization/organization.service';
+import { ConsoleController } from './modules/console/console.controller';
+import { CommandCenterService } from './modules/console/command-center.service';
+import { CompaniesService } from './modules/console/companies.service';
+import { ConsoleAuditService } from './modules/console/console-audit.service';
+import { ConsoleNotificationsService } from './modules/console/console-notifications.service';
+import { ConsoleReportsService } from './modules/console/console-reports.service';
+import { ConsoleRolesService } from './modules/console/console-roles.service';
+import { ConsoleSearchService } from './modules/console/console-search.service';
+import { ConsoleSettingsService } from './modules/console/console-settings.service';
+import { PlanImpactService } from './modules/console/plan-impact.service';
+import { RefundsService } from './modules/console/refunds.service';
+import { RequestMetricsMiddleware, RequestMetricsService, SystemStatusService } from './modules/console/system-status.service';
+import { ViewAsService } from './modules/console/view-as.service';
+import { ConsoleNotifyService } from './platform/notify/console-notify.service';
 import { PlatformAuthController, PlatformController, PlatformIntegrationsController, PlatformSetupController } from './modules/platform-admin/platform.controller';
 import { FirstRunService } from './modules/platform-admin/first-run.service';
 import { PlatformAuthService } from './modules/platform-admin/platform-auth.service';
@@ -140,7 +156,7 @@ import { HelpdeskService } from './modules/helpdesk/helpdesk.service';
 import { ChatService } from './modules/communication/chat.service';
 import { PlatformSupportChatController, SupportChatController } from './modules/support-chat/support-chat.controller';
 import { SupportChatService } from './modules/support-chat/support-chat.service';
-import { HelpController, PlatformHelpController } from './modules/help/help.controller';
+import { HelpController, PlatformHelpController, PublicHelpController } from './modules/help/help.controller';
 import { HelpContentService } from './modules/help/help-content.service';
 import { HelpQueriesService } from './modules/help/help-queries.service';
 import { CommFilesController, CommunicationController } from './modules/communication/communication.controller';
@@ -182,6 +198,7 @@ import { EntitlementsService } from './platform/entitlements/entitlements.servic
 import { OutboxService } from './platform/events/outbox.service';
 import { contextMiddleware } from './platform/http/context.middleware';
 import { ErrorEnvelopeFilter } from './platform/http/exception.filter';
+import { DeleteAuditInterceptor } from './platform/http/delete-audit.interceptor';
 import { IdempotencyInterceptor } from './platform/http/idempotency.interceptor';
 import { PlatformIntegrationsService } from './platform/integrations/platform-integrations.service';
 import { MailerService } from './platform/notify/mailer.service';
@@ -224,6 +241,7 @@ export const CONTROLLERS = [
   HrAdminController,
   HierarchyController,
   WorkspaceLimitsController,
+  WorkspacePermissionsController,
   OnboardingController,
   TasksController,
   ProfileController,
@@ -276,6 +294,7 @@ export const CONTROLLERS = [
   PlatformSupportChatController,
   HelpController,
   PlatformHelpController,
+  PublicHelpController,
   CommFilesController,
   LmsController,
   LearningFilesController,
@@ -295,6 +314,7 @@ export const CONTROLLERS = [
   PlatformController,
   PlatformIntegrationsController,
   PlatformBillingController,
+  ConsoleController,
 ];
 
 @Module({
@@ -338,6 +358,20 @@ export const CONTROLLERS = [
     TenantControlService,
     NotificationService,
     LiveService,
+    ConsoleNotifyService,
+    ConsoleSettingsService,
+    ConsoleNotificationsService,
+    ConsoleRolesService,
+    CompaniesService,
+    CommandCenterService,
+    ConsoleAuditService,
+    ConsoleSearchService,
+    ConsoleReportsService,
+    RefundsService,
+    PlanImpactService,
+    RequestMetricsService,
+    SystemStatusService,
+    ViewAsService,
     PlatformIntegrationsService,
     FirstRunService,
     MailerService,
@@ -367,6 +401,7 @@ export const CONTROLLERS = [
     HrAdminService,
     HierarchyService,
     WorkspaceLimitsService,
+    WorkspacePermissionsService,
     FeatureLevelsService,
     EmployeeImportService,
     DataImportService,
@@ -433,11 +468,12 @@ export const CONTROLLERS = [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: DeleteAuditInterceptor },
     { provide: APP_FILTER, useClass: ErrorEnvelopeFilter },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(contextMiddleware).forRoutes('*');
+    consumer.apply(contextMiddleware, RequestMetricsMiddleware).forRoutes('*');
   }
 }

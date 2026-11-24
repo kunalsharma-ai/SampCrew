@@ -12,6 +12,8 @@ const refresh = (id?: string) => {
 export interface HrWorkspaceForm {
   name: string; code?: string; kind: string; description: string; features: string[]; maxEmployees: number;
   adminMembershipIds: string[]; departmentIds: string[]; locationIds: string[];
+  /** The Workspace Permissions it starts with. */
+  permissionTemplate?: { template: 'hr_default' | 'all' | 'custom' };
 }
 
 export async function createHrWorkspaceAction(input: HrWorkspaceForm) {

@@ -12,7 +12,7 @@ import { HomeHeader, SectionSkeleton, StatSkeletonRow, ViewTabs } from '@/compon
 import { WorkforceHomeView } from '@/components/home/workforce-home';
 import { load, loadOptional } from '@/lib/api';
 import { can, homeActions, quickActions, workflowActions } from '@/lib/nav';
-import type { AttendanceToday, LeaveBalance, Me, MyCalendar, MyRewards } from '@/lib/types';
+import type { AttendanceToday, LeaveBalance, LeaveDashboard, Me, MyCalendar, MyRewards } from '@/lib/types';
 import type { Announcement, Summary } from './helpdesk/types';
 import { HomeDashboard, type Dashboard } from './home-dashboard';
 
@@ -67,11 +67,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
 async function OrganizationSection({ me, trendDays }: { me: Me; trendDays: number }) {
   const attendanceOn = me.features.includes('attendance_basic');
-  const [o, trend] = await Promise.all([
+  const [o, trend, leave] = await Promise.all([
     loadOptional<OrganizationHome>('/home/organization'),
     attendanceOn ? loadOptional<WorkforceTrend>(`/home/workforce/trend?days=${trendDays}`) : null,
+    me.features.includes('leave') && can(me, 'leave:allocate') ? loadOptional<LeaveDashboard>('/leave/dashboard') : null,
   ]);
-  return <OrganizationHomeView o={o} trend={trend} trendDays={trendDays} actions={homeActions(me, 'super')} />;
+  return <OrganizationHomeView o={o} trend={trend} trendDays={trendDays} actions={homeActions(me, 'super')} leave={leave} />;
 }
 
 async function WorkforceSection({ me, sp, trendDays, level }: { me: Me; sp: Search; trendDays: number; level: 'super' | 'hr' }) {

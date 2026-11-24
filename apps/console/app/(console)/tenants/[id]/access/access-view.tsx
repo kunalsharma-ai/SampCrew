@@ -1,14 +1,14 @@
 'use client';
-import type { MemberAccessRow, WorkspaceAccess } from '@crew/contracts';
+import type { DeleteRightsView, MemberAccessRow, WorkspaceAccess } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Dialog, FeatureSwitchBoard, EmptyState, Input, Switch, Table, TBody, TD, TH, THead, TR, cn } from '@crew/ui';
-import { Blocks, Globe, KeyRound, Search, Smartphone, Users } from 'lucide-react';
+import { Blocks, Globe, KeyRound, Search, Smartphone, Trash2, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
-import { setMemberModulesAction, switchAppsAction, switchModulesAction, switchPermissionsAction } from '../../../actions';
+import { setDeleteRightsAction, setMemberModulesAction, switchAppsAction, switchModulesAction, switchPermissionsAction } from '../../../actions';
 import { LocalTime } from '@/components/local-time';
 
-export type AccessTab = 'modules' | 'apps' | 'permissions' | 'people';
+export type AccessTab = 'modules' | 'apps' | 'permissions' | 'delete' | 'people';
 type Feature = WorkspaceAccess['features'][number];
 type Permission = WorkspaceAccess['permissions'][number];
 type Flash = { tone: 'success' | 'danger'; text: string } | null;
@@ -17,11 +17,12 @@ const TABS: { key: AccessTab; label: string; icon: React.ReactNode }[] = [
   { key: 'modules', label: 'Modules', icon: <Blocks className="size-4" aria-hidden /> },
   { key: 'apps', label: 'Web & mobile apps', icon: <Smartphone className="size-4" aria-hidden /> },
   { key: 'permissions', label: 'Permissions', icon: <KeyRound className="size-4" aria-hidden /> },
+  { key: 'delete', label: 'Delete permissions', icon: <Trash2 className="size-4" aria-hidden /> },
   { key: 'people', label: 'People', icon: <Users className="size-4" aria-hidden /> },
 ];
 
-export function AccessView({ tenantId, tab, access, members, page, pageSize, q, canManage }: {
-  tenantId: string; tab: AccessTab; access: WorkspaceAccess; members: { items: MemberAccessRow[]; total: number } | null;
+export function AccessView({ tenantId, tab, access, members, page, pageSize, q, canManage, deleteRights }: {
+  tenantId: string; tab: AccessTab; access: WorkspaceAccess; members: { items: MemberAccessRow[]; total: number } | null; deleteRights?: DeleteRightsView | null;
   page: number; pageSize: number; q: string; canManage: boolean;
 }) {
   const [flash, setFlash] = useState<Flash>(null);
@@ -52,10 +53,52 @@ export function AccessView({ tenantId, tab, access, members, page, pageSize, q, 
       {tab === 'modules' && <PartsCard tenantId={tenantId} access={access} canManage={canManage} setFlash={setFlash} />}
       {tab === 'apps' && <AppsTab tenantId={tenantId} access={access} canManage={canManage} setFlash={setFlash} />}
       {tab === 'permissions' && <PermissionsTab tenantId={tenantId} access={access} canManage={canManage} setFlash={setFlash} />}
+      {tab === 'delete' && deleteRights && <DeleteRightsTab tenantId={tenantId} rights={deleteRights} canManage={canManage} setFlash={setFlash} />}
       {tab === 'people' && (canManage && members
         ? <PeopleTab tenantId={tenantId} features={access.features} members={members} page={page} pageSize={pageSize} q={q} setFlash={setFlash} />
         : <Card><EmptyState icon={<Users className="size-6" />} title="Super admins only" description="Choosing which modules each person may use is limited to Super admins, because it lists the workspace's members." /></Card>)}
     </div>
+  );
+}
+
+/**
+ * Delete permissions: which areas this company may delete in. An area off here is off for its Super Workspace and for
+ * every HR and Employee Workspace below it; on, the Super Workspace may delete there (always with its password) and
+ * may pass it on to HR and Employee Workspace in Settings > Workspace Permissions.
+ */
+function DeleteRightsTab({ tenantId, rights, canManage, setFlash }: { tenantId: string; rights: DeleteRightsView; canManage: boolean; setFlash: (f: Flash) => void }) {
+  const { pending, run } = useSave(setFlash);
+  const off = rights.areas.filter((a) => !a.allowed).map((a) => a.key);
+  const save = (next: string[]) => run(() => setDeleteRightsAction(tenantId, next));
+  return (
+    <Card data-testid="delete-rights">
+      <CardHeader
+        title="Delete permissions"
+        description="Choose what this company's Super Workspace may delete. Whatever is off here is off for its HR and Employee Workspaces too; the Super Workspace can pass on only what is on. Every delete at every level asks for the person's own password and is written to the audit log."
+        action={canManage && (
+          <span className="flex gap-1">
+            <Button size="sm" variant="ghost" disabled={pending || !off.length} onClick={() => save([])}>Allow all</Button>
+            <Button size="sm" variant="ghost" disabled={pending || off.length === rights.areas.length} onClick={() => save(rights.areas.map((a) => a.key))}>Allow none</Button>
+          </span>
+        )}
+      />
+      <Table aria-label="Delete permissions">
+        <THead><TR><TH>Area</TH><TH>What can be deleted</TH><TH className="text-right">Super Workspace may delete</TH></TR></THead>
+        <TBody>
+          {rights.areas.map((a) => (
+            <TR key={a.key} data-testid={`delete-area-${a.key}`}>
+              <TD className="font-medium text-fg">{a.label}</TD>
+              <TD className="text-xs text-fg-muted">{a.description}</TD>
+              <TD className="text-right">
+                <Switch checked={a.allowed} label={`${a.label}: Super Workspace may delete`} testId={`switch-delete-${a.key}`} disabled={!canManage || pending}
+                  onChange={(next) => save(next ? off.filter((k) => k !== a.key) : [...off, a.key])} />
+              </TD>
+            </TR>
+          ))}
+        </TBody>
+      </Table>
+      {rights.updatedAt && <CardBody className="text-xs text-fg-subtle">Workspace controls last changed <LocalTime value={rights.updatedAt} /></CardBody>}
+    </Card>
   );
 }
 
