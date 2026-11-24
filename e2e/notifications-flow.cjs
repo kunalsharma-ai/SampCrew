@@ -101,6 +101,9 @@ const count = async (p) => {
       return (await c.count()) ? Number((await c.innerText()).match(/(\d+)\s*pending/)?.[1] ?? 0) : 0;
     };
     const pendingBefore = await pendingOn();
+    // Opening Approvals marks its notices read, so the other tab's bell is read again before counting.
+    await board.waitForTimeout(1500);
+    await sup.reload();
     await sup.getByTestId('notification-bell').waitFor();
     await sup.waitForTimeout(1500); // the live stream connects
     const before = await count(sup);
@@ -172,6 +175,11 @@ const count = async (p) => {
 
     // 5. Mark all read.
     await op.goto(BASE + '/notifications');
+    // Opening Approvals above already read its notices, so mark one unread again first.
+    if ((await count(op)) === 0) {
+      await op.getByTestId('notification-item').first().getByRole('button', { name: 'Mark unread' }).click();
+      await op.getByTestId('notification-count').waitFor({ timeout: 10000 });
+    }
     if ((await count(op)) === 0) throw new Error('expected unread notices before Mark all read');
     await op.getByRole('button', { name: 'Mark all read' }).click();
     await op.waitForFunction(() => !document.querySelector('[data-testid=notification-count]'), null, { timeout: 10000 });
