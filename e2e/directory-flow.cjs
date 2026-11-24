@@ -118,9 +118,12 @@ let current;
     const dialog = hr.locator('dialog[open]');
     await dialog.locator('input[name=firstName]').fill('Sunita');
     await dialog.locator('input[name=lastName]').fill('Patil');
+    // The same name alone does not stop the form: two people may share a name, each with their own employee ID.
     await dialog.getByRole('button', { name: 'Next: Employment' }).click();
-    await dialog.getByText('This person may already have a record').waitFor();
-    await dialog.getByRole('link', { name: 'Sunita Patil' }).waitFor();
+    await dialog.locator('h3', { hasText: 'Employment' }).waitFor();
+    await dialog.getByRole('button', { name: 'Back', exact: true }).click();
+    await dialog.getByText('Someone with this name already works here').waitFor();
+    expect(!(await dialog.getByText('This person may already have a record').isVisible()), 'a name-only match was shown as a possible duplicate');
     const stamp = String(Date.now() % 100000);
     await dialog.locator('input[name=firstName]').fill('Sunaina');
     // The personal email is never taken as the work email.
@@ -161,7 +164,7 @@ let current;
     await drafts.getByText('Sunaina Patil').waitFor();
     await hr.reload();
     await drafts.getByText('Next: Department & reporting').waitFor();
-    ok('duplicate warning for an existing Sunita Patil; corrected the name and saved the hire as a draft that survives a reload');
+    ok('same name as Sunita Patil only noted, not blocked; corrected the name and saved the hire as a draft that survives a reload');
 
     await hr.getByRole('button', { name: 'Resume hiring Sunaina Patil' }).click();
     await dialog.locator('h3', { hasText: 'Department & reporting' }).waitFor();
