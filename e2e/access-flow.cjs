@@ -100,6 +100,7 @@ async function toggle(page, testId, want) {
     current = hr;
     await signIn(hr, 'hr.admin@demo.crew.local');
     expect((await navLinks(hr)).includes('/leave/manage'), 'HR should start with Leave management');
+    expect((await navLinks(hr)).includes('/settings/leave'), 'HR should start with Holidays and leave rules');
 
     // 2. Switch Staffing bids off for the workspace.
     current = admin;
@@ -123,12 +124,14 @@ async function toggle(page, testId, want) {
     ok('leave:allocate switched off in the console');
     current = hr;
     await hr.goto(WEB + '/');
-    expect(!(await navLinks(hr)).includes('/leave/manage'), 'Leave management should be hidden for HR');
+    // Leave management also opens for assigning quantities or creating types (issue #83), so the screen that needs
+    // leave:allocate alone, Holidays and leave rules, is the one that disappears.
+    expect(!(await navLinks(hr)).includes('/settings/leave'), 'Holidays and leave rules should be hidden for HR');
     await hr.goto(WEB + '/settings/roles');
     await hr.getByRole('button', { name: /HR Workspace \d+$/ }).click();
     await hr.getByText('Switched off by SAMPLEDGE').first().waitFor();
     await shot(hr, 'access-web-roles');
-    ok('HR loses Leave management and Access levels shows the permission as switched off by SAMPLEDGE');
+    ok('HR loses Holidays and leave rules and Access levels shows the permission as switched off by SAMPLEDGE');
 
     // 4. Take Recruitment away from the recruiter only.
     current = admin;
