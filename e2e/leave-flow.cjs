@@ -242,6 +242,17 @@ async function hrApprove(p, day) {
     const hist = sw.getByRole('table', { name: 'Leave history' });
     await hist.locator('tr').filter({ hasText: 'Leave type created' }).filter({ hasText: 'Compensatory Off' }).filter({ hasText: 'Aarav Mehta' }).first().waitFor();
     ok('History shows the type created, with who did it');
+
+    // 8. HR applies for leave for an employee from Leave balances (issue #83).
+    const hr2 = current = await signIn(b, 'hr.admin@demo.crew.local');
+    await hr2.goto(BASE + '/leave/balances');
+    const behalfRow = hr2.locator('tr', { has: hr2.getByTestId('apply-on-behalf') }).first();
+    const behalfName = (await behalfRow.locator('td').first().innerText()).split('\n')[0].trim();
+    await behalfRow.getByTestId('apply-on-behalf').click();
+    const behalf = hr2.locator('dialog[open]');
+    await behalf.getByText(`Apply for leave for ${behalfName}`).waitFor({ timeout: 10000 });
+    if ((await behalf.locator('select[name=leaveTypeId] option').count()) === 0) throw new Error('the leave form for the employee lists no leave types');
+    ok(`HR opened the leave form for ${behalfName} from Leave balances`);
   } catch (e) {
     if (current) await current.screenshot({ path: '/tmp/leave-flow-failure.png', fullPage: true }).catch(() => {});
     throw e;

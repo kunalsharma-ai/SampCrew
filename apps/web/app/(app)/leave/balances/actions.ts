@@ -12,5 +12,6 @@ export async function adjustLeaveAction(values: { employeeId: string; leaveTypeI
 
 /** The leave an employee can apply for, with their balances, so HR can apply on their behalf. */
 export async function employeeBalancesAction(employeeId: string) {
-  return act(() => api<LeaveBalance[]>(`/leave/balances?employeeId=${encodeURIComponent(employeeId)}`));
+  // The API answers { employeeId, year, balances }: the dialog needs the list.
+  return act(async () => (await api<{ balances: LeaveBalance[] }>(`/leave/balances?employeeId=${encodeURIComponent(employeeId)}`)).balances);
 }
