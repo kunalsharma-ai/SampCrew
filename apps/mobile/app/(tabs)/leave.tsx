@@ -6,6 +6,7 @@ import type { Balance, LeaveCalendar, LeaveRequest } from '../../src/lib/types';
 import { type DayMark, MonthCalendar, monthBounds } from '../../src/ui/calendar';
 import { Badge, Button, Card, CardTitle, Empty, errorText, fmt, ListItem, Meter, Notice, Row, Screen, Text, Tile, TileGrid, Title, useLoad, useReloadOnFocus } from '../../src/ui';
 import { ModuleGate } from '../../src/ui/kit';
+import { ModuleNotices } from '../../src/ui/module-notices';
 
 const AUTH_STATUS: Record<string, string> = { approved: 'approved', rejected: 'rejected', pending: 'waiting', waiting: 'not yet reached', withdrawn: 'withdrawn' };
 
@@ -54,6 +55,7 @@ function LeaveBody() {
 
   return (
     <Screen onRefresh={reload} refreshing={loading && !!data}>
+      <ModuleNotices category="leave" label="Leave" />
       <Title>Leave</Title>
       {error && <Notice tone="danger">{error}</Notice>}
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}

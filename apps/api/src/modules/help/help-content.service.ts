@@ -21,6 +21,9 @@ import {
   type HelpSearchResult,
   type HelpSettings,
   type HelpStep,
+  type PublicHelpArticle,
+  type PublicHelpEntry,
+  type PublicHelpHome,
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -136,7 +139,7 @@ export class HelpContentService {
   // ------------------------------------------------------------------------------------------- the viewer
 
   /** The level of a workspace member: Super Workspace, HR Workspace (any grant) or Employee Workspace. */
-  static levelOf(subject: Subject): Exclude<HelpAudience, 'console'> {
+  static levelOf(subject: Subject): Exclude<HelpAudience, 'console' | 'public'> {
     if (subject.grants.some((g) => g.roleKey === 'super_workspace')) return 'super';
     if (subject.grants.some((g) => g.roleKey === 'hr_workspace')) return 'hr';
     return 'employee';
@@ -151,6 +154,11 @@ export class HelpContentService {
 
   consoleViewer(): HelpViewer {
     return { level: 'console', audiences: ['console'], features: null, subject: null };
+  }
+
+  /** Someone who has not signed in: only content with the public audience (no feature or permission can be held). */
+  publicViewer(): HelpViewer {
+    return { level: 'public', audiences: ['public'], features: new Set<string>(), subject: null };
   }
 
   // ------------------------------------------------------------------------------------------- loading
@@ -179,6 +187,7 @@ export class HelpContentService {
       id: a.id, slug: a.slug, categoryId: a.category_id, categoryKey: (c?.key as string) ?? '', categoryName: (c?.name as string) ?? '',
       kind: a.kind as HelpArticleKind, title: a.title, summary: a.summary ?? '', audiences: a.audiences ?? [], href: a.href ?? null,
       hasVideo: !!a.video_url, steps: (a.steps as unknown[] | undefined)?.length ?? 0,
+      icon: ((a.icon as HelpIcon | null) ?? (c?.icon as HelpIcon | undefined)) || 'book',
     };
   }
 
@@ -380,6 +389,42 @@ export class HelpContentService {
     return this.settings(tx);
   }
 
+  // ------------------------------------------------------------------------------------------- public Help & Support
+
+  /**
+   * The public Help & Support page, for anyone before signing in: feature briefs and FAQs with their text, articles
+   * and guides. Read-only, and nothing about the reader is stored.
+   */
+  publicHome(): Promise<PublicHelpHome> {
+    return this.db.platform(async (tx) => {
+      const v = this.publicViewer();
+      const { cats, arts, byId } = await this.visible(tx, v);
+      const entry = (a: Doc): PublicHelpEntry => ({ ...this.summary(a, byId), body: a.body ?? '', keywords: a.keywords ?? [] });
+      const ofKind = (...k: HelpArticleKind[]) => arts.filter((a) => k.includes(a.kind));
+      const settings = await this.settings(tx);
+      return {
+        welcome: settings.welcome,
+        categories: this.categoryViews(cats, arts).filter((c) => c.count > 0),
+        features: ofKind('feature').map(entry),
+        faqs: ofKind('faq', 'troubleshooting').map(entry),
+        articles: ofKind('article').map((a) => this.summary(a, byId)),
+        guides: ofKind('guide', 'tutorial', 'quickstart').map((a) => this.summary(a, byId)),
+        counts: Object.fromEntries(HELP_ARTICLE_KINDS.map((k) => [k, ofKind(k).length])) as Record<HelpArticleKind, number>,
+      };
+    });
+  }
+
+  publicSearch(q: HelpSearchQuery) {
+    return this.db.platform(async (tx) => this.searchIn(tx, this.publicViewer(), q));
+  }
+
+  publicArticle(slug: string): Promise<PublicHelpArticle> {
+    return this.db.platform(async (tx) => {
+      const { mine: _mine, helpful: _helpful, ...rest } = await this.articleIn(tx, this.publicViewer(), slug, null);
+      return rest;
+    });
+  }
+
   // ------------------------------------------------------------------------------------------- Console: own help
 
   consoleHome() {
@@ -434,7 +479,7 @@ export class HelpContentService {
       return {
         id: a.id, slug: a.slug, categoryId: a.category_id, kind: a.kind, title: a.title, summary: a.summary ?? '', body: a.body ?? '',
         steps: a.steps ?? [], audiences: a.audiences ?? [], feature: a.feature ?? null, permission: a.permission ?? null, keywords: a.keywords ?? [],
-        href: a.href ?? null, videoUrl: a.video_url ?? null, imageUrl: a.image_url ?? null, related: a.related ?? [], sort: a.sort ?? 100,
+        href: a.href ?? null, videoUrl: a.video_url ?? null, imageUrl: a.image_url ?? null, related: a.related ?? [], icon: a.icon ?? null, sort: a.sort ?? 100,
         status: a.status, builtin: !!a.builtin_key, customised: !!a.customised_at, updatedAt: iso(a.updated_at ?? a.created_at),
       };
     });
@@ -494,7 +539,7 @@ export class HelpContentService {
     return {
       slug: input.slug, category_id: input.categoryId, kind: input.kind, title: input.title, summary: input.summary, body: input.body, steps: input.steps,
       audiences: input.audiences, feature: input.feature, permission: input.permission, keywords: input.keywords, href: input.href,
-      video_url: input.videoUrl, image_url: input.imageUrl, related: input.related, sort: input.sort, status: input.status,
+      video_url: input.videoUrl, image_url: input.imageUrl, related: input.related, icon: input.icon, sort: input.sort, status: input.status,
     };
   }
 
@@ -504,6 +549,7 @@ export class HelpContentService {
     if (taken && taken.id !== id) throw Errors.conflict('slug_taken', 'Another article already uses this web address (slug)');
     if ((input.kind === 'guide' || input.kind === 'tutorial' || input.kind === 'quickstart') && !input.steps.length) throw Errors.badRequest('steps_required', 'Guides, tutorials and quick starts need at least one step');
     if ((input.kind === 'faq' || input.kind === 'troubleshooting') && !input.body) throw Errors.badRequest('body_required', 'Write the answer');
+    if ((input.kind === 'feature' || input.kind === 'article') && !input.body) throw Errors.badRequest('body_required', input.kind === 'feature' ? 'Write the feature brief' : 'Write the article');
   }
 
   createArticle(input: HelpArticleInput) {

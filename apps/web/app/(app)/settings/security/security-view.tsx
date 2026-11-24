@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input } from '@crew/ui';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input, PasswordInput } from '@crew/ui';
 import { Laptop, ShieldCheck, Smartphone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -99,9 +99,9 @@ export function SecurityView({ mfaEnabled, sessionMfa, sessions }: { mfaEnabled:
             }}
           >
             {pwMsg && <Alert tone={pwMsg.tone}>{pwMsg.text}</Alert>}
-            <Field label="Current password" required>{(p) => <Input {...p} name="currentPassword" type="password" autoComplete="current-password" required />}</Field>
-            <Field label="New password" hint="At least 12 characters, mixing letters, numbers and symbols" error={pwMsg?.fe?.newPassword} required>{(p) => <Input {...p} name="newPassword" type="password" autoComplete="new-password" required minLength={12} />}</Field>
-            <Field label="Confirm new password" required>{(p) => <Input {...p} name="confirm" type="password" autoComplete="new-password" required />}</Field>
+            <Field label="Current password" required>{(p) => <PasswordInput {...p} name="currentPassword" autoComplete="current-password" required />}</Field>
+            <Field label="New password" hint="At least 12 characters, mixing letters, numbers and symbols" error={pwMsg?.fe?.newPassword} required>{(p) => <PasswordInput {...p} name="newPassword" autoComplete="new-password" required minLength={12} rules />}</Field>
+            <Field label="Confirm new password" required>{(p) => <PasswordInput {...p} name="confirm" autoComplete="new-password" required matches="newPassword" />}</Field>
             <Button type="submit" variant="secondary" loading={pending}>Change password</Button>
           </form>
         </CardBody>

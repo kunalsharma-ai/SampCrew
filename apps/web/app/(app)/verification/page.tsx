@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load, loadOptional } from '@/lib/api';
@@ -24,6 +25,7 @@ export default async function VerificationPage({ searchParams }: { searchParams:
   return (
     <>
       <PageHeader title="Background verification" description="Identity, address, education, employment, reference and document checks for each employee, done by HR or by an agency. Only people with Background verification access see these records." />
+      <ModuleNotices category="verification" label="Verification" />
       <CasesView cases={cases} agencies={agencies ?? []} verifiers={verifiers ?? []} filters={{ status, q: sp.q ?? '', method: sp.method ?? '' }}
         startFor={forEmployee ? { id: forEmployee.id, name: forEmployee.displayName } : null}
         can={{ create: canCreate, export: Boolean(me.permissions['bgv:export']), manage: Boolean(me.permissions['bgv:manage']) }} />

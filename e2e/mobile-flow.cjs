@@ -103,7 +103,7 @@ async function signIn(p, email, { code } = {}) {
   for (let attempt = 0; ; attempt++) {
     await p.goto(APP + '/login');
     await p.getByLabel('Work email').fill(email);
-    await p.getByLabel('Password').fill(PASSWORD);
+    await p.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await p.getByRole('button', { name: 'Sign in', exact: true }).click();
     if (code) {
       // The password step can be rate limited too (10 sign-ins a minute); wait and try again rather than time out.
@@ -120,7 +120,7 @@ async function signIn(p, email, { code } = {}) {
       await p.getByRole('button', { name: 'Verify' }).click();
     }
     const r = await Promise.race([
-      p.getByText(/^Good (morning|afternoon|evening)/).waitFor({ timeout: 20000 }).then(() => 'in'),
+      p.getByText(/^Good (morning|afternoon|evening), /).waitFor({ timeout: 20000 }).then(() => 'in'),
       p.getByText('Too many attempts').waitFor({ timeout: 20000 }).then(() => 'limited'),
     ]);
     if (r === 'in') return;
@@ -167,7 +167,7 @@ function futureWeekday(taken) {
     await p.goto(APP + '/');
     await p.getByTestId('web-preview-notice').waitFor();
     await p.getByLabel('Work email').fill(qaEmail);
-    await p.getByLabel('Password').fill('not-the-password');
+    await p.getByLabel('Password', { exact: true }).fill('not-the-password');
     await p.getByRole('button', { name: 'Sign in', exact: true }).click();
     await p.getByTestId('login-error').waitFor();
     await signIn(p, qaEmail);

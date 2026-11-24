@@ -14,6 +14,10 @@ interface Due {
   revoked: boolean;
   attempts: number;
   device_id: string;
+  /** No sound: the person or the organisation turned sound off for this category. */
+  silent: boolean;
+  category: string | null;
+  priority: string | null;
 }
 
 interface ExpoTicket {
@@ -89,13 +93,20 @@ export class PushService implements OnApplicationBootstrap, OnModuleDestroy {
               accept: 'application/json',
               ...(settings.accessToken ? { authorization: `Bearer ${settings.accessToken}` } : {}),
             },
-            body: JSON.stringify(sendable.map((m) => ({
-              to: m.push_token,
-              title: 'SampCrew',
-              body: 'You have something new in SampCrew.',
-              sound: 'default',
-              data: { notificationId: m.notification_id, link: m.link },
-            }))),
+            body: JSON.stringify(sendable.map((m) => {
+              const important = m.priority === 'high' || m.priority === 'urgent';
+              return {
+                to: m.push_token,
+                title: 'SampCrew',
+                body: 'You have something new in SampCrew.',
+                // Silent pushes still show; they just make no sound (the phone's own settings apply on top).
+                ...(m.silent ? {} : { sound: 'default' }),
+                // Android: important notices use the "Important" channel the app creates (heads-up); others the default one.
+                channelId: m.silent ? 'silent' : important ? 'important' : 'default',
+                priority: important ? 'high' : 'default',
+                data: { notificationId: m.notification_id, link: m.link, category: m.category, priority: m.priority, silent: m.silent },
+              };
+            })),
             signal: AbortSignal.timeout(10_000),
           });
           const json = (await res.json().catch(() => null)) as { data?: ExpoTicket[]; errors?: { message: string }[] } | null;
@@ -153,7 +164,10 @@ export class PushService implements OnApplicationBootstrap, OnModuleDestroy {
       const links = new Map((await tx.collection('notifications').find({ id: { $in: due.map((p) => p.notification_id).filter(Boolean) } }, { projection: { link: 1 } })).map((n) => [n.id as string, n.link]));
       return due.map((p) => {
         const d = devices.get(p.mobile_device_id);
-        return { id: p.id, notification_id: p.notification_id, link: links.get(p.notification_id) ?? null, push_token: d?.push_token ?? null, revoked: !d || !!d.revoked_at, attempts: p.attempts, device_id: p.mobile_device_id } as Due;
+        return {
+          id: p.id, notification_id: p.notification_id, link: links.get(p.notification_id) ?? null, push_token: d?.push_token ?? null, revoked: !d || !!d.revoked_at,
+          attempts: p.attempts, device_id: p.mobile_device_id, silent: p.silent === true, category: p.category ?? null, priority: p.priority ?? null,
+        } as Due;
       });
     });
   }

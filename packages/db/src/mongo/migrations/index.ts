@@ -19,6 +19,7 @@ import { m0130WorkspaceLimits } from './0130_workspace_limits';
 import { m0140HelpCentre } from './0140_help_centre';
 import { m0150ConsoleCommandCenter } from './0150_console_command_center';
 import { m0160SimpleLeavePermissions } from './0160_simple_leave_permissions';
+import { m0170NotificationFramework } from './0170_notification_framework';
 import { m0180DeletePermissions } from './0180_delete_permissions';
 
 /** Every MongoDB migration, in order. Append new ones; never edit or reorder one that has shipped. */
@@ -43,5 +44,6 @@ export const MONGO_MIGRATIONS: MongoMigration[] = [
   m0140HelpCentre,
   m0150ConsoleCommandCenter,
   m0160SimpleLeavePermissions,
+  m0170NotificationFramework,
   m0180DeletePermissions,
 ];

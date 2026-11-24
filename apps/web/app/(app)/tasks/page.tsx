@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { Card, CardHeader, PageHeader, Stat } from '@crew/ui';
 import { AlertTriangle, ClipboardCheck, FileSearch, ListTodo } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -67,6 +68,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader title="My tasks" description="HR tasks and manager tasks in one place, with their deadlines, priority and progress." actions={assigns ? <AssignTask people={people} /> : undefined} />
+      <ModuleNotices category={['hr_tasks', 'manager_tasks', 'documents']} label="Task and onboarding" />
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Open tasks" value={open} icon={<ListTodo className="size-4" />} />
         <Stat label="Overdue" value={overdue} icon={<AlertTriangle className="size-4" />} hint={overdue ? 'Past their due date' : 'Nothing late'} />

@@ -49,7 +49,8 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
     // 1. Drag and drop.
     await p.goto(BASE + '/recruitment');
-    await p.getByRole('link', { name: /Quality Engineer/ }).first().click();
+    // The job's own link (the notices strip above the jobs can link to a candidate with the same job title).
+    await p.locator('a[href^="/recruitment/jobs/"]', { hasText: 'Quality Engineer' }).first().click();
     await p.waitForURL(/\/recruitment\/jobs\/[0-9a-f-]{36}$/);
     const jobUrl = p.url();
     const column = (name) => p.getByRole('region', { name, exact: true });
@@ -57,8 +58,14 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
     await column('Applied').getByRole('link', { name: 'Sneha Kulkarni' }).waitFor();
     // Bring the board into view first: a drag that has to scroll the page to reach its drop target never lands.
     await column('Screening').scrollIntoViewIfNeeded();
-    await card('Sneha Kulkarni').dragTo(column('Screening'));
-    await column('Screening').getByRole('link', { name: 'Sneha Kulkarni' }).waitFor();
+    // A drag can miss when the page shifts under it (a live notice arriving above the board), so try again if it did.
+    for (let tries = 0; ; tries++) {
+      await card('Sneha Kulkarni').dragTo(column('Screening'));
+      const landed = await column('Screening').getByRole('link', { name: 'Sneha Kulkarni' }).waitFor({ timeout: 8000 }).then(() => true, () => false);
+      if (landed) break;
+      if (tries >= 2) throw new Error('Sneha Kulkarni did not land in Screening after 3 drags');
+      await column('Screening').scrollIntoViewIfNeeded();
+    }
     await p.reload();
     await column('Screening').getByRole('link', { name: 'Sneha Kulkarni' }).waitFor();
     expect(await column('Applied').getByRole('link', { name: 'Sneha Kulkarni' }).count() === 0, 'Sneha still in Applied after reload');

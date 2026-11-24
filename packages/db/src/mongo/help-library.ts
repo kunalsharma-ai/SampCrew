@@ -42,6 +42,8 @@ export interface LibArticle {
   keywords: string[];
   href?: string;
   related: string[];
+  /** The card icon of a feature brief or article. */
+  icon?: HelpIcon;
   sort: number;
 }
 
@@ -54,12 +56,15 @@ interface Opts {
   related?: string[];
   summary?: string;
   body?: string;
+  icon?: HelpIcon;
 }
 
 const EVERYONE: HelpAudience[] = ['employee'];
 const HR: HelpAudience[] = ['hr'];
 const SUPER: HelpAudience[] = ['super'];
 const CONSOLE: HelpAudience[] = ['console'];
+/** The public Help & Support page (anyone, before signing in). */
+const PUBLIC: HelpAudience[] = ['public'];
 
 let order = 0;
 const firstSentence = (s: string) => {
@@ -83,6 +88,7 @@ function make(kind: HelpArticleKind, category: string, slug: string, title: stri
     keywords: o.keywords ?? [],
     ...(o.href ? { href: o.href } : {}),
     related: o.related ?? [],
+    ...(o.icon ? { icon: o.icon } : {}),
     sort: order,
   };
 }
@@ -94,6 +100,12 @@ const guide = (category: string, slug: string, title: string, summary: string, l
 const tutorial = (category: string, slug: string, title: string, summary: string, list: StepTuple[], o: Opts = {}) => make('tutorial', category, slug, title, { ...o, summary, steps: list });
 /** A problem and how to fix it. */
 const fix = (category: string, slug: string, title: string, body: string, o: Opts & { steps?: StepTuple[] } = {}) => make('troubleshooting', category, slug, title, { ...o, body });
+/** A feature brief for the public "Our features" showcase. */
+const brief = (slug: string, title: string, body: string, icon: HelpIcon, keywords: string[]) => make('feature', 'our-features', slug, title, { body, icon, keywords, audiences: PUBLIC });
+/** A longer public article (offerings, facilities, security). */
+const article = (category: string, slug: string, title: string, icon: HelpIcon, body: string, keywords: string[]) => make('article', category, slug, title, { body, icon, keywords, audiences: PUBLIC });
+/** A public FAQ. */
+const pfaq = (category: string, slug: string, title: string, body: string, keywords: string[]) => make('faq', category, slug, title, { body, keywords, audiences: PUBLIC });
 /** A first-day guide for a level. */
 const quick = (category: string, slug: string, title: string, summary: string, list: StepTuple[], o: Opts = {}) => make('quickstart', category, slug, title, { ...o, summary, steps: list });
 
@@ -146,6 +158,12 @@ export const HELP_LIBRARY_CATEGORIES: LibCategory[] = [
   cat('console-support', 'Support inbox & help queries', 'Answering Super Workspaces and managing help queries.', 'headset', CONSOLE),
   cat('console-help', 'Managing the help centre', 'Writing FAQs, guides and tutorials, and setting up Raise a Query.', 'book', CONSOLE),
   cat('console-platform', 'Admins, integrations & health', 'Console admins, integrations, payroll country packs, health and audit.', 'activity', CONSOLE),
+  // Public Help & Support (anyone, before signing in; signed-in people see it too)
+  cat('about-sampcrew', 'About SampCrew', 'What SampCrew is, who it is for, what we offer and how we look after you.', 'sparkles', PUBLIC),
+  cat('our-features', 'Our features', 'A short brief on every part of SampCrew: what it does and why it helps.', 'rocket', PUBLIC),
+  cat('signing-in', 'Signing in & your account', 'Getting in, passwords, two-step verification and which address to use.', 'key', PUBLIC),
+  cat('security-trust', 'Security & privacy', 'How your data is protected, stored, backed up and audited.', 'shield', PUBLIC),
+  cat('plans-support', 'Plans, trials & support', 'Plans, free trials, add-ons, billing questions and how to reach us.', 'card', PUBLIC),
 ];
 
 // ------------------------------------------------------------------------------------------------------ articles
@@ -682,6 +700,59 @@ export const HELP_LIBRARY_ARTICLES: LibArticle[] = [
   faq('console-platform', 'console-integrations', 'Where are API keys for email, payments and AI?', 'Integrations keeps every key in the database: email delivery, Razorpay and Stripe, AI provider and more. The server\'s .env file only holds the database connection.', { audiences: CONSOLE, keywords: ['integrations', 'smtp', 'api keys', 'razorpay'], href: '/integrations' }),
   faq('console-platform', 'console-health', 'How do I check the system is healthy?', 'System health shows the API, database replication, backups (including point-in-time backups) and background jobs. Platform audit records every Console action.', { audiences: CONSOLE, keywords: ['health', 'backups', 'status', 'audit'], href: '/health' }),
   faq('console-platform', 'console-statutory-packs', 'What are payroll country packs?', 'Payroll country packs hold the statutory rules (contributions, taxes, limits) for each supported country. Companies pick them in Payroll settings; India is the default.', { audiences: CONSOLE, keywords: ['statutory', 'country pack', 'payroll rules'], href: '/statutory-packs' }),
+  // ---------------------------------------------------------------------------------- public Help & Support
+  // Feature briefs: one per part of SampCrew, for the "Our features" showcase on the public page.
+  brief('core-people', 'Employee records & structure', 'One record for every person: personal and job details, documents, reporting lines, departments, locations and legal entities, with custom fields for anything your company tracks.', 'users', ['employee records', 'org chart', 'hire', 'custom fields']),
+  brief('leave-brief', 'Leave management', 'Standard and custom leave types, allocations, balances and a year view. People apply in two taps; approvals go to the right level, with policies scoped by HR Workspace, department or location.', 'calendar', ['leave', 'time off', 'holidays', 'balances']),
+  brief('attendance-brief', 'Attendance & time', 'Punch in from the web, phone, QR kiosk or biometric machine, with geofences, shifts, late-coming rules, corrections and monthly registers you can export to Excel.', 'clock', ['attendance', 'punch', 'biometric', 'shifts']),
+  brief('payroll-brief', 'Payroll & payslips', 'Salary structures, monthly payroll runs and payslips, with statutory packs for India, the UK, the US, the UAE, Saudi Arabia, Qatar, Singapore and Australia, and a custom scheme for any other country.', 'wallet', ['payroll', 'payslip', 'salary', 'statutory']),
+  brief('recruitment-brief', 'Recruitment, ATS & Candidate CRM', 'Job requisitions, a careers page, pipelines you drag candidates through, interviews, offers and a candidate database with follow-ups, imports and exports.', 'briefcase', ['recruitment', 'ats', 'candidates', 'hiring']),
+  brief('performance-brief', 'Performance & appraisals', 'Goals, review cycles, appraisal forms and reward payouts, so every review is fair, on time and on record.', 'target', ['performance', 'appraisal', 'goals', 'reviews']),
+  brief('learning-brief', 'Learning & development', 'Courses, learning paths, quizzes, assignments and certificates, with progress for each person and team.', 'graduation', ['learning', 'lms', 'courses', 'training']),
+  brief('communication-brief', 'Communication & announcements', 'Chat, announcements, emails from HR and one notification centre with sound, push and email, so nobody misses what matters.', 'messages', ['communication', 'chat', 'announcements', 'notifications']),
+  brief('documents-brief', 'Documents & verification', 'Collect, approve and store documents with comments and reasons, and run background verification with outside agencies.', 'file', ['documents', 'bgv', 'verification']),
+  brief('expenses-assets-brief', 'Expenses & assets', 'Expense claims with receipts and approvals, and a register of every laptop, phone and asset and who holds it.', 'receipt', ['expenses', 'claims', 'assets']),
+  brief('engagement-brief', 'Recognition & surveys', 'Thank colleagues in public, run pulse and engagement surveys, and see how your people really feel.', 'heart', ['recognition', 'surveys', 'engagement']),
+  brief('analytics-brief', 'Analytics, AI & automation', 'Dashboards for every level, attrition risk, Workforce Universe and Automation Studio, so routine HR work runs by itself.', 'chart', ['analytics', 'ai', 'automation', 'dashboards']),
+  brief('levels-brief', 'Four levels, one platform', 'SampCrew Console for the SAMPLEDGE team, a Super Workspace for each company, HR Workspaces for its departments or branches, and an Employee Workspace for everyone. Each level switches features on or off for the levels below it.', 'network', ['levels', 'super workspace', 'hr workspace', 'employee workspace']),
+  brief('mobile-brief', 'SampCrew on your phone', 'The Android and iPhone app has attendance, leave, payslips, approvals, chat and notifications, with the same sign-in as the web.', 'phone', ['mobile', 'app', 'android', 'iphone']),
+
+  // Articles: offerings, facilities, security and getting started.
+  article('about-sampcrew', 'sampcrew-overview', 'What is SampCrew?', 'sparkles', 'SampCrew by SAMPLEDGE is one place to run everything about your people: hiring, records, attendance, leave, payroll, performance, learning and communication. People, simplified.\n\nIt is built for companies of every size, from a team of ten to groups with many branches and legal entities.\n\n- One record for every person, shared by every module\n- Four levels (Console, Super Workspace, HR Workspace, Employee Workspace), each seeing exactly what it should\n- The same experience on the web and on Android and iPhone\n- Your data in your own self-hosted database, backed up and audited', ['about', 'what is', 'overview', 'sampledge']),
+  article('about-sampcrew', 'our-offerings', 'Our offerings', 'briefcase', 'SampCrew comes as plans that grow with you, and add-ons you switch on when you need them.\n\n- Core HR in every plan: employee records, structure, documents, Help & Support and the phone app\n- Modules by plan: leave, attendance, payroll, recruitment, performance, learning, engagement, expenses, assets and analytics\n- Add-ons: extra seats, payroll for more countries, biometric machines, AI and automation\n- Free trials: try a plan or an add-on before you buy it\n- Set-up help: data import from Excel or CSV and guided set-up for your first HR Workspace', ['offerings', 'plans', 'modules', 'add-ons', 'pricing']),
+  article('about-sampcrew', 'our-facilities', 'Facilities and support we provide', 'headset', 'Everyone who uses SampCrew can get help in the way that suits them.\n\n- This Help & Support centre, with feature briefs, FAQs, guides and step-by-step tutorials\n- An "i" help icon next to fields and pages inside the app\n- Raise a Query from inside SampCrew: you get a ticket ID and replies by notification and email\n- Queries go to the right level: your HR Workspace, your Super Workspace, then the SampCrew team\n- Live support chat between your Super Workspace and the SampCrew team', ['facilities', 'support', 'help', 'contact', 'ticket']),
+  article('security-trust', 'how-we-protect-data', 'How we protect your data', 'shield', 'Security is part of every screen in SampCrew.\n\n- Passwords are stored as strong one-way hashes and sign-in attempts are rate limited\n- Two-step verification for every level, required for every SampCrew Console admin\n- Sensitive fields such as bank details are encrypted in the database\n- Each company only ever reaches its own data; every request is checked on the server\n- Every sign-in and every change is recorded in an audit trail\n- Point-in-time backups with an off-site copy', ['security', 'privacy', 'encryption', 'backup', 'audit']),
+  article('signing-in', 'which-sign-in-page', 'Which sign-in page do I use?', 'globe', 'SampCrew has one sign-in page for every company and level. Use your work email and password; SampCrew opens the workspace you belong to.\n\n- Super Workspace, HR Workspace and Employee Workspace all sign in on the same page, and each sees its own welcome\n- If you belong to more than one company, you choose which one after signing in\n- Companies with single sign-on show a "Sign in with single sign-on" button\n- The SampCrew Console has its own address, for SAMPLEDGE staff only', ['sign in', 'login page', 'address', 'url', 'workspace']),
+
+  // Public FAQs
+  pfaq('signing-in', 'public-forgot-password', 'I forgot my password. What do I do?', 'Choose "Forgot password?" under the password box on the sign-in page. Enter your work email and we send you a 6-digit code. Enter the code with a new password and sign in. The code works once and expires after a short time. On the phone app it is the same link under the password.', ['forgot password', 'reset password', 'lost password', 'cannot sign in']),
+  pfaq('signing-in', 'public-show-password', 'How can I check the password I typed?', 'Select the eye button at the right of the password box to show what you typed, and select it again to hide it. It is on every sign-in, reset and change-password form, on the web and on the phone app.', ['show password', 'eye', 'hidden password', 'typo']),
+  pfaq('signing-in', 'public-no-account', 'How do I get a SampCrew account?', 'Your company creates it. When your HR Workspace adds you, you get an email invitation or a temporary password. If your company is new to SampCrew, the person setting it up creates the workspace with "Create a workspace" on the sign-in page.', ['account', 'invitation', 'join', 'register', 'sign up']),
+  pfaq('signing-in', 'public-two-step', 'What is two-step verification?', 'After your password, SampCrew asks for a 6-digit code from an authenticator app on your phone. Even someone who knows your password cannot sign in without it. Turn it on in Settings > Security once you are signed in.', ['two step', 'mfa', '2fa', 'authenticator', 'code']),
+  pfaq('signing-in', 'public-locked-out', 'My sign-in keeps failing. Why?', 'Check that you use your work email and that Caps Lock is off; the eye button shows what you typed. After several wrong tries SampCrew pauses sign-in for a few minutes to protect you. If your account was switched off or your company uses single sign-on, ask your HR Workspace.', ['login failed', 'wrong password', 'locked', 'too many attempts']),
+  pfaq('signing-in', 'public-light-dark', 'Can I change the colours of the sign-in page?', 'Yes. Use the sun and moon buttons at the top of the sign-in page for light or dark mode, and "Colours" to choose a palette. Your choice is remembered on that device.', ['dark mode', 'light mode', 'theme', 'colours', 'palette']),
+  pfaq('about-sampcrew', 'public-who-for', 'Who is SampCrew for?', 'Any company that wants one simple place for its people: start-ups, growing companies and groups with many branches. Super Workspace runs the company, HR Workspaces run departments or branches, and every employee gets their own Employee Workspace.', ['who', 'company size', 'industries']),
+  pfaq('about-sampcrew', 'public-levels', 'What are Super Workspace, HR Workspace and Employee Workspace?', 'They are the levels of SampCrew. The Super Workspace controls the whole company and decides which features each HR Workspace has. An HR Workspace looks after the people of its department or branch. The Employee Workspace is your own self-service: attendance, leave, payslips, requests and profile.', ['levels', 'super workspace', 'hr workspace', 'employee workspace']),
+  pfaq('about-sampcrew', 'public-mobile-app', 'Is there a phone app?', 'Yes, SampCrew works on Android and iPhone with the same sign-in. Punch attendance, apply for leave, see payslips, approve requests and chat, with notifications on your phone.', ['mobile app', 'android', 'iphone', 'download']),
+  pfaq('plans-support', 'public-free-trial', 'Can we try SampCrew before buying?', 'Yes. Plans and add-ons such as payroll can start with a free trial. Your Super Workspace sees the trial days left in Plan & billing and can upgrade at any time without losing data.', ['trial', 'free', 'demo', 'try']),
+  pfaq('plans-support', 'public-billing-questions', 'Who answers billing questions?', 'The SampCrew team. Your Super Workspace raises a query under "Plan & billing" in Help & Support, or uses the support chat with SampCrew. Invoices, including GST invoices, are in Plan & billing.', ['billing', 'invoice', 'payment', 'gst']),
+  pfaq('plans-support', 'public-contact-support', 'How do I contact support?', 'Sign in and open Help & Support, then choose Raise a Query. Pick a category, describe the problem and attach a screenshot if it helps. You get a ticket ID and are told about every reply. If you cannot sign in, ask your HR Workspace or use Forgot password.', ['contact', 'support', 'raise query', 'ticket', 'help']),
+  pfaq('security-trust', 'public-data-location', 'Where is our data stored?', 'In SampCrew\'s own self-hosted database, with point-in-time backups and an off-site copy. Each company\'s data is kept apart from every other company\'s and is checked on every request.', ['data location', 'hosting', 'database', 'backup']),
+  pfaq('security-trust', 'public-who-sees-what', 'Who can see my personal details?', 'Only the people your company allows. Your HR Workspace sees the people it looks after, and the Super Workspace sees the company. SampCrew Console staff see company names and settings, not your personal records. Every view of sensitive data and every change is audited.', ['privacy', 'personal data', 'who can see', 'access']),
+
+  // Public guides
+  guide('signing-in', 'public-reset-password-guide', 'Reset your password', 'Get back in with a code sent to your work email.', [
+    ['Open Forgot password', 'Under the password box on the sign-in page, choose "Forgot password?".', '/forgot-password'],
+    ['Enter your work email', 'We send a 6-digit code to it. Check your spam folder if it does not arrive within a minute.'],
+    ['Enter the code and a new password', 'Use 12 or more characters with three of: lowercase, uppercase, numbers and symbols. The eye button shows what you typed.'],
+    ['Sign in', 'Sign in with your new password on the web or the phone app.'],
+  ], { audiences: PUBLIC, icon: 'key', keywords: ['forgot password', 'reset', 'code'], related: ['public-forgot-password'] }),
+  guide('signing-in', 'public-first-sign-in', 'Sign in for the first time', 'From your invitation to your own Employee Workspace.', [
+    ['Open your invitation', 'Use the link in the email from your company, or the sign-in page with the temporary password HR gave you.', '/login'],
+    ['Choose your password', 'With a temporary password you are asked to choose your own straight away.'],
+    ['Turn on two-step verification', 'Settings > Security. It keeps your account safe even if your password leaks.'],
+    ['Install the phone app', 'Sign in with the same email and password on Android or iPhone.'],
+  ], { audiences: PUBLIC, icon: 'rocket', keywords: ['first time', 'invitation', 'new joiner', 'welcome'], related: ['public-no-account'] }),
 ];
 
 /** Categories people choose from when raising a query. "other" is required and always last. */
@@ -743,7 +814,7 @@ export async function syncHelpLibraryMongo(tx: SyncTables): Promise<{ categories
     const fields = {
       slug: a.slug, category_id: categoryId, kind: a.kind, title: a.title, summary: a.summary, body: a.body, steps: a.steps,
       audiences: a.audiences, feature: a.feature ?? null, permission: a.permission ?? null, keywords: a.keywords, href: a.href ?? null,
-      related: a.related, sort: a.sort, status: 'published',
+      related: a.related, icon: a.icon ?? null, sort: a.sort, status: 'published',
     };
     const existing = await arts.findOne({ slug: a.slug });
     if (!existing) {

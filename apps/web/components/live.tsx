@@ -4,8 +4,8 @@ import { cn } from '@crew/ui';
 import { X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { armAudioUnlock, playNotificationSound } from '@/lib/notification-sound';
-import { markNotificationReadAction, notificationCountsAction } from '@/app/(app)/shell-actions';
+import { armAudioUnlock, claimNotice, playNotificationSound } from '@/lib/notification-sound';
+import { markNotificationReadAction, notificationLiveCountsAction, notificationPreferencesAction } from '@/app/(app)/shell-actions';
 import { deliveredAction } from '@/app/(app)/communication/actions';
 
 type Handler = (data: any) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -20,6 +20,10 @@ interface Live {
   pulse: boolean;
   /** Unread notices per category (the menu marks Leave, Attendance, Learning ... with them). */
   byCategory: Record<string, number>;
+  /** Unread notices that ask the person to act (decide, complete, acknowledge). */
+  actionNeeded: number;
+  /** Refetch the counts now (after marking something read elsewhere). */
+  refreshCounts: () => void;
   prefs: NotificationPreferences | null;
   setPrefs: (p: NotificationPreferences) => void;
   setUnread: (n: number) => void;
@@ -104,7 +108,7 @@ function onPage(link: string | null): boolean {
  * Notification Center, chat and approvals all update from it without reloading. Sounds and pop-ups follow the
  * person's preferences; a sound never plays on page load, only for notices arriving while the page is open.
  */
-export function LiveProvider({ initial, byCategory: initialByCategory, prefs: initialPrefs, children }: { initial: { unread: number; items: NotificationView[] } | null; byCategory?: Record<string, number> | null; prefs: NotificationPreferences | null; children: React.ReactNode }) {
+export function LiveProvider({ initial, byCategory: initialByCategory, actionNeeded: initialAction = 0, prefs: initialPrefs, children }: { initial: { unread: number; items: NotificationView[] } | null; byCategory?: Record<string, number> | null; actionNeeded?: number; prefs: NotificationPreferences | null; children: React.ReactNode }) {
   const router = useRouter();
   const [unread, setUnread] = useState(initial?.unread ?? 0);
   const [items, setItems] = useState<NotificationView[]>(initial?.items ?? []);
@@ -113,6 +117,12 @@ export function LiveProvider({ initial, byCategory: initialByCategory, prefs: in
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(initialPrefs);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [byCategory, setByCategory] = useState<Record<string, number>>(initialByCategory ?? {});
+  const [actionNeeded, setActionNeeded] = useState(initialAction);
+  useEffect(() => setActionNeeded(initialAction), [initialAction]);
+  // The organisation's policy or the person's settings changed on the server (another tab, the phone): follow it.
+  useEffect(() => {
+    if (initialPrefs) setPrefs(initialPrefs);
+  }, [initialPrefs]);
   const openRef = useRef<(n: NotificationView) => void>(() => undefined);
   const countsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The per-category counts come from the server, at most once a second however many notices arrive.
@@ -120,7 +130,11 @@ export function LiveProvider({ initial, byCategory: initialByCategory, prefs: in
     if (countsTimer.current) return;
     countsTimer.current = setTimeout(() => {
       countsTimer.current = null;
-      void notificationCountsAction().then((c) => c && setByCategory(c)).catch(() => undefined);
+      void notificationLiveCountsAction().then((c) => {
+        if (!c) return;
+        setByCategory(c.byCategory);
+        setActionNeeded(c.actionNeeded);
+      }).catch(() => undefined);
     }, 1000);
   }, []);
   useEffect(() => {
@@ -184,7 +198,10 @@ export function LiveProvider({ initial, byCategory: initialByCategory, prefs: in
         // updates on its own); the bell still counts it.
         // Quiet hours hold back sound, pop-ups and system notifications too (urgent ones still come through).
         const quiet = d.self || onPage(d.notification.link) || quietNow(p, d.notification.priority);
-        if (!quiet && p && shouldPlaySound(p.sound, d.notification.priority)) playNotificationSound(d.notification.priority, p.sound.volume);
+        // One sound per notice across all open tabs, and none again when a folded notice (chat) only counts up.
+        if (!quiet && p && shouldPlaySound(p.sound, d.notification.priority, d.notification.category, p)) {
+          void claimNotice(d.notification.id, d.folded).then((mine) => mine && playNotificationSound(d.notification.priority, p.sound.volume, { queueIfLocked: true }));
+        }
         if (!quiet && (!p || p.toasts)) {
           setToasts((cur) => [{ id: `${d.notification.id}:${Date.now()}`, n: d.notification }, ...cur.filter((x) => x.n.id !== d.notification.id)].slice(0, 3));
         }
@@ -195,11 +212,23 @@ export function LiveProvider({ initial, byCategory: initialByCategory, prefs: in
       // What this person may use changed at a level above them (Console, Super Workspace or HR Workspace): reload the
       // page, so menus and screens follow at once. The API already refuses what was taken away.
       es.addEventListener('access.changed', () => router.refresh());
+      // The Super Workspace changed the organisation's notification policy, or this person changed their settings on
+      // another device: load the settings again (locked switches, sound).
+      es.addEventListener('notifications.policy', () => {
+        void notificationPreferencesAction().then((np) => np && setPrefs(np)).catch(() => undefined);
+      });
       for (const type of ['notifications.read', 'chat.message', 'chat.read', 'chat.updated', 'approvals.changed', 'announcements.changed', 'leave.changed', 'documents.changed', 'support.message', 'support.read', 'support.changed']) {
         es.addEventListener(type, (e) => {
           const d = JSON.parse((e as MessageEvent).data);
           if (type === 'notifications.read') {
             if (typeof d.unread === 'number') setUnread(d.unread);
+            // Notices the server closed itself (a request was decided): read in the bell too.
+            if (Array.isArray(d.ids) && d.ids.length) {
+              const closed = new Set<string>(d.ids);
+              const at = new Date().toISOString();
+              setItems((cur) => cur.map((x) => (closed.has(x.id) && !x.readAt ? { ...x, readAt: at } : x)));
+              setUnread((u) => Math.max(0, u - d.ids.length));
+            }
             refreshCounts();
           }
           // A chat message reached this browser: tell the sender it was delivered (at most every few seconds).
@@ -231,14 +260,19 @@ export function LiveProvider({ initial, byCategory: initialByCategory, prefs: in
 
   const markRead = useCallback((id: string) => {
     setItems((cur) => cur.map((x) => (x.id === id && !x.readAt ? { ...x, readAt: new Date().toISOString() } : x)));
-  }, []);
+    refreshCounts();
+  }, [refreshCounts]);
   const markAllRead = useCallback(() => {
     setUnread(0);
     setByCategory({});
+    setActionNeeded(0);
     setItems((cur) => cur.map((x) => (x.readAt ? x : { ...x, readAt: new Date().toISOString() })));
   }, []);
 
-  const value = useMemo<Live>(() => ({ unread, items, connected, pulse, byCategory, prefs, setPrefs, setUnread, markRead, markAllRead, on }), [unread, items, connected, pulse, byCategory, prefs, markRead, markAllRead, on]);
+  const value = useMemo<Live>(
+    () => ({ unread, items, connected, pulse, byCategory, actionNeeded, refreshCounts, prefs, setPrefs, setUnread, markRead, markAllRead, on }),
+    [unread, items, connected, pulse, byCategory, actionNeeded, refreshCounts, prefs, markRead, markAllRead, on],
+  );
 
   const openNotice = useCallback((n: NotificationView) => {
     setToasts((cur) => cur.filter((t) => t.n.id !== n.id));

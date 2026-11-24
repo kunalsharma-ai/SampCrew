@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { CONSOLE_DELETE_PERMISSION, type ConsoleAlerts, type ConsoleNotificationSummary, type ConsoleSettings } from '@crew/contracts';
-import { DeletePasswordProvider } from '@crew/ui';
+import { DeletePasswordProvider, WelcomeIntro } from '@crew/ui';
 import { api, load } from '@/lib/api';
 import { hasCap } from '@/lib/caps';
 import type { Admin } from '@/lib/types';
@@ -75,6 +75,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   return (
     <DeletePasswordProvider confirm={confirmDeleteAction}>
       {!hasCap(me, CONSOLE_DELETE_PERMISSION) && <style>{'[data-delete-area="console"]{display:none!important}'}</style>}
+      {/* The welcome that plays once right after signing in. */}
+      <WelcomeIntro scene="console" name={me.fullName} workspace="SAMPLEDGE" />
       <Shell me={me} nav={nav} alerts={alerts} summary={summary} live={hasCap(me, 'support:chat')} branding={settings?.branding ?? null}>{children}</Shell>
     </DeletePasswordProvider>
   );

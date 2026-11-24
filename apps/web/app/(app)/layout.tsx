@@ -1,6 +1,7 @@
-import { designLevelOf, type MemberPreferences, type NotificationPreferences, type NotificationView } from '@crew/contracts';
+import { designLevelOf, welcomeSceneFor, type MemberPreferences, type NotificationPreferences, type NotificationView } from '@crew/contracts';
+import { RememberWelcome } from '@/components/remember-welcome';
 import { headers } from 'next/headers';
-import { DemoBanner } from '@crew/ui';
+import { DemoBanner, WelcomeIntro } from '@crew/ui';
 import Link from 'next/link';
 import { loadOptional, loadSession } from '@/lib/api';
 import { DeletePasswordProvider } from '@/components/delete-guard';
@@ -29,7 +30,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     loadOptional<TaskCounts>('/tasks/counts'),
     chatsOn ? loadOptional<{ unread: number }>('/communication/unread') : Promise.resolve(null),
     newsOn ? loadOptional<{ total: number }>('/announcements/unread') : Promise.resolve(null),
-    loadOptional<{ categories: { category: string; unread: number }[] }>('/notifications/summary'),
+    loadOptional<{ categories: { category: string; unread: number }[]; actionNeeded?: number }>('/notifications/summary'),
   ]);
   // Unread notices per category: the menu marks the matching module (Leave, Attendance, Learning ...) with them.
   const byCategory = noticeSummary ? Object.fromEntries(noticeSummary.categories.filter((c) => c.unread > 0).map((c) => [c.category, c.unread])) : null;
@@ -47,10 +48,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (tasks) counts['/tasks'] = tasks;
   // The level's design is on <html> before the first paint (the shell keeps it in step afterwards).
   const nonce = (await headers()).get('x-nonce') ?? undefined;
+  // The sign-in page remembers this level, so the next sign-in on this browser opens with its own welcome.
   const levelScript = `document.documentElement.dataset.level=${JSON.stringify(designLevelOf(me.levels))}`;
   return (
     <>
       <script nonce={nonce} dangerouslySetInnerHTML={{ __html: levelScript }} />
+      <RememberWelcome scene={welcomeSceneFor(me.levels)} />
+      {/* The welcome that plays once right after signing in, over the dashboard while it loads. */}
+      <WelcomeIntro scene={welcomeSceneFor(me.levels)} name={me.user.fullName} workspace={me.tenant.name} />
       {me.tenant.isDemo && <DemoBanner />}
       {me.subscription?.locked && (
         <div role="alert" data-testid="read-only-banner" className="border-b border-danger/30 bg-danger-subtle px-4 py-1.5 text-center text-xs font-medium text-danger">
@@ -60,7 +65,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       )}
       <MfaStepUpProvider mfaEnabled={me.user.mfaEnabled}>
         <DeletePasswordProvider>
-        <LiveProvider initial={notifications ? { unread: notifications.unread, items: notifications.items } : null} byCategory={byCategory} prefs={notificationPrefs}>
+        <LiveProvider initial={notifications ? { unread: notifications.unread, items: notifications.items } : null} byCategory={byCategory} actionNeeded={noticeSummary?.actionNeeded ?? 0} prefs={notificationPrefs}>
         <Shell me={me} nav={visibleNav(me)} notifications={notifications} prefs={prefs} cookieAppearance={cookieAppearance} counts={counts} quick={quickActions(me)} workflows={workflowActions(me)}>
           {children}
         </Shell>

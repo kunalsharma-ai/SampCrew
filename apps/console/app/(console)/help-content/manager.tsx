@@ -93,6 +93,8 @@ function ArticlesTab({ data, run, pending }: { data: ManageData; run: Run; pendi
           <Select aria-label="Level" value={level} onChange={(e) => setLevel(e.target.value)} className="h-8 text-xs"><option value="">All levels</option>{HELP_AUDIENCES.map((l) => <option key={l} value={l}>{HELP_AUDIENCE_LABEL[l]}</option>)}</Select>
           <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="h-8 text-xs"><option value="">Published and drafts</option><option value="published">Published</option><option value="draft">Drafts</option></Select>
         </div>
+        <Link href="/help-content/articles/new?kind=feature&audience=public" className={buttonClass('secondary', 'sm')} data-testid="new-feature-brief"><Plus className="size-3.5" aria-hidden />New feature brief</Link>
+        <Link href="/help-content/articles/new?kind=faq&audience=public" className={buttonClass('secondary', 'sm')} data-testid="new-public-faq"><Plus className="size-3.5" aria-hidden />New public FAQ</Link>
         <Link href="/help-content/articles/new" className={buttonClass('primary', 'sm')} data-testid="new-article"><Plus className="size-3.5" aria-hidden />New article</Link>
       </div>
       <p className="px-4 py-2 text-xs text-fg-muted">{rows.length} of {data.articles.length} articles</p>
@@ -144,7 +146,7 @@ export function AudiencePicker({ value, onChange }: { value: HelpAudience[]; onC
           <Checkbox key={l} label={HELP_AUDIENCE_LABEL[l]} checked={value.includes(l)} onChange={(e) => onChange(e.target.checked ? [...value, l] : value.filter((x) => x !== l))} data-testid={`audience-${l}`} />
         ))}
       </div>
-      <span className="text-[11px] text-fg-subtle">A Super Workspace also sees HR and Employee Workspace content; an HR Workspace also sees Employee Workspace content.</span>
+      <span className="text-[11px] text-fg-subtle">A Super Workspace also sees HR and Employee Workspace content; an HR Workspace also sees Employee Workspace content. Everyone (public) is the Help & Support page anyone can open from the sign-in pages; signed-in people see it too.</span>
     </fieldset>
   );
 }

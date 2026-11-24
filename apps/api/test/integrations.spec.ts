@@ -108,11 +108,14 @@ describe('Integrations: API keys, webhooks and Slack', () => {
       ids.key = k.id;
       tokens.key = k.key;
       const list = ok(await as('owner').get('/integrations/api-keys'));
-      expect(JSON.stringify(list)).not.toContain(k.key.split('_').pop());
+      // The secret is everything after "crew_<prefix>_"; it can itself contain "_", so cut by position, not by "_".
+      const secret = k.key.slice('crew_'.length + 10 + 1);
+      expect(secret).toHaveLength(43);
+      expect(JSON.stringify(list)).not.toContain(secret);
       expect(list[0]).toMatchObject({ name: 'Directory sync', prefix: k.prefix, status: 'active', useCount: 0 });
       const row = (await pool.one('api_keys', { id: k.id }))!;
       expect(row.secret_hash).toMatch(/^[0-9a-f]{64}$/);
-      expect(row.secret_hash).not.toContain(k.key.split('_').pop());
+      expect(row.secret_hash).not.toContain(secret);
     });
 
     it('reads data within its scopes and workspace, and nothing else', async () => {

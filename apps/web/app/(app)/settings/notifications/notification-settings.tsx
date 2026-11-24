@@ -1,7 +1,7 @@
 'use client';
-import { MANDATORY_CATEGORIES, NOTIFICATION_CATEGORIES, type NotificationPreferences, type NotificationPriority } from '@crew/contracts';
+import { NOTIFICATION_CATEGORIES, notificationLocks, type NotificationPreferences, type NotificationPriority } from '@crew/contracts';
 import { Alert, Button, Card, CardBody, CardHeader, Select, Switch } from '@crew/ui';
-import { Volume2 } from 'lucide-react';
+import { Lock, Volume2 } from 'lucide-react';
 import { useEffect, useState, useTransition } from 'react';
 import { useOptionalLive } from '@/components/live';
 import { playNotificationSound } from '@/lib/notification-sound';
@@ -38,35 +38,53 @@ export function NotificationSettings({ initial }: { initial: NotificationPrefere
     }
     setP((cur) => ({ ...cur, desktop: v }));
   };
-  const setChannel = (key: string, channel: 'inApp' | 'email', v: boolean) =>
+  const locks = p.locks ?? notificationLocks();
+  const setChannel = (key: string, channel: 'inApp' | 'email' | 'push' | 'sound', v: boolean) =>
     setP((cur) => ({ ...cur, categories: { ...cur.categories, [key]: { ...cur.categories[key as keyof typeof cur.categories], [channel]: v } } }));
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
       <Card>
-        <CardHeader title="What you are told about" description="In SampCrew means the bell, Home and the Notification Center. Approvals and workspace notices always show in SampCrew." />
-        <CardBody className="p-0">
-          <table className="w-full text-[0.8125rem]">
+        <CardHeader title="What you are told about" description="In SampCrew means the bell, Home and the notices on each module's page. Phone means a push to the SampCrew app. A lock means your organisation decided it." />
+        <CardBody className="overflow-x-auto p-0">
+          <table className="w-full min-w-[34rem] text-[0.8125rem]">
             <thead className="text-xs text-fg-subtle">
-              <tr className="border-b border-border"><th className="px-5 py-2 text-left font-medium">Category</th><th className="px-3 py-2 font-medium">In SampCrew</th><th className="px-3 py-2 font-medium">Email</th></tr>
+              <tr className="border-b border-border">
+                <th className="px-5 py-2 text-left font-medium">Category</th><th className="px-2 py-2 font-medium">In SampCrew</th><th className="px-2 py-2 font-medium">Email</th>
+                <th className="px-2 py-2 font-medium">Phone</th><th className="px-2 py-2 font-medium">Sound</th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {NOTIFICATION_CATEGORIES.map((c) => (
-                <tr key={c.key} data-testid={`pref-${c.key}`}>
-                  <td className="px-5 py-2.5"><div className="font-medium">{c.label}</div><div className="text-xs text-fg-muted">{c.description}</div></td>
-                  <td className="px-3 py-2.5 text-center"><span className="inline-flex"><Switch label={`${c.label} in SampCrew`} checked={p.categories[c.key].inApp} disabled={MANDATORY_CATEGORIES.includes(c.key)} onChange={(v) => setChannel(c.key, 'inApp', v)} /></span></td>
-                  <td className="px-3 py-2.5 text-center"><span className="inline-flex"><Switch label={`${c.label} by email`} checked={p.categories[c.key].email} disabled={c.key === 'system'} onChange={(v) => setChannel(c.key, 'email', v)} /></span></td>
-                </tr>
-              ))}
+              {NOTIFICATION_CATEGORIES.map((c) => {
+                const ch = p.categories[c.key];
+                const cell = (channel: 'inApp' | 'email' | 'push' | 'sound', label: string, locked: boolean) => (
+                  <td className="px-2 py-2.5 text-center">
+                    <span className="inline-flex items-center gap-1">
+                      <Switch label={`${c.label} ${label}`} checked={ch[channel] !== false} disabled={locked} onChange={(v) => setChannel(c.key, channel, v)} testId={`pref-${c.key}-${channel}`} />
+                      {locked && <Lock className="size-3 text-fg-subtle" aria-label="Set by your organisation" />}
+                    </span>
+                  </td>
+                );
+                return (
+                  <tr key={c.key} data-testid={`pref-${c.key}`}>
+                    <td className="px-5 py-2.5"><div className="font-medium">{c.label}</div><div className="text-xs text-fg-muted">{c.description}</div></td>
+                    {cell('inApp', 'in SampCrew', locks.inApp.includes(c.key))}
+                    {cell('email', 'by email', locks.email.includes(c.key))}
+                    {cell('push', 'on your phone', locks.push)}
+                    {cell('sound', 'with sound', locks.sound)}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </CardBody>
       </Card>
       <div className="grid content-start gap-4">
         <Card>
-          <CardHeader title="Sound" description="A short, quiet tone when a notice arrives while SampCrew is open. Off until you switch it on; it never plays when a page loads." />
+          <CardHeader title="Sound" description="A short, quiet tone when a notice arrives while SampCrew is open, once even with several tabs open. It never plays when a page loads; if the browser holds sound back, it plays at your next click." />
           <CardBody className="grid gap-4">
-            <Row text="Play a sound for new notifications"><Switch label="Play a sound for new notifications" checked={p.sound.enabled} onChange={(v) => setP((cur) => ({ ...cur, sound: { ...cur.sound, enabled: v } }))} testId="sound-enabled" /></Row>
+            {locks.sound && <p className="flex items-center gap-1.5 text-xs text-fg-muted" data-testid="sound-locked"><Lock className="size-3" aria-hidden />Your organisation keeps notifications silent. You still see every notice.</p>}
+            <Row text="Play a sound for new notifications"><Switch label="Play a sound for new notifications" disabled={locks.sound} checked={p.sound.enabled} onChange={(v) => setP((cur) => ({ ...cur, sound: { ...cur.sound, enabled: v } }))} testId="sound-enabled" /></Row>
             <label className="grid gap-1 text-[0.8125rem]">
               <span className="flex justify-between"><span>Volume</span><span className="text-fg-muted">{p.sound.volume}%</span></span>
               <input type="range" min={0} max={100} step={5} value={p.sound.volume} aria-label="Volume" disabled={!p.sound.enabled} onChange={(e) => setP((cur) => ({ ...cur, sound: { ...cur.sound, volume: Number(e.target.value) } }))} />
@@ -98,7 +116,10 @@ export function NotificationSettings({ initial }: { initial: NotificationPrefere
         <Card data-testid="desktop-notifications">
           <CardHeader title="Desktop notifications" description="A system notification on your computer when a notice arrives while SampCrew is in a background tab." />
           <CardBody className="grid gap-2">
-            <Row text="Show desktop notifications"><Switch label="Show desktop notifications" checked={p.desktop} disabled={permission === 'unsupported' || permission === 'denied'} onChange={(v) => void setDesktop(v)} testId="desktop-enabled" /></Row>
+            <Row text="Show desktop notifications"><Switch label="Show desktop notifications" checked={p.desktop} disabled={locks.desktop || permission === 'unsupported' || permission === 'denied'} onChange={(v) => void setDesktop(v)} testId="desktop-enabled" /></Row>
+            {locks.desktop && <p className="flex items-center gap-1.5 text-xs text-fg-muted"><Lock className="size-3" aria-hidden />Your organisation does not use desktop notifications.</p>}
+            {!locks.desktop && permission === 'default' && <Button size="sm" variant="secondary" onClick={() => void Notification.requestPermission().then(setPermission)} data-testid="desktop-permission">Allow notifications in this browser</Button>}
+            {permission === 'granted' && !locks.desktop && <p className="text-xs text-success">This browser may show SampCrew notifications.</p>}
             {permission === 'denied' && <p className="text-xs text-fg-muted">Your browser blocks notifications from SampCrew. Allow them in the browser's site settings, then switch this on.</p>}
             {permission === 'unsupported' && <p className="text-xs text-fg-muted">This browser cannot show desktop notifications.</p>}
           </CardBody>

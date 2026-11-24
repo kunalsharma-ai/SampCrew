@@ -1,5 +1,5 @@
 'use server';
-import type { NotificationPreferences, NotificationPreferencesInput, NotificationView } from '@crew/contracts';
+import type { NotificationPolicy, NotificationPreferences, NotificationPreferencesInput, NotificationView } from '@crew/contracts';
 import { act, api } from '@/lib/api';
 
 export async function loadMoreNotificationsAction(query: string) {
@@ -16,4 +16,8 @@ export async function markCategoryReadAction(category?: string) {
 
 export async function saveNotificationPreferencesAction(input: NotificationPreferencesInput) {
   return act(() => api<NotificationPreferences>('/notifications/preferences', { method: 'PUT', body: input }), 'Notification settings saved');
+}
+
+export async function saveNotificationPolicyAction(input: NotificationPolicy) {
+  return act(() => api<{ policy: NotificationPolicy; updatedAt: string | null; members: number }>('/notifications/policy', { method: 'PUT', body: input }), 'Notification policy saved');
 }

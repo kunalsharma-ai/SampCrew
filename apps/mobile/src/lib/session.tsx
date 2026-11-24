@@ -1,4 +1,4 @@
-import type { LoginResponse, MeResponse } from '@crew/contracts';
+import { welcomeSceneFor, WELCOME_SCENE_COOKIE, type LoginResponse, type MeResponse } from '@crew/contracts';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
@@ -130,6 +130,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const start = useCallback(async () => {
     const m = await api.get<MeResponse>('/me');
     setMe(m);
+    // The sign-in screen opens with this level's welcome next time.
+    void kv.set(WELCOME_SCENE_COOKIE, welcomeSceneFor(m.levels)).catch(() => undefined);
     outbox.current = new Outbox(kv, clock, m.membership.id);
     if (m.features.includes('self_service')) {
       const d = await api.post<Device>('/mobile/devices', {

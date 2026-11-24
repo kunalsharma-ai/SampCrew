@@ -97,6 +97,13 @@ export interface Notification {
   link: string | null;
   readAt: string | null;
   createdAt: string;
+  /** The fields below come from the shared notification model (contracts NotificationView). */
+  category?: string;
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  actionRequired?: boolean;
+  count?: number;
+  actorName?: string | null;
+  updatedAt?: string;
 }
 export interface Announcement {
   id: string;

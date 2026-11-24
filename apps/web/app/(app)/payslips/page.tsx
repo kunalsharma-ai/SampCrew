@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { Card, CardHeader, EmptyState, PageHeader, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { FileText } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -18,6 +19,7 @@ export default async function PayslipsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHeader title="Payslips" description="Payslips from finalised payroll. Open one to see how every amount was worked out, or print it." />
+      <ModuleNotices category="payroll" label="Payroll" />
       {broad && (
         <div className="mb-4 flex gap-2">
           {[{ v: '', l: 'Mine' }, { v: 'all', l: 'Everyone I can see' }].map((f) => (

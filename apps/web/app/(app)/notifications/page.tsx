@@ -11,15 +11,19 @@ export interface NotificationSummary {
   unread: number;
   categories: { category: NotificationCategory; total: number; unread: number }[];
   important: NotificationView[];
+  actionNeeded?: number;
 }
 
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const category = sp.category && (NOTIFICATION_CATEGORY_KEYS as string[]).includes(sp.category) ? sp.category : undefined;
-  const filter = sp.filter === 'unread' ? 'unread' : sp.filter === 'read' ? 'read' : 'all';
+  const filter = sp.filter === 'unread' ? 'unread' : sp.filter === 'read' ? 'read' : sp.filter === 'action' ? 'action' : 'all';
   const q = new URLSearchParams({ limit: '30' });
   if (category) q.set('category', category);
-  if (filter !== 'all') q.set('unread', filter === 'unread' ? 'true' : 'false');
+  if (filter === 'action') {
+    q.set('action', 'true');
+    q.set('unread', 'true');
+  } else if (filter !== 'all') q.set('unread', filter === 'unread' ? 'true' : 'false');
   if (sp.priority && ['low', 'normal', 'high', 'urgent'].includes(sp.priority)) q.set('priority', sp.priority);
   if (sp.q) q.set('q', sp.q.slice(0, 100));
   const [list, summary] = await Promise.all([

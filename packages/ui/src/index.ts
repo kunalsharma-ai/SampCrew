@@ -1,6 +1,9 @@
 export { cn } from './cn';
 export * from './components/button';
 export * from './components/form';
+export * from './components/password-input';
+export * from './components/sign-in-feedback';
+export * from './components/welcome-intro';
 export * from './components/date-picker';
 export * from './components/surface';
 export * from './components/table';
@@ -15,3 +18,4 @@ export * from './components/password-reset';
 export * from './components/password-reset-list';
 export * from './components/help-centre';
 export * from './components/delete-password';
+export * from './components/welcome-scene';

@@ -98,10 +98,10 @@ async function phone(b) {
   for (let attempt = 0; ; attempt++) {
     await p.goto(APP + '/login');
     await p.getByLabel('Work email').fill(EMPLOYEE);
-    await p.getByLabel('Password').fill(PASSWORD);
+    await p.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await p.getByRole('button', { name: 'Sign in', exact: true }).click();
     const r = await Promise.race([
-      p.getByText(/^Good (morning|afternoon|evening)/).waitFor({ timeout: 20000 }).then(() => 'in'),
+      p.getByText(/^Good (morning|afternoon|evening), /).waitFor({ timeout: 20000 }).then(() => 'in'),
       p.getByText('Too many attempts').waitFor({ timeout: 20000 }).then(() => 'limited'),
     ]);
     if (r === 'in') return { ctx, p };
@@ -187,7 +187,7 @@ async function moreNames(p) {
 
     // 3. The phone follows without reinstalling, and the server refuses the module.
     await p.goto(APP + '/');
-    await p.getByText(/^Good (morning|afternoon|evening)/).waitFor();
+    await p.getByText(/^Good (morning|afternoon|evening), /).waitFor();
     let names = [];
     for (let i = 0; i < 10; i++) {
       names = await moreNames(p);

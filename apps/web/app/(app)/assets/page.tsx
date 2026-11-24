@@ -1,3 +1,4 @@
+import { ModuleNotices } from '@/components/module-notices';
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load } from '@/lib/api';
@@ -14,6 +15,7 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
   return (
     <>
       <PageHeader title="Assets" description="Company property and who holds it: laptops, phones, SIM and ID cards and everything else, from purchase to retirement." />
+      <ModuleNotices category="assets" label="Asset" />
       <InventoryView list={list} categories={categories} filters={{ status: sp.status ?? '', categoryId: sp.categoryId ?? '', q: sp.q ?? '' }} currency={me.tenant.currency}
         canManage={Boolean(me.permissions['assets:manage'])} />
     </>

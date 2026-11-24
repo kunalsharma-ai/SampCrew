@@ -4,6 +4,7 @@ import { useSession } from '../src/lib/session';
 import type { InboxItem } from '../src/lib/types';
 import { Button, Card, Empty, Field, fmt, Loading, Notice, Row, Screen, Text, useLoad, CardTitle } from '../src/ui';
 import { ModuleGate } from '../src/ui/kit';
+import { ModuleNotices } from '../src/ui/module-notices';
 
 /** Requests waiting for my decision: leave, corrections, overtime, expenses and the rest. */
 function ApprovalsBody() {
@@ -30,6 +31,7 @@ function ApprovalsBody() {
 
   return (
     <Screen onRefresh={reload} refreshing={loading && !!data}>
+      <ModuleNotices category="approvals" label="Approval" />
       {error && <Notice tone="danger">{error}</Notice>}
       {msg && <Notice tone={msg.tone} testID="approval-message">{msg.text}</Notice>}
       {!data && !error && <Loading />}

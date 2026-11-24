@@ -3632,7 +3632,8 @@ export const TABLES: Record<string, TableSpec> = {
     checks: [],
   },
   help_articles: {
-    // Help & Support articles: FAQs, step-by-step guides, interactive tutorials, troubleshooting and quick starts.
+    // Help & Support articles: FAQs, step-by-step guides, interactive tutorials, troubleshooting, quick starts, feature
+    // briefs and articles. Audience "public" is the Help & Support page anyone can read before signing in.
     // Managed in the Console. Built-in articles (builtin_key) come with the catalogue; once a Console Admin edits one
     // (customised_at) or deletes one (deleted_at) the catalogue sync leaves it alone. Each is shown only to its
     // audiences, while its feature is on for the person and they hold its permission.
@@ -3650,7 +3651,9 @@ export const TABLES: Record<string, TableSpec> = {
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       image_url: {"type": "string"},
       keywords: {"default": {"json": []}, "required": true, "type": "string[]"},
-      kind: {"enum": ["faq", "guide", "tutorial", "troubleshooting", "quickstart"], "required": true, "type": "string"},
+      // The icon of a feature brief or article card (others show their category's).
+      icon: {"type": "string"},
+      kind: {"enum": ["faq", "guide", "tutorial", "troubleshooting", "quickstart", "feature", "article"], "required": true, "type": "string"},
       permission: {"type": "string"},
       related: {"default": {"json": []}, "required": true, "type": "string[]"},
       slug: {"required": true, "type": "string"},
@@ -5616,6 +5619,28 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     checks: [],
   },
+  notification_policies: {
+    // The organisation's notification rules set by the Super Workspace (contracts notificationPolicyInput): categories
+    // everyone sees, required emails, whether sound, desktop and phone push are allowed, and starting choices. One per workspace.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      policy: {"default": {"json": {}}, "required": true, "type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "notification_policies_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}], "name": "notification_policies_one_per_workspace"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
   notifications: {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
@@ -5638,6 +5663,8 @@ export const TABLES: Record<string, TableSpec> = {
       resource_id: {"type": "string"},
       actor_membership_id: {"type": "uuid"},
       updated_at: {"type": "timestamp"},
+      // The notice asks the person to act (contracts kindNeedsAction or Notice.action); migration 0170 fills older rows.
+      action_required: {"type": "bool"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "notifications_pkey", "primary": true},
@@ -5650,6 +5677,7 @@ export const TABLES: Record<string, TableSpec> = {
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "created_at", "desc": true}], "name": "notifications_inbox"},
       {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "category"}, {"col": "created_at", "desc": true}], "name": "notifications_by_category"},
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "read_at"}, {"col": "updated_at", "desc": true}], "name": "notifications_unread"},
     ],
     checks: [
       "CHECK (((link IS NULL) OR (link ~ '^/'::text)))",
@@ -6339,6 +6367,11 @@ export const TABLES: Record<string, TableSpec> = {
       next_attempt_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       notification_id: {"required": true, "type": "uuid"},
       sent_at: {"type": "timestamp"},
+      // Sent without a sound (the person or the organisation turned sound off for this category).
+      silent: {"type": "bool"},
+      // Category and priority (no personal data), so the phone picks the Android channel and its sound.
+      category: {"type": "string"},
+      priority: {"type": "string"},
       status: {"default": "queued", "enum": ["queued", "sent", "failed", "skipped"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
       ticket_id: {"type": "string"},

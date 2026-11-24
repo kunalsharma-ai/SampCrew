@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Button, Field, Input } from '@crew/ui';
+import { Alert, Button, EmailInput, Field, Input, PasswordInput, emailProblem, markWelcomeIntro, useSignInStatus } from '@crew/ui';
 import { Building2, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -8,7 +8,7 @@ import { initialPasswordAction, loginAction, selectTenantAction, ssoStartAction,
 
 type Step = { kind: 'password' } | { kind: 'sso'; email: string; notice?: string } | { kind: 'mfa'; mfaToken: string } | { kind: 'newPassword'; changeToken: string } | { kind: 'tenant'; selectToken: string; tenants: { id: string; name: string; slug: string }[] };
 
-export function LoginForm({ next, expired, workspace, ssoFailure, notice, addressProblem }: { next: string; expired: boolean; workspace?: string; ssoFailure?: string | null; notice?: string | null; addressProblem?: string | null }) {
+export function LoginForm({ title = 'Sign in to SampCrew', next, expired, workspace, ssoFailure, notice, addressProblem }: { title?: string; next: string; expired: boolean; workspace?: string; ssoFailure?: string | null; notice?: string | null; addressProblem?: string | null }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>(ssoFailure ? { kind: 'sso', email: '' } : { kind: 'password' });
   const [error, setError] = useState<string | null>(ssoFailure ?? null);
@@ -17,6 +17,13 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
   // A ref, not state: the answer is handled by the closure from the render that sent it, which a state update made
   // in the same submit would not reach, so the single sign-on step would open with an empty email.
   const lastEmail = useRef('');
+  // The tick or cross in the boxes and the card's animation: right password, wrong password, signed in.
+  const feedback = useSignInStatus();
+  const [verdict, setVerdict] = useState<'ok' | 'bad' | null>(null);
+  const settle = (fn: () => void, ms = 650) => {
+    const quick = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    window.setTimeout(fn, quick ? 150 : ms);
+  };
 
   const handle = (r: Awaited<ReturnType<typeof loginAction>>) => {
     if (!r.ok) {
@@ -27,18 +34,32 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
       }
       setError(r.message);
       setFieldErrors(r.fieldErrors ?? {});
+      if (step.kind === 'password' || step.kind === 'mfa') { setVerdict('bad'); feedback.set('fail'); } else feedback.set('idle');
       return;
     }
     const d = r.data!;
-    if (d.status === 'ok') router.replace(next);
-    else if (d.status === 'mfa_required') setStep({ kind: 'mfa', mfaToken: d.mfaToken });
-    else if (d.status === 'password_change_required') setStep({ kind: 'newPassword', changeToken: d.changeToken });
-    else setStep({ kind: 'tenant', selectToken: d.selectToken, tenants: d.tenants });
+    setVerdict('ok');
+    if (d.status === 'ok') {
+      feedback.set('ok');
+      markWelcomeIntro();
+      settle(() => router.replace(next), 1250);
+      return;
+    }
+    feedback.set('idle');
+    // The password was right: let the ticks show for a moment before the next step.
+    settle(() => {
+      setVerdict(null);
+      if (d.status === 'mfa_required') setStep({ kind: 'mfa', mfaToken: d.mfaToken });
+      else if (d.status === 'password_change_required') setStep({ kind: 'newPassword', changeToken: d.changeToken });
+      else setStep({ kind: 'tenant', selectToken: d.selectToken, tenants: d.tenants });
+    }, step.kind === 'password' ? 650 : 0);
   };
 
   const submit = (fn: () => Promise<Awaited<ReturnType<typeof loginAction>>>) => {
     setError(null);
     setFieldErrors({});
+    setVerdict(null);
+    feedback.set('checking');
     start(async () => handle(await fn()));
   };
 
@@ -64,7 +85,7 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
         {step.notice && !error && <Alert tone="info">{step.notice}</Alert>}
         {error && <Alert tone="danger">{error}</Alert>}
         <Field label="Work email" required>
-          {(p) => <Input {...p} name="email" type="email" autoComplete="username" defaultValue={step.email} required autoFocus />}
+          {(p) => <EmailInput {...p} name="email" autoComplete="username" defaultValue={step.email} required autoFocus />}
         </Field>
         <Button type="submit" size="lg" loading={pending}>Continue</Button>
         <button type="button" className="text-[0.8125rem] text-fg-muted hover:text-fg" onClick={() => { setError(null); setStep({ kind: 'password' }); }}>Use a password instead</button>
@@ -114,10 +135,10 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
         </div>
         {error && <Alert tone="danger">{error}</Alert>}
         <Field label="New password" error={fieldErrors.newPassword} hint="12+ characters with three of: lowercase, uppercase, numbers, symbols" required>
-          {(p) => <Input {...p} name="newPassword" type="password" autoComplete="new-password" required autoFocus />}
+          {(p) => <PasswordInput {...p} name="newPassword" autoComplete="new-password" required autoFocus rules />}
         </Field>
         <Field label="Confirm new password" error={fieldErrors.confirmPassword} required>
-          {(p) => <Input {...p} name="confirmPassword" type="password" autoComplete="new-password" required />}
+          {(p) => <PasswordInput {...p} name="confirmPassword" autoComplete="new-password" required matches="newPassword" />}
         </Field>
         <Button type="submit" size="lg" loading={pending}>Save password and sign in</Button>
         <button type="button" className="text-[0.8125rem] text-fg-muted hover:text-fg" onClick={() => setStep({ kind: 'password' })}>Use a different account</button>
@@ -162,12 +183,15 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
         e.preventDefault();
         const f = new FormData(e.currentTarget);
         lastEmail.current = String(f.get('email'));
+        const bad = emailProblem(lastEmail.current);
+        if (bad) { setFieldErrors({ email: bad }); setVerdict(null); feedback.set('fail'); return; }
+        if (!String(f.get('password') ?? '')) { setFieldErrors({ password: 'Enter your password' }); feedback.set('fail'); return; }
         submit(() => loginAction({ email: String(f.get('email')), password: String(f.get('password')), tenantSlug: String(f.get('tenantSlug') ?? '') }));
       }}
       className="flex flex-col gap-5"
     >
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Sign in to SampCrew</h2>
+        <h2 className="text-2xl font-semibold tracking-tight" data-testid="login-title">{title}</h2>
         <p className="mt-1 text-sm text-fg-muted">Welcome back. Use your work email.</p>
       </div>
       {addressProblem && !error && <Alert tone="danger">{addressProblem}</Alert>}
@@ -175,10 +199,10 @@ export function LoginForm({ next, expired, workspace, ssoFailure, notice, addres
       {notice && !error && <Alert tone="warning">{notice}</Alert>}
       {error && <Alert tone="danger">{error}</Alert>}
       <Field label="Work email" error={fieldErrors.email} required>
-        {(p) => <Input {...p} name="email" type="email" autoComplete="username" required autoFocus />}
+        {(p) => <EmailInput {...p} name="email" autoComplete="username" required autoFocus verified={verdict === 'ok'} onChange={() => { if (fieldErrors.email) setFieldErrors(({ email: _e, ...rest }) => rest); }} />}
       </Field>
       <Field label="Password" error={fieldErrors.password} required>
-        {(p) => <Input {...p} name="password" type="password" autoComplete="current-password" required />}
+        {(p) => <PasswordInput {...p} name="password" autoComplete="current-password" required check={verdict} onChange={() => { if (verdict === 'bad') { setVerdict(null); feedback.set('idle'); } }} />}
       </Field>
       <div className="-mt-3 text-right">
         <Link href="/forgot-password" className="text-[0.8125rem] font-medium text-accent hover:underline" data-testid="forgot-password-link">Forgot password?</Link>

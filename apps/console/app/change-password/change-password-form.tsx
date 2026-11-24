@@ -1,6 +1,6 @@
 'use client';
 import { password as passwordSchema } from '@crew/contracts';
-import { Alert, Button, Field, Input } from '@crew/ui';
+import { Alert, Button, Field, PasswordInput } from '@crew/ui';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { z } from 'zod';
@@ -46,13 +46,13 @@ export function ChangePasswordForm({ email, required }: { email: string; require
       </div>
       {error && <Alert tone="danger">{error}</Alert>}
       <Field label={required ? 'Temporary password' : 'Current password'} error={errors.currentPassword} required>
-        {(p) => <Input {...p} name="currentPassword" type="password" autoComplete="current-password" />}
+        {(p) => <PasswordInput {...p} name="currentPassword" autoComplete="current-password" />}
       </Field>
       <Field label="New password" hint="At least 12 characters, with three of: lowercase, uppercase, numbers, symbols" error={errors.newPassword} required>
-        {(p) => <Input {...p} name="newPassword" type="password" autoComplete="new-password" />}
+        {(p) => <PasswordInput {...p} name="newPassword" autoComplete="new-password" rules />}
       </Field>
       <Field label="New password again" error={errors.confirm} required>
-        {(p) => <Input {...p} name="confirm" type="password" autoComplete="new-password" />}
+        {(p) => <PasswordInput {...p} name="confirm" autoComplete="new-password" matches="newPassword" />}
       </Field>
       <Button type="submit" loading={pending}>Save new password</Button>
       {required ? (

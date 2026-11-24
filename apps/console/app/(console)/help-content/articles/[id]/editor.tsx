@@ -1,5 +1,5 @@
 'use client';
-import { HELP_ARTICLE_KINDS, HELP_KIND_LABEL, type HelpArticleKind, type HelpAudience, type HelpCategoryView, type HelpStep } from '@crew/contracts';
+import { HELP_ARTICLE_KINDS, HELP_ICONS, HELP_ICON_KEYS, HELP_KIND_LABEL, type HelpArticleKind, type HelpIcon, type HelpAudience, type HelpCategoryView, type HelpStep } from '@crew/contracts';
 import { Alert, Button, Card, Field, HelpBody, Input, Select, Switch, Textarea, buttonClass } from '@crew/ui';
 import { ArrowDown, ArrowUp, Eye, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
@@ -11,20 +11,23 @@ import { AudiencePicker, FEATURE_OPTIONS, PERMISSION_OPTIONS } from '../../manag
 export interface EditableArticle {
   id: string; slug: string; categoryId: string; kind: HelpArticleKind; title: string; summary: string; body: string; steps: HelpStep[]; audiences: HelpAudience[];
   feature: string | null; permission: string | null; keywords: string[]; href: string | null; videoUrl: string | null; imageUrl: string | null; related: string[];
-  sort: number; status: 'published' | 'draft'; builtin: boolean; customised: boolean; updatedAt: string;
+  icon: HelpIcon | null; sort: number; status: 'published' | 'draft'; builtin: boolean; customised: boolean; updatedAt: string;
 }
 
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
 const list = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
 
 /** The article editor: text, steps (for guides, tutorials and quick starts), links, media, visibility and publishing. */
-export function ArticleEditor({ article, categories, slugs }: { article: EditableArticle | null; categories: HelpCategoryView[]; slugs: { slug: string; title: string }[] }) {
+export function ArticleEditor({ article, categories, slugs, startKind, startPublic }: { article: EditableArticle | null; categories: HelpCategoryView[]; slugs: { slug: string; title: string }[]; startKind?: HelpArticleKind; startPublic?: boolean }) {
+  // A public piece starts in a public category (Our features for a feature brief).
+  const publicCats = categories.filter((c) => c.audiences.includes('public'));
+  const startCat = startPublic ? (publicCats.find((c) => startKind === 'feature' ? c.key === 'our-features' : c.key !== 'our-features') ?? publicCats[0]) : undefined;
   const router = useRouter();
   const [a, setA] = useState(() => ({
-    slug: article?.slug ?? '', categoryId: article?.categoryId ?? categories[0]?.id ?? '', kind: article?.kind ?? ('faq' as HelpArticleKind), title: article?.title ?? '',
-    summary: article?.summary ?? '', body: article?.body ?? '', steps: article?.steps ?? ([] as HelpStep[]), audiences: article?.audiences ?? (['employee'] as HelpAudience[]),
+    slug: article?.slug ?? '', categoryId: article?.categoryId ?? startCat?.id ?? categories[0]?.id ?? '', kind: article?.kind ?? startKind ?? ('faq' as HelpArticleKind), title: article?.title ?? '',
+    summary: article?.summary ?? '', body: article?.body ?? '', steps: article?.steps ?? ([] as HelpStep[]), audiences: article?.audiences ?? ((startPublic ? ['public'] : ['employee']) as HelpAudience[]),
     feature: article?.feature ?? '', permission: article?.permission ?? '', keywords: (article?.keywords ?? []).join(', '), href: article?.href ?? '',
-    videoUrl: article?.videoUrl ?? '', imageUrl: article?.imageUrl ?? '', related: (article?.related ?? []).join(', '), sort: article?.sort ?? 100, status: article?.status ?? ('draft' as 'published' | 'draft'),
+    videoUrl: article?.videoUrl ?? '', imageUrl: article?.imageUrl ?? '', related: (article?.related ?? []).join(', '), icon: (article?.icon ?? '') as HelpIcon | '', sort: article?.sort ?? 100, status: article?.status ?? ('draft' as 'published' | 'draft'),
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -38,13 +41,14 @@ export function ArticleEditor({ article, categories, slugs }: { article: Editabl
     start(async () => {
       const input = {
         ...a, status: status ?? a.status, feature: a.feature || null, permission: a.permission || null, keywords: list(a.keywords), related: list(a.related),
-        href: a.href || null, videoUrl: a.videoUrl || null, imageUrl: a.imageUrl || null, steps: a.steps.map((s) => ({ ...s, href: s.href || null })),
+        icon: a.icon || null, href: a.href || null, videoUrl: a.videoUrl || null, imageUrl: a.imageUrl || null, steps: a.steps.map((s) => ({ ...s, href: s.href || null })),
       };
       const r = await saveArticleAction(article?.id ?? null, input as never);
       if (r.ok) { router.push('/help-content?tab=articles'); router.refresh(); } else { setError(r.message); setErrors(r.fieldErrors ?? {}); }
     });
   };
-  const stepped = a.kind !== 'faq' || a.steps.length > 0;
+  const stepped = ['guide', 'tutorial', 'quickstart'].includes(a.kind) || a.steps.length > 0;
+  const isPublic = a.audiences.includes('public');
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]" data-testid="article-editor">
       <Card className="grid gap-4 p-5">
@@ -54,6 +58,12 @@ export function ArticleEditor({ article, categories, slugs }: { article: Editabl
           <Field label="Kind" required>{(p) => <Select {...p} value={a.kind} onChange={(e) => set({ kind: e.target.value as HelpArticleKind })} data-testid="article-kind">{HELP_ARTICLE_KINDS.map((k) => <option key={k} value={k}>{HELP_KIND_LABEL[k]}</option>)}</Select>}</Field>
           <Field label="Category" required error={errors.categoryId}>{(p) => <Select {...p} value={a.categoryId} onChange={(e) => set({ categoryId: e.target.value })} data-testid="article-category">{categories.map((c) => <option key={c.id} value={c.id}>{c.parentId ? '· ' : ''}{c.name}</option>)}</Select>}</Field>
           <Field label="Address (slug)" required error={errors.slug} hint="Lower-case letters, numbers and dashes.">{(p) => <Input {...p} value={a.slug} onChange={(e) => set({ slug: e.target.value })} data-testid="article-slug" />}</Field>
+          <Field label="Card icon" hint="Shown on feature and article cards; others use their category's." error={errors.icon}>{(p) => (
+            <Select {...p} value={a.icon} onChange={(e) => set({ icon: e.target.value as HelpIcon | '' })} data-testid="article-icon">
+              <option value="">Category icon</option>
+              {HELP_ICON_KEYS.map((k) => <option key={k} value={k}>{HELP_ICONS[k]} {k}</option>)}
+            </Select>
+          )}</Field>
           <Field label="Order" hint="Lower numbers come first.">{(p) => <Input {...p} type="number" min={0} max={10000} value={a.sort} onChange={(e) => set({ sort: Number(e.target.value) })} />}</Field>
           <Field label="Summary" className="sm:col-span-2" hint="One or two sentences shown in lists and search results." error={errors.summary}>{(p) => <Textarea {...p} rows={2} value={a.summary} onChange={(e) => set({ summary: e.target.value })} data-testid="article-summary" />}</Field>
         </div>
@@ -97,6 +107,7 @@ export function ArticleEditor({ article, categories, slugs }: { article: Editabl
           <h2 className="text-sm font-semibold">Who sees it</h2>
           <AudiencePicker value={a.audiences} onChange={(audiences) => set({ audiences })} />
           {errors.audiences && <span className="text-xs text-danger">{errors.audiences}</span>}
+          {isPublic && <Alert tone="info" data-testid="public-note">Everyone can read this on the public Help & Support page, before signing in. Leave Module and Permission empty, or it stays hidden there.</Alert>}
           <Field label="Module or feature" hint="Shown only while it is switched on for the person." error={errors.feature}>{(p) => (
             <Select {...p} value={a.feature} onChange={(e) => set({ feature: e.target.value })} data-testid="article-feature">
               <option value="">Every plan</option>
