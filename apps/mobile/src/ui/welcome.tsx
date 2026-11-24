@@ -382,7 +382,7 @@ export function SignInThemeBar({ scene, mode, palette, onMode, onPalette }: { sc
         {(['auto', 'light', 'dark'] as const).map((m) => {
           const on = m === mode;
           return (
-            <Pressable key={m} testID={`signin-mode-${m}`} onPress={() => onMode(m)} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={MODE_LABEL[m]} hitSlop={4}
+            <Pressable key={m} testID={`signin-mode-${m}`} onPress={() => onMode(m)} accessibilityRole="radio" accessibilityState={{ checked: on }} aria-checked={on} accessibilityLabel={MODE_LABEL[m]} hitSlop={4}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: on ? t.accent : 'transparent' }}>
               <Ionicons name={MODE_ICON[m]} size={13} color={on ? t.accentFg : t.muted} />
               {on && <Text style={{ color: t.accentFg, fontSize: 12, fontWeight: '700' }}>{MODE_LABEL[m]}</Text>}
@@ -394,7 +394,7 @@ export function SignInThemeBar({ scene, mode, palette, onMode, onPalette }: { sc
         {swatches.map((p) => {
           const on = p.key === palette;
           return (
-            <Pressable key={p.key} testID={`signin-palette-${p.key}`} onPress={() => onPalette(p.key)} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={p.label} hitSlop={4}
+            <Pressable key={p.key} testID={`signin-palette-${p.key}`} onPress={() => onPalette(p.key)} accessibilityRole="radio" accessibilityState={{ checked: on }} aria-checked={on} accessibilityLabel={p.label} hitSlop={4}
               style={{ width: 24, height: 24, borderRadius: 12, padding: 2, borderWidth: 2, borderColor: on ? t.fg : 'transparent' }}>
               <View style={[{ flex: 1, borderRadius: 10 }, gradient(`linear-gradient(135deg, ${p.colors[0]}, ${p.colors[1]} 55%, ${p.colors[2]})`, p.colors[1])]} />
             </Pressable>
