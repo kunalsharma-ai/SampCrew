@@ -119,7 +119,7 @@ async function signIn(p, email, { code } = {}) {
       await p.getByRole('button', { name: 'Verify' }).click();
     }
     const r = await Promise.race([
-      p.getByText(/^Good (morning|afternoon|evening)/).waitFor({ timeout: 20000 }).then(() => 'in'),
+      p.getByText(/^Good (morning|afternoon|evening), /).waitFor({ timeout: 20000 }).then(() => 'in'),
       p.getByText('Too many attempts').waitFor({ timeout: 20000 }).then(() => 'limited'),
     ]);
     if (r === 'in') return;

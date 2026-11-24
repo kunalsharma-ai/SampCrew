@@ -75,7 +75,7 @@ async function signIn(p, email) {
     await p.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await p.getByRole('button', { name: 'Sign in', exact: true }).click();
     const r = await Promise.race([
-      p.getByText(/^Good (morning|afternoon|evening)/).waitFor({ timeout: 20000 }).then(() => 'in'),
+      p.getByText(/^Good (morning|afternoon|evening), /).waitFor({ timeout: 20000 }).then(() => 'in'),
       p.getByText('Too many attempts').waitFor({ timeout: 20000 }).then(() => 'limited'),
     ]);
     if (r === 'in') return;
