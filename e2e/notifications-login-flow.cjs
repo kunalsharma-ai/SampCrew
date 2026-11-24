@@ -317,12 +317,14 @@ const unread = async (p) => {
     await shot(op, 'bell-action-needed', { wait: 700 });
     await op.keyboard.press('Escape');
     await shot(op, 'home-notifications', { wait: 300 });
+    // Counted before opening Learning: opening a module marks its notices read, which may clear them at once.
+    await op2.waitForFunction(() => document.querySelector('[data-testid=notification-count]'), null, { timeout: 15000 });
+    const inTab2 = await unread(op2);
+    expect(inTab2 >= 1, 'the second tab counted the new notice live');
     await op.goto(BASE + '/learning');
     const notices = op.getByTestId('module-notices-learning');
     await notices.getByText(title).first().waitFor();
     await shot(op, 'learning-module-notices', { wait: 300 });
-    const inTab2 = await unread(op2);
-    expect(inTab2 >= 1, 'the second tab counted the new notice live');
     await notices.getByRole('button', { name: new RegExp(`^Mark ".*${title}.*" read$`) }).first().click();
     await op2.waitForFunction((n) => {
       const el = document.querySelector('[data-testid=notification-count]');
