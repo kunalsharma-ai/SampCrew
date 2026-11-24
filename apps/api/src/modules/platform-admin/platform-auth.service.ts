@@ -38,7 +38,7 @@ export class PlatformAuthService {
 
   async login(email: string, password: string, code?: string) {
     const admin = await this.db.platform((tx) => tx.collection<AdminRow>('platform_admins').findOne({ email }));
-    if (admin?.locked_until && admin.locked_until > new Date()) throw Errors.tooMany();
+    if (admin?.locked_until && admin.locked_until > new Date()) throw Errors.lockedOut(admin.locked_until);
     const ok = await verifyPassword(admin?.password_hash ?? null, password);
     if (!admin || !ok || admin.status !== 'active') {
       if (admin) await this.failed(admin.id);
@@ -152,7 +152,7 @@ export class PlatformAuthService {
     const a = requestContext.platformActor();
     const admin = await this.db.platform((tx) => tx.collection<AdminRow>('platform_admins').findOne({ id: a.adminId }));
     if (!admin) throw Errors.unauthorized();
-    if (admin.locked_until && admin.locked_until > new Date()) throw Errors.tooMany();
+    if (admin.locked_until && admin.locked_until > new Date()) throw Errors.lockedOut(admin.locked_until);
     if (!(await verifyPassword(admin.password_hash, password))) {
       await this.failed(admin.id);
       await this.db.platform((tx) => this.audit.record(tx, { tenantId: null, action: 'delete.password_failed', resourceType: 'platform_admin', resourceId: admin.id })).catch(() => undefined);

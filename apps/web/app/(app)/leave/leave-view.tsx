@@ -28,7 +28,7 @@ const formOf = (r: LeaveRequest) => ({
 });
 
 /** Applying for leave, or changing a request (change set): same fields, live preview, the server's rules. */
-function LeaveDialog({ balances, open, onClose, date, change }: { balances: LeaveBalance[]; open: boolean; onClose: () => void; date?: string; change?: LeaveRequest }) {
+export function LeaveDialog({ balances, open, onClose, date, change, forEmployee }: { balances: LeaveBalance[]; open: boolean; onClose: () => void; date?: string; change?: LeaveRequest; forEmployee?: { id: string; name: string } }) {
   const router = useRouter();
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState(change ? formOf(change) : { leaveTypeId: balances[0]?.leaveTypeId ?? '', startDate: today, endDate: today, startHalf: 'full', endHalf: 'full', reason: '', route: '' as LeaveRoute | '' });
@@ -56,6 +56,8 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
     if (form.reason.trim()) b.reason = form.reason.trim();
     if (form.route) b.approvalRoute = form.route;
     if (docs.length) b.documentIds = docs.map((d) => d.id);
+    // HR applying for one of their people (the API checks they approve leave for them).
+    if (forEmployee && !change) b.employeeId = forEmployee.id;
     return b;
   };
 
@@ -75,7 +77,7 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
     <Dialog
         open={open}
         onClose={onClose}
-        title={change ? 'Change leave request' : 'Apply for leave'}
+        title={change ? 'Change leave request' : forEmployee ? `Apply for leave for ${forEmployee.name}` : 'Apply for leave'}
         footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form={formId} loading={pending} disabled={!!previewError || uploading}>{change ? 'Send change' : 'Submit request'}</Button></>}
       >
         <form
@@ -86,7 +88,10 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
             setError(null);
             start(async () => {
               const r = change ? await modifyLeaveAction(change.id, body()) : await requestLeaveAction(body());
-              if (r.ok) {
+              if (r.ok && forEmployee) {
+                onClose();
+                router.refresh();
+              } else if (r.ok) {
                 onClose();
                 // The page then says who the request went to.
                 router.push(`/leave?sent=${(r.data as { id: string }).id}&month=${form.startDate.slice(0, 7)}`, { scroll: false });
@@ -103,6 +108,7 @@ function LeaveDialog({ balances, open, onClose, date, change }: { balances: Leav
             </Alert>
           )}
           {error && <Alert tone="danger" className="sm:col-span-2">{error}</Alert>}
+          {forEmployee && !balances.length && <Alert tone="warning" className="sm:col-span-2">No leave type is available to {forEmployee.name} yet. Create one in Leave management, or check who it is visible to.</Alert>}
           <Field label="Leave type" className="sm:col-span-2">
             {(p) => (
               <Select {...p} name="leaveTypeId" value={form.leaveTypeId} onChange={(e) => setForm({ ...form, leaveTypeId: e.target.value, route: '' })}>

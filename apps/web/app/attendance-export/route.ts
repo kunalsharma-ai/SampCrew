@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { apiDownload } from '@/lib/api';
 
-const PASS = ['from', 'to', 'hrWorkspaceId', 'employeeId', 'status', 'level', 'q', 'include'];
+const PASS = ['from', 'to', 'hrWorkspaceId', 'employeeId', 'status', 'level', 'q', 'include', 'format', 'employeeIds'];
 
 /**
- * Downloads attendance as an Excel workbook from the API, with the filters on screen. The API decides what the
+ * Downloads attendance as Excel, CSV, Word or PDF from the API, with the filters on screen. The API decides what the
  * person may see (their own only for Employee Workspace), checks the export permission and audits every export.
  */
 export async function GET(req: Request) {
@@ -12,9 +12,9 @@ export async function GET(req: Request) {
   const qs = new URLSearchParams();
   for (const k of PASS) {
     const v = src.get(k);
-    if (v) qs.set(k, v.slice(0, 200));
+    if (v) qs.set(k, v.slice(0, k === 'employeeIds' ? 20_000 : 200));
   }
-  const res = await apiDownload(`/attendance/export.xlsx?${qs}`);
+  const res = await apiDownload(`/attendance/export?${qs}`);
   if (!res.ok || !res.body) {
     const e = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
     return new NextResponse(e.error?.message ?? 'Export not available', { status: [401, 403, 404, 422].includes(res.status) ? res.status : 400 });

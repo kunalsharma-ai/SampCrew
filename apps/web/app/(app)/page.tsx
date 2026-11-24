@@ -3,6 +3,7 @@ import {
   type EmployeeHome, type MemberPreferences, type OrganizationHome, type WorkforceHome, type WorkforceTrend,
 } from '@crew/contracts';
 import { cookies } from 'next/headers';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { EmployeeHomeView } from '@/components/home/employee-home';
@@ -16,7 +17,7 @@ import type { AttendanceToday, LeaveBalance, LeaveDashboard, Me, MyCalendar, MyR
 import type { Announcement, Summary } from './helpdesk/types';
 import { HomeDashboard, type Dashboard } from './home-dashboard';
 
-interface Overview { legalEntities: number; businessUnits: number; locations: number; departments: number; activeMembers: number; pendingInvites: number; countries: number }
+interface Overview { legalEntities: number; businessUnits: number; locations: number; departments: number; activeMembers: number; pendingInvites: number; countries: number; shiftTemplates?: number; leaveTypes?: number; paidLeaveTypes?: number; employees?: number }
 type Search = { welcome?: string; month?: string; view?: string; hrWorkspace?: string; department?: string; location?: string; date?: string; trend?: string };
 
 const SCOPE_LABEL: Record<string, string> = { own: 'Yourself', team: 'Your team', department: 'Your department', entity: 'Your legal entity', tenant: 'Whole organization' };
@@ -52,6 +53,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     <>
       <HomeRefresh poll={view !== 'me'} />
       <HomeHeader name={me.user.fullName} level={levelLabel} workspace={me.tenant.name} timeZone={me.tenant.timezone} renderedAt={renderedAt} />
+      {level !== 'employee' && (
+        <Suspense fallback={null}>
+          <SetupGaps me={me} />
+        </Suspense>
+      )}
       <ViewTabs current={view} tabs={views.map((v) => ({ ...v, href: v.key === fallback && !sp.hrWorkspace ? '/' : `/?view=${v.key}` }))} />
       <Suspense key={`${view}:${JSON.stringify(sp)}`} fallback={<div className="grid grid-cols-1 gap-5"><StatSkeletonRow count={view === 'me' ? 4 : 8} /><SectionSkeleton rows={4} /><div className="grid grid-cols-1 gap-5 lg:grid-cols-2"><SectionSkeleton /><SectionSkeleton /></div></div>}>
         {view === 'organization' && <OrganizationSection me={me} trendDays={trendDays} />}
@@ -62,6 +68,36 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <MoreWidgets me={me} firstName={firstName} welcome={Boolean(sp.welcome)} />
       </Suspense>
     </>
+  );
+}
+
+/**
+ * Asks HR to define the basics a new workspace cannot run without (issue #83): at least one shift and one paid leave
+ * type, before people are added and start punching or applying for leave. Only shows what is missing and what this
+ * person may fix.
+ */
+async function SetupGaps({ me }: { me: Me }) {
+  if (!can(me, 'org:read')) return null;
+  const o = await loadOptional<Overview>('/org/overview');
+  if (!o) return null;
+  const gaps: { key: string; text: string; href: string; action: string }[] = [];
+  if (me.features.includes('attendance_basic') && can(me, 'attendance:configure') && o.shiftTemplates === 0)
+    gaps.push({ key: 'shift', text: 'No shift types yet. Add at least one shift (for example General, 09:30 to 18:30) so attendance knows when people should work.', href: '/settings/attendance', action: 'Add a shift' });
+  if (me.features.includes('leave') && can(me, 'leavetypes:create') && o.paidLeaveTypes === 0)
+    gaps.push({ key: 'leave', text: o.leaveTypes ? 'There is no paid leave type yet. Add one (for example Casual Leave) and say how many days people get.' : 'No leave types yet. Add at least one paid leave type and say how many days people get, so they can apply for leave.', href: '/leave/manage?tab=types', action: 'Add a leave type' });
+  if (!gaps.length) return null;
+  return (
+    <section aria-label="Finish setting up" data-testid="setup-gaps" className="mb-5 rounded-xl border border-warning/40 bg-warning-subtle/40 p-4">
+      <h2 className="text-[0.9375rem] font-semibold">Finish setting up{o.employees ? '' : ' before you add people'}</h2>
+      <ul className="mt-2 grid gap-2">
+        {gaps.map((g) => (
+          <li key={g.key} className="flex flex-wrap items-center justify-between gap-2 text-[0.8125rem]" data-testid={`setup-gap-${g.key}`}>
+            <span className="min-w-0 flex-1 text-fg-muted">{g.text}</span>
+            <Link href={g.href} className="rounded-lg bg-accent px-3 py-1.5 font-medium text-accent-fg hover:bg-accent-hover">{g.action}</Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

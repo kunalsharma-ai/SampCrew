@@ -16,6 +16,7 @@ import type { Response } from 'express';
 import { z } from 'zod';
 import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { sendFile } from '../../platform/export/tabular';
+import { contentDisposition } from '../../platform/http/content-disposition';
 import { ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { AttendanceAccessService } from './attendance-access.service';
@@ -75,8 +76,19 @@ export class AttendanceOverviewController {
   @RequirePermission('attendance:read')
   @Doc({ summary: 'Attendance as an Excel workbook, with the filters applied and only what the caller may see (audited)', query: attendanceExportQuery })
   async export(@Query(new ZodPipe(attendanceExportQuery)) q: AttendanceExportQuery, @Res() res: Response) {
+    const file = await this.overviews.export({ ...q, format: 'xlsx' });
+    sendFile(res, file as { fileName: string; content: Buffer }, 'xlsx');
+  }
+
+  @Get('export')
+  @RequirePermission('attendance:read')
+  @Doc({ summary: 'Attendance report as Excel, CSV, Word or PDF (format), for everyone visible or chosen employees, with the filters applied (audited)', query: attendanceExportQuery })
+  async exportAs(@Query(new ZodPipe(attendanceExportQuery)) q: AttendanceExportQuery, @Res() res: Response) {
     const file = await this.overviews.export(q);
-    sendFile(res, file, 'xlsx');
+    res.setHeader('content-type', file.contentType);
+    res.setHeader('content-disposition', contentDisposition('attachment', file.fileName));
+    res.setHeader('cache-control', 'private, no-store');
+    res.send(file.content);
   }
 
   @Get('access')

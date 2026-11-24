@@ -27,5 +27,5 @@ export async function setAccessAction(id: string, access: Record<string, unknown
 }
 
 export async function resendInviteAction(id: string) {
-  return act(() => api<{ inviteUrl?: string }>(`/members/${id}/resend-invite`, { method: 'POST' }));
+  return act(() => api<{ inviteUrl?: string; delivery?: 'email_queued' | 'email_not_configured' }>(`/members/${id}/resend-invite`, { method: 'POST' }));
 }

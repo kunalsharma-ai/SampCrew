@@ -15,8 +15,9 @@ import { requestContext } from '../../platform/context/request-context';
 import { MongoService as DatabaseService, type PlatformTx } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { OutboxService } from '../../platform/events/outbox.service';
-import { AppError, Errors } from '../../platform/http/errors';
+import { AppError, Errors, minutesLeft } from '../../platform/http/errors';
 import { SsoService, type SsoResult } from '../identity/sso.service';
+import { displayName } from '../employees/employee-view';
 
 const MAX_FAILED_LOGINS = 5;
 const LOCK_MINUTES = 15;
@@ -91,11 +92,11 @@ export class AuthService {
   // ---------------------------------------------------------------------------
   async login(email: string, password: string, tenantSlug: string | undefined, client: Client): Promise<LoginResponse> {
     const user = await this.db.platform((tx) => tx.collection<UserRow>('users').findOne({ email }));
-    if (user?.locked_until && user.locked_until > new Date()) throw Errors.tooMany('Too many failed sign-in attempts. Try again in a few minutes.');
+    if (user?.locked_until && user.locked_until > new Date()) throw Errors.lockedOut(user.locked_until);
     const ok = await verifyPassword(user?.password_hash ?? null, password);
     if (!user || !ok || user.status !== 'active') {
-      if (user) await this.recordFailedLogin(user.id);
-      throw Errors.unauthorized('Email or password is incorrect');
+      const lockedUntil = user ? await this.recordFailedLogin(user.id) : null;
+      throw Errors.unauthorized(lockedUntil ? `Email or password is incorrect. After too many wrong attempts sign-in is locked: try again after ${minutesLeft(lockedUntil)}.` : 'Email or password is incorrect');
     }
     await this.db.platform((tx) => tx.collection('users').updateOne({ id: user.id }, { $set: { failed_login_count: 0, locked_until: null } }));
 
@@ -111,7 +112,7 @@ export class AuthService {
     });
     const user = await this.db.platform((tx) => tx.collection<UserRow>('users').findOne({ id: step.sub }));
     if (!user?.mfa_secret_enc || !user.mfa_enabled) throw Errors.unauthorized();
-    if (user.locked_until && user.locked_until > new Date()) throw Errors.tooMany();
+    if (user.locked_until && user.locked_until > new Date()) throw Errors.lockedOut(user.locked_until);
     if (!verifyTotp(decryptField(user.mfa_secret_enc, this.config.fieldKeys), code)) {
       await this.recordFailedLogin(user.id);
       throw Errors.unauthorized('That code is not valid. Check your authenticator app and try again.');
@@ -182,13 +183,16 @@ export class AuthService {
     return this.db.platform((tx) => activeMembershipsOf(tx, userId));
   }
 
-  private async recordFailedLogin(userId: string) {
-    await this.db.platform(async (tx) => {
+  /** Counts a wrong password or code; returns when the lock ends if this attempt locked the account. */
+  private async recordFailedLogin(userId: string): Promise<Date | null> {
+    return this.db.platform(async (tx) => {
       const users = tx.collection('users');
       const u = await users.findOne({ id: userId }, { projection: { failed_login_count: 1 } });
       const count = ((u?.failed_login_count as number) ?? 0) + 1;
-      await users.updateOne({ id: userId }, { $set: { failed_login_count: count, ...(count >= MAX_FAILED_LOGINS ? { locked_until: new Date(Date.now() + LOCK_MINUTES * 60_000) } : {}) } });
+      const lockedUntil = count >= MAX_FAILED_LOGINS ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null;
+      await users.updateOne({ id: userId }, { $set: { failed_login_count: count, ...(lockedUntil ? { locked_until: lockedUntil } : {}) } });
       await this.audit.record(tx, { tenantId: null, action: 'auth.login_failed', resourceType: 'user', resourceId: userId });
+      return lockedUntil;
     });
   }
 
@@ -315,7 +319,7 @@ export class AuthService {
       const subject = await this.authz.subject(tx);
       const ent = await this.entitlements.current(tx);
       const controls = await tx.collection('tenant_access_controls').findOne({});
-      const employee = await tx.collection('employees').findOne({ membership_id: actor.membershipId }, { projection: { _id: 1, photo_updated_at: 1, hr_workspace_id: 1 } });
+      const employee = await tx.collection('employees').findOne({ membership_id: actor.membershipId }, { projection: { _id: 1, photo_updated_at: 1, hr_workspace_id: 1, first_name: 1, last_name: 1, preferred_name: 1 } });
       // Levels: HR Workspaces this person runs (a limited grant names them), and whether they run the company.
       const hrIds = [...new Set(subject.grants.flatMap((g) => g.constraints.hrWorkspaceIds ?? []))];
       const spaces = await tx.collection('hr_workspaces').find({ id: { $in: [...hrIds, ...(employee?.hr_workspace_id ? [employee.hr_workspace_id] : [])] }, status: { $ne: 'archived' } }, { projection: { name: 1, status: 1 }, sort: { name: 1 } });
@@ -344,7 +348,9 @@ export class AuthService {
     // Workspace switcher: only this user's own active workspaces.
     const tenants = (await this.db.platform((tx) => activeMembershipsOf(tx, actor.userId))).map((m) => ({ id: m.tenant_id, name: m.name, slug: m.slug }));
     return {
-      user: { id: data.user!.id, email: data.user!.email, fullName: data.user!.full_name, mfaEnabled: data.user!.mfa_enabled },
+      // Someone with an employee record is greeted by that record's name, so a name HR corrects on the profile shows on
+      // Home, in the top bar and on the phone at once (the login keeps the name it was created with).
+      user: { id: data.user!.id, email: data.user!.email, fullName: (data.employee?.first_name ? displayName(data.employee as never) : '') || data.user!.full_name, mfaEnabled: data.user!.mfa_enabled },
       tenant: { id: data.tenant!.id, name: data.tenant!.name, slug: data.tenant!.slug, isDemo: data.tenant!.is_demo, status: data.tenant!.status, timezone: data.tenant!.timezone, currency: data.tenant!.currency, locale: data.tenant!.locale, setupCompletedAt: data.tenant!.setup_completed_at?.toISOString() ?? null },
       membership: { id: data.membership!.id, status: data.membership!.status, roles: data.roles },
       permissions: effectivePermissions(data.subject),
@@ -471,7 +477,7 @@ export class AuthService {
     const actor = requestContext.tenantActor();
     const user = await this.db.platform((tx) => tx.collection<UserRow>('users').findOne({ id: actor.userId }));
     if (!user?.mfa_enabled || !user.mfa_secret_enc) throw Errors.badRequest('mfa_not_enabled', 'Turn on two-step verification first');
-    if (user.locked_until && user.locked_until > new Date()) throw Errors.tooMany();
+    if (user.locked_until && user.locked_until > new Date()) throw Errors.lockedOut(user.locked_until);
     if (!verifyTotp(decryptField(user.mfa_secret_enc, this.config.fieldKeys), code)) {
       await this.recordFailedLogin(user.id);
       throw Errors.badRequest('invalid_code', 'That code is not valid. Check your authenticator app and try again.');
@@ -494,7 +500,7 @@ export class AuthService {
     if (actor.apiKey) throw Errors.forbidden('API keys cannot confirm a delete');
     const user = await this.db.platform((tx) => tx.collection<UserRow>('users').findOne({ id: actor.userId }));
     if (!user) throw Errors.unauthorized();
-    if (user.locked_until && user.locked_until > new Date()) throw Errors.tooMany();
+    if (user.locked_until && user.locked_until > new Date()) throw Errors.lockedOut(user.locked_until);
     if (!user.password_hash) throw Errors.badRequest('password_not_set', 'Your account signs in with single sign-on and has no SampCrew password yet. Set one with "Forgot password" on the sign-in page, then delete again.');
     if (!(await verifyPassword(user.password_hash, password))) {
       await this.recordFailedLogin(user.id);

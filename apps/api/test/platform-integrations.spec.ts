@@ -321,7 +321,7 @@ describe('Platform integrations (Super Admin Console)', () => {
       const off = `off.${stamp}@crew.test`;
       await pool.insert('email_messages', { tenant_id: t.id, to_email: off, subject: 'Should not go', text_body: 'x', template: 'test' });
       await mailer.sendBatch(500);
-      expect(await pool.one('email_messages', { to_email: off })).toMatchObject({ status: 'skipped', last_error: 'Email delivery is not set up (Super Admin Console > Integrations > Email)' });
+      expect(await pool.one('email_messages', { to_email: off })).toMatchObject({ status: 'skipped', last_error: 'Email delivery is not set up (Settings > Email setup in the workspace, or Super Admin Console > Integrations > Email)' });
       ok(await as(superToken).delete('/platform/integrations/email'));
     });
   });

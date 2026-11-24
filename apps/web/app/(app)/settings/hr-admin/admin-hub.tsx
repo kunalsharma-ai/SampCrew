@@ -80,6 +80,18 @@ function Features({ rows }: { rows: FeatureLevelRow[] }) {
     if (res.ok && res.data) setList(res.data.items);
     setFlash({ tone: res.ok ? 'success' : 'danger', text: res.ok ? `${name}: ${res.message}` : res.message });
   });
+  const changeMany = (changes: { key: string; column: string; on: boolean }[]) => start(async () => {
+    if (!changes.length) return;
+    // The API takes up to 200 switches at a time.
+    let res!: Awaited<ReturnType<typeof setFeatureLevelsAction>>;
+    for (let i = 0; i < changes.length; i += 200) {
+      const part = changes.slice(i, i + 200);
+      res = await withMfa(() => setFeatureLevelsAction(part.map((c) => ({ key: c.key, target: c.column as 'company' | 'hr' | 'employee', enabled: c.on }))));
+      if (!res.ok) break;
+    }
+    if (res.ok && res.data) setList(res.data.items);
+    setFlash({ tone: res.ok ? 'success' : 'danger', text: res.ok ? `${changes.length} switches ${changes[0]!.on ? 'on' : 'off'}: ${res.message}` : res.message });
+  });
   const board = list.map((r) => ({ key: r.key, name: r.name, module: r.module, parent: r.parent, kind: isFeatureAction(r.key) ? 'action' as const : 'page' as const, audience: r.audience, cells: { company: r.company, hr: r.hr, employee: r.employee } }));
   return (
     <Card>
@@ -93,6 +105,7 @@ function Features({ rows }: { rows: FeatureLevelRow[] }) {
           columns={LEVEL_COLUMNS}
           busy={pending}
           onChange={change}
+          onBulkChange={changeMany}
           intro={flash ? <Alert tone={flash.tone}>{flash.text}</Alert> : <p className="text-xs text-fg-subtle">Active: on. Inherited: follows the whole-company switch. Inactive: switched off at this level, you can switch it back on. Restricted: switched off higher up (SAMPLEDGE, the plan, or the whole-company switch). Hover a label to see who switched it.</p>}
         />
       </CardBody>

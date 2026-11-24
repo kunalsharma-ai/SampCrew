@@ -197,7 +197,13 @@ export function RequestDocumentDialog({ open, onClose, catalogue, preset, target
   const [target, setTarget] = useState<'employee' | 'hr_workspace'>(preset?.target ?? 'employee');
   const [people, setPeople] = useState<string[]>(preset?.employeeIds ?? []);
   const [ws, setWs] = useState(preset?.hrWorkspaceId ?? '');
-  const [typeKey, setTypeKey] = useState(preset?.typeKey ?? '');
+  // Several documents can be asked for in one go (issue #83); a replacement asks for exactly one.
+  const [typeKeys, setTypeKeys] = useState<string[]>(preset?.typeKey ? [preset.typeKey] : []);
+  const typeKey = typeKeys[0] ?? '';
+  const single = !!preset?.replacesDocumentId;
+  const setTypeKey = (k: string) => setTypeKeys(k ? [k] : []);
+  const toggleType = (k: string, on: boolean) => setTypeKeys((cur) => (on ? [...cur.filter((x) => x !== k), k] : cur.filter((x) => x !== k)));
+  const [typeFind, setTypeFind] = useState('');
   const [formats, setFormats] = useState<RequestFileFormat[]>(['pdf', 'image']);
   const [find, setFind] = useState('');
   const fixed = !!preset && (preset.employeeIds?.length || preset.hrWorkspaceId);
@@ -208,7 +214,7 @@ export function RequestDocumentDialog({ open, onClose, catalogue, preset, target
 
   const submit = (f: FormData) => {
     const body = {
-      target, typeKey, title: (f.get('title') as string) || null, instructions: (f.get('instructions') as string) || null, reason: f.get('reason') as string,
+      target, typeKey, ...(typeKeys.length > 1 ? { typeKeys } : {}), title: (f.get('title') as string) || null, instructions: (f.get('instructions') as string) || null, reason: f.get('reason') as string,
       dueOn: (f.get('dueOn') as string) || null, priority: f.get('priority') as string, formats, maxMb: Number(f.get('maxMb') ?? 10), expiryRequired: f.get('expiryRequired') === 'on',
       ...(target === 'employee' ? { employeeIds: people } : { hrWorkspaceId: ws, assigneeMembershipId: (f.get('assignee') as string) || null }),
       ...(preset?.replacesDocumentId ? { replacesDocumentId: preset.replacesDocumentId } : {}),
@@ -235,7 +241,7 @@ export function RequestDocumentDialog({ open, onClose, catalogue, preset, target
         {error && <Alert tone="danger">{error}</Alert>}
         {!fixed && (
           <Field label="Ask">{(p) => (
-            <Select {...p} value={target} onChange={(e) => { setTarget(e.target.value as 'employee'); setTypeKey(''); }}>
+            <Select {...p} value={target} onChange={(e) => { setTarget(e.target.value as 'employee'); setTypeKeys([]); }}>
               <option value="employee">Employees</option>
               {(targets?.hrWorkspaces.length ?? 0) > 0 && <option value="hr_workspace">An HR Workspace</option>}
             </Select>
@@ -268,15 +274,40 @@ export function RequestDocumentDialog({ open, onClose, catalogue, preset, target
             <Select {...p} name="assignee" defaultValue={admins[0]?.membershipId}>{admins.map((a) => <option key={a.membershipId} value={a.membershipId}>{a.name ?? 'HR Workspace Admin'}</option>)}</Select>
           )}</Field>
         )}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Document type" required error={fieldErrors.typeKey}>{(p) => (
-            <Select {...p} value={typeKey} onChange={(e) => setTypeKey(e.target.value)} required disabled={!!preset?.replacesDocumentId && !!preset.typeKey}>
-              <option value="">Choose…</option>
-              {groups.map((g) => <optgroup key={g.key} label={g.name}>{types.filter((x) => x.category === g.key).map((x) => <option key={x.key} value={x.key}>{x.name}{x.sensitive ? ' (sensitive)' : ''}</option>)}</optgroup>)}
-            </Select>
-          )}</Field>
-          <Field label="Document name" hint={typeKey === 'custom' ? 'Required for a custom document' : 'Leave empty to use the type name'} error={fieldErrors.title}>{(p) => <Input {...p} name="title" maxLength={200} required={typeKey === 'custom'} />}</Field>
-        </div>
+        {single ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Document type" required error={fieldErrors.typeKey}>{(p) => (
+              <Select {...p} value={typeKey} onChange={(e) => setTypeKey(e.target.value)} required disabled={!!preset?.typeKey}>
+                <option value="">Choose…</option>
+                {groups.map((g) => <optgroup key={g.key} label={g.name}>{types.filter((x) => x.category === g.key).map((x) => <option key={x.key} value={x.key}>{x.name}{x.sensitive ? ' (sensitive)' : ''}</option>)}</optgroup>)}
+              </Select>
+            )}</Field>
+            <Field label="Document name" hint={typeKey === 'custom' ? 'Required for a custom document' : 'Leave empty to use the type name'} error={fieldErrors.title}>{(p) => <Input {...p} name="title" maxLength={200} required={typeKey === 'custom'} />}</Field>
+          </div>
+        ) : (
+          <>
+            <Field label="Documents" required error={fieldErrors.typeKey ?? fieldErrors.typeKeys} hint={typeKeys.length ? `${typeKeys.length} chosen. Each one becomes its own request and task.` : 'Tick every document you need. You can ask for several at once.'}>{(p) => (
+              <div className="grid gap-2">
+                <Input {...p} placeholder="Search document types" value={typeFind} onChange={(e) => setTypeFind(e.target.value)} />
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-border p-2" data-testid="request-types">
+                  {groups.map((g) => {
+                    const inGroup = types.filter((x) => x.category === g.key && (!typeFind || x.name.toLowerCase().includes(typeFind.toLowerCase())));
+                    if (!inGroup.length) return null;
+                    return (
+                      <div key={g.key} className="mb-2">
+                        <div className="mb-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle">{g.name}</div>
+                        {inGroup.map((x) => <Checkbox key={x.key} label={`${x.name}${x.sensitive ? ' (sensitive)' : ''}`} checked={typeKeys.includes(x.key)} onChange={(ev) => toggleType(x.key, ev.target.checked)} data-testid={`request-type-${x.key}`} />)}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}</Field>
+            {(typeKeys.length === 1 || typeKeys.includes('custom')) && (
+              <Field label={typeKeys.length === 1 ? 'Document name' : 'Name of the custom document'} hint={typeKeys.includes('custom') ? 'Required for a custom document' : 'Leave empty to use the type name'} error={fieldErrors.title}>{(p) => <Input {...p} name="title" maxLength={200} required={typeKeys.includes('custom')} />}</Field>
+            )}
+          </>
+        )}
         <Field label="Reason" required error={fieldErrors.reason} hint="Shown to the person. Ask only for what the stated purpose needs.">{(p) => <Input {...p} name="reason" required minLength={3} maxLength={1000} defaultValue={preset?.replacesDocumentId ? 'The earlier document expired or needs renewing' : ''} />}</Field>
         <Field label="Instructions">{(p) => <Textarea {...p} name="instructions" rows={2} maxLength={2000} placeholder="For example: both sides in one PDF, clearly readable" />}</Field>
         <div className="grid gap-4 sm:grid-cols-3">
@@ -293,7 +324,7 @@ export function RequestDocumentDialog({ open, onClose, catalogue, preset, target
         <Checkbox name="expiryRequired" label="Ask for the expiry date" description="For passports, licences, certificates and other documents that expire." />
         <div className="flex justify-end gap-2 border-t border-border pt-4">
           <Button type="button" variant="secondary" onClick={onClose}>Back</Button>
-          <Button type="submit" loading={pending} disabled={!typeKey || !formats.length || (target === 'employee' ? !people.length : !ws)}>Send request</Button>
+          <Button type="submit" loading={pending} disabled={!typeKey || !formats.length || (target === 'employee' ? !people.length : !ws)}>{typeKeys.length > 1 ? `Send ${typeKeys.length} requests` : 'Send request'}</Button>
         </div>
       </form>
     </Dialog>

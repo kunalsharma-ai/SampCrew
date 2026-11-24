@@ -1,6 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { act, api } from '@/lib/api';
+import type { AttendanceToday } from '@/lib/types';
 
 /** Form selects send "true"/"false" and numbers as strings; turn them into JSON types. */
 function typed(values: Record<string, unknown>, opts: { bools?: string[]; numbers?: string[]; nulls?: string[] } = {}) {
@@ -197,4 +198,15 @@ export async function simulateAction(id: string, scenario: string, date?: string
   const r = await act(() => api<{ accepted: number; duplicates: number; rejected: number; records: number; date: string }>(`/attendance/devices/${id}/simulate`, { method: 'POST', body: { scenario, ...(date ? { date } : {}) } }));
   revalidatePath(`/settings/devices/${id}`);
   return r;
+}
+
+/** Today's attendance for the top bar's check-in button; null when the person has no employee record. */
+export async function attendanceTodayAction() {
+  return act(() => api<AttendanceToday>('/attendance/today'));
+}
+
+/** People the export can be narrowed to: everyone the viewer may see in the period, searchable. */
+export async function exportPeopleAction(from: string, to: string, q: string) {
+  const qs = new URLSearchParams({ from, to, pageSize: '200', ...(q ? { q } : {}) });
+  return act(() => api<{ rows: { employeeId: string; name: string; code: string; department: string | null; hrWorkspaceName: string }[]; total: number }>(`/attendance/overview/people?${qs}`));
 }

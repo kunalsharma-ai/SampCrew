@@ -31,14 +31,22 @@ export function ModulePicker({ modules, value, onChange, disabled, lockedHint }:
         <span>{open.filter((m) => chosen.has(m.key)).length} of {open.length} modules given</span>
         {!disabled && (
           <>
-            <button type="button" className="font-medium text-accent hover:underline" onClick={() => onChange([...new Set([...value, ...open.map((m) => m.key)])].sort())}>Give all</button>
+            <button type="button" className="font-medium text-accent hover:underline" onClick={() => onChange([...new Set([...value, ...open.map((m) => m.key)])].sort())}>Select all</button>
             <button type="button" className="font-medium text-accent hover:underline" onClick={() => onChange(value.filter((k) => !open.some((m) => m.key === k)))}>Clear</button>
           </>
         )}
       </div>
       {groups.map((g) => (
         <fieldset key={g} className="grid gap-2">
-          <legend className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-subtle">{g}</legend>
+          <legend className="mb-1 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-fg-subtle">
+            {g}
+            {!disabled && open.some((m) => m.module === g) && (
+              <span className="flex gap-2 normal-case tracking-normal">
+                <button type="button" className="font-medium text-accent hover:underline" aria-label={`Select all ${g} modules`} onClick={() => onChange([...new Set([...value, ...open.filter((m) => m.module === g).map((m) => m.key)])].sort())}>Select all</button>
+                <button type="button" className="font-medium text-accent hover:underline" aria-label={`Clear ${g} modules`} onClick={() => onChange(value.filter((k) => !open.some((m) => m.module === g && m.key === k)))}>Clear</button>
+              </span>
+            )}
+          </legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {modules.filter((m) => m.module === g).map((m) => {
               const locked = m.state === 'locked';

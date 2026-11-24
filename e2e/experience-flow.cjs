@@ -64,10 +64,11 @@ function leaveDay() {
 (async () => {
   const b = await chromium.launch();
   try {
-    // 1. Request leave from the Create menu.
+    // 1. Request leave from the search palette's actions (the top bar no longer has a Create menu, issue #83).
     const op = await signIn(b, 'operator2@demo.crew.local');
-    await op.getByRole('button', { name: 'Create' }).click();
-    await op.getByRole('menuitem', { name: 'Request time off' }).click();
+    await op.getByRole('button', { name: /Search/ }).first().click();
+    await op.getByRole('combobox', { name: 'Search pages' }).fill('Request time off');
+    await op.getByRole('option', { name: /Request time off/ }).first().click();
     await op.waitForURL((u) => u.pathname === '/leave');
     await op.locator('dialog[open] select[name=leaveTypeId]').waitFor();
     expect(!op.url().includes('create='), 'the create parameter should be removed once the form opens');
@@ -87,7 +88,7 @@ function leaveDay() {
     const attention = sup.getByRole('region', { name: 'Needs your attention' });
     const item = attention.getByRole('listitem').filter({ hasText: `Neha Deshmukh: Casual Leave, ${day}` });
     await item.waitFor();
-    const approvals = sup.getByRole('link', { name: /^Approval inbox, [1-9]/ });
+    const approvals = sup.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Approvals/ }).filter({ hasText: /[1-9]/ }).first();
     await approvals.waitFor();
     await item.getByRole('button', { name: /^Approve:/ }).click();
     await item.getByText('Approved', { exact: true }).waitFor({ timeout: 10000 });

@@ -79,6 +79,11 @@ export async function discardHireDraftAction(id: string) {
   return r;
 }
 
+/** The employee ID the next hire gets when the box is left empty (a preview; nothing is reserved). */
+export async function nextEmployeeCodeAction() {
+  return act(() => api<{ code: string | null; prefix: string }>('/employees/next-code'));
+}
+
 export async function duplicateCheckAction(values: Record<string, string>) {
   return act(() => api<{ matches: { id: string; displayName: string; employeeCode: string; status: string; departmentName: string | null; reasons: string[] }[] }>('/employees/duplicate-check', { method: 'POST', body: values }));
 }

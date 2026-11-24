@@ -56,7 +56,7 @@ export function TypesPanel({ types, options, isSuper, canCreate, canVisibility }
                       <span className="font-medium">{t.name}</span> <Badge>{t.code}</Badge>
                     </div>
                     {t.description && <div className="mt-0.5 max-w-md text-xs text-fg-muted">{t.description}</div>}
-                    <div className="mt-0.5 text-xs text-fg-subtle">Managed by {owner(t)}</div>
+                    <div className="mt-0.5 text-xs text-fg-subtle">{t.paid ? 'Paid' : 'Unpaid'}{t.monthlyCredit ? ` · ${t.monthlyCredit} days credited every month` : ''} · Managed by {owner(t)}</div>
                   </TD>
                   <TD>
                     {t.canManage && (isSuper || canVisibility) ? (
@@ -98,17 +98,22 @@ function TypeForm({ type, isSuper, canVisibility, hrWorkspaces, onClose, run }: 
   const [f, setF] = useState({
     name: type?.name ?? '', description: type?.description ?? '', code: type?.code ?? '', visibility: (type?.visibility ?? 'both') as LeaveVisibility,
     status: type ? (type.active ? 'active' : 'inactive') : 'active', hrWorkspaceId: hrWorkspaces[0]?.id ?? '',
+    paid: type ? type.paid : true, monthlyCredit: type?.monthlyCredit ?? '',
   });
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
-  const valid = f.name.trim().length > 0;
+  const credit = f.monthlyCredit.trim();
+  const creditOk = !credit || (/^\d{1,2}(\.\d{1,2})?$/.test(credit) && Number(credit) > 0 && Number(credit) <= 31);
+  const valid = f.name.trim().length > 0 && creditOk;
   const save = () => {
     if (type) {
       const body: Record<string, unknown> = { name: f.name.trim(), description: f.description.trim(), version: type.version };
       if (f.code.trim() && f.code.trim().toUpperCase() !== type.code) body.code = f.code.trim();
       if (canVisibility && f.visibility !== type.visibility) body.visibility = f.visibility;
+      if (f.paid !== type.paid) body.paid = f.paid;
+      if ((credit || null) !== (type.monthlyCredit ?? null)) body.monthlyCredit = credit || null;
       run(() => updateLeaveTypeAction(type.id, body), () => `${f.name.trim()} saved`);
     } else {
-      const body: Record<string, unknown> = { name: f.name.trim(), description: f.description.trim() || undefined, code: f.code.trim(), visibility: f.visibility, status: f.status };
+      const body: Record<string, unknown> = { name: f.name.trim(), description: f.description.trim() || undefined, code: f.code.trim(), visibility: f.visibility, status: f.status, paid: f.paid, monthlyCredit: credit || null };
       if (!isSuper && hrWorkspaces.length > 1) body.hrWorkspaceId = f.hrWorkspaceId;
       run(() => createLeaveTypeAction(body), () => `${f.name.trim()} created and visible to ${LEAVE_VISIBILITY_LABELS[f.visibility]}`);
     }
@@ -126,6 +131,15 @@ function TypeForm({ type, isSuper, canVisibility, hrWorkspaces, onClose, run }: 
           <Select {...p} value={f.visibility} disabled={!canVisibility && Boolean(type)} onChange={(e) => set('visibility', e.target.value as LeaveVisibility)} data-testid="leave-type-visibility">
             {LEAVE_VISIBILITIES.map((v) => <option key={v} value={v}>{LEAVE_VISIBILITY_LABELS[v]}</option>)}
           </Select>
+        )}</Field>
+        <Field label="Paid or unpaid" hint="Unpaid leave is deducted from salary in payroll.">{(p) => (
+          <Select {...p} value={f.paid ? 'paid' : 'unpaid'} onChange={(e) => set('paid', e.target.value === 'paid')} data-testid="leave-type-paid">
+            <option value="paid">Paid leave</option><option value="unpaid">Unpaid leave</option>
+          </Select>
+        )}</Field>
+        <Field label="Credit every month" error={creditOk ? undefined : 'Use a number of days from 0.5 to 31, such as 1 or 1.5'}
+          hint="Optional. Days added to everyone who can use this leave on the 1st of each month, starting this month. Leave empty to assign days by hand only.">{(p) => (
+          <Input {...p} value={f.monthlyCredit} inputMode="decimal" maxLength={5} placeholder="e.g. 1.5" onChange={(e) => set('monthlyCredit', e.target.value)} data-testid="leave-type-monthly-credit" />
         )}</Field>
         {!type && (
           <Field label="Status">{(p) => (

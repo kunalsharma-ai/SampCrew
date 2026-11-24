@@ -384,7 +384,7 @@ describe('core HR', () => {
       const r = await app.get(MailerService).sendBatch(500);
       expect(r.sent).toBe(0);
       const row = (await pool.one('email_messages', { tenant_id: t.id }))!;
-      expect({ status: row.status, last_error: row.last_error }).toEqual({ status: 'skipped', last_error: 'Email delivery is not set up (Super Admin Console > Integrations > Email)' });
+      expect({ status: row.status, last_error: row.last_error }).toEqual({ status: 'skipped', last_error: 'Email delivery is not set up (Settings > Email setup in the workspace, or Super Admin Console > Integrations > Email)' });
     });
   });
 

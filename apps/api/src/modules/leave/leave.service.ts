@@ -55,7 +55,7 @@ interface Authority { authority: 'hr' | 'super'; label: string; hrWorkspaceId: s
 
 const TYPE_FIELDS = {
   code: 'code', name: 'name', visibility: 'visibility', description: 'description', category: 'category', paid: 'paid', allowHalfDay: 'allow_half_day', color: 'color', kind: 'kind',
-  eligibleGender: 'eligible_gender', countsCalendarDays: 'counts_calendar_days', effectiveFrom: 'effective_from', hrAllocatable: 'hr_allocatable',
+  eligibleGender: 'eligible_gender', countsCalendarDays: 'counts_calendar_days', effectiveFrom: 'effective_from', hrAllocatable: 'hr_allocatable', monthlyCredit: 'monthly_credit',
   eligibility: 'eligibility', policy: 'policy', approval: 'approval',
 } as const;
 
@@ -195,6 +195,7 @@ export class LeaveService implements OnModuleInit {
         paid: Boolean(t.paid), allowHalfDay: Boolean(t.allow_half_day), color: t.color as string, kind: (t.kind as string | undefined) ?? 'standard',
         eligibleGender: (t.eligible_gender as string | undefined) ?? 'any', countsCalendarDays: Boolean(t.counts_calendar_days),
         effectiveFrom: (t.effective_from as string | null) ?? null, hrAllocatable: t.hr_allocatable !== false,
+        monthlyCredit: (t.monthly_credit as string | null | undefined) ?? null, monthlyCreditFrom: (t.monthly_credit_from as string | null | undefined) ?? null,
         active: !t.archived_at, archivedAt: t.archived_at ?? null, deactivatedReason: (t.deactivated_reason as string | null) ?? null,
         version: (t.version as number | undefined) ?? 1,
         eligibility: cfg.eligibility, policy: cfg.policy, approval: cfg.approval,
@@ -303,7 +304,7 @@ export class LeaveService implements OnModuleInit {
   private snapshot(t: Doc) {
     return {
       code: t.code, name: t.name, description: t.description ?? null, category: t.category, paid: t.paid, allowHalfDay: t.allow_half_day, color: t.color, kind: t.kind,
-      eligibleGender: t.eligible_gender, countsCalendarDays: t.counts_calendar_days, effectiveFrom: t.effective_from ?? null, hrAllocatable: t.hr_allocatable,
+      eligibleGender: t.eligible_gender, countsCalendarDays: t.counts_calendar_days, effectiveFrom: t.effective_from ?? null, hrAllocatable: t.hr_allocatable, monthlyCredit: t.monthly_credit ?? null,
       eligibility: t.eligibility, policy: t.policy, approval: t.approval, active: !t.archived_at,
     };
   }
@@ -329,7 +330,8 @@ export class LeaveService implements OnModuleInit {
     const row = await tx.collection('leave_types').insert({
       code: input.code, visibility: input.visibility, owner_level: by.level === 'hr' ? 'hr' : 'super', owner_hr_workspace_id: by.level === 'hr' ? by.hrWorkspaceId ?? null : null, name: input.name, description: input.description ?? null, category: input.category, paid: input.paid, allow_half_day: input.allowHalfDay,
       color: input.color, kind: input.kind, eligible_gender: input.eligibleGender, counts_calendar_days: input.countsCalendarDays, effective_from: input.effectiveFrom,
-      hr_allocatable: input.hrAllocatable, eligibility: input.eligibility, policy: input.policy, approval: input.approval, version: 1,
+      hr_allocatable: input.hrAllocatable, monthly_credit: input.monthlyCredit ?? null, monthly_credit_from: input.monthlyCredit ? today().slice(0, 7) : null,
+      eligibility: input.eligibility, policy: input.policy, approval: input.approval, version: 1,
       ...(input.active ? {} : { archived_at: new Date(), deactivated_reason: 'Created inactive' }),
       created_by_level: by.level, created_by_membership_id: by.membershipId, created_by_name: by.name,
       updated_by_level: by.level, updated_by_membership_id: by.membershipId, updated_by_name: by.name,
@@ -357,6 +359,7 @@ export class LeaveService implements OnModuleInit {
         ? leaveTypeInput.parse({
           code: await this.codeFor(tx, input.name, (input as LeaveTypeSimpleInput).code || undefined), name: input.name, description: input.description,
           visibility: input.visibility, active: 'status' in input ? input.status !== 'inactive' : (input as LeaveTypeInput).active ?? true,
+          paid: input.paid ?? true, monthlyCredit: input.monthlyCredit ?? null, category: input.paid === false ? 'unpaid' : 'general',
         })
         : (input as LeaveTypeInput);
       let hrWorkspaceId: string | null = null;
@@ -405,7 +408,7 @@ export class LeaveService implements OnModuleInit {
       const { t, level } = await this.manageable(tx, id);
       if (level !== 'super') {
         // An HR Workspace changes the name, description and code of its own types; visibility with its own permission.
-        const extra = Object.keys(input).filter((k) => !['name', 'description', 'code', 'visibility', 'version', 'note'].includes(k));
+        const extra = Object.keys(input).filter((k) => !['name', 'description', 'code', 'visibility', 'paid', 'monthlyCredit', 'version', 'note'].includes(k));
         if (extra.length) throw Errors.forbidden('Only the Super Workspace sets leave policies');
         if (input.visibility !== undefined) {
           await this.authz.require('leavetypes:visibility', undefined, tx);
@@ -426,6 +429,8 @@ export class LeaveService implements OnModuleInit {
         set[col] = v;
         changes[k] = { from: before, to: v };
       }
+      // Monthly credits start with the month they are switched on (never back-dated).
+      if ('monthly_credit' in set) set.monthly_credit_from = set.monthly_credit ? (t.monthly_credit && t.monthly_credit_from ? t.monthly_credit_from : today().slice(0, 7)) : null;
       if (!Object.keys(set).length) {
         const [view] = await this.typeViews(tx, [t]);
         return view!;
@@ -1548,14 +1553,44 @@ export class LeaveService implements OnModuleInit {
    * The hourly leave job: escalation of applications waiting too long. It credits nothing: automatic accruals, carry
    * forward and lapses were removed on 2026-11-23 (quantities are entered by hand).
    */
-  async runScheduled(tx: TenantTx, _asOf: string): Promise<number> {
-    const posted = 0;
+  async runScheduled(tx: TenantTx, asOf: string): Promise<number> {
+    const posted = await this.creditMonthly(tx, asOf);
     const pending = await tx.collection('leave_requests').find({ status: 'pending', approval_request_id: { $ne: null }, 'policy_snapshot.approval.escalation.enabled': true });
     const now = Date.now();
     for (const r of pending) {
       const after = Number(r.policy_snapshot?.approval?.escalation?.afterDays ?? 0);
       if (!after || now - new Date(r.created_at).getTime() < after * 86_400_000) continue;
       await this.approvals.escalate(tx, r.approval_request_id, `Waiting more than ${after} days`);
+    }
+    return posted;
+  }
+
+  /**
+   * Monthly credit (issue #83, opt-in per leave type): on the first run of each month, everyone who can use the type
+   * and works here that month gets the type's monthly days as an adjustment line. Keyed per person, type and month
+   * (accrual_key MONTH<yyyy-mm>), so running again never credits twice; months before it was switched on are skipped.
+   */
+  async creditMonthly(tx: TenantTx, asOf: string): Promise<number> {
+    const types = await tx.collection('leave_types').find({ archived_at: null, monthly_credit: { $nin: [null, ''] } });
+    if (!types.length) return 0;
+    const month = asOf.slice(0, 7);
+    const monthStart = `${month}-01`;
+    const book = await loadBook(tx);
+    const people = await loadPeople(tx, { status: { $ne: 'exited' }, date_of_joining: { $lte: asOf } });
+    let posted = 0;
+    for (const t of types) {
+      if (t.monthly_credit_from && month < (t.monthly_credit_from as string)) continue;
+      const key = `MONTH${month}`;
+      const done = new Set(await tx.collection('leave_ledger').distinct<string>('employee_id', { leave_type_id: t.id, accrual_key: key }));
+      for (const e of people) {
+        if (done.has(e.id) || !entitlementsOf(book, e).has(t.id as string)) continue;
+        if (e.last_working_day && e.last_working_day < monthStart) continue;
+        await tx.collection('leave_ledger').insert({
+          employee_id: e.id, leave_type_id: t.id, leave_year: yearOf(asOf), kind: 'adjustment', quantity: fromH(toH(String(t.monthly_credit))), effective_on: monthStart < e.date_of_joining ? e.date_of_joining : monthStart,
+          accrual_key: key, note: `Monthly credit: ${t.monthly_credit as string} days of ${t.name as string} for ${month}`, created_by: null,
+        });
+        posted++;
+      }
     }
     return posted;
   }

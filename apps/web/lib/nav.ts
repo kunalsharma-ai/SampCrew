@@ -7,6 +7,8 @@ export interface NavItem {
   icon: string;
   /** Visible when the user holds this permission (any scope). */
   permission?: string;
+  /** Visible when the user holds any one of these (any scope), for pages that serve several jobs. */
+  anyPermission?: string[];
   /** Hidden when the permission covers only the person's own record (an organization view of one person is empty). */
   beyondOwn?: boolean;
   /** Visible when the plan includes this feature. */
@@ -110,7 +112,9 @@ export const NAV: NavGroup[] = [
       { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
       { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
       { href: '/leave/balances', label: 'Leave balances', icon: 'calendar-range', permission: 'leave:approve', feature: 'leave' },
-      { href: '/leave/manage', label: 'Leave management', icon: 'sliders', permission: 'leave:allocate', feature: 'leave' },
+      // Any of the leave jobs opens it: an HR Workspace the Super Workspace allowed to create leave types, assign
+      // or assign quantities finds Leave management even without the calendars and reports switch.
+      { href: '/leave/manage', label: 'Leave management', icon: 'sliders', anyPermission: ['leave:allocate', 'leave:assign', 'leavetypes:create'], feature: 'leave' },
       { href: '/settings/leave', label: 'Holidays and leave rules', icon: 'calendar-range', permission: 'leave:allocate', feature: 'leave' },
     ],
   },
@@ -140,7 +144,7 @@ export const NAV: NavGroup[] = [
       { href: '/recognition', label: 'Recognition', icon: 'heart', permission: 'recognition:give', feature: 'engagement' },
       { href: '/surveys', label: 'Surveys', icon: 'clipboard-list', permission: 'surveys:respond', feature: 'engagement' },
       { href: '/surveys/manage', label: 'Survey results', icon: 'chart', permission: 'engagement:manage', feature: 'engagement' },
-      { href: '/announcements/manage', label: 'Manage announcements', icon: 'megaphone', permission: 'announcements:manage', feature: 'announcements' },
+      { href: '/announcements/manage', label: 'Manage announcements', icon: 'megaphone', permission: 'announcements:manage', feature: 'announcements', keywords: 'news create new announcement publish notice broadcast' },
       { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'helpdesk' },
     ],
   },
@@ -178,6 +182,7 @@ export const NAV: NavGroup[] = [
       { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
+      { href: '/settings/email', label: 'Email setup', icon: 'mail', permission: 'mail:configure', keywords: 'smtp mail server outgoing email invitation verification password reset' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
       { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
       { href: '/settings/notifications/organisation', label: 'Notification policy', icon: 'bell', superOnly: true },
@@ -242,7 +247,7 @@ export const isAdminLevel = (me: Me) => Boolean(me.levels?.super || me.levels?.c
 
 export function visibleNav(me: Me): NavGroup[] {
   const allowed = (i: NavItem) =>
-    (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && !(i.hiddenWith && me.permissions[i.hiddenWith]) && !(i.superOnly && !me.levels?.super) && !(i.adminOnly && !isAdminLevel(me)) && !(i.candidateCrm && !me.candidateCrm);
+    (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && (!i.anyPermission || i.anyPermission.some((p) => me.permissions[p] && me.permissions[p] !== 'own')) && !(i.hiddenWith && me.permissions[i.hiddenWith]) && !(i.superOnly && !me.levels?.super) && !(i.adminOnly && !isAdminLevel(me)) && !(i.candidateCrm && !me.candidateCrm);
   // A billing admin also sees each module the plan lacks once, with a lock, so they know it exists and can upgrade.
   const upsell = me.permissions['billing:manage'] ? new Set<string>() : null;
   return NAV.map((g) => ({

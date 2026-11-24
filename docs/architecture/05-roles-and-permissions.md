@@ -42,6 +42,7 @@ Within the company, access combines **RBAC** (the level bundles permissions) wit
 | **Administration** | | |  |  |  |
 | `users:read` View workspace members | 1 |  | A | A | T |
 | `users:invite` Invite people to the workspace | 1 |  | A | A | · |
+| `mail:configure` Set up the company's own email server (Settings > Email setup) that invitations and notices are sent from | 31 |  | A | A | · |
 | `users:manage` Change member placement, suspend or reactivate members | 1 |  | A | A | · |
 | `roles:read` View roles and role assignments | 1 |  | A | A | · |
 | `roles:manage` Create custom roles and assign roles to members | 1 | yes | A | · | · |
@@ -197,20 +198,30 @@ The migration moved each person to the level below, with their exact previous pe
 
 Platform staff authenticate in a separate realm (`platform_admins` table, separate login, MFA mandatory). They have **no** access to tenant data by default. Viewing a tenant's data requires a time-boxed support access grant that the tenant owner approves, and every action is written to both the platform audit log and the tenant's own audit log.
 
-| Capability | super_admin | support | billing_ops | viewer |
-|---|---|---|---|---|
-| `tenants:read` | ✓ | ✓ | ✓ | ✓ |
-| `tenants:manage` | ✓ | · | · | · |
-| `access:manage` | ✓ | · | · | · |
-| `integrations:manage` | ✓ | · | · | · |
-| `billing:read` | ✓ | · | ✓ | ✓ |
-| `billing:manage` | ✓ | · | ✓ | · |
-| `plans:manage` | ✓ | · | ✓ | · |
-| `statutory:manage` | ✓ | · | · | · |
-| `support:request` | ✓ | ✓ | · | · |
-| `support:chat` | ✓ | ✓ | · | · |
-| `help:manage` | ✓ | · | · | · |
-| `help:answer` | ✓ | ✓ | · | · |
-| `admins:manage` | ✓ | · | · | · |
-| `audit:read` | ✓ | ✓ | · | · |
-| `health:read` | ✓ | ✓ | · | ✓ |
+| Capability | super_admin | admin | billing_ops | support | operations | viewer |
+|---|---|---|---|---|---|---|
+| `tenants:read` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `tenants:manage` | ✓ | ✓ | · | · | ✓ | · |
+| `users:read` | ✓ | ✓ | · | ✓ | ✓ | · |
+| `users:pii` | ✓ | ✓ | · | ✓ | · | · |
+| `access:manage` | ✓ | ✓ | · | · | ✓ | · |
+| `billing:read` | ✓ | ✓ | ✓ | · | · | ✓ |
+| `billing:manage` | ✓ | ✓ | ✓ | · | · | · |
+| `billing:refund` | ✓ | ✓ | ✓ | · | · | · |
+| `plans:manage` | ✓ | ✓ | ✓ | · | · | · |
+| `support:chat` | ✓ | ✓ | · | ✓ | · | · |
+| `help:answer` | ✓ | ✓ | · | ✓ | · | · |
+| `help:manage` | ✓ | ✓ | · | · | · | · |
+| `support:request` | ✓ | ✓ | · | ✓ | · | · |
+| `reports:read` | ✓ | ✓ | ✓ | · | ✓ | ✓ |
+| `reports:export` | ✓ | ✓ | ✓ | · | · | · |
+| `audit:read` | ✓ | ✓ | · | ✓ | ✓ | · |
+| `audit:export` | ✓ | ✓ | · | · | · | · |
+| `health:read` | ✓ | ✓ | · | ✓ | ✓ | ✓ |
+| `integrations:manage` | ✓ | ✓ | · | · | · | · |
+| `statutory:manage` | ✓ | ✓ | · | · | ✓ | · |
+| `settings:manage` | ✓ | ✓ | · | · | · | · |
+| `admins:manage` | ✓ | · | · | · | · | · |
+| `roles:manage` | ✓ | · | · | · | · | · |
+| `security:manage` | ✓ | · | · | · | · | · |
+| `records:delete` | ✓ | ✓ | ✓ | · | ✓ | · |

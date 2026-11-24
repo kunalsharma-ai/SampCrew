@@ -162,6 +162,14 @@ export function leaveCodeFrom(name: string): string {
 }
 
 /**
+ * Monthly credit (issue #83): days added to everyone who can use the type on the 1st of each month, as an
+ * adjustment line in their ledger (so it counts as an assigned quantity). Null: nothing is credited (the default; leave
+ * stays manual, as decided on 2026-11-23). Credits start from the month it is switched on and are never back-dated.
+ */
+export const monthlyCredit = z.union([z.literal(''), z.null(), positiveDays.refine((v) => Number(v) <= 31, 'Use at most 31 days a month')])
+  .transform((v) => (v === '' || v === null ? null : v));
+
+/**
  * The simple form (Create New Leave Type): name, description, optional code, visibility and status. The other
  * settings of leaveTypeInput keep their defaults.
  */
@@ -171,6 +179,9 @@ export const leaveTypeSimpleInput = z.object({
   code: z.union([code, z.literal('')]).optional(),
   visibility: z.enum(LEAVE_VISIBILITIES).default('both'),
   status: z.enum(['active', 'inactive']).default('active'),
+  /** Paid or unpaid leave (unpaid leave is deducted in payroll). */
+  paid: z.boolean().default(true),
+  monthlyCredit: monthlyCredit.optional(),
 }).strict();
 export type LeaveTypeSimpleInput = z.infer<typeof leaveTypeSimpleInput>;
 
@@ -209,6 +220,7 @@ export const leaveTypeInput = z.object({
   active: z.boolean().default(true),
   /** Whether the Super Workspace may make it available to HR Workspaces for them to allocate. */
   hrAllocatable: z.boolean().default(true),
+  monthlyCredit: monthlyCredit.default(null),
   eligibility: leaveEligibility.default({ employmentTypes: [], departmentIds: [], designationIds: [], locationIds: [], legalEntityIds: [], groupIds: [], employeeIds: [] }),
   policy: leaveTypePolicy.default(leaveTypePolicy.parse({})),
   approval: leaveApprovalRules.default(leaveApprovalRules.parse({})),
@@ -233,6 +245,7 @@ export const leaveTypeUpdate = z.object({
   countsCalendarDays: z.boolean().optional(),
   effectiveFrom: isoDate.nullable().optional(),
   hrAllocatable: z.boolean().optional(),
+  monthlyCredit: monthlyCredit.optional(),
   eligibility: leaveEligibility.optional(),
   policy: leaveTypePolicy.optional(),
   approval: leaveApprovalRules.optional(),

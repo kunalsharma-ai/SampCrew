@@ -98,6 +98,7 @@ export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; 
     else {
       const outside = r.data!.punch.geofence === 'outside';
       setNotice({ tone: outside ? 'warning' : 'success', text: `${done ?? (direction === 'in' ? 'Checked in' : 'Checked out')} at ${clock(new Date().toISOString())}.${outside ? ' You appear to be away from your workplace; this is recorded.' : ''}` });
+      window.dispatchEvent(new Event('crew:punched')); // the top bar's check-in button follows
       router.refresh();
     }
   });

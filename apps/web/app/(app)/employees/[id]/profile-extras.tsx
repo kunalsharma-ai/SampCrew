@@ -1,10 +1,12 @@
 'use client';
 import { Alert, Avatar, Badge, Button, Card, CardBody, CardHeader, Dialog, Field, Input, Select } from '@crew/ui';
 import { Camera, Copy, Fingerprint, KeyRound, Lock, LogOut, Mail, Plus, RotateCcw, Trash2, Unlock, X } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, useTransition } from 'react';
 import { photoUrl } from '@/lib/photo';
 import type { AttendanceRegistration, EmployeeProfile, LoginDetails } from '@/lib/types';
+import { resendInviteAction } from '../../people/actions';
 import { createLoginAction, loginControlAction, type LoginControlAction, type LoginResult, removePhotoAction, saveAttendanceRegistrationAction, uploadPhotoAction } from '../actions';
 
 const PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -177,6 +179,16 @@ export function LoginControlCard({ e, details }: { e: EmployeeProfile; details: 
       router.refresh();
     });
   };
+  const [link, setLink] = useState<string | null>(null);
+  const resend = () => {
+    setError(null); setNotice(null); setLink(null);
+    start(async () => {
+      const r = await resendInviteAction(d.membershipId);
+      if (!r.ok) { setError(r.message); return; }
+      if (r.data?.delivery === 'email_not_configured') setLink(r.data.inviteUrl ?? null);
+      else { setNotice(`A new invitation email is on its way to ${d.loginId}. Earlier links stop working.`); if (r.data?.inviteUrl) setLink(r.data.inviteUrl); }
+    });
+  };
   const locked = d.membershipStatus === 'suspended' || !!d.lockedUntil;
   const status = d.membershipStatus === 'invited' ? { tone: 'warning' as const, label: 'Invitation not accepted' }
     : d.membershipStatus === 'suspended' ? { tone: 'danger' as const, label: 'Locked by an admin' }
@@ -200,6 +212,21 @@ export function LoginControlCard({ e, details }: { e: EmployeeProfile; details: 
         {shared && <p className="text-fg-subtle">This person also uses this login in another company&apos;s workspace, so only they or SAMPLEDGE support can change its password.</p>}
         {error && <Alert tone="danger">{error}</Alert>}
         {notice && !error && <Alert tone="success">{notice}</Alert>}
+        {d.membershipStatus === 'invited' && (
+          <div className="space-y-2" data-testid="login-invited">
+            <p className="text-fg-subtle">They have not set their password yet. Send the invitation again if it did not arrive or the link has expired.</p>
+            <Button size="sm" variant="secondary" loading={pending} onClick={resend} data-testid="profile-resend-invite"><Mail className="size-3.5" /> Resend invitation email</Button>
+            {link && (
+              <Alert tone="warning" title={notice ? 'Invitation link' : 'Email is not set up yet'}>
+                {notice ? 'You can also share this one-time link yourself:' : <>Share this one-time link with them yourself, or set up your company email in <Link className="font-medium text-accent hover:underline" href="/settings/email">Settings, Email setup</Link>.</>}
+                <div className="mt-2 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[0.6875rem] text-fg" data-testid="profile-invite-link">{link}</code>
+                  <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(link)}><Copy className="size-3.5" /> Copy</Button>
+                </div>
+              </Alert>
+            )}
+          </div>
+        )}
         {d.membershipStatus !== 'invited' && (
           <div className="flex flex-wrap gap-2">
             {!shared && <Button size="sm" variant="secondary" disabled={pending} onClick={() => setResetOpen(true)}><KeyRound className="size-3.5" /> Reset password</Button>}

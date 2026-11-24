@@ -15,7 +15,7 @@ import type { LeaveType } from '@/lib/types';
 /** Active leave types that keep a quantity (not work from home), one row per legal entity they are limited to (or one for everyone), for opening balances. */
 const openingOptions = (types: LeaveType[]): LeavePolicyOption[] => types
   .filter((t) => t.active && t.kind !== 'wfh' && t.visibility !== 'hr')
-  .flatMap((t) => (t.eligibility.legalEntityIds.length ? t.eligibility.legalEntityIds : [null]).map((legalEntityId) => ({ leaveTypeId: t.id, leaveTypeName: t.name, legalEntityId, accrualMethod: t.policy.accrualMethod, typeArchived: false })));
+  .flatMap((t) => (t.eligibility.legalEntityIds.length ? t.eligibility.legalEntityIds : [null]).map((legalEntityId) => ({ leaveTypeId: t.id, leaveTypeName: t.name, legalEntityId, accrualMethod: t.policy.accrualMethod, typeArchived: false, paid: t.paid, monthlyCredit: t.monthlyCredit ?? null })));
 import type { DeviceOption, ShiftOption } from './[id]/profile-extras';
 import { DEFAULT_COLUMNS, viewUrl } from './view-url';
 

@@ -101,6 +101,13 @@ export class EmployeesController {
     return this.employees.duplicates(body);
   }
 
+  @Get('next-code')
+  @RequirePermission('employees:create')
+  @Doc({ summary: 'The employee ID the next hire gets when none is typed (a preview: nothing is reserved)' })
+  nextCode() {
+    return this.employees.previewNextCode();
+  }
+
   @Get('drafts')
   @RequirePermission('employees:create')
   @Doc({ summary: 'Your unfinished hires' })

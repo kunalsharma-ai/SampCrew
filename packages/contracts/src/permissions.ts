@@ -76,6 +76,7 @@ export const PERMISSIONS = [
   { key: 'org:manage', module: 'Organization', description: 'Create and change legal entities, business units, locations and departments', phase: 1, scopes: TENANT_ONLY },
   { key: 'users:read', module: 'Administration', description: 'View workspace members', phase: 1, scopes: ALL },
   { key: 'users:invite', module: 'Administration', description: 'Invite people to the workspace', phase: 1, scopes: TENANT_ONLY },
+  { key: 'mail:configure', module: 'Administration', description: "Set up the company's own email server (Settings > Email setup) that invitations and notices are sent from", phase: 31, scopes: TENANT_ONLY, action: 'manage' },
   { key: 'users:manage', module: 'Administration', description: 'Change member placement, suspend or reactivate members', phase: 1, scopes: ['department', 'entity', 'tenant'] },
   { key: 'roles:read', module: 'Administration', description: 'View roles and role assignments', phase: 1, scopes: TENANT_ONLY },
   { key: 'roles:manage', module: 'Administration', description: 'Create custom roles and assign roles to members', phase: 1, scopes: TENANT_ONLY, requiresMfa: true },

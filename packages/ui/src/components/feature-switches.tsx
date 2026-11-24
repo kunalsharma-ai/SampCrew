@@ -68,10 +68,12 @@ export function IndicatorBadge({ cell }: { cell: SwitchCell }) {
  * Feature management board: every module with its pages under it, one switch per level (column), a label on each
  * (Active, Inherited, Inactive, Restricted, Pending), search and a status filter. Switching something off asks first.
  */
-export function FeatureSwitchBoard({ rows, columns, onChange, busy, intro }: {
+export function FeatureSwitchBoard({ rows, columns, onChange, onBulkChange, busy, intro }: {
   rows: SwitchRow[];
   columns: SwitchColumn[];
   onChange: (key: string, column: string, on: boolean) => void;
+  /** Select all / Deselect all for a column: every switch there that can change and is not already that way. */
+  onBulkChange?: (changes: { key: string; column: string; on: boolean }[]) => void;
   busy?: boolean;
   intro?: ReactNode;
 }) {
@@ -79,6 +81,8 @@ export function FeatureSwitchBoard({ rows, columns, onChange, busy, intro }: {
   const [status, setStatus] = useState<'all' | SwitchIndicator>('all');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [confirm, setConfirm] = useState<{ row: SwitchRow; column: SwitchColumn } | null>(null);
+  const [bulkOff, setBulkOff] = useState<SwitchColumn | null>(null);
+  const bulk = (column: string, on: boolean) => rows.filter((r) => r.cells[column]?.editable && r.cells[column]!.on !== on).map((r) => ({ key: r.key, column, on }));
   const modules = useMemo(() => rows.filter((r) => !r.parent), [rows]);
   const partsOf = useMemo(() => {
     const m = new Map<string, SwitchRow[]>();
@@ -139,7 +143,17 @@ export function FeatureSwitchBoard({ rows, columns, onChange, busy, intro }: {
         <div role="table" aria-label="Features" className="min-w-fit text-sm">
           <div role="row" className="grid gap-x-3 bg-surface px-3 py-2 text-xs font-medium text-fg-subtle" style={{ gridTemplateColumns: `minmax(12rem,1fr) repeat(${columns.length}, minmax(9.5rem, 11rem))` }}>
             <div role="columnheader">Module or page</div>
-            {columns.map((c) => <div key={c.key} role="columnheader">{c.label}</div>)}
+            {columns.map((c) => (
+              <div key={c.key} role="columnheader">
+                {c.label}
+                {onBulkChange && (
+                  <span className="mt-0.5 flex gap-2 font-normal">
+                    <button type="button" className="text-accent hover:underline disabled:opacity-40" disabled={busy || !bulk(c.key, true).length} data-testid={`select-all-${c.key}`} aria-label={`Select all for ${c.target}`} onClick={() => onBulkChange(bulk(c.key, true))}>Select all</button>
+                    <button type="button" className="text-accent hover:underline disabled:opacity-40" disabled={busy || !bulk(c.key, false).length} data-testid={`deselect-all-${c.key}`} aria-label={`Deselect all for ${c.target}`} onClick={() => setBulkOff(c)}>Deselect all</button>
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
           {modules.flatMap((m) => {
             const parts = partsOf.get(m.key) ?? [];
@@ -149,6 +163,17 @@ export function FeatureSwitchBoard({ rows, columns, onChange, busy, intro }: {
           })}
         </div>
       </div>
+      <Dialog
+        open={Boolean(bulkOff)}
+        onClose={() => setBulkOff(null)}
+        title={bulkOff ? `Switch off everything for ${bulkOff.target}?` : ''}
+        footer={<>
+          <Button variant="ghost" onClick={() => setBulkOff(null)}>Cancel</Button>
+          <Button variant="danger" data-testid="confirm-deselect-all" onClick={() => { if (bulkOff && onBulkChange) onBulkChange(bulk(bulkOff.key, false)); setBulkOff(null); }}>Switch all off</Button>
+        </>}
+      >
+        {bulkOff && <Alert tone="warning">{bulk(bulkOff.key, false).length} modules, pages and buttons that can be changed here go off at once. Nothing is deleted, and you can select them all again.</Alert>}
+      </Dialog>
       <Dialog
         open={Boolean(confirm)}
         onClose={() => setConfirm(null)}

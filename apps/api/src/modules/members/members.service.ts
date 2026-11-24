@@ -246,11 +246,16 @@ export class MembersService {
     );
   }
 
-  /** Outside staging/production the link is also returned so the flow can be tested without a mail server. */
+  /**
+   * Outside staging/production the link is also returned so the flow can be tested without a mail server. While no
+   * email server is set up (Settings > Email setup, or SAMPLEDGE's), the person who invited gets the link too, so
+   * they can pass it on themselves: otherwise the invitation would reach nobody.
+   */
   private async inviteResult(token: string) {
     const inviteUrl = `${this.config.WEB_PUBLIC_URL}/accept-invite?token=${token}`;
     if (!this.config.isProductionLike) this.logger.log(`Invitation link: ${inviteUrl}`);
-    return { inviteUrl: this.config.isProductionLike ? undefined : inviteUrl, delivery: (await this.mailer.isConfigured()) ? ('email_queued' as const) : ('email_not_configured' as const) };
+    const configured = await this.mailer.isConfigured(requestContext.tenantActor().tenantId);
+    return { inviteUrl: this.config.isProductionLike && configured ? undefined : inviteUrl, delivery: configured ? ('email_queued' as const) : ('email_not_configured' as const) };
   }
 
   async update(id: string, input: z.infer<typeof updateMemberRequest>) {

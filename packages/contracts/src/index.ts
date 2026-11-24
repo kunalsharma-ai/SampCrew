@@ -66,6 +66,7 @@ export * from './safe-path';
 export * from './csp';
 export * from './web-session';
 export * from './platform-integrations';
+export * from './mail-setup';
 export * from './overview';
 export * from './setup';
 export * from './signatures';

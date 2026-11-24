@@ -76,6 +76,7 @@ export function AccessEditor({ value, onChange, canGiveSuper, hrWorkspaces, enti
           <Field label="HR Workspaces" hint="Leave all unticked to cover the whole company." className="sm:col-span-2">
             {() => (
               <div className="grid gap-2 sm:grid-cols-2">
+                {hrWorkspaces.length > 1 && <AllOrNone className="sm:col-span-2" disabled={disabled} label="HR Workspaces" all={hrWorkspaces.every((w) => value.hrWorkspaceIds?.includes(w.id))} onAll={() => set({ hrWorkspaceIds: hrWorkspaces.map((w) => w.id) })} onNone={() => set({ hrWorkspaceIds: [] })} />}
                 {hrWorkspaces.length ? hrWorkspaces.map((w) => (
                   <Checkbox key={w.id} label={w.name} disabled={disabled} checked={Boolean(value.hrWorkspaceIds?.includes(w.id))} onChange={(e) => set({ hrWorkspaceIds: toggle(value.hrWorkspaceIds, w.id, e.target.checked) })} />
                 )) : <p className="text-xs text-fg-subtle">No active HR Workspaces yet. This person covers the whole company.</p>}
@@ -85,6 +86,7 @@ export function AccessEditor({ value, onChange, canGiveSuper, hrWorkspaces, enti
           <Field label="Only people in these legal entities" hint="Optional.">
             {() => (
               <div className="flex flex-col gap-2">
+                {entities.length > 1 && <AllOrNone disabled={disabled} label="legal entities" all={entities.every((e) => value.legalEntityIds?.includes(e.id))} onAll={() => set({ legalEntityIds: entities.map((e) => e.id) })} onNone={() => set({ legalEntityIds: [] })} />}
                 {entities.map((e) => <Checkbox key={e.id} label={e.name} disabled={disabled} checked={Boolean(value.legalEntityIds?.includes(e.id))} onChange={(ev) => set({ legalEntityIds: toggle(value.legalEntityIds, e.id, ev.target.checked) })} />)}
                 {!entities.length && <p className="text-xs text-fg-subtle">No legal entities yet.</p>}
               </div>
@@ -93,6 +95,7 @@ export function AccessEditor({ value, onChange, canGiveSuper, hrWorkspaces, enti
           <Field label="Only people in these departments" hint="Optional.">
             {() => (
               <div className="flex max-h-40 flex-col gap-2 overflow-y-auto">
+                {departments.length > 1 && <AllOrNone disabled={disabled} label="departments" all={departments.every((d) => value.departmentIds?.includes(d.id))} onAll={() => set({ departmentIds: departments.map((d) => d.id) })} onNone={() => set({ departmentIds: [] })} />}
                 {departments.map((d) => <Checkbox key={d.id} label={d.name} disabled={disabled} checked={Boolean(value.departmentIds?.includes(d.id))} onChange={(ev) => set({ departmentIds: toggle(value.departmentIds, d.id, ev.target.checked) })} />)}
                 {!departments.length && <p className="text-xs text-fg-subtle">No departments yet.</p>}
               </div>
@@ -108,6 +111,13 @@ export function AccessEditor({ value, onChange, canGiveSuper, hrWorkspaces, enti
             <Alert tone="info">
               Kept from before: {kept.map((k) => `${k.area} (${k.actions.join(', ')})`).join('; ')}. Ticking areas below replaces it.
             </Alert>
+          )}
+          {!disabled && (
+            <div className="flex flex-wrap gap-2 text-[0.8125rem]" data-testid="access-areas-bulk">
+              <button type="button" className="font-medium text-accent hover:underline" onClick={() => set({ areas: [...ACCESS_AREAS], viewAreas: [] })}>Select all: full</button>
+              <button type="button" className="font-medium text-accent hover:underline" onClick={() => set({ viewAreas: [...ACCESS_AREAS], areas: [] })}>Select all: view only</button>
+              <button type="button" className="font-medium text-accent hover:underline" onClick={() => set({ areas: [], viewAreas: [] })}>Clear all</button>
+            </div>
           )}
           <div className="overflow-hidden rounded-md border border-border">
             <table className="w-full text-[0.8125rem]">
@@ -130,6 +140,17 @@ export function AccessEditor({ value, onChange, canGiveSuper, hrWorkspaces, enti
           <Checkbox label="Can read the audit trail" description="Only with chosen areas. Without areas, the level decides." disabled={disabled || !areasTouched} checked={Boolean(value.auditTrail)} onChange={(e) => set({ auditTrail: e.target.checked })} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** Select all / Clear for a list of checkboxes, so a long list is not ticked one by one. */
+function AllOrNone({ label, all, onAll, onNone, disabled, className }: { label: string; all: boolean; onAll: () => void; onNone: () => void; disabled?: boolean; className?: string }) {
+  if (disabled) return null;
+  return (
+    <div className={`flex gap-3 text-xs ${className ?? ''}`}>
+      <button type="button" className="font-medium text-accent hover:underline disabled:opacity-50" disabled={all} onClick={onAll} aria-label={`Select all ${label}`}>Select all</button>
+      <button type="button" className="font-medium text-accent hover:underline" onClick={onNone} aria-label={`Clear ${label}`}>Clear</button>
     </div>
   );
 }

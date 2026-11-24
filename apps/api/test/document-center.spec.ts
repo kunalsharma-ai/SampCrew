@@ -102,7 +102,8 @@ describe('Document management, verification and approval', () => {
     // Uploading is not approval: the file is pending, and the task waits for review.
     expect((await pool.one('employee_documents', { id: aadhaarDoc }))!.verification_status).toBe('pending');
     expect((await api(app, kunal.token).get(`/tasks/${task.id}`)).body).toMatchObject({ status: 'pending_review', requestStatus: 'submitted' });
-    expect(await notices(kunal.membershipId, 'document.submitted')).toBe(1);
+    // No notice to Kunal about his own upload (issue #83); the request shows it as submitted.
+    expect(await notices(kunal.membershipId, 'document.submitted')).toBe(0);
 
     // HR sees it in Approvals, under Document verification, and in its verification queue.
     const inbox = await api(app, hrPuneToken).get('/approvals/inbox');

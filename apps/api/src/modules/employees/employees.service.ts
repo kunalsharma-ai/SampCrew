@@ -740,10 +740,10 @@ export class EmployeesService {
           ? (existing ? undefined : ((await tx.collection('onboarding_templates').findOne({ is_default: true, archived_at: null }))?.id as string | undefined))
           : input.onboardingTemplateId;
       if (templateId) await this.onboarding.instantiate(tx, row.id, templateId);
-      // No leave is credited automatically (2026-11-23). HR may type the quantities an existing employee has today:
-      // bring an existing employee's balances to what they have today (from their previous records).
+      // No leave is credited automatically (2026-11-23). HR may type the quantities the person has this year at hire:
+      // a new joiner's days for the year, or what someone already working here has today (from their previous records).
       let opening: Awaited<ReturnType<LeaveService['setOpeningBalances']>> = [];
-      if (existing && input.openingLeaveBalances?.length) {
+      if (input.openingLeaveBalances?.length) {
         // Setting balances is a leave decision: the same access as adjusting a balance.
         await this.authz.require('leave:approve', employeeAttrs(await this.load(tx, row.id)), tx);
         opening = await this.leave.setOpeningBalances(tx, row.id, input.openingLeaveBalances);
@@ -755,7 +755,8 @@ export class EmployeesService {
         action: 'employee.created', resourceType: 'employee', resourceId: row.id,
         changes: {
           employeeCode: code, name: e.displayName, legalEntityId: e.legalEntityId, departmentId: e.departmentId, dateOfJoining: e.dateOfJoining,
-          ...(existing ? { joinedAs: 'existing', confirmationDate: confirmedOn, openingLeaveBalances: opening } : {}),
+          ...(existing ? { joinedAs: 'existing', confirmationDate: confirmedOn } : {}),
+          ...(opening.length ? { openingLeaveBalances: opening } : {}),
           ...(isMinorOn(input.dateOfBirth, input.dateOfJoining) ? { minorConfirmed: true, ageOnJoining: ageOn(input.dateOfBirth!, input.dateOfJoining) } : {}),
           ...(input.designationName ? { designationName: input.designationName } : {}),
         },
@@ -1065,6 +1066,18 @@ export class EmployeesService {
     const s = await this.authz.subject(tx);
     if (s.employeeId === e.id) return;
     await this.authz.require('employees:update', employeeAttrs(e), tx);
+  }
+
+  /** The code the next hire would get, without reserving it, so the form can show it beside the Employee ID box. */
+  async previewNextCode() {
+    return this.db.tenant(async (tx) => {
+      const s = (await tx.collection('employee_number_series').findOne({})) ?? { prefix: 'EMP', padding: 4, next_value: 1 };
+      for (let n = Number(s.next_value), i = 0; i < 1000; i++, n++) {
+        const code = `${s.prefix as string}${String(n).padStart(Number(s.padding), '0')}`;
+        if (!(await tx.collection('employees').exists({ employee_code: code }))) return { code, prefix: s.prefix as string };
+      }
+      return { code: null, prefix: s.prefix as string };
+    });
   }
 
   /** Allocates the next code from the tenant's series, skipping codes already used (e.g. by imported records). */

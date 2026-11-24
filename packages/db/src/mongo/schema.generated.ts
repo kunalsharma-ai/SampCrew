@@ -5199,6 +5199,10 @@ export const TABLES: Record<string, TableSpec> = {
       effective_from: {"type": "date"},
       // Whether the Super Workspace may make it available to HR Workspaces to allocate.
       hr_allocatable: {"default": true, "required": true, "type": "bool"},
+      // Days credited to everyone who can use it on the 1st of each month (issue #83); null: none (manual only).
+      monthly_credit: {"type": "string"},
+      // The first month (YYYY-MM) credited: the month the credit was switched on. Earlier months are never credited.
+      monthly_credit_from: {"type": "string"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       // standard: time off; wfh: counts as present; comp_off: credited by HR; optional_holiday: only on optional holidays.
       kind: {"default": "standard", "enum": ["standard", "wfh", "comp_off", "optional_holiday"], "required": true, "type": "string"},
@@ -5634,6 +5638,40 @@ export const TABLES: Record<string, TableSpec> = {
     unique: [
       {"cols": [{"col": "id"}], "name": "notification_policies_pkey", "primary": true},
       {"cols": [{"col": "tenant_id"}], "name": "notification_policies_one_per_workspace"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  tenant_mail_settings: {
+    // Settings > Email setup (issue #83): the company's own SMTP server, used for every email SampCrew sends for it
+    // while enabled. The password is in secrets_enc, encrypted with the field key; only secret_hint is ever shown.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      enabled: {"default": false, "required": true, "type": "bool"},
+      from_address: {"required": true, "type": "citext"},
+      from_name: {"default": "", "required": true, "type": "string"},
+      host: {"required": true, "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // The last Test connection: when, whether it worked and what the server said.
+      last_test: {"type": "json"},
+      port: {"required": true, "type": "int"},
+      reply_to: {"default": "", "required": true, "type": "string"},
+      secret_hint: {"type": "string"},
+      secrets_enc: {"default": "", "required": true, "type": "string"},
+      security: {"enum": ["starttls", "tls", "none"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by: {"type": "uuid"},
+      updated_by_name: {"type": "string"},
+      username: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "tenant_mail_settings_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}], "name": "tenant_mail_settings_one_per_workspace"},
     ],
     fks: [
       {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},

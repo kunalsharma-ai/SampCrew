@@ -95,7 +95,7 @@ async function run(b, adminEmail, adminPassword, stamp) {
     assert((await emp.getByTestId('quick-inbox').count()) === 0, 'an Employee Workspace sees the queries inbox');
     assert((await emp.getByTestId('help-quickstart').count()) === 1, 'the employee should see one quick start (their own)');
     assert((await emp.getByTestId('help-category').count()) >= 6, 'too few help categories for the employee');
-    await emp.getByTestId('header-help').waitFor();
+    await emp.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Help & Support/ }).first().waitFor();
     await shot(emp, '01-employee-help-home');
     await shot(emp, '01b-employee-help-home-full', true);
     // Super Workspace content is not reachable.

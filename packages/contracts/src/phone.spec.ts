@@ -122,7 +122,9 @@ describe('existing employees', () => {
   });
 
   it('keeps those fields to existing employees, with sensible values', () => {
-    expect(issues(hire({ openingLeaveBalances: [{ leaveTypeId: LEAVE, days: 3 }] })).joinedAs).toMatch(/existing employees/);
+    // Since issue #83 a new joiner may start with leave days too (asked at registration); the confirmation date stays for existing employees.
+    expect(hire({ openingLeaveBalances: [{ leaveTypeId: LEAVE, days: 3 }] }).success).toBe(true);
+    expect(issues(hire({ confirmationDate: '2019-10-01' })).joinedAs).toMatch(/existing employees/);
     expect(issues(hire({ joinedAs: 'existing', dateOfJoining: '2019-04-01', confirmationDate: '2019-01-01' })).confirmationDate).toMatch(/before the joining date/);
     expect(issues(hire({ joinedAs: 'existing', dateOfJoining: '2019-04-01', openingLeaveBalances: [{ leaveTypeId: LEAVE, days: 1 }, { leaveTypeId: LEAVE, days: 2 }] })).openingLeaveBalances).toMatch(/one opening balance/);
     expect(hire({ joinedAs: 'existing', dateOfJoining: '2019-04-01', employeeCode: 'has space' }).success).toBe(false);

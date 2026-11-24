@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import {
   accessLevelOf, ACCESS_LEVEL_LABEL, AWAITING_REVIEW, AWAITING_SUBMISSION, builtInType, BUILT_IN_DOCUMENT_TYPES, DOCUMENT_ACCESS_KEYS, DOCUMENT_ACCESS_SWITCHES, DOCUMENT_GROUPS,
-  DOCUMENT_GROUP_LABEL, DOCUMENT_REQUEST_STATUS_LABEL, DOCUMENT_STATUS_LABEL, LEGACY_CATEGORY_GROUP, legacyCategoriesOf, OPEN_REQUEST_STATUSES, REQUEST_FILE_FORMATS, requestDisplayStatus, effectiveDocumentAccess,
+  DOCUMENT_GROUP_LABEL, DOCUMENT_REQUEST_STATUS_LABEL, DOCUMENT_STATUS_LABEL, LEGACY_CATEGORY_GROUP, legacyCategoriesOf, OPEN_REQUEST_STATUSES, REQUEST_FILE_FORMATS, requestDisplayStatus, requestedTypeKeys, effectiveDocumentAccess,
   type documentAccessInput, type documentCategoryInput, type documentDecisionInput, type DocumentRequestInput, type documentRequestQuery, type DocumentRepositoryQuery,
   type DocumentRequestStatus, type documentSubmitMeta, type documentTypeInput, type DocumentTypeDef, type RequestFileFormat, type DocumentAccess,
 } from '@crew/contracts';
@@ -582,59 +582,66 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
       const v = await this.viewer(tx);
       if (!v.isSuper && !v.hr) throw Errors.forbidden('Only Super Workspace and HR Workspace can request documents');
       const cat = await this.catalogue(tx);
-      const type = cat.typeOf(input.typeKey);
-      if (!type) throw Errors.badRequest('unknown_type', 'Choose a document type');
-      if (!type.owners.includes(input.target)) throw Errors.badRequest('wrong_owner', input.target === 'employee' ? `${type.name} is asked of HR Workspaces, not people` : `${type.name} is asked of people, not HR Workspaces`);
-      const title = input.title?.trim() || type.name;
-      const level: DocLevel = v.isSuper ? 'super_workspace' : 'hr_workspace';
-      const due = input.dueOn ?? null;
-      if (due && due < istToday()) throw Errors.badRequest('past_deadline', 'The deadline cannot be in the past');
-      let replaced: Doc | undefined;
-      if (input.replacesDocumentId) {
-        replaced = (await this.loadDoc(tx, v, input.replacesDocumentId)).d;
-      }
-      const common = {
-        type_key: type.key, doc_category: type.category, title, instructions: input.instructions ?? null, reason: input.reason, due_on: due, priority: input.priority,
-        formats: input.formats, max_mb: input.maxMb, expiry_required: input.expiryRequired, replaces_document_id: replaced?.id ?? null,
-        requested_by_membership_id: actor.membershipId, requester_level: level, status: 'new_request',
-      };
-      const wsNames = new Map<string, string>();
+      const keys = requestedTypeKeys(input);
+      const types = keys.map((k) => {
+        const type = cat.typeOf(k);
+        if (!type) throw Errors.badRequest('unknown_type', 'Choose a document type');
+        if (!type.owners.includes(input.target)) throw Errors.badRequest('wrong_owner', input.target === 'employee' ? `${type.name} is asked of HR Workspaces, not people` : `${type.name} is asked of people, not HR Workspaces`);
+        return type;
+      });
       const created: Doc[] = [];
-      if (input.target === 'employee') {
-        const ids = [...new Set(input.employeeIds ?? [])];
-        const people = await tx.collection('employees').find({ id: { $in: ids } });
-        if (people.length !== ids.length) throw Errors.notFound('Employee');
-        for (const e of people) {
-          if (e.id === v.s.employeeId) throw Errors.badRequest('self_request', 'You cannot request a document from yourself');
-          if (replaced && replaced.employee_id !== e.id) throw Errors.badRequest('wrong_owner', 'A replacement is asked of the person the document belongs to');
+      let replaced: Doc | undefined;
+      for (const type of types) {
+        // One document asked for: the name given, else the type's. Several: the name is only for a custom document.
+        const title = (keys.length === 1 || type.key === 'custom' ? input.title?.trim() : '') || type.name;
+        const level: DocLevel = v.isSuper ? 'super_workspace' : 'hr_workspace';
+        const due = input.dueOn ?? null;
+        if (due && due < istToday()) throw Errors.badRequest('past_deadline', 'The deadline cannot be in the past');
+        if (input.replacesDocumentId && !replaced) {
+          replaced = (await this.loadDoc(tx, v, input.replacesDocumentId)).d;
+        }
+        const common = {
+          type_key: type.key, doc_category: type.category, title, instructions: input.instructions ?? null, reason: input.reason, due_on: due, priority: input.priority,
+          formats: input.formats, max_mb: input.maxMb, expiry_required: input.expiryRequired, replaces_document_id: replaced?.id ?? null,
+          requested_by_membership_id: actor.membershipId, requester_level: level, status: 'new_request',
+        };
+        const wsNames = new Map<string, string>();
+        if (input.target === 'employee') {
+          const ids = [...new Set(input.employeeIds ?? [])];
+          const people = await tx.collection('employees').find({ id: { $in: ids } });
+          if (people.length !== ids.length) throw Errors.notFound('Employee');
+          for (const e of people) {
+            if (e.id === v.s.employeeId) throw Errors.badRequest('self_request', 'You cannot request a document from yourself');
+            if (replaced && replaced.employee_id !== e.id) throw Errors.badRequest('wrong_owner', 'A replacement is asked of the person the document belongs to');
+            let requesterWs: string | null = null;
+            if (!v.isSuper) {
+              if (!hrCovers(v, e, 'documents:manage')) throw Errors.notFound('Employee');
+              const a = accessFor(v, e.hr_workspace_id ?? null);
+              if (!a?.request) throw Errors.forbidden('Super Workspace has not allowed your HR Workspace to request employee documents');
+              requesterWs = v.hr!.companyWide ? null : (e.hr_workspace_id as string);
+            }
+            if (!e.membership_id) throw Errors.badRequest('no_login', `${displayName(e as never)} has no SampCrew login yet, so they cannot receive the request`);
+            created.push(await this.insertRequest(tx, v, { ...common, target_type: 'employee', employee_id: e.id, hr_workspace_id: e.hr_workspace_id ?? null, assignee_membership_id: e.membership_id, requester_hr_workspace_id: requesterWs }, e));
+          }
+        } else {
+          const w = await tx.collection('hr_workspaces').findOne({ id: input.hrWorkspaceId!, status: 'active' });
+          if (!w) throw Errors.notFound('HR Workspace');
+          wsNames.set(w.id, w.name);
           let requesterWs: string | null = null;
           if (!v.isSuper) {
-            if (!hrCovers(v, e, 'documents:manage')) throw Errors.notFound('Employee');
-            const a = accessFor(v, e.hr_workspace_id ?? null);
-            if (!a?.request) throw Errors.forbidden('Super Workspace has not allowed your HR Workspace to request employee documents');
-            requesterWs = v.hr!.companyWide ? null : (e.hr_workspace_id as string);
+            const scopes = v.hr!.companyWide ? [CENTRAL] : v.hr!.workspaceIds;
+            const via = scopes.find((sc) => sc !== w.id && v.book.get(sc === CENTRAL ? null : sc).request_other_hr && v.book.shared(sc === CENTRAL ? null : sc).includes(w.id));
+            if (!via) throw Errors.forbidden('Super Workspace has not allowed your HR Workspace to request documents from this HR Workspace');
+            requesterWs = via === CENTRAL ? null : via;
           }
-          if (!e.membership_id) throw Errors.badRequest('no_login', `${displayName(e as never)} has no SampCrew login yet, so they cannot receive the request`);
-          created.push(await this.insertRequest(tx, v, { ...common, target_type: 'employee', employee_id: e.id, hr_workspace_id: e.hr_workspace_id ?? null, assignee_membership_id: e.membership_id, requester_hr_workspace_id: requesterWs }, e));
+          if (replaced && replaced.hr_workspace_id !== w.id) throw Errors.badRequest('wrong_owner', 'A replacement is asked of the HR Workspace the document belongs to');
+          const admins = (await hrWorkspaceAdmins(tx, [w.id])).get(w.id) ?? [];
+          if (!admins.length) throw Errors.badRequest('no_admins', `${w.name} has no HR Workspace Admin to send the request to`);
+          const assignee = input.assigneeMembershipId ?? admins[0]!;
+          if (!admins.includes(assignee)) throw Errors.badRequest('not_admin', 'Choose one of the HR Workspace Admins');
+          if (assignee === actor.membershipId) throw Errors.badRequest('self_request', 'You cannot request a document from yourself');
+          created.push(await this.insertRequest(tx, v, { ...common, target_type: 'hr_workspace', employee_id: null, hr_workspace_id: w.id, assignee_membership_id: assignee, requester_hr_workspace_id: requesterWs }, undefined, admins));
         }
-      } else {
-        const w = await tx.collection('hr_workspaces').findOne({ id: input.hrWorkspaceId!, status: 'active' });
-        if (!w) throw Errors.notFound('HR Workspace');
-        wsNames.set(w.id, w.name);
-        let requesterWs: string | null = null;
-        if (!v.isSuper) {
-          const scopes = v.hr!.companyWide ? [CENTRAL] : v.hr!.workspaceIds;
-          const via = scopes.find((sc) => sc !== w.id && v.book.get(sc === CENTRAL ? null : sc).request_other_hr && v.book.shared(sc === CENTRAL ? null : sc).includes(w.id));
-          if (!via) throw Errors.forbidden('Super Workspace has not allowed your HR Workspace to request documents from this HR Workspace');
-          requesterWs = via === CENTRAL ? null : via;
-        }
-        if (replaced && replaced.hr_workspace_id !== w.id) throw Errors.badRequest('wrong_owner', 'A replacement is asked of the HR Workspace the document belongs to');
-        const admins = (await hrWorkspaceAdmins(tx, [w.id])).get(w.id) ?? [];
-        if (!admins.length) throw Errors.badRequest('no_admins', `${w.name} has no HR Workspace Admin to send the request to`);
-        const assignee = input.assigneeMembershipId ?? admins[0]!;
-        if (!admins.includes(assignee)) throw Errors.badRequest('not_admin', 'Choose one of the HR Workspace Admins');
-        if (assignee === actor.membershipId) throw Errors.badRequest('self_request', 'You cannot request a document from yourself');
-        created.push(await this.insertRequest(tx, v, { ...common, target_type: 'hr_workspace', employee_id: null, hr_workspace_id: w.id, assignee_membership_id: assignee, requester_hr_workspace_id: requesterWs }, undefined, admins));
       }
       if (replaced) await this.activity(tx, v, { action: 'replacement_requested', documentId: replaced.id, requestId: created[0]!.id, employeeId: replaced.employee_id, hrWorkspaceId: replaced.hr_workspace_id });
       return this.requestViews(tx, v, created);

@@ -42,6 +42,11 @@ export interface Notice {
    * Home and the module's page. Worked out from the kind when left out (contracts kindNeedsAction).
    */
   action?: boolean;
+  /**
+   * Also tell the person who caused it. By default nobody is told about their own action (issue #83: "I approved
+   * it, I don't need a notice saying so"); security and system notices always go out.
+   */
+  includeActor?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,7 +103,12 @@ export class NotificationService {
     const live: Doc[] = [];
     // Who caused it, so their own open page does not pop up a notice about what they just did.
     const by = (() => { const a = requestContext.get()?.actor; return a?.kind === 'user' ? a.membershipId : null; })();
+    const toActor = notice.includeActor || category === 'system' || notice.kind.startsWith('security.') || notice.kind.startsWith('auth.');
+    // Who did it: the notice's own actor when it names one (a scheduled announcement published while someone else
+    // opens a feed is still the publisher's), else the person whose request this is.
+    const doer = notice.actorMembershipId !== undefined ? notice.actorMembershipId : by;
     for (const r of active) {
+      if (doer && r.id === doer && !toActor) continue;
       const channel = prefs.get(r.id) ?? { inApp: true, email: true, push: true, sound: true };
       if (channel.inApp) {
         const n = await this.store(tx, r, notice, category, priority);

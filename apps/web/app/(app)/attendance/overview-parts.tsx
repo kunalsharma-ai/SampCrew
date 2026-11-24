@@ -3,6 +3,7 @@ import { Badge, Card } from '@crew/ui';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import Link from 'next/link';
 import { dateLabel, type Period, periodQuery } from '@/lib/attendance-period';
+import { ExportDialogButton } from './export-dialog';
 
 /** Building blocks shared by the Attendance pages of every level (server components: no state, links only). */
 
@@ -149,14 +150,9 @@ export function PeriodBar({ period, path, keep = {} }: { period: Period; path: s
   );
 }
 
-/** "Export to Excel": downloads the .xlsx the API builds for exactly these filters. */
-export function ExportButton({ period, filters = {}, label = 'Export to Excel' }: { period: Period; filters?: Record<string, string | undefined>; label?: string }) {
-  return (
-    <a href={`/attendance-export${qs({ from: period.from, to: period.to, ...filters })}`} download
-      className="inline-flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-accent-fg hover:opacity-90">
-      <Download className="size-4" aria-hidden /> {label}
-    </a>
-  );
+/** "Export": opens the report download (Excel, CSV, Word or PDF; day, week, month, year or a range; all or chosen people). */
+export function ExportButton({ period, filters = {}, label = 'Export' }: { period: Period; filters?: Record<string, string | undefined>; label?: string }) {
+  return <ExportDialogButton period={period} filters={filters} label={label} own={Boolean(filters.employeeId)} />;
 }
 
 export function Pager({ page, pageSize, total, href }: { page: number; pageSize: number; total: number; href: (page: number) => string }) {

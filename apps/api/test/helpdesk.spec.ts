@@ -235,8 +235,8 @@ describe('helpdesk and announcements', () => {
       expect(await unread('hr2', 'helpdesk.case_new')).toContain(title);
       expect(await unread('ukhr', 'helpdesk.case_new')).not.toContain(title);
       expect(await unread('manager', 'helpdesk.case_new')).toEqual([]);
-      // The person who asked hears that HR has it.
-      expect(await unread('asha', 'helpdesk.case_received')).toContain(`HR has your question ${c.ref}: Canteen timings`);
+      // The person who asked gets no notice about their own question (issue #83); the case page shows it is with HR.
+      expect(await unread('asha', 'helpdesk.case_received')).not.toContain(`HR has your question ${c.ref}: Canteen timings`);
       // Her follow-up before anyone replies reaches HR too.
       ok(await as('asha').post(`/helpdesk/cases/${c.id}/messages`).send({ body: 'And on Sundays?' }));
       expect(await unread('hr', 'helpdesk.reply')).toContain(`New reply on ${c.ref}`);
