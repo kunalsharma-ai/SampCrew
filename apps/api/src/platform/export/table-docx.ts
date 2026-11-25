@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from 'fflate';
-import type { Cell } from './tabular';
+import { cellText, type Cell } from './tabular';
 
 /**
  * A report as a Word document (.docx): a title, a subtitle line, then one table per section with a bold, repeated
@@ -12,7 +12,7 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
   // eslint-disable-next-line no-control-regex
   .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
 
-const text = (v: Cell) => (v === null || v === undefined ? '' : String(v)).replace(/^'([=+\-@])/, '$1');
+const text = (v: Cell) => cellText(v).replace(/^'([=+\-@])/, '$1');
 
 const run = (s: string, opts: { bold?: boolean; size?: number; color?: string } = {}) =>
   `<w:r><w:rPr>${opts.bold ? '<w:b/>' : ''}${opts.color ? `<w:color w:val="${opts.color}"/>` : ''}<w:sz w:val="${opts.size ?? 16}"/></w:rPr><w:t xml:space="preserve">${esc(s)}</w:t></w:r>`;

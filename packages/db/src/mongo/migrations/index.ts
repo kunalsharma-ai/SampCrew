@@ -21,6 +21,7 @@ import { m0150ConsoleCommandCenter } from './0150_console_command_center';
 import { m0160SimpleLeavePermissions } from './0160_simple_leave_permissions';
 import { m0170NotificationFramework } from './0170_notification_framework';
 import { m0180DeletePermissions } from './0180_delete_permissions';
+import { m0190WorkModeAttendance } from './0190_work_mode_attendance';
 
 /** Every MongoDB migration, in order. Append new ones; never edit or reorder one that has shipped. */
 export const MONGO_MIGRATIONS: MongoMigration[] = [
@@ -46,4 +47,5 @@ export const MONGO_MIGRATIONS: MongoMigration[] = [
   m0160SimpleLeavePermissions,
   m0170NotificationFramework,
   m0180DeletePermissions,
+  m0190WorkModeAttendance,
 ];

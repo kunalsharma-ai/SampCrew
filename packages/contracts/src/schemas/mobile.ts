@@ -40,6 +40,8 @@ export const syncPunch = z
     accuracyM: z.number().min(0).max(100_000).optional(),
     /** The phone reported the location as coming from a mock provider. */
     mockLocation: z.boolean().default(false),
+    /** Why there are no coordinates: the person refused, or the phone could not get a fix in time. */
+    locationStatus: z.enum(['ok', 'denied', 'unavailable', 'timeout']).optional(),
     /** The punch was queued while the phone had no connection. */
     offline: z.boolean().default(false),
     note: z.string().trim().max(300).optional(),

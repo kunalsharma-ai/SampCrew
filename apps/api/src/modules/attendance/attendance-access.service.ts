@@ -36,6 +36,8 @@ export interface AttendanceViewer {
   otherGroups: string[] | 'all';
   viewOtherHr: boolean;
   canExport: boolean;
+  /** Office / home / hybrid totals for the whole company (numbers only): Super Workspace, and HR with attendance.org_totals. */
+  orgTotals: boolean;
   /** Memberships at Super Workspace and at HR Workspace level in the company. */
   superMemberships: Set<string>;
   hrMemberships: Set<string>;
@@ -77,6 +79,43 @@ export class AttendanceAccessService {
   private async load(tx: TenantTx, subject: Subject): Promise<AttendanceViewer> {
     const roles = new Set(subject.grants.map((g) => g.roleKey));
     const level: AttendanceViewerLevel = roles.has('super_workspace') ? 'super' : roles.has('hr_workspace') ? 'hr' : 'employee';
+    const { superMemberships, hrMemberships, adminsByGroup } = await this.levelMemberships(tx);
+
+    let homeGroups: string[] = [];
+    let otherGroups: string[] | 'all' = [];
+    let viewOtherHr = false;
+    let canExport = level === 'super';
+    let orgTotals = level === 'super';
+    if (level === 'hr') {
+      const hrGrants = subject.grants.filter((g) => g.roleKey === 'hr_workspace');
+      homeGroups = hrGrants.some((g) => !g.constraints.hrWorkspaceIds?.length) ? [CENTRAL_GROUP] : [...new Set(hrGrants.flatMap((g) => g.constraints.hrWorkspaceIds ?? []))];
+      const saved = await tx.collection('level_permissions').find({ subject_type: 'hr_workspace', subject_id: { $in: homeGroups } });
+      const rows = homeGroups.map((g) => saved.find((s) => s.subject_id === g));
+      const on = (key: string) => rows.some((r) => levelPermission(HR_LEVEL_PERMISSIONS, r?.permissions, key));
+      viewOtherHr = on('attendance.view_other_hr');
+      canExport = on('attendance.export');
+      orgTotals = on('attendance.org_totals');
+      if (viewOtherHr) {
+        const reach = rows.filter((r) => r && levelPermission(HR_LEVEL_PERMISSIONS, r.permissions, 'attendance.view_other_hr')).map((r) => r!.scope_hr_workspace_ids as string[] | null | undefined);
+        otherGroups = reach.some((r) => r === null || r === undefined) ? 'all' : [...new Set(reach.flat() as string[])].filter((g) => !homeGroups.includes(g));
+      }
+    } else if (level === 'employee') {
+      const saved = await tx.collection('level_permissions').findOne({ subject_type: 'employee_workspace', subject_id: 'all' });
+      canExport = levelPermission(EMPLOYEE_LEVEL_PERMISSIONS, saved?.permissions, 'attendance.export_own');
+    }
+    // Attendance itself switched off for the person (feature or permission): nothing to see or export.
+    if (!hasPermission(subject, 'attendance:read').allowed) canExport = false;
+    return {
+      level, subject, membershipId: subject.membershipId, employeeId: subject.employeeId ?? null,
+      homeGroups, otherGroups, viewOtherHr, canExport, orgTotals, superMemberships, hrMemberships, adminsByGroup,
+    };
+  }
+
+  /**
+   * Everyone at Super Workspace and HR Workspace level in the company, and the HR Workspaces each HR person looks
+   * after. Needs no signed-in person, so background jobs can use it too.
+   */
+  async levelMemberships(tx: TenantTx): Promise<{ superMemberships: Set<string>; hrMemberships: Set<string>; adminsByGroup: Map<string, Set<string>> }> {
     const levelRoles = new Map((await tx.collection('roles').find({ is_system: true, key: { $in: ['super_workspace', 'hr_workspace'] } }, { projection: { key: 1 } })).map((r) => [r.id as string, r.key as string]));
     const assignments = await tx.collection('role_assignments').find({ role_id: { $in: [...levelRoles.keys()] } }, { projection: { membership_id: 1, role_id: 1, constraints: 1 } });
     const active = new Set(await tx.collection('memberships').distinct<string>('id', { id: { $in: assignments.map((a) => a.membership_id) }, status: 'active' }));
@@ -94,33 +133,7 @@ export class AttendanceAccessService {
     }
     // Someone at Super Workspace level is never counted as HR Workspace too.
     for (const m of superMemberships) hrMemberships.delete(m);
-
-    let homeGroups: string[] = [];
-    let otherGroups: string[] | 'all' = [];
-    let viewOtherHr = false;
-    let canExport = level === 'super';
-    if (level === 'hr') {
-      const hrGrants = subject.grants.filter((g) => g.roleKey === 'hr_workspace');
-      homeGroups = hrGrants.some((g) => !g.constraints.hrWorkspaceIds?.length) ? [CENTRAL_GROUP] : [...new Set(hrGrants.flatMap((g) => g.constraints.hrWorkspaceIds ?? []))];
-      const saved = await tx.collection('level_permissions').find({ subject_type: 'hr_workspace', subject_id: { $in: homeGroups } });
-      const rows = homeGroups.map((g) => saved.find((s) => s.subject_id === g));
-      const on = (key: string) => rows.some((r) => levelPermission(HR_LEVEL_PERMISSIONS, r?.permissions, key));
-      viewOtherHr = on('attendance.view_other_hr');
-      canExport = on('attendance.export');
-      if (viewOtherHr) {
-        const reach = rows.filter((r) => r && levelPermission(HR_LEVEL_PERMISSIONS, r.permissions, 'attendance.view_other_hr')).map((r) => r!.scope_hr_workspace_ids as string[] | null | undefined);
-        otherGroups = reach.some((r) => r === null || r === undefined) ? 'all' : [...new Set(reach.flat() as string[])].filter((g) => !homeGroups.includes(g));
-      }
-    } else if (level === 'employee') {
-      const saved = await tx.collection('level_permissions').findOne({ subject_type: 'employee_workspace', subject_id: 'all' });
-      canExport = levelPermission(EMPLOYEE_LEVEL_PERMISSIONS, saved?.permissions, 'attendance.export_own');
-    }
-    // Attendance itself switched off for the person (feature or permission): nothing to see or export.
-    if (!hasPermission(subject, 'attendance:read').allowed) canExport = false;
-    return {
-      level, subject, membershipId: subject.membershipId, employeeId: subject.employeeId ?? null,
-      homeGroups, otherGroups, viewOtherHr, canExport, superMemberships, hrMemberships, adminsByGroup,
-    };
+    return { superMemberships, hrMemberships, adminsByGroup };
   }
 
   capabilities(v: AttendanceViewer): AttendanceCapabilities {

@@ -121,6 +121,7 @@ export const HR_LEVEL_PERMISSIONS = [
   { key: 'attendance.view_own', label: 'View own attendance', description: 'Every HR Workspace person always sees their own attendance.', default: true, locked: true },
   { key: 'attendance.view_employees', label: 'View Employee Workspace attendance', description: 'The employees this HR Workspace looks after, as set by its HR Workspace access.', default: true, locked: true },
   { key: 'attendance.view_other_hr', label: 'View other HR Workspace attendance', description: 'Also see the attendance of the other HR Workspaces chosen below (their HR Workspace people and employees). Never the Super Workspace.', default: false, locked: false },
+  { key: 'attendance.org_totals', label: 'See organisation-wide attendance totals', description: 'Office, home and hybrid totals for the whole company, Super Workspace and every HR Workspace included. Numbers only: names stay limited to the people this HR Workspace may see.', default: true, locked: false },
   { key: 'attendance.export', label: 'Export accessible attendance', description: 'Download the attendance this HR Workspace can see as an Excel file.', default: true, locked: false },
 ] as const;
 export type HrLevelPermissionKey = (typeof HR_LEVEL_PERMISSIONS)[number]['key'];

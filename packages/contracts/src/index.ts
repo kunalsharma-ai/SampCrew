@@ -26,6 +26,7 @@ export type { DayInput, DayResult, DayStatus, DayFlag, ShiftRule, EnginePunch } 
 export { DAY_STATUSES, DAY_FLAGS } from './attendance-engine';
 export * as zonedTime from './zoned-time';
 export * from './attendance-overview';
+export * from './work-mode';
 export * from './schemas/recruitment';
 export * from './schemas/payroll';
 export * as money from './money';

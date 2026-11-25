@@ -129,6 +129,9 @@ import { AttendanceAccessService } from './modules/attendance/attendance-access.
 import { AttendanceOverviewController } from './modules/attendance/attendance-overview.controller';
 import { AttendanceOverviewService } from './modules/attendance/attendance-overview.service';
 import { AttendanceService } from './modules/attendance/attendance.service';
+import { WorkModeController } from './modules/attendance/work-mode.controller';
+import { WorkModeService } from './modules/attendance/work-mode.service';
+import { WorkforceService } from './modules/attendance/workforce.service';
 import { DevicesService } from './modules/attendance/devices.service';
 import { ShiftsService } from './modules/attendance/shifts.service';
 import { CandidatesService } from './modules/recruitment/candidates.service';
@@ -271,6 +274,7 @@ export const CONTROLLERS = [
   OverviewController,
   AttendanceController,
   AttendanceOverviewController,
+  WorkModeController,
   KioskController,
   ShiftsController,
   DevicesController,
@@ -418,6 +422,8 @@ export const CONTROLLERS = [
     AttendanceOverviewService,
     DisciplineService,
     AttendanceService,
+    WorkModeService,
+    WorkforceService,
     ShiftsService,
     DevicesService,
     RequisitionsService,

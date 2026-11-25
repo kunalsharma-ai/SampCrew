@@ -3,6 +3,7 @@ import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { MongoService as DatabaseService } from '../../platform/database/mongo.service';
 import { AttendanceService } from '../attendance/attendance.service';
 import { DevicesService } from '../attendance/devices.service';
+import { WorkModeService } from '../attendance/work-mode.service';
 import { EmployeesService } from '../employees/employees.service';
 import { LeaveService } from '../leave/leave.service';
 import { HelpdeskService } from '../helpdesk/helpdesk.service';
@@ -20,6 +21,8 @@ export interface HrJobResult {
   accrualsPosted: number;
   attendanceDaysComputed: number;
   devicesAlerted: number;
+  locationsPurged: number;
+  missingCheckOutReminders: number;
   candidatesAnonymized: number;
   helpdeskCasesClosed: number;
   attritionScored: number;
@@ -44,6 +47,7 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly leave: LeaveService,
     private readonly attendance: AttendanceService,
     private readonly devices: DevicesService,
+    private readonly workMode: WorkModeService,
     private readonly candidates: CandidatesService,
     private readonly helpdesk: HelpdeskService,
     private readonly ai: AiService,
@@ -103,6 +107,12 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     // Attendance runs in its own transactions so a problem there never holds back the HR changes above.
     const attendanceDaysComputed = await this.attendance.refreshRecent(tenantId);
     const devicesAlerted = await this.devices.alertOffline(tenantId);
+    // Check-in coordinates past the location retention period are removed (the office / home result stays), and people
+    // who did not check out yesterday get one reminder.
+    const workMode = await this.workMode.runJobs(tenantId).catch((err: Error) => {
+      this.logger.error(`Work-mode job failed for tenant ${tenantId}: ${err.message}`);
+      return { purged: 0, reminded: 0 };
+    });
     // Candidate data past the career site's retention period is anonymised (recruitment entitlement or not:
     // data a workspace already holds still has to age out after a downgrade).
     const candidatesAnonymized = await this.candidates.applyRetention(tenantId);
@@ -118,6 +128,6 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     const aiPromptsPurged = await this.db.tenant((tx) => this.ai.purgeExpired(tx), { tenantId });
     // The workspace's retention schedule (leavers, exports, sign-in logs), once a day.
     const retentionApplied = Boolean(await this.privacy.applyRetentionDaily(tenantId));
-    return { ...hr, attendanceDaysComputed, devicesAlerted, candidatesAnonymized, helpdeskCasesClosed, attritionScored, aiPromptsPurged, retentionApplied };
+    return { ...hr, attendanceDaysComputed, devicesAlerted, locationsPurged: workMode.purged, missingCheckOutReminders: workMode.reminded, candidatesAnonymized, helpdeskCasesClosed, attritionScored, aiPromptsPurged, retentionApplied };
   }
 }
