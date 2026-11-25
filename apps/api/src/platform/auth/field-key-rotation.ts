@@ -14,6 +14,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<{ table: string; key: string; colu
   { table: 'employee_sensitive', key: 'employee_id', column: 'tax_id_enc' },
   { table: 'employee_sensitive', key: 'employee_id', column: 'national_id_enc' },
   { table: 'employee_sensitive', key: 'employee_id', column: 'other_id_enc' },
+  { table: 'employee_record_details', key: 'employee_id', column: 'parent_aadhaar_enc' },
   { table: 'profile_change_requests', key: 'id', column: 'new_enc' },
   { table: 'webhook_endpoints', key: 'id', column: 'secret_enc' },
   { table: 'integration_connections', key: 'id', column: 'credentials_enc' },

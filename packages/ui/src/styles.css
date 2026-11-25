@@ -1215,3 +1215,21 @@ a.hs-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, 
   .hs-faq[data-open="true"] .hs-faq-body { animation: wi-rise 260ms ease-out both; }
   .hs-cta-spark { animation: sc-wave 2.4s ease-in-out infinite; }
 }
+
+/* ------------------------------------------------------------------------------------------------------------------
+ * My Day (issue #86): a person who looks after a workforce switches to their own day from the top bar. The accent turns
+ * teal so the mode is obvious at a glance. The :not(#crew-myday) raises specificity above the theme's level selectors.
+ * ---------------------------------------------------------------------------------------------------------------- */
+html:root[data-view="myday"]:not(#crew-myday) {
+  --accent: #0d9488; --accent-hover: #0f766e; --accent-subtle: #ccfbf1; --accent-fg: #ffffff; --ring: #0d9488;
+  --glow-1: #14b8a6; --glow-2: #0ea5e9;
+  --color-accent: var(--accent); --color-accent-hover: var(--accent-hover); --color-accent-subtle: var(--accent-subtle); --color-accent-fg: var(--accent-fg);
+}
+html:root[data-view="myday"][data-theme="dark"]:not(#crew-myday) {
+  --accent: #2dd4bf; --accent-hover: #5eead4; --accent-subtle: #042f2e; --accent-fg: #04201d; --ring: #2dd4bf;
+}
+@media (prefers-color-scheme: dark) {
+  html:root[data-view="myday"]:not([data-theme]):not(#crew-myday) { --accent: #2dd4bf; --accent-hover: #5eead4; --accent-subtle: #042f2e; --accent-fg: #04201d; --ring: #2dd4bf; }
+}
+/* Compact view: more on the screen. */
+:root[data-density="compact"][data-font="small"] .crew-main { max-width: 1560px; }

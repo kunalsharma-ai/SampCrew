@@ -3,6 +3,7 @@ import { password } from './auth';
 import { phoneNumber } from '../phone';
 import { setAccessRequest } from './access';
 import { email, name } from './common';
+import { PAGE_ACCESS_KEYS } from '../page-access';
 
 /** Calendar date as YYYY-MM-DD (no time zone; dates are local to the employee's entity). */
 export const isoDate = z.iso.date('Use a date in YYYY-MM-DD format');
@@ -148,6 +149,8 @@ export const createEmployeeInput = placementInput
     access: setAccessRequest.optional(),
     /** Link to an existing workspace member instead of inviting. */
     membershipId: z.uuid().optional(),
+    /** The everyday pages the new login opens (PAGE_ACCESS_CHOICES keys); the rest are withheld for this person. */
+    pageAccess: z.array(z.enum(PAGE_ACCESS_KEYS)).max(20).optional(),
     /** Attendance registration: their usual shift and the enrolment number(s) they punch with on attendance machines. */
     defaultShiftId: z.uuid().nullable().optional(),
     attendanceEnrolments: z.array(attendanceEnrolment).max(5).optional(),

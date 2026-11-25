@@ -1,11 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res, UploadedFile as File, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res, UploadedFile as File, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   audienceInput,
   type AudienceInput,
+  chatEditInput,
+  type ChatEditInput,
   chatMessageInput,
   type ChatMessageInput,
   chatMessagesQuery,
+  chatReactionInput,
+  type ChatReactionInput,
   chatSearchQuery,
   COMM_FILE_MAX_BYTES,
   commGroupInput,
@@ -91,6 +95,28 @@ export class CommunicationController {
   @Doc({ summary: 'Delete your own message' })
   deleteMessage(@Param('id', UuidPipe) id: string, @Param('messageId', UuidPipe) messageId: string) {
     return this.chat.deleteMessage(id, messageId);
+  }
+
+  @Patch('conversations/:id/messages/:messageId')
+  @RequirePermission('helpdesk:use')
+  @Doc({ summary: 'Edit your own message (for 15 minutes after sending); it shows as Edited', body: chatEditInput })
+  editMessage(@Param('id', UuidPipe) id: string, @Param('messageId', UuidPipe) messageId: string, @Body(new ZodPipe(chatEditInput)) body: ChatEditInput) {
+    return this.chat.editMessage(id, messageId, body);
+  }
+
+  @Post('conversations/:id/messages/:messageId/restore')
+  @HttpCode(200)
+  @RequirePermission('helpdesk:use')
+  @Doc({ summary: 'Undo deleting a message (for 30 seconds, by the person who deleted it)' })
+  restoreMessage(@Param('id', UuidPipe) id: string, @Param('messageId', UuidPipe) messageId: string) {
+    return this.chat.restoreMessage(id, messageId);
+  }
+
+  @Put('conversations/:id/messages/:messageId/reactions')
+  @RequirePermission('helpdesk:use')
+  @Doc({ summary: 'Add your emoji reaction to a message, or take it away when you already reacted with it', body: chatReactionInput })
+  react(@Param('id', UuidPipe) id: string, @Param('messageId', UuidPipe) messageId: string, @Body(new ZodPipe(chatReactionInput)) body: ChatReactionInput) {
+    return this.chat.react(id, messageId, body);
   }
 
   @Post('conversations/:id/read')

@@ -36,6 +36,7 @@ export async function provisionTenantMongo(tx: Tables, input: ProvisionTenantInp
     locale: input.locale ?? 'en',
     region: input.region ?? regionFor(input.countryCode),
     is_demo: input.isDemo ?? false,
+    registration_ip: input.registrationIp ?? null,
   });
   const tenantId = tenant.id as string;
   const t = (name: string) => tx.collection(name);
@@ -328,6 +329,8 @@ export interface ProvisionTenantInput {
   locale?: string;
   region?: string;
   isDemo?: boolean;
+  /** The IP address the company registered from (self sign-up), recorded once and shown locked (issue #86). */
+  registrationIp?: string | null;
   /** Add this Super Workspace to an existing client company (companies.id) instead of creating one. */
   companyId?: string | null;
   /** Profile fields for the new company (companies columns), when one is created. */

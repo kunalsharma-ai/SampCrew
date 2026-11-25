@@ -26,6 +26,13 @@ const assert = (c, m) => {
   if (!c) throw new Error(`assertion failed: ${m}`);
 };
 
+async function inBell(p, title) {
+  // Issue #86: notifications are read from the bell and their own page, not a Home card.
+  await p.getByTestId('notification-bell').click();
+  await p.getByTestId('notification-panel').waitFor();
+  await p.getByTestId('bell-item').filter({ hasText: title }).first().waitFor({ timeout: 15000 });
+  await p.keyboard.press('Escape');
+}
 async function api(token, method, p, body) {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(API + p, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -88,7 +95,7 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
     for (const t of ['This month', 'Attendance rewards', 'Attendance calendar']) await e.getByText(t, { exact: true }).first().waitFor();
     await e.getByText('Perfect attendance').first().waitFor();
     // Recent notifications, live: HR's new task for Neha is among them.
-    await e.getByTestId('recent-notifications').getByText(`Upload your degree certificate ${run}`).first().waitFor();
+    await inBell(e, `Upload your degree certificate ${run}`);
     assert((await e.getByText('Interviews this week').count()) === 0, 'no interview highlight for a non-recruiter');
     ok('Home shows the clock, this month, rewards and the calendar, and no interviews');
 

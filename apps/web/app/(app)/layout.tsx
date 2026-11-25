@@ -8,7 +8,7 @@ import { DeletePasswordProvider } from '@/components/delete-guard';
 import { MfaStepUpProvider } from '@/components/mfa-step-up';
 import { LiveProvider } from '@/components/live';
 import { appearanceFromCookie } from '@/lib/appearance-cookie';
-import { quickActions, visibleNav, workflowActions } from '@/lib/nav';
+import { canSwitchWorkView, myDayNav, quickActions, visibleNav, workflowActions } from '@/lib/nav';
 import type { Me, TaskCounts } from '@/lib/types';
 import { Shell, type Notifications } from './shell';
 
@@ -49,7 +49,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // The level's design is on <html> before the first paint (the shell keeps it in step afterwards).
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   // The sign-in page remembers this level, so the next sign-in on this browser opens with its own welcome.
-  const levelScript = `document.documentElement.dataset.level=${JSON.stringify(designLevelOf(me.levels))}`;
+  // My Workforce / My Day (issue #86): My Day keeps only the person's own pages in the menu, in its own colour.
+  const switchable = canSwitchWorkView(me);
+  const workView = switchable ? (prefs?.experience?.workView ?? 'workforce') : 'workforce';
+  const nav = workView === 'myday' ? myDayNav(visibleNav(me)) : visibleNav(me);
+  const levelScript = `document.documentElement.dataset.level=${JSON.stringify(designLevelOf(me.levels))};document.documentElement.dataset.view=${JSON.stringify(workView)}`;
   return (
     <>
       <script nonce={nonce} dangerouslySetInnerHTML={{ __html: levelScript }} />
@@ -66,7 +70,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <MfaStepUpProvider mfaEnabled={me.user.mfaEnabled}>
         <DeletePasswordProvider>
         <LiveProvider initial={notifications ? { unread: notifications.unread, items: notifications.items } : null} byCategory={byCategory} actionNeeded={noticeSummary?.actionNeeded ?? 0} prefs={notificationPrefs}>
-        <Shell me={me} nav={visibleNav(me)} notifications={notifications} prefs={prefs} cookieAppearance={cookieAppearance} counts={counts} quick={quickActions(me)} workflows={workflowActions(me)}>
+        <Shell me={me} nav={nav} workView={switchable ? workView : null} notifications={notifications} prefs={prefs} cookieAppearance={cookieAppearance} counts={counts} quick={quickActions(me)} workflows={workflowActions(me)}>
           {children}
         </Shell>
         </LiveProvider>

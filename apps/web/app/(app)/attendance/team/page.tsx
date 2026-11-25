@@ -1,9 +1,12 @@
 import { ATTENDANCE_VIEW_FILTERS, ATTENDANCE_VIEW_LABEL, type AttendanceViewFilter } from '@crew/contracts';
 import { Card, CardHeader, EmptyState, PageHeader, Stat, StatusPill, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
-import { Users, X } from 'lucide-react';
+import { UserPlus, Users, X } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load, loadOptional } from '@/lib/api';
+import { can } from '@/lib/nav';
+import { ExportDialogButton } from '../export-dialog';
+import type { Me } from '@/lib/types';
 import { addDays, dayLabel, hm, STATUS_LABEL } from '@/lib/time';
 import type { AttendanceDay, Department, Location } from '@/lib/types';
 
@@ -19,11 +22,13 @@ export default async function TeamAttendancePage({ searchParams }: { searchParam
   // A view opened from Home (late, left early, working now, not in yet, from home).
   const filter = (ATTENDANCE_VIEW_FILTERS as readonly string[]).includes(sp.filter ?? '') ? (sp.filter as AttendanceViewFilter) : undefined;
   if (filter) qs.set('filter', filter);
-  const [data, departments, locations] = await Promise.all([
-    load<{ date: string; summary: Record<string, number>; rows: AttendanceDay[] }>(`/attendance/team?${qs}`),
+  const [data, departments, locations, me] = await Promise.all([
+    load<{ date: string; summary: Record<string, number>; rows: AttendanceDay[]; canExport?: boolean }>(`/attendance/team?${qs}`),
     loadOptional<Department[]>('/org/departments'),
     loadOptional<Location[]>('/org/locations'),
+    load<Me>('/me'),
   ]);
+  const canHire = can(me, 'employees:create');
   const tzOf = new Map((locations ?? []).map((l) => [l.name, l.timezone]));
   const s = data.summary;
   const link = (patch: Record<string, string | undefined>) => {
@@ -34,9 +39,12 @@ export default async function TeamAttendancePage({ searchParams }: { searchParam
   return (
     <>
       <PageHeader title="Team attendance" description={`${dayLabel(date)}. Everyone you can see, with how each day was counted.`} actions={
-        <div className="flex items-center gap-3 text-sm">
+        <div className="flex flex-wrap items-center gap-3 text-sm">
           <Link className="hover:underline" href={link({ date: addDays(date, -1) })}>Previous day</Link>
           <Link className="hover:underline" href={link({ date: addDays(date, 1) })}>Next day</Link>
+          {/* Issue #86: the report download and Add employee sit on top of Team Attendance. */}
+          {data.canExport && <ExportDialogButton period={{ from: date, to: date, today: date, label: dayLabel(date) }} label="Download report" />}
+          {canHire && <Link href="/employees?create=employee" data-testid="team-add-employee" className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-[0.8125rem] font-medium hover:bg-bg-subtle"><UserPlus className="size-4" aria-hidden /> Add employee</Link>}
         </div>
       } />
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-5">

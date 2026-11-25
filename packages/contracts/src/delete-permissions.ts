@@ -97,6 +97,7 @@ export const WORKSPACE_DELETE_ACTIONS: readonly DeleteAction[] = [
   d('shifts/rosters/*', 'attendance', 'Draft roster'),
   d('attendance/devices/mappings/*', 'attendance', 'Device mapping'),
   d('attendance/devices/*', 'attendance', 'Attendance device'),
+  d('attendance/work-mode/sites/*', 'attendance', 'Approved work site'),
   // payroll
   d('payroll/components/*', 'payroll', 'Salary component'),
   d('payroll/structures/*', 'payroll', 'Salary structure'),
@@ -170,6 +171,7 @@ export const NOT_DELETE_ACTIONS: readonly { method: 'DELETE'; path: string; reas
   { method: 'DELETE', path: 'employees/drafts/*', reason: 'Discards your own unfinished hire form (no record was saved yet); also done automatically once the hire is saved' },
   { method: 'DELETE', path: 'billing/scheduled-change', reason: 'Cancels a plan change that has not happened yet' },
   { method: 'DELETE', path: 'workspace-permissions/templates/*', reason: 'Resets a permission template to its defaults' },
+  { method: 'DELETE', path: 'attendance/work-mode/saved-reports/*', reason: 'Removes one of your own saved report filters' },
   { method: 'DELETE', path: 'signatures/me/agents/*', reason: 'Disconnects your own Outlook signature add-in' },
   { method: 'DELETE', path: 'scim/v2/Users/*', reason: 'SCIM provisioning from the identity provider (token, no person signed in); it deactivates, never deletes' },
   { method: 'DELETE', path: 'scim/v2/Groups/*', reason: 'SCIM provisioning from the identity provider (token, no person signed in)' },

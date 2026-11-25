@@ -86,6 +86,20 @@ export const chatSearchQuery = z.object({ q: text(2, 100) });
 /** Sent: saved. Delivered: every other member's app has received it. Read: every other member has opened it. */
 export type MessageDelivery = 'sent' | 'delivered' | 'read';
 
+/**
+ * Message actions (issue #86): edit your own message for CHAT_EDIT_MINUTES (it then shows "Edited"), delete it (after
+ * a confirmation) and undo the delete for CHAT_UNDO_SECONDS, and react with one of CHAT_REACTIONS. Only your own
+ * messages, except that HR (helpdesk:manage) may delete anyone's in a conversation it can see.
+ */
+export const CHAT_EDIT_MINUTES = 15;
+export const CHAT_UNDO_SECONDS = 30;
+export const CHAT_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
+export type ChatReaction = (typeof CHAT_REACTIONS)[number];
+export const chatEditInput = z.object({ body: z.string().trim().min(1, 'Write something').max(4000) }).strict();
+export const chatReactionInput = z.object({ emoji: z.enum(CHAT_REACTIONS) }).strict();
+export type ChatEditInput = z.infer<typeof chatEditInput>;
+export type ChatReactionInput = z.infer<typeof chatReactionInput>;
+
 export interface ChatMessageView {
   id: string;
   conversationId: string;
@@ -101,6 +115,14 @@ export interface ChatMessageView {
   /** Only on your own messages. */
   delivery: MessageDelivery | null;
   system: boolean;
+  /** Each emoji used, how many reacted, whether you did, and who (issue #86). */
+  reactions: { emoji: string; count: number; mine: boolean; names: string[] }[];
+  /** You may still edit it (your own, within CHAT_EDIT_MINUTES). */
+  canEdit: boolean;
+  /** You may delete it (your own, or anyone's for HR). */
+  canDelete: boolean;
+  /** You deleted it less than CHAT_UNDO_SECONDS ago and can bring it back. */
+  canUndo: boolean;
 }
 
 export interface ConversationView {

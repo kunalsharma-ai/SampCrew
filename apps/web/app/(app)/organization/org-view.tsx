@@ -22,6 +22,10 @@ interface Props {
   units: BusinessUnit[];
   tree: Department[];
   designations: Designation[];
+  /** Only the Super Workspace registers another company (issue #86). */
+  canAddEntity: boolean;
+  /** Registered information is locked: filled fields of a legal entity cannot change (issue #86). */
+  companyLocked: boolean;
 }
 
 export function OrgView(props: Props) {
@@ -74,6 +78,13 @@ export function OrgView(props: Props) {
       { name: 'code', label: 'Code', half: true },
       { name: 'description', label: 'Description', type: 'textarea' },
     ],
+  };
+  // Locked registered information: an entity's filled fields show read-only, the empty ones can be completed.
+  const ENTITY_LOCKED = ['name', 'legalName', 'countryCode', 'currency', 'timezone', 'fiscalYearStartMonth', 'registrationNumber', 'taxId', 'address'];
+  const fieldsFor = (t: OrgResource): FieldDef[] => {
+    if (t !== 'entities' || !props.companyLocked || !editing?.id) return fields[t];
+    const init = editing.initial ?? {};
+    return fields[t].map((f) => (ENTITY_LOCKED.includes(f.name) && init[f.name] !== null && init[f.name] !== undefined && String(init[f.name]).trim() !== '' ? { ...f, readOnly: true } : f));
   };
   const noun = { entities: 'legal entity', locations: 'location', departments: 'department', designations: 'designation', units: 'business unit' }[tab];
 
@@ -171,7 +182,12 @@ export function OrgView(props: Props) {
     <>
       {message && <div className="mb-4 rounded-md bg-bg-subtle px-4 py-2 text-[0.8125rem] text-fg-muted" role="status">{message}</div>}
       <Card>
-        {canManage && (
+        {tab === 'entities' && props.companyLocked && (
+          <div className="border-b border-border px-5 py-2.5 text-[0.8125rem] text-fg-muted" data-testid="company-locked-note">
+            Your registered company information is locked. You can fill in anything still empty; ask SAMPLEDGE support to correct a registered detail.
+          </div>
+        )}
+        {canManage && (tab !== 'entities' || props.canAddEntity) && (
           <div className="flex justify-end border-b border-border px-5 py-3">
             <Button size="sm" onClick={() => setEditing({ id: null })}><Plus className="size-4" /> Add {noun}</Button>
           </div>
@@ -182,7 +198,7 @@ export function OrgView(props: Props) {
         open={!!editing}
         onClose={() => setEditing(null)}
         title={editing?.id ? `Edit ${noun}` : `Add ${noun}`}
-        fields={fields[tab]}
+        fields={fieldsFor(tab)}
         initial={editing?.id ? editing.initial : tab === 'entities' ? { fiscalYearStartMonth: '4', countryCode: 'IN', currency: 'INR', timezone: 'Asia/Kolkata' } : tab === 'locations' ? { kind: 'office', countryCode: 'IN', timezone: 'Asia/Kolkata', legalEntityId: entities[0]?.id } : undefined}
         submitLabel={editing?.id ? 'Save changes' : `Add ${noun}`}
         onSubmit={(values) => {

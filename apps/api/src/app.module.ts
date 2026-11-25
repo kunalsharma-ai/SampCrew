@@ -4,6 +4,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { SharedRateLimitStorage } from './platform/http/rate-limit-storage';
 import { ApprovalsController } from './modules/approvals/approvals.controller';
 import { ApprovalsService } from './modules/approvals/approvals.service';
+import { ActivityController } from './modules/activity/activity.controller';
+import { EmployeePageAccessController, EmployeeRecordController } from './modules/employees/employee-record.controller';
 import { AuditController } from './modules/audit/audit.controller';
 import { AuthController, MeController, PasswordResetsController } from './modules/auth/auth.controller';
 import { PasswordResetService } from './modules/auth/password-reset.service';
@@ -227,6 +229,9 @@ export const CONTROLLERS = [
   MembersController,
   RolesController,
   AuditController,
+  ActivityController,
+  EmployeeRecordController,
+  EmployeePageAccessController,
   BillingController,
   BillingWebhooksController,
   DesignationsController,

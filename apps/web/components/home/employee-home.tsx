@@ -6,11 +6,11 @@ import {
   Medal, Megaphone, PartyPopper, Plane, Star, TimerReset, TriangleAlert, Trophy, UserCheck, UserX,
 } from 'lucide-react';
 import Link from 'next/link';
+import { ExportDialogButton } from '@/app/(app)/attendance/export-dialog';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { punchAction } from '@/app/(app)/attendance/actions';
 import { punchLocation } from '@/lib/locate';
-import { RecentNotifications } from '@/components/notifications-widget';
 import { hm } from '@/lib/time';
 import type { AttendanceToday, LeaveBalance, MyCalendar, MyRewards } from '@/lib/types';
 import { ActionCenter, Empty, Progress, relative, SectionError, shortDate, StatCard } from './ui';
@@ -220,6 +220,9 @@ export function AttendanceCalendar({ home, events }: { home: EmployeeHome; event
             <span className="min-w-28 text-center text-sm font-medium" data-testid="calendar-month">{title}</span>
             <Link aria-label="Next month" className={cn('rounded p-1 hover:bg-bg-subtle', isThisMonth && 'pointer-events-none opacity-30')} aria-disabled={isThisMonth} href={`/?view=me&month=${shift(1)}`} scroll={false}><ChevronRight className="size-4" /></Link>
             {!isThisMonth && <Link className="ml-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium hover:bg-bg-subtle" href="/?view=me" scroll={false}>Today</Link>}
+            {home.exportEmployeeId && (
+              <span className="ml-2"><ExportDialogButton period={{ from: a.days[0]!.date, to: a.days[a.days.length - 1]!.date, today: home.today, label: title }} filters={{ employeeId: home.exportEmployeeId }} own label="Download report" /></span>
+            )}
           </div>
         }
       />
@@ -504,11 +507,8 @@ export function EmployeeHomeView({ home, today, balances, rewards, calendar, ren
               {home.learning && <LearningCard learning={home.learning} />}
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-            {home.announcements && <AnnouncementsCard a={home.announcements} />}
-            <RecentNotifications limit={5} />
-            <ActivityCard items={home.activity} />
-          </div>
+          {/* Announcements and notifications are read from the bell and their own pages, not repeated here (issue #86). */}
+          <ActivityCard items={home.activity} />
         </>
       )}
     </section>

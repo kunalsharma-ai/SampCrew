@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { DepartmentInput, LegalEntityInput } from '@crew/contracts';
+import { ENTITY_LOCKED_FIELDS, LOCKED_FIELD_MESSAGE, lockedFieldChanges, type DepartmentInput, type LegalEntityInput } from '@crew/contracts';
+import { isSuperWorkspace } from '../communication/identity';
 import { AuditService, diff } from '../../platform/audit/audit.service';
 import { requestContext } from '../../platform/context/request-context';
 import { countBy, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
@@ -68,6 +69,8 @@ export class OrganizationService {
   async create(table: OrgTable, input: Row) {
     return this.db.tenant(async (tx) => {
       if (table === 'legal_entities') {
+        // Only the Super Workspace registers another company; HR Workspace people work with the registered one (issue #86).
+        if (!(await isSuperWorkspace(tx, requestContext.tenantActor().membershipId))) throw Errors.forbidden('Only the Super Workspace can register another company (legal entity)');
         const count = await tx.collection('legal_entities').count({ archived_at: null });
         // A second legal entity needs the multi-entity module as well as room under the plan's entity limit.
         await this.entitlements.requireWithinLimit('max_legal_entities', count, tx);
@@ -88,6 +91,12 @@ export class OrganizationService {
       const stored = await tx.collection(table).findOne({ id });
       if (!stored) throw Errors.notFound(RESOURCE[table].replace('_', ' '));
       const before = (await views(tx, table, [stored]))[0]!;
+      // Registered company information is locked once company setup is finished (issue #86): filled fields stay as
+      // registered, empty ones can be completed.
+      if (table === 'legal_entities' && (await tx.collection('tenants').findOne({}))?.company_locked_at) {
+        const locked = lockedFieldChanges(before, input, ENTITY_LOCKED_FIELDS);
+        if (locked.length) throw Errors.validation(locked.map((path) => ({ path, message: LOCKED_FIELD_MESSAGE })));
+      }
       if (table === 'departments') await this.checkDepartmentRefs(tx, input as DepartmentInput, id);
       const cols = COLUMNS[table]!;
       const entries = Object.entries(input).filter(([k, v]) => cols[k] && v !== undefined);

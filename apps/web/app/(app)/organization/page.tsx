@@ -1,7 +1,7 @@
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { load } from '@/lib/api';
+import { load, loadOptional } from '@/lib/api';
 import { can } from '@/lib/nav';
 import type { BusinessUnit, Department, Designation, LegalEntity, Location, Me } from '@/lib/types';
 import { OrgView } from './org-view';
@@ -28,6 +28,7 @@ export default async function OrganizationPage({ searchParams }: { searchParams:
     load<Department[]>('/org/department-tree'),
     load<Designation[]>('/designations'),
   ]);
+  const setup = await loadOptional<{ company: { registration?: { lockedAt: string | null } } }>('/setup');
   return (
     <>
       <PageHeader
@@ -50,7 +51,7 @@ export default async function OrganizationPage({ searchParams }: { searchParams:
           </Link>
         ))}
       </nav>
-      <OrgView tab={tab} canManage={can(me, 'org:manage')} entities={entities} locations={locations} departments={departments} units={units} tree={tree} designations={designations} />
+      <OrgView tab={tab} canManage={can(me, 'org:manage')} canAddEntity={Boolean(me.levels?.super)} companyLocked={Boolean(setup?.company.registration?.lockedAt)} entities={entities} locations={locations} departments={departments} units={units} tree={tree} designations={designations} />
     </>
   );
 }

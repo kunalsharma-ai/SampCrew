@@ -165,13 +165,16 @@ function leaveDay() {
     // 6. Home layout and notes.
     await sup.goto(BASE + '/');
     await sup.getByRole('button', { name: 'Customize' }).click();
+    // Personal notes and Recently viewed start hidden (issue #86); add them back from Customize.
+    await sup.getByRole('button', { name: 'Show Personal notes' }).click();
+    await sup.getByRole('button', { name: 'Show Recently viewed' }).click();
     for (let i = 0; i < 12; i++) {
       const up = sup.getByRole('button', { name: 'Move Personal notes up' });
       const before = await sup.getByTestId('more-for-you').locator('section[aria-label]').first().getAttribute('aria-label');
       if (before === 'Personal notes') break;
       await up.click();
     }
-    await sup.getByRole('button', { name: 'Hide Your access' }).click();
+    await sup.getByRole('button', { name: 'Hide Recently viewed' }).click();
     await sup.getByRole('button', { name: 'Save layout' }).click();
     await sup.getByText('Layout saved').waitFor();
     const note = `Check rota for line 2 (${Date.now() % 100000})`;
@@ -179,7 +182,7 @@ function leaveDay() {
     await sup.getByText(/^Saved \d/).waitFor({ timeout: 10000 });
     await sup.reload();
     expect((await sup.getByTestId('more-for-you').locator('section[aria-label]').first().getAttribute('aria-label')) === 'Personal notes', 'widget order lost on reload');
-    expect((await sup.getByRole('region', { name: 'Your access' }).count()) === 0, 'hidden widget shown after reload');
+    expect((await sup.getByRole('region', { name: 'Recently viewed' }).count()) === 0, 'hidden widget shown after reload');
     expect((await sup.getByRole('textbox', { name: 'Your notes' }).inputValue()) === note, 'notes lost on reload');
     ok('Home widgets reordered and hidden, notes autosaved, all kept after a reload');
 

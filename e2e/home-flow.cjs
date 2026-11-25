@@ -31,6 +31,13 @@ const expect = (cond, m) => {
   if (!cond) throw new Error(m);
 };
 
+async function inBell(p, title) {
+  // Issue #86: notifications are read from the bell and their own page, not a Home card.
+  await p.getByTestId('notification-bell').click();
+  await p.getByTestId('notification-panel').waitFor();
+  await p.getByTestId('bell-item').filter({ hasText: title }).first().waitFor({ timeout: 15000 });
+  await p.keyboard.press('Escape');
+}
 async function api(token, method, p, body) {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(API + p, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -125,9 +132,9 @@ async function waitPhase(p, want) {
     await must(ownerT, 'POST', '/learning/assignments', { courseId: course.id, employeeIds: [neha.id], dueOn: '2099-12-31' });
     await e.getByTestId('nav-unread-learning').waitFor({ timeout: 15000 });
     await e.getByTestId('nav-unread-notifications').waitFor();
-    await e.getByTestId('recent-notifications').getByText(new RegExp(`Home flow safety ${run}`)).first().waitFor({ timeout: 15000 });
+    await inBell(e, new RegExp(`Home flow safety ${run}`));
     await e.getByTestId('notification-count').waitFor();
-    ok('the new course shows live on the Learning tab, the Home notifications card and the bell');
+    ok('the new course shows live on the Learning tab and in the bell');
     await e.goto(BASE + '/learning');
     const notices = e.getByTestId('module-notices-learning');
     await notices.getByText(new RegExp(`Home flow safety ${run}`)).first().waitFor();
@@ -166,10 +173,10 @@ async function waitPhase(p, want) {
     expect((await api(supT, 'GET', '/home/organization')).status === 403, 'a manager cannot open the organization view');
     ok('an Employee Workspace manager sees their own day; the workforce and organization views are refused');
 
-    // Every level sees a notice in three places: its menu tab, the Home notifications card and the bell.
+    // Every level sees a notice on its menu tab and in the bell.
     const everywhere = async (p, title) => {
       await p.getByTestId('nav-unread-learning').waitFor({ timeout: 15000 });
-      await p.getByTestId('recent-notifications').getByText(title).first().waitFor();
+      await inBell(p, title);
       await p.getByTestId('notification-count').waitFor();
     };
     const assignTo = async (email, title, byT) => {
@@ -186,7 +193,7 @@ async function waitPhase(p, want) {
     const hr = await signIn(b, 'hr.admin@demo.crew.local');
     await hr.getByTestId('workforce-home').waitFor();
     await everywhere(hr, new RegExp(`HR course ${run}`));
-    ok('HR Workspace sees the new notice on the Learning tab, the Home notifications card and the bell');
+    ok('HR Workspace sees the new notice on the Learning tab and in the bell');
     expect((await hr.getByTestId('home-level').innerText()).includes('HR Workspace'), 'the header names the HR Workspace level');
     await hr.getByTestId('wf-present').click();
     await hr.waitForURL((u) => u.pathname === '/attendance/team' && u.searchParams.get('status') === 'present');
@@ -204,7 +211,7 @@ async function waitPhase(p, want) {
     expect((await owner.getByTestId('home-level').innerText()).includes('Super Workspace'), 'the header names the Super Workspace level');
     await owner.getByTestId('org-alerts').waitFor();
     await everywhere(owner, new RegExp(`Owner course ${run}`));
-    ok('Super Workspace sees the new notice on the Learning tab, the Home notifications card and the bell');
+    ok('Super Workspace sees the new notice on the Learning tab and in the bell');
     await owner.getByTestId(`ws-${ws.id}`).click();
     await owner.waitForURL((u) => u.searchParams.get('hrWorkspace') === ws.id);
     await owner.getByTestId('workforce-home').waitFor();

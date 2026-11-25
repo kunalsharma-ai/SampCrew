@@ -56,7 +56,7 @@ export function PhotoAvatar({ e, size = 56 }: { e: EmployeeProfile; size?: numbe
           ref={input}
           type="file"
           accept="image/png,image/jpeg,image/webp"
-          className="sr-only"
+          className="hidden"
           aria-label="Choose a photo"
           tabIndex={-1}
           onChange={(ev) => { const f = ev.target.files?.[0]; ev.target.value = ''; if (f) upload(f); }}

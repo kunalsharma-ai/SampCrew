@@ -19,6 +19,7 @@ export function CaseView({ c, agencies, verifiers }: { c: CaseDetail; agencies: 
   const [cancelling, setCancelling] = useState(false);
   const say = (r: { ok: boolean; message?: string }) => setFlash(r.ok ? (r.message ? { tone: 'success', text: r.message } : null) : { tone: 'danger', text: r.message ?? 'Something went wrong' });
   const checkLabel = (id: string | null) => c.checks.find((x) => x.id === id)?.label;
+  const linkedDocs = c.checks.flatMap((x) => (x.documents ?? []).map((d) => ({ ...d, checkId: x.id, check: x.label })));
 
   return (
     <div className="grid gap-6">
@@ -39,6 +40,19 @@ export function CaseView({ c, agencies, verifiers }: { c: CaseDetail; agencies: 
           <Card>
             <CardHeader title="Case files" description="Supporting documents and agency reports. Only files you share are visible to the agency." />
             {c.can.edit && <CardBody><UploadFile caseId={c.id} checks={c.checks} onDone={say} /></CardBody>}
+            {/* Issue #86: documents attached to the checks from the employee's profile are files of the case too. They
+                were left out here, so the card said "No files yet" while the case had documents. */}
+            {linkedDocs.length > 0 && (
+              <CardBody className="grid gap-1 border-b border-border text-[0.8125rem]" data-testid="case-linked-documents">
+                <div className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">From the employee&apos;s documents</div>
+                {linkedDocs.map((d) => (
+                  <div key={`${d.checkId}-${d.id}`} className="flex items-center justify-between gap-2">
+                    <a className="truncate font-medium text-accent hover:underline" href={`/files/${d.id}`}>{d.title}</a>
+                    <span className="shrink-0 text-xs text-fg-muted">{d.check}{d.archived ? ' · archived' : ''}</span>
+                  </div>
+                ))}
+              </CardBody>
+            )}
             {c.files.length ? (
               <Table aria-label="Case files">
                 <THead><tr><TH>File</TH><TH>Check</TH><TH>Added</TH><TH>Shared with agency</TH><TH /></tr></THead>
@@ -57,7 +71,7 @@ export function CaseView({ c, agencies, verifiers }: { c: CaseDetail; agencies: 
                   ))}
                 </TBody>
               </Table>
-            ) : <CardBody><EmptyState title="No files yet" description="Upload ID proofs, certificates, relieving letters or reports." /></CardBody>}
+            ) : linkedDocs.length ? null : <CardBody><EmptyState title="No files yet" description="Upload ID proofs, certificates, relieving letters or reports, or attach the employee's documents to a check." /></CardBody>}
           </Card>
 
           <Card>

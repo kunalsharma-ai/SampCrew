@@ -33,6 +33,8 @@ export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] a
 
 export const personalSection = z.object({
   firstName: text(80).min(1, 'Enter the first name'),
+  /** Legal middle name, if any (issue #86: the profile shows the legal name, first, middle and last). */
+  middleName: opt(80),
   lastName: text(80).default(''),
   preferredName: opt(80),
   dateOfBirth: date.nullable().default(null),

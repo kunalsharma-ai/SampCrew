@@ -198,11 +198,123 @@ export const dashboardLayoutInput = z.object({
 }).strict();
 export type DashboardLayout = z.infer<typeof dashboardLayoutInput>;
 
-/** Saved order first, then any widgets added since in their default place. */
+/**
+ * Widgets kept off Home until the person adds them back from Customize (issue #86): announcements (they arrive as
+ * notifications), Workspace at a glance, Recently viewed and Personal notes, and Needs your attention (the HR action
+ * center above already lists the same items). "Your access" moved to the Activity log page.
+ */
+export const DEFAULT_HIDDEN_WIDGETS: readonly DashboardWidget[] = ['announcements', 'headcount', 'recent', 'notes', 'attention', 'access'];
+
+/** Saved order first, then any widgets added since in their default place. Nothing saved: the default hidden widgets. */
 export function resolveLayout(saved: Partial<DashboardLayout> | null | undefined): DashboardLayout {
   const order = (saved?.order ?? []).filter((w): w is DashboardWidget => (DASHBOARD_WIDGETS as readonly string[]).includes(w));
   for (const w of DASHBOARD_WIDGETS) if (!order.includes(w)) order.push(w);
-  return { order, hidden: (saved?.hidden ?? []).filter((w) => order.includes(w)) };
+  const hidden = saved?.hidden ?? (saved?.order?.length ? [] : [...DEFAULT_HIDDEN_WIDGETS]);
+  return { order, hidden: hidden.filter((w) => order.includes(w)) };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Work view, Home cards, first-login tour and the setup prompt (issue #86)
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * My Workforce or My Day, switched at the top right under the person's name (Super Workspace and HR Workspace).
+ * My Day narrows the menu and Home to the person's own work and settings, in its own colour, until switched back.
+ */
+export const WORK_VIEWS = ['workforce', 'myday'] as const;
+export type WorkView = (typeof WORK_VIEWS)[number];
+
+/** The count cards at the top of the HR and Super Workspace Home, each of which can be switched off. */
+export const HOME_COUNT_CARDS = [
+  { key: 'employees', label: 'Employees' }, { key: 'present', label: 'Present' }, { key: 'working', label: 'Working now' },
+  { key: 'absent', label: 'Absent' }, { key: 'leave', label: 'On leave' }, { key: 'late', label: 'Late' },
+  { key: 'missing', label: 'Missing punch' }, { key: 'wfh', label: 'Work from home' },
+] as const;
+export type HomeCountCard = (typeof HOME_COUNT_CARDS)[number]['key'];
+/** The sections of the HR and Super Workspace Home below the cards, each of which can be switched off. */
+export const HOME_SECTIONS = [
+  { key: 'action_center', label: 'HR action center' }, { key: 'monitoring', label: 'Attendance monitoring' },
+  { key: 'trend', label: 'Attendance trend' }, { key: 'calendar', label: 'Attendance calendar' },
+  { key: 'leave', label: 'Leave management' }, { key: 'people', label: 'Employee overview' },
+  { key: 'learning', label: 'Learning & development' }, { key: 'communication', label: 'Communication' },
+  { key: 'quick_actions', label: 'Quick actions' },
+] as const;
+export type HomeSection = (typeof HOME_SECTIONS)[number]['key'];
+const CARD_KEYS = HOME_COUNT_CARDS.map((c) => c.key) as [HomeCountCard, ...HomeCountCard[]];
+const SECTION_KEYS = HOME_SECTIONS.map((c) => c.key) as [HomeSection, ...HomeSection[]];
+
+/** The first-login tour: the stops, in order. */
+export const TOUR_STEPS = [
+  { key: 'menu', title: 'Your menu', text: 'Every page you can use is here, grouped by area. Star a page in the list to keep it under Favourites at the top.' },
+  { key: 'search', title: 'Search anything', text: 'Find people, candidates, pages and actions. Press Ctrl K from anywhere.' },
+  { key: 'view', title: 'My Workforce or My Day', text: 'Switch between the people you look after and your own work. My Day shows only your pages, in its own colour.' },
+  { key: 'notifications', title: 'Notifications', text: 'New requests and updates arrive here. Open one to read it in full; read ones leave the list.' },
+  { key: 'account', title: 'Your profile and settings', text: 'Your profile, Settings, compact view, password and sign out are under your name.' },
+  { key: 'home', title: 'Your Home', text: 'Choose which cards and sections Home shows in Settings > Home dashboard.' },
+] as const;
+export type TourStep = (typeof TOUR_STEPS)[number]['key'];
+/** The tour ends by itself this many days after it was first shown, even if not every stop was visited. */
+export const TOUR_DAYS = 3;
+
+export interface ExperienceState {
+  workView: WorkView;
+  hiddenCards: HomeCountCard[];
+  hiddenSections: HomeSection[];
+  tour: { startedAt: string | null; endedAt: string | null; endedBy: 'finished' | 'skipped' | 'expired' | null; seen: TourStep[] };
+  /** When the person opened or completed "Set up your workspace" (the prompt stays on top until then). */
+  setupPromptSeenAt: string | null;
+}
+export const DEFAULT_EXPERIENCE: ExperienceState = { workView: 'workforce', hiddenCards: [], hiddenSections: [], tour: { startedAt: null, endedAt: null, endedBy: null, seen: [] }, setupPromptSeenAt: null };
+
+export const experiencePatch = z.object({
+  workView: z.enum(WORK_VIEWS),
+  hiddenCards: z.array(z.enum(CARD_KEYS)).max(HOME_COUNT_CARDS.length),
+  hiddenSections: z.array(z.enum(SECTION_KEYS)).max(HOME_SECTIONS.length),
+  /** Tour progress: start (stamps the first showing), a stop seen, skip, or finish. */
+  tour: z.object({ action: z.enum(['start', 'seen', 'skip', 'finish']), step: z.enum(TOUR_STEPS.map((t) => t.key) as [TourStep, ...TourStep[]]).optional() }).strict(),
+  setupPromptSeen: z.literal(true),
+}).partial().strict();
+export type ExperiencePatch = z.infer<typeof experiencePatch>;
+
+/** Reads a stored value leniently, and ends a tour older than TOUR_DAYS. */
+export function normaliseExperience(raw: unknown, now = Date.now()): ExperienceState {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const tourRaw = (r.tour && typeof r.tour === 'object' ? r.tour : {}) as Record<string, unknown>;
+  const steps = TOUR_STEPS.map((t) => t.key) as readonly string[];
+  const tour: ExperienceState['tour'] = {
+    startedAt: typeof tourRaw.startedAt === 'string' ? tourRaw.startedAt : null,
+    endedAt: typeof tourRaw.endedAt === 'string' ? tourRaw.endedAt : null,
+    endedBy: tourRaw.endedBy === 'finished' || tourRaw.endedBy === 'skipped' || tourRaw.endedBy === 'expired' ? tourRaw.endedBy : null,
+    seen: Array.isArray(tourRaw.seen) ? (tourRaw.seen.filter((s) => typeof s === 'string' && steps.includes(s)) as TourStep[]) : [],
+  };
+  if (!tour.endedAt && tour.startedAt && now - Date.parse(tour.startedAt) >= TOUR_DAYS * 86_400_000) {
+    tour.endedAt = new Date(Date.parse(tour.startedAt) + TOUR_DAYS * 86_400_000).toISOString();
+    tour.endedBy = 'expired';
+  }
+  return {
+    workView: r.workView === 'myday' ? 'myday' : 'workforce',
+    hiddenCards: Array.isArray(r.hiddenCards) ? (r.hiddenCards.filter((k) => (CARD_KEYS as string[]).includes(k as string)) as HomeCountCard[]) : [],
+    hiddenSections: Array.isArray(r.hiddenSections) ? (r.hiddenSections.filter((k) => (SECTION_KEYS as string[]).includes(k as string)) as HomeSection[]) : [],
+    tour,
+    setupPromptSeenAt: typeof r.setupPromptSeenAt === 'string' ? r.setupPromptSeenAt : null,
+  };
+}
+
+/** Applies a patch to the stored state (the API's only writer). */
+export function applyExperiencePatch(state: ExperienceState, patch: ExperiencePatch, now = new Date()): ExperienceState {
+  const next: ExperienceState = { ...state, tour: { ...state.tour, seen: [...state.tour.seen] } };
+  if (patch.workView) next.workView = patch.workView;
+  if (patch.hiddenCards) next.hiddenCards = [...new Set(patch.hiddenCards)];
+  if (patch.hiddenSections) next.hiddenSections = [...new Set(patch.hiddenSections)];
+  if (patch.setupPromptSeen && !next.setupPromptSeenAt) next.setupPromptSeenAt = now.toISOString();
+  const t = patch.tour;
+  if (t && !next.tour.endedAt) {
+    if (!next.tour.startedAt) next.tour.startedAt = now.toISOString();
+    if (t.action === 'seen' && t.step && !next.tour.seen.includes(t.step)) next.tour.seen.push(t.step);
+    if (t.action === 'skip' || t.action === 'finish') { next.tour.endedAt = now.toISOString(); next.tour.endedBy = t.action === 'skip' ? 'skipped' : 'finished'; }
+    if (t.action === 'seen' && next.tour.seen.length >= TOUR_STEPS.length) { next.tour.endedAt = now.toISOString(); next.tour.endedBy = 'finished'; }
+  }
+  return next;
 }
 
 export const notesInput = z.object({ notes: z.string().max(4000) }).strict();
@@ -213,6 +325,8 @@ export interface MemberPreferences {
   recents: { href: string; label: string; at: string }[];
   dashboard: DashboardLayout;
   notes: string;
+  /** Work view, Home cards and sections, tour and setup prompt (issue #86). */
+  experience: ExperienceState;
   updatedAt: string | null;
 }
 

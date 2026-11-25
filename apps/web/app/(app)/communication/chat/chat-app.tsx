@@ -1,13 +1,13 @@
 'use client';
-import { senderLine, type ChatMessageView, type CommFile, type ConversationView } from '@crew/contracts';
+import { CHAT_REACTIONS, senderLine, type ChatMessageView, type CommFile, type ConversationView } from '@crew/contracts';
 import { Alert, Badge, Button, Card, Dialog, EmptyState, Input, Select, Textarea, cn } from '@crew/ui';
-import { BellOff, Check, CheckCheck, FileText, Headset, LogOut, MessagesSquare, Paperclip, Plus, Search, Send, Trash2, Users, X } from 'lucide-react';
+import { BellOff, Check, CheckCheck, FileText, Headset, LogOut, MessagesSquare, Paperclip, Pencil, Plus, Search, Send, SmilePlus, Trash2, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRefreshOn } from '@/components/live';
 import {
-  deleteMessageAction, leaveConversationAction, manageConversationAction, markReadAction, muteAction, openConversationAction,
+  deleteMessageAction, editMessageAction, leaveConversationAction, reactAction, restoreMessageAction, manageConversationAction, markReadAction, muteAction, openConversationAction,
   searchMessagesAction, sendMessageAction, uploadFileAction,
 } from '../actions';
 import { PeoplePicker } from '../people-picker';
@@ -237,20 +237,7 @@ function Thread({ d, me }: { d: ConversationDetail; me: string }) {
               <li key={m.id} className="grid">
                 {sep && <div className="my-2 text-center text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>{d0}</div>}
                 {m.system ? <p className="text-center text-xs italic text-fg-muted" data-testid="system-message">{m.body}</p> : (
-                  <div className={cn('group flex max-w-[85%] flex-col', mine ? 'items-end justify-self-end' : 'items-start')} data-testid="message">
-                    {!mine && <SenderTag m={m} />}
-                    <div className={cn('rounded-2xl px-3 py-2 text-[0.8125rem]', mine ? 'rounded-br-sm bg-accent text-accent-fg' : 'rounded-bl-sm bg-bg-subtle text-fg', m.deleted && 'italic opacity-70')}>
-                      {m.deleted ? 'Message deleted' : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
-                      <Files files={m.files} mine={mine} />
-                    </div>
-                    <span className="mt-0.5 flex items-center gap-2 text-[0.6875rem] text-fg-subtle">
-                      <span suppressHydrationWarning>{time(m.createdAt)}</span>
-                      {mine && <Delivery m={m} />}
-                      {mine && !m.deleted && (
-                        <button data-delete-area="communication" data-delete="chat message" className="opacity-0 transition group-hover:opacity-100 focus:opacity-100" aria-label="Delete message" onClick={() => start(async () => { const r = await deleteMessageAction(c.id, m.id); if (!r.ok) setError(r.message); router.refresh(); })}><Trash2 className="size-3" /></button>
-                      )}
-                    </span>
-                  </div>
+                  <MessageItem m={m} mine={mine} conversationId={c.id} onError={setError} />
                 )}
               </li>
             );
@@ -278,6 +265,95 @@ function Thread({ d, me }: { d: ConversationDetail; me: string }) {
       </div>
       {manage && <ManageDialog c={c} onClose={() => setManage(false)} />}
     </Card>
+  );
+}
+
+/**
+ * One message with its actions (issue #86): hover or tap a message for React, Edit (your own, for
+ * CHAT_EDIT_MINUTES) and Delete (your own, or anyone's for HR, after a confirmation); a delete can be undone for
+ * CHAT_UNDO_SECONDS. Edited messages say so. Everything updates live for everyone in the conversation.
+ */
+function MessageItem({ m, mine, conversationId, onError }: { m: ChatMessageView; mine: boolean; conversationId: string; onError: (e: string | null) => void }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(m.body);
+  const [confirming, setConfirming] = useState(false);
+  const run = (fn: () => Promise<{ ok: boolean; message?: string }>) => start(async () => {
+    onError(null);
+    const r = await fn();
+    if (!r.ok) onError(r.message ?? 'Something went wrong');
+    router.refresh();
+  });
+  const react = (emoji: string) => { setPicking(false); run(() => reactAction(conversationId, m.id, emoji)); };
+  const saveEdit = () => {
+    const body = draft.trim();
+    if (!body) return;
+    run(async () => { const r = await editMessageAction(conversationId, m.id, body); if (r.ok) setEditing(false); return r; });
+  };
+  const showActions = !m.deleted && !editing;
+  return (
+    <div className={cn('group relative flex max-w-[85%] flex-col', mine ? 'items-end justify-self-end' : 'items-start')} data-testid="message" onMouseLeave={() => { setPicking(false); }}>
+      {!mine && <SenderTag m={m} />}
+      {editing ? (
+        <div className="grid w-[min(28rem,80vw)] gap-1.5" data-testid="message-edit">
+          <Textarea aria-label="Edit message" value={draft} rows={2} maxLength={4000} onChange={(e) => setDraft(e.target.value)} autoFocus
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); } if (e.key === 'Escape') { setEditing(false); setDraft(m.body); } }} />
+          <div className="flex justify-end gap-1.5">
+            <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setDraft(m.body); }}>Cancel</Button>
+            <Button size="sm" onClick={saveEdit} loading={pending} disabled={!draft.trim()} data-testid="message-edit-save">Save</Button>
+          </div>
+        </div>
+      ) : (
+        <div
+          role="button" tabIndex={0} aria-label={m.deleted ? 'Deleted message' : 'Message actions'} aria-expanded={open}
+          onClick={() => setOpen((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((v) => !v); } }}
+          className={cn('cursor-default rounded-2xl px-3 py-2 text-left text-[0.8125rem] outline-none focus-visible:ring-2 focus-visible:ring-accent', mine ? 'rounded-br-sm bg-accent text-accent-fg' : 'rounded-bl-sm bg-bg-subtle text-fg', m.deleted && 'italic opacity-70')}
+        >
+          {m.deleted ? 'Message deleted' : <span className="whitespace-pre-wrap break-words" data-testid="message-body">{m.body}</span>}
+          <Files files={m.files} mine={mine} />
+        </div>
+      )}
+      {showActions && (
+        <div className={cn('absolute -top-3 z-10 flex items-center gap-0.5 rounded-full border border-border bg-surface-raised p-0.5 shadow-card transition-opacity', mine ? 'right-2' : 'left-2', open || picking ? 'opacity-100' : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100')} data-testid="message-actions">
+          <button type="button" className="rounded-full p-1 text-fg-muted hover:bg-bg-subtle hover:text-fg" aria-label="React" aria-expanded={picking} onClick={() => setPicking((v) => !v)} data-testid="message-react"><SmilePlus className="size-3.5" /></button>
+          {m.canEdit && <button type="button" className="rounded-full p-1 text-fg-muted hover:bg-bg-subtle hover:text-fg" aria-label="Edit message" onClick={() => { setDraft(m.body); setEditing(true); setOpen(false); }} data-testid="message-edit-start"><Pencil className="size-3.5" /></button>}
+          {m.canDelete && <button type="button" data-delete-area="communication" data-delete="chat message" className="rounded-full p-1 text-fg-muted hover:bg-danger-subtle hover:text-danger" aria-label="Delete message" onClick={() => { setConfirming(true); setOpen(false); }}><Trash2 className="size-3.5" /></button>}
+        </div>
+      )}
+      {picking && (
+        <div className={cn('absolute -top-11 z-20 flex gap-0.5 rounded-full border border-border bg-surface-raised p-1 shadow-pop', mine ? 'right-2' : 'left-2')} role="group" aria-label="Choose a reaction" data-testid="reaction-picker">
+          {CHAT_REACTIONS.map((e) => <button key={e} type="button" className="rounded-full px-1.5 py-0.5 text-base leading-none transition-transform hover:scale-125 hover:bg-bg-subtle" aria-label={`React with ${e}`} onClick={() => react(e)}>{e}</button>)}
+        </div>
+      )}
+      {confirming && (
+        <div className="mt-1 flex items-center gap-2 rounded-lg border border-danger/40 bg-danger-subtle/50 px-2.5 py-1.5 text-xs" role="alertdialog" aria-label="Delete this message?" data-testid="message-delete-confirm">
+          <span>{mine ? 'Delete this message for everyone?' : 'Delete this message from the conversation?'}</span>
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
+          <Button size="sm" variant="danger" loading={pending} data-testid="message-delete-yes" onClick={() => run(async () => { const r = await deleteMessageAction(conversationId, m.id); setConfirming(false); return r; })}>Delete</Button>
+        </div>
+      )}
+      {m.reactions.length > 0 && (
+        <ul className="mt-1 flex flex-wrap gap-1" aria-label="Reactions" data-testid="message-reactions">
+          {m.reactions.map((r) => (
+            <li key={r.emoji}>
+              <button type="button" onClick={() => react(r.emoji)} title={r.names.join(', ')} aria-pressed={r.mine} aria-label={`${r.emoji} ${r.count}${r.mine ? ', including you' : ''}`}
+                className={cn('inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-xs', r.mine ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-surface hover:bg-bg-subtle')}>
+                <span>{r.emoji}</span><span className="tabular">{r.count}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <span className="mt-0.5 flex items-center gap-2 text-[0.6875rem] text-fg-subtle">
+        <span suppressHydrationWarning>{time(m.createdAt)}</span>
+        {m.editedAt && !m.deleted && <span data-testid="message-edited" title={`Edited ${time(m.editedAt)}`}>Edited</span>}
+        {mine && <Delivery m={m} />}
+        {m.canUndo && <button type="button" className="font-semibold text-accent hover:underline" onClick={() => run(() => restoreMessageAction(conversationId, m.id))} data-testid="message-undo">Undo</button>}
+      </span>
+    </div>
   );
 }
 

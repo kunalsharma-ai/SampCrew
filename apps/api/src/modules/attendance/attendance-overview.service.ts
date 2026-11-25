@@ -5,6 +5,8 @@ import {
   ACCESS_LEVEL_LABEL,
   CENTRAL_GROUP,
   DAY_STATUS_LABEL,
+  ipInOffice,
+  normaliseIp,
   attendanceTotals,
   bucketOf,
   statusesOf,
@@ -381,6 +383,50 @@ export class AttendanceOverviewService {
     return { rows: days.map((d) => toRow(byId.get(d.employee_id)!, d.work_date, d.status, d)), total };
   }
 
+  /**
+   * Where each day's check-in came from, for the report (issue #86): the network address and GPS reading of the first
+   * web or phone punch, and a Remark of Work From Home when the day was counted as home, or when a punch came from a
+   * network that is not one of the company's office addresses or from GPS outside every approved office.
+   */
+  private async punchPlaces(tx: TenantTx, rows: AttendanceRecordRow[]): Promise<Map<string, { ip: string; gps: string; remark: string }>> {
+    const out = new Map<string, { ip: string; gps: string; remark: string }>();
+    if (!rows.length) return out;
+    const ids = [...new Set(rows.map((r) => r.employeeId))];
+    const dates = rows.map((r) => r.date).sort();
+    const from = new Date(`${addDays(dates[0]!, -1)}T00:00:00Z`);
+    const to = new Date(`${addDays(dates[dates.length - 1]!, 2)}T00:00:00Z`);
+    const settings = await tx.collection('work_mode_settings').findOne({}, { projection: { office_ips: 1, location_tracking: 1 } });
+    const officeIps = ((settings?.office_ips as string[] | undefined) ?? []);
+    const tzOf = new Map(rows.map((r) => [r.employeeId, r.timeZone]));
+    const [events, days] = await Promise.all([
+      tx.collection('attendance_events').find({ employee_id: { $in: ids }, source: { $in: ['web', 'mobile'] }, captured_at: { $gte: from, $lt: to } }, { sort: { captured_at: 1 }, limit: 50_000, projection: { employee_id: 1, captured_at: 1, remote_ip: 1, latitude: 1, longitude: 1, work_zone: 1 } }),
+      tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: { $gte: dates[0]!, $lte: dates[dates.length - 1]! } }, { projection: { employee_id: 1, work_date: 1, work_mode: 1 } }),
+    ]);
+    const modeOf = new Map(days.map((d) => [`${d.employee_id}|${d.work_date}`, d.work_mode as string | null]));
+    const byDay = new Map<string, Doc[]>();
+    for (const e of events) {
+      const date = new Intl.DateTimeFormat('en-CA', { timeZone: tzOf.get(e.employee_id) ?? 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(e.captured_at));
+      const key = `${e.employee_id}|${date}`;
+      byDay.set(key, [...(byDay.get(key) ?? []), e]);
+    }
+    for (const r of rows) {
+      const key = `${r.employeeId}|${r.date}`;
+      const list = byDay.get(key) ?? [];
+      const first = list[0];
+      const mode = modeOf.get(key) ?? null;
+      const offNetwork = officeIps.length > 0 && list.some((e) => e.remote_ip && !ipInOffice(e.remote_ip as string, officeIps));
+      const offSite = list.some((e) => e.work_zone === 'remote');
+      const remark = mode === 'remote' || offNetwork || offSite ? 'Work From Home' : mode === 'hybrid' ? 'Hybrid' : mode === 'office' ? 'Work From Office' : '';
+      if (!first && !remark) continue;
+      out.set(key, {
+        ip: first?.remote_ip ? normaliseIp(first.remote_ip as string) : '',
+        gps: first && first.latitude !== null && first.latitude !== undefined ? `${Number(first.latitude).toFixed(5)}, ${Number(first.longitude).toFixed(5)}` : '',
+        remark,
+      });
+    }
+    return out;
+  }
+
   records(q: AttendanceRecordsQuery): Promise<Paged<AttendanceRecordRow>> {
     return this.db.tenant(async (tx) => {
       const v = await this.access.viewer(tx);
@@ -448,11 +494,12 @@ export class AttendanceOverviewService {
         if (total > max) throw Errors.badRequest('too_many_rows', `That is ${total} date-wise rows; ${report ? `a ${q.format === 'pdf' ? 'PDF' : 'Word'} report holds up to ${max} (Excel holds more)` : `one file holds up to ${max}`}. Pick a shorter period or fewer people.`);
         recordCount = rows.length;
         const percentOf = new Map(people.map((r) => [r.employeeId, r.totals.percent]));
+        const place = await this.punchPlaces(tx, rows);
         sheets.push({
           name: 'Date-wise',
           rows: [
-            ['Workspace Name', 'Workspace Type', 'Employee Name', 'Employee ID', 'Department', 'Designation', 'Location', 'Date', 'Day', 'Attendance Status', 'Detail', 'Check-in Time', 'Check-out Time', 'Working Hours', 'Late Minutes', 'Time Zone', 'Attendance % (period)'],
-            ...rows.map((r) => { const w = who(r.employeeId); return [r.hrWorkspaceName, LEVEL_WORKSPACE[r.level], r.name, r.code, departmentOf.get(r.employeeId) ?? '', w.designation, w.location, r.date, dayName(r.date), ATTENDANCE_BUCKET_LABEL[r.status], r.detail, r.firstIn ?? '', r.lastOut ?? '', hours(r.workedMinutes), r.lateMinutes, r.timeZone, pct(percentOf.get(r.employeeId) ?? null)]; }),
+            ['Workspace Name', 'Workspace Type', 'Employee Name', 'Employee ID', 'Department', 'Designation', 'Location', 'Date', 'Day', 'Attendance Status', 'Detail', 'Check-in Time', 'Check-out Time', 'Working Hours', 'Late Minutes', 'Time Zone', 'Check-in IP', 'Check-in GPS', 'Remark', 'Attendance % (period)'],
+            ...rows.map((r) => { const w = who(r.employeeId); const pl = place.get(`${r.employeeId}|${r.date}`); return [r.hrWorkspaceName, LEVEL_WORKSPACE[r.level], r.name, r.code, departmentOf.get(r.employeeId) ?? '', w.designation, w.location, r.date, dayName(r.date), ATTENDANCE_BUCKET_LABEL[r.status], r.detail, r.firstIn ?? '', r.lastOut ?? '', hours(r.workedMinutes), r.lateMinutes, r.timeZone, pl?.ip ?? '', pl?.gps ?? '', pl?.remark ?? '', pct(percentOf.get(r.employeeId) ?? null)]; }),
           ],
         });
       }

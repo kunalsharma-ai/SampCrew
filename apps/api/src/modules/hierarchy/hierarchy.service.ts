@@ -566,8 +566,10 @@ export class HierarchyService {
       const parent = this.parentOf(c.features, w);
       const wanted = modules.filter((k) => !CORE.has(k));
       await this.refuseBeyondParent(tx, s, wanted.filter((k) => !parent.includes(k)), { type: 'employee', id: employeeId, name: `${e.first_name} ${e.last_name}` });
-      const withheld = parent.filter((k) => !CORE.has(k) && !wanted.includes(k)).sort();
       const current = await tx.collection('member_module_assignments').findOne({ membership_id: e.membership_id });
+      // Pages withheld for this person (page access chosen at registration) stay as they are when modules change.
+      const pages = ((current?.withheld_features ?? []) as string[]).filter((k) => isFeaturePart(k));
+      const withheld = parent.filter((k) => !CORE.has(k) && !wanted.includes(k)).sort();
       const before = ((current?.withheld_features ?? []) as string[]).filter((k) => parent.includes(k)).sort();
       if (version !== undefined && version !== ((current?.version as number | undefined) ?? 0)) {
         throw Errors.conflict('version_conflict', "Someone else changed this person's modules while you were editing. Reload and try again.");
@@ -575,7 +577,7 @@ export class HierarchyService {
       if (sameSet(before, withheld)) return { modules: parent.filter((k) => !withheld.includes(k)), version: (current?.version as number | undefined) ?? 0 };
       const level = this.levelOf(s);
       const next = ((current?.version as number | undefined) ?? 0) + 1;
-      if (current) await tx.collection('member_module_assignments').updateOne({ id: current.id }, { $set: { withheld_features: withheld, version: next, updated_by_level: level, updated_by_membership_id: s.membershipId } });
+      if (current) await tx.collection('member_module_assignments').updateOne({ id: current.id }, { $set: { withheld_features: [...withheld, ...pages].sort(), version: next, updated_by_level: level, updated_by_membership_id: s.membershipId } });
       else await tx.collection('member_module_assignments').insert({ membership_id: e.membership_id, withheld_features: withheld, version: next, updated_by_level: level, updated_by_membership_id: s.membershipId });
       const given = (list: string[]) => parent.filter((k) => !list.includes(k));
       const changes = { modules: { from: given(before), to: given(withheld) } };

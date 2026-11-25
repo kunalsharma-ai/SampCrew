@@ -1,12 +1,12 @@
 'use client';
 import { NOTIFICATION_CATEGORIES, type NotificationView } from '@crew/contracts';
 import { cn } from '@crew/ui';
-import { Bell, Check, CheckCheck, Mail, MailOpen, Settings2 } from 'lucide-react';
+import { Bell, Check, CheckCheck, MailOpen, Settings2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { ICONS } from '@/lib/icons';
-import { markAllNotificationsReadAction, markNotificationReadAction, markNotificationUnreadAction } from '@/app/(app)/shell-actions';
+import { markAllNotificationsReadAction, markNotificationReadAction } from '@/app/(app)/shell-actions';
 import { useLive } from './live';
 import { Popover } from './popover';
 
@@ -62,7 +62,7 @@ export function ActionBadge({ className }: { className?: string }) {
   return <span className={cn('rounded-full bg-ember-subtle px-1.5 py-px text-[0.625rem] font-semibold text-ember', className)} data-testid="action-needed">Action needed</span>;
 }
 
-type Tab = 'all' | 'unread' | 'action';
+type Tab = 'unread' | 'action';
 
 /**
  * The bell in the top bar: live unread count (it swings and the badge pops when a notice arrives), the latest notices
@@ -74,7 +74,7 @@ export function NotificationBell() {
   const live = useLive();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>('all');
+  const [tab, setTab] = useState<Tab>('unread');
   const [pending, start] = useTransition();
   /** The notice just marked read: its row shows a tick for a moment. */
   const [ticked, setTicked] = useState<string | null>(null);
@@ -95,18 +95,17 @@ export function NotificationBell() {
         live.markRead(n.id);
         await markNotificationReadAction(n.id);
       }
-      if (n.link) router.push(n.link);
-      else router.refresh();
+      // A notice without its own record opens in full on the Notifications page (issue #86).
+      router.push(n.link ?? '/notifications');
     });
   };
-  const toggleRead = (n: NotificationView) => start(async () => {
-    if (n.readAt) await markNotificationUnreadAction(n.id);
-    else {
-      live.markRead(n.id);
-      setTicked(n.id);
-      setTimeout(() => setTicked((t) => (t === n.id ? null : t)), 900);
-      await markNotificationReadAction(n.id);
-    }
+  // Read notices leave the bell at once (issue #86): the tick shows for a moment, then the row goes. They stay on the
+  // Notifications page, where they can be marked unread again.
+  const markRead = (n: NotificationView) => start(async () => {
+    setTicked(n.id);
+    setTimeout(() => setTicked((t) => (t === n.id ? null : t)), 450);
+    live.markRead(n.id);
+    await markNotificationReadAction(n.id);
     router.refresh();
   });
   const readAll = () => start(async () => {
@@ -117,7 +116,8 @@ export function NotificationBell() {
     router.refresh();
   });
 
-  const shown = live.items.filter((n) => (tab === 'unread' ? !n.readAt : tab === 'action' ? n.actionRequired && !n.readAt : true));
+  // Only unread notices (and the one just ticked, for its moment) are in the bell.
+  const shown = live.items.filter((n) => (!n.readAt || n.id === ticked) && (tab === 'action' ? n.actionRequired : true));
   const count = live.unread > 99 ? '99+' : String(live.unread);
   return (
     <div className="relative">
@@ -150,7 +150,7 @@ export function NotificationBell() {
             ) : null}
           </div>
           <div className="flex gap-1 border-b border-border px-3" role="tablist" aria-label="Show">
-            {([['all', 'All', null], ['unread', 'Unread', live.unread], ['action', 'Action needed', live.actionNeeded]] as const).map(([key, label, n]) => (
+            {([['unread', 'Unread', live.unread], ['action', 'Action needed', live.actionNeeded]] as const).map(([key, label, n]) => (
               <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)} data-testid={`bell-tab-${key}`} className={cn('-mb-px border-b-2 px-2 py-1.5 text-xs', tab === key ? 'border-accent font-semibold text-fg' : 'border-transparent text-fg-muted hover:text-fg')}>
                 {label}
                 {n ? <span className={cn('ml-1 rounded-full px-1.5 text-[0.625rem] font-semibold', key === 'action' ? 'bg-ember-subtle text-ember' : 'bg-accent-subtle text-accent')}>{n > 99 ? '99+' : n}</span> : null}
@@ -160,7 +160,7 @@ export function NotificationBell() {
           <ul className="max-h-[26rem] overflow-y-auto" role="tabpanel">
             {shown.length === 0 && (
               <li className="px-4 py-8 text-center text-[0.8125rem] text-fg-subtle">
-                {tab === 'action' ? 'Nothing is waiting for you.' : tab === 'unread' ? 'You are all caught up.' : 'Nothing yet. New notices appear here as they happen.'}
+                {tab === 'action' ? 'Nothing is waiting for you.' : 'You are all caught up. Read notices stay on the Notifications page.'}
               </li>
             )}
             {shown.map((n) => (
@@ -182,13 +182,14 @@ export function NotificationBell() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => toggleRead(n)}
-                  aria-label={n.readAt ? `Mark "${n.title}" unread` : `Mark "${n.title}" read`}
-                  title={n.readAt ? 'Mark unread' : 'Mark read'}
+                  onClick={() => markRead(n)}
+                  disabled={Boolean(n.readAt)}
+                  aria-label={`Mark "${n.title}" read`}
+                  title="Mark read"
                   className="m-1 self-start rounded-md p-1.5 text-fg-subtle opacity-70 hover:bg-bg-subtle hover:text-fg group-hover:opacity-100 focus-visible:opacity-100"
                   data-testid="bell-toggle-read"
                 >
-                  {ticked === n.id ? <Check className="crew-check-pop size-3.5 text-success" /> : n.readAt ? <Mail className="size-3.5" /> : <MailOpen className="size-3.5" />}
+                  {ticked === n.id ? <Check className="crew-check-pop size-3.5 text-success" /> : <MailOpen className="size-3.5" />}
                 </button>
               </li>
             ))}

@@ -69,13 +69,16 @@ export function HomeDashboard(props: {
     switch (w) {
       case 'announcements': return Boolean(props.news?.length);
       case 'helpdesk': return Boolean(props.helpdesk);
-      case 'setup': return props.steps.length > 0;
+      // Below a level's Home, "Set up your workspace" is the prompt on top of the page instead (issue #86).
+      case 'setup': return props.steps.length > 0 && !props.embedded;
       case 'headcount': return Boolean(d && (d.funnel || d.attendance));
       // Kept below a level's Home too: its rows approve with one click, which the action centre only links to.
       case 'attention': return Boolean(d);
       // The My day panel already shows HR and manager tasks for an employee.
       case 'tasks': return Boolean(d) && !props.myDay && !props.embedded;
       case 'quick-actions': return !props.embedded;
+      // "Your access" moved to the Activity log page (issue #86).
+      case 'access': return !props.embedded;
       default: return true;
     }
   };
@@ -124,7 +127,7 @@ export function HomeDashboard(props: {
           <section
             key={w}
             aria-label={WIDGET_LABEL[w]}
-            className={cn('min-w-0', WIDE.includes(w) && 'xl:col-span-2', editing && 'rounded-xl outline-2 outline-dashed outline-offset-4 outline-border-strong', editing && layout.hidden.includes(w) && 'opacity-50')}
+            className={cn('min-w-0', WIDE.includes(w) && 'xl:col-span-2', editing && 'rounded-xl border-2 border-dashed border-border-strong bg-bg-subtle/40 p-3', editing && layout.hidden.includes(w) && 'opacity-50')}
             draggable={editing}
             onDragStart={() => { dragging.current = w; }}
             onDragOver={(e) => editing && e.preventDefault()}
@@ -158,14 +161,15 @@ export function HomeDashboard(props: {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 id="more-for-you" className="text-base font-semibold">More for you</h2>
-            <p className="text-[0.8125rem] text-fg-muted">Optional widgets. Reorder or hide them; attendance, alerts and notifications above always stay.</p>
+            <p className="text-[0.8125rem] text-fg-muted">Optional widgets. Add, reorder or hide them with Customize; the cards above are chosen in Settings &gt; Home dashboard.</p>
           </div>
           <div className="flex items-center gap-2">{saved && !editing && <span className="text-xs text-fg-subtle" role="status">{saved}</span>}{!editing && <Button variant="secondary" size="sm" onClick={openThemes}><Palette className="size-3.5" /> Themes</Button>}{customize}</div>
         </div>
-        {d && d.kpis.length > 0 && <KpiStrip kpis={d.kpis} />}
-        {d && <Spotlight d={d} actions={props.actions} openAssistant={openAssistant} recruiter={!!props.recruiter} />}
+        {/* No second set of figures or the SampCrew IQ card here (issue #86): the level's Home above already has the
+            counts, and SampCrew IQ opens from the button in the bottom-right corner. */}
         {editing && <p className="mb-3 text-[0.8125rem] text-fg-muted">Drag widgets to reorder them, or use the arrow buttons. Hidden widgets stay here while you edit.</p>}
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">{visible.map((w) => widget(w))}</div>
+        {visible.length === 0 && !editing && <p className="rounded-xl border border-dashed border-border px-4 py-3 text-[0.8125rem] text-fg-muted" data-testid="more-for-you-empty">Nothing added. Use Customize to add Workspace at a glance, Recently viewed, Personal notes and more.</p>}
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">{visible.map((w) => widget(w))}</div>
       </section>
     );
   }
@@ -207,7 +211,7 @@ export function HomeDashboard(props: {
       {!d && <Card className="mb-6 p-5 text-[0.8125rem] text-fg-muted">The dashboard could not load just now. Your pages in the menu still work.</Card>}
 
       {editing && <p className="mb-3 text-[0.8125rem] text-fg-muted">Drag widgets to reorder them, or use the arrow buttons. Hidden widgets stay here while you edit.</p>}
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
         {visible.map((w) => widget(w))}
       </div>
     </>

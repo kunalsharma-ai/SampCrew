@@ -393,7 +393,8 @@ export interface ProfileChange { field: string; label: string; old: string | nul
 export interface ProfileUpdateBrief { id: string; status: string; createdAt: string; decidedAt: string | null; remarks: string | null; changes: ProfileChange[] }
 export interface PostalAddressView { line1: string; line2: string; city: string; state: string; postalCode: string; country: string }
 export interface FullProfile {
-  employee: { id: string; name: string; code: string; photo: boolean; photoUpdatedAt: string | null };
+  /** legalName: first, middle and last name (issue #86); preferredName is shown separately. */
+  employee: { id: string; name: string; legalName?: string; preferredName?: string | null; code: string; photo: boolean; photoUpdatedAt: string | null };
   self: boolean; completeness: number; filled: Record<ProfileSectionKey, boolean>;
   professional: {
     employeeCode: string; designation: string | null; department: string | null; manager: string | null; employmentType: string; status: string; dateOfJoining: string;
@@ -403,7 +404,7 @@ export interface FullProfile {
     workspaceAccess?: string | null; assignedWorkspace?: string | null;
   };
   sections: {
-    personal: { firstName: string; lastName: string; preferredName: string | null; dateOfBirth: string | null; gender: string | null; personalEmail: string | null; phone: string | null; nationality: string | null; maritalStatus: string | null; bloodGroup: string | null };
+    personal: { firstName: string; middleName?: string | null; lastName: string; preferredName: string | null; dateOfBirth: string | null; gender: string | null; personalEmail: string | null; phone: string | null; nationality: string | null; maritalStatus: string | null; bloodGroup: string | null };
     address: { current: PostalAddressView | null; permanentSameAsCurrent: boolean; permanent: PostalAddressView | null } | null;
     emergency: { contacts: { name: string; relationship: string; phone: string; email: string | null }[] } | null;
     education: { highestQualification: string | null; records: { level: string; degree: string | null; institution: string; yearCompleted: number | null; percentage: number | null; documentId: string | null }[] } | null;

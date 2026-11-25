@@ -41,6 +41,13 @@ const shot = async (p, name, opts = {}) => {
   await p.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: opts.full ?? false });
 };
 
+async function inBell(p, title) {
+  // Issue #86: notifications are read from the bell and their own page, not a Home card.
+  await p.getByTestId('notification-bell').click();
+  await p.getByTestId('notification-panel').waitFor();
+  await p.getByTestId('bell-item').filter({ hasText: title }).first().waitFor({ timeout: 15000 });
+  await p.keyboard.press('Escape');
+}
 async function api(token, method, p, body) {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(API + p, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -297,7 +304,7 @@ const unread = async (p) => {
     const op2 = await opCtx.newPage();
     watch(op2, 'operator2 tab 2');
     await op2.goto(BASE + '/');
-    await op.getByTestId('recent-notifications').waitFor();
+    await op.getByTestId('notification-bell').waitFor();
     await op.waitForTimeout(1500); // the live streams connect
     const before = await unread(op);
     const title = `Fire safety refresher ${run}`;
@@ -307,9 +314,6 @@ const unread = async (p) => {
       const el = document.querySelector('[data-testid=notification-count]');
       return el && Number(el.textContent.replace(/\D/g, '')) > n;
     }, before, { timeout: 15000 });
-    const card = op.getByTestId('recent-notifications');
-    await card.getByText(title).first().waitFor();
-    await card.locator('li', { hasText: title }).getByTestId('action-needed').waitFor();
     await op.getByTestId('notification-bell').click();
     await op.getByTestId('notification-panel').waitFor();
     await op.getByTestId('bell-tab-action').click();
@@ -332,14 +336,14 @@ const unread = async (p) => {
     }, inTab2, { timeout: 15000 });
     const listed = (await must(opT, 'GET', '/notifications?category=learning&limit=20')).items.find((n) => n.title.includes(title));
     expect(listed && listed.readAt && listed.actionRequired, 'the notice is read on the server and still marked as one that asked for action');
-    ok('a course assignment is Action needed in the bell, on Home and on the Learning page; reading it there clears the other tab live');
+    ok('a course assignment is Action needed in the bell and on the Learning page; reading it there clears the other tab live');
 
     // 3. One sound across tabs.
     const prefs = await must(opT, 'GET', '/notifications/preferences');
     await must(opT, 'PUT', '/notifications/preferences', { ...prefs, sound: { enabled: true, volume: 60, minPriority: 'low' } });
     for (const p of [op, op2]) {
       await p.goto(BASE + '/');
-      await p.getByTestId('recent-notifications').waitFor();
+      await p.getByTestId('notification-bell').waitFor();
       await p.mouse.click(5, 300); // a click allows sound in this tab (browsers block it before one)
       await p.evaluate(() => { window.__tones = 0; });
     }
@@ -347,7 +351,7 @@ const unread = async (p) => {
     const second = `Data privacy basics ${run}`;
     const c2 = await must(ownerT, 'POST', '/learning/courses', { title: second, format: 'online', selfEnrol: false });
     await must(ownerT, 'POST', '/learning/assignments', { courseId: c2.id, employeeIds: [opEmp.id], dueOn: '2099-12-31' });
-    for (const p of [op, op2]) await p.getByTestId('recent-notifications').getByText(second).first().waitFor({ timeout: 15000 });
+    for (const p of [op, op2]) await inBell(p, second);
     await op.waitForTimeout(1200);
     const tones = [await op.evaluate(() => window.__tones), await op2.evaluate(() => window.__tones)];
     expect(tones.filter((n) => n > 0).length === 1, `exactly one tab should sound, got ${JSON.stringify(tones)}`);

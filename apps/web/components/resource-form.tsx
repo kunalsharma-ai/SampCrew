@@ -18,6 +18,8 @@ export interface FieldDef {
   placeholder?: string;
   half?: boolean;
   step?: string;
+  /** Shown but not editable (locked registered information); the field is not sent. */
+  readOnly?: boolean;
 }
 
 /** Dialog form driven by field definitions; posts through a server action and shows API validation errors inline. */
@@ -61,6 +63,7 @@ export function ResourceDialog({ open, onClose, title, description, fields, init
           const f = new FormData(e.currentTarget);
           const values: Record<string, unknown> = {};
           for (const def of fields) {
+            if (def.readOnly) continue;
             const raw = String(f.get(def.name) ?? '').trim();
             if (raw === '') {
               if (def.nullable && initial) values[def.name] = null;
@@ -88,6 +91,14 @@ export function ResourceDialog({ open, onClose, title, description, fields, init
         {fields.map((def) => {
           const value = initial?.[def.name];
           const dv = value === null || value === undefined ? '' : String(value);
+          if (def.readOnly) {
+            const shown = def.type === 'select' ? (def.options?.find((o) => o.value === dv)?.label ?? dv) : dv;
+            return (
+              <Field key={def.name} label={def.label} hint={def.hint ?? 'Locked: registered information. Ask SAMPLEDGE support to correct it.'} className={def.half ? 'col-span-2 sm:col-span-1' : 'col-span-2'}>
+                {(p) => <Input {...p} value={shown} readOnly aria-readonly="true" data-locked="true" className="cursor-not-allowed bg-bg-subtle text-fg-muted" />}
+              </Field>
+            );
+          }
           return (
             <Field key={def.name} label={def.label} hint={def.hint} error={fe[def.name]} required={def.required} className={def.half ? 'col-span-2 sm:col-span-1' : 'col-span-2'}>
               {(p) =>

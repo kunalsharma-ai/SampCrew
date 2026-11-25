@@ -782,9 +782,15 @@ export const TABLES: Record<string, TableSpec> = {
       conversation_id: {"required": true, "type": "uuid"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       deleted_at: {"type": "timestamp"},
+      // Who deleted it (the sender, or HR), and what it said, kept for CHAT_UNDO_SECONDS so the delete can be undone.
+      deleted_by_membership_id: {"type": "uuid"},
+      deleted_body: {"type": "string"},
+      deleted_file_ids: {"type": "uuid[]"},
       edited_at: {"type": "timestamp"},
       file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Emoji reactions: emoji to the memberships that reacted with it (issue #86).
+      reactions: {"default": {"json": {}}, "required": true, "type": "json"},
       // Who sent it, as it was at sending: level (super, hr, employee) and workspace name (company or HR Workspace).
       // Older messages have neither; they show the sender's current level.
       sender_level: {"enum": ["super", "hr", "employee"], "type": "string"},
@@ -1383,6 +1389,10 @@ export const TABLES: Record<string, TableSpec> = {
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       labels: {"default": {"json": {}}, "required": true, "type": "json"},
       location_retention_days: {"default": 90, "required": true, "type": "int"},
+      // How attendance reads the location, chosen at company registration (contracts LOCATION_TRACKING, issue #86).
+      location_tracking: {"default": "punch", "enum": ["off", "punch", "real_time"], "required": true, "type": "string"},
+      // Office network addresses (IPs or IPv4 CIDR ranges): a punch from another network is remarked Work From Home.
+      office_ips: {"default": {"json": []}, "required": true, "type": "string[]"},
       max_accuracy_m: {"default": 150, "required": true, "type": "int"},
       min_office_minutes: {"default": 60, "required": true, "type": "int"},
       min_remote_minutes: {"default": 60, "required": true, "type": "int"},
@@ -3172,6 +3182,39 @@ export const TABLES: Record<string, TableSpec> = {
     indexes: [],
     checks: [],
   },
+  employee_record_details: {
+    // The employee record's own fields (issue #86, contracts employee-record.ts): family, gate pass, work status,
+    // CTC figures and notes. Everything else on the record lives where it already did.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      any_details: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      ctc_annual: {"scale": 2, "type": "decimal"},
+      ctc_annual_in_hand: {"scale": 2, "type": "decimal"},
+      ctc_monthly_fixed: {"scale": 2, "type": "decimal"},
+      employee_id: {"required": true, "type": "uuid"},
+      father_name: {"type": "string"},
+      gate_pass_id: {"type": "string"},
+      mother_name: {"type": "string"},
+      // A parent's Aadhaar number, encrypted, and its last four digits for the masked display.
+      parent_aadhaar_enc: {"type": "string"},
+      parent_aadhaar_last4: {"type": "string"},
+      parents_address: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+      work_status: {"enum": ["working", "on_notice", "on_long_leave", "inactive", "left"], "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}], "name": "employee_record_details_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
   employee_salaries: {
     access: "tenant", grants: ["delete", "insert", "select"],
     columns: {
@@ -3408,7 +3451,8 @@ export const TABLES: Record<string, TableSpec> = {
   member_module_assignments: {
     // Modules one employee does NOT get although their HR Workspace (or, in the central group, the company) holds
     // them, chosen by the HR Workspace admins or the Super Workspace. Stored as what is withheld, so a module the HR
-    // Workspace gains later reaches its people unless someone takes it away from them.
+    // Workspace gains later reaches its people unless someone takes it away from them. Pages (FEATURE_PARTS keys)
+    // unticked under Page access at registration (issue #86) are kept here too.
     access: "tenant", grants: ["insert", "select", "update"], touch: true,
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -3548,6 +3592,8 @@ export const TABLES: Record<string, TableSpec> = {
       // opening leave balances). Records from before this column have none and are new joiners.
       joined_as: {"enum": ["new_joiner", "existing"], "type": "string"},
       last_name: {"default": "", "required": true, "type": "string"},
+      // Legal middle name (issue #86); the legal name is first, middle and last. preferred_name is separate.
+      middle_name: {"type": "string"},
       last_working_day: {"type": "date"},
       membership_id: {"type": "uuid"},
       personal_email: {"type": "citext"},
@@ -5640,6 +5686,9 @@ export const TABLES: Record<string, TableSpec> = {
       favourites: {"default": {"json": []}, "required": true, "type": "string[]"},
       membership_id: {"required": true, "type": "uuid"},
       notes: {"default": "", "required": true, "type": "string"},
+      // My Workforce / My Day, Home cards and sections switched off, the first-login tour and the setup prompt
+      // (contracts ExperienceState, issue #86).
+      experience: {"type": "json"},
       // Notification channels per category and sound settings (contracts notificationPreferencesInput).
       notifications: {"type": "json"},
       // Attendance notices the person switched on or off (contracts ATTENDANCE_NOTICES); a key not saved has its default.
@@ -7257,6 +7306,13 @@ export const TABLES: Record<string, TableSpec> = {
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       ip: {"type": "string"},
       last_used_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Where the person was when they signed in (issue #86): read once by the browser or app after sign-in, when the
+      // company reads locations and the person allowed it. Null: not shared.
+      latitude: {"scale": 6, "type": "decimal"},
+      longitude: {"scale": 6, "type": "decimal"},
+      location_accuracy_m: {"type": "int"},
+      located_at: {"type": "timestamp"},
+      location_status: {"enum": ["shared", "denied", "unavailable"], "type": "string"},
       mfa_verified: {"default": false, "required": true, "type": "bool"},
       refresh_token_hash: {"required": true, "type": "string"},
       revoked_at: {"type": "timestamp"},
@@ -8095,13 +8151,16 @@ export const TABLES: Record<string, TableSpec> = {
     // A workspace reads its own row and updates its settings (column grants in PostgreSQL; see TenancyService).
     access: "tenant_self", grants: ["select", "update"],
     tenantColumns: {
-      select: ["brand_color", "company_size", "contact_email", "contact_phone", "country_code", "created_at", "currency", "id", "industry", "is_demo", "locale", "name", "region", "require_mfa", "setup_completed_at", "setup_step", "slug", "status", "timezone", "website"],
-      update: ["brand_color", "company_size", "contact_email", "contact_phone", "currency", "industry", "locale", "name", "require_mfa", "setup_completed_at", "setup_step", "timezone", "website"],
+      select: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "country_code", "created_at", "currency", "id", "industry", "is_demo", "locale", "name", "region", "registration_ip", "require_mfa", "setup_completed_at", "setup_step", "slug", "status", "timezone", "website"],
+      update: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "currency", "industry", "locale", "name", "registration_ip", "require_mfa", "setup_completed_at", "setup_step", "timezone", "website"],
     }, touch: true,
     columns: {
       brand_color: {"type": "string"},
       // The client company this Super Workspace belongs to (companies). Console only; a workspace never reads it.
       company_id: {"type": "uuid"},
+      // When the registered company information was locked (company setup finished, issue #86): from then on a field
+      // that holds a value changes only from the Console.
+      company_locked_at: {"type": "timestamp"},
       company_size: {"enum": ["1-10", "11-50", "51-200", "201-500", "501-1000", "1000+"], "type": "string"},
       contact_email: {"type": "citext"},
       contact_phone: {"type": "string"},
@@ -8114,6 +8173,8 @@ export const TABLES: Record<string, TableSpec> = {
       locale: {"default": "en", "required": true, "type": "string"},
       name: {"required": true, "type": "string"},
       region: {"default": "in", "enum": ["in", "eu", "us", "uk", "me", "sg", "au"], "required": true, "type": "string"},
+      // The IP address the company registered from (sign-up or the Console's new company), recorded once, shown locked.
+      registration_ip: {"type": "string"},
       require_mfa: {"default": false, "required": true, "type": "bool"},
       setup_completed_at: {"type": "timestamp"},
       setup_step: {"default": 0, "required": true, "type": "int"},

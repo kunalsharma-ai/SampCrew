@@ -183,7 +183,7 @@ function SiteDialog({ site, near, onClose }: { site: Site | null; near?: Office;
   });
   return (
     <Dialog open onClose={onClose} size="lg" title={site ? `Approved site: ${site.name}` : 'Add an approved site'} description="A place people may work from that is not one of your offices."
-      footer={<>{site && <Button variant="ghost" onClick={archive} loading={pending} className="mr-auto">Archive</Button>}<Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save} loading={pending}>Save</Button></>}>
+      footer={<>{site && <Button variant="ghost" onClick={archive} loading={pending} className="mr-auto" data-delete={`the approved site ${site.name}`} data-delete-area="attendance">Archive</Button>}<Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save} loading={pending}>Save</Button></>}>
       <div className="grid gap-4">
         {error && <Alert tone="danger">{error}</Alert>}
         <div className="grid gap-3 sm:grid-cols-2">

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Put } from '@nestjs/common';
 import {
-  MAX_RECENTS, appearancePatch, dashboardLayoutInput, favouritesInput, normaliseAppearance, notesInput, recentVisitInput, resolveLayout,
+  MAX_RECENTS, appearancePatch, applyExperiencePatch, dashboardLayoutInput, experiencePatch, favouritesInput, normaliseAppearance, normaliseExperience, notesInput, recentVisitInput, resolveLayout,
   type MemberPreferences,
 } from '@crew/contracts';
 import { z } from 'zod';
@@ -10,7 +10,7 @@ import { MongoService as DatabaseService, type TenantTx as Tx } from '../../plat
 import { ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 
-interface Row { appearance: unknown; favourites: string[]; recents: { href: string; label: string; at: string }[]; dashboard: unknown; notes: string; updated_at: string | null }
+interface Row { appearance: unknown; favourites: string[]; recents: { href: string; label: string; at: string }[]; dashboard: unknown; notes: string; experience?: unknown; updated_at: string | null }
 
 const load = async (tx: Tx, membershipId: string) => (await tx.collection('member_preferences').findOne({ membership_id: membershipId })) as Row | undefined;
 
@@ -21,6 +21,7 @@ function shape(r: Row | undefined): MemberPreferences {
     recents: Array.isArray(r?.recents) ? r!.recents : [],
     dashboard: resolveLayout(r?.dashboard as never),
     notes: r?.notes ?? '',
+    experience: normaliseExperience(r?.experience),
     updatedAt: r?.updated_at ?? null,
   };
 }
@@ -33,7 +34,7 @@ function shape(r: Row | undefined): MemberPreferences {
 export class PreferencesController {
   constructor(private readonly db: DatabaseService) {}
 
-  private async upsert(tx: Tx, column: 'appearance' | 'favourites' | 'recents' | 'dashboard' | 'notes', value: unknown) {
+  private async upsert(tx: Tx, column: 'appearance' | 'favourites' | 'recents' | 'dashboard' | 'notes' | 'experience', value: unknown) {
     const me = requestContext.tenantActor();
     await tx.collection('member_preferences').upsert(
       { membership_id: me.membershipId },
@@ -93,6 +94,18 @@ export class PreferencesController {
   @Doc({ summary: 'Save your Home widget order and hidden widgets', body: dashboardLayoutInput })
   dashboard(@Body(new ZodPipe(dashboardLayoutInput)) body: z.infer<typeof dashboardLayoutInput>) {
     return this.db.tenant((tx) => this.upsert(tx, 'dashboard', resolveLayout(body)));
+  }
+
+  @Put('experience')
+  @AllowWithoutMfa()
+  @Doc({ summary: 'My Workforce or My Day, the Home cards and sections you hide, first-login tour progress and the setup prompt', body: experiencePatch })
+  experience(@Body(new ZodPipe(experiencePatch)) body: z.infer<typeof experiencePatch>) {
+    const me = requestContext.tenantActor();
+    return this.db.tenant(async (tx) => {
+      await tx.collection('member_preferences').lock({ membership_id: me.membershipId });
+      const current = shape(await load(tx, me.membershipId)).experience;
+      return this.upsert(tx, 'experience', applyExperiencePatch(current, body));
+    });
   }
 
   @Put('notes')

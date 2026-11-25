@@ -159,7 +159,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     const adminNav = admin.getByRole('navigation', { name: 'Main' });
     await adminNav.getByRole('link', { name: 'Employees', exact: true }).waitFor();
     await adminNav.getByRole('link', { name: 'Logins & access', exact: true }).waitFor();
-    for (const trigger of ['account-menu-header', 'account-menu-sidebar']) {
+    for (const trigger of ['account-menu-header']) {
       await emp.getByTestId(trigger).click();
       await emp.getByRole('menu', { name: 'Your account' }).getByRole('menuitem', { name: 'My profile' }).click();
       await emp.waitForURL((u) => u.pathname === '/profile');

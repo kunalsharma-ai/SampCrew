@@ -197,6 +197,8 @@ export const NAV: NavGroup[] = [
     label: 'You',
     items: [
       { href: '/notifications', label: 'Notifications', icon: 'bell' },
+      { href: '/activity', label: 'Activity log', icon: 'history', keywords: 'login sign in ip location sessions access audit what I did' },
+      { href: '/settings/home', label: 'Home dashboard', icon: 'layout-grid', adminOnly: true, keywords: 'dashboard cards counts widgets home page setup' },
       { href: '/settings/notifications', label: 'Notification settings', icon: 'bell' },
       { href: '/settings/appearance', label: 'Appearance', icon: 'palette' },
       { href: '/settings/signature', label: 'Email signature', icon: 'mail', feature: 'email_signatures' },
@@ -241,9 +243,29 @@ export function workflowActions(me: Me): QuickAction[] {
 export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: string; href: string }[] {
   return [
     ...(me.employee ? [{ key: 'profile', label: 'My profile', href: '/profile' }] : []),
+    { key: 'settings', label: 'Settings', href: '/settings' },
+    { key: 'activity', label: 'Activity log', href: '/activity' },
     { key: 'security', label: 'Password & sign-in', href: '/settings/security' },
     { key: 'appearance', label: 'Appearance', href: '/settings/appearance' },
   ];
+}
+
+/**
+ * My Day (issue #86): the pages about the person's own work and settings. Everything else in the menu waits until
+ * they switch back to My Workforce.
+ */
+export const MY_DAY_HREFS: ReadonlySet<string> = new Set([
+  '/', '/tasks', '/announcements', '/communication', '/help', '/attendance', '/leave', '/payslips', '/expenses', '/appraisal', '/assets/mine',
+  '/goals', '/learning', '/recognition', '/surveys', '/notifications', '/activity', '/settings/notifications', '/settings/appearance', '/settings/signature',
+  '/settings/security', '/settings/home', '/profile',
+]);
+
+/** People who look after a workforce (Super Workspace and HR Workspace with more than their own record) can switch views. */
+export const canSwitchWorkView = (me: Me) => isAdminLevel(me) && Boolean(me.employee) && (me.permissions['employees:read'] ?? 'own') !== 'own';
+
+/** The menu for My Day: only the person's own pages, in the same groups. */
+export function myDayNav(nav: NavGroup[]): NavGroup[] {
+  return nav.map((g) => ({ ...g, items: g.items.filter((i) => MY_DAY_HREFS.has(i.href)) })).filter((g) => g.items.length);
 }
 
 /** Super Workspace or HR Workspace (company-wide or for named HR Workspaces). */

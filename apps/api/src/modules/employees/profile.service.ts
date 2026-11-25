@@ -176,7 +176,7 @@ export class ProfileService implements OnModuleInit {
     switch (section) {
       case 'personal':
         return {
-          firstName: e.first_name, lastName: e.last_name ?? '', preferredName: e.preferred_name ?? null, dateOfBirth: e.date_of_birth ?? null, gender: e.gender ?? null,
+          firstName: e.first_name, middleName: e.middle_name ?? null, lastName: e.last_name ?? '', preferredName: e.preferred_name ?? null, dateOfBirth: e.date_of_birth ?? null, gender: e.gender ?? null,
           personalEmail: e.personal_email ?? null, phone: e.phone ?? null, nationality: p.nationality ?? null, maritalStatus: p.marital_status ?? null, bloodGroup: p.blood_group ?? null,
         };
       case 'address': return p.address ?? { current: null, permanentSameAsCurrent: true, permanent: null };
@@ -210,7 +210,7 @@ export class ProfileService implements OnModuleInit {
         if (data.personalEmail && e.work_email && String(e.work_email).toLowerCase() === String(data.personalEmail).toLowerCase()) {
           throw Errors.validation([{ path: 'personalEmail', message: 'The personal email must differ from the work email' }]);
         }
-        await tx.collection('employees').updateOne({ id: e.id }, { $set: { first_name: data.firstName, last_name: data.lastName ?? '', preferred_name: data.preferredName, date_of_birth: data.dateOfBirth, gender: data.gender, personal_email: data.personalEmail, phone: data.phone } });
+        await tx.collection('employees').updateOne({ id: e.id }, { $set: { first_name: data.firstName, middle_name: data.middleName ?? null, last_name: data.lastName ?? '', preferred_name: data.preferredName, date_of_birth: data.dateOfBirth, gender: data.gender, personal_email: data.personalEmail, phone: data.phone } });
         await profile({ nationality: data.nationality, marital_status: data.maritalStatus, blood_group: data.bloodGroup });
         await this.outbox.publish(tx, requestContext.tenantActor().tenantId, 'employee.changed', { employeeId: e.id, fields: Object.keys(data) });
         return;
@@ -307,7 +307,7 @@ export class ProfileService implements OnModuleInit {
       const updates: Partial<Record<ProfileSection, Doc>> = {};
       for (const r of requests) if (!updates[r.section as ProfileSection]) updates[r.section as ProfileSection] = { id: r.id, status: r.status, createdAt: r.created_at, decidedAt: r.decided_at ?? null, remarks: r.remarks ?? null, changes: r.changes };
       return {
-        employee: { id: e.id, name: displayName(e as never), code: e.employee_code, photo: !!e.photo_key, photoUpdatedAt: e.photo_updated_at ?? null },
+        employee: { id: e.id, name: displayName(e as never), legalName: [e.first_name, e.middle_name, e.last_name].filter((x) => x && String(x).trim()).join(' '), preferredName: e.preferred_name ?? null, code: e.employee_code, photo: !!e.photo_key, photoUpdatedAt: e.photo_updated_at ?? null },
         self, completeness: profileCompleteness(filled), filled, professional, sections, updates,
         can: {
           submit: self,

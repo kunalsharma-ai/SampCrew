@@ -100,3 +100,16 @@ export async function archiveGroupAction(id: string) {
   revalidatePath('/communication/groups');
   return r;
 }
+
+/** Message actions (issue #86): edit, undo a delete, and emoji reactions. */
+export async function editMessageAction(conversationId: string, messageId: string, body: string) {
+  return act(() => api<ChatMessageView>(`/communication/conversations/${conversationId}/messages/${messageId}`, { method: 'PATCH', body: { body } }), 'Message edited.');
+}
+
+export async function restoreMessageAction(conversationId: string, messageId: string) {
+  return act(() => api<ChatMessageView>(`/communication/conversations/${conversationId}/messages/${messageId}/restore`, { method: 'POST' }), 'Message restored.');
+}
+
+export async function reactAction(conversationId: string, messageId: string, emoji: string) {
+  return act(() => api<ChatMessageView>(`/communication/conversations/${conversationId}/messages/${messageId}/reactions`, { method: 'PUT', body: { emoji } }));
+}

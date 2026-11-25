@@ -15,7 +15,7 @@ import {
   type PunchZone,
   type WorkAssignmentInput,
   type WorkModeLabels,
-  type WorkModeSettingsInput,
+  type WorkModeSettingsInput, type LocationTracking,
   type WorkModeState,
   type WorkPlace,
   type WorkSiteInput,
@@ -54,6 +54,10 @@ export interface WorkModeSettings {
   standardHours: number;
   classifyFrom: string;
   updatedAt: Date | null;
+  /** How attendance reads the location, chosen at company registration (issue #86). */
+  locationTracking: LocationTracking;
+  /** Office network addresses: a punch from another network is remarked Work From Home. */
+  officeIps: string[];
 }
 
 /** What a live punch needs to know about where it was, worked out before it is stored. */
@@ -124,6 +128,8 @@ export class WorkModeService implements OnModuleInit {
       standardHours: (row?.standard_minutes ?? 480) / 60,
       classifyFrom: row?.classify_from ?? '1970-01-01',
       updatedAt: row?.updated_at ?? null,
+      locationTracking: (row?.location_tracking as LocationTracking | undefined) ?? 'punch',
+      officeIps: (row?.office_ips as string[] | undefined) ?? [],
     };
   }
 
@@ -160,6 +166,8 @@ export class WorkModeService implements OnModuleInit {
         standard_minutes: Math.round(input.standardHours * 60),
         updated_by_membership_id: v.membershipId,
       };
+      if (input.locationTracking) set.location_tracking = input.locationTracking;
+      if (input.officeIps) set.office_ips = input.officeIps;
       if (input.labels && v.level === 'super') set.labels = input.labels;
       await tx.collection('work_mode_settings').updateOne({}, { $set: set });
       // Switched on again: classify from today, so days in between stay as they were.

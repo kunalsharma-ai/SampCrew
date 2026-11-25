@@ -74,6 +74,8 @@ export interface MeResponse {
     id: string; name: string; slug: string; isDemo: boolean; status: string; timezone: string; currency: string; locale: string;
     /** When the first-login company setup was finished (null: not yet, so admins are taken through it). */
     setupCompletedAt: string | null;
+    /** How attendance reads location (issue #86): off, at check-in and check-out, or real-time; also whether a sign-in records GPS. */
+    locationTracking?: 'off' | 'punch' | 'real_time';
   };
   membership: { id: string; status: string; roles: { key: string; name: string }[] };
   permissions: Record<string, string>;
@@ -89,7 +91,8 @@ export interface MeResponse {
   disabledPermissions: string[];
   limits: Record<string, number>;
   subscription: { plan: string; status: string; trialEndsOn: string | null; /** Read-only for an overdue invoice. */ locked: boolean } | null;
-  session: { mfa: boolean };
+  /** locationPending: the browser should read and send where this sign-in happened (issue #86). */
+  session: { mfa: boolean; locationPending?: boolean };
   tenants: { id: string; name: string; slug: string }[];
   /** This person's own employee record in the workspace, if their login is linked to one, for their photo. */
   employee: { id: string; photoUpdatedAt: string | null } | null;

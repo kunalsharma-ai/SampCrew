@@ -1011,6 +1011,18 @@ export const WEB_HELP: HelpContent = {
       how: 'Pick a theme or tweak it; changes apply straight away and follow you to every device.',
       where: 'For everyone.',
     },
+    '/settings/home': {
+      title: 'Home dashboard',
+      what: 'Which count cards and sections your Home page shows.',
+      how: 'Tick what you want to see and save. Unticked cards stay hidden until you tick them again.',
+      where: 'For everyone; each person chooses their own.',
+    },
+    '/activity': {
+      title: 'Activity log',
+      what: 'Each sign-in session: when it started, the IP address, the location shared at sign-in and what was done in it.',
+      how: 'Open a session to see its actions. People who may read the audit trail can pick someone else.',
+      where: 'Your own log for everyone; other people for the Super Workspace and HR with audit access.',
+    },
     '/settings/signature': {
       title: 'Email signature',
       what: 'Your Outlook email signature: pick one of 20 designs, make it yours and keep it up to date in Outlook on your Windows computer.',
@@ -1970,7 +1982,17 @@ export const WEB_HELP: HelpContent = {
       },
     },
     '/employees/[id]': {
+      sections: {
+        'Page access': { what: 'The everyday pages this person\'s login opens, first chosen when they were registered.', how: 'Tick or untick and save; it applies at their next page load.' },
+        'Record details': { what: 'The details kept only with the employee record: family, gate pass, work status, CTC figures and notes.', how: 'Fill them in and save; the completion score goes up as items are filled.' },
+      },
       fields: { Reason: { what: 'Why the change is made. Kept in the job history.' } },
+    },
+    '/settings/home': {
+      sections: {
+        'Count cards': { what: 'The number cards at the top of Home, such as headcount and who is in today.' },
+        Sections: { what: 'The larger parts of Home, such as the attendance calendar and quick actions.' },
+      },
     },
     '/payroll/runs/[id]/items/[itemId]': {
       fields: {

@@ -97,3 +97,6 @@ export * from './help';
 export * from './workspace-permissions';
 export * from './console';
 export * from './delete-permissions';
+export * from './company-profile';
+export * from './employee-record';
+export * from './page-access';

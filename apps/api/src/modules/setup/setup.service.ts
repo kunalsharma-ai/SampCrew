@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { suggestedDepartments, suggestedDesignations, type Industry, type SetupCompanyInput, type SetupStructureInput } from '@crew/contracts';
+import {
+  COMPANY_LOCKED_FIELDS, LOCKED_FIELD_MESSAGE, lockedFieldChanges, normaliseIp, suggestedDepartments, suggestedDesignations,
+  type CompanyRegistration, type Industry, type LocationTracking, type SetupCompanyInput, type SetupStructureInput,
+} from '@crew/contracts';
+import { Errors } from '../../platform/http/errors';
 import { AuditService, diff } from '../../platform/audit/audit.service';
 import { AuthzService } from '../../platform/authz/authz.service';
 import { requestContext } from '../../platform/context/request-context';
@@ -24,7 +28,11 @@ interface CompanyRow {
   registrationNumber: string | null;
   taxId: string | null;
   address: string | null;
+  /** Registered information: what is locked, where the company registered from, location and office networks (issue #86). */
+  registration: CompanyRegistration;
 }
+
+const localToday = (tz: string) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 
 /**
  * The first-login company setup. A new workspace starts with a name and one legal entity; this fills in the company
@@ -45,12 +53,24 @@ export class SetupService {
     const t = await tx.collection('tenants').findOne({});
     const le = await tx.collection('legal_entities').findOne({ archived_at: null }, { sort: { created_at: 1 } });
     if (!t || !le) return undefined;
-    return {
+    return Promise.resolve<CompanyRow>({
       name: t.name, industry: t.industry ?? null, companySize: t.company_size ?? null, website: t.website ?? null, contactEmail: t.contact_email ?? null,
       contactPhone: t.contact_phone ?? null, setupStep: t.setup_step, setupCompletedAt: t.setup_completed_at ?? null,
       legalEntityId: le.id, legalName: le.legal_name ?? null, countryCode: le.country_code, currency: le.currency, timezone: le.timezone,
       fiscalYearStartMonth: le.fiscal_year_start_month, registrationNumber: le.registration_number ?? null, taxId: le.tax_id ?? null, address: le.address ?? null,
-    };
+      registration: { lockedAt: null, lockedFields: [], registrationIp: t.registration_ip ?? null, locationTracking: 'punch', officeIps: [] },
+    }).then(async (c) => {
+      const wm = await tx.collection('work_mode_settings').findOne({});
+      const lockedAt = (t.company_locked_at as Date | null | undefined) ?? null;
+      c.registration = {
+        lockedAt: lockedAt ? new Date(lockedAt).toISOString() : null,
+        lockedFields: lockedAt ? COMPANY_LOCKED_FIELDS.filter((f) => { const v = (c as unknown as Record<string, unknown>)[f]; return v !== null && v !== undefined && String(v).trim() !== ''; }) : [],
+        registrationIp: (t.registration_ip as string | null | undefined) ?? null,
+        locationTracking: (wm?.location_tracking as LocationTracking | undefined) ?? 'punch',
+        officeIps: (wm?.office_ips as string[] | undefined) ?? [],
+      };
+      return c;
+    });
   }
 
   /** Where setup stands, what exists already, and the suggestions for the chosen industry. */
@@ -80,8 +100,29 @@ export class SetupService {
   async saveCompany(input: SetupCompanyInput) {
     return this.db.tenant(async (tx) => {
       const before = (await this.company(tx))!;
+      // Registered information is locked once setup is finished (issue #86): a field that holds a value cannot change;
+      // an empty one can be filled in. SAMPLEDGE corrects locked fields from the Console.
+      if (before.registration.lockedAt) {
+        const locked = lockedFieldChanges(before as unknown as Record<string, unknown>, input as unknown as Record<string, unknown>, COMPANY_LOCKED_FIELDS);
+        if (locked.length) throw Errors.validation(locked.map((path) => ({ path, message: LOCKED_FIELD_MESSAGE })));
+      }
       // Once setup is finished, renaming the workspace is a workspace-settings change and needs that permission (and MFA).
       if (before.setupCompletedAt && input.name !== before.name) await this.authz.require('tenant:manage', undefined, tx);
+      // Companies registered before the IP was recorded get it from the first save of the company details.
+      if (!before.registration.registrationIp) {
+        const ip = normaliseIp(requestContext.get()?.ip);
+        if (ip) await tx.collection('tenants').updateOne({ registration_ip: null }, { $set: { registration_ip: ip } });
+      }
+      if (input.locationTracking || input.officeIps) {
+        if (!(await tx.collection('work_mode_settings').exists({}))) {
+          const tz = input.timezone || before.timezone;
+          await tx.collection('work_mode_settings').insert({ classify_from: localToday(tz) }).catch(() => undefined);
+        }
+        const set: Record<string, unknown> = {};
+        if (input.locationTracking) set.location_tracking = input.locationTracking;
+        if (input.officeIps) set.office_ips = input.officeIps;
+        await tx.collection('work_mode_settings').updateOne({}, { $set: set });
+      }
       await tx.collection('tenants').updateOne({}, {
         $set: { name: input.name, industry: input.industry, company_size: input.companySize, website: input.website ?? null, contact_email: input.contactEmail ?? null, contact_phone: input.contactPhone ?? null },
         $max: { setup_step: 1 },
@@ -93,6 +134,8 @@ export class SetupService {
       const after = (await this.company(tx))!;
       const changes = diff(before as unknown as Record<string, unknown>, after as unknown as Record<string, unknown>);
       delete changes.setupStep;
+      delete changes.registration;
+      if (JSON.stringify(before.registration) !== JSON.stringify(after.registration)) changes.registration = { from: before.registration, to: after.registration };
       if (Object.keys(changes).length) {
         await this.audit.record(tx, { action: 'tenant.company_profile_updated', resourceType: 'tenant', resourceId: requestContext.tenantActor().tenantId, changes });
       }
@@ -137,6 +180,8 @@ export class SetupService {
   async complete() {
     return this.db.tenant(async (tx) => {
       await tx.collection('tenants').update({ setup_completed_at: null }, { $set: { setup_completed_at: new Date() } });
+      // Finishing setup locks the registered information (issue #86).
+      await tx.collection('tenants').update({ company_locked_at: null }, { $set: { company_locked_at: new Date() } });
       const r = { at: (await tx.collection('tenants').findOne({}))!.setup_completed_at as Date };
       await this.audit.record(tx, { action: 'tenant.setup_completed', resourceType: 'tenant', resourceId: requestContext.tenantActor().tenantId });
       return { setupCompletedAt: r.at };

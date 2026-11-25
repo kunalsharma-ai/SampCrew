@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ChatMessageInput, ChatMessageView, CommFile, ConversationInput, ConversationView, MessageDelivery } from '@crew/contracts';
+import { CHAT_EDIT_MINUTES, CHAT_UNDO_SECONDS, type ChatEditInput, type ChatMessageInput, type ChatMessageView, type ChatReactionInput, type CommFile, type ConversationInput, type ConversationView, type MessageDelivery } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { AuthzService, permissionHolderIds } from '../../platform/authz/authz.service';
 import { hasPermission, type Subject } from '../../platform/authz/policy';
@@ -335,7 +335,17 @@ export class ChatService {
       if (group.every((o) => reached(o.last_delivered_at) || reached(o.last_read_at))) return 'delivered';
       return 'sent';
     };
+    // Who reacted, by name (shown when hovering a reaction).
+    const reactors = await memberNames(tx, rows.flatMap((m) => Object.values((m.reactions ?? {}) as Record<string, string[]>).flat()));
+    const now = Date.now();
+    const hr = this.isHr(s);
     return rows.map((m) => ({
+      reactions: m.deleted_at ? [] : Object.entries((m.reactions ?? {}) as Record<string, string[]>).filter(([, ids]) => ids.length).map(([emoji, ids]) => ({
+        emoji, count: ids.length, mine: ids.includes(s.membershipId), names: ids.map((x) => reactors.get(x) ?? 'Someone'),
+      })),
+      canEdit: !m.system && !m.deleted_at && m.sender_membership_id === s.membershipId && now - new Date(m.created_at).getTime() <= CHAT_EDIT_MINUTES * 60_000,
+      canDelete: !m.system && !m.deleted_at && (m.sender_membership_id === s.membershipId || hr),
+      canUndo: Boolean(m.deleted_at) && m.deleted_by_membership_id === s.membershipId && now - new Date(m.deleted_at).getTime() <= CHAT_UNDO_SECONDS * 1000,
       id: m.id, conversationId: m.conversation_id, senderMembershipId: m.sender_membership_id ?? null,
       senderName: m.sender_membership_id ? names.get(m.sender_membership_id) ?? null : null,
       sender: m.sender_membership_id && !m.system ? storedIdentity(m, names.get(m.sender_membership_id) ?? null, current.get(m.sender_membership_id)) : null,
@@ -435,18 +445,92 @@ export class ChatService {
     });
   }
 
-  /** Deletes your own message (the others see "Message deleted"). */
+  /**
+   * Deletes a message (the others see "Message deleted"): your own, or anyone's for HR. What it said is kept for
+   * CHAT_UNDO_SECONDS so the person who deleted it can undo; after that it is cleared for good.
+   */
   deleteMessage(id: string, messageId: string) {
     return this.db.tenant(async (tx) => {
       const s = await this.authz.subject(tx);
       const { conv } = await this.access(tx, id, s);
       const m = await tx.collection('chat_messages').findOne({ id: messageId, conversation_id: id });
       if (!m || m.system) throw Errors.notFound('Message');
-      if (m.sender_membership_id !== s.membershipId) throw Errors.forbidden('You can delete only your own messages');
-      await tx.collection('chat_messages').updateOne({ id: messageId }, { $set: { deleted_at: new Date(), body: '', file_ids: [] } });
+      if (m.deleted_at) return { ok: true };
+      const own = m.sender_membership_id === s.membershipId;
+      if (!own && !this.isHr(s)) throw Errors.forbidden('You can delete only your own messages');
+      await this.purgeDeleted(tx, id);
+      await tx.collection('chat_messages').updateOne({ id: messageId }, { $set: { deleted_at: new Date(), deleted_by_membership_id: s.membershipId, deleted_body: m.body, deleted_file_ids: m.file_ids ?? [], body: '', file_ids: [] } });
+      if (!own) await this.audit.record(tx, { action: 'chat.message_deleted_by_hr', resourceType: 'chat_message', resourceId: messageId, metadata: { conversationId: id } });
       const others = (await this.audience(tx, conv)).map((a) => a.id);
       await this.notifications.signal(tx, others, 'chat.updated', { conversationId: id, messageId });
       return { ok: true };
+    });
+  }
+
+  /** Clears what deleted messages said once their undo time has passed. */
+  private async purgeDeleted(tx: TenantTx, conversationId: string) {
+    await tx.collection('chat_messages').update(
+      { conversation_id: conversationId, deleted_at: { $lt: new Date(Date.now() - CHAT_UNDO_SECONDS * 1000) }, deleted_body: { $ne: null } },
+      { $set: { deleted_body: null, deleted_file_ids: null } },
+    );
+  }
+
+  /** Undo a delete within CHAT_UNDO_SECONDS (only the person who deleted it). */
+  restoreMessage(id: string, messageId: string) {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      const { conv } = await this.access(tx, id, s);
+      const m = await tx.collection('chat_messages').findOne({ id: messageId, conversation_id: id });
+      if (!m || m.system || !m.deleted_at) throw Errors.notFound('Message');
+      if (m.deleted_by_membership_id !== s.membershipId) throw Errors.forbidden('Only the person who deleted it can undo');
+      if (Date.now() - new Date(m.deleted_at).getTime() > CHAT_UNDO_SECONDS * 1000 || m.deleted_body === null || m.deleted_body === undefined) {
+        throw Errors.badRequest('undo_expired', `A delete can be undone for ${CHAT_UNDO_SECONDS} seconds.`);
+      }
+      await tx.collection('chat_messages').updateOne({ id: messageId }, { $set: { deleted_at: null, deleted_by_membership_id: null, body: m.deleted_body, file_ids: m.deleted_file_ids ?? [], deleted_body: null, deleted_file_ids: null } });
+      const others = (await this.audience(tx, conv)).map((a) => a.id);
+      await this.notifications.signal(tx, others, 'chat.updated', { conversationId: id, messageId });
+      const fresh = await tx.collection('chat_messages').findOne({ id: messageId });
+      return (await this.messageViews(tx, conv, [fresh!], s))[0]!;
+    });
+  }
+
+  /** Edit your own message within CHAT_EDIT_MINUTES; everyone sees it marked "Edited". */
+  editMessage(id: string, messageId: string, input: ChatEditInput) {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      const { conv } = await this.access(tx, id, s);
+      const m = await tx.collection('chat_messages').findOne({ id: messageId, conversation_id: id });
+      if (!m || m.system || m.deleted_at) throw Errors.notFound('Message');
+      if (m.sender_membership_id !== s.membershipId) throw Errors.forbidden('You can edit only your own messages');
+      if (Date.now() - new Date(m.created_at).getTime() > CHAT_EDIT_MINUTES * 60_000) throw Errors.badRequest('edit_expired', `A message can be edited for ${CHAT_EDIT_MINUTES} minutes after sending.`);
+      if (m.body === input.body) return (await this.messageViews(tx, conv, [m], s))[0]!;
+      await tx.collection('chat_messages').updateOne({ id: messageId }, { $set: { body: input.body, edited_at: new Date() } });
+      if (conv.last_message?.at && new Date(conv.last_message.at).getTime() === new Date(m.created_at).getTime()) {
+        await tx.collection('chat_conversations').updateOne({ id: conv.id }, { $set: { 'last_message.body': preview(input.body, (m.file_ids as string[]).length) } });
+      }
+      const others = (await this.audience(tx, conv)).map((a) => a.id);
+      await this.notifications.signal(tx, others, 'chat.updated', { conversationId: id, messageId });
+      const fresh = await tx.collection('chat_messages').findOne({ id: messageId });
+      return (await this.messageViews(tx, conv, [fresh!], s))[0]!;
+    });
+  }
+
+  /** Adds your reaction with this emoji, or takes it away when you had it. */
+  react(id: string, messageId: string, input: ChatReactionInput) {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      const { conv } = await this.access(tx, id, s);
+      const m = await tx.collection('chat_messages').findOne({ id: messageId, conversation_id: id });
+      if (!m || m.system || m.deleted_at) throw Errors.notFound('Message');
+      const reactions = { ...((m.reactions ?? {}) as Record<string, string[]>) };
+      const ids = reactions[input.emoji] ?? [];
+      reactions[input.emoji] = ids.includes(s.membershipId) ? ids.filter((x) => x !== s.membershipId) : [...ids, s.membershipId];
+      if (!reactions[input.emoji]!.length) delete reactions[input.emoji];
+      await tx.collection('chat_messages').updateOne({ id: messageId }, { $set: { reactions } });
+      const others = (await this.audience(tx, conv)).map((a) => a.id);
+      await this.notifications.signal(tx, others, 'chat.updated', { conversationId: id, messageId });
+      const fresh = await tx.collection('chat_messages').findOne({ id: messageId });
+      return (await this.messageViews(tx, conv, [fresh!], s))[0]!;
     });
   }
 

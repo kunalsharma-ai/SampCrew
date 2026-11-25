@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { distanceMetres } from './attendance-engine';
+import { LOCATION_TRACKING, officeIpsInput } from './company-profile';
 import { fmtHhmm, toLocal } from './zoned-time';
 
 /**
@@ -416,6 +417,10 @@ export const workModeSettingsInput = z.object({
   employeeCanRequestCorrection: z.boolean(),
   /** Standard day for reports (hours worked against it). */
   standardHours: z.number().min(1).max(24),
+  /** How attendance reads the location (issue #86). Left out keeps the current choice. */
+  locationTracking: z.enum(LOCATION_TRACKING).optional(),
+  /** Office network addresses; a check-in from any other network is remarked Work From Home. Left out keeps them. */
+  officeIps: officeIpsInput.optional(),
 }).strict();
 export type WorkModeSettingsInput = z.infer<typeof workModeSettingsInput>;
 

@@ -55,6 +55,10 @@ export const BUILT_IN_DOCUMENT_TYPES: readonly DocumentTypeDef[] = [
   t('experience_letter', 'Experience Letter', 'employment', 'certificate'),
   t('relieving_letter', 'Relieving Letter', 'employment', 'certificate'),
   t('salary_slip', 'Salary Slip', 'employment', 'tax', { sensitive: true }),
+  // Asked for by the employee record (issue #86).
+  t('info_agreement', 'Information Agreement', 'employment', 'contract'),
+  t('previous_company_verification', 'Previous Company Verification', 'employment', 'certificate'),
+  t('cloud_verification', 'Cloud Verification Document', 'identity', 'id_proof', { sensitive: true }),
   t('marksheet_10', '10th Marksheet', 'education', 'certificate'),
   t('marksheet_12', '12th Marksheet', 'education', 'certificate'),
   t('graduation', 'Graduation Certificate', 'education', 'certificate'),

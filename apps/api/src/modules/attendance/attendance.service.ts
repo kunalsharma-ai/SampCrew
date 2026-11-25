@@ -748,7 +748,10 @@ export class AttendanceService implements OnModuleInit {
   /** Everyone the caller can see on one date, with a status summary. Recent days are refreshed first. */
   async team(q: { date: string; status?: string; filter?: AttendanceViewFilter; departmentId?: string; locationId?: string }) {
     return this.db.tenant(async (tx) => {
-      const scope = await this.access.visibleFilter(tx, await this.access.viewer(tx));
+      const viewer = await this.access.viewer(tx);
+      const scope = await this.access.visibleFilter(tx, viewer);
+      // Team Attendance shows Download report when this person may export (issue #86).
+      const canExport = viewer.canExport;
       const and: Record<string, unknown>[] = [scope, { date_of_joining: { $lte: q.date } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: q.date } }] }];
       if (q.departmentId) and.push({ current_department_id: q.departmentId });
       if (q.locationId) and.push({ current_location_id: q.locationId });
@@ -759,7 +762,7 @@ export class AttendanceService implements OnModuleInit {
       const employees = await tx.collection('employees').find({ $and: and }, { limit: 1000 });
       const ids = employees.map((e) => e.id as string);
       await this.refreshDate(tx, employees, q.date);
-      if (!ids.length) return { date: q.date, summary: {}, rows: [] };
+      if (!ids.length) return { date: q.date, summary: {}, rows: [], canExport };
       const allDays = await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: q.date });
       // Home's cards open this list with a view beyond the stored status: late, left early, working now, not in yet, WFH.
       const wfh = q.filter === 'wfh' ? await remoteOn(tx, ids, q.date) : null;
@@ -792,7 +795,7 @@ export class AttendanceService implements OnModuleInit {
       const all = allDays.map((d) => ({ status: d.status as string, lateMinutes: d.late_minutes as number, firstIn: d.first_in ?? null, lastOut: d.last_out ?? null }));
       const summary: Record<string, number> = { total: all.length, late: all.filter((r) => r.lateMinutes > 0).length, onSiteNow: all.filter((r) => r.status === 'in_progress' && r.firstIn && !r.lastOut).length };
       for (const r of all) summary[r.status] = (summary[r.status] ?? 0) + 1;
-      return { date: q.date, summary, rows };
+      return { date: q.date, summary, rows, canExport };
     });
   }
 
