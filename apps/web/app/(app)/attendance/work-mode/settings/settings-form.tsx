@@ -1,6 +1,7 @@
 'use client';
-import { Alert, Button, Card, CardBody, CardHeader, Field, Input, Select, Switch } from '@crew/ui';
+import { Alert, Button, Card, CardBody, CardHeader, Field, Input, Select } from '@crew/ui';
 import { useRouter } from 'next/navigation';
+import { SwitchRow } from '@/components/work-mode/switch-row';
 import { useState, useTransition } from 'react';
 import type { WorkModeLabels } from '@/lib/types';
 import { saveWorkModeSettingsAction } from '../../work-mode-actions';
@@ -16,7 +17,7 @@ export function WorkModeSettingsForm({ view }: { view: SettingsView }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
-  const { classifyFrom: _c, ...initial } = view.settings;
+  const { classifyFrom: _c, updatedAt: _u, ...initial } = view.settings as SettingsView['settings'] & { updatedAt?: unknown };
   const [f, setF] = useState(initial);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF({ ...f, [k]: v });
   const ro = !view.canConfigure;
@@ -45,7 +46,7 @@ export function WorkModeSettingsForm({ view }: { view: SettingsView }) {
       <Card>
         <CardHeader title="Classification" />
         <CardBody className="grid gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2"><Switch checked={f.enabled} onChange={(v) => set('enabled', v)} disabled={ro} label="Classify days as office, home or hybrid" /></div>
+          <div className="sm:col-span-2"><SwitchRow checked={f.enabled} onChange={(v) => set('enabled', v)} disabled={ro} label="Classify days as office, home or hybrid" /></div>
           <Field label="Minimum office time for hybrid (minutes)">{(p) => <Input {...p} type="number" min={0} max={720} value={f.minOfficeMinutes} disabled={ro} onChange={(e) => set('minOfficeMinutes', Number(e.target.value))} />}</Field>
           <Field label="Minimum time away for hybrid (minutes)">{(p) => <Input {...p} type="number" min={0} max={720} value={f.minRemoteMinutes} disabled={ro} onChange={(e) => set('minRemoteMinutes', Number(e.target.value))} />}</Field>
           <Field label="Time between a check-in and a check-out in different places" hint="With no location update in between, where was it worked?">{(p) => (
@@ -70,7 +71,7 @@ export function WorkModeSettingsForm({ view }: { view: SettingsView }) {
               <option value="none">Anywhere (outside an office counts as home)</option><option value="check_in">Check-in must be at an office</option><option value="check_in_out">Check-in and check-out must be at an office</option>
             </Select>
           )}</Field>
-          <div className="self-end"><Switch checked={f.employeeCanRequestCorrection} onChange={(v) => set('employeeCanRequestCorrection', v)} disabled={ro} label="Employees may ask to change where a day counts" /></div>
+          <div className="self-end"><SwitchRow checked={f.employeeCanRequestCorrection} onChange={(v) => set('employeeCanRequestCorrection', v)} disabled={ro} label="Employees may ask to change where a day counts" /></div>
         </CardBody>
       </Card>
       <Card>

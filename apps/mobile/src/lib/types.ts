@@ -21,6 +21,20 @@ export interface Today {
   punches: Punch[];
   day: { status: string; workedMinutes: number; explanation: string[]; flags: string[] } | null;
   policy?: { requireLocation?: boolean; geofence?: string };
+  /** Office / home / hybrid attendance for today. */
+  workMode?: {
+    enabled: boolean;
+    labels: { office: string; remote: string; hybrid: string };
+    state: 'office' | 'remote' | 'hybrid' | 'pending_verification' | null;
+    provisional: boolean;
+    officeMinutes: number;
+    remoteMinutes: number;
+    unverifiedMinutes: number;
+    places: string[];
+    explanation: string[];
+    current: { zone: string; place: string | null; at: string } | null;
+    offices: { name: string }[];
+  } | null;
 }
 export interface Balance {
   leaveTypeId: string;

@@ -1,7 +1,8 @@
 'use client';
-import { Alert, Badge, Button, Card, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Switch, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
+import { Alert, Badge, Button, Card, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { Building2, LocateFixed, MapPin, Plus, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { SwitchRow } from '@/components/work-mode/switch-row';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { GeoMap, type MapCircle } from '@/components/work-mode/geo-map';
 import { locateOnce } from '@/lib/locate';
@@ -158,7 +159,7 @@ function OfficeDialog({ office, entities, near, onClose }: { office: Office | nu
         )}
         <Field label="Address">{(f) => <Input {...f} value={address} onChange={(e) => setAddress(e.target.value)} maxLength={300} placeholder="Street, area" />}</Field>
         <PlaceEditor lat={v.lat} lon={v.lon} radius={v.radius} onChange={setV} />
-        {office && <Switch checked={active} onChange={setActive} label="Use this office for office / home attendance" />}
+        {office && <SwitchRow checked={active} onChange={setActive} label="Use this office for office / home attendance" />}
       </div>
     </Dialog>
   );
@@ -192,8 +193,8 @@ function SiteDialog({ site, near, onClose }: { site: Site | null; near?: Office;
           <Field label="Address">{(p) => <Input {...p} value={f.addressLine} onChange={(e) => setF({ ...f, addressLine: e.target.value })} maxLength={300} />}</Field>
         </div>
         <PlaceEditor lat={v.lat} lon={v.lon} radius={v.radius} onChange={setV} />
-        <Switch checked={f.everyone} onChange={(x) => setF({ ...f, everyone: x })} label="Everyone may use this site (otherwise only assigned people)" />
-        <Switch checked={f.active} onChange={(x) => setF({ ...f, active: x })} label="In use" />
+        <SwitchRow checked={f.everyone} onChange={(x) => setF({ ...f, everyone: x })} label="Everyone may use this site (otherwise only assigned people)" />
+        <SwitchRow checked={f.active} onChange={(x) => setF({ ...f, active: x })} label="In use" />
       </div>
     </Dialog>
   );

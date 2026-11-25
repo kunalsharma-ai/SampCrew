@@ -24,7 +24,7 @@ export function NoticeChoices({ notices }: { notices: { key: string; label: stri
         {notices.map((n) => (
           <div key={n.key} className="flex items-start justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
             <div><div className="text-[0.8125rem] font-medium text-fg">{n.label}</div><div className="text-xs text-fg-muted">{n.description}</div></div>
-            <Switch checked={Boolean(state[n.key])} onChange={(v) => toggle(n.key, v)} label={n.label} testId={`notice-${n.key}`} className="[&>span:last-child]:sr-only" />
+            <Switch checked={Boolean(state[n.key])} onChange={(v) => toggle(n.key, v)} label={n.label} testId={`notice-${n.key}`} />
           </div>
         ))}
       </CardBody>

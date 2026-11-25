@@ -59,8 +59,8 @@ const shot = async (p, e) => {
   // 1. The operator punches in from the plant.
   const op = await signIn(b, 'operator1@demo.crew.local', { geolocation: PUNE, permissions: ['geolocation'] });
   await op.goto(BASE + '/attendance');
-  await op.locator('button', { hasText: /^\s*Punch in\s*$/ }).click();
-  await op.locator('button', { hasText: /^\s*Punch out\s*$/ }).waitFor({ timeout: 10000 }).catch((e) => shot(op, e));
+  await op.locator('button', { hasText: /^\s*(Punch|Check) in\s*$/ }).click();
+  await op.locator('button', { hasText: /^\s*(Punch|Check) out\s*$/ }).waitFor({ timeout: 10000 }).catch((e) => shot(op, e));
   await op.locator('[aria-label="Today\'s punches"] >> text=In').first().waitFor({ timeout: 5000 });
   ok('operator punched in inside the Pune geofence; the button now offers Punch out');
 

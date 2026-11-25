@@ -225,6 +225,7 @@ export const MOBILE_HELP = {
   'home.approvals': { title: 'Waiting for your approval', what: 'Requests from your team that need your decision.' },
   'home.announcements': { title: 'Announcements', what: 'The latest company news. Some ask you to acknowledge them.' },
   'home.notifications': { title: 'Notifications', what: 'Your newest notifications.' },
+  'attendance.work-mode': { title: 'Where today counts', what: 'Whether today counts as office, home or hybrid, from where you checked in and out, with office and away hours.', how: 'Your location is read only when you punch or press Update my location. If it cannot be read, HR verifies the day.' },
   'attendance.today': { title: 'Today', what: 'Today’s status, shift and the button to punch.', how: 'Punch in when you start and out when you finish.' },
   'attendance.queue': { title: 'Waiting to send', what: 'Punches saved on this phone while it was offline.', how: 'They are sent automatically when you are back online. Keep the app installed until then.' },
   'attendance.missing': { title: 'Not recorded', what: 'Punches the server could not accept, with the reason.', how: 'Ask your manager or HR to correct the day.' },
