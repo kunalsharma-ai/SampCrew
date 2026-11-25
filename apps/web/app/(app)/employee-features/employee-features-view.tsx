@@ -19,6 +19,18 @@ export function EmployeeFeaturesView({ scopes, scope, rows }: { scopes: Employee
     if (res.ok && res.data) setList(res.data.items);
     setFlash({ tone: res.ok ? 'success' : 'danger', text: res.ok ? `${name}: ${res.message}` : res.message });
   });
+  const changeMany = (changes: { key: string; on: boolean }[]) => start(async () => {
+    if (!changes.length) return;
+    // The API takes up to 200 switches at a time.
+    let res!: Awaited<ReturnType<typeof setEmployeeFeaturesAction>>;
+    for (let i = 0; i < changes.length; i += 200) {
+      const part = changes.slice(i, i + 200);
+      res = await setEmployeeFeaturesAction(scope.id, part.map((c) => ({ key: c.key, enabled: c.on })));
+      if (!res.ok) break;
+    }
+    if (res.ok && res.data) setList(res.data.items);
+    setFlash({ tone: res.ok ? 'success' : 'danger', text: res.ok ? `${changes.length} switches ${changes[0]!.on ? 'on' : 'off'}: ${res.message}` : res.message });
+  });
   return (
     <Card>
       <CardHeader
@@ -40,6 +52,7 @@ export function EmployeeFeaturesView({ scopes, scope, rows }: { scopes: Employee
           columns={COLUMN}
           busy={pending}
           onChange={change}
+          onBulkChange={changeMany}
           intro={flash ? <Alert tone={flash.tone}>{flash.text}</Alert> : <p className="text-xs text-fg-subtle">Inherited: on, as the Super Workspace allows. Inactive: you switched it off. Restricted: switched off above you, by SAMPLEDGE, the plan or the Super Workspace. HR Workspace people keep their own access.</p>}
         />
       </CardBody>

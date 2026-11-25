@@ -175,7 +175,7 @@ export const createEmployeeInput = placementInput
   .superRefine((v, ctx) => { const m = dateOfBirthError(v.dateOfBirth, v.dateOfJoining); if (m) ctx.addIssue({ code: 'custom', message: m, path: ['dateOfBirth'] }); })
   .refine((v) => !isMinorOn(v.dateOfBirth, v.dateOfJoining) || v.minorConfirmed === true, { message: `They are under ${ADULT_AGE} on the joining date: confirm they may be employed`, path: ['minorConfirmed'] })
   .refine((v) => !(v.designationId && v.designationName), { message: 'Pick a designation or type a new one, not both', path: ['designationName'] })
-  .refine((v) => v.joinedAs === 'existing' || (!v.confirmationDate && !v.openingLeaveBalances?.length), { message: 'Confirmation dates and opening balances are for existing employees', path: ['joinedAs'] })
+  .refine((v) => v.joinedAs === 'existing' || !v.confirmationDate, { message: 'Confirmation dates are for existing employees', path: ['joinedAs'] })
   .refine((v) => !v.confirmationDate || v.confirmationDate >= v.dateOfJoining, { message: 'The confirmation date cannot be before the joining date', path: ['confirmationDate'] })
   .refine((v) => new Set((v.openingLeaveBalances ?? []).map((b) => b.leaveTypeId)).size === (v.openingLeaveBalances ?? []).length, { message: 'Each leave type can have one opening balance', path: ['openingLeaveBalances'] })
   .refine((v) => !(v.inviteToCrew || v.loginMode === 'invite' || v.loginMode === 'password') || !!v.workEmail, { message: 'A work email is needed to give this person a SampCrew login', path: ['workEmail'] })

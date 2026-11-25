@@ -969,6 +969,12 @@ export const WEB_HELP: HelpContent = {
       how: 'Change a default here; legal entities and locations can override time zone and currency.',
       where: 'For workspace owners.',
     },
+    '/settings/email': {
+      title: 'Email setup',
+      what: "Your company's own email server, so invitations, verification and password reset emails and notices reach people from your address.",
+      how: 'Fill in the SMTP server, port, user name, password and From address, save, then send a test email.',
+      where: 'Super Workspace. Without it, the server SAMPLEDGE set up is used; with neither, no email is sent.',
+    },
     '/settings/support': {
       title: 'Support access',
       what: 'Lets the Sampledge support team see your workspace for a limited time to help you.',
@@ -1200,6 +1206,9 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    'Your email server': { what: 'The SMTP server SampCrew sends your company’s emails through.', how: 'Pick your provider to fill in the usual server and port, then add the user name, password and From address.' },
+    'Test the connection': { what: 'Checks the saved settings by signing in to your server and sending a real email.', how: 'Save first, then send the test to your own address.' },
+    'Latest emails': { what: 'The last emails SampCrew tried to send for your company and whether they went out.', how: 'Not sent means no email server was connected at the time; Failed shows what the server said.' },
 
     // Notification policy
     'Required for everyone': { what: 'Categories that always show in SampCrew, or are always emailed, for everyone in your organisation.', how: 'Switch Always shown or Always emailed for a category. Approvals and Workspace & security always show.' },

@@ -82,7 +82,7 @@ export interface JobRecord { id: string; effectiveFrom: string; effectiveTo: str
 export interface LifecycleEvent { id: string; kind: string; effectiveOn: string; details: Record<string, unknown>; createdAt: string; by: string | null }
 export interface LeaveType {
   id: string; code: string; name: string; description: string | null; category: string; paid: boolean; allowHalfDay: boolean; color: string; kind: string;
-  eligibleGender: string; countsCalendarDays: boolean; effectiveFrom: string | null; hrAllocatable: boolean; active: boolean; archivedAt: string | null;
+  eligibleGender: string; countsCalendarDays: boolean; effectiveFrom: string | null; hrAllocatable: boolean; monthlyCredit?: string | null; monthlyCreditFrom?: string | null; active: boolean; archivedAt: string | null;
   deactivatedReason: string | null; version: number; eligibility: LeaveEligibility; policy: LeaveTypePolicy; approval: LeaveApprovalRules;
   createdBy: { name: string | null; level: string | null; at: string | null }; updatedBy: { name: string | null; level: string | null; at: string | null };
   /** Who sees it: HR Workspace only, Employee Workspace only, or both. */

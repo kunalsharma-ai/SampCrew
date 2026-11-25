@@ -321,7 +321,8 @@ function futureWeekday(taken) {
     await api(hr, 'POST', `/helpdesk/cases/${caseId2}/messages`, { body: 'At reception, with your employee card.', internal: false });
     await p.goto(APP + '/notifications');
     await p.getByText(`HR replied on ${ref2}`).first().waitFor();
-    await p.getByText(`HR has your question ${ref2}: ${subject2}`).first().waitFor();
+    // Nobody is notified about what they did themselves: raising the question sends no "HR has your question" notice.
+    assert(!(await p.getByText(`HR has your question ${ref2}`).count()), 'the employee was notified about their own question');
     ok(`raised ${ref2} with no named handler: HR was notified on the web, and HR's reply showed on the phone`);
 
     // 5. Announcement with acknowledgement.

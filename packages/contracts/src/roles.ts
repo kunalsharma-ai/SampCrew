@@ -148,7 +148,7 @@ export const SYSTEM_ROLES: readonly RoleTemplate[] = [
     grants: {
       ...EMPLOYEE_SELF,
       'tenant:read': 'tenant', 'org:read': 'tenant', 'org:manage': 'tenant',
-      'users:read': 'tenant', 'users:invite': 'tenant', 'users:manage': 'tenant', 'roles:read': 'tenant',
+      'users:read': 'tenant', 'users:invite': 'tenant', 'users:manage': 'tenant', 'roles:read': 'tenant', 'mail:configure': 'tenant',
       'employees:read': 'tenant', 'employees:create': 'tenant', 'employees:update': 'tenant', 'employees:sensitive:read': 'tenant',
       'employees:lifecycle': 'tenant', 'documents:read': 'tenant', 'documents:manage': 'tenant',
       'leave:read': 'tenant', 'leave:approve': 'tenant', 'leave:configure': 'tenant', 'leave:allocate': 'tenant',
@@ -329,7 +329,7 @@ const HR_WORKSPACE_GRANTS: Partial<Record<PermissionKey, Scope>> = (() => {
 })();
 
 /** Permissions only company-wide HR holds: an HR Workspace admin of named HR Workspaces does not see the whole company's audit trail. */
-export const COMPANY_HR_ONLY: ReadonlySet<string> = new Set(['audit:read', 'masterdata:manage']);
+export const COMPANY_HR_ONLY: ReadonlySet<string> = new Set(['audit:read', 'masterdata:manage', 'mail:configure']);
 
 /**
  * Permissions added after people's old roles were migrated to the levels (LevelConstraints.grants keeps exactly what
@@ -341,6 +341,8 @@ export const SPLIT_PERMISSIONS: Record<string, string> = {
   'imports:read': 'employees:create',
   'imports:run': 'employees:create',
   'masterdata:manage': 'org:manage',
+  // The company's email server (issue #83): whoever could invite people company-wide sets up the mail they go out by.
+  'mail:configure': 'users:invite',
 };
 
 /**

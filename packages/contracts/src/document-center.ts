@@ -145,6 +145,11 @@ export const documentRequestInput = z
     hrWorkspaceId: z.uuid().optional().nullable(),
     assigneeMembershipId: z.uuid().optional().nullable(),
     typeKey: z.string().trim().min(2).max(60),
+    /**
+     * Ask for several documents at once (issue #83): every type listed here (typeKey included) becomes its own
+     * request and task. The name below then applies only to a custom document.
+     */
+    typeKeys: z.array(z.string().trim().min(2).max(60)).max(20).optional(),
     /** Shown to the person; defaults to the type's name. A custom requirement must be named. */
     title: text(200).optional().nullable(),
     instructions: text(2000).optional().nullable(),
@@ -161,8 +166,13 @@ export const documentRequestInput = z
   .superRefine((v, ctx) => {
     if (v.target === 'employee' && !v.employeeIds?.length) ctx.addIssue({ code: 'custom', path: ['employeeIds'], message: 'Choose who must submit it' });
     if (v.target === 'hr_workspace' && !v.hrWorkspaceId) ctx.addIssue({ code: 'custom', path: ['hrWorkspaceId'], message: 'Choose the HR Workspace' });
-    if (v.typeKey === 'custom' && !v.title?.trim()) ctx.addIssue({ code: 'custom', path: ['title'], message: 'Name the document you need' });
+    if ((v.typeKey === 'custom' || v.typeKeys?.includes('custom')) && !v.title?.trim()) ctx.addIssue({ code: 'custom', path: ['title'], message: 'Name the document you need' });
+    if (v.replacesDocumentId && v.typeKeys && new Set([v.typeKey, ...v.typeKeys]).size > 1) ctx.addIssue({ code: 'custom', path: ['typeKeys'], message: 'A replacement asks for one document' });
   });
+/** Every document type one request form asks for, typeKey first, without repeats. */
+export function requestedTypeKeys(v: { typeKey: string; typeKeys?: string[] }): string[] {
+  return [...new Set([v.typeKey, ...(v.typeKeys ?? [])])];
+}
 export type DocumentRequestInput = z.infer<typeof documentRequestInput>;
 
 export const documentSubmitMeta = z.object({

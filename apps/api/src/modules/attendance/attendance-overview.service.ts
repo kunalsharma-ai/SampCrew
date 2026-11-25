@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   ATTENDANCE_BUCKET_LABEL,
-  ATTENDANCE_EXPORT_MAX_ROWS,
+  ATTENDANCE_EXPORT_MAX_ROWS, ATTENDANCE_REPORT_MAX_ROWS,
   ACCESS_LEVEL_LABEL,
   CENTRAL_GROUP,
   DAY_STATUS_LABEL,
@@ -26,7 +26,10 @@ import {
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
+import { renderTableDocx } from '../../platform/export/table-docx';
+import { renderTablePdf } from '../../platform/export/table-pdf';
 import { type Cell, toXlsxBook } from '../../platform/export/tabular';
+import { csv } from '../payroll/payroll-common';
 import { Errors } from '../../platform/http/errors';
 import { displayName, fieldById } from '../employees/employee-view';
 import { AttendanceAccessService, type AttendanceViewer } from './attendance-access.service';
@@ -40,6 +43,8 @@ type Doc = Record<string, any>;
 interface Filters {
   hrWorkspaceId?: string;
   employeeId?: string;
+  /** Only these people (the export's "chosen employees"). */
+  employeeIds?: string[];
   level?: AttendanceViewerLevel;
   q?: string;
 }
@@ -110,6 +115,7 @@ export class AttendanceOverviewService {
   private async people(tx: TenantTx, v: AttendanceViewer, from: string, to: string, f: Filters): Promise<Person[]> {
     const and: Doc[] = [await this.access.visibleFilter(tx, v), { date_of_joining: { $lte: to } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: from } }] }];
     if (f.employeeId) and.push({ id: f.employeeId });
+    if (f.employeeIds?.length) and.push({ id: { $in: f.employeeIds } });
     if (f.hrWorkspaceId) and.push(this.access.groupFilter(v, [f.hrWorkspaceId]));
     const docs = await tx.collection('employees').find({ $and: and }, { limit: MAX_PEOPLE, sort: { first_name: 1, last_name: 1 } });
     const tenant = await tx.collection('tenants').findOne({});
@@ -392,16 +398,26 @@ export class AttendanceOverviewService {
    * About (who, when, filters), Employees (period totals), Date-wise (one row per person and day) and, where the
    * viewer has the HR Workspace section, HR Workspaces. Audited.
    */
-  export(q: AttendanceExportQuery): Promise<{ fileName: string; content: Buffer; rows: number }> {
+  export(q: AttendanceExportQuery): Promise<{ fileName: string; content: Buffer | string; rows: number; contentType: string }> {
     return this.db.tenant(async (tx) => {
       const v = await this.access.viewer(tx);
       const caps = this.access.capabilities(v);
       if (!caps.export) throw Errors.forbidden(v.level === 'employee' ? 'Exporting your attendance is turned off for your workspace' : 'Exporting attendance is turned off for your HR Workspace');
       const own = v.level === 'employee';
       if (own && !v.employeeId) throw Errors.badRequest('no_employee_record', 'Your login has no employee record, so there is no attendance to export.');
-      const f = own ? { ...q, employeeId: v.employeeId!, hrWorkspaceId: undefined, level: undefined } : q;
+      const f = own ? { ...q, employeeId: v.employeeId!, employeeIds: undefined, hrWorkspaceId: undefined, level: undefined } : q;
+      const report = q.format === 'docx' || q.format === 'pdf';
       const sheets: { name: string; rows: Cell[][] }[] = [];
       const { rows: people } = await this.personRows(tx, v, f);
+      // Who each person is (issue #83: the export must say more than a name): department, designation, location, email.
+      const docs = await tx.collection('employees').find({ id: { $in: people.map((r) => r.employeeId) } }, { projection: { current_designation_id: 1, current_location_id: 1, work_email: 1, date_of_joining: 1 } });
+      const designations = await fieldById(tx, 'designations', docs.map((d) => d.current_designation_id));
+      const locations = await fieldById(tx, 'locations', docs.map((d) => d.current_location_id));
+      const detail = new Map(docs.map((d) => [d.id as string, {
+        designation: designations.get(d.current_designation_id) ?? '', location: locations.get(d.current_location_id) ?? '', email: (d.work_email as string | null) ?? '', joined: (d.date_of_joining as string | null) ?? '',
+      }]));
+      const departmentOf = new Map(people.map((r) => [r.employeeId, r.department ?? '']));
+      const who = (id: string) => detail.get(id) ?? { designation: '', location: '', email: '', joined: '' };
       const pct = (n: number | null) => (n === null ? '' : n);
       const names = await this.groupNames(tx);
       const about: Cell[][] = [
@@ -420,22 +436,23 @@ export class AttendanceOverviewService {
         sheets.push({
           name: 'Employees',
           rows: [
-            ['Workspace Name', 'Workspace Type', 'Employee Name', 'Employee ID', 'Department', 'Status Today', 'Working Days', 'Present', 'Absent', 'Leave', 'Half Days', 'Holidays', 'Weekends', 'Not Counted Yet', 'Late Days', 'Attendance %'],
-            ...people.map((r) => [r.hrWorkspaceName, LEVEL_WORKSPACE[r.level], r.name, r.code, r.department ?? '', r.today ? ATTENDANCE_BUCKET_LABEL[r.today] : '', r.totals.workingDays, r.totals.present, r.totals.absent, r.totals.leave, r.totals.halfDays, r.totals.holidays, r.totals.weekends, r.totals.unmarked, r.totals.late, pct(r.totals.percent)]),
+            ['Workspace Name', 'Workspace Type', 'Employee Name', 'Employee ID', 'Department', 'Designation', 'Location', 'Work Email', 'Date of Joining', 'Status Today', 'Working Days', 'Present', 'Absent', 'Leave', 'Half Days', 'Holidays', 'Weekends', 'Not Counted Yet', 'Late Days', 'Attendance %'],
+            ...people.map((r) => { const w = who(r.employeeId); return [r.hrWorkspaceName, LEVEL_WORKSPACE[r.level], r.name, r.code, r.department ?? '', w.designation, w.location, w.email, w.joined, r.today ? ATTENDANCE_BUCKET_LABEL[r.today] : '', r.totals.workingDays, r.totals.present, r.totals.absent, r.totals.leave, r.totals.halfDays, r.totals.holidays, r.totals.weekends, r.totals.unmarked, r.totals.late, pct(r.totals.percent)]; }),
           ],
         });
       }
       let recordCount = 0;
       if (q.include === 'all' || q.include === 'records') {
-        const { rows, total } = await this.recordRows(tx, v, f, { skip: 0, limit: ATTENDANCE_EXPORT_MAX_ROWS });
-        if (total > ATTENDANCE_EXPORT_MAX_ROWS) throw Errors.badRequest('too_many_rows', `That is ${total} date-wise rows; one file holds up to ${ATTENDANCE_EXPORT_MAX_ROWS}. Pick a shorter period or fewer people.`);
+        const max = report ? ATTENDANCE_REPORT_MAX_ROWS : ATTENDANCE_EXPORT_MAX_ROWS;
+        const { rows, total } = await this.recordRows(tx, v, f, { skip: 0, limit: max });
+        if (total > max) throw Errors.badRequest('too_many_rows', `That is ${total} date-wise rows; ${report ? `a ${q.format === 'pdf' ? 'PDF' : 'Word'} report holds up to ${max} (Excel holds more)` : `one file holds up to ${max}`}. Pick a shorter period or fewer people.`);
         recordCount = rows.length;
         const percentOf = new Map(people.map((r) => [r.employeeId, r.totals.percent]));
         sheets.push({
           name: 'Date-wise',
           rows: [
-            ['Workspace Name', 'Workspace Type', 'Employee Name', 'Employee ID', 'Date', 'Day', 'Attendance Status', 'Detail', 'Check-in Time', 'Check-out Time', 'Working Hours', 'Late Minutes', 'Time Zone', 'Attendance % (period)'],
-            ...rows.map((r) => [r.hrWorkspaceName, LEVEL_WORKSPACE[r.level], r.name, r.code, r.date, dayName(r.date), ATTENDANCE_BUCKET_LABEL[r.status], r.detail, r.firstIn ?? '', r.lastOut ?? '', hours(r.workedMinutes), r.lateMinutes, r.timeZone, pct(percentOf.get(r.employeeId) ?? null)]),
+            ['Workspace Name', 'Workspace Type', 'Employee Name', 'Employee ID', 'Department', 'Designation', 'Location', 'Date', 'Day', 'Attendance Status', 'Detail', 'Check-in Time', 'Check-out Time', 'Working Hours', 'Late Minutes', 'Time Zone', 'Attendance % (period)'],
+            ...rows.map((r) => { const w = who(r.employeeId); return [r.hrWorkspaceName, LEVEL_WORKSPACE[r.level], r.name, r.code, departmentOf.get(r.employeeId) ?? '', w.designation, w.location, r.date, dayName(r.date), ATTENDANCE_BUCKET_LABEL[r.status], r.detail, r.firstIn ?? '', r.lastOut ?? '', hours(r.workedMinutes), r.lateMinutes, r.timeZone, pct(percentOf.get(r.employeeId) ?? null)]; }),
           ],
         });
       }
@@ -454,10 +471,24 @@ export class AttendanceOverviewService {
       }
       await this.audit.record(tx, {
         action: 'attendance.exported', resourceType: 'attendance', resourceId: own ? v.employeeId! : 'overview',
-        metadata: { from: q.from, to: q.to, include: q.include, hrWorkspaceId: f.hrWorkspaceId ?? null, employeeId: f.employeeId ?? null, status: f.status ?? null, people: people.length, records: recordCount, level: v.level },
+        metadata: { from: q.from, to: q.to, include: q.include, format: q.format, hrWorkspaceId: f.hrWorkspaceId ?? null, employeeId: f.employeeId ?? null, employeeIds: f.employeeIds?.length ?? 0, status: f.status ?? null, people: people.length, records: recordCount, level: v.level },
       });
       const label = own ? `my-attendance` : f.hrWorkspaceId ? `attendance-${(names.get(f.hrWorkspaceId)?.name ?? 'hr-workspace').toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 'attendance';
-      return { fileName: `${label}-${q.from}-to-${q.to}.xlsx`, content: toXlsxBook(sheets), rows: recordCount };
+      const base = `${label}-${q.from}-to-${q.to}`;
+      const tables = sheets.filter((x) => x.name !== 'About');
+      const subtitle = `${q.from} to ${q.to} · ${people.length} ${people.length === 1 ? 'person' : 'people'} · Exported by ${LEVEL_WORKSPACE[v.level]} on ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+      if (q.format === 'csv') {
+        // One table in a CSV: the date-wise rows when asked for, else the per-person totals.
+        const main = tables.find((x) => x.name === 'Date-wise') ?? tables.find((x) => x.name === 'Employees') ?? tables[0];
+        return { fileName: `${base}.csv`, content: '\uFEFF' + csv(main?.rows ?? []), rows: recordCount, contentType: 'text/csv; charset=utf-8' };
+      }
+      if (q.format === 'docx') return { fileName: `${base}.docx`, content: renderTableDocx('Attendance report', subtitle, tables), rows: recordCount, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+      if (q.format === 'pdf') {
+        // One table per PDF (landscape pages): the date-wise rows when asked for, else the per-person totals.
+        const main = tables.find((x) => x.name === 'Date-wise') ?? tables.find((x) => x.name === 'Employees') ?? tables[0];
+        return { fileName: `${base}.pdf`, content: await renderTablePdf(`Attendance report: ${main?.name ?? ''}`, subtitle, main?.rows ?? [[]]), rows: recordCount, contentType: 'application/pdf' };
+      }
+      return { fileName: `${base}.xlsx`, content: toXlsxBook(sheets), rows: recordCount, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
     });
   }
 }

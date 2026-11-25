@@ -172,14 +172,15 @@ async function waitPhase(p, want) {
       await p.getByTestId('recent-notifications').getByText(title).first().waitFor();
       await p.getByTestId('notification-count').waitFor();
     };
-    const assignTo = async (email, title) => {
+    const assignTo = async (email, title, byT) => {
       const t = await apiLogin(email);
       const emp = (await must(t, 'GET', '/me')).employee;
-      const c = await must(ownerT, 'POST', '/learning/courses', { title, format: 'online', selfEnrol: false });
-      await must(ownerT, 'POST', '/learning/assignments', { courseId: c.id, employeeIds: [emp.id], dueOn: '2099-12-31' });
+      const c = await must(byT, 'POST', '/learning/courses', { title, format: 'online', selfEnrol: false });
+      await must(byT, 'POST', '/learning/assignments', { courseId: c.id, employeeIds: [emp.id], dueOn: '2099-12-31' });
     };
-    await assignTo('hr.admin@demo.crew.local', `HR course ${run}`);
-    await assignTo('owner@demo.crew.local', `Owner course ${run}`);
+    // Nobody is notified about what they did themselves, so the Super Workspace's course is assigned by HR.
+    await assignTo('hr.admin@demo.crew.local', `HR course ${run}`, ownerT);
+    await assignTo('owner@demo.crew.local', `Owner course ${run}`, await apiLogin('hr.admin@demo.crew.local'));
 
     // HR Workspace (company HR): My workforce, cards open the filtered team list.
     const hr = await signIn(b, 'hr.admin@demo.crew.local');

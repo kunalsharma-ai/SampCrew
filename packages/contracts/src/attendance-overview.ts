@@ -197,10 +197,22 @@ export const attendanceRecordsQuery = z.object({
 }).refine((v) => v.to >= v.from, { message: 'to is before from', path: ['to'] })
   .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 366, { message: 'Ask for at most a year at a time', path: ['to'] });
 
+export const ATTENDANCE_EXPORT_FORMATS = ['xlsx', 'csv', 'docx', 'pdf'] as const;
+export type AttendanceExportFormat = (typeof ATTENDANCE_EXPORT_FORMATS)[number];
+/** A Word or PDF report is for reading and printing: it holds at most this many date-wise rows. */
+export const ATTENDANCE_REPORT_MAX_ROWS = 5_000;
+
 export const attendanceExportQuery = z.object({
   from: day, to: day, ...filters,
   /** What goes in the workbook: everything visible, or one part. */
   include: z.enum(['all', 'people', 'records', 'hr_workspaces']).default('all'),
+  /** Excel (every sheet), CSV (one table), Word or PDF (a printable report). */
+  format: z.enum(ATTENDANCE_EXPORT_FORMATS).default('xlsx'),
+  /** Only these people (comma-separated ids in the query); everyone visible when left out. */
+  employeeIds: z.preprocess(
+    (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : v),
+    z.array(z.uuid()).max(500).optional(),
+  ),
 }).refine((v) => v.to >= v.from, { message: 'to is before from', path: ['to'] })
   .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 366, { message: 'Ask for at most a year at a time', path: ['to'] });
 

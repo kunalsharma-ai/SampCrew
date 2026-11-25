@@ -26,7 +26,9 @@ import { paletteSearchAction, recordVisitAction, resetAppearanceAction, saveAppe
 import { IqPanel } from './iq-panel';
 import { ThemePanel } from './theme-panel';
 import { logoutAction, switchTenantAction } from './shell-actions';
+import { markCategoryReadAction } from './notifications/actions';
 import { NotificationBell } from '@/components/notification-bell';
+import { HeaderPunch } from '@/components/header-punch';
 import { useOptionalLive } from '@/components/live';
 import { FeatureGate } from '@/components/feature-gate';
 import { useDesignLevel } from '@/lib/design-level';
@@ -146,6 +148,9 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
   const [themesOpen, setThemesOpen] = useState(false);
   const [iqOpen, setIqOpen] = useState(false);
   const hasIq = me.features.includes('crew_iq');
+  // Employee Workspace people change their theme from the account menu (Appearance), so the top bar stays clear.
+  const employeeLevel = !me.levels || (!me.levels.super && !me.levels.companyHr && me.levels.hrWorkspaces.length === 0);
+  const punchable = Boolean(me.employee) && me.features.includes('attendance_basic') && Boolean(me.permissions['attendance:punch']);
   const state = useExperienceState(prefs, cookieAppearance);
   const openThemes = useCallback(() => setThemesOpen(true), []);
   const openAssistant = useCallback(() => setIqOpen(true), []);
@@ -169,6 +174,21 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
     if (live?.unread) out['/notifications'] = live.unread;
     return out;
   }, [live?.byCategory, live?.unread, hrefKey]);
+
+  // Opening a module counts as seeing its notices, so its menu dot clears (issue #83). Only the categories whose
+  // menu entry is the page being opened, and only when they have unread notices.
+  const seenRef = useRef('');
+  useEffect(() => {
+    const mine = new Set(hrefKey.split('|'));
+    const cats = Object.entries(live?.byCategory ?? {}).filter(([cat, n]) => {
+      const href = NOTIFICATION_NAV[cat as keyof typeof NOTIFICATION_NAV]?.find((h) => mine.has(h));
+      return n > 0 && href && (pathname === href || pathname.startsWith(`${href}/`));
+    }).map(([cat]) => cat);
+    const key = `${pathname}:${cats.join(',')}`;
+    if (!cats.length || seenRef.current === key) return;
+    seenRef.current = key;
+    void Promise.all(cats.map((c) => markCategoryReadAction(c))).then(() => live?.refreshCounts());
+  }, [pathname, live, hrefKey]);
 
   useEffect(() => setMobileOpen(false), [pathname]);
   // Each level has its own design system (colours, shape, motion): see data-level in @crew/ui styles.css.
@@ -258,28 +278,22 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               <span className="hidden sm:inline"><Kbd>Ctrl</Kbd> <Kbd>K</Kbd></span>
             </button>
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              {me.subscription?.status === 'trialing' && me.subscription.trialEndsOn && (
-                // Wrapped: Badge's own inline-flex would otherwise beat `hidden`, and the badge pushed the header off phone screens.
-                <span className="mr-1 hidden xl:inline-flex"><Badge tone="info">Trial until {new Date(me.subscription.trialEndsOn).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Badge></span>
-              )}
-              {hasIq && <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} className="crew-ai-button mr-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] font-semibold shadow-card hover:border-accent/50" title="SampCrew IQ, your AI HR assistant (Ctrl+J)">
-                <Sparkles className="size-4 text-accent" aria-hidden /><span className="hidden sm:inline">SampCrew IQ</span><span className="sr-only sm:hidden">SampCrew IQ</span>
-              </button>}
-              {quick.length > 0 && <QuickCreate actions={quick} />}
-              <Link href="/approvals" className="relative hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg sm:block" aria-label={counts['/approvals'] ? `Approval inbox, ${counts['/approvals']} waiting` : 'Approval inbox'} title="Approval inbox">
-                <Inbox className="size-4" />
-                {(counts['/approvals'] ?? 0) > 0 && <span className="absolute right-0.5 top-0.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.625rem] font-semibold leading-4 text-accent-fg">{counts['/approvals']! > 99 ? '99+' : counts['/approvals']}</span>}
-              </Link>
-              <Link href="/tasks" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="My tasks" title="My tasks"><ListChecks className="size-4" /></Link>
-              {me.permissions['leave:request'] && me.features.includes('leave') && <Link href="/leave" className="hidden rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg md:block" aria-label="Leave calendar" title="Leave calendar"><CalendarDays className="size-4" /></Link>}
-              {!(me.features.includes('core_hr') && !me.features.includes('core_hr.help_centre')) && <Link href="/help" className="rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-fg" aria-label="Help & Support" title="Help & Support" data-testid="header-help"><LifeBuoy className="size-4" /></Link>}
+              {/* The top bar keeps only check-in, notifications and theme (issue #83). Approvals, tasks, leave and help
+                  live in the sidebar, Create in the search palette, the trial date in the account menu and SampCrew IQ
+                  in the bottom-right corner. */}
+              {punchable && <HeaderPunch />}
               {notifications && <NotificationBell />}
-              <ThemeMenu />
+              {!employeeLevel && <ThemeMenu />}
               <HeaderUser me={me} />
             </div>
           </header>
           <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><div key={pathname} className="crew-page"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></div></main>
         </div>
+        {hasIq && !iqOpen && (
+          <button type="button" onClick={() => setIqOpen(true)} aria-expanded={iqOpen} data-testid="iq-launcher" className="crew-ai-button fixed bottom-5 right-5 z-40 inline-flex h-11 items-center gap-2 rounded-full border border-border bg-surface px-4 text-[0.8125rem] font-semibold shadow-card hover:border-accent/50 print:hidden" title="SampCrew IQ, your AI HR assistant (Ctrl+J)">
+            <Sparkles className="size-4 text-accent" aria-hidden /><span className="hidden sm:inline">SampCrew IQ</span><span className="sr-only sm:hidden">SampCrew IQ</span>
+          </button>
+        )}
         {hasIq && <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />}
         <ThemePanel open={themesOpen} onClose={() => setThemesOpen(false)} appearance={appearance} update={update} />
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} nav={nav} me={me} quick={quick} workflows={workflows} />
@@ -371,13 +385,14 @@ function Sidebar({ me, nav, counts, unread, rail, pathname, allHrefs, onCollapse
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter menu" className="h-8 w-full rounded-lg border border-border bg-bg-subtle/60 pl-8 pr-2 text-[0.8125rem] placeholder:text-fg-subtle focus:border-accent focus:outline-none" />
         </label>
       )}
+      {/* Favourites stay in place while the rest of the menu scrolls under them. */}
+      {!q && favItems.length > 0 && (
+        <div className="-mx-1 max-h-56 shrink-0 overflow-y-auto border-b border-border px-1 pb-3" data-testid="nav-favourites">
+          {!rail && <div className="flex items-center gap-1.5 px-2 pb-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle"><Star className="size-3" /> Favourites</div>}
+          <ul className="flex flex-col gap-0.5" aria-label="Favourites">{favItems.map((i) => link(i, `fav-${i.href}`, true))}</ul>
+        </div>
+      )}
       <div className="-mx-1 flex flex-1 flex-col gap-3 overflow-y-auto px-1">
-        {!q && favItems.length > 0 && (
-          <div>
-            {!rail && <div className="flex items-center gap-1.5 px-2 pb-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle"><Star className="size-3" /> Favourites</div>}
-            <ul className="flex flex-col gap-0.5" aria-label="Favourites">{favItems.map((i) => link(i, `fav-${i.href}`, true))}</ul>
-          </div>
-        )}
         {groups.map((g) => {
           const open = rail || Boolean(q) || !closed.includes(g.label);
           return (
@@ -446,6 +461,11 @@ function AccountMenu({ me, children, wrapperClassName, buttonClassName, up, test
         <div className="border-b border-border px-2.5 pb-2 pt-1.5">
           <div className="truncate text-[0.8125rem] font-medium">{me.user.fullName}</div>
           <div className="truncate text-[0.6875rem] text-fg-subtle">{me.user.email}</div>
+          {me.subscription?.status === 'trialing' && me.subscription.trialEndsOn && (
+            <Link href="/settings/billing" onClick={close} className="mt-1.5 inline-flex" data-testid="account-trial">
+              <Badge tone="info">{me.subscription.plan[0]!.toUpperCase()}{me.subscription.plan.slice(1)} plan · Trial until {new Date(me.subscription.trialEndsOn).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</Badge>
+            </Link>
+          )}
         </div>
         <ul role="menu" aria-label="Your account" className="pt-1">
           {accountLinks(me).map((a) => {
@@ -547,32 +567,6 @@ function Popover({ open, onClose, children, className, up }: { open: boolean; on
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div className={cn('absolute z-50 rounded-xl border border-border bg-surface-raised shadow-pop animate-fade-in', up ? 'bottom-full left-0 mb-2' : 'right-0 top-full mt-2', className)}>{children}</div>
     </>
-  );
-}
-
-function QuickCreate({ actions }: { actions: QuickAction[] }) {
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  return (
-    <div className="relative">
-      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-haspopup="menu" className="mr-1 flex h-8 items-center gap-1.5 rounded-lg bg-accent px-2.5 text-[0.8125rem] font-medium text-accent-fg shadow-card transition-colors hover:bg-accent-hover">
-        <Plus className="size-4" /> <span className="hidden sm:inline">Create</span>
-      </button>
-      <Popover open={open} onClose={close} className="w-60 p-1">
-        <ul role="menu" aria-label="Create">
-          {actions.map((a) => {
-            const Icon = ICONS[a.icon] ?? Plus;
-            return (
-              <li key={a.key} role="none">
-                <Link role="menuitem" href={a.href} onClick={close} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.8125rem] text-fg-muted hover:bg-bg-subtle hover:text-fg">
-                  <Icon className="size-4 text-accent" /> {a.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </Popover>
-    </div>
   );
 }
 

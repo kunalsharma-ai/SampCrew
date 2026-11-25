@@ -34,7 +34,12 @@ export default async function AnnouncementsPage({ searchParams }: { searchParams
       <PageHeader
         title="Announcements"
         description="News and notices from HR addressed to you."
-        actions={can(me, 'announcements:manage') ? <Link className={buttonClass('secondary', 'sm')} href="/announcements/manage">Manage announcements</Link> : undefined}
+        actions={can(me, 'announcements:manage') ? (
+          <div className="flex flex-wrap gap-2">
+            <Link className={buttonClass('primary', 'sm')} href="/announcements/manage/new" data-testid="new-announcement">New announcement or news</Link>
+            <Link className={buttonClass('secondary', 'sm')} href="/announcements/manage">Manage announcements</Link>
+          </div>
+        ) : undefined}
       />
       <ModuleNotices category="announcements" label="Announcement" />
       <div className="grid max-w-3xl gap-4">

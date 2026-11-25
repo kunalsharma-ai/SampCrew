@@ -10,14 +10,14 @@ import type { SetAccessRequest } from '@crew/contracts';
 import { AccessEditor, accessBody, LEVEL_OPTIONS } from '@/components/access-editor';
 import type { Structure } from '../payroll/types';
 import { type DeviceOption, EnrolmentRows, LoginModeChoice, OwnPassword, type ShiftOption } from './[id]/profile-extras';
-import { completeHireAction, createDepartmentAction, createLocationAction, createShiftAction, type DraftData, duplicateCheckAction, saveHireDraftAction } from './actions';
+import { completeHireAction, createDepartmentAction, createLocationAction, createShiftAction, type DraftData, duplicateCheckAction, nextEmployeeCodeAction, saveHireDraftAction } from './actions';
 import type { HireDone } from './employees-view';
 
 export interface EmployeeDraft { id: string; step: number; data: DraftData; updatedAt: string }
 /** A leave policy that keeps a balance, for an existing employee's opening balances. */
 /** An asset that is free to hand over, offered when adding someone who already works here. */
 export interface AssetOption { id: string; assetCode: string; name: string; category: string | null }
-export interface LeavePolicyOption { leaveTypeId: string; leaveTypeName: string; legalEntityId: string | null; accrualMethod: string; typeArchived: boolean }
+export interface LeavePolicyOption { leaveTypeId: string; leaveTypeName: string; legalEntityId: string | null; accrualMethod: string; typeArchived: boolean; paid?: boolean; monthlyCredit?: string | null }
 
 export const HIRE_STEPS = ['Personal details', 'Employment', 'Department & reporting', 'Compensation', 'Documents', 'Attendance & access', 'Review'] as const;
 
@@ -56,6 +56,8 @@ type LoginMode = 'none' | 'invite' | 'password';
 type Enrolment = { deviceUserId: string; deviceId: string };
 
 type Match = { id: string; displayName: string; employeeCode: string; status: string; departmentName: string | null; reasons: string[] };
+/** A match on the name alone: two people may share a name, so it is a note, not a stop. */
+const nameOnly = (m: Match) => m.reasons.every((r) => r === 'Same name');
 type Doc = { file: File; category: string; title: string; hrOnly: boolean };
 
 type Kind = 'department' | 'location' | 'shift';
@@ -134,6 +136,8 @@ export function HireWizard(p: Props) {
   const [error, setError] = useState<string | null>(null);
   const [matches, setMatches] = useState<Match[] | null>(null);
   const [checkedKey, setCheckedKey] = useState<string | null>(null);
+  // The employee ID the hire gets when the box is left empty, shown beside it so nobody types one by guesswork.
+  const [nextCode, setNextCode] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const idem = useRef(crypto.randomUUID());
 
@@ -165,6 +169,8 @@ export function HireWizard(p: Props) {
     setError(null);
     setMatches(null);
     setCheckedKey(null);
+    setNextCode(null);
+    void nextEmployeeCodeAction().then((r) => { if (r.ok && r.data) setNextCode(r.data.code); });
     idem.current = crypto.randomUUID();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.open, p.draft]);
@@ -271,12 +277,12 @@ export function HireWizard(p: Props) {
       const pm = Number(v.probationMonths);
       if (!Number.isInteger(pm) || pm < 0 || pm > 24) e.probationMonths = 'Use 0 to 24 months';
       if (designationText.length > 120) e.designationName = 'Use up to 120 characters';
-      if (existing && str(v.employeeCode).trim() && !CODE.test(str(v.employeeCode).trim())) e.employeeCode = 'Use up to 40 letters, digits, -, _, / or .';
+      if (str(v.employeeCode).trim() && !CODE.test(str(v.employeeCode).trim())) e.employeeCode = 'Use up to 40 letters, digits, -, _, / or .';
       if (existing && str(v.confirmationDate)) {
         if (str(v.confirmationDate) < joining) e.confirmationDate = 'The confirmation date cannot be before the joining date';
         else if (str(v.confirmationDate) > today) e.confirmationDate = 'Use a date up to today. A future confirmation is done from the profile on that day';
       }
-      if (existing && openingRows.some((t) => !DAYS.test(str(opening[t.leaveTypeId]).trim()))) e.openingLeaveBalances = 'Enter days as a number, such as 12 or 7.5';
+      if (openingRows.some((t) => !DAYS.test(str(opening[t.leaveTypeId]).trim()))) e.openingLeaveBalances = 'Enter days as a number, such as 12 or 7.5';
     }
     if (s === 3 && str(v.structureId)) {
       if (!MONEY.test(str(v.annualCtc).replace(/,/g, ''))) e.annualCtc = 'Enter the annual CTC, such as 600000';
@@ -313,8 +319,11 @@ export function HireWizard(p: Props) {
         for (const k of ['firstName', 'lastName', 'workEmail', 'personalEmail', 'phone', 'dateOfBirth']) if (str(v[k]).trim()) body[k] = str(v[k]).trim();
         const r = await duplicateCheckAction(body);
         setCheckedKey(dupKey);
-        if (r.ok && r.data && r.data.matches.length) { setMatches(r.data.matches); return; }
-        setMatches(null);
+        const found = r.ok && r.data ? r.data.matches : [];
+        setMatches(found.length ? found : null);
+        // Two people may share a name: each gets their own employee ID. Only a matching email, phone or name with the
+        // same date of birth stops here so HR can check; a name alone is shown as a note and the form moves on.
+        if (found.some((m) => !nameOnly(m))) return;
       }
       setStep(to);
       setReached((x) => Math.max(x, to));
@@ -344,10 +353,11 @@ export function HireWizard(p: Props) {
     else if (designationText) employee.designationName = designationText;
     if (minor) employee.minorConfirmed = true;
     employee.joinedAs = existing ? 'existing' : 'new_joiner';
+    // Any hire may get the employee ID HR types; left empty, the next ID in the series is used.
+    if (openingRows.length) employee.openingLeaveBalances = openingRows.map((t) => ({ leaveTypeId: t.leaveTypeId, days: str(opening[t.leaveTypeId]).trim() }));
+    if (str(v.employeeCode).trim()) employee.employeeCode = str(v.employeeCode).trim();
     if (existing) {
-      if (str(v.employeeCode).trim()) employee.employeeCode = str(v.employeeCode).trim();
       if (str(v.confirmationDate)) employee.confirmationDate = str(v.confirmationDate);
-      if (openingRows.length) employee.openingLeaveBalances = openingRows.map((t) => ({ leaveTypeId: t.leaveTypeId, days: str(opening[t.leaveTypeId]).trim() }));
       if (p.availableAssets && handOver.length) employee.assetIds = handOver;
     }
     const tpl = str(v.onboardingTemplateId);
@@ -448,7 +458,7 @@ export function HireWizard(p: Props) {
           {last ? (
             <Button type="submit" form="hire-form" loading={pending}>Add employee</Button>
           ) : (
-            <Button onClick={() => go(step + 1)} loading={pending}>{step === 0 && matches && checkedKey === dupKey ? 'This is a different person' : `Next: ${HIRE_STEPS[step + 1]}`}</Button>
+            <Button onClick={() => go(step + 1)} loading={pending}>{step === 0 && matches && checkedKey === dupKey && matches.some((m) => !nameOnly(m)) ? 'This is a different person' : `Next: ${HIRE_STEPS[step + 1]}`}</Button>
           )}
         </div>
       }
@@ -482,7 +492,12 @@ export function HireWizard(p: Props) {
 
         {step === 0 && (
           <>
-            {matches && (
+            {matches && matches.every(nameOnly) && (
+              <Alert tone="info" title="Someone with this name already works here" className="sm:col-span-2">
+                {matches.map((m) => `${m.displayName} (${m.employeeCode})`).join(', ')}. Names do not have to be unique: this person gets their own employee ID, so you can carry on.
+              </Alert>
+            )}
+            {matches && !matches.every(nameOnly) && (
               <Alert tone="warning" title="This person may already have a record" className="sm:col-span-2">
                 <ul className="mt-1 space-y-1">
                   {matches.map((m) => (
@@ -653,12 +668,44 @@ export function HireWizard(p: Props) {
             </Field>
             <Field label="Grade" error={errors.grade}>{(f) => <Input {...f} name="grade" value={str(v.grade)} onChange={(e) => set('grade', e.target.value)} maxLength={20} />}</Field>
             <Field label="Probation (months)" error={errors.probationMonths} hint="0 confirms them straight away">{(f) => <Input {...f} name="probationMonths" type="number" min={0} max={24} value={str(v.probationMonths)} onChange={(e) => set('probationMonths', e.target.value === '' ? '' : Number(e.target.value))} />}</Field>
+            <Field
+              label="Employee ID"
+              error={errors.employeeCode}
+              hint={existing ? `The ID they already have.${nextCode ? ` Leave empty to give them ${nextCode}.` : ' Leave empty for the next ID in your series.'}` : nextCode ? `Leave empty to give them ${nextCode}, the next ID in your series, or type your own.` : 'Leave empty for the next ID in your series, or type your own.'}
+            >
+              {(f) => <Input {...f} name="employeeCode" autoComplete="off" maxLength={40} placeholder={nextCode ?? 'e.g. EMP-0042'} value={str(v.employeeCode)} onChange={(e) => set('employeeCode', e.target.value)} />}
+            </Field>
+            {p.leavePolicies && (
+              <fieldset className="sm:col-span-2" data-testid="hire-leave">
+                <legend className="text-[0.8125rem] font-medium">{existing ? 'Leave balance available today' : 'Leave for this year'}</legend>
+                {balanceTypes.length === 0 ? (
+                  <Alert tone="warning" className="mt-1">
+                    No leave types are set up yet, so this person will see no leave to apply for. Add at least one paid or unpaid leave type in{' '}
+                    <Link href="/leave/manage?tab=types" target="_blank" className="font-medium underline">Leave management</Link>, then assign their days from the Quantities tab.
+                  </Alert>
+                ) : (
+                  <>
+                    <p className="mb-2 text-xs text-fg-subtle">
+                      {existing ? 'From their previous records. ' : 'How many days of each leave they have this year. '}
+                      Each number becomes their quantity for this year. A type left empty shows as Not Assigned until HR enters one.
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {balanceTypes.map((t) => (
+                        <label key={t.leaveTypeId} className="flex flex-col gap-1 text-xs text-fg-muted">
+                          <span>{t.leaveTypeName} <span className="text-fg-subtle">· {t.paid === false ? 'Unpaid' : 'Paid'}{t.monthlyCredit ? ` · +${t.monthlyCredit} a month` : ''}</span></span>
+                          <Input aria-label={`Opening balance, ${t.leaveTypeName}`} inputMode="decimal" placeholder="days" value={str(opening[t.leaveTypeId])} onChange={(e) => setOpening(t.leaveTypeId, e.target.value)} />
+                        </label>
+                      ))}
+                    </div>
+                    {openingRows.length === 0 && <p className="mt-1 text-xs text-warning" data-testid="hire-leave-empty">No leave days entered: they will see Not Assigned for every type until someone assigns them.</p>}
+                  </>
+                )}
+                {errors.openingLeaveBalances && <p className="mt-1 text-xs text-danger">{errors.openingLeaveBalances}</p>}
+              </fieldset>
+            )}
             {existing && (
               <>
                 <h4 className="mt-1 text-xs font-semibold uppercase tracking-wide text-fg-subtle sm:col-span-2">Already working here</h4>
-                <Field label="Employee code" error={errors.employeeCode} hint="The code they already have. Leave empty for the next code in your series.">
-                  {(f) => <Input {...f} name="employeeCode" autoComplete="off" maxLength={40} placeholder="e.g. EMP-0042" value={str(v.employeeCode)} onChange={(e) => set('employeeCode', e.target.value)} />}
-                </Field>
                 {Number(v.probationMonths) > 0 && (
                   <Field
                     label="Confirmed on"
@@ -672,21 +719,6 @@ export function HireWizard(p: Props) {
                   {joining ? (confirmedOn && confirmedOn <= today ? `Added as a confirmed employee (confirmed ${confirmedOn}).` : `Added as on probation until ${probationEnd ?? joining}.`) : 'Choose the joining date.'}
                   {' '}No joining checklist is started unless you pick one in Attendance &amp; access.
                 </p>
-                {p.leavePolicies && balanceTypes.length > 0 && (
-                  <fieldset className="sm:col-span-2">
-                    <legend className="text-[0.8125rem] font-medium">Leave balance available today</legend>
-                    <p className="mb-2 text-xs text-fg-subtle">From their previous records. Each number you enter becomes their quantity for this year. A type left empty shows as Not Assigned until HR enters one.</p>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      {balanceTypes.map((t) => (
-                        <label key={t.leaveTypeId} className="flex flex-col gap-1 text-xs text-fg-muted">
-                          {t.leaveTypeName}
-                          <Input aria-label={`Opening balance, ${t.leaveTypeName}`} inputMode="decimal" placeholder="days" value={str(opening[t.leaveTypeId])} onChange={(e) => setOpening(t.leaveTypeId, e.target.value)} />
-                        </label>
-                      ))}
-                    </div>
-                    {errors.openingLeaveBalances && <p className="mt-1 text-xs text-danger">{errors.openingLeaveBalances}</p>}
-                  </fieldset>
-                )}
                 {p.availableAssets && (
                   <fieldset className="sm:col-span-2" data-testid="hire-assets">
                     <legend className="text-[0.8125rem] font-medium">Assets they already hold</legend>

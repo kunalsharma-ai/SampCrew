@@ -49,7 +49,7 @@ export function PeopleView(props: Props) {
       {limits && canInvite && <div className="mb-4"><WorkspaceLimitsCard limits={limits} only="employee" title="Employee Workspaces on your plan" /></div>}
       {inviteLink && (
         <Alert tone="info" title="Invitation created" className="mb-4">
-          An invitation email has been queued. If email delivery is not configured in this environment, share this one-time link instead:
+          If the invitation email cannot be sent (for example when email is not set up yet), share this one-time link with the person yourself. To have SampCrew email invitations, set up your company email in <Link className="font-medium text-accent hover:underline" href="/settings/email">Settings, Email setup</Link>.
           <div className="mt-2 flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[0.6875rem] text-fg">{inviteLink}</code>
             <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(inviteLink)}><Copy className="size-3.5" /> Copy</Button>
@@ -240,8 +240,10 @@ function MemberDialog({ member, onClose, onLink, hrWorkspaces, departments, enti
             {member.status === 'invited' ? (
               <Button variant="secondary" size="sm" loading={pending} onClick={() => start(async () => {
                 const r = await resendInviteAction(member.id);
-                if (r.ok) { onLink(r.data?.inviteUrl ?? null); onClose(); } else setMsg({ tone: 'danger', text: r.message });
-              })}>Create a new invitation link</Button>
+                if (!r.ok) { setMsg({ tone: 'danger', text: r.message }); return; }
+                if (r.data?.inviteUrl) { onLink(r.data.inviteUrl); onClose(); return; }
+                setMsg({ tone: 'success', text: `A new invitation email is on its way to ${member.email}. Earlier links stop working.` });
+              })} data-testid="resend-invite">Resend invitation email</Button>
             ) : <span />}
             {member.status === 'active' && <Button variant="danger" size="sm" loading={pending} onClick={() => confirm(`Suspend ${member.fullName}? They will be signed out everywhere.`) && run(() => updateMemberAction(member.id, { status: 'suspended' }), 'Member suspended and signed out.')}>Suspend access</Button>}
             {member.status === 'suspended' && <Button variant="secondary" size="sm" loading={pending} onClick={() => run(() => updateMemberAction(member.id, { status: 'active' }), 'Access restored.')}>Restore access</Button>}

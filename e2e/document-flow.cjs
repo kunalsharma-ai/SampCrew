@@ -99,7 +99,7 @@ async function setDownload(owner, on) {
     const dialog = owner.getByRole('dialog');
     await dialog.getByPlaceholder('Search by name or code').fill('Neha');
     await dialog.getByLabel(/Neha Deshmukh/).check();
-    await dialog.getByLabel('Document type').selectOption('aadhaar');
+    await dialog.getByTestId('request-type-aadhaar').check();
     await dialog.getByLabel('Reason').fill('Identity proof for statutory records');
     await dialog.getByLabel('Instructions').fill('Both sides in one PDF');
     await save(owner, '02-request-form');

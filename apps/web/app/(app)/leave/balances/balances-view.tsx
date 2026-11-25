@@ -1,17 +1,26 @@
 'use client';
 import { Alert, Badge, Button, Card, CardHeader, Dialog, EmptyState, Field, Input, Select, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
-import { SlidersHorizontal } from 'lucide-react';
+import { CalendarPlus, SlidersHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import type { Department, LeaveAdjustment, LeaveOverview, LeaveType } from '@/lib/types';
-import { adjustLeaveAction } from './actions';
+import type { Department, LeaveAdjustment, LeaveBalance, LeaveOverview, LeaveType } from '@/lib/types';
+import { LeaveDialog } from '../leave-view';
+import { adjustLeaveAction, employeeBalancesAction } from './actions';
 
 type Row = LeaveOverview['rows'][number];
 
 /** One row per person, one column per leave type: what is available now (or taken, for types with no balance). */
 export function BalanceOverview({ data, departments, types, filters }: { data: LeaveOverview; departments: Department[]; types: LeaveType[]; filters: { departmentId: string; q: string } }) {
   const [adjusting, setAdjusting] = useState<Row | null>(null);
+  const [applying, setApplying] = useState<{ row: Row; balances: LeaveBalance[] } | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [loadingApply, startApply] = useTransition();
+  const apply = (r: Row) => startApply(async () => {
+    setApplyError(null);
+    const res = await employeeBalancesAction(r.employeeId);
+    if (res.ok) setApplying({ row: r, balances: res.data ?? [] }); else setApplyError(res.message);
+  });
   return (
     <div className="grid gap-4">
       <form className="flex flex-wrap items-end gap-3" action="/leave/balances">
@@ -22,6 +31,7 @@ export function BalanceOverview({ data, departments, types, filters }: { data: L
         <Field label="Search">{(p) => <Input {...p} name="q" defaultValue={filters.q} placeholder="Name or employee code" />}</Field>
         <Button type="submit" variant="secondary">Show</Button>
       </form>
+      {applyError && <Alert tone="danger">{applyError}</Alert>}
       {data.truncated && <Alert tone="info">Showing the first 500 people. Choose a department or search to see others.</Alert>}
       <Card>
         <CardHeader title={`Balances in ${data.year}`} description="Available days (balance less requests waiting for approval). Types without a balance, such as work from home, show the days taken." />
@@ -53,6 +63,7 @@ export function BalanceOverview({ data, departments, types, filters }: { data: L
                       );
                     })}
                     <TD className="whitespace-nowrap text-right">
+                      <Button size="sm" variant="ghost" disabled={loadingApply} onClick={() => apply(r)} data-testid="apply-on-behalf"><CalendarPlus className="size-3.5" /> Apply leave</Button>
                       <Button size="sm" variant="ghost" onClick={() => setAdjusting(r)}><SlidersHorizontal className="size-3.5" /> Adjust</Button>
                       <Link className="text-xs text-accent hover:underline" href={`/leave/balances?tab=history&year=${data.year}&employeeId=${r.employeeId}`}>History</Link>
                     </TD>
@@ -63,6 +74,7 @@ export function BalanceOverview({ data, departments, types, filters }: { data: L
           </div>
         ) : <EmptyState title="Nobody to show" description="No one you can see matches these filters." />}
       </Card>
+      {applying && <LeaveDialog open balances={applying.balances} forEmployee={{ id: applying.row.employeeId, name: applying.row.name }} onClose={() => setApplying(null)} />}
       {adjusting && <AdjustDialog row={adjusting} types={types.filter((t) => adjusting.balances[t.id])} onClose={() => setAdjusting(null)} />}
     </div>
   );

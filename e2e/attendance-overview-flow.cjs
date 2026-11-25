@@ -88,8 +88,12 @@ function sheetRows(file, n) {
   return [...xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)].map((m) => [...m[1].matchAll(/<c\b[^>]*>(?:<is><t[^>]*>([\s\S]*?)<\/t><\/is>|<v>([\s\S]*?)<\/v>)<\/c>/g)].map((c) => c[1] ?? c[2]));
 }
 
-async function download(p, locator) {
-  const [d] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), locator.click()]);
+/** Opens the Export dialog from this button and downloads the Excel file (the dialog's defaults). */
+async function download(p, button) {
+  await button.click();
+  const dialog = p.getByTestId('attendance-export-dialog');
+  await dialog.waitFor();
+  const [d] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), dialog.getByTestId('export-download').click()]);
   const file = path.join(os.tmpdir(), `att-${Date.now()}-${d.suggestedFilename()}`);
   await d.saveAs(file);
   if (fs.readFileSync(file).subarray(0, 2).toString() !== 'PK') throw new Error(`${d.suggestedFilename()} is not an Excel file`);
@@ -149,7 +153,7 @@ async function download(p, locator) {
     await see(owner, 'Sunita Patil');
     await see(owner, 'Arjun Kulkarni');
     await save(owner, '03-super-one-hr-workspace');
-    const one = await download(owner, owner.getByRole('link', { name: 'Export this HR Workspace' }));
+    const one = await download(owner, owner.getByRole('button', { name: 'Export this HR Workspace' }));
     const people = sheetRows(one.file, 2);
     const names = people.slice(1).map((r) => r[2]).sort();
     if (names.join() !== ['Arjun Kulkarni', 'Neha Deshmukh', 'Sunita Patil'].join()) throw new Error(`HR Workspace export holds ${names}`);
@@ -170,11 +174,11 @@ async function download(p, locator) {
     await owner.waitForURL(/view=records/);
     await see(owner, 'Date-wise attendance');
     await save(owner, '05-super-date-wise');
-    const all = await download(owner, owner.getByRole('link', { name: 'Export to Excel' }));
+    const all = await download(owner, owner.getByRole('button', { name: 'Export', exact: true }));
     if (!/attendance-quality-cell/.test(all.name)) throw new Error(`unexpected file name ${all.name}`);
     const recs = sheetRows(all.file, 3);
-    if (recs[0].slice(0, 8).join('|') !== 'Workspace Name|Workspace Type|Employee Name|Employee ID|Date|Day|Attendance Status|Detail') throw new Error(`Date-wise columns: ${recs[0]}`);
-    if (recs.slice(1).some((r) => !['Farhan Qureshi', 'Oliver Bennett'].includes(r[2]) || r[6] !== 'Absent') || !recs.some((r) => r[2] === 'Farhan Qureshi')) throw new Error('filtered export holds other people or statuses');
+    if (recs[0].slice(0, 11).join('|') !== 'Workspace Name|Workspace Type|Employee Name|Employee ID|Department|Designation|Location|Date|Day|Attendance Status|Detail') throw new Error(`Date-wise columns: ${recs[0]}`);
+    if (recs.slice(1).some((r) => !['Farhan Qureshi', 'Oliver Bennett'].includes(r[2]) || r[9] !== 'Absent') || !recs.some((r) => r[2] === 'Farhan Qureshi')) throw new Error('filtered export holds other people or statuses');
     ok('Super Workspace filters by HR Workspace and status, switches to date-wise and exports the same rows');
 
     // 3. HR Workspace (the supervisor): their employees only.
@@ -242,7 +246,7 @@ async function download(p, locator) {
     await see(op, 'Page not found');
     await op.goto(BASE + '/attendance?period=week');
     await see(op, 'Attendance history');
-    const mine = await download(op, op.getByRole('link', { name: 'Export my attendance' }));
+    const mine = await download(op, op.getByRole('button', { name: 'Export my attendance' }));
     const own = sheetRows(mine.file, 2);
     if (own.length !== 2 || own[1][2] !== 'Arjun Kulkarni') throw new Error(`own export holds ${own.map((r) => r[2])}`);
     ok('Employee Workspace sees and exports only its own attendance');

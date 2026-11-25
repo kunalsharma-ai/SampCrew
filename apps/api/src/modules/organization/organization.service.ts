@@ -147,6 +147,12 @@ export class OrganizationService {
       activeMembers: await tx.collection('memberships').count({ status: 'active' }),
       pendingInvites: await tx.collection('memberships').count({ status: 'invited' }),
       countries: (await tx.collection('legal_entities').distinct('country_code', { archived_at: null })).length,
+      // The basics a new workspace must define before adding people (issue #83): Home asks for whichever is missing.
+      shiftTemplates: await tx.collection('shift_templates').count({ archived_at: null }),
+      leaveTypes: await tx.collection('leave_types').count({ archived_at: null }),
+      paidLeaveTypes: await tx.collection('leave_types').count({ archived_at: null, paid: true }),
+      employees: await tx.collection('employees').count({}),
+      mailConfigured: await tx.collection('tenant_mail_settings').exists({ enabled: true }),
     }));
   }
 

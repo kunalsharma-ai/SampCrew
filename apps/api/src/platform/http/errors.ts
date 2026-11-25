@@ -45,4 +45,13 @@ export const Errors = {
   tenantSuspended: () => new AppError(HttpStatus.FORBIDDEN, 'tenant_suspended', 'This workspace is suspended. Contact your administrator or SAMPLEDGE support.'),
   unavailable: (code: string, message: string) => new AppError(HttpStatus.SERVICE_UNAVAILABLE, code, message),
   tooMany: (message = 'Too many attempts. Try again later.') => new AppError(HttpStatus.TOO_MANY_REQUESTS, 'rate_limited', message),
+  /** A sign-in lock after wrong passwords or codes, with the real time left so people know when to try again. */
+  lockedOut: (until: Date, what = 'sign-in attempts') =>
+    new AppError(HttpStatus.TOO_MANY_REQUESTS, 'rate_limited', `Too many failed ${what}. Try again after ${minutesLeft(until)}.`, { retryAt: until.toISOString(), retryInMinutes: Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000)) }),
 };
+
+/** "30 minutes", "1 minute": the time left on a lock, rounded up. */
+export function minutesLeft(until: Date): string {
+  const m = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
+  return `${m} ${m === 1 ? 'minute' : 'minutes'}`;
+}

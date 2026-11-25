@@ -125,7 +125,7 @@ describe('create employee rules', () => {
     expect(recent.body.employee).toMatchObject({ status: 'probation', confirmationDate: null });
   });
 
-  it('refuses a taken code, a future joining date and new-joiner balances for existing employees', async () => {
+  it('refuses a taken code and a future joining date; a new joiner may start with leave days (issue #83)', async () => {
     const taken = await post({ firstName: 'Code', lastName: 'Taken', joinedAs: 'existing', dateOfJoining: yearsAgo(1), employeeCode: 'OLD/0042' });
     expect(taken.status).toBe(409);
     expect(taken.body.error.code).toBe('employee_code_taken');
@@ -133,6 +133,6 @@ describe('create employee rules', () => {
     expect(future.status).toBe(422);
     expect(fieldErrors(future.body).dateOfJoining).toMatch(/on or before today/);
     const newJoiner = await post({ firstName: 'New', lastName: 'Joiner', openingLeaveBalances: [{ leaveTypeId: cl, days: 3 }] });
-    expect(newJoiner.status).toBe(422);
+    expect(newJoiner.status, JSON.stringify(newJoiner.body)).toBe(201);
   });
 });

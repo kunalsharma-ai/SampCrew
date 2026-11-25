@@ -282,6 +282,8 @@ export class ApprovalsService {
     await this.notifications.notify(tx, {
       membershipIds: [requester], kind: 'approval.auto_approved', title: `${h.label} approved automatically`,
       body: `${req.summary}\n${note}`, link: h.link(req.resource_id), resource: { type: req.resource_type, id: req.resource_id },
+      // The system decided it, not the person: they are told even though they sent the request.
+      includeActor: true,
     });
     return true;
   }

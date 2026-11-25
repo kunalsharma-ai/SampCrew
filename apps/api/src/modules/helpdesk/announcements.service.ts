@@ -171,11 +171,11 @@ export class AnnouncementsService implements OnApplicationBootstrap, OnModuleDes
       if (!audience.length) {
         // Nobody to send it to any more: back to a draft, and the person who scheduled it is told.
         await tx.collection('announcements').updateOne({ id: a.id, status: 'scheduled' }, { $set: { status: 'draft', publish_at: null } });
-        await this.notifications.notify(tx, { membershipIds: [by], kind: 'announcement.not_published', title: `"${a.title}" was not published: nobody is in its audience`, link: `/announcements/manage/${a.id}`, priority: 'high' });
+        await this.notifications.notify(tx, { membershipIds: [by], kind: 'announcement.not_published', title: `"${a.title}" was not published: nobody is in its audience`, link: `/announcements/manage/${a.id}`, priority: 'high', includeActor: true });
         continue;
       }
       if (await tx.collection('announcements').updateOne({ id: a.id, status: 'scheduled' }, { $set: { status: 'published', published_at: new Date(), published_by_membership_id: by } })) {
-        await this.announce(tx, { ...a, status: 'published' }, audience);
+        await this.announce(tx, { ...a, status: 'published', published_by_membership_id: by }, audience);
         await this.audit.record(tx, { action: 'announcement.published', resourceType: 'announcement', resourceId: a.id, metadata: { audience: audience.length, requiresAck: a.requires_ack, scheduled: true } });
         n++;
       }
@@ -463,7 +463,7 @@ export class AnnouncementsService implements OnApplicationBootstrap, OnModuleDes
         return { id, audience: audience.length, scheduledFor: at.toISOString() };
       }
       await tx.collection('announcements').updateOne({ id }, { $set: { status: 'published', published_at: new Date(), published_by_membership_id: s.membershipId } });
-      await this.announce(tx, { ...a, status: 'published' }, audience);
+      await this.announce(tx, { ...a, status: 'published', published_by_membership_id: s.membershipId }, audience);
       await this.audit.record(tx, { action: 'announcement.published', resourceType: 'announcement', resourceId: id, metadata: { audience: audience.length, requiresAck: a.requires_ack, priority: a.priority ?? 'normal' } });
       return { id, audience: audience.length, scheduledFor: null };
     });

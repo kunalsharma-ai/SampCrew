@@ -4,6 +4,7 @@ import { APP_CONFIG, type AppConfig } from '../config/config';
 import { MongoService as DatabaseService } from '../database/mongo.service';
 import { PlatformIntegrationsService } from '../integrations/platform-integrations.service';
 import { StorageService } from '../storage/storage.service';
+import { companyMailRuntime } from '../../modules/mail-setup/mail-setup.service';
 
 /** A stored file sent with an email (for example a proposal PDF). */
 export interface EmailAttachment { filename: string; contentType: string; storageKey: string }
@@ -12,7 +13,7 @@ const MAX_ATTEMPTS = 5;
 /** How long a sender holds a message it took, so another server does not send it too. */
 const LEASE_SECONDS = 120;
 
-interface QueuedEmail { id: string; to_email: string; subject: string; text_body: string; html_body?: string | null; attempts: number; attachments: EmailAttachment[]; next_attempt_at: Date }
+interface QueuedEmail { id: string; tenant_id?: string | null; to_email: string; subject: string; text_body: string; html_body?: string | null; attempts: number; attachments: EmailAttachment[]; next_attempt_at: Date }
 
 /**
  * Sends queued email over SMTP, with the email settings SAMPLEDGE saved in the Super Admin Console (Integrations),
@@ -33,8 +34,28 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly integrations: PlatformIntegrationsService,
   ) {}
 
-  async isConfigured() {
-    return Boolean(await this.integrations.email());
+  /** Whether an email for this company (or, without one, a platform email) would be sent now. */
+  async isConfigured(tenantId?: string | null) {
+    if (await this.integrations.email()) return true;
+    if (!tenantId) return false;
+    return this.db.platform(async (tx) => Boolean(await tx.collection('tenant_mail_settings').findOne({ tenant_id: tenantId, enabled: true })));
+  }
+
+  /** Companies' own email servers (Settings > Email setup), rebuilt only when their settings change. */
+  private readonly companies = new Map<string, { hash: string; transport: Transporter; from: string; replyTo: string | null }>();
+  private async companyTransport(tenantId: string) {
+    const r = await this.db.platform((tx) => companyMailRuntime(tx, tenantId, this.config));
+    const cached = this.companies.get(tenantId);
+    if (!r) {
+      cached?.transport.close();
+      this.companies.delete(tenantId);
+      return null;
+    }
+    if (cached?.hash === r.hash) return cached;
+    cached?.transport.close();
+    const built = { hash: r.hash, transport: createTransport(r.transport), from: r.from, replyTo: r.replyTo };
+    this.companies.set(tenantId, built);
+    return built;
   }
 
   /** The SMTP transport for the settings in effect, rebuilt only when they change. */
@@ -58,6 +79,7 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
   onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
     this.built?.transport.close();
+    for (const c of this.companies.values()) c.transport.close();
   }
 
   private async read(key: string): Promise<Buffer> {
@@ -81,14 +103,26 @@ export class MailerService implements OnApplicationBootstrap, OnModuleDestroy {
         // never sends an email twice.
         const m = await this.claim();
         if (!m) break;
-        if (!smtp) {
-          await update(m.id, { status: 'skipped', last_error: 'Email delivery is not set up (Super Admin Console > Integrations > Email)' });
+        // A company with its own email server (Settings > Email setup) sends through it, from its own address.
+        let company: Awaited<ReturnType<MailerService['companyTransport']>> = null;
+        try {
+          company = m.tenant_id ? await this.companyTransport(m.tenant_id) : null;
+        } catch (err) {
+          // The company's server name did not resolve or points somewhere SampCrew does not connect to: retry later.
+          const attempts = m.attempts + 1;
+          await update(m.id, { attempts, last_error: (err as Error).message.slice(0, 1000), status: attempts >= MAX_ATTEMPTS ? 'failed' : 'queued', next_attempt_at: new Date(Date.now() + Math.min(30 * 2 ** attempts, 3600) * 1000) });
+          out.failed++;
+          continue;
+        }
+        const via = company ?? smtp;
+        if (!via) {
+          await update(m.id, { status: 'skipped', last_error: 'Email delivery is not set up (Settings > Email setup in the workspace, or Super Admin Console > Integrations > Email)' });
           out.skipped++;
           continue;
         }
         try {
           const attachments = await Promise.all((m.attachments ?? []).map(async (a) => ({ filename: a.filename, contentType: a.contentType, content: await this.read(a.storageKey) })));
-          await smtp.transport.sendMail({ from: smtp.from, to: m.to_email, subject: m.subject, text: m.text_body, ...(m.html_body ? { html: m.html_body } : {}), attachments });
+          await via.transport.sendMail({ from: via.from, ...(company?.replyTo ? { replyTo: company.replyTo } : {}), to: m.to_email, subject: m.subject, text: m.text_body, ...(m.html_body ? { html: m.html_body } : {}), attachments });
           await update(m.id, { status: 'sent', sent_at: new Date(), last_error: null }, { attempts: 1 });
           out.sent++;
         } catch (err) {

@@ -60,7 +60,7 @@ export default async function LeaveManagePage({ searchParams }: { searchParams: 
         description={isSuper
           ? 'Create leave types, choose who sees them, type the quantities people have, and follow every application across the company.'
           : 'Review your people’s applications, type the quantities they have, and manage your own leave types when the Super Workspace allows it.'}
-        actions={!isSuper ? <Link className="text-sm font-medium text-accent hover:underline" href="/leave/balances">Balances and adjustments</Link> : undefined}
+        actions={can(me, 'leave:approve') ? <Link className="text-sm font-medium text-accent hover:underline" href="/leave/balances" data-testid="leave-balances-link">Balances, adjustments and applying for an employee</Link> : undefined}
       />
       <SubNav label="Leave management" current={href(tab)} items={order.map((t) => ({ href: href(t), label: labels[t], count: t === 'approvals' ? dashboard?.counts.waitingForMe : undefined, alert: t === 'approvals', testId: `leave-tab-${t}` }))} />
       {(tab === 'dashboard' || tab === 'reports') && (
