@@ -617,6 +617,8 @@ export interface WorkforceDashboard {
   from: string;
   to: string;
   labels: WorkModeLabels;
+  /** The viewer's level: Super Workspace or HR Workspace. */
+  level: 'super' | 'hr';
   /** Org-wide numbers (true) or only the people the viewer may see (false). */
   orgWide: boolean;
   /** People the viewer can open in the lists. */

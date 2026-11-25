@@ -494,7 +494,7 @@ export class AttendanceService implements OnModuleInit {
       await this.days.recompute(tx, e.id, prev, cur, now);
     }
     const ev = (await tx.collection('attendance_events').findOne({ id }))!;
-    const punch = { id: ev.id, capturedAt: ev.captured_at, direction: ev.direction, source: ev.source, geofence: ev.geofence_result ?? null, distanceM: ev.distance_m ?? null };
+    const punch = { id: ev.id, capturedAt: ev.captured_at, direction: ev.direction, source: ev.source, geofence: ev.geofence_result ?? null, distanceM: ev.distance_m ?? null, workZone: ev.work_zone ?? null, place: ev.work_place_name ?? null, verification: ev.location_verification ?? null };
     return { punch, duplicate: Boolean(existing), today: await this.dayRow(tx, e.id, today) };
   }
 
@@ -622,7 +622,7 @@ export class AttendanceService implements OnModuleInit {
         nextDirection: last && last.direction !== 'out' ? 'out' : 'in',
         // Working, on a break (the last punch was an out for a break) or not checked in.
         state: last && last.direction !== 'out' ? 'working' : last && last.purpose === 'break' ? 'on_break' : last ? 'checked_out' : 'not_started',
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), note: p.note ?? null, flags: p.risk_flags, purpose: p.purpose })),
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), note: p.note ?? null, flags: p.risk_flags, purpose: p.purpose, workZone: p.work_zone ?? null, workPlace: p.work_place_name ?? null })),
         day: await this.dayRow(tx, e.id, date),
         allowed: { web: policy.web_punch, mobile: policy.mobile_punch, qr: policy.qr_punch },
         geofence: { mode: policy.geofence_mode, configured: Boolean(e.fence), radiusM: e.fence?.radiusM ?? null },
@@ -659,6 +659,7 @@ export class AttendanceService implements OnModuleInit {
         employee: { id: e.id, name: e.name, code: e.code, timeZone: e.tz },
         from, to,
         totals,
+        workModeLabels: (await this.workMode.settings(tx)).labels,
         summary: {
           workingDays: totals.workingDays,
           attendancePercent: totals.percent,
@@ -711,7 +712,7 @@ export class AttendanceService implements OnModuleInit {
         employee: { id: e.id, name: e.name, code: e.code, timeZone: e.tz },
         day: (await this.dayRow(tx, e.id, date)) ?? null,
         window: { from: new Date(win.from).toISOString(), to: new Date(win.to).toISOString() },
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, verifyMethod: p.verify_method, viaCorrection: Boolean(p.correction_id), note: p.note, flags: p.risk_flags })),
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, verifyMethod: p.verify_method, viaCorrection: Boolean(p.correction_id), note: p.note, flags: p.risk_flags, workZone: p.work_zone ?? null, workPlace: p.work_place_name ?? null })),
         locked: await isLocked(tx, e.id, date),
       };
     });

@@ -102,6 +102,8 @@ export const NAV: NavGroup[] = [
   {
     label: 'Attendance & time',
     items: [
+      { href: '/attendance/work-mode', label: 'Workforce attendance', icon: 'building', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
+      { href: '/attendance/work-mode/register', label: 'Office and home register', icon: 'clipboard-list', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
       { href: '/attendance/employees', label: 'Employee Workspace attendance', icon: 'users-round', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
       { href: '/attendance/hr-workspaces', label: 'HR Workspace attendance', icon: 'network', permission: 'attendance:read', feature: 'attendance_basic', superOnly: true },
       { href: '/attendance/register', label: 'All employees attendance', icon: 'calendar-range', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
@@ -109,6 +111,8 @@ export const NAV: NavGroup[] = [
       { href: '/attendance/late', label: 'Late coming & penalties', icon: 'alarm-clock', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
       { href: '/settings/attendance-access', label: 'Attendance permissions', icon: 'shield-check', permission: 'hierarchy:manage', feature: 'attendance_basic', superOnly: true },
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
+      { href: '/attendance/offices', label: 'Office locations', icon: 'map-pin', permission: 'attendance:configure', feature: 'attendance_basic' },
+      { href: '/attendance/work-mode/settings', label: 'Office and home rules', icon: 'sliders', permission: 'attendance:configure', feature: 'attendance_basic' },
       { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
       { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
       { href: '/leave/balances', label: 'Leave balances', icon: 'calendar-range', permission: 'leave:approve', feature: 'leave' },

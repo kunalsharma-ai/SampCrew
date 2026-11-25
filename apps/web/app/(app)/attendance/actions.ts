@@ -16,9 +16,9 @@ const refresh = (...paths: string[]) => {
   for (const p of ['/attendance', '/approvals', ...paths]) revalidatePath(p);
 };
 
-export async function punchAction(body: { latitude?: number; longitude?: number; accuracyM?: number; direction?: 'in' | 'out'; note?: string }) {
+export async function punchAction(body: { latitude?: number; longitude?: number; accuracyM?: number; locationStatus?: 'ok' | 'denied' | 'unavailable' | 'timeout'; direction?: 'in' | 'out'; note?: string }) {
   const r = await act(
-    () => api<{ punch: { direction: string; geofence: string; distanceM: number | null }; duplicate: boolean }>('/attendance/punch', {
+    () => api<{ punch: { direction: string; geofence: string; distanceM: number | null; workZone?: string | null; place?: string | null }; duplicate: boolean }>('/attendance/punch', {
       method: 'POST',
       body: { ...body, source: 'web', clientEventId: `web-${crypto.randomUUID()}` },
     }),
@@ -33,7 +33,7 @@ export async function qrPunchAction(code: string) {
   return r;
 }
 
-export async function correctionAction(body: { employeeId?: string; workDate: string; punches: { time: string; direction: 'in' | 'out'; nextDay: boolean }[]; reason: string }) {
+export async function correctionAction(body: { employeeId?: string; workDate: string; punches: { time: string; direction: 'in' | 'out'; nextDay: boolean }[]; reason: string; category?: string; workMode?: 'office' | 'remote' | 'hybrid' }) {
   const r = await act(() => api('/attendance/corrections', { method: 'POST', body, idempotencyKey: crypto.randomUUID() }), 'Correction sent for approval.');
   refresh('/attendance/team');
   return r;

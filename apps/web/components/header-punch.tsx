@@ -4,23 +4,13 @@ import { Coffee, LogIn, LogOut, TimerReset } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, useTransition } from 'react';
 import { attendanceTodayAction, punchAction } from '@/app/(app)/attendance/actions';
+import { punchLocation } from '@/lib/locate';
 import { BREAK_NOTE, tally } from '@/components/home/employee-home';
 import { hm } from '@/lib/time';
 import type { AttendanceToday } from '@/lib/types';
 
 /** Fired after any punch on the page, so the top bar and the Home card show the same state. */
 export const PUNCHED_EVENT = 'crew:punched';
-
-function locate(): Promise<{ latitude?: number; longitude?: number; accuracyM?: number; denied?: boolean }> {
-  return new Promise((resolve) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve({});
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: Math.round(p.coords.accuracy) }),
-      (err) => resolve({ denied: err.code === err.PERMISSION_DENIED }),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30_000 },
-    );
-  });
-}
 
 /**
  * Check in, check out and breaks from the top bar, on every page. A break is a check-out marked "Break" and ends at
@@ -55,13 +45,12 @@ export function HeaderPunch() {
   const phase = t.open ? 'working' : t.onBreak ? 'on_break' : today.punches.length ? 'done' : 'not_in';
   const punch = (direction: 'in' | 'out', note: string | undefined, done: string) => start(async () => {
     setMessage(null);
-    const where = today.geofence.mode !== 'off' && today.geofence.configured ? await locate() : {};
-    if (today.geofence.mode === 'enforce' && where.denied) {
-      setMessage({ tone: 'error', text: 'Allow location access to check in: your workplace checks that you are on site.' });
+    const { where, refused } = await punchLocation(today);
+    if (refused) {
+      setMessage({ tone: 'error', text: refused });
       return;
     }
-    const { denied: _d, ...coords } = where;
-    const r = await punchAction({ ...coords, direction, ...(note ? { note } : {}) });
+    const r = await punchAction({ ...where, direction, ...(note ? { note } : {}) });
     if (!r.ok) { setMessage({ tone: 'error', text: r.message }); return; }
     setMessage({ tone: 'ok', text: done });
     await load();

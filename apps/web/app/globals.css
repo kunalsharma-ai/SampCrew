@@ -21,3 +21,18 @@
 .prose-email blockquote { border-left: 3px solid var(--color-border); padding-left: 0.75rem; color: var(--color-fg-muted); }
 .prose-email a { color: var(--color-accent); text-decoration: underline; }
 .prose-email b, .prose-email strong { font-weight: 600; }
+
+/* Office / home / hybrid attendance: charts draw in, cards rise, the live dot pulses (only when motion is allowed). */
+@keyframes wm-draw { from { stroke-dasharray: 0 1000; } }
+@keyframes wm-grow { from { transform: scaleY(0); } }
+@keyframes wm-grow-x { from { transform: scaleX(0); } }
+@keyframes wm-rise { from { opacity: 0; transform: translateY(6px); } }
+@keyframes wm-ping { 0% { transform: scale(0.8); opacity: 0.7; } 100% { transform: scale(2.2); opacity: 0; } }
+.wm-draw { animation: wm-draw 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.wm-grow { transform-box: fill-box; transform-origin: bottom; animation: wm-grow 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.wm-grow-x { transform-origin: left; animation: wm-grow-x 800ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.wm-rise { animation: wm-rise 450ms ease-out both; }
+.wm-ping { animation: wm-ping 1.6s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .wm-draw, .wm-grow, .wm-grow-x, .wm-rise, .wm-ping { animation: none !important; }
+}

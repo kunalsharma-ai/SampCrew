@@ -246,7 +246,7 @@ export class WorkforceService {
         });
       }
       return {
-        date, from, to, labels, orgWide, visiblePeople: visible.filter((p) => p.joined <= date && (!p.left || p.left >= date)).length,
+        date, from, to, labels, level: v.level as 'super' | 'hr', orgWide, visiblePeople: visible.filter((p) => p.joined <= date && (!p.left || p.left >= date)).length,
         cards,
         byDepartment: sortGroups([...dept].map(([id, g]) => ({ id, name: id ? departments.get(id) ?? 'Department' : 'No department', ...g }))),
         byLocation: sortGroups([...loc].map(([id, g]) => ({ id, name: id ? locations.get(id) ?? 'Location' : 'No location', ...g }))),
