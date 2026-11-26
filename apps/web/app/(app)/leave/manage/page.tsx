@@ -5,7 +5,10 @@ import { load, loadOptional } from '@/lib/api';
 import { can } from '@/lib/nav';
 import { SubNav } from '@/components/sub-nav';
 import type { LeaveDashboard, LeaveHistoryRow, LeaveQuantities, LeaveReport, LeaveRequest, LeaveType, Me } from '@/lib/types';
+import type { CompOff, StatusRule } from '../actions';
+import { CompOffCard } from '../comp-off';
 import { ApprovalsPanel } from './approvals-panel';
+import { RulesPanel } from './rules-panel';
 import { DashboardPanel, HistoryPanel, ReportsPanel } from './panels';
 import type { LeaveOptions } from './pickers';
 import { QuantitiesPanel } from './quantities-panel';
@@ -13,7 +16,7 @@ import { TypesPanel } from './types-panel';
 
 export const metadata: Metadata = { title: 'Leave management' };
 
-const TABS = ['dashboard', 'types', 'quantities', 'approvals', 'reports', 'history'] as const;
+const TABS = ['dashboard', 'types', 'quantities', 'rules', 'approvals', 'compoff', 'reports', 'history'] as const;
 type Tab = (typeof TABS)[number];
 
 /**
@@ -33,11 +36,15 @@ export default async function LeaveManagePage({ searchParams }: { searchParams: 
     );
   }
   const isSuper = can(me, 'leave:configure');
-  const allowed = new Set<Tab>(TABS.filter((t) => t === 'quantities' ? can(me, 'leave:assign') : t === 'types' ? can(me, 'leave:read') : t === 'approvals' ? can(me, 'leave:approve') : can(me, 'leave:allocate')));
+  const allowed = new Set<Tab>(TABS.filter((t) => t === 'quantities' || t === 'rules' ? can(me, 'leave:assign') : t === 'compoff' ? can(me, 'leave:approve') : t === 'types' ? can(me, 'leave:read') : t === 'approvals' ? can(me, 'leave:approve') : can(me, 'leave:allocate')));
   const first = TABS.find((t) => allowed.has(t)) ?? 'types';
   const tab: Tab = allowed.has(sp.tab as Tab) ? (sp.tab as Tab) : first;
   const year = /^\d{4}$/.test(sp.year ?? '') ? Number(sp.year) : new Date().getUTCFullYear();
   const q = new URLSearchParams({ year: String(year), ...(sp.hrWorkspaceId ? { hrWorkspaceId: sp.hrWorkspaceId } : {}) });
+  const [rules, compOffs] = await Promise.all([
+    tab === 'rules' ? load<StatusRule[]>('/leave/status-rules') : Promise.resolve([] as StatusRule[]),
+    tab === 'compoff' ? load<CompOff[]>('/leave/comp-off?scope=team') : Promise.resolve([] as CompOff[]),
+  ]);
   const [dashboard, types, options, quantities, waiting, recent, report, history] = await Promise.all([
     can(me, 'leave:allocate') ? loadOptional<LeaveDashboard>(`/leave/dashboard?${q}`) : Promise.resolve(null),
     tab === 'types' ? load<LeaveType[]>('/leave/types?includeArchived=true') : Promise.resolve([] as LeaveType[]),
@@ -49,7 +56,7 @@ export default async function LeaveManagePage({ searchParams }: { searchParams: 
     tab === 'history' ? load<LeaveHistoryRow[]>('/leave/history?limit=300') : Promise.resolve([] as LeaveHistoryRow[]),
   ]);
   const href = (t: Tab) => `/leave/manage?${new URLSearchParams({ tab: t, ...(sp.year ? { year: sp.year } : {}) })}`;
-  const labels: Record<Tab, string> = { dashboard: 'Dashboard', types: 'Leave types', quantities: 'Quantities', approvals: 'Approvals', reports: 'Reports', history: 'History' };
+  const labels: Record<Tab, string> = { dashboard: 'Dashboard', types: 'Leave types', quantities: 'Quantities', rules: 'Leave rules', approvals: 'Approvals', compoff: 'Comp-off', reports: 'Reports', history: 'History' };
   const order: Tab[] = TABS.filter((t) => allowed.has(t));
   const noOptions = { level: isSuper ? 'super' : 'hr', departments: [], designations: [], locations: [], legalEntities: [], groups: [], hrWorkspaces: [], companyHr: false, superAdmins: [], employees: [] } as LeaveOptions;
   return (
@@ -84,7 +91,9 @@ export default async function LeaveManagePage({ searchParams }: { searchParams: 
       {tab === 'dashboard' && dashboard && <DashboardPanel d={dashboard} />}
       {tab === 'types' && <TypesPanel types={types} options={options ?? noOptions} isSuper={isSuper} canCreate={can(me, 'leavetypes:create')} canVisibility={can(me, 'leavetypes:visibility')} />}
       {tab === 'quantities' && quantities && <QuantitiesPanel data={quantities} q={sp.q ?? ''} />}
+      {tab === 'rules' && <RulesPanel rules={rules} />}
       {tab === 'approvals' && <ApprovalsPanel waiting={waiting} recent={recent} />}
+      {tab === 'compoff' && <CompOffCard rows={compOffs} team />}
       {tab === 'reports' && report && <ReportsPanel r={report} />}
       {tab === 'history' && <HistoryPanel rows={history} />}
     </>

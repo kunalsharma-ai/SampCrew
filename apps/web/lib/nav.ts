@@ -44,6 +44,7 @@ export const NAV: NavGroup[] = [
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
       { href: '/documents', label: 'Documents', icon: 'file-stack', permission: 'documents:read', feature: 'documents' },
+      { href: '/onboarding-documents/mine', label: 'My onboarding documents', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', keywords: 'joining documents upload aadhaar pan certificates' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
       // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
       { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
@@ -74,6 +75,7 @@ export const NAV: NavGroup[] = [
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
       { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
       { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
+      { href: '/onboarding-documents', label: 'Onboarding documents', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', adminOnly: true, keywords: 'joining documents progress approve reject new joiner' },
       { href: '/imports', label: 'Data import', icon: 'upload', permission: 'imports:run', feature: 'data_import' },
       { href: '/verification', label: 'Background verification', icon: 'shield-check', permission: 'bgv:view', feature: 'background_verification' },
       { href: '/assets', label: 'Assets', icon: 'laptop', permission: 'assets:view', beyondOwn: true, feature: 'asset_management' },
@@ -180,12 +182,15 @@ export const NAV: NavGroup[] = [
       { href: '/settings/mobile-app', label: 'Mobile app', icon: 'smartphone', permission: 'mobileapp:manage', superOnly: true },
       { href: '/settings/roles', label: 'Access levels', icon: 'shield', permission: 'roles:read' },
       { href: '/settings/custom-fields', label: 'Custom fields', icon: 'text-cursor-input', permission: 'fields:manage' },
+      { href: '/settings/employee-form', label: 'Add Employee form', icon: 'text-cursor-input', permission: 'employees:create', superOnly: true, keywords: 'work email domain fields required hidden labels add employee form configuration' },
+      { href: '/settings/onboarding-documents', label: 'Onboarding document library', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', adminOnly: true, keywords: 'onboarding documents library templates categories mandatory optional' },
       { href: '/settings/master-data', label: 'Master data', icon: 'list-tree', permission: 'org:read' },
       { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },
       { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
       { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
       { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
       { href: '/settings/email', label: 'Email setup', icon: 'mail', permission: 'mail:configure', keywords: 'smtp mail server outgoing email invitation verification password reset' },
+      { href: '/settings/email-templates', label: 'Email templates', icon: 'mail', permission: 'mail:configure', keywords: 'email template html design branding import company layout' },
       { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
       { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
       { href: '/settings/notifications/organisation', label: 'Notification policy', icon: 'bell', superOnly: true },
@@ -255,7 +260,7 @@ export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: st
  */
 export const MY_DAY_HREFS: ReadonlySet<string> = new Set([
   '/', '/tasks', '/announcements', '/communication', '/help', '/attendance', '/leave', '/payslips', '/expenses', '/appraisal', '/assets/mine',
-  '/goals', '/learning', '/recognition', '/surveys', '/notifications', '/activity', '/settings/notifications', '/settings/appearance', '/settings/signature',
+  '/goals', '/learning', '/onboarding-documents/mine', '/recognition', '/surveys', '/notifications', '/activity', '/settings/notifications', '/settings/appearance', '/settings/signature',
   '/settings/security', '/settings/home', '/profile',
 ]);
 

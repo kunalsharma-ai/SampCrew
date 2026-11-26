@@ -16,7 +16,7 @@ const LEARNING_PARTS = ['learning.mine', 'learning.manage', 'learning.catalogue'
  *    and an organisation that does not allow sound at all keeps that.
  *
  * New collections (onboarding document library, templates, checklists, document requests to Super Workspace, leave
- * status rules, comp-off requests, form field settings) are created by syncCollections. Safe to run again.
+ * status rules, comp-off requests, form field settings, company email templates) are created by syncCollections. Safe to run again.
  */
 export const m0210OnboardingDocuments: MongoMigration = {
   name: '0210_onboarding_documents',

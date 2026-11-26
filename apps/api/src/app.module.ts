@@ -42,6 +42,7 @@ import { HierarchyController } from './modules/hierarchy/hierarchy.controller';
 import { WorkspaceLimitsController } from './modules/workspace-limits/workspace-limits.controller';
 import { MailSetupController } from './modules/mail-setup/mail-setup.controller';
 import { MailSetupService } from './modules/mail-setup/mail-setup.service';
+import { EmailTemplatesController, EmailTemplatesService } from './modules/mail-setup/email-templates';
 import { WorkspacePermissionsController } from './modules/workspace-permissions/workspace-permissions.controller';
 import { WorkspacePermissionsService } from './modules/workspace-permissions/workspace-permissions.service';
 import { WorkspaceLimitsService } from './modules/workspace-limits/workspace-limits.service';
@@ -255,6 +256,7 @@ export const CONTROLLERS = [
   HierarchyController,
   WorkspaceLimitsController,
   MailSetupController,
+  EmailTemplatesController,
   WorkspacePermissionsController,
   OnboardingController,
   TasksController,
@@ -419,6 +421,7 @@ export const CONTROLLERS = [
     HierarchyService,
     WorkspaceLimitsService,
     MailSetupService,
+    EmailTemplatesService,
     WorkspacePermissionsService,
     FeatureLevelsService,
     EmployeeImportService,

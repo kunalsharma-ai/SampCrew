@@ -56,6 +56,16 @@ export function RequestView({ r }: { r: RequestDetail }) {
                 {latest.expiresOn && <span className="text-fg-muted">· expires {fmtDate(latest.expiresOn)}</span>}
                 <Link className="text-accent hover:underline" href={`/documents/${latest.id}`}>Document page</Link>
               </div>
+              {(r.files?.length ?? 0) > 1 && (
+                <ul className="grid gap-2 text-sm" data-testid="submission-files">
+                  {r.files!.map((d, i) => (
+                    <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
+                      <span>File {i + 1} of {r.files!.length} · {d.fileName} · {fmtSize(d.sizeBytes)}</span>
+                      <FileActions d={{ id: d.id, can: latest.can }} />
+                    </li>
+                  ))}
+                </ul>
+              )}
               {reviewing && <PreviewPanel d={latest} />}
               {reviewing && <DecisionButtons r={r} expiresOn={latest.expiresOn} onDone={(m) => { setNote(m); router.refresh(); }} />}
               {r.canReview && !reviewing && AWAITING_UPLOAD.includes(r.status) && <p className="text-sm text-fg-muted">Waiting for {asked} to upload a new version.</p>}
@@ -95,7 +105,8 @@ export function RequestView({ r }: { r: RequestDetail }) {
             {r.instructions && <Row k="Instructions"><span className="whitespace-pre-wrap">{r.instructions}</span></Row>}
             <Row k="Deadline"><span className={r.overdue ? 'font-medium text-danger' : ''}>{r.dueOn ? fmtDate(r.dueOn) : 'No deadline'}</span>{r.overdue && <Badge tone="danger" className="ml-2">Overdue</Badge>}</Row>
             <Row k="Priority"><span className="capitalize">{r.priority}</span></Row>
-            <Row k="Accepted files">{r.formats.map((f) => REQUEST_FILE_LABEL[f]).join(', ')}, up to {r.maxMb} MB</Row>
+            <Row k="Accepted files">{r.formats.map((f) => REQUEST_FILE_LABEL[f]).join(', ')}, up to {r.maxMb} MB{(r.maxFiles ?? 1) > 1 ? `, up to ${r.maxFiles} files` : ''}</Row>
+            {r.checklistId && <Row k="Onboarding"><Link className="text-accent hover:underline" href={`/onboarding-documents/${r.checklistId}`}>{r.mandatory ? 'Mandatory' : 'Optional'} document in the onboarding checklist</Link></Row>}
             {r.expiryRequired && <Row k="Expiry date">Needed with the upload</Row>}
             <Row k="Requested on">{fmtWhen(r.createdAt)}</Row>
             {r.reviewer?.name && <Row k="Verified by">{r.reviewer.name}{r.reviewer.designation ? `, ${r.reviewer.designation}` : ''}{r.decidedAt ? <span className="block text-xs text-fg-muted">{fmtWhen(r.decidedAt)}</span> : null}</Row>}

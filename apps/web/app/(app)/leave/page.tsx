@@ -10,6 +10,8 @@ import { LeaveCalendar } from './leave-calendar';
 import { LeaveYear } from './leave-year';
 import { monthRange } from './month';
 import { ApplyLeave, MyRequests, TeamAway } from './leave-view';
+import type { CompOff } from './actions';
+import { CompOffCard } from './comp-off';
 import { MyLeaveTypes } from './my-types';
 
 export const metadata: Metadata = { title: 'Leave' };
@@ -41,11 +43,12 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
   const year = sp.year && /^\d{4}$/.test(sp.year) ? Number(sp.year) : Number(today.slice(0, 4));
   const { from, to } = yearView ? { from: `${year}-01-01`, to: `${year}-12-31` } : monthRange(month);
   const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-  const [requests, away, calendar, leaveFields] = await Promise.all([
+  const [requests, away, calendar, leaveFields, compOffs] = await Promise.all([
     load<LeaveRequest[]>('/leave/requests?scope=mine&limit=100'),
     scope && scope !== 'own' ? load<LeaveRequest[]>(`/leave/away?from=${today}&to=${in30}`) : Promise.resolve(null),
     load<LeaveCalendarData>(`/leave/calendar?from=${from}&to=${to}`),
     loadOptional<{ id: string; enabled: boolean }[]>('/custom-fields?entity=leave_request'),
+    loadOptional<CompOff[]>('/leave/comp-off?scope=mine'),
   ]);
   const sent = sp.sent ? requests.find((r) => r.id === sp.sent) : undefined;
   const canApply = can(me, 'leave:request') && balances.balances.length > 0;
@@ -84,6 +87,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
           <CardHeader title="My requests" description="A request waiting for approval can be changed or cancelled. Approved leave that has not started can be changed too: the change goes for approval and replaces it once approved." />
           <MyRequests requests={requests} balances={balances.balances} hasFields={Boolean(leaveFields?.some((f) => f.enabled))} />
         </Card>
+        {compOffs && (compOffs.length > 0 || mine.types.some((t) => t.kind === 'comp_off')) && <CompOffCard rows={compOffs} />}
         {away && <TeamAway rows={away} />}
       </div>
     </>

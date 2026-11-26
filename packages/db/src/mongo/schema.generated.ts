@@ -9289,6 +9289,32 @@ export const TABLES: Record<string, TableSpec> = {
     checks: [],
   },
   // Issue #89 (migration 0210) -------------------------------------------------------------------------------------
+  email_templates: {
+    // A company's own email designs (issue #89 point 13): imported HTML for every email (key layout) or for one kind
+    // of email (account, notification, recruitment, communication). Reset switches one off; nothing is deleted.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      name: {"type": "string"},
+      subject: {"type": "string"},
+      html: {"required": true, "type": "string"},
+      active: {"default": true, "required": true, "type": "bool"},
+      version: {"default": 1, "required": true, "type": "int"},
+      source_file_name: {"type": "string"},
+      updated_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "email_templates_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "email_templates_key"},
+    ],
+    fks: [{"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]}],
+    indexes: [],
+    checks: [],
+  },
   form_settings: {
     // A form's configuration, one row per form (employee_create: work email domains and the Add Employee fields).
     access: "tenant", grants: ["insert", "select", "update"], touch: true,

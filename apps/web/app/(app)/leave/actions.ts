@@ -49,3 +49,30 @@ export async function modifyLeaveAction(id: string, values: Record<string, unkno
   revalidatePath('/approvals');
   return r;
 }
+
+// Comp-off and leave rules by employment status (issue #89) ------------------------------------------------------------
+
+export interface CompOff {
+  id: string; employeeId: string; employeeName: string; workDate: string; dayKind: 'weekly_off' | 'holiday'; holidayName: string | null; days: string; reason: string;
+  workedMinutes: number | null; status: string; decidedBy: string | null; comment: string | null; decidedAt: string | null; createdAt: string; canDecide: boolean;
+}
+export interface StatusRule { leaveTypeId: string; code: string; name: string; kind: string; probation: 'allowed' | 'no_leave'; onConfirmationDays: string | null; prorate: boolean; updatedAt: string | null }
+
+export async function requestCompOffAction(body: { workDate: string; days: '1' | '0.5'; reason: string }) {
+  const r = await act(() => api<CompOff>('/leave/comp-off', { method: 'POST', body, idempotencyKey: crypto.randomUUID() }), 'Comp-off requested. Your manager or HR will approve it.');
+  revalidatePath('/leave');
+  return r;
+}
+
+export async function decideCompOffAction(id: string, decision: 'approve' | 'reject', comment?: string) {
+  const r = await act(() => api<CompOff>(`/leave/comp-off/${id}/decide`, { method: 'POST', body: { decision, ...(comment ? { comment } : {}) } }), decision === 'approve' ? 'Approved. The day is added to their comp-off balance.' : 'Rejected. They have been told the reason.');
+  revalidatePath('/leave/manage');
+  revalidatePath('/approvals');
+  return r;
+}
+
+export async function saveStatusRuleAction(leaveTypeId: string, body: { probation: 'allowed' | 'no_leave'; onConfirmationDays: string | null; prorate: boolean }) {
+  const r = await act(() => api<StatusRule>(`/leave/status-rules/${leaveTypeId}`, { method: 'PUT', body }), 'Saved. It applies to new joiners and to everyone confirmed from now on.');
+  revalidatePath('/leave/manage');
+  return r;
+}

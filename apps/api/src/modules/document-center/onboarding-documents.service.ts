@@ -355,7 +355,7 @@ export class OnboardingDocumentsService implements OnModuleInit {
         suggestedTemplateId: (suggested?.id ?? null) as string | null,
         categories: cats.map((c) => ({ id: c.id as string, name: c.name as string })),
         items: items.map(itemView),
-        templates: templates.map((t) => ({ id: t.id as string, name: t.name as string, description: (t.description ?? null) as string | null, isDefault: !!t.is_default, items: ((t.items ?? []) as { itemId: string; required: boolean }[]).filter((x) => live.has(x.itemId)) })),
+        templates: templates.map((t) => ({ id: t.id as string, name: t.name as string, description: (t.description ?? null) as string | null, isDefault: !!t.is_default, departmentIds: (t.department_ids ?? []) as string[], employmentTypes: (t.employment_types ?? []) as string[], items: ((t.items ?? []) as { itemId: string; required: boolean }[]).filter((x) => live.has(x.itemId)) })),
       };
     });
   }
@@ -504,7 +504,7 @@ export class OnboardingDocumentsService implements OnModuleInit {
         requestId: r.id as string, taskId: (r.task_id ?? null) as string | null, reference: r.reference as string, title: r.title as string,
         description: (it?.description ?? null) as string | null, instructions: (it?.instructions ?? r.instructions ?? null) as string | null, verification: mine ? null : ((it?.verification ?? null) as string | null),
         requirement: ((it?.requirement ?? (r.mandatory ? 'mandatory' : 'optional')) as OnboardingRequirement), mandatory: !!r.mandatory,
-        formats: (r.formats ?? []) as RequestFileFormat[], maxMb: r.max_mb as number, maxFiles: (r.max_files ?? 1) as number, category: (it?.category_id ?? null) as string | null,
+        formats: (r.formats ?? []) as RequestFileFormat[], maxMb: r.max_mb as number, maxFiles: (r.max_files ?? 1) as number, expiryRequired: !!r.expiry_required, category: (it?.category_id ?? null) as string | null,
         status, statusLabel: ONBOARDING_DOC_STATUS_LABEL[status], approved: status === 'approved',
         hrComment: (r.reviewer_comment ?? null) as string | null, submissions: (r.submissions ?? 0) as number,
         lastSubmittedAt: iso(r.submitted_at), decidedAt: iso(r.decided_at), dueOn: (r.due_on ?? null) as string | null, files,
