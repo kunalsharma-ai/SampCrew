@@ -51,7 +51,7 @@ export function MyPhoto({ employee, name }: { employee: { id: string; photoUpdat
               ref={input}
               type="file"
               accept="image/png,image/jpeg,image/webp"
-              className="sr-only"
+              className="hidden"
               aria-label="Choose your photo"
               tabIndex={-1}
               onChange={(ev) => { const f = ev.target.files?.[0]; ev.target.value = ''; if (f) upload(f); }}

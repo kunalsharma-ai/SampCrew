@@ -1233,3 +1233,7 @@ html:root[data-view="myday"][data-theme="dark"]:not(#crew-myday) {
 }
 /* Compact view: more on the screen. */
 :root[data-density="compact"][data-font="small"] .crew-main { max-width: 1560px; }
+
+/* A file picker inside a page title (the employee photo next to the name) never shows its "No file chosen" text,
+   whatever the title's styling (the HR Workspace gradient title paints clipped text too). Issue #86. */
+.crew-page-title input[type="file"] { display: none; }
