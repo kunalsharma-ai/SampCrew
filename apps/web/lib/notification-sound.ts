@@ -22,6 +22,9 @@ function context(): AudioContext | null {
   return ctx;
 }
 
+/** Gestures browsers accept for starting sound (touchend for phones and tablets, where pointerdown may not count). */
+const UNLOCK_EVENTS = ['pointerdown', 'keydown', 'click', 'touchend'] as const;
+
 /** Call once on mount: the first user gesture unlocks audio for the rest of the visit. */
 export function armAudioUnlock(): () => void {
   if (typeof window === 'undefined' || unlocked) return () => undefined;
@@ -36,11 +39,9 @@ export function armAudioUnlock(): () => void {
     if (p && Date.now() - p.at < PENDING_MS) playNotificationSound(p.priority, p.volume);
   };
   const remove = () => {
-    window.removeEventListener('pointerdown', unlock);
-    window.removeEventListener('keydown', unlock);
+    for (const e of UNLOCK_EVENTS) window.removeEventListener(e, unlock);
   };
-  window.addEventListener('pointerdown', unlock, { once: true });
-  window.addEventListener('keydown', unlock, { once: true });
+  for (const e of UNLOCK_EVENTS) window.addEventListener(e, unlock, { once: true });
   return remove;
 }
 

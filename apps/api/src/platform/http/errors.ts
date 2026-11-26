@@ -42,6 +42,8 @@ export const Errors = {
   featureOffInApp: (feature: string, client: string) => new AppError(HttpStatus.FORBIDDEN, 'feature_off_in_app', `${feature} is switched off in the ${client === 'mobile' ? 'mobile app' : 'Web Portal'} for this workspace by SAMPLEDGE.`, { feature, client }),
   mobileModuleOff: (module: string) => new AppError(HttpStatus.FORBIDDEN, 'mobile_module_off', `${module} is not available in the mobile app. Your company's Super Workspace decides which modules the app shows.`, { module }),
   workspaceLocked: () => new AppError(HttpStatus.PAYMENT_REQUIRED, 'workspace_read_only', 'Your workspace is read-only because an invoice is overdue. You can still view everything; a billing admin can pay on Plan & billing to open it again.'),
+  /** Signed out after the inactivity time Super Workspace set (issue #89). */
+  sessionIdle: () => new AppError(HttpStatus.UNAUTHORIZED, 'session_idle', 'You were signed out after a period of inactivity. Sign in again.'),
   tenantSuspended: () => new AppError(HttpStatus.FORBIDDEN, 'tenant_suspended', 'This workspace is suspended. Contact your administrator or SAMPLEDGE support.'),
   unavailable: (code: string, message: string) => new AppError(HttpStatus.SERVICE_UNAVAILABLE, code, message),
   tooMany: (message = 'Too many attempts. Try again later.') => new AppError(HttpStatus.TOO_MANY_REQUESTS, 'rate_limited', message),

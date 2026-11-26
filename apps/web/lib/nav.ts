@@ -135,7 +135,6 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/goals', label: 'Goals', icon: 'target', permission: 'performance:read', feature: 'performance' },
       { href: '/reviews', label: 'Reviews', icon: 'messages-square', permission: 'performance:read', feature: 'performance' },
-      { href: '/reviews/cycles', label: 'Review cycles', icon: 'calendar-range', permission: 'performance:configure', feature: 'performance' },
       { href: '/settings/appraisals', label: 'Appraisal forms & cycles', icon: 'award', permission: 'performance:configure', feature: 'performance' },
       { href: '/learning', label: 'My learning', icon: 'graduation-cap', permission: 'learning:read', feature: 'learning' },
       { href: '/learning/manage', label: 'Learning management', icon: 'book-open', permission: 'learning:manage', feature: 'learning' },

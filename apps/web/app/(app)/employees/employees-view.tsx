@@ -26,9 +26,9 @@ const COLUMNS: DataColumn<Employee>[] = [
     key: 'name', label: 'Name', sort: 'name', required: true,
     render: (e) => (
       <Link href={`/employees/${e.id}`} className="flex items-center gap-3" onClick={(ev) => ev.stopPropagation()}>
-        <Avatar name={e.displayName} size={32} src={photoUrl(e)} />
+        <Avatar name={e.legalName ?? e.displayName} size={32} src={photoUrl(e)} />
         <span>
-          <span className="block font-medium">{e.displayName}</span>
+          <span className="block font-medium">{e.legalName ?? e.displayName}</span>
           <span className="block text-xs text-fg-subtle">{e.designationName ?? 'No designation'}{e.membershipId ? '' : ' · no SampCrew login'}</span>
         </span>
       </Link>

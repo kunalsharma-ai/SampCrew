@@ -198,8 +198,11 @@ export function LiveProvider({ initial, byCategory: initialByCategory, actionNee
         // updates on its own); the bell still counts it.
         // Quiet hours hold back sound, pop-ups and system notifications too (urgent ones still come through).
         const quiet = d.self || onPage(d.notification.link) || quietNow(p, d.notification.priority);
+        // The tone still plays on the page the notice is about (issue #89: every new notice should sound); only your
+        // own actions and quiet hours stay silent.
+        const silent = d.self || quietNow(p, d.notification.priority);
         // One sound per notice across all open tabs, and none again when a folded notice (chat) only counts up.
-        if (!quiet && p && shouldPlaySound(p.sound, d.notification.priority, d.notification.category, p)) {
+        if (!silent && p && shouldPlaySound(p.sound, d.notification.priority, d.notification.category, p)) {
           void claimNotice(d.notification.id, d.folded).then((mine) => mine && playNotificationSound(d.notification.priority, p.sound.volume, { queueIfLocked: true }));
         }
         if (!quiet && (!p || p.toasts)) {

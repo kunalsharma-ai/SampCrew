@@ -128,7 +128,7 @@ export async function loadSession<T>(path: string): Promise<T> {
   try {
     return await api<T>(path);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) redirect('/signed-out?reason=expired');
+    if (e instanceof ApiError && e.status === 401) redirect(e.code === 'session_idle' ? '/signed-out?reason=idle' : '/signed-out?reason=expired');
     if (e instanceof ApiError && (e.status === 402 || e.status === 403)) redirect(`/signed-out?reason=${encodeURIComponent(e.code)}`);
     throw e;
   }

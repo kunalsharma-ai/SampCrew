@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { ApiError, api, apiRaw } from '@/lib/api';
 
 /** Announcement attachments: the API checks the announcement is addressed to you and issues a short signed link. */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) return new NextResponse('File not found', { status: 404 });
   try {
@@ -13,6 +13,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     for (const h of ['content-type', 'content-length', 'content-disposition']) {
       const v = file.headers.get(h);
       if (v) headers.set(h, v);
+    }
+    // ?view=1 opens a PDF, picture or text file in the browser tab instead of saving it.
+    const type = headers.get('content-type') ?? '';
+    if (new URL(req.url).searchParams.get('view') === '1' && /^(application\/pdf|image\/(png|jpeg|webp|gif)|text\/plain)\b/.test(type)) {
+      const disposition = headers.get('content-disposition');
+      headers.set('content-disposition', disposition ? disposition.replace(/^attachment/i, 'inline') : 'inline');
     }
     return new NextResponse(file.body, { headers });
   } catch (e) {

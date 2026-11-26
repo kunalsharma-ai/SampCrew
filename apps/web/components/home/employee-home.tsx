@@ -1,5 +1,5 @@
 'use client';
-import type { EmployeeHome, HomeCalendarDay } from '@crew/contracts';
+import { unverifiedReason, type EmployeeHome, type HomeCalendarDay } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardHeader, cn, type Tone } from '@crew/ui';
 import {
   AlarmClock, CalendarCheck2, CalendarDays, CalendarOff, ChevronLeft, ChevronRight, CircleDot, Clock3, Coffee, GraduationCap, Home as HomeIcon, LogIn, LogOut,
@@ -77,6 +77,7 @@ export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; 
   const punch = (direction: 'in' | 'out', note?: string, done?: string) => start(async () => {
     setNotice(null);
     const { where, refused } = await punchLocation(today);
+    const fix = where;
     if (refused) {
       setNotice({ tone: 'danger', text: refused });
       return;
@@ -88,7 +89,7 @@ export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; 
       const outside = pz.geofence === 'outside' && !pz.workZone;
       const where = pz.workZone === 'office' ? ` at ${pz.place ?? 'the office'}` : pz.workZone === 'remote' ? ', away from the office' : '';
       const unverified = pz.workZone === 'unverified';
-      setNotice({ tone: outside || unverified ? 'warning' : 'success', text: `${done ?? (direction === 'in' ? 'Checked in' : 'Checked out')}${where} at ${clock(new Date().toISOString())}.${outside ? ' You appear to be away from your workplace; this is recorded.' : ''}${unverified ? ' Your location could not be read, so today waits for HR to verify it.' : ''}` });
+      setNotice({ tone: outside || unverified ? 'warning' : 'success', text: `${done ?? (direction === 'in' ? 'Checked in' : 'Checked out')}${where} at ${clock(new Date().toISOString())}.${outside ? ' You appear to be away from your workplace; this is recorded.' : ''}${unverified ? ` ${unverifiedReason(fix.locationStatus === 'ok' ? 'poor_accuracy' : fix.locationStatus === 'denied' ? 'denied' : fix.locationStatus ? 'unavailable' : 'no_location', { accuracyM: fix.accuracyM ?? null, maxAccuracyM: today.workMode?.maxAccuracyM ?? null })} Until then today waits for verification.` : ''}` });
       window.dispatchEvent(new Event('crew:punched')); // the top bar's check-in button follows
       router.refresh();
     }

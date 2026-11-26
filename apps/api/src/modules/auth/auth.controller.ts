@@ -175,6 +175,15 @@ export class AuthController {
     await this.auth.logout();
   }
 
+  @Post('activity')
+  @AllowWithoutMfa()
+  @HttpCode(204)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Doc({ summary: 'The person is using SampCrew: resets the automatic sign-out clock the Super Workspace set' })
+  async activity() {
+    await this.auth.activity();
+  }
+
   @Post('switch-tenant')
   @AllowWithoutMfa()
   @HttpCode(200)

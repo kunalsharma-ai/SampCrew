@@ -78,9 +78,16 @@ const count = async (p) => {
     const op = await signIn(b, 'operator2@demo.crew.local');
     await op.goto(BASE + '/settings/notifications');
     const sound = op.getByTestId('sound-enabled');
-    if ((await sound.getAttribute('aria-checked')) !== 'false') throw new Error('sound should be off by default');
+    // Issue #89: notices sound by default; each person can still switch it off.
+    if ((await sound.getAttribute('aria-checked')) !== 'true') throw new Error('sound should be on by default');
     if (!(await op.getByRole('switch', { name: 'Approvals in SampCrew' }).isDisabled())) throw new Error('approval notices should not be switchable off');
     await sound.click();
+    await op.click('text=Save notification settings');
+    await op.getByText(/saved/i).first().waitFor();
+    await op.reload();
+    await op.getByTestId('sound-enabled').waitFor();
+    if ((await op.getByTestId('sound-enabled').getAttribute('aria-checked')) !== 'false') throw new Error('switching sound off did not persist');
+    await op.getByTestId('sound-enabled').click();
     await op.click('text=Save notification settings');
     await op.getByText(/saved/i).first().waitFor();
     await op.reload();
@@ -90,7 +97,7 @@ const count = async (p) => {
     if ((await op.evaluate(() => window.__tones)) !== 0) throw new Error('a sound played on page load');
     await op.getByRole('button', { name: 'Urgent' }).click();
     await op.waitForFunction(() => window.__tones > 0);
-    ok('sound is off by default, saved on, never plays on load, preview plays');
+    ok('sound is on by default, can be switched off and on, never plays on load, preview plays');
 
     // 2. The supervisor sees a new request arrive live.
     const sup = await signIn(b, 'supervisor@demo.crew.local');

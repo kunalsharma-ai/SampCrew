@@ -131,3 +131,10 @@ export async function supportDecisionAction(id: string, decision: 'approve' | 'r
   revalidatePath('/settings/support');
   return r;
 }
+
+/** Automatic sign-out time for everyone (Super Workspace only, issue #89). */
+export async function saveSessionPolicyAction(idleMinutes: number) {
+  const r = await act(() => api('/tenant/session-policy', { method: 'PUT', body: { idleMinutes } }));
+  revalidatePath('/', 'layout');
+  return r;
+}

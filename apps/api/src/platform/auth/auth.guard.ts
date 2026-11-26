@@ -12,6 +12,7 @@ import { EntitlementsService } from '../entitlements/entitlements.service';
 import { Errors } from '../http/errors';
 import { ApiKeysService } from '../../modules/integrations/api-keys.service';
 import { ScimService } from '../../modules/identity/scim.service';
+import { idleLimit, isIdle } from './idle';
 import { TokenService } from './token.service';
 
 /**
@@ -91,7 +92,11 @@ export class AuthGuard implements CanActivate {
       if (!membership || !tenant || !user) return undefined;
       const controls = await tx.collection('tenant_access_controls').findOne({ tenant_id: tenant.id });
       const sub = await tx.collection('subscriptions').findOne({ tenant_id: tenant.id }, { projection: { locked_at: 1 } });
+      const idle = await idleLimit(tx, tenant.id as string, session.client as string);
+      const idleOut = !!idle && !session.revoked_at && isIdle(session.last_active_at as Date | null | undefined, idle);
+      if (idleOut) await tx.collection('sessions').update({ family_id: session.family_id, revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'idle_timeout' } });
       return {
+        idle_out: idleOut,
         session_ok: !session.revoked_at && session.expires_at > new Date(),
         membership_status: membership.status as string,
         tenant_status: tenant.status as string,
@@ -104,6 +109,7 @@ export class AuthGuard implements CanActivate {
         locked: Boolean(sub?.locked_at),
       };
     });
+    if (row?.idle_out) throw Errors.sessionIdle();
     if (!row?.session_ok || row.membership_status !== 'active') throw Errors.unauthorized('Your session is no longer valid. Sign in again.');
     if (row.tenant_status !== 'active') throw Errors.tenantSuspended();
     // An app SAMPLEDGE switched off for the workspace is closed on every request, not only at sign-in.

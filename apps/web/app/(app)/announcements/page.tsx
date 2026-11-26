@@ -2,6 +2,7 @@ import { ModuleNotices } from '@/components/module-notices';
 import { ANNOUNCEMENT_CATEGORIES, ANNOUNCEMENT_CATEGORY_LABELS } from '@crew/contracts';
 import { Badge, Card, CardBody, EmptyState, Input, PageHeader, buttonClass, cn } from '@crew/ui';
 import { Megaphone, Paperclip } from 'lucide-react';
+import { AnnouncementFiles } from './announcement-files';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load } from '@/lib/api';
@@ -73,8 +74,9 @@ export default async function AnnouncementsPage({ searchParams }: { searchParams
               <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[0.8125rem] text-fg-muted">{a.body}</p>
               <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
                 <span suppressHydrationWarning>{a.publishedAt && dateTime(a.publishedAt)}{a.publishedByName ? ` · ${a.publishedByName}` : ''}{a.editedAt ? ' · edited' : ''}</span>
-                {a.files.length > 0 && <span className="inline-flex items-center gap-1"><Paperclip className="size-3" aria-hidden />{a.files.length}</span>}
+                {a.files.length > 0 && <span className="inline-flex items-center gap-1"><Paperclip className="size-3" aria-hidden />{a.files.length} {a.files.length === 1 ? 'attachment' : 'attachments'}</span>}
               </p>
+              {a.files.length > 0 && <div className="mt-2"><AnnouncementFiles files={a.files} compact /></div>}
             </CardBody>
           </Card>
         ))}

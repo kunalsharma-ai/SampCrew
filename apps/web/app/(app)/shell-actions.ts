@@ -9,6 +9,18 @@ export async function logoutAction() {
   redirect('/login');
 }
 
+/** Automatic sign-out after inactivity (issue #89): ends the session on the server too, then says why on sign-in. */
+export async function idleLogoutAction() {
+  await api('/auth/logout', { method: 'POST' }).catch(() => undefined);
+  await clearSession();
+  redirect('/login?reason=idle');
+}
+
+/** The person is using SampCrew: resets the server's inactivity clock. */
+export async function sessionActivityAction() {
+  await api('/auth/activity', { method: 'POST' }).catch(() => undefined);
+}
+
 export async function switchTenantAction(tenantId: string) {
   try {
     const t = await api<TokenPair>('/auth/switch-tenant', { method: 'POST', body: { tenantId } });

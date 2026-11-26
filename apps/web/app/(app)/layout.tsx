@@ -7,6 +7,7 @@ import { loadOptional, loadSession } from '@/lib/api';
 import { DeletePasswordProvider } from '@/components/delete-guard';
 import { MfaStepUpProvider } from '@/components/mfa-step-up';
 import { LiveProvider } from '@/components/live';
+import { IdleWatch } from '@/components/idle-watch';
 import { appearanceFromCookie } from '@/lib/appearance-cookie';
 import { canSwitchWorkView, myDayNav, quickActions, visibleNav, workflowActions } from '@/lib/nav';
 import type { Me, TaskCounts } from '@/lib/types';
@@ -58,6 +59,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       <script nonce={nonce} dangerouslySetInnerHTML={{ __html: levelScript }} />
       <RememberWelcome scene={welcomeSceneFor(me.levels)} />
+      <IdleWatch minutes={me.session.idleMinutes} />
       {/* The welcome that plays once right after signing in, over the dashboard while it loads. */}
       <WelcomeIntro scene={welcomeSceneFor(me.levels)} name={me.user.fullName} workspace={me.tenant.name} />
       {me.tenant.isDemo && <DemoBanner />}

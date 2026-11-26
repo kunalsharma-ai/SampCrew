@@ -414,6 +414,7 @@ export class WorkModeService implements OnModuleInit {
         : last && lastZone ? { zone: lastZone.zone, place: lastZone.place, at: last.captured_at, verification: last.location_verification } : null,
       requirement: await this.requirementFor(tx, e, s),
       offices: (await this.placesFor(tx, e, s)).filter((p) => p.countsAs === 'office').map((p) => ({ name: p.name, kind: p.kind, radiusM: p.radiusM })),
+      maxAccuracyM: s.maxAccuracyM,
       canRequestCorrection: s.employeeCanRequestCorrection,
     };
   }

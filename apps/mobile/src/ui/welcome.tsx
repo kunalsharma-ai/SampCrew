@@ -353,16 +353,15 @@ export function SignInGreeting({ scene }: { scene: WelcomeScene }) {
     }, 2200);
     return () => clearInterval(id);
   }, [reduced, fade]);
-  const copy = WELCOME_COPY[scene];
   return (
-    <View testID="signin-greeting" style={{ gap: 2, marginTop: 4 }}>
+    <View testID="signin-greeting" nativeID={`signin-greeting-${scene}`} style={{ gap: 2, marginTop: 4 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Animated.Text accessibilityElementsHidden importantForAccessibility="no" style={{ fontSize: 22, transform: [{ rotate: wave.interpolate({ inputRange: [0, 1], outputRange: ['-12deg', '18deg'] }) }] }}>👋</Animated.Text>
         <Text style={{ color: t.fg, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }} testID="signin-greeting-time">{timeGreeting(new Date().getHours())}</Text>
         <Animated.Text style={{ opacity: fade, color: t.accent, fontSize: 18, fontWeight: '800' }} testID="signin-greeting-hello">· {WELCOME_HELLOS[i]}</Animated.Text>
       </View>
       <Text style={{ color: t.muted, fontSize: 14 }}>
-        Sign in to your <Text style={{ color: t.fg, fontWeight: '800' }}>{copy.level}</Text> with your work email.
+        Sign in to your <Text style={{ color: t.fg, fontWeight: '800' }}>workspace</Text> with your work email.
       </Text>
     </View>
   );

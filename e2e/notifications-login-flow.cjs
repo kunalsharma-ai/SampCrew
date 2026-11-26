@@ -126,8 +126,8 @@ const unread = async (p) => {
     const lp = await guest.newPage();
     watch(lp, 'guest');
     const scenes = [
-      ['super', 'Super Workspace', 'Sign in to your Super Workspace'],
-      ['hr', 'HR Workspace', 'Sign in to your HR Workspace'],
+      ['super', 'Super Workspace', 'Sign in to your workspace'],
+      ['hr', 'HR Workspace', 'Sign in to your workspace'],
       ['manager', 'Employee Workspace', 'Sign in to your workspace'],
       ['employee', 'Employee Workspace', 'Sign in to your workspace'],
     ];

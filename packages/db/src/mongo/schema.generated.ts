@@ -7305,6 +7305,8 @@ export const TABLES: Record<string, TableSpec> = {
       family_id: {"required": true, "type": "uuid"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       ip: {"type": "string"},
+      // When the person last used SampCrew (POST /auth/activity), carried across refreshes: the automatic sign-out clock.
+      last_active_at: {"type": "timestamp"},
       last_used_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       // Where the person was when they signed in (issue #86): read once by the browser or app after sign-in, when the
       // company reads locations and the person allowed it. Null: not shared.
@@ -8151,8 +8153,8 @@ export const TABLES: Record<string, TableSpec> = {
     // A workspace reads its own row and updates its settings (column grants in PostgreSQL; see TenancyService).
     access: "tenant_self", grants: ["select", "update"],
     tenantColumns: {
-      select: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "country_code", "created_at", "currency", "id", "industry", "is_demo", "locale", "name", "region", "registration_ip", "require_mfa", "setup_completed_at", "setup_step", "slug", "status", "timezone", "website"],
-      update: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "currency", "industry", "locale", "name", "registration_ip", "require_mfa", "setup_completed_at", "setup_step", "timezone", "website"],
+      select: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "country_code", "created_at", "currency", "id", "industry", "is_demo", "locale", "name", "region", "registration_ip", "require_mfa", "session_idle_minutes", "setup_completed_at", "setup_step", "slug", "status", "timezone", "website"],
+      update: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "currency", "industry", "locale", "name", "registration_ip", "require_mfa", "session_idle_minutes", "setup_completed_at", "setup_step", "timezone", "website"],
     }, touch: true,
     columns: {
       brand_color: {"type": "string"},
@@ -8176,6 +8178,8 @@ export const TABLES: Record<string, TableSpec> = {
       // The IP address the company registered from (sign-up or the Console's new company), recorded once, shown locked.
       registration_ip: {"type": "string"},
       require_mfa: {"default": false, "required": true, "type": "bool"},
+      // Automatic sign-out after this many minutes of inactivity, for everyone (issue #89); null: off. Super Workspace only.
+      session_idle_minutes: {"type": "int"},
       setup_completed_at: {"type": "timestamp"},
       setup_step: {"default": 0, "required": true, "type": "int"},
       slug: {"required": true, "type": "citext"},

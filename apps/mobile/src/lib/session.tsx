@@ -117,7 +117,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const api = useMemo(() => new Api(API_URL, tokenStore, () => signedOutLocally()), [signedOutLocally]);
+  const api = useMemo(() => {
+    const a = new Api(API_URL, tokenStore, () => signedOutLocally());
+    a.trackActivity = true;
+    return a;
+  }, [signedOutLocally]);
 
   const loadQueue = useCallback(async (extra: Partial<QueueState> = {}) => {
     const o = outbox.current;

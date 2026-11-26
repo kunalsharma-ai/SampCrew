@@ -6,6 +6,7 @@ import { ConsoleNotifyService } from '../../platform/notify/console-notify.servi
 import { mongo } from '@crew/db';
 import { AuditService } from '../../platform/audit/audit.service';
 import { decryptField, encryptField, hashPassword, randomToken, sha256, verifyPassword } from '../../platform/auth/crypto';
+import { idleLimit, isIdle } from '../../platform/auth/idle';
 import { generateMfaSecret, mfaUri, verifyTotp } from '../../platform/auth/mfa';
 import { TokenService } from '../../platform/auth/token.service';
 import { AuthzService } from '../../platform/authz/authz.service';
@@ -231,7 +232,7 @@ export class AuthService {
   /** Creates a session row (refresh token stored as a hash) and returns a signed access token. */
   private async issueSession(
     tx: PlatformTx,
-    s: { userId: string; tenantId: string; membershipId: string; mfa: boolean; client: Client; familyId?: string },
+    s: { userId: string; tenantId: string; membershipId: string; mfa: boolean; client: Client; familyId?: string; lastActiveAt?: Date | null },
   ): Promise<TokenPair> {
     // SAMPLEDGE can switch the Web Portal or the mobile app off for a workspace (Console > Features & permissions > Apps).
     if (s.client === 'web' || s.client === 'mobile') {
@@ -250,6 +251,9 @@ export class AuthService {
       ip: ctx?.ip ?? null,
       user_agent: ctx?.userAgent?.slice(0, 400) ?? null,
       expires_at: new Date(Date.now() + this.config.REFRESH_TOKEN_TTL_DAYS * 86_400_000),
+      // When the person last used SampCrew (issue #89): a refreshed token keeps the time, so a page that only polls in
+      // the background never resets the automatic sign-out clock.
+      last_active_at: s.lastActiveAt ?? new Date(),
     });
     if (!s.familyId) {
       await tx.collection('users').updateOne({ id: s.userId }, { $set: { last_login_at: new Date() } });
@@ -282,10 +286,27 @@ export class AuthService {
       // Marking it rotated in this transaction means a second refresh with the same token conflicts and is retried,
       // then sees rotated_at and is treated as reuse (the row lock did this in PostgreSQL).
       await tx.collection('sessions').updateOne({ id: s.id }, { $set: { rotated_at: new Date(), revoked_at: new Date(), revoked_reason: 'rotated' } });
-      return this.issueSession(tx, { userId: s.user_id, tenantId: s.tenant_id, membershipId: m.membership_id, mfa: s.mfa_verified, client: s.client, familyId: s.family_id });
+      const idle = await idleLimit(tx, s.tenant_id, s.client);
+      const lastActive = (s as { last_active_at?: Date | null }).last_active_at ?? null;
+      if (idle && isIdle(lastActive, idle)) {
+        await tx.collection('sessions').update({ family_id: s.family_id, revoked_at: null }, { $set: { revoked_at: new Date(), revoked_reason: 'idle_timeout' } });
+        await this.audit.record(tx, { tenantId: s.tenant_id, action: 'auth.idle_timeout', resourceType: 'session', resourceId: s.id, metadata: { idleMinutes: idle } });
+        return 'idle' as const;
+      }
+      return this.issueSession(tx, { userId: s.user_id, tenantId: s.tenant_id, membershipId: m.membership_id, mfa: s.mfa_verified, client: s.client, familyId: s.family_id, lastActiveAt: lastActive });
     }).then((r) => {
+      if (r === 'idle') throw Errors.sessionIdle();
       if (!r) throw Errors.unauthorized('This session was revoked for your security. Sign in again.');
       return r;
+    });
+  }
+
+  /** The person used SampCrew (clicked, typed, opened a page): resets their automatic sign-out clock (issue #89). */
+  async activity(): Promise<void> {
+    const actor = requestContext.tenantActor();
+    await this.db.platform(async (tx) => {
+      const current = await tx.collection('sessions').findOne({ id: actor.sessionId }, { projection: { family_id: 1 } });
+      if (current) await tx.collection('sessions').update({ family_id: current.family_id, revoked_at: null }, { $set: { last_active_at: new Date() } });
     });
   }
 
@@ -367,7 +388,7 @@ export class AuthService {
       disabledPermissions: data.disabledPermissions,
       limits: data.ent.limits,
       subscription: data.ent.planKey ? { plan: data.ent.planKey, status: data.ent.status!, trialEndsOn: data.ent.trialEndsOn, locked: data.ent.locked } : null,
-      session: { mfa: actor.mfa, locationPending: data.locationTracking !== 'off' && !located },
+      session: { mfa: actor.mfa, locationPending: data.locationTracking !== 'off' && !located, idleMinutes: (data.tenant!.session_idle_minutes as number | null | undefined) || null },
       client: actor.client ?? 'web',
       tenants,
       employee: data.employee ? { id: data.employee.id, photoUpdatedAt: data.employee.photo_updated_at?.toISOString() ?? null } : null,
