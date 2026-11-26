@@ -267,6 +267,23 @@ export function myDayNav(nav: NavGroup[]): NavGroup[] {
   return nav.map((g) => ({ ...g, items: g.items.filter((i) => MY_DAY_HREFS.has(i.href)) })).filter((g) => g.items.length);
 }
 
+/**
+ * The views of Home and the menu, switched at the top of the sidebar (issue #89, replacing the menu filter): the Super
+ * Workspace's Organization and Workforce, an HR Workspace's My Workforce, and My Day for anyone who can switch to their
+ * own work. Empty or one entry means there is nothing to switch.
+ */
+export type HomeViewKey = 'organization' | 'workforce' | 'myday';
+export const HOME_VIEW_COOKIE = 'crew_home_view';
+export function homeViews(me: Me): { key: HomeViewKey; label: string }[] {
+  const sup = Boolean(me.levels?.super);
+  const seesWorkforce = isAdminLevel(me) && (me.permissions['employees:read'] ?? 'own') !== 'own';
+  return [
+    ...(sup ? [{ key: 'organization' as const, label: 'Organization' }] : []),
+    ...(seesWorkforce ? [{ key: 'workforce' as const, label: sup ? 'Workforce' : 'My Workforce' }] : []),
+    ...(canSwitchWorkView(me) ? [{ key: 'myday' as const, label: 'My Day' }] : []),
+  ];
+}
+
 /** Super Workspace or HR Workspace (company-wide or for named HR Workspaces). */
 export const isAdminLevel = (me: Me) => Boolean(me.levels?.super || me.levels?.companyHr || me.levels?.hrWorkspaces?.length);
 

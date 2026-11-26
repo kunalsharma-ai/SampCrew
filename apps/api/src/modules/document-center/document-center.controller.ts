@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post, Put, Query, UploadedFile as File, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Body, Controller, Get, Header, HttpCode, Param, Post, Put, Query, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import {
   DOCUMENT_MAX_BYTES, documentAccessInput, documentCancelInput, documentCategoryInput, documentDecisionInput, documentRepositoryQuery, documentRequestInput, documentRequestQuery,
   documentSubmitMeta, documentTypeInput, type DocumentRequestInput, type DocumentRepositoryQuery,
@@ -139,10 +139,10 @@ export class DocumentCenterController {
 
   @Post('document-requests/:id/submit')
   @HttpCode(200)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: DOCUMENT_MAX_BYTES, files: 1 } }))
-  @Doc({ summary: 'Submit the requested document (multipart/form-data: file, remarks, expiresOn). It goes for verification.' })
-  submit(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(documentSubmitMeta)) body: z.infer<typeof documentSubmitMeta>, @File() file?: UploadedFile) {
-    return this.center.submit(id, file, body);
+  @UseInterceptors(FileFieldsInterceptor([{ name: 'file', maxCount: 1 }, { name: 'files', maxCount: 10 }], { limits: { fileSize: DOCUMENT_MAX_BYTES, files: 10 } }))
+  @Doc({ summary: 'Submit the requested document (multipart/form-data: file, or files for a document that takes several, remarks, expiresOn). It goes for verification.' })
+  submit(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(documentSubmitMeta)) body: z.infer<typeof documentSubmitMeta>, @UploadedFiles() given?: { file?: UploadedFile[]; files?: UploadedFile[] }) {
+    return this.center.submit(id, [...(given?.file ?? []), ...(given?.files ?? [])], body);
   }
 
   @Post('document-requests/:id/review')

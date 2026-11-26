@@ -202,21 +202,6 @@ export function HomeHeader({ name, level, workspace, timeZone, renderedAt, child
   );
 }
 
-/** Tabs between a level's views (Organisation, Workforce, My day), kept in the URL. */
-export function ViewTabs({ tabs, current }: { tabs: { key: string; label: string; href: string }[]; current: string }) {
-  if (tabs.length < 2) return null;
-  return (
-    <nav aria-label="Home views" className="mb-5 inline-flex rounded-xl border border-border bg-surface p-1 shadow-sm">
-      {tabs.map((t) => (
-        <Link key={t.key} href={t.href} scroll={false} aria-current={t.key === current ? 'page' : undefined}
-          className={cn('rounded-lg px-3 py-1.5 text-[0.8125rem] font-medium transition-colors', t.key === current ? 'bg-accent text-accent-fg shadow-sm' : 'text-fg-muted hover:bg-bg-subtle hover:text-fg')}>
-          {t.label}
-        </Link>
-      ))}
-    </nav>
-  );
-}
-
 export const relative = (iso: string | null, now = Date.now()) => {
   if (!iso) return '';
   const s = Math.round((now - Date.parse(iso)) / 1000);

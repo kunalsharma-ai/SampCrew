@@ -46,7 +46,7 @@ function WorkspaceCard({ w }: { w: WorkspaceHealth }) {
 function Comparison({ list }: { list: WorkspaceHealth[] }) {
   return (
     <Card data-testid="workspace-comparison">
-      <CardHeader title="HR Workspace performance" description="The same figures for each HR Workspace today, in name order." />
+      <CardHeader title="HR Workspace performance" href="/hr-workspaces" linkAs={Link} description="The same figures for each HR Workspace today, in name order." />
       <div className="overflow-x-auto px-2 pb-4">
         <table className="w-full min-w-[40rem] text-[0.8125rem]">
           <thead><tr className="text-left text-[0.6875rem] uppercase tracking-wide text-fg-subtle">
@@ -76,7 +76,7 @@ function Comparison({ list }: { list: WorkspaceHealth[] }) {
 function LearningOverview({ l }: { l: OrganizationHome['learning'] }) {
   return (
     <Card data-testid="org-learning">
-      <CardHeader title="Learning overview" description={l.assigned ? `${l.completion ?? 0}% of ${l.assigned} assignments completed, ${l.active} courses in use` : 'No learning assigned yet.'} action={<Link className="text-xs font-medium text-accent hover:underline" href="/learning?view=team">View progress</Link>} />
+      <CardHeader title="Learning overview" href="/learning?view=team" linkAs={Link} description={l.assigned ? `${l.completion ?? 0}% of ${l.assigned} assignments completed, ${l.active} courses in use` : 'No learning assigned yet.'} action={<Link className="text-xs font-medium text-accent hover:underline" href="/learning?view=team">View progress</Link>} />
       <div className="grid grid-cols-1 gap-3 px-5 pb-5">
         <div className="grid grid-cols-3 gap-2 text-center text-[0.6875rem]">
           <div className="rounded-lg bg-bg-subtle p-2"><div className="text-lg font-bold tabular">{l.active}</div>Active modules</div>
@@ -102,7 +102,7 @@ function LeaveOverview({ d }: { d: LeaveDashboard }) {
   const c = d.counts;
   return (
     <Card data-testid="org-leave-overview">
-      <CardHeader title="Leave overview" description={`${c.activeTypes} active leave type${c.activeTypes === 1 ? '' : 's'} for ${c.employees} people in ${d.year}. Days are only what administrators typed.`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/leave/manage">Leave management</Link>} />
+      <CardHeader title="Leave overview" href="/leave/manage" linkAs={Link} description={`${c.activeTypes} active leave type${c.activeTypes === 1 ? '' : 's'} for ${c.employees} people in ${d.year}. Days are only what administrators typed.`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/leave/manage">Leave management</Link>} />
       <div className="grid grid-cols-1 gap-3 px-5 pb-5">
         <div className="grid grid-cols-4 gap-2 text-center text-[0.6875rem]">
           <Link href="/leave/manage?tab=approvals" className="rounded-lg bg-warning-subtle p-2 text-warning hover:ring-1 hover:ring-warning"><div className="text-lg font-bold tabular">{c.waitingForMe}</div>Waiting for you</Link>
@@ -154,7 +154,7 @@ export function OrganizationHomeView({ o, trend, trendDays, actions, leave }: { 
         <TrendCard trend={trend} days={trendDays} base="/?view=organization" title="Attendance trends" />
       </div>
       <Card data-testid="workspace-health">
-        <CardHeader title="Workspace health" description={`Attendance target ${o.targetRate}%. Open an HR Workspace for its own dashboard.`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/hr-workspaces">Manage HR Workspaces</Link>} />
+        <CardHeader title="Workspace health" href="/hr-workspaces" linkAs={Link} description={`Attendance target ${o.targetRate}%. Open an HR Workspace for its own dashboard.`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/hr-workspaces">Manage HR Workspaces</Link>} />
         <div className="grid grid-cols-1 gap-3 px-5 pb-5 sm:grid-cols-2 xl:grid-cols-3">
           {o.workspaces.length === 0 ? <p className="text-[0.8125rem] text-fg-muted">No HR Workspaces yet. Create one to delegate a department, branch or region.</p> : o.workspaces.map((w) => <WorkspaceCard key={w.id} w={w} />)}
         </div>

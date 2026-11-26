@@ -101,3 +101,4 @@ export * from './company-profile';
 export * from './employee-record';
 export * from './page-access';
 export * from './feedback-89';
+export * from './onboarding-documents';

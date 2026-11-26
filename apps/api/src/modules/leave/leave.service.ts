@@ -3,7 +3,7 @@ import type { z } from 'zod';
 import {
   LEAVE_AUTHORITY_LABELS, LEAVE_VISIBILITY_LABELS, leaveApprovalRules, leaveCodeFrom, leaveEligibility, leaveMath, leaveRef, leaveRoutesFor, leaveTypeInput, leaveTypePolicy,
   type LeaveAuthority, type LeaveModifyInput, type LeaveQuantityInput, type LeaveRequestInput, type LeaveTypeInput, type LeaveTypeSimpleInput, type LeaveTypeUpdate,
-  type LeaveVisibility, type WorkCalendar,
+  type LeaveVisibility, type WorkCalendar, COMP_OFF_WINDOW_DAYS, confirmationCredit, type CompOffRequestInput, type LeaveStatusRuleInput, type compOffDecisionInput,
 } from '@crew/contracts';
 import type {
   holidayCalendarInput, holidayInput, leaveAdjustmentInput, leaveAdjustmentsQuery, leaveBalanceOverviewQuery, leaveHistoryQuery, leaveReportQuery,
@@ -90,6 +90,24 @@ export class LeaveService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    this.approvals.register('comp_off', {
+      permission: 'leave:approve',
+      configurePermission: 'leave:configure',
+      defaultSteps: [{ type: 'manager' }],
+      fallbackRole: 'hr_workspace',
+      label: 'Comp-off request',
+      link: () => '/leave?tab=comp-off',
+      attributes: async (tx, id) => {
+        const r = await tx.collection('comp_off_requests').findOne({ id });
+        return this.attrsOf(await this.employee(tx, r!.employee_id));
+      },
+      details: async (tx, id) => {
+        const r = await tx.collection('comp_off_requests').findOne({ id });
+        return r ? { workDate: r.work_date, day: r.day_kind === 'holiday' ? `Holiday${r.holiday_name ? `: ${r.holiday_name as string}` : ''}` : 'Weekly off', days: String(Number(r.days)), worked: r.worked_minutes != null ? `${Math.floor((r.worked_minutes as number) / 60)} h ${(r.worked_minutes as number) % 60} min recorded` : 'No attendance recorded that day', reason: r.reason } : null;
+      },
+      onApproved: (tx, req) => this.closeCompOff(tx, req.resource_id, 'approve', req.comment ?? null, requestContext.get()?.actor?.kind === 'user' ? requestContext.tenantActor().membershipId : null),
+      onRejected: (tx, req) => this.closeCompOff(tx, req.resource_id, 'reject', req.comment ?? null, requestContext.get()?.actor?.kind === 'user' ? requestContext.tenantActor().membershipId : null),
+    });
     this.approvals.register('leave_request', {
       permission: 'leave:approve',
       rejectPermission: 'leave:reject',
@@ -834,6 +852,8 @@ export class LeaveService implements OnModuleInit {
     if (input.startDate < e.date_of_joining) throw Errors.badRequest('before_joining', 'Leave cannot start before the joining date');
     if (e.last_working_day && input.endDate > e.last_working_day) throw Errors.badRequest('after_exit', 'Leave cannot end after the last working day');
     if (e.status === 'probation' && !p.availableDuringProbation) throw Errors.badRequest('not_during_probation', `${type.name} is available after probation`);
+    // The employment-status rule (issue #89): no leave of this type while on probation.
+    if (e.status === 'probation' && (await tx.collection('leave_status_rules').exists({ leave_type_id: type.id, probation: 'no_leave' }))) throw Errors.badRequest('not_during_probation', `${type.name} is available once you are confirmed (not during probation)`);
 
     const cal = await this.calendarFor(tx, e);
     const daysH = countLeaveDays(input, type.counts_calendar_days ? { weeklyOffs: [], holidays: new Set() } : cal);
@@ -1578,12 +1598,14 @@ export class LeaveService implements OnModuleInit {
     const book = await loadBook(tx);
     const people = await loadPeople(tx, { status: { $ne: 'exited' }, date_of_joining: { $lte: asOf } });
     let posted = 0;
+    const noProbation = new Set(await tx.collection('leave_status_rules').distinct<string>('leave_type_id', { probation: 'no_leave' }));
     for (const t of types) {
       if (t.monthly_credit_from && month < (t.monthly_credit_from as string)) continue;
       const key = `MONTH${month}`;
       const done = new Set(await tx.collection('leave_ledger').distinct<string>('employee_id', { leave_type_id: t.id, accrual_key: key }));
       for (const e of people) {
         if (done.has(e.id) || !entitlementsOf(book, e).has(t.id as string)) continue;
+        if (e.status === 'probation' && noProbation.has(t.id as string)) continue;
         if (e.last_working_day && e.last_working_day < monthStart) continue;
         await tx.collection('leave_ledger').insert({
           employee_id: e.id, leave_type_id: t.id, leave_year: yearOf(asOf), kind: 'adjustment', quantity: fromH(toH(String(t.monthly_credit))), effective_on: monthStart < e.date_of_joining ? e.date_of_joining : monthStart,
@@ -1690,6 +1712,194 @@ export class LeaveService implements OnModuleInit {
       });
       return this.quantityOf(tx, e, t, input.year);
     });
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
+  // Leave by employment status (issue #89)
+  // ---------------------------------------------------------------------------------------------------------
+
+  /** Each leave type's rule by employment status, for the types the caller may assign. */
+  statusRules() {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      if (!hasPermission(s, 'leave:assign')) throw Errors.forbidden('Only the Super Workspace and HR set leave rules');
+      const types = await this.listTypesIn(tx, false);
+      const rules = new Map((await tx.collection('leave_status_rules').find({})).map((r) => [r.leave_type_id as string, r]));
+      return types.filter((t) => t.status !== 'inactive').map((t) => {
+        const r = rules.get(t.id as string);
+        return {
+          leaveTypeId: t.id as string, code: t.code as string, name: t.name as string, kind: (t.kind as string | undefined) ?? 'standard',
+          probation: ((r?.probation as string | undefined) ?? (configOf(t).policy.availableDuringProbation ? 'allowed' : 'no_leave')) as 'allowed' | 'no_leave',
+          onConfirmationDays: r?.on_confirmation_days != null ? String(r.on_confirmation_days) : null, prorate: !!r?.prorate, updatedAt: iso(r?.updated_at),
+        };
+      });
+    });
+  }
+
+  /** Sets a leave type's rule by employment status (Super Workspace or HR with leave assignment), audited. */
+  setStatusRule(leaveTypeId: string, input: LeaveStatusRuleInput) {
+    return this.db.tenant(async (tx) => {
+      const s = await this.authz.subject(tx);
+      if (!hasPermission(s, 'leave:assign')) throw Errors.forbidden('Only the Super Workspace and HR set leave rules');
+      const visible = new Set((await this.listTypesIn(tx, false)).map((x) => x.id as string));
+      const t = await tx.collection('leave_types').findOne({ id: leaveTypeId, archived_at: null });
+      if (!t || !visible.has(t.id)) throw Errors.notFound('Leave type');
+      const before = await tx.collection('leave_status_rules').findOne({ leave_type_id: leaveTypeId });
+      const row = { probation: input.probation, on_confirmation_days: input.onConfirmationDays, prorate: input.prorate, updated_by_membership_id: s.membershipId };
+      if (before) await tx.collection('leave_status_rules').updateOne({ id: before.id }, { $set: row });
+      else await tx.collection('leave_status_rules').insert({ leave_type_id: leaveTypeId, ...row });
+      await this.audit.record(tx, {
+        action: 'leave_status_rule.changed', resourceType: 'leave_type', resourceId: leaveTypeId,
+        changes: { probation: { from: before?.probation ?? null, to: input.probation }, onConfirmationDays: { from: before?.on_confirmation_days != null ? String(before.on_confirmation_days) : null, to: input.onConfirmationDays }, prorate: { from: before?.prorate ?? null, to: input.prorate } },
+      });
+      return { leaveTypeId, ...input };
+    });
+  }
+
+  /**
+   * The person became permanent (confirmed, or hired with no probation): each leave type with days on confirmation
+   * is credited once (keyed CONF<year>), as the rule HR set says. Only types the person can use.
+   */
+  async creditOnConfirmation(tx: TenantTx, employeeId: string, confirmedOn: string): Promise<{ leaveTypeId: string; days: string }[]> {
+    const rules = await tx.collection('leave_status_rules').find({ on_confirmation_days: { $ne: null } });
+    if (!rules.length) return [];
+    const e = await this.employee(tx, employeeId);
+    const book = await loadBook(tx);
+    const can = entitlementsOf(book, e);
+    const year = yearOf(confirmedOn);
+    const out: { leaveTypeId: string; days: string }[] = [];
+    for (const r of rules) {
+      const t = book.types.find((x) => x.id === r.leave_type_id);
+      if (!t || !can.has(t.id)) continue;
+      if (await tx.collection('leave_ledger').exists({ employee_id: e.id, leave_type_id: t.id, leave_year: year, accrual_key: `CONF${year}` })) continue;
+      const days = confirmationCredit(String(r.on_confirmation_days), confirmedOn, !!r.prorate);
+      if (Number(days) <= 0) continue;
+      await tx.collection('leave_ledger').insert({
+        employee_id: e.id, leave_type_id: t.id, leave_year: year, kind: 'adjustment', quantity: days, effective_on: confirmedOn,
+        accrual_key: `CONF${year}`, note: `Credited on becoming permanent: ${days} days of ${t.name as string}${r.prorate ? ' (for the rest of the year)' : ''}`, created_by: null,
+      });
+      out.push({ leaveTypeId: t.id as string, days });
+    }
+    if (out.length) {
+      await this.audit.record(tx, { action: 'leave.credited_on_confirmation', resourceType: 'employee', resourceId: e.id, metadata: { confirmedOn, credits: out } });
+      const names = new Map(book.types.map((t) => [t.id as string, t.name as string]));
+      await this.notifications.notify(tx, { membershipIds: [e.membership_id], kind: 'leave.quantity_assigned', title: 'Leave credited now that you are permanent', body: out.map((c) => `${names.get(c.leaveTypeId)}: ${c.days} days`).join(', '), link: '/leave' });
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
+  // Comp-off requests (issue #89)
+  // ---------------------------------------------------------------------------------------------------------
+
+  private async compOffType(tx: TenantTx) {
+    const t = await tx.collection('leave_types').findOne({ kind: 'comp_off', archived_at: null, status: { $ne: 'inactive' } });
+    if (!t) throw Errors.badRequest('no_comp_off_type', 'Comp-off is not set up yet: ask HR to add the Compensatory Off leave type in Leave management');
+    return t;
+  }
+
+  /** The employee asks for comp-off for a weekly off or holiday they worked. Their manager (or HR) approves it. */
+  requestCompOff(input: CompOffRequestInput) {
+    const actor = requestContext.tenantActor();
+    return this.db.tenant(async (tx) => {
+      const e = await this.employee(tx, await this.myEmployeeId(tx));
+      if (e.status === 'exited') throw Errors.badRequest('employee_exited', 'You have left');
+      const day = today();
+      if (input.workDate > day) throw Errors.badRequest('future_date', 'Ask for comp-off after the day you worked');
+      if (input.workDate < addDays(day, -COMP_OFF_WINDOW_DAYS)) throw Errors.badRequest('too_old', `Comp-off can be asked for within ${COMP_OFF_WINDOW_DAYS} days of the day worked`);
+      if (input.workDate < e.date_of_joining) throw Errors.badRequest('before_joining', 'That day is before you joined');
+      const cal = await this.calendarFor(tx, e);
+      const weekday = new Date(`${input.workDate}T00:00:00Z`).getUTCDay();
+      const holiday = cal.holidays.has(input.workDate);
+      const weeklyOff = cal.weeklyOffs.includes(weekday);
+      if (!holiday && !weeklyOff) throw Errors.badRequest('working_day', 'Comp-off is for working on a weekly off (such as Sunday) or a holiday; that day is a working day');
+      const holidayName = holiday && cal.id ? ((await tx.collection('holidays').findOne({ calendar_id: cal.id, holiday_date: input.workDate }))?.name as string | undefined) ?? null : null;
+      const t = await this.compOffType(tx);
+      const att = await tx.collection('attendance_days').findOne({ employee_id: e.id, work_date: input.workDate }, { projection: { worked_minutes: 1 } }).catch(() => undefined);
+      const id = (await tx.collection('comp_off_requests').insert({
+        employee_id: e.id, leave_type_id: t.id, work_date: input.workDate, day_kind: holiday ? 'holiday' : 'weekly_off', holiday_name: holidayName, days: input.days, reason: input.reason,
+        worked_minutes: (att?.worked_minutes as number | undefined) ?? null, requested_by_membership_id: actor.membershipId,
+      }).catch(conflictOn('23505', 'already_requested', 'You already asked for comp-off for that day'))).id as string;
+      const approvalId = await this.approvals.start(tx, { resourceType: 'comp_off', resourceId: id, subjectEmployeeId: e.id, summary: `Comp-off: ${input.days === '1' ? '1 day' : 'half a day'} for working on ${input.workDate}${holidayName ? ` (${holidayName})` : ''}` });
+      await tx.collection('comp_off_requests').updateOne({ id }, { $set: { approval_request_id: approvalId } });
+      await this.audit.record(tx, { action: 'comp_off.requested', resourceType: 'employee', resourceId: e.id, metadata: { compOffId: id, workDate: input.workDate, days: input.days } });
+      return this.compOffView(tx, (await tx.collection('comp_off_requests').findOne({ id }))!);
+    });
+  }
+
+  /** My comp-off requests, or (for a manager or HR) the ones of people they approve for. */
+  compOffs(q: { scope: 'mine' | 'team' }) {
+    return this.db.tenant(async (tx) => {
+      if (q.scope === 'mine') {
+        const me = await this.myEmployeeId(tx);
+        const rows = await tx.collection('comp_off_requests').find({ employee_id: me }, { sort: { created_at: -1 }, limit: 100 });
+        return Promise.all(rows.map((r) => this.compOffView(tx, r)));
+      }
+      const visible = await this.visibleEmployeeIds(tx, 'leave:approve');
+      const rows = await tx.collection('comp_off_requests').find({ employee_id: { $in: visible } }, { sort: { status: 1, created_at: -1 }, limit: 300 });
+      return Promise.all(rows.map((r) => this.compOffView(tx, r)));
+    });
+  }
+
+  /**
+   * The manager decides from Approvals (or here); HR may decide any comp-off of people it looks after, also when it is
+   * waiting for the manager. Approving credits the days to Compensatory Off.
+   */
+  decideCompOff(id: string, input: z.infer<typeof compOffDecisionInput>) {
+    return this.db.tenant(async (tx) => {
+      const r = await tx.collection('comp_off_requests').findOne({ id });
+      if (!r) throw Errors.notFound('Comp-off request');
+      if (r.status !== 'pending') throw Errors.conflict('already_decided', 'This comp-off request was already decided');
+      const e = await this.employee(tx, r.employee_id);
+      const s = await this.authz.subject(tx);
+      if (s.employeeId === e.id) throw Errors.forbidden('You cannot decide your own comp-off');
+      const approvers = r.approval_request_id ? await this.approvals.approversOf(tx, r.approval_request_id) : [];
+      if (approvers.includes(s.membershipId)) return { via: 'approval' as const, approvalId: r.approval_request_id as string };
+      await this.authz.require('leave:approve', this.attrsOf(e), tx);
+      if (!hasPermission(s, 'leave:assign')) throw Errors.forbidden('Only the manager or HR decides comp-off');
+      if (r.approval_request_id) await this.approvals.cancel(tx, r.approval_request_id);
+      await this.closeCompOff(tx, id, input.decision, input.comment ?? null, s.membershipId);
+      return { via: 'direct' as const, approvalId: null };
+    }).then(async (res) => {
+      if (res.via === 'approval') await this.approvals.decide(res.approvalId, input.decision, input.comment ?? undefined);
+      return this.db.tenant(async (tx) => this.compOffView(tx, (await tx.collection('comp_off_requests').findOne({ id }))!));
+    });
+  }
+
+  private async closeCompOff(tx: TenantTx, id: string, decision: 'approve' | 'reject', comment: string | null, by: string | null) {
+    const r = await tx.collection('comp_off_requests').findOne({ id, status: 'pending' });
+    if (!r) return;
+    if (decision === 'reject' && (comment ?? '').trim().length < 3) throw Errors.badRequest('reason_required', 'Give the reason for rejecting the comp-off');
+    const now = new Date();
+    let ledgerId: string | null = null;
+    if (decision === 'approve') {
+      const year = yearOf(r.work_date as string);
+      const line = await tx.collection('leave_ledger').insert({
+        employee_id: r.employee_id, leave_type_id: r.leave_type_id, leave_year: year, kind: 'adjustment', quantity: fromH(toH(String(r.days))), effective_on: today(),
+        accrual_key: `COMP${r.work_date as string}`, note: `Comp-off for working on ${r.work_date as string}${r.holiday_name ? ` (${r.holiday_name as string})` : ''}`, created_by: null,
+      });
+      ledgerId = line.id as string;
+    }
+    await tx.collection('comp_off_requests').updateOne({ id }, { $set: { status: decision === 'approve' ? 'approved' : 'rejected', decided_by_membership_id: by, decided_comment: comment, decided_at: now, ledger_id: ledgerId } });
+    await this.audit.record(tx, { action: `comp_off.${decision === 'approve' ? 'approved' : 'rejected'}`, resourceType: 'employee', resourceId: r.employee_id, metadata: { compOffId: id, workDate: r.work_date, days: String(r.days), comment } });
+    await this.notifications.notify(tx, {
+      membershipIds: [r.requested_by_membership_id], kind: `comp_off.${decision === 'approve' ? 'approved' : 'rejected'}`,
+      title: decision === 'approve' ? `Comp-off approved: ${String(r.days) === '1' || String(r.days) === '1.00' ? '1 day' : 'half a day'} added to your leave` : `Comp-off for ${r.work_date as string} was not approved`,
+      body: comment ?? undefined, link: '/leave?tab=comp-off',
+    });
+  }
+
+  private async compOffView(tx: TenantTx, r: Doc) {
+    const e = await tx.collection('employees').findOne({ id: r.employee_id });
+    const people = await membershipUserNames(tx, [r.decided_by_membership_id].filter(Boolean));
+    const approvers = r.status === 'pending' && r.approval_request_id ? await this.approvals.approversOf(tx, r.approval_request_id) : [];
+    const me = requestContext.tenantActor().membershipId;
+    return {
+      id: r.id as string, employeeId: r.employee_id as string, employeeName: e ? (await employeeNames(tx, [e.id])).get(e.id)?.name ?? '' : '', workDate: r.work_date as string,
+      dayKind: r.day_kind as 'weekly_off' | 'holiday', holidayName: (r.holiday_name ?? null) as string | null, days: String(Number(r.days)), reason: r.reason as string,
+      workedMinutes: (r.worked_minutes ?? null) as number | null, status: r.status as string, decidedBy: r.decided_by_membership_id ? people.get(r.decided_by_membership_id) ?? null : null,
+      comment: (r.decided_comment ?? null) as string | null, decidedAt: iso(r.decided_at), createdAt: iso(r.created_at)!, canDecide: r.status === 'pending' && (approvers.includes(me) || r.requested_by_membership_id !== me),
+    };
   }
 
   private async quantityOf(tx: TenantTx, e: EmployeeLite, t: Doc, year: number) {

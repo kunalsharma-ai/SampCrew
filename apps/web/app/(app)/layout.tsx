@@ -1,6 +1,6 @@
 import { designLevelOf, welcomeSceneFor, type MemberPreferences, type NotificationPreferences, type NotificationView } from '@crew/contracts';
 import { RememberWelcome } from '@/components/remember-welcome';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { DemoBanner, WelcomeIntro } from '@crew/ui';
 import Link from 'next/link';
 import { loadOptional, loadSession } from '@/lib/api';
@@ -9,7 +9,7 @@ import { MfaStepUpProvider } from '@/components/mfa-step-up';
 import { LiveProvider } from '@/components/live';
 import { IdleWatch } from '@/components/idle-watch';
 import { appearanceFromCookie } from '@/lib/appearance-cookie';
-import { canSwitchWorkView, myDayNav, quickActions, visibleNav, workflowActions } from '@/lib/nav';
+import { HOME_VIEW_COOKIE, canSwitchWorkView, homeViews, quickActions, visibleNav, workflowActions } from '@/lib/nav';
 import type { Me, TaskCounts } from '@/lib/types';
 import { Shell, type Notifications } from './shell';
 
@@ -53,7 +53,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // My Workforce / My Day (issue #86): My Day keeps only the person's own pages in the menu, in its own colour.
   const switchable = canSwitchWorkView(me);
   const workView = switchable ? (prefs?.experience?.workView ?? 'workforce') : 'workforce';
-  const nav = workView === 'myday' ? myDayNav(visibleNav(me)) : visibleNav(me);
+  // The whole menu goes to the shell, which keeps only My Day's pages itself, so the menu follows the switch at once.
+  const nav = visibleNav(me);
+  const views = homeViews(me);
+  const homeView = (await cookies()).get(HOME_VIEW_COOKIE)?.value;
   const levelScript = `document.documentElement.dataset.level=${JSON.stringify(designLevelOf(me.levels))};document.documentElement.dataset.view=${JSON.stringify(workView)}`;
   return (
     <>
@@ -72,7 +75,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <MfaStepUpProvider mfaEnabled={me.user.mfaEnabled}>
         <DeletePasswordProvider>
         <LiveProvider initial={notifications ? { unread: notifications.unread, items: notifications.items } : null} byCategory={byCategory} actionNeeded={noticeSummary?.actionNeeded ?? 0} prefs={notificationPrefs}>
-        <Shell me={me} nav={nav} workView={switchable ? workView : null} notifications={notifications} prefs={prefs} cookieAppearance={cookieAppearance} counts={counts} quick={quickActions(me)} workflows={workflowActions(me)}>
+        <Shell me={me} nav={nav} workView={switchable ? workView : null} views={views.length > 1 ? views : []} homeView={homeView === 'organization' || homeView === 'workforce' ? homeView : null} notifications={notifications} prefs={prefs} cookieAppearance={cookieAppearance} counts={counts} quick={quickActions(me)} workflows={workflowActions(me)}>
           {children}
         </Shell>
         </LiveProvider>

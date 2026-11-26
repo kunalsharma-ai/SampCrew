@@ -9,10 +9,10 @@ import { Suspense } from 'react';
 import { EmployeeHomeView } from '@/components/home/employee-home';
 import { HomeRefresh } from '@/components/home/home-refresh';
 import { OrganizationHomeView } from '@/components/home/organization-home';
-import { HomeHeader, SectionSkeleton, StatSkeletonRow, ViewTabs } from '@/components/home/ui';
+import { HomeHeader, SectionSkeleton, StatSkeletonRow } from '@/components/home/ui';
 import { WorkforceHomeView } from '@/components/home/workforce-home';
 import { load, loadOptional } from '@/lib/api';
-import { can, canSwitchWorkView, homeActions, quickActions, workflowActions } from '@/lib/nav';
+import { HOME_VIEW_COOKIE, can, canSwitchWorkView, homeActions, quickActions, workflowActions } from '@/lib/nav';
 import { SetupPrompt } from '@/components/home/setup-prompt';
 import type { AttendanceToday, LeaveBalance, LeaveDashboard, Me, MyCalendar, MyRewards } from '@/lib/types';
 import type { Announcement, Summary } from './helpdesk/types';
@@ -39,7 +39,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const level = designLevelOf(me.levels);
   // The Super Workspace and HR Workspaces look after a workforce; an Employee Workspace (managers included) sees their own day.
   const seesWorkforce = level !== 'employee' && (me.permissions['employees:read'] ?? 'own') !== 'own';
-  // My Workforce / My Day is switched at the top right (issue #86); Home follows it. My Day is the person's own day.
+  // My Workforce / My Day is switched at the top of the sidebar (issue #89); Home follows it. My Day is the person's own day.
   const switchable = canSwitchWorkView(me);
   const myDay = switchable && experience?.workView === 'myday';
   const views = myDay ? [{ key: 'me', label: 'My day' }] : [
@@ -47,7 +47,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     ...(seesWorkforce ? [{ key: 'workforce', label: level === 'super' ? 'Workforce' : 'My workforce' }] : []),
     ...(me.employee && !switchable ? [{ key: 'me', label: 'My day' }] : []),
   ];
-  const fallback = sp.hrWorkspace && views.some((v) => v.key === 'workforce') ? 'workforce' : (views[0]?.key ?? 'me');
+  // The view is switched at the top of the sidebar (issue #89); it is remembered so Home opens where it was left.
+  const remembered = (await cookies()).get(HOME_VIEW_COOKIE)?.value;
+  const fallback = sp.hrWorkspace && views.some((v) => v.key === 'workforce') ? 'workforce' : views.some((v) => v.key === remembered) ? remembered! : (views[0]?.key ?? 'me');
   const view = views.some((v) => v.key === sp.view) ? sp.view! : fallback;
   const steps = myDay ? [] : await setupSteps(me);
   const trendDays = sp.trend === '7' ? 7 : sp.trend === '30' ? 30 : 14;
@@ -65,7 +67,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <SetupGaps me={me} />
         </Suspense>
       )}
-      {views.length > 1 && <ViewTabs current={view} tabs={views.map((v) => ({ ...v, href: v.key === fallback && !sp.hrWorkspace ? '/' : `/?view=${v.key}` }))} />}
       <Suspense key={`${view}:${JSON.stringify(sp)}`} fallback={<div className="grid grid-cols-1 gap-5"><StatSkeletonRow count={view === 'me' ? 4 : 8} /><SectionSkeleton rows={4} /><div className="grid grid-cols-1 gap-5 lg:grid-cols-2"><SectionSkeleton /><SectionSkeleton /></div></div>}>
         {view === 'organization' && <OrganizationSection me={me} trendDays={trendDays} />}
         {view === 'workforce' && <WorkforceSection me={me} sp={sp} trendDays={trendDays} level={level === 'super' ? 'super' : 'hr'} hiddenCards={experience?.hiddenCards ?? []} hiddenSections={experience?.hiddenSections ?? []} />}

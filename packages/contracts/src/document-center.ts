@@ -247,6 +247,7 @@ export const DOCUMENT_ACCESS_SWITCHES = [
   { key: 'view_other_hr', label: 'View documents of other authorized HR Workspaces', description: 'Read-only access to the HR Workspaces listed below.' },
   { key: 'request_other_hr', label: 'Request documents from other authorized HR Workspaces', description: 'Raise requests to the HR Workspaces listed below; this HR Workspace verifies them.' },
   { key: 'request', label: 'Request employee documents', description: 'Raise document requests to its employees.' },
+  { key: 'manage_onboarding_library', label: 'Manage the onboarding document library', description: 'Add and change onboarding documents, categories and templates (issue #89). Sensitive documents stay optional unless Super Workspace makes them mandatory.' },
   { key: 'verify', label: 'Verify employee documents', description: 'Open submissions in the verification queue. Needed for approving, rejecting and corrections.' },
   { key: 'approve', label: 'Approve employee documents', description: '' },
   { key: 'reject', label: 'Reject employee documents', description: '' },
@@ -263,7 +264,7 @@ export type DocumentAccess = Record<DocumentAccessKey, boolean>;
  */
 export const DEFAULT_DOCUMENT_ACCESS: DocumentAccess = {
   enabled: true, view_employee: true, view_approved: true, view_pending: true, preview: true, download: true, view_hr_documents: true,
-  view_other_hr: false, request_other_hr: false, request: true, verify: true, approve: true, reject: true, correct: true, export: false,
+  view_other_hr: false, request_other_hr: false, manage_onboarding_library: false, request: true, verify: true, approve: true, reject: true, correct: true, export: false,
 };
 export const NO_DOCUMENT_ACCESS: DocumentAccess = Object.fromEntries(DOCUMENT_ACCESS_KEYS.map((k) => [k, false])) as DocumentAccess;
 

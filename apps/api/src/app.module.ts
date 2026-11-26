@@ -18,6 +18,9 @@ import { PlatformBillingController } from './modules/billing/platform-billing.co
 import { PlatformBillingService } from './modules/billing/platform-billing.service';
 import { DocumentsController } from './modules/documents/documents.controller';
 import { DocumentCenterController } from './modules/document-center/document-center.controller';
+import { OnboardingDocumentsController } from './modules/document-center/onboarding-documents.controller';
+import { EmployeeFormController, EmployeeFormService } from './modules/employees/employee-form';
+import { OnboardingDocumentsService } from './modules/document-center/onboarding-documents.service';
 import { DocumentCenterService } from './modules/document-center/document-center.service';
 import { DocumentsService } from './modules/documents/documents.service';
 import { DesignationsController, EmployeesController } from './modules/employees/employees.controller';
@@ -263,6 +266,8 @@ export const CONTROLLERS = [
   SignatureAgentController,
   DocumentsController,
   DocumentCenterController,
+  OnboardingDocumentsController,
+  EmployeeFormController,
   LeaveController,
   LeavePenaltiesController,
   ApprovalsController,
@@ -422,6 +427,8 @@ export const CONTROLLERS = [
     MasterDataService,
     DocumentsService,
     DocumentCenterService,
+    OnboardingDocumentsService,
+    EmployeeFormService,
     AttendanceDaysService,
     AttendanceAccessService,
     AttendanceOverviewService,
