@@ -85,13 +85,9 @@ const shown = (t) => (t.value === null ? '–' : t.unit === 'percent' ? `${Math.
     expect(sidebarBg.includes('gradient'), `the sidebar should be the dark gradient panel, got ${sidebarBg}`);
     const active = p.locator('aside.crew-sidebar a[aria-current="page"]').first();
     expect((await active.evaluate((el) => getComputedStyle(el).backgroundImage)).includes('gradient'), 'the active menu item should be a gradient pill');
-    const tile = p.locator('[aria-label="Key figures"] .crew-tile').first();
-    await tile.waitFor();
-    expect((await tile.evaluate((el) => getComputedStyle(el).backgroundImage)).includes('linear-gradient'), 'KPI tiles should be gradient tiles');
-    await p.getByRole('heading', { name: 'Workforce overview' }).waitFor();
-    await p.getByRole('heading', { name: 'Department wise employees' }).waitFor();
-    await p.getByRole('heading', { name: "Today's highlights" }).waitFor();
-    ok('Home shows the neon sidebar, gradient KPI tiles, the workforce trend and department charts');
+    // Home keeps one set of count cards (issue #86: the duplicate KPI strip and chart cards were removed).
+    await p.getByTestId('workforce-cards').waitFor();
+    ok('Home shows the neon sidebar and one set of count cards');
 
     // 2. Module overviews match the API's live numbers.
     const pages = [['/employees', 'employees', 'total'], ['/recruitment', 'recruitment', 'jobs'], ['/attendance', 'attendance', 'present'], ['/leave', 'leave', 'requests'], ['/reviews', 'performance', 'reviewed'], ['/learning', 'learning', 'courses'], ['/insights', 'analytics', 'headcount']];
@@ -147,7 +143,9 @@ const shown = (t) => (t.value === null ? '–' : t.unit === 'percent' ? `${Math.
     await p.reload();
     await waitForHtml(p, 'data-style', 'classic');
     expect((await html(p, 'data-preset')) === 'monochrome', 'the template sets its theme');
-    const flat = await p.locator('[aria-label="Key figures"] .crew-tile').first().evaluate((el) => getComputedStyle(el).backgroundImage);
+    // The module overview tiles (Home no longer has a KPI strip, issue #86).
+    await p.goto(BASE + '/employees');
+    const flat = await p.locator('.crew-tile').first().evaluate((el) => getComputedStyle(el).backgroundImage);
     expect(flat === 'none', `Classic tiles should be flat, got ${flat}`);
     saved = (await api(token, 'GET', '/me/preferences')).body.appearance;
     expect(saved.style === 'classic' && saved.preset === 'monochrome' && saved.backdrop === 'plain', `template should be saved, got ${JSON.stringify(saved)}`);

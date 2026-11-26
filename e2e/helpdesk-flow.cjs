@@ -225,15 +225,15 @@ const alertText = (p, re) => p.getByText(re).first().waitFor();
     ok('HR wrote an important announcement for the Assembly Line with bold text and published it');
 
     current = neha;
-    await neha.goto(BASE + '/');
-    // The announcements widget under "More for you" (Home's own announcements card links to the list instead).
-    const item = neha.getByTestId('more-for-you').getByRole('listitem').filter({ hasText: title });
+    // Home no longer shows announcements by default (issue #86); the operator opens the announcements list.
+    await neha.goto(BASE + '/announcements');
+    const item = neha.getByTestId('announcement-card').filter({ hasText: title });
     await item.getByText('Please acknowledge').waitFor();
     await item.getByRole('link', { name: title }).click();
     await neha.locator('.prose-email b', { hasText: 'Packed lunches' }).waitFor();
     await neha.getByRole('button', { name: 'I have read this' }).click();
     await neha.getByText(/You acknowledged this on/).waitFor();
-    ok('operator saw it on Home, read the formatted text and acknowledged it');
+    ok('operator saw it in Announcements, read the formatted text and acknowledged it');
 
     current = hr;
     await hr.goto(BASE + '/announcements/manage');

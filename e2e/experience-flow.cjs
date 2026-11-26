@@ -85,6 +85,11 @@ function leaveDay() {
 
     // 2. The supervisor approves it from Home.
     const sup = await signIn(b, 'supervisor@demo.crew.local');
+    // "Needs your attention" starts hidden on Home (issue #86); the supervisor adds it back from Customize.
+    await sup.getByRole('button', { name: 'Customize' }).click();
+    await sup.getByRole('button', { name: 'Show Needs your attention' }).click();
+    await sup.getByRole('button', { name: 'Save layout' }).click();
+    await sup.getByText('Layout saved').waitFor();
     const attention = sup.getByRole('region', { name: 'Needs your attention' });
     const item = attention.getByRole('listitem').filter({ hasText: `Neha Deshmukh: Casual Leave, ${day}` });
     await item.waitFor();

@@ -288,7 +288,7 @@ async function run(b) {
   const fields = hr.locator('div', { has: hr.getByText('Fields your workspace added.') }).filter({ has: hr.getByRole('button', { name: 'Edit', exact: true }) }).last();
   await fields.getByRole('button', { name: 'Edit', exact: true }).click().catch((e) => fail(hr, e));
   await fields.getByLabel(label).fill('M');
-  await fields.getByRole('button', { name: /^Save/ }).click();
+  await fields.getByRole('button', { name: 'Save', exact: true }).click();
   await see(hr, 'Saved.');
   await hr.getByRole('link', { name: 'Assets', exact: true }).last().click();
   await see(hr, laptopName.split(' ')[0]);

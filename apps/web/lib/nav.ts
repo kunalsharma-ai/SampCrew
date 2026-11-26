@@ -211,7 +211,8 @@ export const NAV: NavGroup[] = [
   },
 ];
 
-export interface QuickAction { key: string; label: string; href: string; icon: string; keywords?: string }
+/** `download` marks a file download: shown as a plain link so the browser never prefetches (and builds) the file. */
+export interface QuickAction { key: string; label: string; href: string; icon: string; keywords?: string; download?: boolean }
 
 /** "Create" menu and command palette actions; each opens the real form for that record. */
 export function quickActions(me: Me): QuickAction[] {
@@ -339,6 +340,6 @@ export function homeActions(me: Me, level: 'super' | 'hr'): QuickAction[] {
   if (level === 'super' && has('hierarchy:manage')) out.push({ key: 'workspace-permissions', label: 'Workspace Permissions', href: '/settings/workspace-permissions', icon: 'shield-check' });
   if (level === 'super' && has('roles:read')) out.push({ key: 'permissions', label: 'Manage access levels', href: '/people', icon: 'shield' });
   if (wide('employees:read')) out.push({ key: 'reports', label: 'View reports', href: '/insights', icon: 'chart' });
-  if (wide('employees:read')) out.push({ key: 'export', label: 'Export report', href: '/employees-export?format=xlsx', icon: 'upload' });
+  if (wide('employees:read')) out.push({ key: 'export', label: 'Export report', href: '/employees-export?format=xlsx', icon: 'upload', download: true });
   return out;
 }

@@ -241,7 +241,7 @@ let current;
     expect(await glance.getByLabel('Pay', { exact: true }).count() === 0, 'pay shown to an HR admin without payroll access');
     await glance.getByText(/Not shown, because your access or the plan does not cover them: .*Pay/).waitFor();
     expect(/Since 1 Jun 2023/.test(await glance.getByLabel('Tenure', { exact: true }).innerText()), 'tenure not from the hire record');
-    await hr.getByRole('link', { name: 'Activity' }).click();
+    await hr.getByRole('link', { name: 'Activity', exact: true }).click();
     const timeline = hr.getByRole('list', { name: 'Activity timeline' });
     await timeline.getByText('Transferred').waitFor();
     await timeline.getByText('effective 2024-04-01').waitFor();
