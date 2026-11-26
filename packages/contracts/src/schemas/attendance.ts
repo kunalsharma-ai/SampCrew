@@ -47,6 +47,8 @@ export const punchInput = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   accuracyM: z.number().min(0).max(100_000).optional(),
+  /** Why there are no coordinates: the person refused, or the device could not get a fix in time. */
+  locationStatus: z.enum(['ok', 'denied', 'unavailable', 'timeout']).optional(),
   note: z.string().trim().max(300).optional(),
 }).refine((v) => (v.latitude === undefined) === (v.longitude === undefined), { message: 'Send both latitude and longitude', path: ['longitude'] });
 export type PunchInput = z.infer<typeof punchInput>;
@@ -62,11 +64,15 @@ export const correctionInput = z.object({
   workDate: isoDate,
   punches: z
     .array(correctionPunch)
-    .min(1)
     .max(6)
-    .refine((ps) => new Set(ps.map((p) => `${p.time}|${p.direction}|${p.nextDay}`)).size === ps.length, { message: 'The same punch is listed twice' }),
+    .refine((ps) => new Set(ps.map((p) => `${p.time}|${p.direction}|${p.nextDay}`)).size === ps.length, { message: 'The same punch is listed twice' })
+    .default([]),
   reason: z.string().trim().min(3).max(500),
-});
+  /** Why the day needs correcting (shown to HR and in the exceptions report). */
+  category: z.enum(['forgot_check_in', 'forgot_check_out', 'technical_issue', 'location_issue', 'worked_elsewhere', 'other']).default('other'),
+  /** The work arrangement the day should have (office, home or hybrid), when that is what needs correcting. */
+  workMode: z.enum(['office', 'remote', 'hybrid']).optional(),
+}).refine((v) => v.punches.length > 0 || v.workMode !== undefined, { message: 'Add a punch or choose the work arrangement the day should have', path: ['punches'] });
 export type CorrectionInput = z.infer<typeof correctionInput>;
 
 export const overtimeClaimInput = z.object({

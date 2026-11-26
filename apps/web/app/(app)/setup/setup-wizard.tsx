@@ -1,7 +1,7 @@
 'use client';
-import { COMPANY_SIZES, INDUSTRIES, INDUSTRY_LABELS, phoneError, SETUP_STEPS } from '@crew/contracts';
+import { COMPANY_SIZES, INDUSTRIES, INDUSTRY_LABELS, LOCATION_TRACKING, LOCATION_TRACKING_LABELS, officeIpsInput, phoneError, SETUP_STEPS, type LocationTracking } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, Checkbox, Field, Input, Select, Textarea, cn } from '@crew/ui';
-import { Building2, Check, MapPin, Network, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react';
+import { Building2, Check, Lock, MapPin, Network, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Location } from '@/lib/types';
@@ -131,7 +131,19 @@ function Summary({ ok, label, value, onEdit }: { ok: boolean; label: string; val
 
 function CompanyStep({ setup, pending, onSave }: { setup: SetupState; pending: boolean; onSave: (v: Record<string, unknown>) => void }) {
   const c = setup.company;
+  const reg = c.registration;
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [tracking, setTracking] = useState<LocationTracking>(reg.locationTracking);
+  // The office networks start with the address the company registered from, until HR saves its own list.
+  const [ips, setIps] = useState((reg.officeIps.length ? reg.officeIps : reg.registrationIp ? [reg.registrationIp] : []).join(', '));
+  /** Registered information that holds a value is locked once setup is finished (issue #86). */
+  const locked = (f: string) => reg.lockedFields.includes(f);
+  const lockProps = (f: string) => (locked(f) ? { readOnly: true, 'aria-readonly': true, 'data-locked': 'true', className: 'cursor-not-allowed bg-bg-subtle text-fg-muted' } : {});
+  const lockHint = (f: string, hint?: string) => (locked(f) ? 'Locked: registered information' : hint);
+  /** A locked select cannot be read-only in HTML, so it is shown as text and its value sent unchanged. */
+  const lockedSelect = (f: string, value: string, label: string, render: () => React.ReactNode) => (locked(f)
+    ? <><Input value={label} readOnly aria-readonly data-locked="true" className="cursor-not-allowed bg-bg-subtle text-fg-muted" aria-label={f} /><input type="hidden" name={f} value={value} /></>
+    : render());
   return (
     <Card>
       <CardBody>
@@ -150,31 +162,63 @@ function CompanyStep({ setup, pending, onSave }: { setup: SetupState; pending: b
             if (v.website && !/^https?:\/\/\S+$/.test(String(v.website))) errs.website = 'Start the website with https://';
             const ph = phoneError(String(v.contactPhone ?? ''), String(v.countryCode ?? '') || null);
             if (ph) errs.contactPhone = ph;
+            const officeIps = ips.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
+            const ipCheck = officeIpsInput.safeParse(officeIps);
+            if (!ipCheck.success) errs.officeIps = ipCheck.error.issues[0]?.message ?? 'Check the addresses';
+            delete v.officeIpsText;
+            delete v.locationTrackingChoice;
             setErrors(errs);
             if (Object.keys(errs).length) return;
             v.fiscalYearStartMonth = Number(v.fiscalYearStartMonth);
+            v.locationTracking = tracking;
+            v.officeIps = officeIps;
             onSave(v);
           }}
         >
           <h2 className="text-lg font-semibold sm:col-span-2">Tell us about your company</h2>
-          <Field label="Company name" required error={errors.name}>{(p) => <Input {...p} name="name" defaultValue={c.name} maxLength={160} />}</Field>
-          <Field label="Registered legal name" hint="As on your registration certificate">{(p) => <Input {...p} name="legalName" defaultValue={c.legalName ?? ''} maxLength={200} />}</Field>
-          <Field label="Industry" required error={errors.industry}>
-            {(p) => <Select {...p} name="industry" defaultValue={c.industry ?? ''}><option value="">Choose…</option>{INDUSTRIES.map((i) => <option key={i} value={i}>{INDUSTRY_LABELS[i]}</option>)}</Select>}
+          {reg.lockedAt && (
+            <Alert tone="info" className="sm:col-span-2" data-testid="company-locked">
+              <Lock className="mr-1 inline size-3.5" aria-hidden />Your registered information is locked. You can fill in anything still empty; ask SAMPLEDGE support to correct a registered detail.
+            </Alert>
+          )}
+          <Field label="Company name" required error={errors.name} hint={lockHint('name')}>{(p) => <Input {...p} name="name" defaultValue={c.name} maxLength={160} {...lockProps('name')} />}</Field>
+          <Field label="Registered legal name" error={errors.legalName} hint={lockHint('legalName', 'As on your registration certificate')}>{(p) => <Input {...p} name="legalName" defaultValue={c.legalName ?? ''} maxLength={200} {...lockProps('legalName')} />}</Field>
+          <Field label="Industry" required error={errors.industry} hint={lockHint('industry')}>
+            {(p) => lockedSelect('industry', c.industry ?? '', c.industry ? INDUSTRY_LABELS[c.industry] : '', () => <Select {...p} name="industry" defaultValue={c.industry ?? ''}><option value="">Choose…</option>{INDUSTRIES.map((i) => <option key={i} value={i}>{INDUSTRY_LABELS[i]}</option>)}</Select>)}
           </Field>
-          <Field label="Number of employees" required error={errors.companySize}>
-            {(p) => <Select {...p} name="companySize" defaultValue={c.companySize ?? ''}><option value="">Choose…</option>{COMPANY_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}</Select>}
+          <Field label="Number of employees" required error={errors.companySize} hint={lockHint('companySize')}>
+            {(p) => lockedSelect('companySize', c.companySize ?? '', c.companySize ?? '', () => <Select {...p} name="companySize" defaultValue={c.companySize ?? ''}><option value="">Choose…</option>{COMPANY_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}</Select>)}
           </Field>
-          <Field label="Website" error={errors.website}>{(p) => <Input {...p} name="website" type="url" placeholder="https://" defaultValue={c.website ?? ''} />}</Field>
-          <Field label="HR contact email" hint="Shown to employees for HR questions">{(p) => <Input {...p} name="contactEmail" type="email" defaultValue={c.contactEmail ?? ''} />}</Field>
-          <Field label="Company phone" error={errors.contactPhone} hint="With the country code, such as +91 20 5555 0100">{(p) => <Input {...p} name="contactPhone" type="tel" inputMode="tel" maxLength={40} defaultValue={c.contactPhone ?? ''} />}</Field>
-          <Field label="Country" required>{(p) => <Select {...p} name="countryCode" defaultValue={c.countryCode}>{COUNTRIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>}</Field>
-          <Field label="Currency" required>{(p) => <Select {...p} name="currency" defaultValue={c.currency}>{CURRENCIES.map((x) => <option key={x} value={x}>{x}</option>)}</Select>}</Field>
-          <Field label="Time zone" required>{(p) => <Select {...p} name="timezone" defaultValue={c.timezone}>{[...new Set([c.timezone, ...TIMEZONES])].map((x) => <option key={x} value={x}>{x}</option>)}</Select>}</Field>
-          <Field label="Financial year starts" required>{(p) => <Select {...p} name="fiscalYearStartMonth" defaultValue={String(c.fiscalYearStartMonth)}>{MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</Select>}</Field>
-          <Field label="Registration number" hint="For example CIN or company number">{(p) => <Input {...p} name="registrationNumber" defaultValue={c.registrationNumber ?? ''} maxLength={64} />}</Field>
-          <Field label="Tax ID" hint="For example GSTIN, VAT or EIN">{(p) => <Input {...p} name="taxId" defaultValue={c.taxId ?? ''} maxLength={64} />}</Field>
-          <Field label="Registered address" className="sm:col-span-2">{(p) => <Textarea {...p} name="address" rows={2} defaultValue={c.address ?? ''} maxLength={500} />}</Field>
+          <Field label="Website" error={errors.website} hint={lockHint('website')}>{(p) => <Input {...p} name="website" type="url" placeholder="https://" defaultValue={c.website ?? ''} {...lockProps('website')} />}</Field>
+          <Field label="HR contact email" error={errors.contactEmail} hint={lockHint('contactEmail', 'Shown to employees for HR questions')}>{(p) => <Input {...p} name="contactEmail" type="email" defaultValue={c.contactEmail ?? ''} {...lockProps('contactEmail')} />}</Field>
+          <Field label="Company phone" error={errors.contactPhone} hint={lockHint('contactPhone', 'With the country code, such as +91 20 5555 0100')}>{(p) => <Input {...p} name="contactPhone" type="tel" inputMode="tel" maxLength={40} defaultValue={c.contactPhone ?? ''} {...lockProps('contactPhone')} />}</Field>
+          <Field label="Country" required hint={lockHint('countryCode')}>{(p) => lockedSelect('countryCode', c.countryCode, COUNTRIES.find(([v]) => v === c.countryCode)?.[1] ?? c.countryCode, () => <Select {...p} name="countryCode" defaultValue={c.countryCode}>{COUNTRIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>)}</Field>
+          <Field label="Currency" required hint={lockHint('currency')}>{(p) => lockedSelect('currency', c.currency, c.currency, () => <Select {...p} name="currency" defaultValue={c.currency}>{CURRENCIES.map((x) => <option key={x} value={x}>{x}</option>)}</Select>)}</Field>
+          <Field label="Time zone" required hint={lockHint('timezone')}>{(p) => lockedSelect('timezone', c.timezone, c.timezone, () => <Select {...p} name="timezone" defaultValue={c.timezone}>{[...new Set([c.timezone, ...TIMEZONES])].map((x) => <option key={x} value={x}>{x}</option>)}</Select>)}</Field>
+          <Field label="Financial year starts" required hint={lockHint('fiscalYearStartMonth')}>{(p) => lockedSelect('fiscalYearStartMonth', String(c.fiscalYearStartMonth), MONTHS[c.fiscalYearStartMonth - 1] ?? '', () => <Select {...p} name="fiscalYearStartMonth" defaultValue={String(c.fiscalYearStartMonth)}>{MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</Select>)}</Field>
+          <Field label="Registration number" error={errors.registrationNumber} hint={lockHint('registrationNumber', 'For example CIN or company number')}>{(p) => <Input {...p} name="registrationNumber" defaultValue={c.registrationNumber ?? ''} maxLength={64} {...lockProps('registrationNumber')} />}</Field>
+          <Field label="Tax ID" error={errors.taxId} hint={lockHint('taxId', 'For example GSTIN, VAT or EIN')}>{(p) => <Input {...p} name="taxId" defaultValue={c.taxId ?? ''} maxLength={64} {...lockProps('taxId')} />}</Field>
+          <Field label="Registered address" className="sm:col-span-2" error={errors.address} hint={lockHint('address')}>{(p) => <Textarea {...p} name="address" rows={2} defaultValue={c.address ?? ''} maxLength={500} {...lockProps('address')} />}</Field>
+          <fieldset className="grid gap-3 rounded-lg border border-border p-4 sm:col-span-2" data-testid="company-location-tracking">
+            <legend className="px-1 text-[0.8125rem] font-semibold">Attendance location (GPS)</legend>
+            <p className="-mt-1 text-xs text-fg-muted">How SampCrew reads where people check in from, to tell Work From Office from Work From Home. The location is read only after each person allows it.</p>
+            <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Attendance location (GPS)">
+              {LOCATION_TRACKING.map((k) => (
+                <label key={k} className={cn('flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-[0.8125rem]', tracking === k ? 'border-accent bg-accent/5' : 'border-border hover:bg-bg-subtle')}>
+                  <input type="radio" name="locationTrackingChoice" value={k} checked={tracking === k} onChange={() => setTracking(k)} className="mt-0.5 accent-[var(--accent)]" />
+                  <span><span className="block font-medium">{LOCATION_TRACKING_LABELS[k].label}</span><span className="block text-xs text-fg-subtle">{LOCATION_TRACKING_LABELS[k].help}</span></span>
+                </label>
+              ))}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Registered from IP address" hint="Recorded when the company registered. It cannot be changed.">
+                {(p) => <Input {...p} value={reg.registrationIp ?? 'Recorded when you save this step'} readOnly aria-readonly data-locked="true" data-testid="registration-ip" className="cursor-not-allowed bg-bg-subtle font-mono text-fg-muted" />}
+              </Field>
+              <Field label="Office network IP addresses" error={errors.officeIps} hint="Separate with commas. Ranges like 203.0.113.0/24 work. A check-in from any other network is marked Work From Home in reports.">
+                {(p) => <Input {...p} name="officeIpsText" value={ips} onChange={(e) => setIps(e.target.value)} placeholder="203.0.113.10, 198.51.100.0/24" className="font-mono" data-testid="office-ips" />}
+              </Field>
+            </div>
+          </fieldset>
           <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending}>Save and continue</Button></div>
         </form>
       </CardBody>

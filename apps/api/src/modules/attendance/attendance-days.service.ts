@@ -138,9 +138,26 @@ export interface ComputedDay {
 }
 export type DayHook = (tx: TenantTx, e: EmployeeCtx, day: ComputedDay) => Promise<void>;
 
+export type DayPunch = Awaited<ReturnType<AttendanceDaysService['punches']>>[number];
+/**
+ * Adds fields to a day before it is stored (office / home classification). Runs in the same transaction, before the
+ * day is written, so it can compare with the day as stored.
+ */
+export type DayClassifier = (
+  tx: TenantTx,
+  e: EmployeeCtx,
+  day: { workDate: string; punches: DayPunch[]; window: { from: number; to: number }; remote: 'full' | 'first_half' | 'second_half' | null; result: DayResult; now: number },
+) => Promise<Record<string, unknown>>;
+
 @Injectable()
 export class AttendanceDaysService {
   private readonly hooks: DayHook[] = [];
+  private classifier: DayClassifier | null = null;
+
+  /** The office / home classifier (one, set by WorkModeService). */
+  setClassifier(fn: DayClassifier) {
+    this.classifier = fn;
+  }
 
   /** Runs `hook` in the same transaction after each day is computed and stored (never for locked days). */
   onComputed(hook: DayHook) {
@@ -274,6 +291,10 @@ export class AttendanceDaysService {
       risk_flags: (ev.risk_flags as string[]) ?? [],
       // A phone punch that starts or ends a break (raw.purpose), so the app can show the right next action.
       purpose: ((ev.raw as { purpose?: string } | null | undefined)?.purpose as 'work' | 'break' | undefined) ?? null,
+      // Office / home classification (work-mode.service): where the punch was, as decided when it was recorded.
+      work_zone: (ev.work_zone as 'office' | 'remote' | 'unverified' | 'neutral' | null | undefined) ?? null,
+      work_place_name: (ev.work_place_name as string | null | undefined) ?? null,
+      location_verification: (ev.location_verification as string | null | undefined) ?? null,
     }));
   }
 
@@ -340,6 +361,8 @@ export class AttendanceDaysService {
         engine_version: ENGINE_VERSION,
         computed_at: new Date(),
       };
+      const extra = this.classifier ? await this.classifier(tx, e, { workDate: d, punches, window: win, remote: remote.get(d) ?? null, result: r, now }) : {};
+      Object.assign(values, extra);
       await tx.collection('attendance_days').upsert({ employee_id: e.id, work_date: d }, { employee_id: e.id, work_date: d, ...values }, { $set: values });
       for (const hook of this.hooks) await hook(tx, e, { workDate: d, shift: day.shift, result: r, now });
       results.set(d, r);

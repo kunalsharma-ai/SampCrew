@@ -1,7 +1,7 @@
 'use client';
 import type { TenantMailView } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Select, Switch, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
-import { Mail, Send } from 'lucide-react';
+import { Lock, LockOpen, Mail, Send, ShieldCheck } from 'lucide-react';
 import { useState, useTransition } from 'react';
 import { saveMailAction, testMailAction } from './actions';
 
@@ -32,6 +32,9 @@ export function MailSetupView({ view: initial, me }: { view: TenantMailView; me:
   const [notice, setNotice] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [sendTo, setSendTo] = useState(me.email);
   const [pending, start] = useTransition();
+  // Once a server with its password is saved, the panel is locked (issue #86): the fields show what is saved, the
+  // password only as an encrypted mask, and nothing changes until someone presses Unlock to edit.
+  const [locked, setLocked] = useState(Boolean(initial.host && initial.passwordHint));
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => { setF((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: '' })); };
   const save = () => start(async () => {
     setNotice(null);
@@ -44,6 +47,7 @@ export function MailSetupView({ view: initial, me }: { view: TenantMailView; me:
     if (!r.ok) { setErrors(r.fieldErrors ?? {}); setNotice({ tone: 'danger', text: r.message }); return; }
     if (r.data) setView(r.data);
     setF((x) => ({ ...x, password: '' })); setErrors({}); setNotice({ tone: 'success', text: r.message ?? 'Saved' });
+    if (r.data?.host && r.data.passwordHint) setLocked(true);
   });
   const test = () => start(async () => {
     setNotice(null);
@@ -60,9 +64,15 @@ export function MailSetupView({ view: initial, me }: { view: TenantMailView; me:
         <CardHeader
           title="Your email server"
           description="Any email service with SMTP works. Ask your IT team or email provider for the server, port, user name and password (or an app password / API key)."
-          action={<Switch label="Send through this server" checked={f.enabled} onChange={(v) => set('enabled', v)} testId="mail-enabled" />}
+          action={locked ? (
+            <div className="flex items-center gap-2">
+              <Badge tone="success"><Lock className="mr-1 inline size-3" aria-hidden />Locked</Badge>
+              <Button size="sm" variant="secondary" onClick={() => { setNotice(null); setLocked(false); }} data-testid="mail-unlock"><LockOpen className="size-3.5" /> Unlock to edit</Button>
+            </div>
+          ) : <Switch label="Send through this server" checked={f.enabled} onChange={(v) => set('enabled', v)} testId="mail-enabled" />}
         />
         <CardBody className="grid gap-4 sm:grid-cols-2">
+          <fieldset disabled={locked} className="contents" data-testid="mail-panel" data-locked={locked ? 'true' : 'false'}>
           <div className="flex flex-wrap items-center gap-2 text-[0.8125rem] sm:col-span-2">
             <span className="text-fg-muted">Fill in for:</span>
             {PRESETS.map((p) => <Button key={p.key} size="sm" variant="ghost" onClick={() => setF((x) => ({ ...x, host: p.host, port: String(p.port), security: p.security }))}>{p.label}</Button>)}
@@ -77,15 +87,28 @@ export function MailSetupView({ view: initial, me }: { view: TenantMailView; me:
             )}</Field>
           </div>
           <Field label="User name" error={errors.username} hint="Usually the full email address of the mailbox.">{(p) => <Input {...p} value={f.username} autoComplete="off" onChange={(e) => set('username', e.target.value)} data-testid="mail-username" />}</Field>
-          <Field label="Password or API key" error={errors.password} hint={view.passwordHint ? `Saved (${view.passwordHint}). Leave empty to keep it.` : 'Stored encrypted. Nobody can read it back, not even SAMPLEDGE support.'}>
-            {(p) => <Input {...p} type="password" value={f.password} autoComplete="new-password" onChange={(e) => set('password', e.target.value)} data-testid="mail-password" />}
+          <Field label="Password or API key" error={errors.password} hint={view.passwordHint ? (locked ? 'Saved and encrypted. Nobody can read it back, not even SAMPLEDGE support.' : 'Saved and encrypted. Leave empty to keep it, or type a new one to replace it.') : 'Stored encrypted. Nobody can read it back, not even SAMPLEDGE support.'}>
+            {(p) => (
+              <div className="relative">
+                <Input {...p} type="password" value={f.password} placeholder={view.passwordHint ? '••••••••••••' : undefined} autoComplete="new-password" onChange={(e) => set('password', e.target.value)} data-testid="mail-password" className={view.passwordHint ? 'pr-28' : undefined} />
+                {view.passwordHint && !f.password && (
+                  <span className="pointer-events-none absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 rounded bg-success-subtle px-1.5 py-0.5 text-[0.6875rem] font-medium text-success" data-testid="mail-password-encrypted">
+                    <ShieldCheck className="size-3" aria-hidden /> Encrypted
+                  </span>
+                )}
+              </div>
+            )}
           </Field>
           <Field label="From name" error={errors.fromName} hint="What people see the email from, such as “Northwind HR”.">{(p) => <Input {...p} value={f.fromName} maxLength={100} onChange={(e) => set('fromName', e.target.value)} data-testid="mail-from-name" />}</Field>
           <Field label="From address" required error={errors.fromAddress} hint="Your provider must allow this mailbox to send.">{(p) => <Input {...p} type="email" value={f.fromAddress} placeholder="hr@yourcompany.com" onChange={(e) => set('fromAddress', e.target.value)} data-testid="mail-from-address" />}</Field>
           <Field label="Replies go to" error={errors.replyTo} hint="Optional. Leave empty to receive replies at the From address.">{(p) => <Input {...p} type="email" value={f.replyTo} onChange={(e) => set('replyTo', e.target.value)} />}</Field>
-          <div className="flex items-end justify-end sm:col-span-1">
-            <Button onClick={save} loading={pending} data-testid="mail-save"><Mail className="size-4" /> Save email setup</Button>
-          </div>
+          {!locked && (
+            <div className="flex items-end justify-end gap-2 sm:col-span-1">
+              {view.host && view.passwordHint && <Button variant="ghost" onClick={() => { setLocked(true); setErrors({}); }}>Cancel</Button>}
+              <Button onClick={save} loading={pending} data-testid="mail-save"><Mail className="size-4" /> Save email setup</Button>
+            </div>
+          )}
+          </fieldset>
         </CardBody>
       </Card>
       <Card>

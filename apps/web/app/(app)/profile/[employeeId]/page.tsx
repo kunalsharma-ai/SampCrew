@@ -16,7 +16,7 @@ export default async function FullProfilePage({ params, searchParams }: { params
     <>
       <PageHeader
         eyebrow={<Link href={`/employees/${employeeId}`} className="hover:underline">Employee record</Link>}
-        title={profile.employee.name}
+        title={profile.employee.legalName || profile.employee.name}
         description={profile.can.editDirect ? 'You can change these details directly. The employee is told, and every change is audited.' : 'Read only.'}
       />
       <ProfileView profile={profile} tab={tab} />

@@ -212,3 +212,15 @@ export async function bulkChangeEmployeesAction(body: import('@crew/contracts').
   revalidatePath('/employees');
   return r;
 }
+
+export async function saveEmployeeRecordAction(id: string, values: Record<string, unknown>) {
+  const r = await act(() => api(`/employees/${id}/record`, { method: 'PUT', body: values }), 'Record saved');
+  refresh(id);
+  return r;
+}
+
+export async function savePageAccessAction(id: string, pages: string[]) {
+  const r = await act(() => api(`/employees/${id}/page-access`, { method: 'PUT', body: { pages } }), 'Page access saved');
+  refresh(id);
+  return r;
+}

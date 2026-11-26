@@ -8,7 +8,28 @@ import { contentDisposition } from '../http/content-disposition';
  * widths. Cells are written as inline text or numbers, never formulas, so nothing in the data can run.
  */
 
-export type Cell = string | number | null | undefined;
+export type Cell = string | number | null | undefined | TypedCell;
+
+/**
+ * A real date, time or duration in a workbook (Excel and Google Sheets sort and filter it as one). `v` is the Excel
+ * serial number for dates and times (days since 1899-12-30, the time as the fraction of a day) and hours for 'hours'.
+ * In CSV it is written as text in ISO form.
+ */
+export interface TypedCell { t: 'date' | 'datetime' | 'time' | 'hours'; v: number; text: string }
+
+/** Excel serial number of a local date and minutes after midnight. */
+export function excelSerial(date: string, minutes = 0): number {
+  const days = (Date.parse(`${date}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86_400_000;
+  return days + minutes / 1440;
+}
+export const xDate = (date: string): TypedCell => ({ t: 'date', v: excelSerial(date), text: date });
+export const xDateTime = (date: string, minutes: number): TypedCell => ({ t: 'datetime', v: excelSerial(date, minutes), text: `${date} ${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}` });
+export const xTime = (minutes: number): TypedCell => ({ t: 'time', v: minutes / 1440, text: `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}` });
+export const xHours = (minutes: number): TypedCell => ({ t: 'hours', v: Math.round((minutes / 60) * 100) / 100, text: (Math.round((minutes / 60) * 100) / 100).toFixed(2) });
+const isTyped = (v: Cell): v is TypedCell => typeof v === 'object' && v !== null && 't' in v;
+/** A cell as text (CSV). */
+export const cellText = (v: Cell): string => (v === null || v === undefined ? '' : isTyped(v) ? v.text : String(v));
+const STYLE = { date: 2, datetime: 3, time: 4, hours: 5 } as const;
 
 /** Parses CSV as the export services write it (RFC 4180, CRLF, optional BOM) back into rows. */
 export function parseCsv(content: string): string[][] {
@@ -50,24 +71,34 @@ export function numeric(v: string) {
   return /^-?(0|[1-9]\d{0,14})(\.\d{1,6})?$/.test(v) && v.replace(/[-.]/g, '').length <= 15;
 }
 
-function sheetXml(rows: Cell[][]): string {
+function sheetXml(rows: Cell[][], header = 0, filter = false): string {
   const widths: number[] = [];
+  let maxCols = 0;
   const body = rows.map((r, ri) => {
+    maxCols = Math.max(maxCols, r.length);
     const cells = r.map((v, ci) => {
       const ref = `${columnName(ci)}${ri + 1}`;
       if (v === null || v === undefined || v === '') return '';
+      if (isTyped(v)) {
+        widths[ci] = Math.max(widths[ci] ?? 8, v.t === 'datetime' ? 18 : 12);
+        return `<c r="${ref}" s="${STYLE[v.t]}"><v>${v.v}</v></c>`;
+      }
       let text = String(v);
-      widths[ci] = Math.max(widths[ci] ?? 8, Math.min(60, text.length + 2));
-      if (ri > 0 && (typeof v === 'number' || numeric(text))) return `<c r="${ref}"><v>${Number(text)}</v></c>`;
+      // Title rows above the header do not widen the columns.
+      if (ri >= header) widths[ci] = Math.max(widths[ci] ?? 8, Math.min(60, text.length + 2));
+      if (ri > header && (typeof v === 'number' || numeric(text))) return `<c r="${ref}"><v>${Number(text)}</v></c>`;
       // The CSV writers prefix possible formulas with an apostrophe; in a workbook text is never a formula.
       if (/^'[=+\-@]/.test(text)) text = text.slice(1);
-      return `<c r="${ref}" t="inlineStr"${ri === 0 ? ' s="1"' : ''}><is><t xml:space="preserve">${esc(text)}</t></is></c>`;
+      const bold = ri === header || (header > 0 && ri === 0);
+      return `<c r="${ref}" t="inlineStr"${bold ? ' s="1"' : ''}><is><t xml:space="preserve">${esc(text)}</t></is></c>`;
     }).join('');
     return `<row r="${ri + 1}">${cells}</row>`;
   }).join('');
-  const cols = widths.length ? `<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w ?? 10}" customWidth="1"/>`).join('')}</cols>` : '';
+  const cols = widths.length ? `<cols>${Array.from(widths, (w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w ?? 10}" customWidth="1"/>`).join('')}</cols>` : '';
+  const top = header + 1;
+  const auto = filter && rows.length > top && maxCols ? `<autoFilter ref="A${top}:${columnName(maxCols - 1)}${rows.length}"/>` : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${cols}<sheetData>${body}</sheetData></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="${top}" topLeftCell="A${top + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${cols}<sheetData>${body}</sheetData>${auto}</worksheet>`;
 }
 
 const sheetTitle = (s: string, i: number) => esc(s.replace(/[[\]:*?/\\]/g, ' ').slice(0, 31) || `Sheet${i + 1}`);
@@ -80,7 +111,7 @@ export function toXlsx(sheetName: string, rows: Cell[][]): Buffer {
  * A workbook with several sheets (each with a bold frozen header row). Sheet names must differ; they are cut to
  * Excel's 31 characters and characters Excel refuses are replaced.
  */
-export function toXlsxBook(sheets: { name: string; rows: Cell[][] }[]): Buffer {
+export function toXlsxBook(sheets: { name: string; rows: Cell[][]; header?: number; filter?: boolean }[]): Buffer {
   const list = sheets.length ? sheets : [{ name: 'Sheet1', rows: [] }];
   const files: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -92,9 +123,9 @@ export function toXlsxBook(sheets: { name: string; rows: Cell[][] }[]): Buffer {
     'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${list.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${list.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
     'xl/styles.xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf fontId="0" xfId="0"/><xf fontId="1" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`),
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="3"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/><numFmt numFmtId="165" formatCode="yyyy-mm-dd hh:mm"/><numFmt numFmtId="166" formatCode="hh:mm"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="6"><xf fontId="0" xfId="0"/><xf fontId="1" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="166" fontId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="2" fontId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`),
   };
-  list.forEach((s, i) => { files[`xl/worksheets/sheet${i + 1}.xml`] = strToU8(sheetXml(s.rows)); });
+  list.forEach((s, i) => { files[`xl/worksheets/sheet${i + 1}.xml`] = strToU8(sheetXml(s.rows, s.header ?? 0, s.filter ?? false)); });
   return Buffer.from(zipSync(files, { level: 6 }));
 }
 

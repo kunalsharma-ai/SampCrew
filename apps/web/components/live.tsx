@@ -217,7 +217,7 @@ export function LiveProvider({ initial, byCategory: initialByCategory, actionNee
       es.addEventListener('notifications.policy', () => {
         void notificationPreferencesAction().then((np) => np && setPrefs(np)).catch(() => undefined);
       });
-      for (const type of ['notifications.read', 'chat.message', 'chat.read', 'chat.updated', 'approvals.changed', 'announcements.changed', 'leave.changed', 'documents.changed', 'support.message', 'support.read', 'support.changed']) {
+      for (const type of ['notifications.read', 'chat.message', 'chat.read', 'chat.updated', 'approvals.changed', 'announcements.changed', 'leave.changed', 'attendance.changed', 'documents.changed', 'support.message', 'support.read', 'support.changed']) {
         es.addEventListener(type, (e) => {
           const d = JSON.parse((e as MessageEvent).data);
           if (type === 'notifications.read') {

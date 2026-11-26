@@ -154,12 +154,19 @@ export interface AttendanceDay {
   shiftName: string | null;
   shiftStart: string | null;
   shiftEnd: string | null;
+  workMode?: WorkModeStateKey | null;
+  workModeProvisional?: boolean;
+  officeMinutes?: number;
+  remoteMinutes?: number;
+  workPlaces?: string[];
+  workIssues?: string[];
+  workModeCorrected?: boolean;
   employeeName?: string;
   employeeCode?: string;
   department?: string | null;
   location?: string | null;
 }
-export interface Punch { id: string; at: string; direction: 'in' | 'out' | 'unknown'; source: string; geofence: string | null; device: string | null; viaCorrection: boolean; verifyMethod?: string | null; note?: string | null; flags?: string[] }
+export interface Punch { id: string; at: string; direction: 'in' | 'out' | 'unknown'; source: string; geofence: string | null; device: string | null; viaCorrection: boolean; verifyMethod?: string | null; note?: string | null; flags?: string[]; workZone?: string | null; workPlace?: string | null }
 export interface AttendanceToday {
   employeeId: string;
   date: string;
@@ -173,14 +180,37 @@ export interface AttendanceToday {
   allowed: { web: boolean; mobile: boolean; qr: boolean };
   geofence: { mode: 'off' | 'warn' | 'enforce'; configured: boolean; radiusM: number | null };
   locked: boolean;
+  workMode?: WorkModeToday | null;
 }
-export interface AttendanceCorrection { id: string; employeeId: string; workDate: string; punches: { time: string; direction: string; nextDay?: boolean }[]; reason: string; status: string; createdAt: string; employeeName?: string }
+export type WorkModeStateKey = 'office' | 'remote' | 'hybrid' | 'pending_verification';
+export interface WorkModeLabels { office: string; remote: string; hybrid: string }
+/** Office / home / hybrid attendance for the person today (GET /attendance/today). */
+export interface WorkModeToday {
+  enabled: boolean;
+  labels: WorkModeLabels;
+  state: WorkModeStateKey | null;
+  guess: 'office' | 'remote' | 'hybrid' | null;
+  provisional: boolean;
+  officeMinutes: number;
+  remoteMinutes: number;
+  unverifiedMinutes: number;
+  places: string[];
+  issues: string[];
+  explanation: string[];
+  override: { mode: string; reason: string; byName: string | null; source: string } | null;
+  current: { zone: 'office' | 'remote' | 'unverified' | 'neutral'; place: string | null; at: string; verification: string | null } | null;
+  requirement: 'none' | 'check_in' | 'check_in_out';
+  offices: { name: string; kind: string; radiusM: number }[];
+  canRequestCorrection: boolean;
+}
+export interface AttendanceCorrection { id: string; employeeId: string; workDate: string; punches: { time: string; direction: string; nextDay?: boolean }[]; reason: string; status: string; createdAt: string; employeeName?: string; category?: string; workMode?: string | null; decidedReason?: string | null }
 export interface OvertimeClaim { id: string; workDate: string; status: string; minutes: number; reason: string | null }
 export interface AttendanceMonth {
   employee: { id: string; name: string; code: string; timeZone: string };
   from: string;
   to: string;
-  summary: { workingDays: number; attendancePercent: number | null; present: number; halfDay: number; absent: number; missingPunch: number; onLeave: number; late: number; workedMinutes: number; overtimeMinutes: number; approvedOvertimeMinutes: number };
+  summary: { workingDays: number; attendancePercent: number | null; present: number; halfDay: number; absent: number; missingPunch: number; onLeave: number; late: number; workedMinutes: number; overtimeMinutes: number; approvedOvertimeMinutes: number; office?: number; remote?: number; hybrid?: number; pendingVerification?: number; officeMinutes?: number; remoteMinutes?: number };
+  workModeLabels?: WorkModeLabels;
   totals?: import('@crew/contracts').AttendanceTotals;
   days: AttendanceDay[];
   corrections: AttendanceCorrection[];
@@ -363,7 +393,8 @@ export interface ProfileChange { field: string; label: string; old: string | nul
 export interface ProfileUpdateBrief { id: string; status: string; createdAt: string; decidedAt: string | null; remarks: string | null; changes: ProfileChange[] }
 export interface PostalAddressView { line1: string; line2: string; city: string; state: string; postalCode: string; country: string }
 export interface FullProfile {
-  employee: { id: string; name: string; code: string; photo: boolean; photoUpdatedAt: string | null };
+  /** legalName: first, middle and last name (issue #86); preferredName is shown separately. */
+  employee: { id: string; name: string; legalName?: string; preferredName?: string | null; code: string; photo: boolean; photoUpdatedAt: string | null };
   self: boolean; completeness: number; filled: Record<ProfileSectionKey, boolean>;
   professional: {
     employeeCode: string; designation: string | null; department: string | null; manager: string | null; employmentType: string; status: string; dateOfJoining: string;
@@ -373,7 +404,7 @@ export interface FullProfile {
     workspaceAccess?: string | null; assignedWorkspace?: string | null;
   };
   sections: {
-    personal: { firstName: string; lastName: string; preferredName: string | null; dateOfBirth: string | null; gender: string | null; personalEmail: string | null; phone: string | null; nationality: string | null; maritalStatus: string | null; bloodGroup: string | null };
+    personal: { firstName: string; middleName?: string | null; lastName: string; preferredName: string | null; dateOfBirth: string | null; gender: string | null; personalEmail: string | null; phone: string | null; nationality: string | null; maritalStatus: string | null; bloodGroup: string | null };
     address: { current: PostalAddressView | null; permanentSameAsCurrent: boolean; permanent: PostalAddressView | null } | null;
     emergency: { contacts: { name: string; relationship: string; phone: string; email: string | null }[] } | null;
     education: { highestQualification: string | null; records: { level: string; degree: string | null; institution: string; yearCompleted: number | null; percentage: number | null; documentId: string | null }[] } | null;

@@ -160,7 +160,8 @@ export function ProfileView({ profile, tab: initialTab }: { profile: FullProfile
         <div className="flex flex-wrap items-center gap-5 bg-gradient-to-br from-accent/10 via-transparent to-transparent p-6">
           {src ? <img src={src} alt="" className="size-20 rounded-2xl object-cover" /> : <div className="grid size-20 place-items-center rounded-2xl bg-accent text-2xl font-semibold text-accent-fg" aria-hidden>{p.employee.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}</div>}
           <div className="min-w-0 flex-1">
-            <h2 className="text-xl font-semibold">{p.employee.name}</h2>
+            <h2 className="text-xl font-semibold" data-testid="profile-legal-name">{p.employee.legalName || p.employee.name}</h2>
+            {p.employee.preferredName && <div className="text-[0.8125rem] text-fg-muted">Preferred name: {p.employee.preferredName}</div>}
             <p className="text-sm text-fg-muted">{[p.professional.designation, p.professional.department, p.employee.code].filter(Boolean).join(' · ')}</p>
             {!p.self && <Link className="mt-1 inline-block text-sm font-medium text-accent hover:underline" href={`/employees/${p.employee.id}`}>Employee record, documents and job history</Link>}
           </div>
@@ -188,7 +189,7 @@ export function ProfileView({ profile, tab: initialTab }: { profile: FullProfile
           <Update section="personal" />
           {editing === 'personal' ? <PersonalForm value={s.personal} pending={pending} self={p.self} onCancel={() => setEditing(null)} onSave={(d, n) => save('personal', d, n)} /> : (
             <Rows rows={[
-              ['Full name', `${s.personal.firstName} ${s.personal.lastName}`.trim()], ['Preferred name', s.personal.preferredName], ['Date of birth', day(s.personal.dateOfBirth)],
+              ['Legal name', [s.personal.firstName, s.personal.middleName, s.personal.lastName].filter(Boolean).join(' ')], ['Preferred name', s.personal.preferredName], ['Date of birth', day(s.personal.dateOfBirth)],
               ['Gender', label(s.personal.gender)], ['Personal phone', s.personal.phone], ['Personal email', s.personal.personalEmail], ['Nationality', s.personal.nationality],
               ['Marital status', label(s.personal.maritalStatus)], ['Blood group', s.personal.bloodGroup],
             ]} />
@@ -350,6 +351,7 @@ function PersonalForm({ value, pending, self, onCancel, onSave }: FormProps<Full
   return (
     <div className="grid gap-4 px-5 pb-5 md:grid-cols-3">
       <Field label="First name" required>{(fp) => <Input {...fp} value={v.firstName} maxLength={80} onChange={(e) => set({ firstName: e.target.value })} />}</Field>
+      <Field label="Middle name">{(fp) => <Input {...fp} value={v.middleName ?? ''} maxLength={80} onChange={(e) => set({ middleName: e.target.value || null })} />}</Field>
       <Field label="Last name">{(fp) => <Input {...fp} value={v.lastName} maxLength={80} onChange={(e) => set({ lastName: e.target.value })} />}</Field>
       <Field label="Preferred name">{(fp) => <Input {...fp} value={v.preferredName ?? ''} maxLength={80} onChange={(e) => set({ preferredName: e.target.value || null })} />}</Field>
       <Field label="Date of birth">{(fp) => <DatePicker {...fp} value={v.dateOfBirth ?? ''} max={new Date().toISOString().slice(0, 10)} openTo="1995-01-01" onChange={(x) => set({ dateOfBirth: x || null })} calendarLabel="Choose date of birth" />}</Field>

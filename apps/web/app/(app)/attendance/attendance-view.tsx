@@ -7,20 +7,38 @@ import { useState, useTransition } from 'react';
 import { clock, dayLabel, hm, SOURCE_LABEL, RISK_FLAG_LABEL } from '@/lib/time';
 import type { AttendanceDay, AttendanceMonth, AttendanceToday } from '@/lib/types';
 import { cancelCorrectionAction, correctionAction, overtimeAction, punchAction } from './actions';
-
-/** Browser location for geofenced punching. Resolves without coordinates if the person declines or it times out. */
-function locate(): Promise<{ latitude?: number; longitude?: number; accuracyM?: number; denied?: boolean }> {
-  return new Promise((resolve) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve({});
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: Math.round(p.coords.accuracy) }),
-      (err) => resolve({ denied: err.code === err.PERMISSION_DENIED }),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30_000 },
-    );
-  });
-}
+import { punchLocation } from '@/lib/locate';
+import { WorkModeStatusCard } from '@/components/work-mode/status-card';
+import { ModeBadge, hoursLabel } from '@/components/work-mode/parts';
 
 export function TodayCard({ today }: { today: AttendanceToday }) {
+  if (today.workMode?.enabled) return <WorkModeToday today={today} />;
+  return <ClassicTodayCard today={today} />;
+}
+
+/** Office / home attendance on: the big status card, then today's punches with where each one was. */
+function WorkModeToday({ today }: { today: AttendanceToday }) {
+  const tz = today.timeZone;
+  return (
+    <div className="grid gap-3">
+      <WorkModeStatusCard today={today} />
+      {today.punches.length > 0 && (
+        <ol className="flex flex-wrap gap-2" aria-label="Today's punches">
+          {today.punches.map((p) => (
+            <li key={p.id}>
+              <Badge tone={p.direction === 'in' ? 'success' : p.direction === 'out' ? 'neutral' : 'info'}>
+                {p.direction === 'unknown' ? 'Punch' : p.direction === 'in' ? 'In' : 'Out'} {clock(p.at, tz)} · {p.device ?? SOURCE_LABEL[p.source] ?? p.source}
+                {p.workZone === 'office' ? ` · ${p.workPlace ?? 'office'}` : p.workZone === 'remote' ? ' · away' : p.workZone === 'unverified' ? ' · not verified' : ''}
+              </Badge>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function ClassicTodayCard({ today }: { today: AttendanceToday }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [notice, setNotice] = useState<{ tone: 'success' | 'warning' | 'danger'; text: string } | null>(null);
@@ -29,13 +47,12 @@ export function TodayCard({ today }: { today: AttendanceToday }) {
   const offDay = today.dayType !== 'working';
   const punch = () => start(async () => {
     setNotice(null);
-    const where = today.geofence.mode !== 'off' && today.geofence.configured ? await locate() : {};
-    if (today.geofence.mode === 'enforce' && where.denied) {
-      setNotice({ tone: 'danger', text: 'Your workplace checks that you are on site. Allow location access in your browser and try again.' });
+    const { where, refused } = await punchLocation(today);
+    if (refused) {
+      setNotice({ tone: 'danger', text: refused });
       return;
     }
-    const { denied: _denied, ...coords } = where;
-    const r = await punchAction({ ...coords, direction: next });
+    const r = await punchAction({ ...where, direction: next });
     if (!r.ok) setNotice({ tone: 'danger', text: r.message });
     else {
       const p = r.data!.punch;
@@ -113,8 +130,24 @@ export function MonthView({ data, month, own, canClaimFor }: { data: AttendanceM
   const q = (m: string) => `?month=${m}${own ? '' : `&employeeId=${data.employee.id}`}`;
   const s = data.summary;
   const canAct = own || canClaimFor;
+  const labels = data.workModeLabels;
+  const classified = (s.office ?? 0) + (s.remote ?? 0) + (s.hybrid ?? 0) + (s.pendingVerification ?? 0);
   return (
     <>
+      {labels && classified > 0 && (
+        <Card data-testid="month-work-mode">
+          <CardHeader title="Where you worked this month" description="Each working day counts as office, home or hybrid from where you checked in and out." />
+          <div className="grid grid-cols-2 gap-3 px-5 pb-5 sm:grid-cols-4">
+            {([['office', s.office], ['remote', s.remote], ['hybrid', s.hybrid], ['pending_verification', s.pendingVerification]] as const).map(([k, v], i) => (
+              <div key={k} className="wm-rise rounded-xl border border-border px-4 py-3" style={{ animationDelay: `${i * 60}ms` }}>
+                <ModeBadge mode={k} labels={labels} />
+                <div className="mt-2 text-2xl font-semibold tabular text-fg">{v ?? 0}<span className="ml-1 text-sm font-normal text-fg-muted">days</span></div>
+              </div>
+            ))}
+          </div>
+          <p className="border-t border-border px-5 py-3 text-[0.8125rem] text-fg-muted">Office hours {hoursLabel(s.officeMinutes ?? 0)} · {labels.remote} hours {hoursLabel(s.remoteMinutes ?? 0)}</p>
+        </Card>
+      )}
       <Card>
         <CardHeader
           title={new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T00:00:00Z`))}
@@ -130,10 +163,10 @@ export function MonthView({ data, month, own, canClaimFor }: { data: AttendanceM
           <EmptyState icon={<CalendarCheck className="size-5" />} title="Nothing to show for this month" description="Days appear here from the joining date up to today." />
         ) : (
           <Table>
-            <THead><TR><TH>Date</TH><TH>Shift</TH><TH>Status</TH><TH>In</TH><TH>Out</TH><TH>Worked</TH><TH>Late</TH><TH>Overtime</TH><TH><span className="sr-only">Actions</span></TH></TR></THead>
+            <THead><TR><TH>Date</TH><TH>Shift</TH><TH>Status</TH>{labels && <TH>Where</TH>}<TH>In</TH><TH>Out</TH><TH>Worked</TH><TH>Late</TH><TH>Overtime</TH><TH><span className="sr-only">Actions</span></TH></TR></THead>
             <TBody>
               {data.days.map((d) => {
-                const fixable = ['missing_punch', 'absent', 'half_day'].includes(d.status) || d.flags.includes('missing_out') || d.flags.includes('missing_in');
+                const fixable = ['missing_punch', 'absent', 'half_day'].includes(d.status) || d.flags.includes('missing_out') || d.flags.includes('missing_in') || (Boolean(labels) && Boolean(d.workMode) && d.status !== 'in_progress');
                 const otClaim = claimed.get(d.workDate);
                 return (
                   <TR key={d.workDate}>
@@ -142,6 +175,7 @@ export function MonthView({ data, month, own, canClaimFor }: { data: AttendanceM
                     </TD>
                     <TD className="text-fg-muted">{d.shiftCode ? `${d.shiftCode} ${d.shiftStart}-${d.shiftEnd}` : '—'}</TD>
                     <TD><StatusPill status={d.status} />{d.flags.includes('outside_geofence') && <Badge tone="warning" className="ml-1">Outside area</Badge>}</TD>
+                    {labels && <TD><ModeBadge mode={d.workMode} labels={labels} provisional={d.workModeProvisional} corrected={d.workModeCorrected} /></TD>}
                     <TD className="tabular">{clock(d.firstIn, tz)}</TD>
                     <TD className="tabular">{clock(d.lastOut, tz)}</TD>
                     <TD className="tabular">{hm(d.workedMinutes)}</TD>
@@ -151,7 +185,7 @@ export function MonthView({ data, month, own, canClaimFor }: { data: AttendanceM
                     </TD>
                     <TD className="text-right whitespace-nowrap">
                       {canAct && fixable && !pendingCorrection.has(d.workDate) && d.status !== 'in_progress' && (
-                        <Button size="sm" variant="ghost" onClick={() => setCorrecting(d)} data-feature="attendance_basic.corrections">Fix punches</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setCorrecting(d)} data-feature="attendance_basic.corrections">{labels && d.workMode && !(['missing_punch', 'absent', 'half_day'].includes(d.status) || d.flags.includes('missing_out')) ? 'Request correction' : 'Fix punches'}</Button>
                       )}
                       {pendingCorrection.has(d.workDate) && <Badge tone="warning">Correction pending</Badge>}
                       {canAct && d.overtimeMinutes > 0 && d.approvedOvertimeMinutes === 0 && !otClaim && (
@@ -166,7 +200,7 @@ export function MonthView({ data, month, own, canClaimFor }: { data: AttendanceM
         )}
       </Card>
       <Corrections data={data} own={own} />
-      {correcting && <CorrectionDialog day={correcting} employeeId={own ? undefined : data.employee.id} onClose={() => setCorrecting(null)} />}
+      {correcting && <CorrectionDialog day={correcting} labels={labels} employeeId={own ? undefined : data.employee.id} onClose={() => setCorrecting(null)} />}
       {claiming && <OvertimeDialog day={claiming} employeeId={own ? undefined : data.employee.id} onClose={() => setClaiming(null)} />}
     </>
   );
@@ -180,13 +214,17 @@ function Corrections({ data, own }: { data: AttendanceMonth; own: boolean }) {
     <Card>
       <CardHeader title="Correction requests this month" description="Approved corrections add punches; the original punches are never changed." />
       <Table>
-        <THead><TR><TH>Date</TH><TH>Punches to add</TH><TH>Reason</TH><TH>Status</TH><TH><span className="sr-only">Actions</span></TH></TR></THead>
+        <THead><TR><TH>Date</TH><TH>Change asked for</TH><TH>Reason</TH><TH>Status</TH><TH><span className="sr-only">Actions</span></TH></TR></THead>
         <TBody>
           {data.corrections.map((c) => (
             <TR key={c.id}>
               <TD>{dayLabel(c.workDate)}</TD>
-              <TD>{c.punches.map((p) => `${p.direction} ${p.time}${p.nextDay ? ' (+1 day)' : ''}`).join(', ')}</TD>
-              <TD className="text-fg-muted">{c.reason}</TD>
+              <TD>
+                {c.punches.map((p) => `${p.direction} ${p.time}${p.nextDay ? ' (+1 day)' : ''}`).join(', ')}
+                {c.workMode && <span className="ml-1"><ModeBadge mode={c.workMode} labels={data.workModeLabels} /></span>}
+                {c.category && c.category !== 'other' && <span className="block text-xs text-fg-subtle">{CATEGORY_LABEL[c.category] ?? c.category}</span>}
+              </TD>
+              <TD className="text-fg-muted">{c.reason}{c.decidedReason && <span className="block text-xs">Decision: {c.decidedReason}</span>}</TD>
               <TD><StatusPill status={c.status} /></TD>
               <TD className="text-right">
                 {own && c.status === 'pending' && (
@@ -201,7 +239,12 @@ function Corrections({ data, own }: { data: AttendanceMonth; own: boolean }) {
   );
 }
 
-function CorrectionDialog({ day, employeeId, onClose }: { day: AttendanceDay; employeeId?: string; onClose: () => void }) {
+const CATEGORY_LABEL: Record<string, string> = {
+  forgot_check_in: 'Forgot to check in', forgot_check_out: 'Forgot to check out', technical_issue: 'Technical issue',
+  location_issue: 'Location was wrong or not read', worked_elsewhere: 'Worked from another place', other: 'Other',
+};
+
+function CorrectionDialog({ day, employeeId, labels, onClose }: { day: AttendanceDay; employeeId?: string; labels?: import('@/lib/types').WorkModeLabels; onClose: () => void }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -212,14 +255,18 @@ function CorrectionDialog({ day, employeeId, onClose }: { day: AttendanceDay; em
     [{ time: day.shiftStart ?? '09:00', direction: 'in', nextDay: false }],
   );
   const [reason, setReason] = useState('');
+  const punchFix = missingOut || ['missing_punch', 'absent', 'half_day'].includes(day.status) || day.flags.includes('missing_in');
+  const [category, setCategory] = useState(missingOut ? 'forgot_check_out' : day.punchCount === 0 ? 'forgot_check_in' : labels && day.workMode === 'pending_verification' ? 'location_issue' : 'other');
+  const [withPunches, setWithPunches] = useState(punchFix);
+  const [mode, setMode] = useState<'' | 'office' | 'remote' | 'hybrid'>('');
   const set = (i: number, patch: Partial<(typeof punches)[number]>) => setPunches(punches.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   return (
     <Dialog
       open
       onClose={onClose}
-      title={`Fix punches for ${dayLabel(day.workDate)}`}
-      description="Add the punches that are missing. Your approver sees the reason; once approved, the day is recalculated."
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form="correction-form" loading={pending}>Send for approval</Button></>}
+      title={`Correct ${dayLabel(day.workDate)}`}
+      description="Add missing punches or ask for the day to count as office, home or hybrid. Your approver sees the reason; once approved, the day is recalculated."
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form="correction-form" loading={pending} disabled={!withPunches && !mode}>Send for approval</Button></>}
     >
       <form
         id="correction-form"
@@ -228,14 +275,30 @@ function CorrectionDialog({ day, employeeId, onClose }: { day: AttendanceDay; em
           e.preventDefault();
           setError(null);
           start(async () => {
-            const r = await correctionAction({ employeeId, workDate: day.workDate, punches, reason });
+            const r = await correctionAction({ employeeId, workDate: day.workDate, punches: withPunches ? punches : [], reason, category, ...(mode ? { workMode: mode } : {}) });
             if (r.ok) { onClose(); router.refresh(); } else setError(r.message);
           });
         }}
       >
         {error && <Alert tone="danger">{error}</Alert>}
         {day.explanation.length > 0 && <Alert tone="info">{day.explanation.join(' ')}</Alert>}
-        {punches.map((p, i) => (
+        <Field label="What happened">{(f) => (
+          <Select {...f} name="category" value={category} onChange={(e) => setCategory(e.target.value)} data-testid="correction-category">
+            {Object.entries(CATEGORY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </Select>
+        )}</Field>
+        {labels && (
+          <Field label="Where the day should count" hint={day.workMode ? `Now: ${day.workMode === 'pending_verification' ? 'Pending verification' : labels[day.workMode as 'office'] ?? day.workMode}` : undefined}>{(f) => (
+            <Select {...f} name="workMode" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} data-testid="correction-work-mode">
+              <option value="">No change</option>
+              <option value="office">{labels.office}</option>
+              <option value="remote">{labels.remote}</option>
+              <option value="hybrid">{labels.hybrid}</option>
+            </Select>
+          )}</Field>
+        )}
+        {labels && <label className="flex items-center gap-2 text-[0.8125rem]"><input type="checkbox" checked={withPunches} onChange={(e) => setWithPunches(e.target.checked)} /> Add missing punches</label>}
+        {withPunches && punches.map((p, i) => (
           <div key={i} className="grid grid-cols-[1fr_1fr_auto_auto] items-end gap-2">
             <Field label="Time">{(f) => <Input {...f} type="time" name={`time-${i}`} value={p.time} onChange={(e) => set(i, { time: e.target.value })} required />}</Field>
             <Field label="Type">{(f) => <Select {...f} name={`direction-${i}`} value={p.direction} onChange={(e) => set(i, { direction: e.target.value as 'in' | 'out' })}><option value="in">Punch in</option><option value="out">Punch out</option></Select>}</Field>
@@ -243,7 +306,7 @@ function CorrectionDialog({ day, employeeId, onClose }: { day: AttendanceDay; em
             <Button type="button" variant="ghost" size="sm" aria-label="Remove punch" disabled={punches.length === 1} onClick={() => setPunches(punches.filter((_, j) => j !== i))}><Trash2 className="size-4" /></Button>
           </div>
         ))}
-        {punches.length < 6 && <Button type="button" variant="secondary" size="sm" onClick={() => setPunches([...punches, { time: '13:00', direction: 'in', nextDay: false }])}><Plus className="size-4" /> Add punch</Button>}
+        {withPunches && punches.length < 6 && <Button type="button" variant="secondary" size="sm" onClick={() => setPunches([...punches, { time: '13:00', direction: 'in', nextDay: false }])}><Plus className="size-4" /> Add punch</Button>}
         <Field label="Reason" required>{(f) => <Textarea {...f} name="reason" value={reason} onChange={(e) => setReason(e.target.value)} minLength={3} maxLength={500} required placeholder="For example: forgot to punch out, device was offline" />}</Field>
       </form>
     </Dialog>

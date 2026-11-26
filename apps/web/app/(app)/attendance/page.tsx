@@ -11,6 +11,8 @@ import { dateLabel, monthBounds, resolvePeriod } from '@/lib/attendance-period';
 import { hm } from '@/lib/time';
 import type { AttendanceMonth, AttendanceToday, LateMonth, Me } from '@/lib/types';
 import { LateSummary } from './late-summary';
+import { NoticeChoices } from '@/components/work-mode/notice-choices';
+import { RealtimeRefresh } from '@/components/work-mode/realtime-refresh';
 import { MonthView, TodayCard } from './attendance-view';
 import { BucketBadge, ExportButton, Pager, PercentRing, PeriodBar, pct, periodQuery, qs, SectionCard, Tile, TotalsTiles, TrendChart } from './overview-parts';
 
@@ -68,6 +70,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const history = !noRecord && !month && o.me ? await load<Paged<AttendanceRecordRow>>(`/attendance/overview/records?from=${period.from}&to=${period.to}&employeeId=${o.me.employeeId}&page=${page}&pageSize=31`) : null;
   const late = !noRecord && o.me ? await api<LateMonth>(`/attendance/late/month?month=${(month ?? period.to).slice(0, 7)}&employeeId=${o.me.employeeId}`).catch(() => null) : null;
   const level = caps.level === 'super' ? 'Super Workspace' : caps.level === 'hr' ? 'HR Workspace' : 'Employee Workspace';
+  const notices = await api<{ notices: { key: string; label: string; description: string; enabled: boolean }[] }>('/attendance/work-mode/notices').catch(() => null);
 
   return (
     <>
@@ -77,6 +80,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         description={`${period.label}. Your own attendance first${caps.employees ? ', then the attendance you look after' : ''}.`}
         actions={caps.export && o.me ? <ExportButton period={period} filters={{ employeeId: o.me.employeeId }} label="Export my attendance" /> : undefined}
       />
+      <RealtimeRefresh />
       <PeriodBar period={period} path="/attendance" />
       <ModuleNotices category="attendance" label="Attendance" />
 
@@ -130,6 +134,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
             <Pager page={history.page} pageSize={history.pageSize} total={history.total} href={(n) => `/attendance${qs({ ...keep, page: String(n) })}`} />
           </Card>
         )}
+        {notices && notices.notices.length > 0 && <NoticeChoices notices={notices.notices} />}
       </section>
 
       {/* 2. The attendance this person looks after (Super and HR Workspace only). */}
@@ -157,6 +162,9 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
             <TrendChart points={o.trend} />
           </Card>
           <div className="grid gap-4 md:grid-cols-2">
+            <SectionCard testId="section-work-mode" href="/attendance/work-mode" title="Workforce attendance: office, home and hybrid"
+              description="Who is at the office, at home or both today, who has not checked in, is on leave or irregular, with charts, filters and the 8-sheet report."
+              stats={[{ label: 'Present today', value: o.cards.presentToday }, { label: 'On leave today', value: o.cards.onLeaveToday }, { label: 'Absent today', value: o.cards.absentToday }]} />
             {caps.hrWorkspaces && (
               <SectionCard testId="section-hr-workspaces" href={`/attendance/hr-workspaces${qs(keep)}`} title="HR Workspace Attendance"
                 description={caps.level === 'super' ? 'Every HR Workspace and the central group: its people, who is in today and its attendance %.' : 'Your HR Workspace and the other HR Workspaces the Super Workspace opened to you.'}

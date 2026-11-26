@@ -20,7 +20,7 @@ import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
 import { requestContext } from '../../platform/context/request-context';
-import { MongoService as DatabaseService, type TenantTx, usersTable } from '../../platform/database/mongo.service';
+import { MongoService as DatabaseService, membershipUserNames, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
@@ -29,6 +29,7 @@ import { EMPLOYEE_FIELDS, employeeAttrs } from '../employees/employee-attrs';
 import { employeeNames, fieldById } from '../employees/employee-view';
 import { AttendanceAccessService } from './attendance-access.service';
 import { AttendanceDaysService, type EmployeeCtx, isLocked } from './attendance-days.service';
+import { WorkModeService, type PunchPlace } from './work-mode.service';
 
 const { addDays, fromLocal, hhmm, localToday } = zonedTime;
 const QR_WINDOW_MS = 30_000;
@@ -64,6 +65,14 @@ async function dayViews(tx: TenantTx, days: Doc[]) {
       shiftStart: st ? String(st.start_time).slice(0, 5) : null,
       shiftEnd: st ? String(st.end_time).slice(0, 5) : null,
       shiftColor: st?.color ?? null,
+      // Office, home or hybrid (null before classification started or with nothing to classify).
+      workMode: (d.work_mode as string | null | undefined) ?? null,
+      workModeProvisional: Boolean(d.work_mode_provisional),
+      officeMinutes: (d.office_minutes as number | undefined) ?? 0,
+      remoteMinutes: (d.remote_minutes as number | undefined) ?? 0,
+      workPlaces: (d.work_mode_places as string[] | undefined) ?? [],
+      workIssues: (d.work_mode_issues as string[] | undefined) ?? [],
+      workModeCorrected: Boolean(d.work_mode_override),
     };
   });
 }
@@ -79,6 +88,9 @@ async function correctionViews(tx: TenantTx, rows: Doc[]) {
       workDate: c.work_date,
       punches: c.punches,
       reason: c.reason,
+      category: c.category ?? 'other',
+      workMode: c.work_mode ?? null,
+      decidedReason: c.decided_reason ?? null,
       status: c.status,
       createdAt: c.created_at,
       approvalId: c.approval_request_id ?? null,
@@ -125,6 +137,7 @@ export class AttendanceService implements OnModuleInit {
     private readonly approvals: ApprovalsService,
     private readonly days: AttendanceDaysService,
     private readonly access: AttendanceAccessService,
+    private readonly workMode: WorkModeService,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
     this.qrKey = Buffer.from(hkdfSync('sha256', config.JWT_ACCESS_SECRET, 'crew', 'crew:kiosk-qr:v1', 32));
@@ -144,8 +157,10 @@ export class AttendanceService implements OnModuleInit {
       attributes: async (tx, id) => attrsOf((await this.employeeFor(tx, 'attendance_corrections', id))!),
       onApproved: (tx, req) => this.correctionApproved(tx, req),
       onRejected: async (tx, req) => {
-        await tx.collection('attendance_corrections').updateOne({ id: req.resource_id, status: 'pending' }, { $set: { status: 'rejected', decided_at: new Date() } });
-        await this.audit.record(tx, { action: 'attendance_correction.rejected', resourceType: 'attendance_correction', resourceId: req.resource_id });
+        // A rejection always says why, so the person knows what to do next (it rolls the decision back otherwise).
+        if (!req.comment?.trim()) throw Errors.badRequest('reason_required', 'Give a reason to reject an attendance correction.');
+        await tx.collection('attendance_corrections').updateOne({ id: req.resource_id, status: 'pending' }, { $set: { status: 'rejected', decided_at: new Date(), decided_reason: req.comment, decided_by_membership_id: requestContext.get()?.actor?.kind === 'user' ? requestContext.tenantActor().membershipId : null } });
+        await this.audit.record(tx, { action: 'attendance_correction.rejected', resourceType: 'attendance_correction', resourceId: req.resource_id, metadata: { reason: req.comment } });
       },
     });
     this.approvals.register('overtime_claim', {
@@ -227,7 +242,10 @@ export class AttendanceService implements OnModuleInit {
           }
         }
       }
+      // Where the punch was, for office / home classification (and an office the person must check in at).
+      const place = await this.workMode.punchPlace(tx, e, { latitude: input.latitude, longitude: input.longitude, accuracyM: input.accuracyM, locationStatus: input.locationStatus });
       return this.record(tx, e, {
+        place,
         source: input.source,
         sourceEventId: `${actor.membershipId}:${input.clientEventId}`,
         direction: input.direction,
@@ -243,6 +261,13 @@ export class AttendanceService implements OnModuleInit {
       // The refusal is audited in its own transaction, since the punch transaction rolls back.
       const r = refused as { employeeId: string; distanceM: number } | null;
       if (r) await this.db.tenant((tx) => this.audit.record(tx, { action: 'attendance.punch_refused', resourceType: 'employee', resourceId: r.employeeId, metadata: { reason: 'outside_geofence', distanceM: r.distanceM } }));
+      const code = (err as { code?: string }).code;
+      if (code === 'office_required' || code === 'office_location_required') {
+        await this.db.tenant(async (tx) => {
+          const s = await this.authz.subject(tx);
+          if (s.employeeId) await this.audit.record(tx, { action: 'attendance.punch_refused', resourceType: 'employee', resourceId: s.employeeId, metadata: { reason: code } });
+        });
+      }
       throw err;
     });
   }
@@ -350,6 +375,17 @@ export class AttendanceService implements OnModuleInit {
             continue;
           }
         }
+        // Where the punch was (office / home). A check-in that must be at an office is refused with the reason.
+        const place = await this.workMode.punchPlace(tx, e, { latitude: p.latitude, longitude: p.longitude, accuracyM: p.accuracyM, mockLocation: p.mockLocation, locationStatus: p.locationStatus });
+        if (p.purpose !== 'break') {
+          try {
+            this.workMode.requireOffice(place, direction);
+          } catch (err) {
+            refuse((err as { code?: string }).code ?? 'office_required', (err as Error).message);
+            continue;
+          }
+        }
+        const apart = place.enabled;
         const row = await tx.collection('attendance_events').insert({
           employee_id: e.id,
           source: 'mobile',
@@ -357,9 +393,10 @@ export class AttendanceService implements OnModuleInit {
           captured_at: new Date(at),
           device_local_time: p.capturedAt,
           direction,
-          latitude: p.latitude ?? null,
-          longitude: p.longitude ?? null,
-          accuracy_m: p.accuracyM ?? null,
+          latitude: apart ? null : p.latitude ?? null,
+          longitude: apart ? null : p.longitude ?? null,
+          accuracy_m: apart ? null : p.accuracyM ?? null,
+          ...this.workMode.eventFields(place),
           geofence_result: geofence,
           distance_m: distance,
           recorded_by_membership_id: actor.membershipId,
@@ -375,10 +412,11 @@ export class AttendanceService implements OnModuleInit {
           continue;
         }
         if (!locked) touched.push(at);
+        await this.workMode.afterPunch(tx, e, { id: row.id as string, captured_at: new Date(at), direction, source: 'mobile' }, place);
         results.push({
           sequence: p.sequence,
           status: 'accepted',
-          punch: { id: row.id, capturedAt: new Date(at), direction, geofence, distanceM: distance, flags, arrivedAfterLock: locked },
+          punch: { id: row.id, capturedAt: new Date(at), direction, geofence, distanceM: distance, flags, arrivedAfterLock: locked, workZone: place.enabled ? place.zone.zone : null, place: place.zone.place?.name ?? null },
           ...(locked ? { message: 'Attendance for that day is locked for payroll. The punch is kept, and HR can apply it after unlocking.' } : {}),
         });
       }
@@ -410,7 +448,7 @@ export class AttendanceService implements OnModuleInit {
   private async record(
     tx: TenantTx,
     e: EmployeeCtx,
-    p: { source: 'web' | 'mobile' | 'qr'; sourceEventId: string; direction?: 'in' | 'out'; latitude: number | null; longitude: number | null; accuracy: number | null; geofence: string; distance: number | null; note: string | null; ip: string | null; kioskId?: string },
+    p: { source: 'web' | 'mobile' | 'qr'; sourceEventId: string; direction?: 'in' | 'out'; latitude: number | null; longitude: number | null; accuracy: number | null; geofence: string; distance: number | null; note: string | null; ip: string | null; kioskId?: string; place?: PunchPlace },
   ) {
     const actor = requestContext.tenantActor();
     const now = Date.now();
@@ -428,6 +466,9 @@ export class AttendanceService implements OnModuleInit {
         const last = (await this.days.punches(tx, e.id, win.from, Math.min(win.to, now + 1))).at(-1);
         direction = last && last.direction !== 'out' ? 'out' : 'in';
       }
+      if (p.place) this.workMode.requireOffice(p.place, direction);
+      // With office / home classification on, coordinates are kept apart (attendance_locations, with a retention period).
+      const apart = Boolean(p.place?.enabled);
       id = (
         await tx.collection('attendance_events').insert({
           employee_id: e.id,
@@ -437,21 +478,23 @@ export class AttendanceService implements OnModuleInit {
           captured_at: new Date(now),
           direction,
           verify_method: p.source === 'qr' ? 'qr' : null,
-          latitude: p.latitude,
-          longitude: p.longitude,
-          accuracy_m: p.accuracy,
+          latitude: apart ? null : p.latitude,
+          longitude: apart ? null : p.longitude,
+          accuracy_m: apart ? null : p.accuracy,
           geofence_result: p.geofence,
           distance_m: p.distance,
           recorded_by_membership_id: actor.membershipId,
           note: p.note,
           remote_ip: p.ip,
+          ...(p.place ? this.workMode.eventFields(p.place) : {}),
         })
       ).id as string;
+      if (p.place) await this.workMode.afterPunch(tx, e, { id, captured_at: new Date(now), direction, source: p.source }, p.place);
       const [prev, cur] = this.days.datesFor(e, now);
       await this.days.recompute(tx, e.id, prev, cur, now);
     }
     const ev = (await tx.collection('attendance_events').findOne({ id }))!;
-    const punch = { id: ev.id, capturedAt: ev.captured_at, direction: ev.direction, source: ev.source, geofence: ev.geofence_result ?? null, distanceM: ev.distance_m ?? null };
+    const punch = { id: ev.id, capturedAt: ev.captured_at, direction: ev.direction, source: ev.source, geofence: ev.geofence_result ?? null, distanceM: ev.distance_m ?? null, workZone: ev.work_zone ?? null, place: ev.work_place_name ?? null, verification: ev.location_verification ?? null };
     return { punch, duplicate: Boolean(existing), today: await this.dayRow(tx, e.id, today) };
   }
 
@@ -480,6 +523,7 @@ export class AttendanceService implements OnModuleInit {
       return this.record(tx, e, {
         source: 'qr', sourceEventId: `${kiosk.id}:${window}:${e.id}`, direction, latitude: null, longitude: null, accuracy: null,
         geofence: 'kiosk', distance: null, note: `Kiosk: ${kiosk.name}`, ip: ctx?.ip ?? null, kioskId: kiosk.id,
+        place: await this.workMode.kioskPlace(tx, kiosk.location_id),
       });
     });
   }
@@ -578,11 +622,13 @@ export class AttendanceService implements OnModuleInit {
         nextDirection: last && last.direction !== 'out' ? 'out' : 'in',
         // Working, on a break (the last punch was an out for a break) or not checked in.
         state: last && last.direction !== 'out' ? 'working' : last && last.purpose === 'break' ? 'on_break' : last ? 'checked_out' : 'not_started',
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), note: p.note ?? null, flags: p.risk_flags, purpose: p.purpose })),
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, viaCorrection: Boolean(p.correction_id), note: p.note ?? null, flags: p.risk_flags, purpose: p.purpose, workZone: p.work_zone ?? null, workPlace: p.work_place_name ?? null })),
         day: await this.dayRow(tx, e.id, date),
         allowed: { web: policy.web_punch, mobile: policy.mobile_punch, qr: policy.qr_punch },
         geofence: { mode: policy.geofence_mode, configured: Boolean(e.fence), radiusM: e.fence?.radiusM ?? null },
         locked: await isLocked(tx, e.id, date),
+        // Office, home or hybrid today, and where the last punch was.
+        workMode: await this.workMode.todayBlock(tx, e, date, punches),
       };
     });
   }
@@ -613,6 +659,7 @@ export class AttendanceService implements OnModuleInit {
         employee: { id: e.id, name: e.name, code: e.code, timeZone: e.tz },
         from, to,
         totals,
+        workModeLabels: (await this.workMode.settings(tx)).labels,
         summary: {
           workingDays: totals.workingDays,
           attendancePercent: totals.percent,
@@ -621,6 +668,13 @@ export class AttendanceService implements OnModuleInit {
           workedMinutes: rows.reduce((t, r) => t + r.workedMinutes, 0),
           overtimeMinutes: rows.reduce((t, r) => t + r.overtimeMinutes, 0),
           approvedOvertimeMinutes: rows.reduce((t, r) => t + r.approvedOvertimeMinutes, 0),
+          // Days by work arrangement, and hours at the office and away.
+          office: rows.filter((r) => r.workMode === 'office').length,
+          remote: rows.filter((r) => r.workMode === 'remote').length,
+          hybrid: rows.filter((r) => r.workMode === 'hybrid').length,
+          pendingVerification: rows.filter((r) => r.workMode === 'pending_verification').length,
+          officeMinutes: rows.reduce((t, r) => t + r.officeMinutes, 0),
+          remoteMinutes: rows.reduce((t, r) => t + r.remoteMinutes, 0),
         },
         days: rows,
         corrections: (await tx.collection('attendance_corrections').find({ employee_id: e.id, work_date: { $gte: from, $lte: to } }, { sort: { created_at: -1 } })).map((c) => ({
@@ -629,6 +683,9 @@ export class AttendanceService implements OnModuleInit {
           status: c.status,
           punches: c.punches,
           reason: c.reason,
+          category: c.category ?? 'other',
+          workMode: c.work_mode ?? null,
+          decidedReason: c.decided_reason ?? null,
           createdAt: c.created_at,
         })),
         overtimeClaims: (await tx.collection('overtime_claims').find({ employee_id: e.id, work_date: { $gte: from, $lte: to } }, { sort: { created_at: -1 } })).map((c) => ({
@@ -655,7 +712,7 @@ export class AttendanceService implements OnModuleInit {
         employee: { id: e.id, name: e.name, code: e.code, timeZone: e.tz },
         day: (await this.dayRow(tx, e.id, date)) ?? null,
         window: { from: new Date(win.from).toISOString(), to: new Date(win.to).toISOString() },
-        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, verifyMethod: p.verify_method, viaCorrection: Boolean(p.correction_id), note: p.note, flags: p.risk_flags })),
+        punches: punches.map((p) => ({ id: p.id, at: p.captured_at, direction: p.direction, source: p.source, geofence: p.geofence_result, device: p.device_name, verifyMethod: p.verify_method, viaCorrection: Boolean(p.correction_id), note: p.note, flags: p.risk_flags, workZone: p.work_zone ?? null, workPlace: p.work_place_name ?? null })),
         locked: await isLocked(tx, e.id, date),
       };
     });
@@ -691,7 +748,10 @@ export class AttendanceService implements OnModuleInit {
   /** Everyone the caller can see on one date, with a status summary. Recent days are refreshed first. */
   async team(q: { date: string; status?: string; filter?: AttendanceViewFilter; departmentId?: string; locationId?: string }) {
     return this.db.tenant(async (tx) => {
-      const scope = await this.access.visibleFilter(tx, await this.access.viewer(tx));
+      const viewer = await this.access.viewer(tx);
+      const scope = await this.access.visibleFilter(tx, viewer);
+      // Team Attendance shows Download report when this person may export (issue #86).
+      const canExport = viewer.canExport;
       const and: Record<string, unknown>[] = [scope, { date_of_joining: { $lte: q.date } }, { $or: [{ last_working_day: null }, { last_working_day: { $gte: q.date } }] }];
       if (q.departmentId) and.push({ current_department_id: q.departmentId });
       if (q.locationId) and.push({ current_location_id: q.locationId });
@@ -702,7 +762,7 @@ export class AttendanceService implements OnModuleInit {
       const employees = await tx.collection('employees').find({ $and: and }, { limit: 1000 });
       const ids = employees.map((e) => e.id as string);
       await this.refreshDate(tx, employees, q.date);
-      if (!ids.length) return { date: q.date, summary: {}, rows: [] };
+      if (!ids.length) return { date: q.date, summary: {}, rows: [], canExport };
       const allDays = await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: q.date });
       // Home's cards open this list with a view beyond the stored status: late, left early, working now, not in yet, WFH.
       const wfh = q.filter === 'wfh' ? await remoteOn(tx, ids, q.date) : null;
@@ -735,7 +795,7 @@ export class AttendanceService implements OnModuleInit {
       const all = allDays.map((d) => ({ status: d.status as string, lateMinutes: d.late_minutes as number, firstIn: d.first_in ?? null, lastOut: d.last_out ?? null }));
       const summary: Record<string, number> = { total: all.length, late: all.filter((r) => r.lateMinutes > 0).length, onSiteNow: all.filter((r) => r.status === 'in_progress' && r.firstIn && !r.lastOut).length };
       for (const r of all) summary[r.status] = (summary[r.status] ?? 0) + 1;
-      return { date: q.date, summary, rows };
+      return { date: q.date, summary, rows, canExport };
     });
   }
 
@@ -824,20 +884,30 @@ export class AttendanceService implements OnModuleInit {
       }
       const times = input.punches.map((p) => fromLocal(input.workDate, hhmm(p.time) + (p.nextDay ? 1440 : 0), e.tz));
       if (times.some((t) => t > Date.now())) throw Errors.badRequest('future_time', 'A corrected punch cannot be in the future.');
+      const wm = await this.workMode.settings(tx);
+      if (input.workMode && !onBehalf && !isAdmin && !wm.employeeCanRequestCorrection) {
+        throw Errors.forbidden('Your company lets HR correct office and home attendance. Ask HR to correct this day.');
+      }
       const row = (await tx.collection('attendance_corrections').insert({
         employee_id: e.id,
         work_date: input.workDate,
         punches: input.punches,
         reason: input.reason,
+        category: input.category,
+        work_mode: input.workMode ?? null,
         requested_by_membership_id: actor.membershipId,
       }).catch((err: { code?: string }) => {
         if (err.code === '23505') throw Errors.conflict('correction_pending', 'There is already a pending correction for this day.');
         throw err;
       }))!;
-      const summary = `${e.name}: add ${input.punches.map((p) => `${p.direction} ${p.time}${p.nextDay ? ' (next day)' : ''}`).join(', ')} on ${input.workDate}. "${input.reason}"`;
+      const parts = [
+        ...(input.punches.length ? [`add ${input.punches.map((p) => `${p.direction} ${p.time}${p.nextDay ? ' (next day)' : ''}`).join(', ')}`] : []),
+        ...(input.workMode ? [`set the day to ${wm.labels[input.workMode]}`] : []),
+      ];
+      const summary = `${e.name}: ${parts.join(' and ')} on ${input.workDate}. "${input.reason}"`;
       const approvalId = await this.approvals.start(tx, { resourceType: 'attendance_correction', resourceId: row.id, subjectEmployeeId: e.id, summary });
       await tx.collection('attendance_corrections').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
-      await this.audit.record(tx, { action: 'attendance_correction.submitted', resourceType: 'attendance_correction', resourceId: row.id, changes: { employeeId: e.id, workDate: input.workDate, punches: input.punches }, metadata: { onBehalf } });
+      await this.audit.record(tx, { action: 'attendance_correction.submitted', resourceType: 'attendance_correction', resourceId: row.id, changes: { employeeId: e.id, workDate: input.workDate, punches: input.punches, workMode: input.workMode ?? null, category: input.category }, metadata: { onBehalf } });
       return this.correction(tx, row.id);
     });
   }
@@ -848,7 +918,7 @@ export class AttendanceService implements OnModuleInit {
   }
 
   private async correctionApproved(tx: TenantTx, req: ApprovalRequestRow) {
-    const c = await tx.collection<{ id: string; employee_id: string; work_date: string; punches: { time: string; direction: 'in' | 'out'; nextDay?: boolean }[]; requested_by_membership_id: string | null }>(
+    const c = await tx.collection<{ id: string; employee_id: string; work_date: string; punches: { time: string; direction: 'in' | 'out'; nextDay?: boolean }[]; requested_by_membership_id: string | null; work_mode?: 'office' | 'remote' | 'hybrid' | null; reason: string }>(
       'attendance_corrections',
     ).findOne({ id: req.resource_id, status: 'pending' });
     if (!c) return;
@@ -856,7 +926,8 @@ export class AttendanceService implements OnModuleInit {
     if (await isLocked(tx, e.id, c.work_date)) {
       throw Errors.conflict('period_locked', 'This date was locked for payroll after the correction was requested. Unlock the period first.');
     }
-    if (!(await tx.collection('attendance_corrections').updateOne({ id: c.id, status: 'pending' }, { $set: { status: 'approved', decided_at: new Date() } }))) return;
+    const decidedBy = requestContext.get()?.actor?.kind === 'user' ? requestContext.tenantActor().membershipId : null;
+    if (!(await tx.collection('attendance_corrections').updateOne({ id: c.id, status: 'pending' }, { $set: { status: 'approved', decided_at: new Date(), decided_reason: req.comment ?? null, decided_by_membership_id: decidedBy } }))) return;
     for (const [i, p] of c.punches.entries()) {
       // Corrections add punches; the original record stays as it was.
       await tx.collection('attendance_events').insert({
@@ -871,6 +942,11 @@ export class AttendanceService implements OnModuleInit {
       });
     }
     await this.days.recompute(tx, e.id, addDays(c.work_date, -1), addDays(c.work_date, 1) > localToday(e.tz) ? c.work_date : addDays(c.work_date, 1));
+    if (c.work_mode) {
+      // The work arrangement asked for becomes the day's correction, with the request's reason in its history.
+      const names = decidedBy ? await membershipUserNames(tx, [decidedBy]) : new Map<string, string | null>();
+      await this.workMode.applyOverride(tx, e, c.work_date, c.work_mode, `Approved correction: ${c.reason}`, 'correction', decidedBy, decidedBy ? names.get(decidedBy) ?? null : null);
+    }
     await this.audit.record(tx, { action: 'attendance_correction.approved', resourceType: 'attendance_correction', resourceId: c.id, metadata: { workDate: c.work_date, punches: c.punches.length } });
   }
 

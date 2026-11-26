@@ -1,5 +1,5 @@
 'use client';
-import type { WorkforceHome, WorkforceTrend } from '@crew/contracts';
+import { HOME_COUNT_CARDS, type HomeCountCard, type HomeSection, type WorkforceHome, type WorkforceTrend } from '@crew/contracts';
 import { Badge, Card, CardHeader, cn } from '@crew/ui';
 import {
   AlarmClock, CalendarClock, CircleDot, Home as HomeIcon, MessagesSquare, Plane, TriangleAlert, UserCheck, UserPlus, Users, UserX,
@@ -7,7 +7,7 @@ import {
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTransition } from 'react';
-import { RecentNotifications } from '@/components/notifications-widget';
+import { ExportDialogButton } from '@/app/(app)/attendance/export-dialog';
 import { ICONS } from '@/lib/icons';
 import type { QuickAction } from '@/lib/nav';
 import { ActionCenter, DailyBars, Empty, Progress, relative, SectionError, shortDate, StatCard } from './ui';
@@ -58,20 +58,22 @@ function Filters({ w, extra }: { w: WorkforceHome; extra?: Record<string, string
 }
 
 /** Today's workforce cards; each opens the attendance list with that filter. */
-export function WorkforceCards({ w }: { w: WorkforceHome }) {
+export function WorkforceCards({ w, hidden = [] }: { w: WorkforceHome; hidden?: readonly string[] }) {
   const t = w.today;
   if (!t) return null;
+  const show = (k: HomeCountCard) => !hidden.includes(k);
+  if (HOME_COUNT_CARDS.every((c) => !show(c.key))) return null;
   const qs = (patch: Record<string, string>) => `/attendance/team?${new URLSearchParams({ date: w.date, ...(w.filters.applied.departmentId ? { departmentId: w.filters.applied.departmentId } : {}), ...(w.filters.applied.locationId ? { locationId: w.filters.applied.locationId } : {}), ...patch })}`;
   return (
     <section aria-label="Today's workforce" className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8" data-testid="workforce-cards">
-      <StatCard label="Employees" value={t.employees} hint={`${t.expected} expected today`} href="/employees" icon={<Users className="size-4" />} tone="bg-accent-subtle text-accent" testId="wf-employees" />
-      <StatCard label="Present" value={t.present} hint={t.rate === null ? 'Nobody expected' : `${t.rate}% of expected`} href={qs({ status: 'present' })} icon={<UserCheck className="size-4" />} tone="bg-success-subtle text-success" testId="wf-present" />
-      <StatCard label="Working now" value={t.workingNow} hint={`${t.notInYet} not in yet`} href={qs({ filter: 'working_now' })} icon={<CircleDot className="size-4" />} tone="bg-success-subtle text-success" testId="wf-working" />
-      <StatCard label="Absent" value={t.absent} level={t.absent ? 'attention' : 'normal'} href={qs({ status: 'absent' })} icon={<UserX className="size-4" />} testId="wf-absent" />
-      <StatCard label="On leave" value={t.onLeave} href={qs({ status: 'on_leave' })} icon={<Plane className="size-4" />} tone="bg-info-subtle text-info" testId="wf-leave" />
-      <StatCard label="Late" value={t.late} level={t.late ? 'attention' : 'normal'} href={qs({ filter: 'late' })} icon={<AlarmClock className="size-4" />} testId="wf-late" />
-      <StatCard label="Missing punch" value={t.missingPunch} level={t.missingPunch ? 'warning' : 'normal'} href={qs({ status: 'missing_punch' })} icon={<TriangleAlert className="size-4" />} testId="wf-missing" />
-      <StatCard label="Work from home" value={t.wfh} href={qs({ filter: 'wfh' })} icon={<HomeIcon className="size-4" />} tone="bg-accent-subtle text-accent" testId="wf-wfh" />
+      {show('employees') && <StatCard label="Employees" value={t.employees} hint={`${t.expected} expected today`} href="/employees" icon={<Users className="size-4" />} tone="bg-accent-subtle text-accent" testId="wf-employees" />}
+      {show('present') && <StatCard label="Present" value={t.present} hint={t.rate === null ? 'Nobody expected' : `${t.rate}% of expected`} href={qs({ status: 'present' })} icon={<UserCheck className="size-4" />} tone="bg-success-subtle text-success" testId="wf-present" />}
+      {show('working') && <StatCard label="Working now" value={t.workingNow} hint={`${t.notInYet} not in yet`} href={qs({ filter: 'working_now' })} icon={<CircleDot className="size-4" />} tone="bg-success-subtle text-success" testId="wf-working" />}
+      {show('absent') && <StatCard label="Absent" value={t.absent} level={t.absent ? 'attention' : 'normal'} href={qs({ status: 'absent' })} icon={<UserX className="size-4" />} testId="wf-absent" />}
+      {show('leave') && <StatCard label="On leave" value={t.onLeave} href={qs({ status: 'on_leave' })} icon={<Plane className="size-4" />} tone="bg-info-subtle text-info" testId="wf-leave" />}
+      {show('late') && <StatCard label="Late" value={t.late} level={t.late ? 'attention' : 'normal'} href={qs({ filter: 'late' })} icon={<AlarmClock className="size-4" />} testId="wf-late" />}
+      {show('missing') && <StatCard label="Missing punch" value={t.missingPunch} level={t.missingPunch ? 'warning' : 'normal'} href={qs({ status: 'missing_punch' })} icon={<TriangleAlert className="size-4" />} testId="wf-missing" />}
+      {show('wfh') && <StatCard label="Work from home" value={t.wfh} href={qs({ filter: 'wfh' })} icon={<HomeIcon className="size-4" />} tone="bg-accent-subtle text-accent" testId="wf-wfh" />}
     </section>
   );
 }
@@ -136,13 +138,15 @@ export function TrendCard({ trend, days, base, title = 'Attendance trend' }: { t
 
 const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 /** The last weeks as a calendar: each day's attendance rate; a day opens the team list for it. */
-export function WorkforceCalendar({ trend }: { trend: WorkforceTrend | null }) {
+export function WorkforceCalendar({ trend, canExport = false }: { trend: WorkforceTrend | null; canExport?: boolean }) {
   if (!trend || trend.days.length < 14) return null;
+  const from = trend.days[0]!.date;
+  const to = trend.days[trend.days.length - 1]!.date;
   const first = new Date(`${trend.days[0]!.date}T00:00:00Z`).getUTCDay();
   const lead = (first + 6) % 7;
   return (
     <Card data-testid="workforce-calendar">
-      <CardHeader title="Attendance calendar" description="Daily workforce attendance. Pick a day for who was in." />
+      <CardHeader title="Attendance calendar" description="Daily workforce attendance. Pick a day for who was in." action={canExport ? <ExportDialogButton period={{ from, to, today: to, label: `${shortDate(from)} to ${shortDate(to)}` }} label="Download report" /> : undefined} />
       <div className="px-5 pb-5">
         <div className="grid grid-cols-7 gap-1 text-center text-[0.625rem] text-fg-subtle" aria-hidden>{DOW.map((d, i) => <div key={i}>{d}</div>)}</div>
         <div className="mt-1 grid grid-cols-7 gap-1">
@@ -260,22 +264,24 @@ export function CommunicationCard({ c, title = 'Communication' }: { c: { unreadC
   );
 }
 
+/**
+ * Quick actions as one compact row of chips (issue #86: the old card took half the screen). Hidden when the person
+ * switches Quick actions off in Settings > Home dashboard.
+ */
 export function QuickActionsCard({ actions, title = 'Quick actions' }: { actions: QuickAction[]; title?: string }) {
   if (!actions.length) return null;
   return (
-    <Card data-testid="home-quick-actions">
-      <CardHeader title={title} />
-      <div className="grid grid-cols-2 gap-2 px-5 pb-5 sm:grid-cols-3">
-        {actions.map((a) => {
-          const Icon = ICONS[a.icon] ?? CalendarClock;
-          return (
-            <Link key={a.key} href={a.href} className="group flex items-center gap-2 rounded-lg border border-border p-2.5 text-[0.8125rem] font-medium transition-colors hover:border-accent hover:bg-accent-subtle" data-testid={`qa-${a.key}`}>
-              <span className="grid grid-cols-1 size-7 place-items-center rounded-md bg-accent-subtle text-accent group-hover:bg-accent group-hover:text-accent-fg"><Icon className="size-3.5" aria-hidden /></span>{a.label}
-            </Link>
-          );
-        })}
-      </div>
-    </Card>
+    <section aria-label={title} data-testid="home-quick-actions" className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2">
+      <span className="mr-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-subtle">{title}</span>
+      {actions.map((a) => {
+        const Icon = ICONS[a.icon] ?? CalendarClock;
+        return (
+          <Link key={a.key} href={a.href} className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[0.75rem] font-medium transition-colors hover:border-accent hover:bg-accent-subtle hover:text-accent" data-testid={`qa-${a.key}`}>
+            <Icon className="size-3.5 text-accent" aria-hidden />{a.label}
+          </Link>
+        );
+      })}
+    </section>
   );
 }
 
@@ -283,10 +289,14 @@ export function QuickActionsCard({ actions, title = 'Quick actions' }: { actions
  * The HR Workspace Home (also the Super Workspace's Workforce view): workforce today, what needs HR, attendance,
  * leave, people, learning and communication for the people this person looks after.
  */
-export function WorkforceHomeView({ w, trend, trendDays, actions, base, extraParams }: {
+export function WorkforceHomeView({ w, trend, trendDays, actions, base, extraParams, hiddenCards = [], hiddenSections = [] }: {
   w: WorkforceHome | null; trend: WorkforceTrend | null; trendDays: number; actions: QuickAction[]; base: string; extraParams?: Record<string, string>;
+  /** Cards and sections the person switched off in Settings > Home dashboard (issue #86). */
+  hiddenCards?: readonly HomeCountCard[]; hiddenSections?: readonly HomeSection[];
 }) {
   if (!w) return <SectionError title="Workforce" what="Today's workforce" />;
+  const on = (k: HomeSection) => !hiddenSections.includes(k);
+  const pair = (a: React.ReactNode, b: React.ReactNode, cls = 'lg:grid-cols-2') => (a || b ? <div className={cn('grid grid-cols-1 gap-5', a && b ? cls : '')}>{a}{b}</div> : null);
   return (
     <section data-testid="workforce-home" aria-label="Workforce" className="grid grid-cols-1 gap-5 animate-fade-in">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -296,36 +306,19 @@ export function WorkforceHomeView({ w, trend, trendDays, actions, base, extraPar
         </div>
         <Filters w={w} extra={extraParams} />
       </div>
+      {on('quick_actions') && <QuickActionsCard actions={actions} />}
       {w.scope.employees === 0 ? (
         <Card><Empty icon={<Users className="size-5" />} title="No employees here yet" text="Employees you look after show here once they are added or moved in." action={<Link href="/employees" className="mt-2 text-xs font-semibold text-accent hover:underline">Employees</Link>} /></Card>
       ) : (
         <>
-          <WorkforceCards w={w} />
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-            <ActionCenter actions={w.actions} title="HR action center" />
-            {w.today ? <AttendanceMonitor w={w} /> : <div />}
-          </div>
-          {w.today && (
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <TrendCard trend={trend} days={trendDays} base={base} />
-              <WorkforceCalendar trend={trend} />
-            </div>
-          )}
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            {w.leave && <LeaveSummary l={w.leave} />}
-            <EmployeeInsights w={w} />
-          </div>
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            {w.learning && <LearningSummary l={w.learning} />}
-            {w.communication && <CommunicationCard c={w.communication} />}
-          </div>
+          <WorkforceCards w={w} hidden={hiddenCards} />
+          {pair(on('action_center') && <ActionCenter actions={w.actions} title="HR action center" />, on('monitoring') && w.today ? <AttendanceMonitor w={w} /> : null, 'xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]')}
+          {w.today && pair(on('trend') && <TrendCard trend={trend} days={trendDays} base={base} />, on('calendar') && <WorkforceCalendar trend={trend} canExport={Boolean(w.canExport)} />)}
+          {pair(on('leave') && w.leave ? <LeaveSummary l={w.leave} /> : null, on('people') && <EmployeeInsights w={w} />)}
+          {pair(on('learning') && w.learning ? <LearningSummary l={w.learning} /> : null, on('communication') && w.communication ? <CommunicationCard c={w.communication} /> : null)}
         </>
       )}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <RecentNotifications limit={5} />
-        <QuickActionsCard actions={actions} />
-      </div>
-      <p className="text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>Updated {relative(w.generatedAt)}. Figures refresh when approvals, leave or notifications change, and every minute.</p>
+      <p className="text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>Updated {relative(w.generatedAt)}. Figures refresh when approvals, leave or notifications change, and every minute. Choose the cards and sections in <Link href="/settings/home" className="text-accent hover:underline">Settings &gt; Home dashboard</Link>.</p>
     </section>
   );
 }

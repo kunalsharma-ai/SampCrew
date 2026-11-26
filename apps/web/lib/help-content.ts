@@ -387,6 +387,30 @@ export const WEB_HELP: HelpContent = {
       how: 'Pick a period (today, this week, this month, previous month or a range), punch in and out, fix a missing punch, or export to Excel.',
       where: 'For everyone. Employee Workspace sees only its own attendance; the Super Workspace decides what each HR Workspace may see.',
     },
+    '/attendance/work-mode': {
+      title: 'Workforce attendance',
+      what: 'Everyone by Work From Office, Work From Home and hybrid on a day, plus not checked in, on leave, incomplete and irregular, with a trend and breakdowns.',
+      how: 'Pick a date and filters, click a card to see the people behind it, and export the 8-sheet Excel report.',
+      where: 'Super Workspace and HR Workspace. Numbers can count the whole organisation; lists show only people you may see.',
+    },
+    '/attendance/work-mode/register': {
+      title: 'Office and home register',
+      what: 'One row per person and day: where it was worked, check-in and check-out places, office and away hours and anything to review.',
+      how: 'Filter by category, status or location check. Verify a day waiting for verification, or correct any day with a reason.',
+      where: 'Super Workspace and HR Workspace. Every change is kept in the day history and the audit trail.',
+    },
+    '/attendance/work-mode/settings': {
+      title: 'Office and home attendance rules',
+      what: 'How days are classified as office, home or hybrid, the minimum times for hybrid, the office rule, and how long locations are kept.',
+      how: 'Change a rule and save. Only the Super Workspace can rename the three names; the stored value never changes.',
+      where: 'People with attendance configuration access. Changes are in the audit trail.',
+    },
+    '/attendance/offices': {
+      title: 'Office locations',
+      what: 'Each office with its position and radius on a map, approved work sites, and who may check in where.',
+      how: 'Click the map or type the coordinates, set the radius and save. Add sites that count as office or home, and assign people.',
+      where: 'People with attendance configuration access. A check-in outside every area counts as away from the office.',
+    },
     '/attendance/employees': {
       title: 'Employee Workspace attendance',
       what: 'Each person you may see, with status today, present, absent and leave days and attendance % for the period, or one row per day.',
@@ -987,6 +1011,18 @@ export const WEB_HELP: HelpContent = {
       how: 'Pick a theme or tweak it; changes apply straight away and follow you to every device.',
       where: 'For everyone.',
     },
+    '/settings/home': {
+      title: 'Home dashboard',
+      what: 'Which count cards and sections your Home page shows.',
+      how: 'Tick what you want to see and save. Unticked cards stay hidden until you tick them again.',
+      where: 'For everyone; each person chooses their own.',
+    },
+    '/activity': {
+      title: 'Activity log',
+      what: 'Each sign-in session: when it started, the IP address, the location shared at sign-in and what was done in it.',
+      how: 'Open a session to see its actions. People who may read the audit trail can pick someone else.',
+      where: 'Your own log for everyone; other people for the Super Workspace and HR with audit access.',
+    },
     '/settings/signature': {
       title: 'Email signature',
       what: 'Your Outlook email signature: pick one of 20 designs, make it yours and keep it up to date in Outlook on your Windows computer.',
@@ -1206,6 +1242,20 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    // Office / home / hybrid attendance
+    'Where you worked this month': { what: 'Your working days this month counted as office, home, hybrid or waiting for verification, with office and away hours.' },
+    'Map': { what: 'Your offices and approved sites drawn to scale.', how: 'Drag to move, use + and - to zoom. Blue are offices; orange sites count as office, green as home.' },
+    'Offices': { what: 'Company locations used as office areas for attendance, with how many people work at each.', how: 'Set location puts the office on the map; People chooses who else may check in there.' },
+    'Approved work sites': { what: 'Client sites, project offices and co-working spaces people may work from, each counting as office or home.' },
+    'Where people worked': { what: 'Present people by office, home, hybrid and waiting for verification on the chosen day.' },
+    'By workspace level': { what: 'Super Workspace, HR Workspace and Employee Workspace people, all counted, with where they worked.' },
+    'Daily trend': { what: 'Office, home, hybrid and pending days for each day in the range.' },
+    'People': { what: 'The people behind the card you chose, only those you may see.', how: 'Open a name for that day in full.' },
+    'Names': { what: 'What office, home and hybrid attendance are called everywhere in SampCrew and in reports.', how: 'Only the Super Workspace can rename them.' },
+    'Classification': { what: 'The minimum office and away time for a hybrid day and how time between two places is counted.' },
+    'Office rule and corrections': { what: 'Whether check-ins must be at an office, and whether employees may ask to change where a day counts.' },
+    'Privacy': { what: 'Locations are read only at check-in, check-out and location updates, and exact coordinates are removed after the retention period.' },
+    'Attendance notices': { what: 'Which attendance notices you get in the bell: check-ins, changes, verification and missing check-outs.' },
     'Your email server': { what: 'The SMTP server SampCrew sends your company’s emails through.', how: 'Pick your provider to fill in the usual server and port, then add the user name, password and From address.' },
     'Test the connection': { what: 'Checks the saved settings by signing in to your server and sending a real email.', how: 'Save first, then send the test to your own address.' },
     'Latest emails': { what: 'The last emails SampCrew tried to send for your company and whether they went out.', how: 'Not sent means no email server was connected at the time; Failed shows what the server said.' },
@@ -1932,7 +1982,17 @@ export const WEB_HELP: HelpContent = {
       },
     },
     '/employees/[id]': {
+      sections: {
+        'Page access': { what: 'The everyday pages this person\'s login opens, first chosen when they were registered.', how: 'Tick or untick and save; it applies at their next page load.' },
+        'Record details': { what: 'The details kept only with the employee record: family, gate pass, work status, CTC figures and notes.', how: 'Fill them in and save; the completion score goes up as items are filled.' },
+      },
       fields: { Reason: { what: 'Why the change is made. Kept in the job history.' } },
+    },
+    '/settings/home': {
+      sections: {
+        'Count cards': { what: 'The number cards at the top of Home, such as headcount and who is in today.' },
+        Sections: { what: 'The larger parts of Home, such as the attendance calendar and quick actions.' },
+      },
     },
     '/payroll/runs/[id]/items/[itemId]': {
       fields: {

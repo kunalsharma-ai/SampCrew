@@ -6,25 +6,14 @@ import {
   Medal, Megaphone, PartyPopper, Plane, Star, TimerReset, TriangleAlert, Trophy, UserCheck, UserX,
 } from 'lucide-react';
 import Link from 'next/link';
+import { ExportDialogButton } from '@/app/(app)/attendance/export-dialog';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { punchAction } from '@/app/(app)/attendance/actions';
-import { RecentNotifications } from '@/components/notifications-widget';
+import { punchLocation } from '@/lib/locate';
 import { hm } from '@/lib/time';
 import type { AttendanceToday, LeaveBalance, MyCalendar, MyRewards } from '@/lib/types';
 import { ActionCenter, Empty, Progress, relative, SectionError, shortDate, StatCard } from './ui';
-
-/** Browser location for geofenced punching; resolves without coordinates if declined or slow. */
-function locate(): Promise<{ latitude?: number; longitude?: number; accuracyM?: number; denied?: boolean }> {
-  return new Promise((resolve) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve({});
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: Math.round(p.coords.accuracy) }),
-      (err) => resolve({ denied: err.code === err.PERMISSION_DENIED }),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30_000 },
-    );
-  });
-}
 
 const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return (h ?? 0) * 60 + (m ?? 0); };
 /** The punch note that marks a check-out as the start of a break (the next check-in ends it). */
@@ -87,17 +76,19 @@ export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; 
 
   const punch = (direction: 'in' | 'out', note?: string, done?: string) => start(async () => {
     setNotice(null);
-    const where = today.geofence.mode !== 'off' && today.geofence.configured ? await locate() : {};
-    if (today.geofence.mode === 'enforce' && where.denied) {
-      setNotice({ tone: 'danger', text: 'Your workplace checks that you are on site. Allow location access and try again.' });
+    const { where, refused } = await punchLocation(today);
+    if (refused) {
+      setNotice({ tone: 'danger', text: refused });
       return;
     }
-    const { denied: _d, ...coords } = where;
-    const r = await punchAction({ ...coords, direction, ...(note ? { note } : {}) });
+    const r = await punchAction({ ...where, direction, ...(note ? { note } : {}) });
     if (!r.ok) setNotice({ tone: 'danger', text: r.message });
     else {
-      const outside = r.data!.punch.geofence === 'outside';
-      setNotice({ tone: outside ? 'warning' : 'success', text: `${done ?? (direction === 'in' ? 'Checked in' : 'Checked out')} at ${clock(new Date().toISOString())}.${outside ? ' You appear to be away from your workplace; this is recorded.' : ''}` });
+      const pz = r.data!.punch;
+      const outside = pz.geofence === 'outside' && !pz.workZone;
+      const where = pz.workZone === 'office' ? ` at ${pz.place ?? 'the office'}` : pz.workZone === 'remote' ? ', away from the office' : '';
+      const unverified = pz.workZone === 'unverified';
+      setNotice({ tone: outside || unverified ? 'warning' : 'success', text: `${done ?? (direction === 'in' ? 'Checked in' : 'Checked out')}${where} at ${clock(new Date().toISOString())}.${outside ? ' You appear to be away from your workplace; this is recorded.' : ''}${unverified ? ' Your location could not be read, so today waits for HR to verify it.' : ''}` });
       window.dispatchEvent(new Event('crew:punched')); // the top bar's check-in button follows
       router.refresh();
     }
@@ -229,6 +220,9 @@ export function AttendanceCalendar({ home, events }: { home: EmployeeHome; event
             <span className="min-w-28 text-center text-sm font-medium" data-testid="calendar-month">{title}</span>
             <Link aria-label="Next month" className={cn('rounded p-1 hover:bg-bg-subtle', isThisMonth && 'pointer-events-none opacity-30')} aria-disabled={isThisMonth} href={`/?view=me&month=${shift(1)}`} scroll={false}><ChevronRight className="size-4" /></Link>
             {!isThisMonth && <Link className="ml-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium hover:bg-bg-subtle" href="/?view=me" scroll={false}>Today</Link>}
+            {home.exportEmployeeId && (
+              <span className="ml-2"><ExportDialogButton period={{ from: a.days[0]!.date, to: a.days[a.days.length - 1]!.date, today: home.today, label: title }} filters={{ employeeId: home.exportEmployeeId }} own label="Download report" /></span>
+            )}
           </div>
         }
       />
@@ -513,11 +507,8 @@ export function EmployeeHomeView({ home, today, balances, rewards, calendar, ren
               {home.learning && <LearningCard learning={home.learning} />}
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-            {home.announcements && <AnnouncementsCard a={home.announcements} />}
-            <RecentNotifications limit={5} />
-            <ActivityCard items={home.activity} />
-          </div>
+          {/* Announcements and notifications are read from the bell and their own pages, not repeated here (issue #86). */}
+          <ActivityCard items={home.activity} />
         </>
       )}
     </section>

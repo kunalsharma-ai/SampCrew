@@ -12,20 +12,24 @@ import { ModuleNotices } from '../../src/ui/module-notices';
 type Fix = { latitude: number; longitude: number; accuracyM?: number; mockLocation: boolean } | null;
 
 /** Asks for the location once per punch; a punch without it is still recorded (the server decides if that is allowed). */
-async function currentLocation(): Promise<{ fix: Fix; note?: string }> {
+type LocationStatus = 'ok' | 'denied' | 'unavailable' | 'timeout';
+async function currentLocation(): Promise<{ fix: Fix; status: LocationStatus; note?: string }> {
   try {
     const perm = await Location.requestForegroundPermissionsAsync();
-    if (perm.status !== 'granted') return { fix: null, note: 'Location is off for SampCrew, so this punch has no location.' };
+    if (perm.status !== 'granted') return { fix: null, status: 'denied', note: 'Location is off for SampCrew, so this punch has no location and waits for HR to verify where you worked.' };
     const pos = await Promise.race([
       Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
       new Promise<null>((r) => setTimeout(() => r(null), 10_000)),
     ]);
-    if (!pos) return { fix: null, note: 'Could not get your location in time, so this punch has no location.' };
-    return { fix: { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracyM: pos.coords.accuracy ?? undefined, mockLocation: pos.mocked === true } };
+    if (!pos) return { fix: null, status: 'timeout', note: 'Could not get your location in time, so this punch waits for HR to verify where you worked.' };
+    return { fix: { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracyM: pos.coords.accuracy ?? undefined, mockLocation: pos.mocked === true }, status: 'ok' };
   } catch {
-    return { fix: null, note: 'Could not read your location, so this punch has no location.' };
+    return { fix: null, status: 'unavailable', note: 'Could not read your location, so this punch waits for HR to verify where you worked.' };
   }
 }
+
+const MODE_TONE = { office: 'violet', remote: 'teal', hybrid: 'amber', pending_verification: 'rose' } as const;
+const hours = (m: number) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 
 export default function AttendanceScreen() {
   return (
@@ -58,9 +62,9 @@ function Attendance() {
     setResult(null);
     const direction = kind === 'break' ? (onBreak ? 'in' : 'out') : next;
     try {
-      const { fix, note } = await currentLocation();
+      const { fix, status, note } = await currentLocation();
       // Saying what the punch is for lets SampCrew refuse a wrong order (a second check-in, ending a break never started).
-      const out = await punch({ direction, purpose: kind, ...(fix ?? {}) });
+      const out = await punch({ direction, purpose: kind, locationStatus: status, ...(fix ?? {}) });
       const at = fmt.time(new Date().toISOString(), today?.timeZone);
       if (out.refused.length) {
         const r = out.refused[out.refused.length - 1];
@@ -77,6 +81,26 @@ function Attendance() {
     }
   };
 
+  const updateLocation = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const { fix, status } = await currentLocation();
+      const r = await api.post<{ zone: { zone: string; place: { name: string } | null } }>('/attendance/work-mode/checkpoint', { locationStatus: status, ...(fix ? { latitude: fix.latitude, longitude: fix.longitude, accuracyM: fix.accuracyM, mockLocation: fix.mockLocation } : {}) });
+      const z = r.zone;
+      setResult({ tone: z.zone === 'unverified' ? 'warn' : 'ok', text: z.zone === 'office' ? `Location updated: at ${z.place?.name ?? 'the office'}.` : z.zone === 'remote' ? 'Location updated: away from the office.' : 'Your location could not be verified this time.' });
+      await reload();
+    } catch (e) {
+      setResult({ tone: 'danger', text: e instanceof Error ? e.message : 'Could not update your location.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const wm = today?.workMode?.enabled ? today.workMode : null;
+  const wmHeadline = wm ? (wm.state === 'pending_verification' ? 'Waiting for location verification'
+    : wm.state ? `${next === 'out' || wm.provisional ? "You're" : 'You were'} ${wm.labels[wm.state].replace(/^Work From/i, 'Working From')} today`
+      : next === 'out' ? 'You are checked in' : 'Not checked in yet') : '';
+
   return (
     <Screen onRefresh={async () => { await sync(); await reload(); }} refreshing={loading && !!today}>
       <ModuleNotices category="attendance" label="Attendance" />
@@ -87,6 +111,17 @@ function Attendance() {
           <Tile testID="tile-worked" tone="violet" icon="time" value={worked(today.day?.workedMinutes ?? 0)} label="Worked today" hint={today.shift ? `Shift ${today.shift.start} to ${today.shift.end}` : 'No shift planned'} />
           <Tile testID="tile-punches" tone="teal" icon="swap-horizontal" value={String(today.punches.length + queue.pending.length)} label="Punches" hint={queue.pending.length ? `${queue.pending.length} not sent yet` : `Next: punch ${next}`} />
         </TileGrid>
+      )}
+      {wm && (
+        <Card testID="work-mode-card">
+          <CardTitle right={wm.state ? <Badge tone={wm.state === 'pending_verification' ? 'warn' : undefined}>{wm.state === 'pending_verification' ? 'Pending verification' : wm.labels[wm.state]}</Badge> : undefined} help="attendance.work-mode">{wmHeadline}</CardTitle>
+          <TileGrid>
+            <Tile testID="tile-office" tone={MODE_TONE.office} icon="business" value={hours(wm.officeMinutes)} label="Office hours" hint={wm.places[0] ?? (wm.offices[0]?.name ? `Office: ${wm.offices[0].name}` : undefined)} />
+            <Tile testID="tile-remote" tone={MODE_TONE.remote} icon="home" value={hours(wm.remoteMinutes)} label={`${wm.labels.remote} hours`} hint={wm.unverifiedMinutes ? `${hours(wm.unverifiedMinutes)} not verified` : undefined} />
+          </TileGrid>
+          {next === 'out' && <Button title="Update my location" kind="secondary" onPress={() => void updateLocation()} busy={busy} testID="update-location" />}
+          <Text muted size={13}>Your location is read only when you punch or press Update my location, never in the background.</Text>
+        </Card>
       )}
       {(historyOn || teamOn) && (
         <Card>

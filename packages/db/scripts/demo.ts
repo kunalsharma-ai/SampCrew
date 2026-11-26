@@ -447,10 +447,18 @@ async function seedAttendance(ws: Workspace, c: { tid: string; puneId: string })
       const missingOut = key === 'arjun' && i === 2; // a forgotten punch-out, to try a correction on
       const punches: [string, 'in' | 'out'][] = [[late ? '09:34' : `08:5${i % 7}`, 'in']];
       if (!missingOut) punches.push([key === 'sunita' && i === 0 ? '19:20' : `18:0${(i * 3) % 10}`, 'out']);
+      // Office, home and hybrid days (office / home attendance): Neha works from home some days and leaves the plant at
+      // lunch on others, finishing from home; the supervisor works from home on some Fridays.
+      const home = (key === 'neha' && i % 4 === 0) || (key === 'sunita' && i % 5 === 3);
+      const hybrid = key === 'neha' && i % 4 === 2;
       for (const [hm, direction] of punches) {
+        const away = home || (hybrid && direction === 'out');
         events.push({
-          employee_id: id, source: 'web', source_event_id: `demo-${key}-${d}-${direction}`, captured_at: at(d, hm), direction,
-          latitude: '18.5205', longitude: '73.8566', accuracy_m: 15, geofence_result: 'inside', distance_m: 15, note: 'Demo data',
+          employee_id: id, source: 'web', source_event_id: `demo-${key}-${d}-${direction}`, captured_at: at(d, hybrid && direction === 'out' ? '18:30' : hm), direction,
+          ...(away
+            ? { latitude: '18.5590', longitude: '73.7868', accuracy_m: 20, geofence_result: null, distance_m: 8400, work_zone: 'remote', location_verification: 'verified', work_place_id: null, work_place_name: null, work_place_kind: null }
+            : { latitude: '18.5205', longitude: '73.8566', accuracy_m: 15, geofence_result: 'inside', distance_m: 15, work_zone: 'office', location_verification: 'verified', work_place_id: c.puneId, work_place_name: 'Pune Plant', work_place_kind: 'office' }),
+          note: 'Demo data',
         });
       }
     }
@@ -466,6 +474,8 @@ async function seedAttendance(ws: Workspace, c: { tid: string; puneId: string })
     }
   }
   await ws.insertMany('attendance_events', events);
+  // Classify the demo's past month as office, home or hybrid (a real workspace classifies from the day it starts).
+  await ws.insert('work_mode_settings', { classify_from: days[days.length - 1]! });
   await ws.set('attendance_devices', { id: device }, { records_accepted: accepted, last_punch_at: at(days[0]!, '18:04') });
   await ws.insert('device_ingest_log', { device_id: device, kind: 'attlog', records: accepted, accepted, duplicates: 0, rejected: 0, detail: 'Demo data: a week of punches' });
 }

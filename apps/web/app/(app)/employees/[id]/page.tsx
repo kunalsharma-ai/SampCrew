@@ -5,7 +5,9 @@ import { notFound } from 'next/navigation';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
 import type { AttendanceRegistration, Department, Designation, Employee, EmployeeProfile, JobRecord, LeaveBalance, LeaveRequest, LegalEntity, LifecycleEvent, Location, LoginDetails, Me, OnboardingTask, Page } from '@/lib/types';
 import { EmployeeStatus } from '../status';
-import type { EmployeeSkill } from '@crew/contracts';
+import type { EmployeeRecord, EmployeeSkill, PageAccessView } from '@crew/contracts';
+import { PageAccessCard } from './page-access-card';
+import { RecordTab } from './record-tab';
 import { ActivityTab, AtAGlance, type Summary360 } from './at-a-glance';
 import { AttendanceCard, type DeviceOption, LoginCard, LoginControlCard, PhotoAvatar, type ShiftOption } from './profile-extras';
 import { SkillsCard } from './skills-card';
@@ -19,6 +21,7 @@ export const metadata: Metadata = { title: 'Employee' };
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
+  { key: 'record', label: 'Record' },
   { key: 'job', label: 'Job & history' },
   { key: 'leave', label: 'Leave' },
   { key: 'documents', label: 'Documents' },
@@ -49,7 +52,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
 
   let content: React.ReactNode;
   if (tab === 'overview') {
-    const [summary, skills, registration, shifts, devices, login, fields] = await Promise.all([
+    const [summary, skills, registration, shifts, devices, login, fields, pageAccess] = await Promise.all([
       loadOptional<Summary360>(`/employees/${id}/360`),
       loadOptional<{ skills: EmployeeSkill[]; canEdit: boolean }>(`/employees/${id}/skills`),
       loadOptional<AttendanceRegistration>(`/employees/${id}/attendance-registration`),
@@ -58,6 +61,7 @@ export default async function EmployeePage({ params, searchParams }: { params: P
       // Only people with users:manage get an answer; everyone else gets a 403 or 404 and sees no card.
       e.membershipId && !e.isSelf ? loadOptional<LoginDetails>(`/employees/${id}/login`) : null,
       loadOptional<FieldValue[]>(`/custom-fields/values/employee/${id}`),
+      e.membershipId && !e.isSelf ? loadOptional<PageAccessView>(`/employees/${id}/page-access`) : null,
     ]);
     content = (
       <>
@@ -68,12 +72,15 @@ export default async function EmployeePage({ params, searchParams }: { params: P
             {registration && <AttendanceCard e={e} reg={registration} shifts={shifts} devices={devices} canEdit={e.can.update} />}
             <LoginCard e={e} />
             {login && <LoginControlCard e={e} details={login} />}
+            {pageAccess?.pages && <PageAccessCard employeeId={id} view={pageAccess} />}
           </div>
         )}
         {fields && fields.length > 0 && <div className="mt-6"><CustomFieldsCard entity="employee" recordId={id} initial={fields} path={`/employees/${id}`} /></div>}
         {skills && <SkillsCard employeeId={id} initial={skills.skills} canEdit={skills.canEdit} />}
       </>
     );
+  } else if (tab === 'record') {
+    content = <RecordTab record={await load<EmployeeRecord>(`/employees/${id}/record`)} />;
   } else if (tab === 'activity') {
     content = <ActivityTab s={await load<Summary360>(`/employees/${id}/360`)} />;
   } else if (tab === 'job') {

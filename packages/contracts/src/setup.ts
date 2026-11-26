@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LOCATION_TRACKING, officeIpsInput } from './company-profile';
 import { phoneNumber } from './phone';
 import { code, countryCode, currencyCode, email, name, timezone } from './schemas/common';
 
@@ -141,6 +142,10 @@ export const setupCompanyInput = z.object({
   registrationNumber: optionalText(64),
   taxId: optionalText(64),
   address: optionalText(500),
+  /** How attendance reads the location (GPS), chosen at registration (issue #86). Left out keeps the current choice. */
+  locationTracking: z.enum(LOCATION_TRACKING).optional(),
+  /** The office network addresses (IPs or IPv4 ranges); a check-in from any other network counts as Work From Home. */
+  officeIps: officeIpsInput.optional(),
 });
 export type SetupCompanyInput = z.infer<typeof setupCompanyInput>;
 

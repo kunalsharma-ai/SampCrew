@@ -1,7 +1,8 @@
 import { Alert, Badge, Card, CardBody, CardHeader, EmptyState, PageHeader, StatusPill, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { load } from '@/lib/api';
+import { load, loadOptional } from '@/lib/api';
+import { WorkModeDayPanel, type WorkModeDay } from '@/components/work-mode/day-panel';
 import { clock, dayLabel, hm, SOURCE_LABEL, RISK_FLAG_LABEL } from '@/lib/time';
 import type { AttendanceDay, Punch } from '@/lib/types';
 
@@ -19,6 +20,7 @@ interface Detail {
 export default async function DayPage({ params }: { params: Promise<{ employeeId: string; date: string }> }) {
   const { employeeId, date } = await params;
   const d = await load<Detail>(`/attendance/days/${employeeId}/${date}`);
+  const wm = await loadOptional<WorkModeDay>(`/attendance/work-mode/days/${employeeId}/${date}`);
   const tz = d.employee.timeZone;
   return (
     <>
@@ -48,6 +50,7 @@ export default async function DayPage({ params }: { params: Promise<{ employeeId
         ) : (
           <Alert tone="info">This day has not been computed yet.</Alert>
         )}
+        {wm && (wm.classification || wm.punches.some((p) => p.zone !== 'unverified' || p.verification)) && <WorkModeDayPanel d={wm} />}
         <Card>
           <CardHeader title="Raw punches" description="Exactly as received. Punches are never edited; corrections add new ones." />
           {d.punches.length === 0 ? (

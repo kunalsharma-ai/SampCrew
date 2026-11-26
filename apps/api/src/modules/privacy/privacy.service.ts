@@ -10,6 +10,7 @@ import { StorageService } from '../../platform/storage/storage.service';
 /** Tables left out of an access export, and why (recorded in the export itself). */
 const EXPORT_SKIPPED: Record<string, string> = {
   employee_sensitive: 'Bank, tax and national ID numbers are shown masked under "sensitive" instead of copied.',
+  employee_record_details: 'The parent Aadhaar number is kept encrypted and is not copied; the rest of the record is in the employee record page.',
   helpdesk_messages: 'Messages are listed under each helpdesk case (internal handler notes are not included).',
   privacy_requests: 'This request itself.',
 };
@@ -235,12 +236,13 @@ export class PrivacyService {
       const code = `ERASED-${r.employee_id.slice(0, 8).toUpperCase()}`;
       await tx.collection('employees', ERASURE).updateOne({ id: r.employee_id }, {
         $set: {
-          first_name: 'Erased', last_name: 'person', preferred_name: null, employee_code: code, work_email: null, personal_email: null, phone: null, date_of_birth: null,
+          first_name: 'Erased', middle_name: null, last_name: 'person', preferred_name: null, employee_code: code, work_email: null, personal_email: null, phone: null, date_of_birth: null,
           gender: null, exit_reason: null, erased_at: new Date(),
         },
       });
       counts.sensitive = await tx.collection('employee_sensitive').delete({ employee_id: r.employee_id });
       counts.profile = await tx.collection('employee_profiles').delete({ employee_id: r.employee_id });
+      counts.record = await tx.collection('employee_record_details').delete({ employee_id: r.employee_id });
       counts.profileUpdates = await tx.collection('profile_change_requests').delete({ employee_id: r.employee_id });
       const docs = await tx.collection('employee_documents').find({ employee_id: r.employee_id }, { projection: { storage_key: 1 } });
       await tx.collection('employee_documents').delete({ employee_id: r.employee_id });

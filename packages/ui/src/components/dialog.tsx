@@ -29,13 +29,14 @@ export function Dialog({ open, onClose, title, description, children, footer, si
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
       className={cn(
-        'm-auto w-[calc(100%-32px)] rounded-xl border border-border bg-surface-raised p-0 text-fg shadow-pop backdrop:bg-black/40 backdrop:backdrop-blur-[2px] open:animate-slide-up',
+        // overflow-hidden: only the body scrolls (issue #86: the browser's own dialog scrollbar showed as a second one).
+        'm-auto max-h-[min(85vh,calc(100dvh-2rem))] w-[calc(100%-32px)] overflow-hidden rounded-xl border border-border bg-surface-raised p-0 text-fg shadow-pop backdrop:bg-black/40 backdrop:backdrop-blur-[2px] open:animate-slide-up',
         size === 'sm' ? 'max-w-sm' : size === 'lg' ? 'max-w-2xl' : 'max-w-lg',
       )}
     >
       {open && (
-        <div className="flex max-h-[85vh] flex-col">
-          <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+        <div className="flex max-h-[min(85vh,calc(100dvh-2rem))] flex-col">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4">
             <div>
               <h2 className="text-base font-semibold">{title}</h2>
               {description && <p className="mt-0.5 text-[0.8125rem] text-fg-muted">{description}</p>}
@@ -44,8 +45,8 @@ export function Dialog({ open, onClose, title, description, children, footer, si
               <X className="size-4" />
             </button>
           </div>
-          <div className="overflow-y-auto px-5 py-4">{children}</div>
-          {footer && <div className="flex justify-end gap-2 border-t border-border px-5 py-3">{footer}</div>}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
+          {footer && <div className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-3">{footer}</div>}
         </div>
       )}
     </dialog>

@@ -170,7 +170,7 @@ export class InterviewsService {
         .map((f) => ({ id: f.id, membershipId: f.membership_id as string, interviewerName: names.get(f.membership_id) ?? null, ratings: f.ratings, recommendation: f.recommendation, summary: f.summary, submittedAt: f.submitted_at }));
       const mine = all.find((f) => f.membershipId === actor.membershipId) ?? null;
       const others = manages || mine ? all.filter((f) => f.membershipId !== actor.membershipId) : [];
-      const files = (await tx.collection('candidate_files').find({ candidate_id: a.candidate_id }, { sort: { created_at: -1 }, projection: { file_name: 1 } })).map((f) => ({ id: f.id, fileName: f.file_name }));
+      const files = (await tx.collection('candidate_files').find({ candidate_id: a.candidate_id, deleted_at: null, superseded_at: null }, { sort: { created_at: -1 }, projection: { file_name: 1 } })).map((f) => ({ id: f.id, fileName: f.file_name }));
       return {
         interview, panel, myFeedback: mine, otherFeedback: others, othersHidden: !manages && !mine && all.length > (mine ? 1 : 0), files,
         can: { feedback: isPanelist && !mine, manage: manages },

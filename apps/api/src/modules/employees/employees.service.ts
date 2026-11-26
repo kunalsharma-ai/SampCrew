@@ -25,6 +25,7 @@ import { decryptField, encryptField, hashPassword, temporaryPasswordValue } from
 import { AuthzService } from '../../platform/authz/authz.service';
 import { grantCovers, grantsFor } from '../../platform/authz/policy';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config';
+import { setPageAccess } from './page-access';
 import { requestContext } from '../../platform/context/request-context';
 import { countBy, MongoService as DatabaseService, type TenantTx, usersTable } from '../../platform/database/mongo.service';
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
@@ -730,6 +731,7 @@ export class EmployeesService {
         temporaryPassword = login.temporaryPassword;
       }
       await this.registerAttendance(tx, row.id, { defaultShiftId: input.defaultShiftId ?? null, enrolments: input.attendanceEnrolments ?? [] }, true);
+      if (input.pageAccess) await this.applyPageAccess(tx, row.id, input.pageAccess);
 
       // Onboarding checklists are a plan module: without it the joiner is hired with no checklist.
       const onboardingOn = (await this.entitlements.current(tx)).features.has('onboarding');
@@ -744,7 +746,10 @@ export class EmployeesService {
       // a new joiner's days for the year, or what someone already working here has today (from their previous records).
       let opening: Awaited<ReturnType<LeaveService['setOpeningBalances']>> = [];
       if (input.openingLeaveBalances?.length) {
-        // Setting balances is a leave decision: the same access as adjusting a balance.
+        // Setting balances is a leave decision: the same access as adjusting a balance. The person was just added to
+        // an HR Workspace in this transaction, so the access is read again: an HR Workspace admin's scope (its people)
+        // was worked out before the hire, and the check failed with "Resource not found" (issue #86).
+        this.authz.forget();
         await this.authz.require('leave:approve', employeeAttrs(await this.load(tx, row.id)), tx);
         opening = await this.leave.setOpeningBalances(tx, row.id, input.openingLeaveBalances);
       }
@@ -812,6 +817,12 @@ export class EmployeesService {
   }
 
   /** Links a login to the employee; the membership then follows the employee's placement. */
+  /** Page access chosen at registration (issue #86); see setPageAccess. */
+  private async applyPageAccess(tx: TenantTx, employeeId: string, given: readonly string[]) {
+    await setPageAccess(tx, employeeId, given, requestContext.tenantActor().membershipId);
+    await this.audit.record(tx, { action: 'employee.page_access_set', resourceType: 'employee', resourceId: employeeId, metadata: { pages: [...given].sort(), via: 'registration' } });
+  }
+
   private async setMembership(tx: TenantTx, employeeId: string, membershipId: string) {
     await tx.collection('employees').updateOne({ id: employeeId }, { $set: { membership_id: membershipId } });
     await syncMembership(tx, employeeId);

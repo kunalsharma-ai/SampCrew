@@ -10,6 +10,7 @@ import { MongoService as DatabaseService, type TenantTx as Tx } from '../../plat
 import { EntitlementsService } from '../../platform/entitlements/entitlements.service';
 import { Errors } from '../../platform/http/errors';
 import { ApprovalsService } from '../approvals/approvals.service';
+import { AttendanceAccessService } from '../attendance/attendance-access.service';
 import { AttendanceService } from '../attendance/attendance.service';
 import { ChatService } from '../communication/chat.service';
 import { EMPLOYEE_FIELDS } from '../employees/employee-attrs';
@@ -88,6 +89,7 @@ export class HomeService {
     private readonly chat: ChatService,
     private readonly helpdesk: HelpdeskService,
     private readonly tasks: TasksService,
+    private readonly attendanceAccess: AttendanceAccessService,
   ) {}
 
   // Employee Workspace -----------------------------------------------------------------------------------------------
@@ -238,8 +240,10 @@ export class HomeService {
     for (const p of rest.punches) activity.push({ at: iso(p.captured_at)!, kind: `punch.${p.direction}`, title: p.direction === 'out' ? 'Checked out' : p.direction === 'in' ? 'Checked in' : 'Punched', href: '/attendance' });
     activity.sort((a, b) => b.at.localeCompare(a.at));
 
+    // The attendance calendar's Download report (issue #86): the person's own report, when they may export it.
+    const exportEmployeeId = home ? await this.db.tenant(async (tx) => { const v = await this.attendanceAccess.viewer(tx); return v.canExport ? v.employeeId : null; }).catch(() => null) : null;
     return {
-      generatedAt: new Date().toISOString(), today, month: m, timeZone: tz,
+      generatedAt: new Date().toISOString(), today, month: m, timeZone: tz, exportEmployeeId,
       attendance: home, leave, learning, announcements: ann, actions: actions.sort(byLevel), activity: activity.slice(0, 10),
     };
   }
@@ -432,8 +436,10 @@ export class HomeService {
       : null;
     if (learning?.overdue) actions.push({ key: 'learning-overdue', level: 'warning', count: learning.overdue, title: `${plural(learning.overdue, 'course')} overdue`, detail: null, href: '/learning?view=team&status=overdue', cta: 'View progress' });
 
+    // The attendance calendar on Home offers the report download when this person may export (issue #86).
+    const canExport = att ? await this.db.tenant(async (tx) => (await this.attendanceAccess.viewer(tx)).canExport).catch(() => false) : false;
     return {
-      generatedAt: new Date().toISOString(), date,
+      generatedAt: new Date().toISOString(), date, canExport,
       scope: { label: setup.label, employees: ids.size },
       filters: { ...setup.options, applied: { departmentId: q.departmentId ?? null, locationId: q.locationId ?? null, hrWorkspaceId: q.hrWorkspaceId ?? null } },
       today,

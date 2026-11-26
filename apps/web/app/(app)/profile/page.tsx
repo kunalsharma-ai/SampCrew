@@ -15,7 +15,7 @@ export default async function MyProfilePage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader
-        title={profile.employee.name}
+        title={profile.employee.legalName || profile.employee.name}
         description="Your personal, professional, education, bank and identity details. Changes you make go to HR for approval."
         actions={me.permissions['profiles:review'] ? <Link className={buttonClass('secondary')} href="/profile/updates">Profile updates to review</Link> : undefined}
       />

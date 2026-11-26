@@ -1,5 +1,5 @@
 'use client';
-import { DEFAULT_APPEARANCE, DELETE_AREAS, FEATURE_ACTION_KEYS, NOTIFICATION_NAV, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences } from '@crew/contracts';
+import { DEFAULT_APPEARANCE, DELETE_AREAS, FEATURE_ACTION_KEYS, NOTIFICATION_NAV, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences, WORK_VIEWS, type WorkView } from '@crew/contracts';
 import { AutoHelp, Avatar, Badge, CrewLogo, Dialog, HelpProvider, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronDown, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
@@ -20,10 +20,11 @@ import { applyAppearance } from '@/lib/appearance-client';
 import { photoUrl } from '@/lib/photo';
 import { WEB_HELP } from '@/lib/help-content';
 import { ICONS } from '@/lib/icons';
-import { accountLinks, type NavGroup, type NavItem, type QuickAction } from '@/lib/nav';
+import { MY_DAY_HREFS, accountLinks, type NavGroup, type NavItem, type QuickAction } from '@/lib/nav';
 import type { Me, Notification } from '@/lib/types';
-import { paletteSearchAction, recordVisitAction, resetAppearanceAction, saveAppearanceAction, saveFavouritesAction, syncAppearanceCookieAction } from './experience-actions';
+import { paletteSearchAction, recordSessionLocationAction, recordVisitAction, saveExperienceAction, resetAppearanceAction, saveAppearanceAction, saveFavouritesAction, syncAppearanceCookieAction } from './experience-actions';
 import { IqPanel } from './iq-panel';
+import { FirstLoginTour } from './first-login-tour';
 import { ThemePanel } from './theme-panel';
 import { logoutAction, switchTenantAction } from './shell-actions';
 import { markCategoryReadAction } from './notifications/actions';
@@ -132,8 +133,10 @@ function useExperienceState(prefs: MemberPreferences | null, cookieAppearance: A
 const isActive = (href: string, pathname: string, allHrefs: string[]) =>
   href === '/' ? pathname === '/' : (pathname === href || pathname.startsWith(`${href}/`)) && !allHrefs.some((h) => h.length > href.length && h.startsWith(`${href}/`) && (pathname === h || pathname.startsWith(`${h}/`)));
 
-export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts, quick, workflows, children }: {
+export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts, quick, workflows, workView, children }: {
   me: Me;
+  /** My Workforce or My Day for people who can switch (issue #86); null for everyone else. */
+  workView: WorkView | null;
   nav: NavGroup[];
   notifications: Notifications | null;
   prefs: MemberPreferences | null;
@@ -189,6 +192,19 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
     seenRef.current = key;
     void Promise.all(cats.map((c) => markCategoryReadAction(c))).then(() => live?.refreshCounts());
   }, [pathname, live, hrefKey]);
+
+  // Where this sign-in happened (issue #86): read once after sign-in when the company reads locations. A refusal is
+  // recorded too, so the Activity log says "not shared" and the browser is not asked again in this session.
+  const locationPending = Boolean(me.session.locationPending);
+  useEffect(() => {
+    if (!locationPending) return;
+    if (!('geolocation' in navigator)) { void recordSessionLocationAction({ status: 'unavailable' }); return; }
+    navigator.geolocation.getCurrentPosition(
+      (p) => void recordSessionLocationAction({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: Number.isFinite(p.coords.accuracy) ? p.coords.accuracy : null }),
+      (e) => void recordSessionLocationAction({ status: e.code === e.PERMISSION_DENIED ? 'denied' : 'unavailable' }),
+      { enableHighAccuracy: false, timeout: 15_000, maximumAge: 300_000 },
+    );
+  }, [locationPending]);
 
   useEffect(() => setMobileOpen(false), [pathname]);
   // Each level has its own design system (colours, shape, motion): see data-level in @crew/ui styles.css.
@@ -256,7 +272,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
       {hiddenActions && <style>{`${hiddenActions}{display:none!important}`}</style>}
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:shadow-pop">Skip to content</a>
       <div className="flex min-h-dvh">
-        <aside className={cn('crew-glass crew-sidebar sticky top-0 hidden h-dvh shrink-0 border-r border-border transition-[width] duration-200 lg:block', collapsed ? 'w-[4.5rem]' : 'w-64')}>{sidebar(collapsed)}</aside>
+        <aside data-tour="menu" className={cn('crew-glass crew-sidebar sticky top-0 hidden h-dvh shrink-0 border-r border-border transition-[width] duration-200 lg:block', collapsed ? 'w-[4.5rem]' : 'w-64')}>{sidebar(collapsed)}</aside>
         {mobileOpen && (
           <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
             <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
@@ -271,6 +287,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
             <button className="rounded-md p-1.5 text-fg-muted hover:bg-bg-subtle lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu className="size-5" /></button>
             <button
               onClick={() => setPaletteOpen(true)}
+              data-tour="search"
               className="crew-search flex h-9 w-full min-w-9 max-w-md items-center gap-2 rounded-lg border border-border bg-surface/70 px-3 text-[0.8125rem] text-fg-subtle shadow-card transition-colors hover:border-border-strong"
             >
               <Search className="size-4" aria-hidden />
@@ -282,12 +299,12 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
                   live in the sidebar, Create in the search palette, the trial date in the account menu and SampCrew IQ
                   in the bottom-right corner. */}
               {punchable && <HeaderPunch />}
-              {notifications && <NotificationBell />}
+              {notifications && <span data-tour="notifications" className="contents"><NotificationBell /></span>}
               {!employeeLevel && <ThemeMenu />}
-              <HeaderUser me={me} />
+              <HeaderUser me={me} workView={workView} />
             </div>
           </header>
-          <main id="main" className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><div key={pathname} className="crew-page"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></div></main>
+          <main id="main" data-tour="home" className="crew-main mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><div key={pathname} className="crew-page"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></div></main>
         </div>
         {hasIq && !iqOpen && (
           <button type="button" onClick={() => setIqOpen(true)} aria-expanded={iqOpen} data-testid="iq-launcher" className="crew-ai-button fixed bottom-5 right-5 z-40 inline-flex h-11 items-center gap-2 rounded-full border border-border bg-surface px-4 text-[0.8125rem] font-semibold shadow-card hover:border-accent/50 print:hidden" title="SampCrew IQ, your AI HR assistant (Ctrl+J)">
@@ -296,6 +313,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
         )}
         {hasIq && <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />}
         <ThemePanel open={themesOpen} onClose={() => setThemesOpen(false)} appearance={appearance} update={update} />
+        {prefs && <FirstLoginTour experience={prefs.experience} canSwitch={workView !== null} />}
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} nav={nav} me={me} quick={quick} workflows={workflows} />
       </div>
     </ExperienceContext.Provider>
@@ -389,7 +407,7 @@ function Sidebar({ me, nav, counts, unread, rail, pathname, allHrefs, onCollapse
       {!q && favItems.length > 0 && (
         <div className="-mx-1 max-h-56 shrink-0 overflow-y-auto border-b border-border px-1 pb-3" data-testid="nav-favourites">
           {!rail && <div className="flex items-center gap-1.5 px-2 pb-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle"><Star className="size-3" /> Favourites</div>}
-          <ul className="flex flex-col gap-0.5" aria-label="Favourites">{favItems.map((i) => link(i, `fav-${i.href}`, true))}</ul>
+          <ul className="flex flex-col gap-0.5" aria-label="Favourites">{favItems.map((i) => link(i, `fav-${i.href}`, false))}</ul>
         </div>
       )}
       <div className="-mx-1 flex flex-1 flex-col gap-3 overflow-y-auto px-1">
@@ -413,7 +431,7 @@ function Sidebar({ me, nav, counts, unread, rail, pathname, allHrefs, onCollapse
         {q && !groups.length && <p className="px-2 text-[0.8125rem] text-fg-subtle">Nothing in the menu matches “{filter}”.</p>}
       </div>
       {!rail && <UpgradeCard me={me} />}
-      <UserMenu me={me} rail={rail} />
+      {/* The person's name and account menu live top right only (issue #86), not in the bottom-left corner. */}
     </nav>
   );
 }
@@ -429,21 +447,64 @@ function UpgradeCard({ me }: { me: Me }) {
   );
 }
 
-/** Greeting chip on the right of the top bar (wide screens); opens the member's account menu. */
-function HeaderUser({ me }: { me: Me }) {
+/**
+ * Greeting chip on the right of the top bar; opens the member's account menu. Under the name, people who look after a
+ * workforce switch between My Workforce and My Day (issue #86). My Day keeps only their own work and settings in the
+ * menu and on Home, and changes the accent colour so the mode is obvious.
+ */
+function HeaderUser({ me, workView }: { me: Me; workView: WorkView | null }) {
   const level = workspaceLevelLabel(me.levels);
   return (
-    <AccountMenu me={me} wrapperClassName="ml-1 hidden shrink-0 xl:block" buttonClassName="flex items-center whitespace-nowrap gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-bg-subtle" testId="account-menu-header">
-      <Avatar name={me.user.fullName} size={32} src={me.employee ? photoUrl(me.employee) : null} />
-      <span className="flex flex-col text-left leading-tight">
-        <span className="text-[0.8125rem] font-semibold">Hi, {me.user.fullName.split(' ')[0]}</span>
-        <span className="text-[0.6875rem] text-fg-subtle">{level}</span>
-      </span>
-    </AccountMenu>
+    <div className="ml-1 flex shrink-0 flex-col items-end gap-0.5" data-tour="account">
+      <AccountMenu me={me} wrapperClassName="shrink-0" buttonClassName={cn('flex items-center whitespace-nowrap gap-2.5 rounded-full hover:bg-bg-subtle', workView ? 'py-0 pl-0.5 pr-2' : 'py-1 pl-1 pr-3')} testId="account-menu-header">
+        <Avatar name={me.user.fullName} size={workView ? 26 : 32} src={me.employee ? photoUrl(me.employee) : null} />
+        <span className="hidden flex-col text-left leading-tight sm:flex">
+          <span className="text-[0.8125rem] font-semibold">Hi, {me.user.fullName.split(' ')[0]}</span>
+          {!workView && <span className="text-[0.6875rem] text-fg-subtle">{level}</span>}
+        </span>
+      </AccountMenu>
+      {workView && <span data-tour="view"><WorkViewSwitch value={workView} /></span>}
+    </div>
   );
 }
 
-const ACCOUNT_ICONS: Record<string, LucideIcon> = { profile: UserRound, security: KeyRound, appearance: Palette };
+function WorkViewSwitch({ value }: { value: WorkView }) {
+  const router = useRouter();
+  const [view, setView] = useState(value);
+  const [pending, start] = useTransition();
+  useEffect(() => setView(value), [value]);
+  const choose = (next: WorkView) => {
+    if (next === view || pending) return;
+    setView(next);
+    document.documentElement.dataset.view = next;
+    start(async () => {
+      const r = await saveExperienceAction({ workView: next }, true);
+      if (!r.ok) { setView(value); document.documentElement.dataset.view = value; return; }
+      if (next === 'myday' && !MY_DAY_HREFS.has(window.location.pathname)) router.push('/');
+      router.refresh();
+    });
+  };
+  return (
+    <div role="radiogroup" aria-label="Work view" data-testid="work-view-switch" className="flex rounded-full border border-border bg-bg-subtle p-0.5 text-[0.6875rem] font-medium">
+      {WORK_VIEWS.map((key) => ({ key, label: key === 'myday' ? 'My Day' : 'My Workforce' })).map((v) => (
+        <button
+          key={v.key}
+          type="button"
+          role="radio"
+          aria-checked={view === v.key}
+          disabled={pending}
+          onClick={() => choose(v.key)}
+          data-testid={`work-view-${v.key}`}
+          className={cn('rounded-full px-2 py-0.5 leading-4 transition-colors', view === v.key ? 'bg-accent text-accent-fg shadow-card' : 'text-fg-muted hover:text-fg')}
+        >
+          {v.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const ACCOUNT_ICONS: Record<string, LucideIcon> = { profile: UserRound, settings: Settings, activity: History, security: KeyRound, appearance: Palette };
 
 /** The member's own pages (profile, password and sign-in, appearance) and sign out, behind their avatar. */
 function AccountMenu({ me, children, wrapperClassName, buttonClassName, up, testId }: { me: Me; children: React.ReactNode; wrapperClassName?: string; buttonClassName?: string; up?: boolean; testId?: string }) {
@@ -478,6 +539,7 @@ function AccountMenu({ me, children, wrapperClassName, buttonClassName, up, test
               </li>
             );
           })}
+          <li role="none"><CompactViewItem /></li>
           <li role="none">
             <button role="menuitem" type="button" disabled={pending} onClick={() => start(() => logoutAction())} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[0.8125rem] text-fg-muted hover:bg-bg-subtle hover:text-fg">
               <LogOut className="size-4 text-accent" /> Sign out
@@ -486,6 +548,30 @@ function AccountMenu({ me, children, wrapperClassName, buttonClassName, up, test
         </ul>
       </Popover>
     </div>
+  );
+}
+
+/**
+ * Compact view (issue #86): smaller text, tighter spacing and tables and a wider page, so more cards and information
+ * fit on the screen. Saved with the person's appearance, so it follows them to every device.
+ */
+function CompactViewItem() {
+  const { appearance, update } = useExperience();
+  const on = appearance.density === 'compact' && appearance.fontSize === 'small';
+  return (
+    <button
+      role="menuitemcheckbox"
+      aria-checked={on}
+      type="button"
+      data-testid="compact-view"
+      onClick={() => void update(on ? { density: 'comfortable', fontSize: 'default', tableDensity: 'comfortable' } : { density: 'compact', fontSize: 'small', tableDensity: 'compact' })}
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[0.8125rem] text-fg-muted hover:bg-bg-subtle hover:text-fg"
+    >
+      <SlidersHorizontal className="size-4 text-accent" /> <span className="flex-1">Compact view</span>
+      <span className={cn('relative h-4 w-7 rounded-full transition-colors', on ? 'bg-accent' : 'bg-border-strong')} aria-hidden>
+        <span className={cn('absolute top-0.5 size-3 rounded-full bg-white transition-all', on ? 'left-3.5' : 'left-0.5')} />
+      </span>
+    </button>
   );
 }
 
@@ -527,25 +613,6 @@ function TenantSwitcher({ me }: { me: Me }) {
           ))}
         </ul>
       )}
-    </div>
-  );
-}
-
-function UserMenu({ me, rail }: { me: Me; rail: boolean }) {
-  const [pending, start] = useTransition();
-  const level = workspaceLevelLabel(me.levels, { withName: true });
-  return (
-    <div className={cn('flex items-center gap-2.5 rounded-lg border border-border px-2.5 py-2', rail && 'flex-col border-0 px-0')}>
-      <AccountMenu me={me} up wrapperClassName="shrink-0" buttonClassName="block rounded-full" testId="account-menu-sidebar"><Avatar name={me.user.fullName} size={30} src={me.employee ? photoUrl(me.employee) : null} /></AccountMenu>
-      {!rail && (
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[0.8125rem] font-medium">{me.user.fullName}</div>
-          <div className="truncate text-[0.6875rem] text-fg-subtle" title={level}>{level}</div>
-        </div>
-      )}
-      <button onClick={() => start(() => logoutAction())} disabled={pending} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg" aria-label="Sign out" title="Sign out">
-        <LogOut className="size-4" />
-      </button>
     </div>
   );
 }

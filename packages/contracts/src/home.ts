@@ -91,6 +91,8 @@ export interface EmployeeHome {
   today: string;
   month: string;
   timeZone: string;
+  /** The person's employee id when they may download their own attendance report from the calendar (issue #86). */
+  exportEmployeeId?: string | null;
   attendance: {
     days: HomeCalendarDay[];
     summary: { present: number; absent: number; late: number; onLeave: number; halfDay: number; missingPunch: number; wfh: number; holidays: number; workedMinutes: number; workingDays: number };
@@ -119,6 +121,8 @@ export interface EmployeeHome {
 export interface WorkforceHome {
   generatedAt: string;
   date: string;
+  /** Whether this person may download the attendance report (Home's attendance calendar shows the button). */
+  canExport?: boolean;
   /** Whose people these are: the whole company, one HR Workspace, several, or a manager's team. */
   scope: { label: string; employees: number };
   filters: {

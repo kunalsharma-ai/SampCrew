@@ -4,6 +4,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { SharedRateLimitStorage } from './platform/http/rate-limit-storage';
 import { ApprovalsController } from './modules/approvals/approvals.controller';
 import { ApprovalsService } from './modules/approvals/approvals.service';
+import { ActivityController } from './modules/activity/activity.controller';
+import { EmployeePageAccessController, EmployeeRecordController } from './modules/employees/employee-record.controller';
 import { AuditController } from './modules/audit/audit.controller';
 import { AuthController, MeController, PasswordResetsController } from './modules/auth/auth.controller';
 import { PasswordResetService } from './modules/auth/password-reset.service';
@@ -129,6 +131,9 @@ import { AttendanceAccessService } from './modules/attendance/attendance-access.
 import { AttendanceOverviewController } from './modules/attendance/attendance-overview.controller';
 import { AttendanceOverviewService } from './modules/attendance/attendance-overview.service';
 import { AttendanceService } from './modules/attendance/attendance.service';
+import { WorkModeController } from './modules/attendance/work-mode.controller';
+import { WorkModeService } from './modules/attendance/work-mode.service';
+import { WorkforceService } from './modules/attendance/workforce.service';
 import { DevicesService } from './modules/attendance/devices.service';
 import { ShiftsService } from './modules/attendance/shifts.service';
 import { CandidatesService } from './modules/recruitment/candidates.service';
@@ -224,6 +229,9 @@ export const CONTROLLERS = [
   MembersController,
   RolesController,
   AuditController,
+  ActivityController,
+  EmployeeRecordController,
+  EmployeePageAccessController,
   BillingController,
   BillingWebhooksController,
   DesignationsController,
@@ -271,6 +279,7 @@ export const CONTROLLERS = [
   OverviewController,
   AttendanceController,
   AttendanceOverviewController,
+  WorkModeController,
   KioskController,
   ShiftsController,
   DevicesController,
@@ -418,6 +427,8 @@ export const CONTROLLERS = [
     AttendanceOverviewService,
     DisciplineService,
     AttendanceService,
+    WorkModeService,
+    WorkforceService,
     ShiftsService,
     DevicesService,
     RequisitionsService,

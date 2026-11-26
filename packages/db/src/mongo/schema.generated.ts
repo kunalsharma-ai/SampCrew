@@ -782,9 +782,15 @@ export const TABLES: Record<string, TableSpec> = {
       conversation_id: {"required": true, "type": "uuid"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       deleted_at: {"type": "timestamp"},
+      // Who deleted it (the sender, or HR), and what it said, kept for CHAT_UNDO_SECONDS so the delete can be undone.
+      deleted_by_membership_id: {"type": "uuid"},
+      deleted_body: {"type": "string"},
+      deleted_file_ids: {"type": "uuid[]"},
       edited_at: {"type": "timestamp"},
       file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      // Emoji reactions: emoji to the memberships that reacted with it (issue #86).
+      reactions: {"default": {"json": {}}, "required": true, "type": "json"},
       // Who sent it, as it was at sending: level (super, hr, employee) and workspace name (company or HR Workspace).
       // Older messages have neither; they show the sender's current level.
       sender_level: {"enum": ["super", "hr", "employee"], "type": "string"},
@@ -1055,11 +1061,18 @@ export const TABLES: Record<string, TableSpec> = {
     access: "tenant", grants: ["delete", "insert", "select", "update"],
     columns: {
       approval_request_id: {"type": "uuid"},
+      // Why the day needs correcting (contracts correctionInput.category).
+      category: {"default": "other", "enum": ["forgot_check_in", "forgot_check_out", "technical_issue", "location_issue", "worked_elsewhere", "other"], "required": true, "type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       decided_at: {"type": "timestamp"},
+      decided_by_membership_id: {"type": "uuid"},
+      // The approver's remarks; a rejection always has one.
+      decided_reason: {"type": "string"},
       employee_id: {"required": true, "type": "uuid"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       punches: {"required": true, "type": "json"},
+      // The work arrangement asked for (office, remote, hybrid), applied as the day's correction when approved.
+      work_mode: {"enum": ["office", "remote", "hybrid"], "type": "string"},
       reason: {"required": true, "type": "string"},
       requested_by_membership_id: {"type": "uuid"},
       status: {"default": "pending", "enum": ["pending", "approved", "rejected", "cancelled"], "required": true, "type": "string"},
@@ -1078,7 +1091,7 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [],
     checks: [
-      "CHECK (((jsonb_typeof(punches) = 'array'::text) AND ((jsonb_array_length(punches) >= 1) AND (jsonb_array_length(punches) <= 6))))",
+      "CHECK (((jsonb_typeof(punches) = 'array'::text) AND ((jsonb_array_length(punches) >= 0) AND (jsonb_array_length(punches) <= 6))))",
       "CHECK (((length(reason) >= 3) AND (length(reason) <= 500)))",
     ],
   },
@@ -1104,6 +1117,26 @@ export const TABLES: Record<string, TableSpec> = {
       status: {"enum": ["present", "half_day", "absent", "missing_punch", "on_leave", "half_day_leave", "holiday", "weekly_off", "in_progress", "not_joined"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
       work_date: {"required": true, "type": "date"},
+      // Where the day was worked (contracts work-mode.ts, 2026-11-25): office, remote or hybrid, or
+      // pending_verification while a location could not be verified. work_mode is what counts (HR's correction when
+      // there is one), work_mode_auto what the engine decided, work_mode_guess its answer from verified time only.
+      work_mode: {"enum": ["office", "remote", "hybrid", "pending_verification"], "type": "string"},
+      work_mode_auto: {"enum": ["office", "remote", "hybrid", "pending_verification"], "type": "string"},
+      work_mode_guess: {"enum": ["office", "remote", "hybrid"], "type": "string"},
+      // True while the person is still checked in (the result can change at check-out).
+      work_mode_provisional: {"default": false, "required": true, "type": "bool"},
+      office_minutes: {"default": 0, "required": true, "type": "int"},
+      remote_minutes: {"default": 0, "required": true, "type": "int"},
+      unverified_minutes: {"default": 0, "required": true, "type": "int"},
+      work_mode_places: {"default": {"json": []}, "required": true, "type": "string[]"},
+      work_mode_issues: {"default": {"json": []}, "required": true, "type": "string[]"},
+      work_mode_explanation: {"default": {"json": []}, "required": true, "type": "json"},
+      // {checkIn, checkOut: {zone, place, verification, distanceM}, transitions: [{at, from, to}]}.
+      work_mode_detail: {"type": "json"},
+      // HR's verification or correction: {mode, reason, byMembershipId, byName, at, source: hr | correction}.
+      work_mode_override: {"type": "json"},
+      // One-time notices already sent for the day (missing_check_out), so the hourly job sends each once.
+      notices_sent: {"default": {"json": []}, "required": true, "type": "string[]"},
       worked_minutes: {"default": 0, "required": true, "type": "int"},
     },
     unique: [
@@ -1116,6 +1149,7 @@ export const TABLES: Record<string, TableSpec> = {
     ],
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "work_date"}, {"col": "status"}], "name": "attendance_days_date"},
+      {"cols": [{"col": "tenant_id"}, {"col": "work_date"}, {"col": "work_mode"}], "name": "attendance_days_work_mode"},
     ],
     checks: [],
   },
@@ -1206,6 +1240,13 @@ export const TABLES: Record<string, TableSpec> = {
       source_event_id: {"required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
       verify_method: {"enum": ["fingerprint", "face", "card", "pin", "palm", "qr", "unknown"], "type": "string"},
+      // Where the punch was for office / home classification, worked out when it was recorded (contracts resolveZone).
+      // The coordinates themselves go to attendance_locations, which follows the company's retention period.
+      work_zone: {"enum": ["office", "remote", "unverified", "neutral"], "type": "string"},
+      location_verification: {"enum": ["verified", "device", "no_location", "denied", "unavailable", "poor_accuracy", "mock_location", "not_needed"], "type": "string"},
+      work_place_id: {"type": "uuid"},
+      work_place_name: {"type": "string"},
+      work_place_kind: {"enum": ["office", "site"], "type": "string"},
     },
     unique: [
       {"cols": [{"col": "id"}], "name": "attendance_events_pkey", "primary": true},
@@ -1335,6 +1376,205 @@ export const TABLES: Record<string, TableSpec> = {
     checks: [
       "CHECK ((period_end >= period_start))",
     ],
+  },
+  work_mode_settings: {
+    // Office / home / hybrid classification rules for the company (contracts workModeSettingsInput), one row per
+    // company. No row means the defaults. labels are the Super Workspace's own names for the three arrangements.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      classify_from: {"required": true, "type": "date"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      employee_can_request_correction: {"default": true, "required": true, "type": "bool"},
+      enabled: {"default": true, "required": true, "type": "bool"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      labels: {"default": {"json": {}}, "required": true, "type": "json"},
+      location_retention_days: {"default": 90, "required": true, "type": "int"},
+      // How attendance reads the location, chosen at company registration (contracts LOCATION_TRACKING, issue #86).
+      location_tracking: {"default": "punch", "enum": ["off", "punch", "real_time"], "required": true, "type": "string"},
+      // Office network addresses (IPs or IPv4 CIDR ranges): a punch from another network is remarked Work From Home.
+      office_ips: {"default": {"json": []}, "required": true, "type": "string[]"},
+      max_accuracy_m: {"default": 150, "required": true, "type": "int"},
+      min_office_minutes: {"default": 60, "required": true, "type": "int"},
+      min_remote_minutes: {"default": 60, "required": true, "type": "int"},
+      office_requirement: {"default": "none", "enum": ["none", "check_in", "check_in_out"], "required": true, "type": "string"},
+      other_offices: {"default": "office", "enum": ["office", "remote"], "required": true, "type": "string"},
+      standard_minutes: {"default": 480, "required": true, "type": "int"},
+      tenant_id: {"required": true, "type": "uuid"},
+      transition: {"default": "split", "enum": ["split", "check_in", "check_out"], "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "work_mode_settings_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}], "name": "work_mode_settings_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK (((min_office_minutes >= 0) AND (min_office_minutes <= 720)))",
+      "CHECK (((min_remote_minutes >= 0) AND (min_remote_minutes <= 720)))",
+      "CHECK (((max_accuracy_m >= 10) AND (max_accuracy_m <= 5000)))",
+    ],
+  },
+  work_sites: {
+    // Approved work places besides the company's offices: client sites, temporary project offices, co-working
+    // spaces. counts_as says whether time there counts as office or away from office. everyone false: only people
+    // assigned to the site (work_assignments.site_ids) may use it.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      active: {"default": true, "required": true, "type": "bool"},
+      address_line: {"type": "string"},
+      archived_at: {"type": "timestamp"},
+      counts_as: {"default": "office", "enum": ["office", "remote"], "required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      everyone: {"default": false, "required": true, "type": "bool"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"default": "client_site", "enum": ["client_site", "project_office", "coworking", "other"], "required": true, "type": "string"},
+      latitude: {"required": true, "scale": 6, "type": "decimal"},
+      longitude: {"required": true, "scale": 6, "type": "decimal"},
+      name: {"required": true, "type": "string"},
+      radius_m: {"required": true, "type": "int"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "work_sites_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "name", "fold": "lower"}], "name": "work_sites_name", "where": [{"col": "archived_at", "op": "null"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [
+      "CHECK (((length(name) >= 1) AND (length(name) <= 160)))",
+      "CHECK (((radius_m >= 25) AND (radius_m <= 5000)))",
+      "CHECK (((latitude >= ('-90'::integer)::numeric) AND (latitude <= (90)::numeric)))",
+      "CHECK (((longitude >= ('-180'::integer)::numeric) AND (longitude <= (180)::numeric)))",
+    ],
+  },
+  work_assignments: {
+    // One person's attendance places and rules: offices they may check in at besides their own work location, approved
+    // sites, and rules that differ from the company's (null follows the company).
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      employee_id: {"required": true, "type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      min_office_minutes: {"type": "int"},
+      min_remote_minutes: {"type": "int"},
+      note: {"type": "string"},
+      office_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      office_requirement: {"enum": ["none", "check_in", "check_in_out"], "type": "string"},
+      site_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "work_assignments_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}], "name": "work_assignments_one"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  attendance_locations: {
+    // The location read at a check-in, check-out or location update the person recorded (kind checkpoint). Only these
+    // moments: SampCrew never tracks anyone through the day. Coordinates are removed (purged_at set) after the
+    // company's retention period; the zone, place and verification stay for the attendance record.
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      accuracy_m: {"scale": 1, "type": "decimal"},
+      captured_at: {"required": true, "type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      distance_m: {"type": "int"},
+      employee_id: {"required": true, "type": "uuid"},
+      event_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"enum": ["punch", "checkpoint"], "required": true, "type": "string"},
+      latitude: {"scale": 6, "type": "decimal"},
+      longitude: {"scale": 6, "type": "decimal"},
+      place_id: {"type": "uuid"},
+      place_kind: {"enum": ["office", "site"], "type": "string"},
+      place_name: {"type": "string"},
+      purged_at: {"type": "timestamp"},
+      source: {"enum": ["web", "mobile", "qr", "device"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      verification: {"enum": ["verified", "device", "no_location", "denied", "unavailable", "poor_accuracy", "mock_location", "not_needed"], "required": true, "type": "string"},
+      zone: {"enum": ["office", "remote", "unverified", "neutral"], "required": true, "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "attendance_locations_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "captured_at"}], "name": "attendance_locations_employee"},
+      {"cols": [{"col": "tenant_id"}, {"col": "captured_at"}], "name": "attendance_locations_time"},
+    ],
+    checks: [
+      "CHECK (((latitude IS NULL) = (longitude IS NULL)))",
+    ],
+  },
+  work_mode_changes: {
+    // Every change of a day's classification: by the engine (a new punch or correction), by HR (verify or correct,
+    // with a reason) or by an approved correction request. Append-only.
+    access: "tenant", grants: ["insert", "select"], triggers: ["reject_mutation"],
+    columns: {
+      by: {"enum": ["system", "hr", "correction"], "required": true, "type": "string"},
+      by_membership_id: {"type": "uuid"},
+      by_name: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      employee_id: {"required": true, "type": "uuid"},
+      from_mode: {"enum": ["office", "remote", "hybrid", "pending_verification"], "type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      reason: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      to_mode: {"enum": ["office", "remote", "hybrid", "pending_verification"], "type": "string"},
+      work_date: {"required": true, "type": "date"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "work_mode_changes_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "work_date"}], "name": "work_mode_changes_day"},
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "work_mode_changes_recent"},
+    ],
+    checks: [],
+  },
+  attendance_saved_reports: {
+    // Report filters a person saved for later exports (contracts savedReportInput).
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      filters: {"default": {"json": {}}, "required": true, "type": "json"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      membership_id: {"required": true, "type": "uuid"},
+      name: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "attendance_saved_reports_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}, {"col": "name", "fold": "lower"}], "name": "attendance_saved_reports_name"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
   },
   attendance_policies: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
@@ -2942,6 +3182,39 @@ export const TABLES: Record<string, TableSpec> = {
     indexes: [],
     checks: [],
   },
+  employee_record_details: {
+    // The employee record's own fields (issue #86, contracts employee-record.ts): family, gate pass, work status,
+    // CTC figures and notes. Everything else on the record lives where it already did.
+    access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,
+    columns: {
+      any_details: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      ctc_annual: {"scale": 2, "type": "decimal"},
+      ctc_annual_in_hand: {"scale": 2, "type": "decimal"},
+      ctc_monthly_fixed: {"scale": 2, "type": "decimal"},
+      employee_id: {"required": true, "type": "uuid"},
+      father_name: {"type": "string"},
+      gate_pass_id: {"type": "string"},
+      mother_name: {"type": "string"},
+      // A parent's Aadhaar number, encrypted, and its last four digits for the masked display.
+      parent_aadhaar_enc: {"type": "string"},
+      parent_aadhaar_last4: {"type": "string"},
+      parents_address: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+      work_status: {"enum": ["working", "on_notice", "on_long_leave", "inactive", "left"], "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}], "name": "employee_record_details_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
   employee_salaries: {
     access: "tenant", grants: ["delete", "insert", "select"],
     columns: {
@@ -3178,7 +3451,8 @@ export const TABLES: Record<string, TableSpec> = {
   member_module_assignments: {
     // Modules one employee does NOT get although their HR Workspace (or, in the central group, the company) holds
     // them, chosen by the HR Workspace admins or the Super Workspace. Stored as what is withheld, so a module the HR
-    // Workspace gains later reaches its people unless someone takes it away from them.
+    // Workspace gains later reaches its people unless someone takes it away from them. Pages (FEATURE_PARTS keys)
+    // unticked under Page access at registration (issue #86) are kept here too.
     access: "tenant", grants: ["insert", "select", "update"], touch: true,
     columns: {
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -3318,6 +3592,8 @@ export const TABLES: Record<string, TableSpec> = {
       // opening leave balances). Records from before this column have none and are new joiners.
       joined_as: {"enum": ["new_joiner", "existing"], "type": "string"},
       last_name: {"default": "", "required": true, "type": "string"},
+      // Legal middle name (issue #86); the legal name is first, middle and last. preferred_name is separate.
+      middle_name: {"type": "string"},
       last_working_day: {"type": "date"},
       membership_id: {"type": "uuid"},
       personal_email: {"type": "citext"},
@@ -5305,6 +5581,8 @@ export const TABLES: Record<string, TableSpec> = {
       code: {"type": "string"},
       country_code: {"required": true, "type": "string"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Off: the location keeps its geofence but is not an office for office / home classification (2026-11-25).
+      geofence_active: {"default": true, "required": true, "type": "bool"},
       geofence_radius_m: {"type": "int"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       kind: {"default": "office", "enum": ["office", "branch", "factory", "warehouse", "store", "hospital", "site", "remote_hub"], "required": true, "type": "string"},
@@ -5408,8 +5686,13 @@ export const TABLES: Record<string, TableSpec> = {
       favourites: {"default": {"json": []}, "required": true, "type": "string[]"},
       membership_id: {"required": true, "type": "uuid"},
       notes: {"default": "", "required": true, "type": "string"},
+      // My Workforce / My Day, Home cards and sections switched off, the first-login tour and the setup prompt
+      // (contracts ExperienceState, issue #86).
+      experience: {"type": "json"},
       // Notification channels per category and sound settings (contracts notificationPreferencesInput).
       notifications: {"type": "json"},
+      // Attendance notices the person switched on or off (contracts ATTENDANCE_NOTICES); a key not saved has its default.
+      attendance_notices: {"type": "json"},
       recents: {"default": {"json": []}, "required": true, "type": "json"},
       tenant_id: {"required": true, "type": "uuid"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
@@ -7023,6 +7306,13 @@ export const TABLES: Record<string, TableSpec> = {
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       ip: {"type": "string"},
       last_used_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Where the person was when they signed in (issue #86): read once by the browser or app after sign-in, when the
+      // company reads locations and the person allowed it. Null: not shared.
+      latitude: {"scale": 6, "type": "decimal"},
+      longitude: {"scale": 6, "type": "decimal"},
+      location_accuracy_m: {"type": "int"},
+      located_at: {"type": "timestamp"},
+      location_status: {"enum": ["shared", "denied", "unavailable"], "type": "string"},
       mfa_verified: {"default": false, "required": true, "type": "bool"},
       refresh_token_hash: {"required": true, "type": "string"},
       revoked_at: {"type": "timestamp"},
@@ -7861,13 +8151,16 @@ export const TABLES: Record<string, TableSpec> = {
     // A workspace reads its own row and updates its settings (column grants in PostgreSQL; see TenancyService).
     access: "tenant_self", grants: ["select", "update"],
     tenantColumns: {
-      select: ["brand_color", "company_size", "contact_email", "contact_phone", "country_code", "created_at", "currency", "id", "industry", "is_demo", "locale", "name", "region", "require_mfa", "setup_completed_at", "setup_step", "slug", "status", "timezone", "website"],
-      update: ["brand_color", "company_size", "contact_email", "contact_phone", "currency", "industry", "locale", "name", "require_mfa", "setup_completed_at", "setup_step", "timezone", "website"],
+      select: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "country_code", "created_at", "currency", "id", "industry", "is_demo", "locale", "name", "region", "registration_ip", "require_mfa", "setup_completed_at", "setup_step", "slug", "status", "timezone", "website"],
+      update: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "currency", "industry", "locale", "name", "registration_ip", "require_mfa", "setup_completed_at", "setup_step", "timezone", "website"],
     }, touch: true,
     columns: {
       brand_color: {"type": "string"},
       // The client company this Super Workspace belongs to (companies). Console only; a workspace never reads it.
       company_id: {"type": "uuid"},
+      // When the registered company information was locked (company setup finished, issue #86): from then on a field
+      // that holds a value changes only from the Console.
+      company_locked_at: {"type": "timestamp"},
       company_size: {"enum": ["1-10", "11-50", "51-200", "201-500", "501-1000", "1000+"], "type": "string"},
       contact_email: {"type": "citext"},
       contact_phone: {"type": "string"},
@@ -7880,6 +8173,8 @@ export const TABLES: Record<string, TableSpec> = {
       locale: {"default": "en", "required": true, "type": "string"},
       name: {"required": true, "type": "string"},
       region: {"default": "in", "enum": ["in", "eu", "us", "uk", "me", "sg", "au"], "required": true, "type": "string"},
+      // The IP address the company registered from (sign-up or the Console's new company), recorded once, shown locked.
+      registration_ip: {"type": "string"},
       require_mfa: {"default": false, "required": true, "type": "bool"},
       setup_completed_at: {"type": "timestamp"},
       setup_step: {"default": 0, "required": true, "type": "int"},

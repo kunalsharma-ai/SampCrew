@@ -1,5 +1,5 @@
 'use client';
-import { ADULT_AGE, addYears, ageOn, DOCUMENT_CATEGORIES, dateOfBirthError, dateOfBirthRange, designationLibrary, earliestJoining, isMinorOn, MIN_WORKING_AGE, phoneError } from '@crew/contracts';
+import { ADULT_AGE, addYears, ageOn, DOCUMENT_CATEGORIES, dateOfBirthError, dateOfBirthRange, designationLibrary, earliestJoining, isMinorOn, MIN_WORKING_AGE, PAGE_ACCESS_CHOICES, DEFAULT_PAGE_ACCESS, phoneError } from '@crew/contracts';
 import { Alert, Button, Checkbox, DatePicker, Dialog, Field, Input, Select, cn } from '@crew/ui';
 import { AlertTriangle, Camera, Check, FileUp, Plus, X } from 'lucide-react';
 import Link from 'next/link';
@@ -112,6 +112,7 @@ export function HireWizard(p: Props) {
   });
   const [v, setV] = useState<DraftData>(blank);
   const [access, setAccess] = useState<SetAccessRequest>({ level: 'employee' });
+  const [pages, setPages] = useState<string[]>(DEFAULT_PAGE_ACCESS);
   const [step, setStep] = useState(0);
   const [reached, setReached] = useState(0);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -343,6 +344,7 @@ export function HireWizard(p: Props) {
     }
     const employee: Record<string, unknown> = { loginMode, probationMonths: Number(v.probationMonths ?? 6) };
     if (loginMode !== 'none' && access.level !== 'employee') employee.access = accessBody(access);
+    if (loginMode !== 'none' && access.level === 'employee') employee.pageAccess = pages;
     if (loginMode === 'password' && ownPassword) employee.initialPassword = password;
     if (str(v.defaultShiftId)) employee.defaultShiftId = str(v.defaultShiftId);
     const enrol = enrolments.filter((x) => x.deviceUserId.trim()).map((x) => ({ deviceUserId: x.deviceUserId.trim(), deviceId: x.deviceId || null }));
@@ -864,6 +866,18 @@ export function HireWizard(p: Props) {
             ) : (
               <p className="text-xs text-fg-muted sm:col-span-2">{loginMode === 'none' ? 'Workspace access comes with a login. Without one, they are an employee record only.' : 'Their login gets Employee Workspace access. A Super Workspace person can give more under Logins & access.'}</p>
             )}
+            {loginMode !== 'none' && access.level === 'employee' && (
+              <fieldset className="rounded-lg border border-border p-4 sm:col-span-2" data-testid="hire-page-access">
+                <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Page access</legend>
+                <p className="mb-3 text-xs text-fg-muted">The pages their login opens. You can change these later under Employee features.</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {PAGE_ACCESS_CHOICES.map((c) => (
+                    <Checkbox key={c.key} label={c.label} checked={pages.includes(c.key)} data-testid={`hire-page-${c.key}`}
+                      onChange={(ev) => { const on = ev.currentTarget.checked; setPages((x) => on ? [...new Set([...x, c.key])] : x.filter((k) => k !== c.key)); }} />
+                  ))}
+                </div>
+              </fieldset>
+            )}
             <Field label="Onboarding checklist" className="sm:col-span-2">
               {(f) => (
                 <Select {...f} name="onboardingTemplateId" value={str(v.onboardingTemplateId)} onChange={(e) => set('onboardingTemplateId', e.target.value)}>
@@ -897,6 +911,7 @@ export function HireWizard(p: Props) {
             <Summary label="Photo" value={photo ? photo.name : 'None'} onEdit={() => setStep(0)} />
             {p.canAttendance && <Summary label="Attendance" value={`${shift ? shift.name : 'Location default shift'} · ${enrolments.filter((x) => x.deviceUserId.trim()).map((x) => x.deviceUserId.trim()).join(', ') || 'no machine enrolment'}`} onEdit={() => setStep(5)} />}
             <Summary label="Onboarding" value={template} onEdit={() => setStep(5)} />
+            {loginMode !== 'none' && access.level === 'employee' && <Summary label="Page access" value={PAGE_ACCESS_CHOICES.filter((c) => pages.includes(c.key)).map((c) => c.label).join(', ') || 'Home only'} onEdit={() => setStep(5)} />}
             {loginMode !== 'none' && <Summary label="Workspace access" value={LEVEL_OPTIONS.find((l) => l.value === access.level)?.label ?? 'Employee Workspace'} onEdit={() => setStep(5)} />}
             <Summary label="SampCrew login" value={loginMode === 'invite' ? `Invitation to ${str(v.workEmail)}` : loginMode === 'password' ? `Created now for ${str(v.workEmail)} with a temporary password` : 'No login for now'} onEdit={() => setStep(5)} />
             {checkedKey === dupKey && matches === null && <p className="flex items-center gap-1.5 text-success sm:col-span-2"><Check className="size-3.5" /> No existing record matches this person.</p>}

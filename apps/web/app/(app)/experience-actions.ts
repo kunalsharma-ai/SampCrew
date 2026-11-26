@@ -1,5 +1,6 @@
 'use server';
-import type { AppearancePatch, DashboardLayout, MemberPreferences, SavedView, ViewPage, ViewState } from '@crew/contracts';
+import type { AppearancePatch, DashboardLayout, ExperiencePatch, MemberPreferences, SavedView, ViewPage, ViewState } from '@crew/contracts';
+import { revalidatePath } from 'next/cache';
 import { act, api } from '@/lib/api';
 import { writeAppearanceCookie } from '@/lib/appearance-cookie';
 
@@ -30,6 +31,14 @@ export async function recordVisitAction(href: string, label: string) {
 
 export async function saveDashboardAction(layout: DashboardLayout) {
   return act(() => api<MemberPreferences>('/me/preferences/dashboard', { method: 'PUT', body: layout }), 'Layout saved');
+}
+
+/** My Workforce / My Day, Home cards and sections, tour progress and the setup prompt (issue #86). */
+export async function saveExperienceAction(patch: ExperiencePatch, refresh = false) {
+  const r = await act(() => api<MemberPreferences>('/me/preferences/experience', { method: 'PUT', body: patch }), 'Saved');
+  // The work view changes the menu and Home, which the server renders.
+  if (r.ok && refresh) revalidatePath('/', 'layout');
+  return r;
 }
 
 export async function saveNotesAction(notes: string) {
@@ -70,4 +79,9 @@ export async function updateViewAction(id: string, patch: { name?: string; state
 
 export async function deleteViewAction(id: string) {
   return act(() => api(`/me/views/${id}`, { method: 'DELETE' }), 'View deleted');
+}
+
+/** Where this sign-in happened (issue #86), read once by the browser after sign-in. */
+export async function recordSessionLocationAction(body: { latitude: number; longitude: number; accuracyM: number | null } | { status: 'denied' | 'unavailable' }) {
+  return act(() => api<void>('/me/session-location', { method: 'POST', body }));
 }

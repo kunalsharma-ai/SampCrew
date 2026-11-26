@@ -26,6 +26,8 @@ export interface PunchDraft {
   longitude?: number;
   accuracyM?: number;
   mockLocation?: boolean;
+  /** Why there is no location: the person refused it, the phone had none, or it took too long. */
+  locationStatus?: 'ok' | 'denied' | 'unavailable' | 'timeout';
   note?: string;
 }
 

@@ -71,6 +71,7 @@ export class AuthService {
           countryCode: input.countryCode,
           currency: input.currency,
           timezone: input.timezone,
+          registrationIp: requestContext.get()?.ip ?? null,
           owner: { email: input.email, fullName: input.fullName, passwordHash },
           plan: { key: planKey, seats: 10, billingCycle: 'monthly', trialDays: defaults.trialDays },
         });
@@ -319,6 +320,7 @@ export class AuthService {
       const subject = await this.authz.subject(tx);
       const ent = await this.entitlements.current(tx);
       const controls = await tx.collection('tenant_access_controls').findOne({});
+      const workMode = await tx.collection('work_mode_settings').findOne({}, { projection: { location_tracking: 1 } });
       const employee = await tx.collection('employees').findOne({ membership_id: actor.membershipId }, { projection: { _id: 1, photo_updated_at: 1, hr_workspace_id: 1, first_name: 1, last_name: 1, preferred_name: 1 } });
       // Levels: HR Workspaces this person runs (a limited grant names them), and whether they run the company.
       const hrIds = [...new Set(subject.grants.flatMap((g) => g.constraints.hrWorkspaceIds ?? []))];
@@ -343,15 +345,21 @@ export class AuthService {
         const live = new Set(await tx.collection('hr_workspaces').distinct<string>('id', { id: { $in: keys }, status: 'active' }));
         candidateCrm = (await tx.collection('candidate_crm_access').find({ key: { $in: keys }, enabled: true }, { projection: { key: 1 } })).some((r) => r.key === 'central' || live.has(r.key));
       }
-      return { user, tenant, membership, roles, subject, ent, employee, levels, candidateCrm, disabledPermissions: (controls?.disabled_permissions as string[]) ?? [] };
+      return { user, tenant, membership, roles, subject, ent, employee, levels, candidateCrm, locationTracking: ((workMode?.location_tracking as string | undefined) ?? 'punch') as 'off' | 'punch' | 'real_time', disabledPermissions: (controls?.disabled_permissions as string[]) ?? [] };
     });
     // Workspace switcher: only this user's own active workspaces.
-    const tenants = (await this.db.platform((tx) => activeMembershipsOf(tx, actor.userId))).map((m) => ({ id: m.tenant_id, name: m.name, slug: m.slug }));
+    const { tenants, located } = await this.db.platform(async (tx) => {
+      const tenants = (await activeMembershipsOf(tx, actor.userId)).map((m) => ({ id: m.tenant_id, name: m.name, slug: m.slug }));
+      // Whether this sign-in already has its location (or a refusal) recorded, so the browser asks only once (issue #86).
+      const current = await tx.collection('sessions').findOne({ id: actor.sessionId }, { projection: { family_id: 1 } });
+      const located = !current || (await tx.collection('sessions').exists({ family_id: current.family_id, located_at: { $ne: null } }));
+      return { tenants, located };
+    });
     return {
       // Someone with an employee record is greeted by that record's name, so a name HR corrects on the profile shows on
       // Home, in the top bar and on the phone at once (the login keeps the name it was created with).
       user: { id: data.user!.id, email: data.user!.email, fullName: (data.employee?.first_name ? displayName(data.employee as never) : '') || data.user!.full_name, mfaEnabled: data.user!.mfa_enabled },
-      tenant: { id: data.tenant!.id, name: data.tenant!.name, slug: data.tenant!.slug, isDemo: data.tenant!.is_demo, status: data.tenant!.status, timezone: data.tenant!.timezone, currency: data.tenant!.currency, locale: data.tenant!.locale, setupCompletedAt: data.tenant!.setup_completed_at?.toISOString() ?? null },
+      tenant: { id: data.tenant!.id, name: data.tenant!.name, slug: data.tenant!.slug, isDemo: data.tenant!.is_demo, status: data.tenant!.status, timezone: data.tenant!.timezone, currency: data.tenant!.currency, locale: data.tenant!.locale, setupCompletedAt: data.tenant!.setup_completed_at?.toISOString() ?? null, locationTracking: data.locationTracking },
       membership: { id: data.membership!.id, status: data.membership!.status, roles: data.roles },
       permissions: effectivePermissions(data.subject),
       features: [...data.ent.features].sort(),
@@ -359,7 +367,7 @@ export class AuthService {
       disabledPermissions: data.disabledPermissions,
       limits: data.ent.limits,
       subscription: data.ent.planKey ? { plan: data.ent.planKey, status: data.ent.status!, trialEndsOn: data.ent.trialEndsOn, locked: data.ent.locked } : null,
-      session: { mfa: actor.mfa },
+      session: { mfa: actor.mfa, locationPending: data.locationTracking !== 'off' && !located },
       client: actor.client ?? 'web',
       tenants,
       employee: data.employee ? { id: data.employee.id, photoUpdatedAt: data.employee.photo_updated_at?.toISOString() ?? null } : null,
