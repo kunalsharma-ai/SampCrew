@@ -8,7 +8,8 @@ import { fmtSize } from '../documents/format';
 import type { RequestRow } from '../documents/types';
 import { UploadBox } from '../documents/ui';
 import type { Checklist, ChecklistItem } from './types';
-import { fmtDay, OnboardingStatusBadge, ProgressBar } from './ui';
+import { fmtDay } from './format';
+import { OnboardingStatusBadge, ProgressBar } from './ui';
 
 const UPLOADABLE = new Set(['assigned', 'not_submitted', 'rejected', 'resubmission_required']);
 

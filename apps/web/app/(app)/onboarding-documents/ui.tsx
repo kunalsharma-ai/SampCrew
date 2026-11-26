@@ -29,4 +29,3 @@ export function ProgressBar({ percent, label }: { percent: number; label?: strin
   );
 }
 
-export const fmtDay = (d: string | null | undefined) => (d ? new Date(d.length === 10 ? `${d}T00:00:00` : d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '');

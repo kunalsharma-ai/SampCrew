@@ -5,7 +5,8 @@ import { load } from '@/lib/api';
 import { LiveDocuments } from '../../documents/ui';
 import { ChecklistView } from '../checklist-view';
 import type { Checklist } from '../types';
-import { fmtDay, ProgressBar } from '../ui';
+import { fmtDay } from '../format';
+import { ProgressBar } from '../ui';
 
 export const metadata: Metadata = { title: 'My onboarding documents' };
 
