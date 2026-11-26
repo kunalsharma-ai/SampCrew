@@ -275,11 +275,11 @@ export function QuickActionsCard({ actions, title = 'Quick actions' }: { actions
       <span className="mr-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-subtle">{title}</span>
       {actions.map((a) => {
         const Icon = ICONS[a.icon] ?? CalendarClock;
-        return (
-          <Link key={a.key} href={a.href} className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[0.75rem] font-medium transition-colors hover:border-accent hover:bg-accent-subtle hover:text-accent" data-testid={`qa-${a.key}`}>
-            <Icon className="size-3.5 text-accent" aria-hidden />{a.label}
-          </Link>
-        );
+        const cls = 'inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[0.75rem] font-medium transition-colors hover:border-accent hover:bg-accent-subtle hover:text-accent';
+        const body = <><Icon className="size-3.5 text-accent" aria-hidden />{a.label}</>;
+        return a.download
+          ? <a key={a.key} href={a.href} download className={cls} data-testid={`qa-${a.key}`}>{body}</a>
+          : <Link key={a.key} href={a.href} className={cls} data-testid={`qa-${a.key}`}>{body}</Link>;
       })}
     </section>
   );
@@ -318,7 +318,7 @@ export function WorkforceHomeView({ w, trend, trendDays, actions, base, extraPar
           {pair(on('learning') && w.learning ? <LearningSummary l={w.learning} /> : null, on('communication') && w.communication ? <CommunicationCard c={w.communication} /> : null)}
         </>
       )}
-      <p className="text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>Updated {relative(w.generatedAt)}. Figures refresh when approvals, leave or notifications change, and every minute. Choose the cards and sections in <Link href="/settings/home" className="text-accent hover:underline">Settings &gt; Home dashboard</Link>.</p>
+      <p className="text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>Updated {relative(w.generatedAt)}. Figures refresh when approvals, leave or notifications change, and every minute. Choose the cards and sections in <Link href="/settings/home" className="text-accent underline underline-offset-2">Settings &gt; Home dashboard</Link>.</p>
     </section>
   );
 }
