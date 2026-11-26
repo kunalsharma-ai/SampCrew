@@ -3,6 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addMember, adminPool, api, createApp, createTenant, department, loginWithMfa, type TestDb, type TestTenant } from './helpers';
 
 const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+/** A few days ahead but still in this month (day(5) fell into next month near the month's end). */
+const endsThisMonth = () => {
+  const now = new Date();
+  const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+  return day(5) <= last ? day(5) : last;
+};
 
 /** SampCrew IQ: answers from the workspace under the asker's permissions; actions only open prefilled forms. */
 describe('SampCrew IQ', () => {
@@ -131,7 +137,7 @@ describe('SampCrew IQ', () => {
         tenant_id: t.id, employee_code: 'IQ-L1', first_name: 'Lee', last_name: 'Leaver', date_of_joining: '2020-01-06', status: 'exited', last_working_day: lw,
         exit_reason: 'Moved city', current_department_id: olu.current_department_id, current_legal_entity_id: t.legalEntityId,
       });
-      await pool.update('employees', { id: ids.ada }, { $set: { status: 'probation', probation_end_date: day(5) } });
+      await pool.update('employees', { id: ids.ada }, { $set: { status: 'probation', probation_end_date: endsThisMonth() } });
       await pool.update('employees', { id: ids.sal }, { $set: { date_of_joining: thisMonth(Math.min(28, today.getUTCDate())) } });
       await pool.insert('attendance_days', { tenant_id: t.id, employee_id: ids.olu, work_date: day(0), day_type: 'working', status: 'absent', worked_minutes: 0, engine_version: 1 });
       await pool.insert('goals', { tenant_id: t.id, employee_id: ids.olu, title: 'Halve scrap on line 3', period_start: day(-30), period_end: day(60), status: 'active', progress: 20, confidence: 'at_risk' });
