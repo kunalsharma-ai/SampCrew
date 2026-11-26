@@ -218,7 +218,7 @@ export function resolveLayout(saved: Partial<DashboardLayout> | null | undefined
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
- * My Workforce or My Day, switched at the top right under the person's name (Super Workspace and HR Workspace).
+ * My Workforce or My Day, switched at the top of the sidebar (issue #89; it was under the person's name) (Super Workspace and HR Workspace).
  * My Day narrows the menu and Home to the person's own work and settings, in its own colour, until switched back.
  */
 export const WORK_VIEWS = ['workforce', 'myday'] as const;
@@ -247,7 +247,7 @@ const SECTION_KEYS = HOME_SECTIONS.map((c) => c.key) as [HomeSection, ...HomeSec
 export const TOUR_STEPS = [
   { key: 'menu', title: 'Your menu', text: 'Every page you can use is here, grouped by area. Star a page in the list to keep it under Favourites at the top.' },
   { key: 'search', title: 'Search anything', text: 'Find people, candidates, pages and actions. Press Ctrl K from anywhere.' },
-  { key: 'view', title: 'My Workforce or My Day', text: 'Switch between the people you look after and your own work. My Day shows only your pages, in its own colour.' },
+  { key: 'view', title: 'Switch your view', text: 'At the top of the menu: switch between the people you look after and your own work. My Day shows only your pages, in its own colour.' },
   { key: 'notifications', title: 'Notifications', text: 'New requests and updates arrive here. Open one to read it in full; read ones leave the list.' },
   { key: 'account', title: 'Your profile and settings', text: 'Your profile, Settings, compact view, password and sign out are under your name.' },
   { key: 'home', title: 'Your Home', text: 'Choose which cards and sections Home shows in Settings > Home dashboard.' },

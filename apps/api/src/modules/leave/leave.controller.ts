@@ -26,6 +26,7 @@ import {
   type LeaveTypeSimpleInput,
   leaveVisibilityInput,
 } from '@crew/contracts';
+import { compOffDecisionInput, compOffRequestInput, leaveStatusRuleInput, type CompOffRequestInput, type LeaveStatusRuleInput } from '@crew/contracts';
 import { z } from 'zod';
 import { RequireFeature, RequirePermission } from '../../platform/authz/decorators';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
@@ -54,6 +55,8 @@ const requestQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 const rangeQuery = z.object({ from: isoDate, to: isoDate }).refine((v) => v.to >= v.from, { message: 'to is before from', path: ['to'] });
+
+const compOffQuery = z.object({ scope: z.enum(['mine', 'team']).default('mine') });
 
 @Controller('leave')
 export class LeaveController {
@@ -356,5 +359,43 @@ export class LeaveController {
   @Doc({ summary: 'Add or deduct days with a note (recorded as a ledger adjustment)', body: leaveAdjustmentInput })
   adjust(@Body(new ZodPipe(leaveAdjustmentInput)) body: z.infer<typeof leaveAdjustmentInput>) {
     return this.leave.adjust(body);
+  }
+
+  // Leave by employment status and comp-off (issue #89) ----------------------------------------------------
+
+  @Get('status-rules')
+  @RequireFeature('leave')
+  @Doc({ summary: 'Each leave type\'s rule by employment status: leave during probation, and days credited on becoming permanent' })
+  statusRules() {
+    return this.leave.statusRules();
+  }
+
+  @Put('status-rules/:leaveTypeId')
+  @RequireFeature('leave')
+  @Doc({ summary: 'Set a leave type\'s rule by employment status (Super Workspace or HR)', body: leaveStatusRuleInput })
+  setStatusRule(@Param('leaveTypeId', UuidPipe) id: string, @Body(new ZodPipe(leaveStatusRuleInput)) body: LeaveStatusRuleInput) {
+    return this.leave.setStatusRule(id, body);
+  }
+
+  @Get('comp-off')
+  @RequireFeature('leave')
+  @Doc({ summary: 'Comp-off requests: mine, or the ones of people I approve for', query: compOffQuery })
+  compOffs(@Query(new ZodPipe(compOffQuery)) q: z.infer<typeof compOffQuery>) {
+    return this.leave.compOffs(q);
+  }
+
+  @Post('comp-off')
+  @RequireFeature('leave')
+  @Doc({ summary: 'Ask for comp-off for working on a weekly off or holiday; the manager or HR approves it', body: compOffRequestInput })
+  requestCompOff(@Body(new ZodPipe(compOffRequestInput)) body: CompOffRequestInput) {
+    return this.leave.requestCompOff(body);
+  }
+
+  @Post('comp-off/:id/decide')
+  @HttpCode(200)
+  @RequireFeature('leave')
+  @Doc({ summary: 'Approve (credits Compensatory Off) or reject a comp-off request (manager or HR)', body: compOffDecisionInput })
+  decideCompOff(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(compOffDecisionInput)) body: z.infer<typeof compOffDecisionInput>) {
+    return this.leave.decideCompOff(id, body);
   }
 }

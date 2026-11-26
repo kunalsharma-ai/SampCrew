@@ -383,12 +383,14 @@ export class TasksService implements OnModuleInit {
   }
 
   /** The employee uploads the document a task asks for. It is filed in their documents and goes to HR to verify. */
-  async upload(id: string, file: UploadedFile | undefined, remarks?: string | null) {
+  async upload(id: string, given: UploadedFile | UploadedFile[] | undefined, remarks?: string | null) {
+    const files = (Array.isArray(given) ? given : given ? [given] : []).filter(Boolean);
+    const file = files[0];
     DocumentsService.check(file);
     // A document request's task: the file goes to the request (one record, verified by the level that asked).
     const requestId = await this.db.tenant(async (tx) => (await this.load(tx, id)).t.request_id as string | null | undefined);
     if (requestId) {
-      await this.center.submit(requestId, file, { remarks: remarks ?? null });
+      await this.center.submit(requestId, files, { remarks: remarks ?? null });
       return this.db.tenant(async (tx) => {
         const s = await this.authz.subject(tx);
         return (await this.views(tx, [(await tx.collection('employee_tasks').findOne({ id }))!], s))[0];

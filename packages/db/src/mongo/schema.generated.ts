@@ -2906,6 +2906,13 @@ export const TABLES: Record<string, TableSpec> = {
       cancelled_reason: {"type": "string"},
       reminder_sent_on: {"type": "date"},
       overdue_notified_at: {"type": "timestamp"},
+      // Onboarding documents (issue #89, migration 0210): the checklist and library document it came from, whether HR
+      // must approve it before onboarding completes, and the extra files of a document that takes several.
+      checklist_id: {"type": "uuid"},
+      library_item_id: {"type": "uuid"},
+      mandatory: {"default": false, "required": true, "type": "bool"},
+      max_files: {"default": 1, "required": true, "type": "int"},
+      extra_document_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
       created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
     },
@@ -2923,6 +2930,7 @@ export const TABLES: Record<string, TableSpec> = {
       {"cols": [{"col": "tenant_id"}, {"col": "hr_workspace_id"}, {"col": "status"}], "name": "document_requests_hr_workspace"},
       {"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "due_on"}], "name": "document_requests_status"},
       {"cols": [{"col": "tenant_id"}, {"col": "requested_by_membership_id"}, {"col": "created_at", "desc": true}], "name": "document_requests_requester"},
+      {"cols": [{"col": "tenant_id"}, {"col": "checklist_id"}], "name": "document_requests_checklist"},
     ],
     checks: [
       "CHECK (((length(title) >= 1) AND (length(title) <= 200)))",
@@ -7305,6 +7313,8 @@ export const TABLES: Record<string, TableSpec> = {
       family_id: {"required": true, "type": "uuid"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       ip: {"type": "string"},
+      // When the person last used SampCrew (POST /auth/activity), carried across refreshes: the automatic sign-out clock.
+      last_active_at: {"type": "timestamp"},
       last_used_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
       // Where the person was when they signed in (issue #86): read once by the browser or app after sign-in, when the
       // company reads locations and the person allowed it. Null: not shared.
@@ -8151,8 +8161,8 @@ export const TABLES: Record<string, TableSpec> = {
     // A workspace reads its own row and updates its settings (column grants in PostgreSQL; see TenancyService).
     access: "tenant_self", grants: ["select", "update"],
     tenantColumns: {
-      select: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "country_code", "created_at", "currency", "id", "industry", "is_demo", "locale", "name", "region", "registration_ip", "require_mfa", "setup_completed_at", "setup_step", "slug", "status", "timezone", "website"],
-      update: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "currency", "industry", "locale", "name", "registration_ip", "require_mfa", "setup_completed_at", "setup_step", "timezone", "website"],
+      select: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "country_code", "created_at", "currency", "id", "industry", "is_demo", "locale", "name", "region", "registration_ip", "require_mfa", "session_idle_minutes", "setup_completed_at", "setup_step", "slug", "status", "timezone", "website"],
+      update: ["brand_color", "company_locked_at", "company_size", "contact_email", "contact_phone", "currency", "industry", "locale", "name", "registration_ip", "require_mfa", "session_idle_minutes", "setup_completed_at", "setup_step", "timezone", "website"],
     }, touch: true,
     columns: {
       brand_color: {"type": "string"},
@@ -8176,6 +8186,8 @@ export const TABLES: Record<string, TableSpec> = {
       // The IP address the company registered from (sign-up or the Console's new company), recorded once, shown locked.
       registration_ip: {"type": "string"},
       require_mfa: {"default": false, "required": true, "type": "bool"},
+      // Automatic sign-out after this many minutes of inactivity, for everyone (issue #89); null: off. Super Workspace only.
+      session_idle_minutes: {"type": "int"},
       setup_completed_at: {"type": "timestamp"},
       setup_step: {"default": 0, "required": true, "type": "int"},
       slug: {"required": true, "type": "citext"},
@@ -9274,6 +9286,271 @@ export const TABLES: Record<string, TableSpec> = {
     indexes: [
       {"name": "platform_request_metrics_recent", "cols": [{"col": "minute", "desc": true}]},
     ],
+    checks: [],
+  },
+  // Issue #89 (migration 0210) -------------------------------------------------------------------------------------
+  email_templates: {
+    // A company's own email designs (issue #89 point 13): imported HTML for every email (key layout) or for one kind
+    // of email (account, notification, recruitment, communication). Reset switches one off; nothing is deleted.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      name: {"type": "string"},
+      subject: {"type": "string"},
+      html: {"required": true, "type": "string"},
+      active: {"default": true, "required": true, "type": "bool"},
+      version: {"default": 1, "required": true, "type": "int"},
+      source_file_name: {"type": "string"},
+      updated_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "email_templates_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "email_templates_key"},
+    ],
+    fks: [{"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]}],
+    indexes: [],
+    checks: [],
+  },
+  form_settings: {
+    // A form's configuration, one row per form (employee_create: work email domains and the Add Employee fields).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      form_key: {"required": true, "type": "string"},
+      settings: {"default": {"json": {}}, "required": true, "type": "json"},
+      version: {"default": 1, "required": true, "type": "int"},
+      updated_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "form_settings_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "form_key"}], "name": "form_settings_form_key"},
+    ],
+    fks: [{"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]}],
+    indexes: [],
+    checks: [],
+  },
+  onboarding_doc_categories: {
+    // Categories of the onboarding document library (A. Identity Verification ...), owned by the Super Workspace.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      name: {"required": true, "type": "string"},
+      description: {"type": "string"},
+      sort: {"default": 0, "required": true, "type": "int"},
+      built_in: {"default": false, "required": true, "type": "bool"},
+      archived_at: {"type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "onboarding_doc_categories_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "onboarding_doc_categories_key"},
+    ],
+    fks: [{"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]}],
+    indexes: [],
+    checks: [],
+  },
+  onboarding_doc_items: {
+    // One document of the onboarding library: how it is asked for (formats, size, files) and how HR checks it.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      category_id: {"required": true, "type": "uuid"},
+      name: {"required": true, "type": "string"},
+      requirement: {"enum": ["mandatory", "conditional", "optional", "role_specific"], "required": true, "type": "string"},
+      description: {"type": "string"},
+      instructions: {"type": "string"},
+      formats: {"default": {"json": ["pdf", "image"]}, "required": true, "type": "string[]"},
+      max_mb: {"default": 5, "required": true, "type": "int"},
+      multiple: {"default": false, "required": true, "type": "bool"},
+      max_files: {"default": 1, "required": true, "type": "int"},
+      verification: {"type": "string"},
+      type_key: {"default": "custom", "required": true, "type": "string"},
+      sensitive: {"default": false, "required": true, "type": "bool"},
+      active: {"default": true, "required": true, "type": "bool"},
+      sort: {"default": 0, "required": true, "type": "int"},
+      built_in: {"default": false, "required": true, "type": "bool"},
+      archived_at: {"type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      updated_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "onboarding_doc_items_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "onboarding_doc_items_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [{"cols": [{"col": "tenant_id"}, {"col": "category_id"}, {"col": "sort"}], "name": "onboarding_doc_items_category"}],
+    checks: [],
+  },
+  onboarding_doc_templates: {
+    // A checklist template (Standard, Intern, Contract ...): library documents, each required or optional, and the
+    // departments and employment types it is suggested for.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      name: {"required": true, "type": "string"},
+      description: {"type": "string"},
+      items: {"default": {"json": []}, "required": true, "type": "json"},
+      department_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      employment_types: {"default": {"json": []}, "required": true, "type": "string[]"},
+      is_default: {"default": false, "required": true, "type": "bool"},
+      active: {"default": true, "required": true, "type": "bool"},
+      built_in: {"default": false, "required": true, "type": "bool"},
+      archived_at: {"type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      updated_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "onboarding_doc_templates_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "onboarding_doc_templates_key"},
+    ],
+    fks: [{"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]}],
+    indexes: [],
+    checks: [],
+  },
+  onboarding_checklists: {
+    // The onboarding documents assigned to one employee. Its items are document_requests (checklist_id), so HR and
+    // the employee read the same records. Completed checklists are archived, never deleted.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      employee_id: {"required": true, "type": "uuid"},
+      hr_workspace_id: {"type": "uuid"},
+      template_id: {"type": "uuid"},
+      template_name: {"type": "string"},
+      status: {"default": "active", "enum": ["active", "completed", "cancelled"], "required": true, "type": "string"},
+      total: {"default": 0, "required": true, "type": "int"},
+      mandatory_total: {"default": 0, "required": true, "type": "int"},
+      approved: {"default": 0, "required": true, "type": "int"},
+      pending_approval: {"default": 0, "required": true, "type": "int"},
+      percent: {"default": 0, "required": true, "type": "int"},
+      due_on: {"type": "date"},
+      note: {"type": "string"},
+      assigned_by_membership_id: {"required": true, "type": "uuid"},
+      requester_level: {"enum": ["super_workspace", "hr_workspace"], "required": true, "type": "string"},
+      all_submitted_at: {"type": "timestamp"},
+      completed_at: {"type": "timestamp"},
+      archived_at: {"type": "timestamp"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "onboarding_checklists_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}], "name": "onboarding_checklists_one_active", "where": [{"col": "status", "op": "eq", "value": "active"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "created_at", "desc": true}], "name": "onboarding_checklists_status"},
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "created_at", "desc": true}], "name": "onboarding_checklists_employee"},
+    ],
+    checks: [],
+  },
+  onboarding_library_requests: {
+    // HR asking the Super Workspace for a document the library lacks, or for permission to manage the library.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      kind: {"enum": ["document", "permission"], "required": true, "type": "string"},
+      name: {"type": "string"},
+      category_id: {"type": "uuid"},
+      requirement: {"type": "string"},
+      reason: {"required": true, "type": "string"},
+      hr_workspace_id: {"type": "uuid"},
+      requested_by_membership_id: {"required": true, "type": "uuid"},
+      status: {"default": "open", "enum": ["open", "approved", "declined"], "required": true, "type": "string"},
+      decided_by_membership_id: {"type": "uuid"},
+      decision_note: {"type": "string"},
+      decided_at: {"type": "timestamp"},
+      item_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [{"cols": [{"col": "id"}], "name": "onboarding_library_requests_pkey", "primary": true}],
+    fks: [{"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]}],
+    indexes: [{"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "created_at", "desc": true}], "name": "onboarding_library_requests_status"}],
+    checks: [],
+  },
+  leave_status_rules: {
+    // A leave type's rule by employment status (issue #89): no leave during probation, and the days credited
+    // automatically when the person becomes permanent. Set by the Super Workspace or HR.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      leave_type_id: {"required": true, "type": "uuid"},
+      probation: {"default": "allowed", "enum": ["no_leave", "allowed"], "required": true, "type": "string"},
+      on_confirmation_days: {"scale": 2, "type": "decimal"},
+      prorate: {"default": false, "required": true, "type": "bool"},
+      updated_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "leave_status_rules_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "leave_type_id"}], "name": "leave_status_rules_type"},
+    ],
+    fks: [{"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]}],
+    indexes: [],
+    checks: [],
+  },
+  comp_off_requests: {
+    // An employee's request for compensatory off for working on a weekly off or holiday (issue #89). Approved by
+    // their manager or HR; approval credits the Compensatory Off leave type.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      employee_id: {"required": true, "type": "uuid"},
+      leave_type_id: {"required": true, "type": "uuid"},
+      work_date: {"required": true, "type": "date"},
+      day_kind: {"enum": ["weekly_off", "holiday"], "required": true, "type": "string"},
+      holiday_name: {"type": "string"},
+      days: {"required": true, "scale": 2, "type": "decimal"},
+      reason: {"required": true, "type": "string"},
+      worked_minutes: {"type": "int"},
+      status: {"default": "pending", "enum": ["pending", "approved", "rejected", "cancelled"], "required": true, "type": "string"},
+      approval_request_id: {"type": "uuid"},
+      requested_by_membership_id: {"required": true, "type": "uuid"},
+      decided_by_membership_id: {"type": "uuid"},
+      decided_comment: {"type": "string"},
+      decided_at: {"type": "timestamp"},
+      ledger_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "comp_off_requests_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "work_date"}], "name": "comp_off_requests_one_per_day", "where": [{"col": "status", "op": "in", "value": ["pending", "approved"]}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [{"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "created_at", "desc": true}], "name": "comp_off_requests_status"}],
     checks: [],
   },
 };

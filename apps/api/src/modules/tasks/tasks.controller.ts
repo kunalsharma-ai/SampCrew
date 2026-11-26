@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, UploadedFile as File, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { DOCUMENT_MAX_BYTES, documentVerifyInput, taskInput, type TaskInput, taskListQuery, taskProgressInput, taskReviewInput, taskUpdateInput } from '@crew/contracts';
 import { z } from 'zod';
 import { RequireFeature } from '../../platform/authz/decorators';
@@ -75,10 +75,10 @@ export class TasksController {
 
   @Post(':id/document')
   @HttpCode(200)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: DOCUMENT_MAX_BYTES, files: 1 } }))
-  @Doc({ summary: 'Upload the document an HR task asks for (multipart/form-data: file, remarks). It goes to HR to verify.' })
-  upload(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(uploadMeta)) body: z.infer<typeof uploadMeta>, @File() file?: UploadedFile) {
-    return this.tasks.upload(id, file, body.remarks);
+  @UseInterceptors(FileFieldsInterceptor([{ name: 'file', maxCount: 1 }, { name: 'files', maxCount: 10 }], { limits: { fileSize: DOCUMENT_MAX_BYTES, files: 10 } }))
+  @Doc({ summary: 'Upload the document an HR task asks for (multipart/form-data: file, or files when the document takes several, remarks). It goes to HR to verify.' })
+  upload(@Param('id', UuidPipe) id: string, @Body(new ZodPipe(uploadMeta)) body: z.infer<typeof uploadMeta>, @UploadedFiles() given?: { file?: UploadedFile[]; files?: UploadedFile[] }) {
+    return this.tasks.upload(id, [...(given?.file ?? []), ...(given?.files ?? [])], body.remarks);
   }
 
   @Post(':id/verify')

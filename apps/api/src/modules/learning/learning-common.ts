@@ -25,8 +25,14 @@ export function parseBlocks(raw: unknown): ContentBlock[] {
 /** The published version an enrolment uses (its own, or the module's current one). */
 export async function versionOf(tx: TenantTx, a: Doc): Promise<{ id: string | null; version: number; blocks: ContentBlock[]; title: string }> {
   const v = a.version_id ? await tx.collection('learning_module_versions').findOne({ id: a.version_id }) : undefined;
-  if (v) return { id: v.id, version: v.version, blocks: parseBlocks(v.blocks), title: v.title };
   const c = await tx.collection('courses').findOne({ id: a.course_id });
+  if (v) {
+    // A learner keeps the version they were assigned, but links follow the published module (issue #89): when HR
+    // corrects a link, "Open the resource" opens the link HR gave now, not the one at the time of assignment.
+    const pinned = parseBlocks(v.blocks);
+    const latest = c?.published_version_id && c.published_version_id !== v.id ? await tx.collection('learning_module_versions').findOne({ id: c.published_version_id }) : undefined;
+    return { id: v.id, version: v.version, blocks: latest ? withLatestLinks(pinned, parseBlocks(latest.blocks)) : pinned, title: v.title };
+  }
   const cv = c?.published_version_id ? await tx.collection('learning_module_versions').findOne({ id: c.published_version_id }) : undefined;
   if (cv) return { id: cv.id, version: cv.version, blocks: parseBlocks(cv.blocks), title: cv.title };
   return { id: null, version: c?.version ?? 1, blocks: parseBlocks(c?.blocks ?? []), title: c?.title ?? '' };
@@ -165,4 +171,16 @@ export async function ownEnrolment(tx: TenantTx, id: string, employeeId: string 
   const a = await tx.collection('course_assignments').findOne({ id });
   if (!a || !employeeId || a.employee_id !== employeeId || a.status === 'cancelled') throw Errors.notFound('Learning');
   return a;
+}
+
+/** The pinned blocks with each link (external URL, linked video, audio or document) taken from the same block now. */
+export function withLatestLinks(pinned: ContentBlock[], latest: ContentBlock[]): ContentBlock[] {
+  const now = new Map(latest.map((b) => [b.id, b]));
+  return pinned.map((b) => {
+    const n = now.get(b.id);
+    if (!n || n.kind !== b.kind) return b;
+    if (b.kind === 'external' && n.kind === 'external') return { ...b, url: n.url };
+    if ('source' in b && 'source' in n && b.source?.type === 'url' && n.source?.type === 'url') return { ...b, source: n.source } as ContentBlock;
+    return b;
+  });
 }

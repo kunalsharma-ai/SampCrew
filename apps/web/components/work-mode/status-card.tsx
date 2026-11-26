@@ -1,4 +1,5 @@
 'use client';
+import { unverifiedReason } from '@crew/contracts';
 import { Alert, Button, cn } from '@crew/ui';
 import { Building2, Home, LocateFixed, LogIn, LogOut, MapPin, Repeat, ShieldCheck, ShieldQuestion, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -67,7 +68,7 @@ export function WorkModeStatusCard({ today }: { today: AttendanceToday }) {
     const unverified = p.workZone === 'unverified';
     setNotice({
       tone: unverified ? 'warning' : 'success',
-      text: `${p.direction === 'in' ? 'Checked in' : 'Checked out'}${p.workZone === 'office' ? ` at ${p.place ?? 'the office'}` : p.workZone === 'remote' ? ', away from the office' : ''}.${unverified ? ' Your location could not be read, so today waits for HR to verify. It is never assumed to be home.' : ''}`,
+      text: `${p.direction === 'in' ? 'Checked in' : 'Checked out'}${p.workZone === 'office' ? ` at ${p.place ?? 'the office'}` : p.workZone === 'remote' ? ', away from the office' : ''}.${unverified ? ` ${unverifiedReason(where.locationStatus === 'ok' ? 'poor_accuracy' : where.locationStatus === 'denied' ? 'denied' : where.locationStatus ? 'unavailable' : 'no_location', { accuracyM: where.accuracyM ?? null, maxAccuracyM: wm.maxAccuracyM ?? null })} Until then today waits for HR; it is never assumed to be home.` : ''}`,
     });
     window.dispatchEvent(new Event('crew:punched'));
     router.refresh();
@@ -79,7 +80,7 @@ export function WorkModeStatusCard({ today }: { today: AttendanceToday }) {
     const r = await checkpointAction(where);
     if (!r.ok) { setNotice({ tone: 'danger', text: r.message }); return; }
     const z = r.data!.zone;
-    setNotice({ tone: z.zone === 'unverified' ? 'warning' : 'success', text: z.zone === 'office' ? `Location updated: you are at ${z.place?.name ?? 'the office'}.` : z.zone === 'remote' ? 'Location updated: you are away from the office.' : 'Your location could not be verified this time.' });
+    setNotice({ tone: z.zone === 'unverified' ? 'warning' : 'success', text: z.zone === 'office' ? `Location updated: you are at ${z.place?.name ?? 'the office'}.` : z.zone === 'remote' ? 'Location updated: you are away from the office.' : unverifiedReason(z.verification, { accuracyM: where.accuracyM ?? null, maxAccuracyM: wm.maxAccuracyM ?? null }) });
     router.refresh();
   });
 

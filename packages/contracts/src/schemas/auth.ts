@@ -92,7 +92,8 @@ export interface MeResponse {
   limits: Record<string, number>;
   subscription: { plan: string; status: string; trialEndsOn: string | null; /** Read-only for an overdue invoice. */ locked: boolean } | null;
   /** locationPending: the browser should read and send where this sign-in happened (issue #86). */
-  session: { mfa: boolean; locationPending?: boolean };
+  /** idleMinutes: signed out after this much inactivity (Super Workspace's setting, issue #89); null: never. */
+  session: { mfa: boolean; locationPending?: boolean; idleMinutes?: number | null };
   tenants: { id: string; name: string; slug: string }[];
   /** This person's own employee record in the workspace, if their login is linked to one, for their photo. */
   employee: { id: string; photoUpdatedAt: string | null } | null;

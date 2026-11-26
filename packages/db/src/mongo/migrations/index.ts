@@ -23,6 +23,7 @@ import { m0170NotificationFramework } from './0170_notification_framework';
 import { m0180DeletePermissions } from './0180_delete_permissions';
 import { m0190WorkModeAttendance } from './0190_work_mode_attendance';
 import { m0200Feedback25Nov } from './0200_feedback_25_nov';
+import { m0210OnboardingDocuments } from './0210_onboarding_documents';
 
 /** Every MongoDB migration, in order. Append new ones; never edit or reorder one that has shipped. */
 export const MONGO_MIGRATIONS: MongoMigration[] = [
@@ -50,4 +51,5 @@ export const MONGO_MIGRATIONS: MongoMigration[] = [
   m0180DeletePermissions,
   m0190WorkModeAttendance,
   m0200Feedback25Nov,
+  m0210OnboardingDocuments,
 ];

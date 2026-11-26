@@ -2,7 +2,9 @@ import { type CustomFieldDefinition, EMPLOYEE_COLUMNS_CATALOGUE, EMPLOYEE_SORTS,
 import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import type { EmployeeFormSettings } from '@crew/contracts';
 import { load, loadOptional } from '@/lib/api';
+import type { AssignOptions } from '../onboarding-documents/types';
 import type { AssetList } from '../assets/types';
 import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
@@ -78,6 +80,11 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     canHire && can(me, 'hierarchy:read') ? loadOptional<{ items: { id: string; name: string }[] }>('/hr-workspaces?status=active') : null,
     canHire ? loadOptional<WorkspaceLimits>('/workspace-limits') : null,
   ]);
+  // The Super Workspace's Add Employee form rules and the onboarding document library (issue #89).
+  const [employeeForm, onboardingOptions] = canHire ? await Promise.all([
+    loadOptional<EmployeeFormSettings>('/employee-form'),
+    me.features.includes('documents') ? loadOptional<AssignOptions>('/onboarding-documents/assign-options') : null,
+  ]) : [null, null];
   // Bulk changes: for people who change others' records (not only their own).
   const beyondOwn = (perm: string) => !!me.permissions[perm] && me.permissions[perm] !== 'own';
   const canMove = beyondOwn('employees:lifecycle');
@@ -134,6 +141,9 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         leavePolicies={canOpenBalances ? openingOptions(policies ?? []) : null}
         availableAssets={canHandOver ? (freeAssets?.items ?? []).map((a) => ({ id: a.id, assetCode: a.assetCode, name: a.name, category: a.category })) : null}
         setupPending={setupPending}
+        employeeForm={employeeForm}
+        onboardingOptions={onboardingOptions}
+        canImport={can(me, 'imports:run') && me.features.includes('data_import')}
       />
     </>
   );

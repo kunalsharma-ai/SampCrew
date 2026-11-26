@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react';
-import { type HTMLAttributes, type ReactNode, useId } from 'react';
+import { type ElementType, type HTMLAttributes, type ReactNode, useId } from 'react';
 import { cn } from '../cn';
 import { AutoHelp, type HelpProp } from './help';
 
@@ -8,14 +8,20 @@ export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
 }
 
 /** A card heading. An "i" icon follows the title when the app's help content has an entry for it (or `help` gives one). */
-export function CardHeader({ title, description, action, className, help }: { title: ReactNode; description?: ReactNode; action?: ReactNode; className?: string; help?: HelpProp }) {
+export function CardHeader({ title, description, action, className, help, href, linkAs: LinkAs = 'a' }: {
+  title: ReactNode; description?: ReactNode; action?: ReactNode; className?: string; help?: HelpProp;
+  /** Makes the title a link to the module it summarises (issue #89), e.g. Attendance monitoring to Attendance. */
+  href?: string;
+  /** The app's link component (next/link), so the title opens the page without a full reload. */
+  linkAs?: ElementType;
+}) {
   const id = useId();
   return (
     // On narrow screens a wide action (several buttons) wraps under the title instead of pushing the card wider.
     <div className={cn('flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5 pt-5 pb-3', className)}>
       <div className="min-w-0 flex-[1_1_14rem]">
         <div className="flex items-center gap-1">
-          <h3 id={id} className="text-[0.9375rem] font-semibold text-fg">{title}</h3>
+          <h3 id={id} className="text-[0.9375rem] font-semibold text-fg">{href ? <LinkAs href={href} className="rounded hover:text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent" data-testid="card-title-link">{title}</LinkAs> : title}</h3>
           <AutoHelp kind="section" text={title} help={help} describedBy={id} />
         </div>
         {description && <p className="mt-0.5 text-[0.8125rem] text-fg-muted">{description}</p>}

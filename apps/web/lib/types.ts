@@ -39,6 +39,8 @@ export interface Employee {
   lastName: string;
   preferredName: string | null;
   displayName: string;
+  /** First and last name as on official records (issue #89). */
+  legalName?: string;
   workEmail: string | null;
   personalEmail?: string | null;
   phone?: string | null;
@@ -201,6 +203,7 @@ export interface WorkModeToday {
   current: { zone: 'office' | 'remote' | 'unverified' | 'neutral'; place: string | null; at: string; verification: string | null } | null;
   requirement: 'none' | 'check_in' | 'check_in_out';
   offices: { name: string; kind: string; radiusM: number }[];
+  maxAccuracyM?: number | null;
   canRequestCorrection: boolean;
 }
 export interface AttendanceCorrection { id: string; employeeId: string; workDate: string; punches: { time: string; direction: string; nextDay?: boolean }[]; reason: string; status: string; createdAt: string; employeeName?: string; category?: string; workMode?: string | null; decidedReason?: string | null }

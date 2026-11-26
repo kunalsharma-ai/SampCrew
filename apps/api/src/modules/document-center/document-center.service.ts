@@ -159,6 +159,22 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
     return viewerOf(tx, await this.authz.subject(tx));
   }
 
+  /** The person asking, as document rights see them (for the onboarding documents service). */
+  viewerIn(tx: TenantTx): Promise<Viewer> {
+    return this.viewer(tx);
+  }
+
+  private readonly listeners: ((tx: TenantTx, request: Doc) => Promise<void>)[] = [];
+  /** Called inside the transaction after a request is submitted, decided or cancelled (onboarding checklists listen). */
+  onRequestChanged(fn: (tx: TenantTx, request: Doc) => Promise<void>) {
+    this.listeners.push(fn);
+  }
+  private async changed(tx: TenantTx, id: string) {
+    if (!this.listeners.length) return;
+    const r = await tx.collection('document_requests').findOne({ id });
+    if (r?.checklist_id) for (const fn of this.listeners) await fn(tx, r);
+  }
+
   /** Records one entry in the document's activity (append only) and returns nothing. */
   private async activity(tx: TenantTx, v: Viewer | null, e: { action: string; documentId?: string | null; requestId?: string | null; taskId?: string | null; approvalId?: string | null; employeeId?: string | null; hrWorkspaceId?: string | null; comment?: string | null; metadata?: Doc }) {
     const actor = requestContext.get()?.actor;
@@ -328,8 +344,9 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
     const cat = await this.catalogue(tx);
     const emps = new Map((await tx.collection('employees').find({ id: { $in: rows.map((r) => r.employee_id).filter(Boolean) } })).map((e) => [e.id as string, e]));
     const ws = await fieldById(tx, 'hr_workspaces', rows.flatMap((r) => [r.hr_workspace_id, r.requester_hr_workspace_id]));
-    const docs = new Map((await tx.collection('employee_documents').find({ id: { $in: rows.map((r) => r.document_id).filter(Boolean) } })).map((d) => [d.id as string, d]));
+    const docs = new Map((await tx.collection('employee_documents').find({ id: { $in: rows.flatMap((r) => [r.document_id, ...((r.extra_document_ids as string[] | undefined) ?? [])]).filter(Boolean) } })).map((d) => [d.id as string, d]));
     const people = await this.people(tx, rows.flatMap((r) => [r.requested_by_membership_id, r.assignee_membership_id, r.submitted_by_membership_id, r.reviewer_membership_id]));
+    const fileOf = (d: Doc) => ({ id: d.id as string, reference: (d.reference ?? refOf('DOC', d.id)) as string, fileName: d.file_name as string, version: (d.version ?? 1) as number, status: statusOf(d), sizeBytes: d.size_bytes as number, contentType: d.content_type as string, expiresOn: (d.expires_on ?? null) as string | null });
     const me = requestContext.tenantActor().membershipId;
     const today = istToday();
     const out = [];
@@ -364,7 +381,12 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
         displayStatus: display,
         statusLabel: DOCUMENT_REQUEST_STATUS_LABEL[display],
         overdue: display === 'overdue',
-        document: d ? { id: d.id as string, reference: (d.reference ?? refOf('DOC', d.id)) as string, fileName: d.file_name as string, version: (d.version ?? 1) as number, status: statusOf(d), sizeBytes: d.size_bytes as number, contentType: d.content_type as string, expiresOn: (d.expires_on ?? null) as string | null } : null,
+        document: d ? fileOf(d) : null,
+        /** Every file of the current submission (several for a document that takes several). */
+        files: d ? [fileOf(d), ...((r.extra_document_ids as string[] | undefined) ?? []).map((x) => docs.get(x)).filter((x): x is Doc => !!x).map(fileOf)] : [],
+        maxFiles: (r.max_files ?? 1) as number,
+        checklistId: (r.checklist_id ?? null) as string | null,
+        mandatory: !!r.mandatory,
         submittedAt: iso(r.submitted_at),
         submittedBy: r.submitted_by_membership_id ? people.get(r.submitted_by_membership_id)?.name ?? null : null,
         submissions: (r.submissions ?? 0) as number,
@@ -648,7 +670,7 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async insertRequest(tx: TenantTx, v: Viewer, row: Doc, employee?: Doc, admins: string[] = []) {
+  async insertRequest(tx: TenantTx, v: Viewer, row: Doc, employee?: Doc, admins: string[] = [], opts: { quiet?: boolean } = {}) {
     const actor = requestContext.tenantActor();
     const id = randomUUID();
     const r = await tx.collection('document_requests').insert({ id, reference: refOf('DRQ', id), ...row });
@@ -677,6 +699,7 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
     await this.activity(tx, v, { action: 'requested', requestId: r.id, taskId, employeeId: r.employee_id, hrWorkspaceId: r.hr_workspace_id, comment: r.reason, metadata: { title: r.title, type: r.type_key, dueOn: r.due_on ?? null, from } });
     await this.audit.record(tx, { action: 'document_request.created', resourceType: r.employee_id ? 'employee' : 'hr_workspace', resourceId: r.employee_id ?? r.hr_workspace_id, metadata: { requestId: r.id, reference: r.reference, type: r.type_key, title: r.title, level: r.requester_level } });
     const to = r.target_type === 'employee' ? [r.assignee_membership_id] : [...new Set([r.assignee_membership_id, ...admins])];
+    if (opts.quiet) return (await tx.collection('document_requests').findOne({ id: r.id }))!;
     await this.notifications.notify(tx, {
       membershipIds: to, kind: 'document.requested',
       title: `${from} has requested your ${r.title}`,
@@ -771,8 +794,12 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** The person asked sends the file. It is stored once, as a new version, and goes to the level that asked to verify. */
-  async submit(id: string, file: UploadedFile | undefined, meta: z.infer<typeof documentSubmitMeta>) {
+  async submit(id: string, given: UploadedFile | UploadedFile[] | undefined, meta: z.infer<typeof documentSubmitMeta>) {
+    // One file, or several for a document that takes several (Aadhaar front and back, every marksheet: issue #89).
+    const files = (Array.isArray(given) ? given : given ? [given] : []).filter(Boolean);
+    const file = files[0];
     DocumentsService.check(file);
+    for (const f of files.slice(1)) DocumentsService.check(f);
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
       const v = await this.viewer(tx);
@@ -781,8 +808,12 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
       if (!(await this.isTarget(tx, v, r))) throw Errors.forbidden(r.target_type === 'employee' ? 'Only the person asked can submit this document' : 'Only the HR Workspace asked can submit this document');
       if (!AWAITING_SUBMISSION.includes(r.status)) throw Errors.conflict('invalid_state', AWAITING_REVIEW.includes(r.status) ? 'Your last upload is being verified' : 'This request is closed');
       const allowed = (r.formats as RequestFileFormat[]).flatMap((f) => REQUEST_FILE_FORMATS[f] as readonly string[]);
-      if (!allowed.includes(file.mimetype)) throw Errors.badRequest('file_not_allowed', `Upload ${(r.formats as string[]).map((f) => f.toUpperCase()).join(', ')}`);
-      if (file.size > r.max_mb * 1024 * 1024) throw Errors.badRequest('file_too_large', `Files for this request can be up to ${r.max_mb} MB`);
+      const maxFiles = (r.max_files as number | undefined) ?? 1;
+      if (files.length > maxFiles) throw Errors.badRequest('too_many_files', maxFiles === 1 ? 'This document takes one file' : `This document takes up to ${maxFiles} files`);
+      for (const f of files) {
+        if (!allowed.includes(f.mimetype)) throw Errors.badRequest('file_not_allowed', `Upload ${(r.formats as string[]).map((x) => x.toUpperCase()).join(', ')}${files.length > 1 ? ` (${f.originalname} is not)` : ''}`);
+        if (f.size > r.max_mb * 1024 * 1024) throw Errors.badRequest('file_too_large', `Files for this request can be up to ${r.max_mb} MB${files.length > 1 ? ` (${f.originalname} is larger)` : ''}`);
+      }
       if (r.expiry_required && !meta.expiresOn) throw Errors.badRequest('expiry_required', 'Enter the date the document expires');
       const prev = r.document_id ? await tx.collection('employee_documents').findOne({ id: r.document_id }) : r.replaces_document_id ? await tx.collection('employee_documents').findOne({ id: r.replaces_document_id }) : undefined;
       if (prev && r.document_id) await tx.collection('employee_documents').updateOne({ id: prev.id }, { $set: { superseded_at: new Date() } });
@@ -793,16 +824,29 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
         version: prev ? (prev.version ?? 1) + 1 : 1, previous_document_id: prev?.id ?? null, expires_on: meta.expiresOn ?? null, submitter_remarks: meta.remarks ?? null,
         verification_status: 'pending', task_id: r.task_id ?? null,
       });
+      // The other files of this submission: the same document, kept and verified together.
+      for (const old of (r.extra_document_ids as string[] | undefined) ?? []) await tx.collection('employee_documents').updateOne({ id: old, superseded_at: null }, { $set: { superseded_at: new Date() } });
+      const extraIds: string[] = [];
+      for (const [n, f] of files.slice(1).entries()) {
+        const xid = randomUUID();
+        await this.documents.store(tx, r.employee_id ?? null, { category: legacy, title: `${r.title} (${n + 2} of ${files.length})`, visibility: 'employee' }, f, {
+          id: xid, owner_type: r.target_type, hr_workspace_id: r.hr_workspace_id ?? null, request_id: r.id, type_key: r.type_key, doc_category: r.doc_category, reference: refOf('DOC', xid),
+          version: prev ? (prev.version ?? 1) + 1 : 1, previous_document_id: null, expires_on: meta.expiresOn ?? null, submitter_remarks: meta.remarks ?? null,
+          verification_status: 'pending', task_id: r.task_id ?? null,
+        });
+        extraIds.push(xid);
+      }
       const status: DocumentRequestStatus = (r.submissions ?? 0) > 0 ? 'resubmitted' : 'submitted';
       const approvalId = await this.approvals.start(tx, { resourceType: 'document_request', resourceId: r.id, subjectEmployeeId: r.employee_id ?? null, summary: `${r.title}: ${doc.fileName} (${r.reference})`, steps: [{ type: 'role', role: r.requester_level }] });
-      await tx.collection('document_requests').updateOne({ id }, { $set: { status, document_id: doc.id, submitted_at: new Date(), submitted_by_membership_id: actor.membershipId, approval_request_id: approvalId }, $inc: { submissions: 1 } });
+      await tx.collection('document_requests').updateOne({ id }, { $set: { status, document_id: doc.id, extra_document_ids: extraIds, submitted_at: new Date(), submitted_by_membership_id: actor.membershipId, approval_request_id: approvalId }, $inc: { submissions: 1 } });
       if (r.task_id) {
         await tx.collection('employee_tasks').updateOne({ id: r.task_id }, {
           $set: { status: 'pending_review', request_status: status, document_id: doc.id, submitted_at: new Date(), employee_remarks: meta.remarks ?? null, verification_request_id: approvalId, seen_at: new Date() },
           $push: { history: { at: new Date(), by: actor.membershipId, action: 'uploaded', status: 'pending_review', remarks: meta.remarks ?? file.originalname } },
         });
       }
-      await this.activity(tx, v, { action: status, documentId: doc.id, requestId: id, taskId: r.task_id, approvalId, employeeId: r.employee_id, hrWorkspaceId: r.hr_workspace_id, comment: meta.remarks ?? null, metadata: { version: prev ? (prev.version ?? 1) + 1 : 1, fileName: doc.fileName, sha256: doc.sha256 } });
+      await this.activity(tx, v, { action: status, documentId: doc.id, requestId: id, taskId: r.task_id, approvalId, employeeId: r.employee_id, hrWorkspaceId: r.hr_workspace_id, comment: meta.remarks ?? null, metadata: { version: prev ? (prev.version ?? 1) + 1 : 1, fileName: doc.fileName, sha256: doc.sha256, files: files.length } });
+      await this.changed(tx, id);
       await this.notifications.notify(tx, {
         membershipIds: [actor.membershipId], kind: 'document.submitted', title: `Your ${r.title} has been submitted successfully`,
         body: `It is awaiting verification by ${ACCESS_LEVEL_LABEL[r.requester_level as 'super_workspace']}.`, link: `/documents/requests/${id}`,
@@ -888,6 +932,9 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
         $set: { verification_status: docStatus, verification_remarks: comment, verified_at: now, verified_by_membership_id: me, ...(stash?.expiresOn ? { expires_on: stash.expiresOn } : {}) },
       });
     }
+    for (const x of (r.extra_document_ids as string[] | undefined) ?? []) {
+      await tx.collection('employee_documents').updateOne({ id: x }, { $set: { verification_status: docStatus, verification_remarks: comment, verified_at: now, verified_by_membership_id: me } });
+    }
     if (decision === 'approve' && r.replaces_document_id) {
       await tx.collection('employee_documents').updateOne({ id: r.replaces_document_id, superseded_at: null }, { $set: { superseded_at: now } });
       await this.activity(tx, v, { action: 'replaced', documentId: r.replaces_document_id, requestId: r.id, employeeId: r.employee_id, hrWorkspaceId: r.hr_workspace_id, metadata: { by: r.document_id } });
@@ -923,6 +970,7 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
       });
     }
     await this.notifications.signal(tx, [...to, r.requested_by_membership_id, me], 'documents.changed', { requestId: r.id });
+    await this.changed(tx, r.id);
   }
 
   async cancel(id: string, reason: string) {
@@ -945,6 +993,7 @@ export class DocumentCenterService implements OnModuleInit, OnModuleDestroy {
     }
     await this.activity(tx, v, { action: 'cancelled', documentId: r.document_id, requestId: r.id, taskId: r.task_id, employeeId: r.employee_id, hrWorkspaceId: r.hr_workspace_id, comment: reason });
     await this.notifications.notify(tx, { membershipIds: [r.assignee_membership_id], kind: 'document.cancelled', title: `Document request cancelled: ${r.title}`, body: reason, link: `/documents/requests/${r.id}`, resource: { type: 'document_request', id: r.id } });
+    await this.changed(tx, r.id);
   }
 
   async cancelByTask(tx: TenantTx, requestId: string, reason: string) {

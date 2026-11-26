@@ -14,9 +14,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (origin && host && new URL(origin).host !== host) return NextResponse.json({ error: { message: 'Not allowed' } }, { status: 403 });
   const form = await req.formData();
   const out = new FormData();
-  const file = form.get('file');
-  if (!(file instanceof File)) return NextResponse.json({ error: { code: 'file_required', message: 'Attach a file' } }, { status: 400 });
-  out.set('file', file, file.name);
+  // One file, or several for a document that takes more than one (front and back of a card, each mark sheet).
+  const files = [...form.getAll('file'), ...form.getAll('files')].filter((f): f is File => f instanceof File).slice(0, 10);
+  if (!files.length) return NextResponse.json({ error: { code: 'file_required', message: 'Attach a file' } }, { status: 400 });
+  if (files.length === 1) out.set('file', files[0]!, files[0]!.name);
+  else for (const f of files) out.append('files', f, f.name);
   for (const k of ['remarks', 'expiresOn']) {
     const v = form.get(k);
     if (typeof v === 'string' && v.trim()) out.set(k, v.slice(0, 2000));

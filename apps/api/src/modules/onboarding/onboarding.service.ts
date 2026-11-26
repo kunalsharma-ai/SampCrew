@@ -129,6 +129,13 @@ export class OnboardingService {
   /** Employee's tasks pick up the login once the invitation creates it. */
   async assignEmployeeTasks(tx: TenantTx, employeeId: string, membershipId: string) {
     await tx.collection('onboarding_tasks').update({ employee_id: employeeId, owner: 'employee', assignee_membership_id: null }, { $set: { assignee_membership_id: membershipId } });
+    // Onboarding documents assigned before the person had a login (issue #89) become theirs to upload.
+    const open = await tx.collection('document_requests').find({ employee_id: employeeId, checklist_id: { $ne: null }, assignee_membership_id: null }, { projection: { _id: 1 } });
+    if (!open.length) return;
+    const ids = open.map((r) => r.id as string);
+    await tx.collection('document_requests').update({ id: { $in: ids } }, { $set: { assignee_membership_id: membershipId } });
+    await tx.collection('employee_tasks').update({ request_id: { $in: ids } }, { $set: { assignee_membership_id: membershipId } });
+    await this.notifications.notify(tx, { membershipIds: [membershipId], kind: 'onboarding.checklist_assigned', title: `Your onboarding checklist: ${ids.length} document${ids.length === 1 ? '' : 's'} to upload`, body: 'Upload each one from My Tasks. HR checks each one.', link: '/onboarding-documents/mine', email: true });
   }
 
   /** Tasks for one employee. Visible to people who can read the employee record. */

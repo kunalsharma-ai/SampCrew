@@ -221,6 +221,21 @@ const mins = (ms: number) => Math.max(0, Math.floor(ms / 60_000));
  *  3. Any unverified time makes the day Pending verification (with the best guess kept for HR).
  *  4. Office and remote time both at least their minimums: hybrid. Otherwise the place with more time wins.
  */
+/** How long an unverified reading may be settled by a verified one next to it (see classifyWorkMode). */
+export const UNVERIFIED_BRIDGE_MINUTES = 120;
+
+/** Why a reading could not be verified, in words the person can act on (issue #89). */
+export function unverifiedReason(verification: string | null | undefined, opts: { accuracyM?: number | null; maxAccuracyM?: number | null } = {}): string {
+  switch (verification) {
+    case 'denied': return 'Your browser or phone refused to share your location. Allow location for SampCrew (the icon in the address bar, or your phone settings) and press Update my location.';
+    case 'unavailable': return 'Your device could not find its location in time. Turn on location services (Wi-Fi helps on a laptop) and press Update my location.';
+    case 'no_location': return 'No location was sent with this check-in. Press Update my location to share it once.';
+    case 'poor_accuracy': return `Your device only knew your location roughly${opts.accuracyM ? ` (to within about ${opts.accuracyM >= 1000 ? `${(opts.accuracyM / 1000).toFixed(1)} km` : `${opts.accuracyM} m`})` : ''}${opts.maxAccuracyM ? `, and your company needs ${opts.maxAccuracyM} m or better` : ''}. Connect to Wi-Fi or use the phone app, then press Update my location.`;
+    case 'mock_location': return 'A fake (mock) location app was detected, so the reading was not used.';
+    default: return 'Your location could not be verified this time. Press Update my location to try again.';
+  }
+}
+
 export function classifyWorkMode(input: ClassifyInput): ClassifyResult {
   const clock = (ms: number) => fmtHhmm(toLocal(ms, input.timeZone).minutes);
   const explanation: string[] = [];
@@ -300,7 +315,16 @@ export function classifyWorkMode(input: ClassifyInput): ClassifyResult {
       const p = points[i]!;
       const q = points[i + 1]!;
       const span = mins(q.at - p.at);
-      if (p.zone === q.zone) time[p.zone] += span;
+      // An unverified reading next to a verified one (issue #89): a check-in whose location could not be read, followed
+      // within two hours by "Update my location" that could, takes the verified place for that time instead of
+      // keeping the whole day waiting for HR. The same holds the other way round (a check-out without a location
+      // shortly after a verified reading). Longer unknown stretches still wait for HR.
+      const bridge = p.zone !== q.zone && (p.zone === 'unverified' || q.zone === 'unverified') && span <= UNVERIFIED_BRIDGE_MINUTES;
+      if (bridge) {
+        const known = p.zone === 'unverified' ? q.zone : p.zone;
+        time[known] += span;
+        explanation.push(`${clock(p.at)} to ${clock(q.at)}: a reading that could not be verified is settled by the verified reading ${p.zone === 'unverified' ? 'after' : 'before'} it.`);
+      } else if (p.zone === q.zone) time[p.zone] += span;
       else if (input.rules.transition === 'check_in') time[p.zone] += span;
       else if (input.rules.transition === 'check_out') time[q.zone] += span;
       else {

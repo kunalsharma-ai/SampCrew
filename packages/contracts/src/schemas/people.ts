@@ -4,6 +4,7 @@ import { phoneNumber } from '../phone';
 import { setAccessRequest } from './access';
 import { email, name } from './common';
 import { PAGE_ACCESS_KEYS } from '../page-access';
+import { assignChecklistInput } from '../onboarding-documents';
 
 /** Calendar date as YYYY-MM-DD (no time zone; dates are local to the employee's entity). */
 export const isoDate = z.iso.date('Use a date in YYYY-MM-DD format');
@@ -173,7 +174,12 @@ export const createEmployeeInput = placementInput
      * HR Workspace admin's own HR Workspace (when they run exactly one), or the central group.
      */
     hrWorkspaceId: z.uuid().nullable().optional(),
+    /** The onboarding documents to ask for (issue #89), assigned with the employee in one transaction. */
+    onboardingDocuments: assignChecklistInput.optional(),
   })
+  // Leave is not assigned by hand at registration (issue #89): it comes from the leave rules for the employment
+  // status. Only someone already working here brings the balance they have today.
+  .refine((v) => v.joinedAs === 'existing' || !v.openingLeaveBalances?.length, { message: 'Leave for a new joiner comes from the leave rules for their employment status, not from the registration form', path: ['openingLeaveBalances'] })
   .refine((v) => !v.workEmail || !v.personalEmail || v.workEmail !== v.personalEmail, { message: 'Use their work email here, not their personal email', path: ['workEmail'] })
   .superRefine((v, ctx) => { const m = dateOfBirthError(v.dateOfBirth, v.dateOfJoining); if (m) ctx.addIssue({ code: 'custom', message: m, path: ['dateOfBirth'] }); })
   .refine((v) => !isMinorOn(v.dateOfBirth, v.dateOfJoining) || v.minorConfirmed === true, { message: `They are under ${ADULT_AGE} on the joining date: confirm they may be employed`, path: ['minorConfirmed'] })

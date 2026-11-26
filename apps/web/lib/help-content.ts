@@ -987,6 +987,42 @@ export const WEB_HELP: HelpContent = {
       how: 'Switch plan, try one free, add modules, and pay invoices online when SAMPLEDGE has set up Razorpay or Stripe. Enterprise is requested from SAMPLEDGE.',
       where: 'For workspace owners and finance.',
     },
+    '/onboarding-documents': {
+      title: 'Onboarding documents',
+      what: 'Every new joiner’s onboarding documents in one list: how many are approved, how many wait for HR, and each person’s progress.',
+      how: 'Search by name or employee ID, show only those with documents waiting, or open the completed ones. Open a name to review their documents. Assign documents to someone already here with Assign onboarding documents.',
+      where: 'For the Super Workspace and HR Workspaces, within the people and document access you have.',
+    },
+    '/onboarding-documents/[id]': {
+      title: 'Onboarding checklist',
+      what: 'One person’s onboarding documents, the same record they see: each document’s status, HR comments, files and history.',
+      how: 'Review opens a document waiting for approval: approve it, or reject it with a comment so they upload again. The checklist completes, at 100%, when every mandatory document is approved.',
+      where: 'A completed checklist is kept in the onboarding history. Nothing is deleted.',
+    },
+    '/onboarding-documents/mine': {
+      title: 'My onboarding documents',
+      what: 'The documents HR asked for when you joined, with what each one needs and its status.',
+      how: 'Upload each document; a document that takes several files (front and back, each mark sheet) takes them together. A rejected one shows HR’s comment: upload it again.',
+      where: 'A document is done only once HR approves it. Each one is also a task in My tasks.',
+    },
+    '/settings/onboarding-documents': {
+      title: 'Onboarding document library',
+      what: 'The documents your company can ask new joiners for, in categories, and the onboarding templates HR picks from in Add Employee.',
+      how: 'The Super Workspace adds, changes and removes documents and templates, and decides whether an HR Workspace may too. HR Workspaces without that permission ask the Super Workspace for a document or for the permission.',
+      where: 'Removing a document or template keeps it in the records, and documents already asked for keep their requests.',
+    },
+    '/settings/employee-form': {
+      title: 'Add Employee form',
+      what: 'How the Add Employee form works for everyone: the company email domain, which fields show, which are required, and their labels.',
+      how: 'Type your domains; the first one is the example in the form. Turn on Only allow these domains to refuse other addresses. Untick Shown to hide a field, tick Required to make HR fill it in.',
+      where: 'Only the Super Workspace changes it. Locked fields are needed to create an employee.',
+    },
+    '/settings/email-templates': {
+      title: 'Email templates',
+      what: 'Your company’s own design for the emails SampCrew sends: for every email, or for logins, notifications, candidates or emails from HR.',
+      how: 'Import an .html file or start from the SampCrew design, put {{content}} where the message goes, check the preview, send yourself a test, then save. Back to standard email switches it off and keeps it.',
+      where: 'Scripts and other code are removed from imported templates. Without a template, emails go out as plain text.',
+    },
     '/settings/workspace': {
       title: 'Workspace settings',
       what: 'Defaults across your organization: name, time zone, currency, locale and brand colour.',
@@ -1242,6 +1278,19 @@ export const WEB_HELP: HelpContent = {
   },
 
   sections: {
+    // Issue #89
+    'Automatic sign-out': { what: 'How long anyone in the company may be inactive before SampCrew signs them out, on the web and on the phone.', how: 'Only the Super Workspace changes it. It applies from each person’s next action.' },
+    'Comp-off': { what: 'Comp-off days you asked for after working on a weekly off or a holiday, and their status.', how: 'Request comp-off with the day you worked; your manager or HR approves it and the day is added to your comp-off balance.' },
+    'Comp-off requests': { what: 'Comp-off asked for by people you approve for, with the hours they worked that day.', how: 'Approve adds the day to their comp-off balance; Reject needs a reason.' },
+    'Your progress': { what: 'How many of your onboarding documents HR has approved, and what is left.' },
+    'Onboarding templates': { what: 'Sets of onboarding documents for a kind of hire.' },
+    'Document library': { what: 'Every onboarding document your company can ask for.' },
+    'Requests from HR Workspaces': { what: 'Documents HR Workspaces asked to add to the library, and requests for permission to manage it.', how: 'Approve adds the document or gives the permission; Decline tells them.' },
+    'Requests to the Super Workspace': { what: 'Your requests for a new library document or for permission to manage the library, with their answers.' },
+    'Work email domain': { what: 'Your company’s email domains for work emails.' },
+    Fields: { what: 'The fields of a form and how each one behaves.' },
+    'Leave rules by employment status': { what: 'Leave on probation and the days credited on confirmation, for each leave type.' },
+
     // Office / home / hybrid attendance
     'Where you worked this month': { what: 'Your working days this month counted as office, home, hybrid or waiting for verification, with office and away hours.' },
     'Map': { what: 'Your offices and approved sites drawn to scale.', how: 'Drag to move, use + and - to zoom. Blue are offices; orange sites count as office, green as home.' },
@@ -1707,6 +1756,39 @@ export const WEB_HELP: HelpContent = {
   },
 
   routes: {
+    '/onboarding-documents': {
+      sections: {
+        Progress: { what: 'How many onboarding documents are approved, waiting for HR, not submitted or rejected, and the % of mandatory ones approved.' },
+        'Your progress': { what: 'How many of your onboarding documents HR has approved, and what is left.' },
+      },
+    },
+    '/onboarding-documents/[id]': {
+      sections: {
+        Progress: { what: 'How many onboarding documents are approved, waiting for HR, not submitted or rejected, and the % of mandatory ones approved.' },
+        'Your progress': { what: 'How many of your onboarding documents HR has approved, and what is left.' },
+      },
+    },
+    '/onboarding-documents/mine': {
+      sections: {
+        Progress: { what: 'How many onboarding documents are approved, waiting for HR, not submitted or rejected, and the % of mandatory ones approved.' },
+        'Your progress': { what: 'How many of your onboarding documents HR has approved, and what is left.' },
+      },
+    },
+    '/settings/email-templates': {
+      sections: { Preview: { what: 'Your template filled in with a sample message, exactly as it will be sent.', how: 'Send a test to see it in your own inbox.' } },
+    },
+    '/settings/employee-form': {
+      sections: {
+        'Work email domain': { what: 'Your company’s email domains. The first one is shown as the example in Add Employee.', how: 'Turn on Only allow these domains to refuse work emails on any other domain.' },
+        Fields: { what: 'Each field of Add Employee: shown or hidden, required or not, its label and a help line.', how: 'Locked fields are always shown and required.' },
+      },
+    },
+    '/settings/onboarding-documents': {
+      sections: {
+        'Document library': { what: 'Every document your company can ask for, in categories A to G, with its requirement, accepted files, size and number of files.', how: 'Edit changes a document; Remove takes it out of the library but keeps the records.' },
+        'Onboarding templates': { what: 'Sets of documents for a kind of hire, each mandatory or optional, suggested by employment type and department.', how: 'HR picks one in Add Employee and can add or leave out optional documents.' },
+      },
+    },
     '/settings/mobile-app': {
       sections: {
         Preview: { what: 'A read-only phone showing what a level gets from your draft: bottom bar, More menu, quick actions and home cards.', how: 'Pick Super, HR or Employee. Each person’s own permissions can hide more on their phone.' },
@@ -1723,6 +1805,7 @@ export const WEB_HELP: HelpContent = {
     },
     '/leave/manage': {
       sections: {
+        'Leave rules by employment status': { what: 'For each leave type: whether people on probation may take it, and the days credited automatically on the day they are confirmed.', how: 'Prorate gives only the months left in the year. New joiners get no leave typed in at hire.' },
     'Your HR Workspaces': { what: 'The HR Workspaces you look after, with their people, leave types and applications.' },
     'By department': { what: 'Days credited and taken per department in the year.' },
       },

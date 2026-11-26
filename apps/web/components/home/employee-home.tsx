@@ -1,5 +1,5 @@
 'use client';
-import type { EmployeeHome, HomeCalendarDay } from '@crew/contracts';
+import { unverifiedReason, type EmployeeHome, type HomeCalendarDay } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardHeader, cn, type Tone } from '@crew/ui';
 import {
   AlarmClock, CalendarCheck2, CalendarDays, CalendarOff, ChevronLeft, ChevronRight, CircleDot, Clock3, Coffee, GraduationCap, Home as HomeIcon, LogIn, LogOut,
@@ -77,6 +77,7 @@ export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; 
   const punch = (direction: 'in' | 'out', note?: string, done?: string) => start(async () => {
     setNotice(null);
     const { where, refused } = await punchLocation(today);
+    const fix = where;
     if (refused) {
       setNotice({ tone: 'danger', text: refused });
       return;
@@ -88,7 +89,7 @@ export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; 
       const outside = pz.geofence === 'outside' && !pz.workZone;
       const where = pz.workZone === 'office' ? ` at ${pz.place ?? 'the office'}` : pz.workZone === 'remote' ? ', away from the office' : '';
       const unverified = pz.workZone === 'unverified';
-      setNotice({ tone: outside || unverified ? 'warning' : 'success', text: `${done ?? (direction === 'in' ? 'Checked in' : 'Checked out')}${where} at ${clock(new Date().toISOString())}.${outside ? ' You appear to be away from your workplace; this is recorded.' : ''}${unverified ? ' Your location could not be read, so today waits for HR to verify it.' : ''}` });
+      setNotice({ tone: outside || unverified ? 'warning' : 'success', text: `${done ?? (direction === 'in' ? 'Checked in' : 'Checked out')}${where} at ${clock(new Date().toISOString())}.${outside ? ' You appear to be away from your workplace; this is recorded.' : ''}${unverified ? ` ${unverifiedReason(fix.locationStatus === 'ok' ? 'poor_accuracy' : fix.locationStatus === 'denied' ? 'denied' : fix.locationStatus ? 'unavailable' : 'no_location', { accuracyM: fix.accuracyM ?? null, maxAccuracyM: today.workMode?.maxAccuracyM ?? null })} Until then today waits for verification.` : ''}` });
       window.dispatchEvent(new Event('crew:punched')); // the top bar's check-in button follows
       router.refresh();
     }
@@ -306,7 +307,7 @@ export function MonthSummary({ home }: { home: EmployeeHome }) {
   ];
   return (
     <Card data-testid="month-summary">
-      <CardHeader title="This month" description={`${hm(s.workedMinutes) === '—' ? '0h' : hm(s.workedMinutes)} worked over ${counted} counted day${counted === 1 ? '' : 's'}`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/attendance">Details</Link>} />
+      <CardHeader title="This month" href="/attendance" linkAs={Link} description={`${hm(s.workedMinutes) === '—' ? '0h' : hm(s.workedMinutes)} worked over ${counted} counted day${counted === 1 ? '' : 's'}`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/attendance">Details</Link>} />
       <ul className="grid grid-cols-1 gap-2 px-5 pb-5">
         {items.map(([label, n, I, tone]) => (
           <li key={label} className="flex items-center gap-3">
@@ -351,7 +352,7 @@ export function LeaveCard({ home, balances }: { home: EmployeeHome; balances: Le
   const shown = (balances ?? []).filter((b) => b.kind !== 'wfh').slice(0, 4);
   return (
     <Card data-testid="leave-card">
-      <CardHeader title="Leave" description="Balance, requests waiting and leave coming up." action={<Link href="/leave?create=leave" className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-xs font-semibold text-accent-fg hover:opacity-90" data-testid="apply-leave">Apply leave</Link>} />
+      <CardHeader title="Leave" href="/leave" linkAs={Link} description="Balance, requests waiting and leave coming up." action={<Link href="/leave?create=leave" className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-xs font-semibold text-accent-fg hover:opacity-90" data-testid="apply-leave">Apply leave</Link>} />
       <div className="grid grid-cols-1 gap-4 px-5 pb-5">
         {shown.length > 0 ? (
           <ul className="grid grid-cols-1 gap-2">
@@ -384,7 +385,7 @@ export function LeaveCard({ home, balances }: { home: EmployeeHome; balances: Le
 export function LearningCard({ learning }: { learning: NonNullable<EmployeeHome['learning']> }) {
   return (
     <Card data-testid="learning-card">
-      <CardHeader title="My learning" description={learning.completion === null ? 'Nothing assigned yet.' : `${learning.completed} completed, ${learning.inProgress} in progress, ${learning.assigned} not started`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/learning">All learning</Link>} />
+      <CardHeader title="My learning" href="/learning" linkAs={Link} description={learning.completion === null ? 'Nothing assigned yet.' : `${learning.completed} completed, ${learning.inProgress} in progress, ${learning.assigned} not started`} action={<Link className="text-xs font-medium text-accent hover:underline" href="/learning">All learning</Link>} />
       <div className="grid grid-cols-1 gap-3 px-5 pb-5">
         {learning.items.length === 0 ? <Empty icon={<GraduationCap className="size-5" />} title="No courses waiting" text="New learning shows here when it is assigned." /> : learning.items.map((i) => {
           const value = i.progress ?? (i.status === 'in_progress' ? 50 : 0);
@@ -411,7 +412,7 @@ export function Rewards({ rewards }: { rewards: MyRewards }) {
   if (!rewards.rewards.length) return null;
   return (
     <Card>
-      <CardHeader title="Attendance rewards" description="Set by HR. Holidays and weekly offs never count, and sick leave does not break a reward." />
+      <CardHeader title="Attendance rewards" href="/attendance" linkAs={Link} description="Set by HR. Holidays and weekly offs never count, and sick leave does not break a reward." />
       <ul className="grid grid-cols-1 gap-3 px-5 pb-5">
         {rewards.rewards.map((r) => {
           const Icon = REWARD_ICON[r.icon] ?? Trophy;
@@ -438,7 +439,7 @@ const PRIORITY_TONE: Record<string, Tone> = { urgent: 'danger', high: 'warning',
 export function AnnouncementsCard({ a }: { a: NonNullable<EmployeeHome['announcements']> }) {
   return (
     <Card data-testid="announcements-card">
-      <CardHeader title="Announcements" description={a.unread ? `${a.unread} new` : 'All read'} action={<Link className="text-xs font-medium text-accent hover:underline" href="/announcements">All announcements</Link>} />
+      <CardHeader title="Announcements" href="/announcements" linkAs={Link} description={a.unread ? `${a.unread} new` : 'All read'} action={<Link className="text-xs font-medium text-accent hover:underline" href="/announcements">All announcements</Link>} />
       {a.items.length === 0 ? <Empty icon={<Megaphone className="size-5" />} title="No announcements" text="Company news shows here." /> : (
         <ul className="divide-y divide-border border-t border-border">
           {a.items.map((n) => (
@@ -461,7 +462,7 @@ export function AnnouncementsCard({ a }: { a: NonNullable<EmployeeHome['announce
 export function ActivityCard({ items }: { items: EmployeeHome['activity'] }) {
   return (
     <Card data-testid="activity-card">
-      <CardHeader title="Recent activity" description="What you did in SampCrew lately." />
+      <CardHeader title="Recent activity" href="/activity" linkAs={Link} description="What you did in SampCrew lately." />
       {items.length === 0 ? <Empty icon={<CalendarDays className="size-5" />} title="Nothing yet" text="Check-ins, leave and learning show here." /> : (
         <ol className="relative mx-5 mb-5 grid gap-3 border-l border-border pl-4">
           {items.map((x, i) => (

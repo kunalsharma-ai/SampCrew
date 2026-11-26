@@ -14,6 +14,8 @@ import type { DeviceOption, ShiftOption } from './[id]/profile-extras';
 import { TemporaryPassword } from './[id]/profile-extras';
 import { discardHireDraftAction } from './actions';
 import { BulkChange } from './bulk-change';
+import type { EmployeeFormSettings } from '@crew/contracts';
+import type { AssignOptions } from '../onboarding-documents/types';
 import { type AssetOption, type EmployeeDraft, HIRE_STEPS, HireWizard, type LeavePolicyOption } from './hire-wizard';
 import { EmployeeStatus } from './status';
 import { DEFAULT_COLUMNS, viewUrl } from './view-url';
@@ -26,9 +28,9 @@ const COLUMNS: DataColumn<Employee>[] = [
     key: 'name', label: 'Name', sort: 'name', required: true,
     render: (e) => (
       <Link href={`/employees/${e.id}`} className="flex items-center gap-3" onClick={(ev) => ev.stopPropagation()}>
-        <Avatar name={e.displayName} size={32} src={photoUrl(e)} />
+        <Avatar name={e.legalName ?? e.displayName} size={32} src={photoUrl(e)} />
         <span>
-          <span className="block font-medium">{e.displayName}</span>
+          <span className="block font-medium">{e.legalName ?? e.displayName}</span>
           <span className="block text-xs text-fg-subtle">{e.designationName ?? 'No designation'}{e.membershipId ? '' : ' · no SampCrew login'}</span>
         </span>
       </Link>
@@ -78,6 +80,9 @@ interface Props {
   canAttendance: boolean;
   canConfigureShifts: boolean;
   setupPending: boolean;
+  employeeForm?: EmployeeFormSettings | null;
+  onboardingOptions?: AssignOptions | null;
+  canImport?: boolean;
   /** Bulk changes: dated job changes (employees:lifecycle) and custom fields (employees:update). */
   bulk: { canMove: boolean; canFields: boolean; fields: CustomFieldDefinition[] } | null;
 }

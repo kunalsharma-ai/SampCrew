@@ -167,7 +167,7 @@ async function waitPhase(p, want) {
     // A manager at the Employee Workspace level has their own day only (Kunal's rule: they see only themselves).
     const sup = await signIn(b, 'supervisor@demo.crew.local');
     await sup.getByTestId('employee-home').waitFor();
-    expect((await sup.getByRole('navigation', { name: 'Home views' }).count()) === 0, 'an Employee Workspace manager has no workforce tab');
+    expect((await sup.getByTestId('work-view-switch').count()) === 0, 'an Employee Workspace manager has no workforce tab');
     const supT = await apiLogin('supervisor@demo.crew.local');
     expect((await api(supT, 'GET', '/home/workforce')).status === 403, 'the API refuses the workforce view to an Employee Workspace manager');
     expect((await api(supT, 'GET', '/home/organization')).status === 403, 'a manager cannot open the organization view');

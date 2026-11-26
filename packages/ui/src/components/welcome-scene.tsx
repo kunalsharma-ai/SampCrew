@@ -244,7 +244,7 @@ function SignInCardBody({ scene, children }: { scene: Scene; children: ReactNode
   const { status, attempt } = useSignInStatus();
   return (
     <div className="sc-card" data-testid="sign-in-card" data-auth={status} data-attempt={attempt % 2}>
-      {status === 'ok' && <SuccessBurst name={copy.level} />}
+      {status === 'ok' && <SuccessBurst name={scene === 'console' ? copy.level : 'workspace'} />}
       <span className="sc-card-frame" aria-hidden />
       <span className="sc-card-glow sc-card-glow-1" aria-hidden />
       <span className="sc-card-glow sc-card-glow-2" aria-hidden />
@@ -252,7 +252,7 @@ function SignInCardBody({ scene, children }: { scene: Scene; children: ReactNode
         <span className="sc-card-badge" aria-hidden><SceneIcon scene={scene} /><span className="sc-card-badge-ring" /></span>
         <div className="sc-card-id">
           <p className="sc-card-kicker">{card.kicker}</p>
-          <p className="sc-card-name" data-testid="card-workspace"><strong>{copy.level}</strong></p>
+          <p className="sc-card-name" data-testid="card-workspace"><strong>{card.name}</strong></p>
         </div>
         <span className={cn('sc-card-chip', card.staffOnly && 'sc-card-chip-staff')}><LockIcon />{card.staffOnly ? 'Staff only' : 'Secure'}</span>
       </div>

@@ -87,6 +87,11 @@ export interface RequestRow {
   isMine: boolean;
   raisedByMe: boolean;
   canReview: boolean;
+  /** Every file of the latest submission (a document that takes several, like the front and back of a card). */
+  files?: { id: string; reference: string; fileName: string; version: number; status: string; sizeBytes: number; contentType: string; expiresOn: string | null }[];
+  maxFiles?: number;
+  checklistId?: string | null;
+  mandatory?: boolean;
 }
 
 export interface RequestDetail extends RequestRow {

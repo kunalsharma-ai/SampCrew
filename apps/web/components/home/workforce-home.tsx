@@ -89,7 +89,7 @@ function AttendanceMonitor({ w }: { w: WorkforceHome }) {
   const team = (k: string) => `/attendance/team?${new URLSearchParams({ date: w.date, ...(['not_in_yet'].includes(k) ? { filter: k } : k ? { status: k } : {}) })}`;
   return (
     <Card data-testid="attendance-monitor">
-      <CardHeader title="Attendance monitoring" description={`${t.workingNow} working now, ${t.earlyLeave} left early, ${t.late} late.`} action={<Link className="text-xs font-medium text-accent hover:underline" href={`/attendance/team?date=${w.date}`}>Team attendance</Link>} />
+      <CardHeader title="Attendance monitoring" href="/attendance" linkAs={Link} description={`${t.workingNow} working now, ${t.earlyLeave} left early, ${t.late} late.`} action={<Link className="text-xs font-medium text-accent hover:underline" href={`/attendance/team?date=${w.date}`}>Team attendance</Link>} />
       <div className="grid grid-cols-1 gap-4 px-5 pb-5">
         <div className="flex h-3 overflow-hidden rounded-full bg-bg-subtle" role="img" aria-label={parts.map((p) => `${p[0]} ${p[1]}`).join(', ')}>
           {parts.map(([label, n, cls]) => n > 0 && <div key={label} className={cn('h-full', cls)} style={{ width: `${(n / total) * 100}%` }} title={`${label}: ${n}`} />)}
@@ -146,7 +146,7 @@ export function WorkforceCalendar({ trend, canExport = false }: { trend: Workfor
   const lead = (first + 6) % 7;
   return (
     <Card data-testid="workforce-calendar">
-      <CardHeader title="Attendance calendar" description="Daily workforce attendance. Pick a day for who was in." action={canExport ? <ExportDialogButton period={{ from, to, today: to, label: `${shortDate(from)} to ${shortDate(to)}` }} label="Download report" /> : undefined} />
+      <CardHeader title="Attendance calendar" href="/attendance/team" linkAs={Link} description="Daily workforce attendance. Pick a day for who was in." action={canExport ? <ExportDialogButton period={{ from, to, today: to, label: `${shortDate(from)} to ${shortDate(to)}` }} label="Download report" /> : undefined} />
       <div className="px-5 pb-5">
         <div className="grid grid-cols-7 gap-1 text-center text-[0.625rem] text-fg-subtle" aria-hidden>{DOW.map((d, i) => <div key={i}>{d}</div>)}</div>
         <div className="mt-1 grid grid-cols-7 gap-1">
@@ -174,7 +174,7 @@ export function WorkforceCalendar({ trend, canExport = false }: { trend: Workfor
 function LeaveSummary({ l }: { l: NonNullable<WorkforceHome['leave']> }) {
   return (
     <Card data-testid="leave-summary">
-      <CardHeader title="Leave management" description="Requests, who is away today and leave coming up." />
+      <CardHeader title="Leave management" href="/leave" linkAs={Link} description="Requests, who is away today and leave coming up." />
       <div className="grid grid-cols-1 gap-4 px-5 pb-5">
         <div className="grid grid-cols-3 gap-2 text-center">
           <Link href="/approvals?category=leave" className="rounded-lg bg-warning-subtle p-2 hover:ring-1 hover:ring-warning"><div className="text-xl font-bold tabular text-warning">{l.pending}</div><div className="text-[0.6875rem] text-fg-muted">Pending</div></Link>
@@ -204,7 +204,7 @@ function EmployeeInsights({ w }: { w: WorkforceHome }) {
   const p = w.people;
   return (
     <Card data-testid="employee-insights">
-      <CardHeader title="Employee overview" description="New joiners and people who may need a word." />
+      <CardHeader title="Employee overview" href="/employees" linkAs={Link} description="New joiners and people who may need a word." />
       <div className="grid grid-cols-1 gap-4 px-5 pb-5 text-[0.8125rem]">
         <div className="grid grid-cols-3 gap-2 text-center">
           <div className="rounded-lg bg-bg-subtle p-2"><div className="text-lg font-bold tabular">{p.newJoiners.length}</div><div className="text-[0.6875rem] text-fg-subtle">Joined in 30 days</div></div>
@@ -229,7 +229,7 @@ function EmployeeInsights({ w }: { w: WorkforceHome }) {
 export function LearningSummary({ l, title = 'Learning & development' }: { l: NonNullable<WorkforceHome['learning']>; title?: string }) {
   return (
     <Card data-testid="learning-summary">
-      <CardHeader title={title} description={l.assigned ? `${l.completion ?? 0}% of ${l.assigned} assignments completed` : 'No learning assigned yet.'} action={<Link className="text-xs font-medium text-accent hover:underline" href="/learning?view=team">View progress</Link>} />
+      <CardHeader title={title} href="/learning?view=team" linkAs={Link} description={l.assigned ? `${l.completion ?? 0}% of ${l.assigned} assignments completed` : 'No learning assigned yet.'} action={<Link className="text-xs font-medium text-accent hover:underline" href="/learning?view=team">View progress</Link>} />
       <div className="grid grid-cols-1 gap-3 px-5 pb-5">
         <Progress value={l.completion} label="Learning completion" barClass="bg-success" />
         <div className="grid grid-cols-4 gap-2 text-center text-[0.6875rem]">
@@ -252,7 +252,7 @@ export function LearningSummary({ l, title = 'Learning & development' }: { l: No
 export function CommunicationCard({ c, title = 'Communication' }: { c: { unreadChats: number; awaitingHr?: number | null; announcements: { id: string; title: string; publishedAt: string | null; priority: string }[] }; title?: string }) {
   return (
     <Card data-testid="communication-card">
-      <CardHeader title={title} description="Messages, questions for HR and the latest announcements." action={<Link className="text-xs font-medium text-accent hover:underline" href="/communication">Open</Link>} />
+      <CardHeader title={title} href="/communication" linkAs={Link} description="Messages, questions for HR and the latest announcements." action={<Link className="text-xs font-medium text-accent hover:underline" href="/communication">Open</Link>} />
       <div className="grid grid-cols-1 gap-3 px-5 pb-5 text-[0.8125rem]">
         <div className="grid grid-cols-2 gap-2 text-center">
           <Link href="/communication" className="rounded-lg bg-bg-subtle p-2 hover:ring-1 hover:ring-accent"><div className="text-lg font-bold tabular">{c.unreadChats}</div><div className="text-[0.6875rem] text-fg-subtle">Unread messages</div></Link>

@@ -94,8 +94,8 @@ export function categoryOfKind(kind: string): NotificationCategory {
 export const MANDATORY_CATEGORIES: NotificationCategory[] = ['approvals', 'system'];
 
 export const notificationSoundSettings = z.object({
-  /** Off by default: a sound only ever plays after the person switched it on. */
-  enabled: z.boolean().default(false),
+  /** On by default (issue #89: notices must sound when they arrive); each person can switch it off. */
+  enabled: z.boolean().default(true),
   /** 0 to 100. */
   volume: z.number().int().min(0).max(100).default(60),
   /** Only notices of this priority or higher make a sound. */
@@ -121,7 +121,7 @@ const DEFAULT_CHANNEL: NotificationChannel = { inApp: true, email: true, push: t
 export const notificationPreferencesInput = z.object({
   /** Per category; a category left out keeps the defaults (in the app and by email). */
   categories: z.partialRecord(z.enum(NOTIFICATION_CATEGORY_KEYS), channelSetting).default({}),
-  sound: notificationSoundSettings.default({ enabled: false, volume: 60, minPriority: 'normal' }),
+  sound: notificationSoundSettings.default({ enabled: true, volume: 60, minPriority: 'normal' }),
   /** Show a toast in the corner when a notice arrives while the portal is open. */
   toasts: z.boolean().default(true),
   /** Also show a system (browser) notification when the portal is in a background tab; needs the browser's permission. */
@@ -149,10 +149,10 @@ export const notificationPolicyInput = z.object({
   allowPush: z.boolean().default(true),
   /** Starting choices for people who have not changed their own settings. */
   defaults: z.object({
-    sound: z.boolean().default(false),
+    sound: z.boolean().default(true),
     toasts: z.boolean().default(true),
     desktop: z.boolean().default(false),
-  }).default({ sound: false, toasts: true, desktop: false }),
+  }).default({ sound: true, toasts: true, desktop: false }),
 });
 export type NotificationPolicy = z.infer<typeof notificationPolicyInput>;
 export const DEFAULT_NOTIFICATION_POLICY: NotificationPolicy = notificationPolicyInput.parse({});

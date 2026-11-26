@@ -17,6 +17,8 @@ import { FEATURE_KEY, PUBLIC_KEY, REALM_KEY } from '../src/platform/authz/decora
 const FOUNDATION: Record<string, string> = {
   AuthController: 'Sign-in, sign-out, invitations and workspace switching',
   MailSetupController: 'The company email server invitations and password resets go out by, needed on every plan',
+  EmailTemplatesController: 'The company email design used for invitations, password resets and notices, which every plan sends',
+  EmployeeFormController: 'How the Add Employee form works (work email domain, fields), part of Core HR on every plan',
   MeController: 'The signed-in person, their sessions, password and two-step verification',
   PasswordResetsController: 'Super Workspace record of forgot-password resets, a security baseline like the audit trail',
   ApprovalsController: 'One inbox for approvals raised by the modules; each item is created by a gated module',

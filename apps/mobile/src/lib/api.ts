@@ -57,6 +57,10 @@ export const deletePrompt: { ask: ((what: string, error?: string) => Promise<str
 
 export class Api {
   private refreshing: Promise<boolean> | null = null;
+  /** When the app last told the server the person is using it (the automatic sign-out clock, issue #89). */
+  private lastBeat = 0;
+  /** Set by the app (not by tests): report use to the server about once a minute. */
+  trackActivity = false;
   /** GETs in flight, so screens and widgets asking for the same thing at once share one request. */
   private inflight = new Map<string, Promise<unknown>>();
   /** Last answers to GETs, for showing a screen at once while it reloads (cleared by any change the app sends). */
@@ -118,6 +122,12 @@ export class Api {
     if (!t) {
       this.onSignedOut();
       throw new ApiError(401, 'signed_out', 'Please sign in again.');
+    }
+    // The app only asks the server for something while it is open in front of the person, so any request is use:
+    // about once a minute the automatic sign-out clock is reset (sent before the request, so it is never late).
+    if (this.trackActivity && path !== '/auth/activity' && Date.now() - this.lastBeat > 60_000) {
+      this.lastBeat = Date.now();
+      void this.raw('POST', '/auth/activity', undefined, t.accessToken).catch(() => undefined);
     }
     let res = await this.raw(method, path, body, t.accessToken, idempotencyKey);
     if (res.status === 401) {

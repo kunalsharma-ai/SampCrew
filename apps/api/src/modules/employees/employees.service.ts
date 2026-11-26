@@ -36,6 +36,8 @@ import { NotificationService } from '../../platform/notify/notification.service'
 import { sniffMatches, StorageService } from '../../platform/storage/storage.service';
 import { DevicesService } from '../attendance/devices.service';
 import { definitionView, withListOptions } from '../custom-fields/custom-fields.service';
+import { OnboardingDocumentsService } from '../document-center/onboarding-documents.service';
+import { checkEmployeeForm } from './employee-form';
 import { LeaveService } from '../leave/leave.service';
 import { MembersService } from '../members/members.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
@@ -124,6 +126,7 @@ export class EmployeesService {
     private readonly storage: StorageService,
     private readonly devices: DevicesService,
     private readonly limits: WorkspaceLimitsService,
+    private readonly onboardingDocs: OnboardingDocumentsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -651,6 +654,8 @@ export class EmployeesService {
     // An existing employee may keep the code they already have; otherwise the next one in the series is reserved.
     const code = await this.db.tenant(async (tx) => {
       await this.mayCreate(tx, input.legalEntityId);
+      // The Super Workspace's Add Employee form rules (issue #89): company email domain and required fields.
+      await checkEmployeeForm(tx, input as unknown as Record<string, unknown>);
       if (input.employeeCode) {
         if (await tx.collection('employees').exists({ employee_code: input.employeeCode })) throw Errors.conflict('employee_code_taken', `Employee code ${input.employeeCode} is already used by someone else`);
         return input.employeeCode;
@@ -753,6 +758,12 @@ export class EmployeesService {
         await this.authz.require('leave:approve', employeeAttrs(await this.load(tx, row.id)), tx);
         opening = await this.leave.setOpeningBalances(tx, row.id, input.openingLeaveBalances);
       }
+
+      // The onboarding documents HR chose on the form (issue #89): assigned in this same transaction, so the employee
+      // and their checklist are created together or not at all.
+      if (input.onboardingDocuments) await this.onboardingDocs.assignInTx(tx, row.id, input.onboardingDocuments, { atHire: true });
+      // Hired straight into a permanent position: the leave rules' days on confirmation are credited now.
+      if (!existing && status === 'active' && confirmedOn) await this.leave.creditOnConfirmation(tx, row.id, confirmedOn);
 
       if (within) await within(tx, row.id);
       const e = await this.load(tx, row.id);
@@ -1380,6 +1391,8 @@ export class EmployeesService {
       if (input.effectiveOn < e.dateOfJoining) throw Errors.badRequest('before_joining', 'Confirmation cannot be before the joining date');
       await tx.collection('employees').updateOne({ id }, { $set: { status: 'active', confirmation_date: input.effectiveOn } });
       await this.event(tx, id, 'confirmed', input.effectiveOn, { note: input.note ?? null });
+      // Leave by employment status (issue #89): the days HR set for becoming permanent are credited now.
+      await this.leave.creditOnConfirmation(tx, id, input.effectiveOn);
       await this.notifications.notify(tx, { membershipIds: [e.membershipId], kind: 'employee.confirmed', title: 'Your employment has been confirmed', link: `/employees/${id}`, email: true });
       return { action: 'employee.confirmed', changes: { status: { from: 'probation', to: 'active' }, confirmationDate: input.effectiveOn } };
     });

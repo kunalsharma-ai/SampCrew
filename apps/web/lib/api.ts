@@ -1,6 +1,7 @@
 import 'server-only';
 import { headers as requestHeaders } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
+import { cache } from 'react';
 import { accessToken } from './session';
 
 const API_URL = process.env.CREW_API_URL ?? 'http://localhost:4000';
@@ -61,6 +62,13 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   return json as T;
 }
 
+/**
+ * A page and its layout often read the same thing (the signed-in person, their access): within one server render each
+ * GET goes to the API once (issue #89 point 16). React's cache lasts for that one render only, and server actions are
+ * not cached, so nothing a change made is ever shown stale.
+ */
+const getOnce = cache(<T,>(path: string): Promise<T> => api<T>(path));
+
 /** Multipart upload (documents). The browser never talks to the API directly; this runs on the server. */
 export async function apiForm<T = unknown>(path: string, form: FormData, opts: { auth?: boolean; method?: 'POST' | 'PUT' } = {}): Promise<T> {
   const token = opts.auth === false ? undefined : await accessToken();
@@ -89,7 +97,7 @@ export function apiRaw(path: string, headers?: Record<string, string>) {
  */
 export async function load<T>(path: string): Promise<T> {
   try {
-    return await api<T>(path);
+    return await getOnce<T>(path);
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) redirect('/login?expired=1');
     if (e instanceof ApiError && (e.status === 402 || e.status === 403)) redirect(await noAccessUrl(e.code));
@@ -126,9 +134,9 @@ export function safeReturnPath(p: string | null | undefined): string | null {
  */
 export async function loadSession<T>(path: string): Promise<T> {
   try {
-    return await api<T>(path);
+    return await getOnce<T>(path);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) redirect('/signed-out?reason=expired');
+    if (e instanceof ApiError && e.status === 401) redirect(e.code === 'session_idle' ? '/signed-out?reason=idle' : '/signed-out?reason=expired');
     if (e instanceof ApiError && (e.status === 402 || e.status === 403)) redirect(`/signed-out?reason=${encodeURIComponent(e.code)}`);
     throw e;
   }
@@ -137,7 +145,7 @@ export async function loadSession<T>(path: string): Promise<T> {
 /** Like load(), but returns null instead of throwing when the user lacks permission or the plan lacks the feature. */
 export async function loadOptional<T>(path: string): Promise<T | null> {
   try {
-    return await api<T>(path);
+    return await getOnce<T>(path);
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) redirect('/login?expired=1');
     if (e instanceof ApiError && [402, 403, 404].includes(e.status)) return null;

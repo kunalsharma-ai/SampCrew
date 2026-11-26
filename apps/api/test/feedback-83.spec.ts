@@ -97,7 +97,7 @@ describe('issue #83 feedback', () => {
     expect((await api(app, token).get('/me')).body.user.fullName).toBe('Meera Nair');
   });
 
-  it('HR 6: a leave type can be unpaid and credit days every month; new joiners get opening days at registration', async () => {
+  it('HR 6: a leave type can be unpaid and credit days every month; existing employees bring opening days (new joiners follow the leave rules, issue #89)', async () => {
     const paid = await api(app, owner).post('/leave/types').send({ code: 'ML', name: 'Monthly Leave', monthlyCredit: '1.5' });
     expect(paid.status, JSON.stringify(paid.body)).toBe(201);
     const unpaid = await api(app, owner).post('/leave/types').send({ code: 'UL', name: 'Unpaid Leave', paid: false });
@@ -107,8 +107,9 @@ describe('issue #83 feedback', () => {
     expect(types.find((x) => x.id === unpaid.body.id)).toMatchObject({ paid: false, monthlyCredit: null });
     expect((await api(app, owner).post('/leave/types').send({ code: 'BAD', name: 'Too much', monthlyCredit: '40' })).status).toBe(422);
 
-    // Opening days asked at registration, for a brand new joiner too.
-    const joiner = await hire(owner, { firstName: 'Nisha', lastName: 'New', dateOfJoining: new Date().toISOString().slice(0, 10), openingLeaveBalances: [{ leaveTypeId: paid.body.id, days: '3' }] });
+    // Opening days are asked for someone already working here; a brand new joiner gets none typed in (issue #89).
+    const lastYear = new Date(Date.now() - 400 * 86_400_000).toISOString().slice(0, 10);
+    const joiner = await hire(owner, { firstName: 'Nisha', lastName: 'New', joinedAs: 'existing', dateOfJoining: lastYear, openingLeaveBalances: [{ leaveTypeId: paid.body.id, days: '3' }] });
     const credit = await pool.find('leave_ledger', { employee_id: joiner.id, leave_type_id: paid.body.id });
     expect(credit.map((x) => String(x.quantity))).toContain('3.00');
 

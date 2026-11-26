@@ -1,5 +1,5 @@
 'use client';
-import { DEFAULT_APPEARANCE, DELETE_AREAS, FEATURE_ACTION_KEYS, NOTIFICATION_NAV, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences, WORK_VIEWS, type WorkView } from '@crew/contracts';
+import { DEFAULT_APPEARANCE, DELETE_AREAS, FEATURE_ACTION_KEYS, NOTIFICATION_NAV, buildTheme, designLevelOf, presetChoices, workspaceLevelLabel, type Appearance, type AppearancePatch, type MemberPreferences, type WorkView } from '@crew/contracts';
 import { AutoHelp, Avatar, Badge, CrewLogo, Dialog, HelpProvider, Kbd, cn } from '@crew/ui';
 import {
   Bell, Building2, CalendarDays, Check, ChevronDown, ChevronsUpDown, Contact, CreditCard, Home, Inbox, KeyRound, LifeBuoy, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search,
@@ -20,7 +20,7 @@ import { applyAppearance } from '@/lib/appearance-client';
 import { photoUrl } from '@/lib/photo';
 import { WEB_HELP } from '@/lib/help-content';
 import { ICONS } from '@/lib/icons';
-import { MY_DAY_HREFS, accountLinks, type NavGroup, type NavItem, type QuickAction } from '@/lib/nav';
+import { HOME_VIEW_COOKIE, MY_DAY_HREFS, accountLinks, myDayNav, type HomeViewKey, type NavGroup, type NavItem, type QuickAction } from '@/lib/nav';
 import type { Me, Notification } from '@/lib/types';
 import { paletteSearchAction, recordSessionLocationAction, recordVisitAction, saveExperienceAction, resetAppearanceAction, saveAppearanceAction, saveFavouritesAction, syncAppearanceCookieAction } from './experience-actions';
 import { IqPanel } from './iq-panel';
@@ -133,10 +133,15 @@ function useExperienceState(prefs: MemberPreferences | null, cookieAppearance: A
 const isActive = (href: string, pathname: string, allHrefs: string[]) =>
   href === '/' ? pathname === '/' : (pathname === href || pathname.startsWith(`${href}/`)) && !allHrefs.some((h) => h.length > href.length && h.startsWith(`${href}/`) && (pathname === h || pathname.startsWith(`${h}/`)));
 
-export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts, quick, workflows, workView, children }: {
+export function Shell({ me, nav: fullNav, notifications, prefs, cookieAppearance, counts, quick, workflows, workView: savedView, views, homeView, children }: {
   me: Me;
   /** My Workforce or My Day for people who can switch (issue #86); null for everyone else. */
   workView: WorkView | null;
+  /** Home's views (Organization, Workforce, My Day), switched at the top of the sidebar (issue #89). */
+  views: { key: HomeViewKey; label: string }[];
+  /** The Organization or Workforce view last chosen, when remembered. */
+  homeView: 'organization' | 'workforce' | null;
+  /** The whole menu; My Day keeps only the person's own pages. */
   nav: NavGroup[];
   notifications: Notifications | null;
   prefs: MemberPreferences | null;
@@ -148,6 +153,10 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
 }) {
   const pathname = usePathname();
   const live = useOptionalLive();
+  // The menu follows My Workforce / My Day as soon as it is switched (issue #89), before the server has saved it.
+  const [workView, setWorkView] = useState(savedView);
+  useEffect(() => setWorkView(savedView), [savedView]);
+  const nav = useMemo(() => (workView === 'myday' ? myDayNav(fullNav) : fullNav), [workView, fullNav]);
   const [themesOpen, setThemesOpen] = useState(false);
   const [iqOpen, setIqOpen] = useState(false);
   const hasIq = me.features.includes('crew_iq');
@@ -264,7 +273,8 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
     ...DELETE_AREAS.filter((a) => !(me.deleteAreas ?? []).includes(a)).map((a) => `[data-delete-area="${a}"]`),
   ].join(','), [me.features, me.deleteAreas]);
 
-  const sidebar = (rail: boolean) => <Sidebar me={me} nav={nav} counts={counts} unread={unreadByHref} rail={rail} pathname={pathname} allHrefs={allHrefs} onCollapse={() => void update({ sidebar: rail ? 'expanded' : 'collapsed' })} />;
+  const viewSwitch = views.length > 1 ? <HomeViewSwitch views={views} workView={workView} savedView={savedView} homeView={homeView} pathname={pathname} onWorkView={setWorkView} /> : null;
+  const sidebar = (rail: boolean) => <Sidebar me={me} nav={nav} views={rail ? null : viewSwitch} counts={counts} unread={unreadByHref} rail={rail} pathname={pathname} allHrefs={allHrefs} onCollapse={() => void update({ sidebar: rail ? 'expanded' : 'collapsed' })} />;
 
   return (
     <HelpProvider content={WEB_HELP} pathname={pathname}>
@@ -301,7 +311,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
               {punchable && <HeaderPunch />}
               {notifications && <span data-tour="notifications" className="contents"><NotificationBell /></span>}
               {!employeeLevel && <ThemeMenu />}
-              <HeaderUser me={me} workView={workView} />
+              <HeaderUser me={me} />
             </div>
           </header>
           <main id="main" data-tour="home" className="crew-main mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><div key={pathname} className="crew-page"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></div></main>
@@ -313,7 +323,7 @@ export function Shell({ me, nav, notifications, prefs, cookieAppearance, counts,
         )}
         {hasIq && <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />}
         <ThemePanel open={themesOpen} onClose={() => setThemesOpen(false)} appearance={appearance} update={update} />
-        {prefs && <FirstLoginTour experience={prefs.experience} canSwitch={workView !== null} />}
+        {prefs && <FirstLoginTour experience={prefs.experience} canSwitch={views.length > 1} />}
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} nav={nav} me={me} quick={quick} workflows={workflows} />
       </div>
     </ExperienceContext.Provider>
@@ -329,10 +339,9 @@ const GROUPS_KEY = 'crew-nav-collapsed';
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
-function Sidebar({ me, nav, counts, unread, rail, pathname, allHrefs, onCollapse }: { me: Me; nav: NavGroup[]; counts: Record<string, number>; unread: Record<string, number>; rail: boolean; pathname: string; allHrefs: string[]; onCollapse: () => void }) {
+function Sidebar({ me, nav, views, counts, unread, rail, pathname, allHrefs, onCollapse }: { me: Me; nav: NavGroup[]; views: React.ReactNode; counts: Record<string, number>; unread: Record<string, number>; rail: boolean; pathname: string; allHrefs: string[]; onCollapse: () => void }) {
   const { favourites, toggleFavourite } = useExperience();
   const uid = useId();
-  const [filter, setFilter] = useState('');
   const [closed, setClosed] = useState<string[]>([]);
   useEffect(() => {
     try { setClosed(JSON.parse(localStorage.getItem(GROUPS_KEY) ?? '[]')); } catch {}
@@ -344,8 +353,7 @@ function Sidebar({ me, nav, counts, unread, rail, pathname, allHrefs, onCollapse
   };
   const byHref = new Map(nav.flatMap((g) => g.items).map((i) => [i.href, i]));
   const favItems = favourites.map((h) => byHref.get(h)).filter((i): i is NavItem => Boolean(i));
-  const q = filter.trim().toLowerCase();
-  const groups = q ? nav.map((g) => ({ ...g, items: g.items.filter((i) => i.label.toLowerCase().includes(q) || g.label.toLowerCase().includes(q)) })).filter((g) => g.items.length) : nav;
+  const groups = nav;
 
   const link = (item: NavItem, key: string, star: boolean) => {
     const Icon = ICONS[item.icon] ?? Home;
@@ -396,15 +404,10 @@ function Sidebar({ me, nav, counts, unread, rail, pathname, allHrefs, onCollapse
         </button>
       </div>
       {!rail && <TenantSwitcher me={me} />}
-      {!rail && (
-        <label className="relative block px-1">
-          <span className="sr-only">Filter the menu</span>
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-subtle" aria-hidden />
-          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter menu" className="h-8 w-full rounded-lg border border-border bg-bg-subtle/60 pl-8 pr-2 text-[0.8125rem] placeholder:text-fg-subtle focus:border-accent focus:outline-none" />
-        </label>
-      )}
+      {/* Organization / Workforce / My Day in place of the old menu filter (issue #89); search is in the top bar (Ctrl K). */}
+      {views}
       {/* Favourites stay in place while the rest of the menu scrolls under them. */}
-      {!q && favItems.length > 0 && (
+      {favItems.length > 0 && (
         <div className="-mx-1 max-h-56 shrink-0 overflow-y-auto border-b border-border px-1 pb-3" data-testid="nav-favourites">
           {!rail && <div className="flex items-center gap-1.5 px-2 pb-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle"><Star className="size-3" /> Favourites</div>}
           <ul className="flex flex-col gap-0.5" aria-label="Favourites">{favItems.map((i) => link(i, `fav-${i.href}`, false))}</ul>
@@ -412,7 +415,7 @@ function Sidebar({ me, nav, counts, unread, rail, pathname, allHrefs, onCollapse
       )}
       <div className="-mx-1 flex flex-1 flex-col gap-3 overflow-y-auto px-1">
         {groups.map((g) => {
-          const open = rail || Boolean(q) || !closed.includes(g.label);
+          const open = rail || !closed.includes(g.label);
           return (
             <div key={g.label}>
               {!rail ? (
@@ -428,7 +431,6 @@ function Sidebar({ me, nav, counts, unread, rail, pathname, allHrefs, onCollapse
             </div>
           );
         })}
-        {q && !groups.length && <p className="px-2 text-[0.8125rem] text-fg-subtle">Nothing in the menu matches “{filter}”.</p>}
       </div>
       {!rail && <UpgradeCard me={me} />}
       {/* The person's name and account menu live top right only (issue #86), not in the bottom-left corner. */}
@@ -447,55 +449,79 @@ function UpgradeCard({ me }: { me: Me }) {
   );
 }
 
-/**
- * Greeting chip on the right of the top bar; opens the member's account menu. Under the name, people who look after a
- * workforce switch between My Workforce and My Day (issue #86). My Day keeps only their own work and settings in the
- * menu and on Home, and changes the accent colour so the mode is obvious.
- */
-function HeaderUser({ me, workView }: { me: Me; workView: WorkView | null }) {
+/** Greeting chip on the right of the top bar; opens the member's account menu. */
+function HeaderUser({ me }: { me: Me }) {
   const level = workspaceLevelLabel(me.levels);
   return (
     <div className="ml-1 flex shrink-0 flex-col items-end gap-0.5" data-tour="account">
-      <AccountMenu me={me} wrapperClassName="shrink-0" buttonClassName={cn('flex items-center whitespace-nowrap gap-2.5 rounded-full hover:bg-bg-subtle', workView ? 'py-0 pl-0.5 pr-2' : 'py-1 pl-1 pr-3')} testId="account-menu-header">
-        <Avatar name={me.user.fullName} size={workView ? 26 : 32} src={me.employee ? photoUrl(me.employee) : null} />
+      <AccountMenu me={me} wrapperClassName="shrink-0" buttonClassName="flex items-center whitespace-nowrap gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-bg-subtle" testId="account-menu-header">
+        <Avatar name={me.user.fullName} size={32} src={me.employee ? photoUrl(me.employee) : null} />
         <span className="hidden flex-col text-left leading-tight sm:flex">
           <span className="text-[0.8125rem] font-semibold">Hi, {me.user.fullName.split(' ')[0]}</span>
-          {!workView && <span className="text-[0.6875rem] text-fg-subtle">{level}</span>}
+          <span className="text-[0.6875rem] text-fg-subtle">{level}</span>
         </span>
       </AccountMenu>
-      {workView && <span data-tour="view"><WorkViewSwitch value={workView} /></span>}
     </div>
   );
 }
 
-function WorkViewSwitch({ value }: { value: WorkView }) {
+/**
+ * The views at the top of the sidebar (issue #89): the Super Workspace's Organization and Workforce (Home's views,
+ * moved here from Home), and My Workforce / My Day for people who look after a workforce (moved here from the top bar,
+ * issue #86). My Day keeps only the person's own work and settings in the menu and on Home, in its own colour; the
+ * menu changes at once, and the choice is saved for the next visit.
+ */
+function HomeViewSwitch({ views, workView, savedView, homeView, pathname, onWorkView }: {
+  views: { key: HomeViewKey; label: string }[]; workView: WorkView | null; savedView: WorkView | null; homeView: 'organization' | 'workforce' | null;
+  pathname: string; onWorkView: (v: WorkView) => void;
+}) {
   const router = useRouter();
-  const [view, setView] = useState(value);
   const [pending, start] = useTransition();
-  useEffect(() => setView(value), [value]);
-  const choose = (next: WorkView) => {
-    if (next === view || pending) return;
-    setView(next);
-    document.documentElement.dataset.view = next;
+  const firstOther = views.find((v) => v.key !== 'myday')?.key as 'organization' | 'workforce' | undefined;
+  const [home, setHome] = useState<'organization' | 'workforce' | undefined>(homeView ?? firstOther);
+  // Home's address says which view it shows (a link to /?view=workforce, say): the switch follows it.
+  useEffect(() => {
+    if (pathname !== '/') return;
+    const v = new URLSearchParams(window.location.search).get('view');
+    if (v === 'organization' || v === 'workforce') setHome(v);
+  }, [pathname]);
+  const current: HomeViewKey = workView === 'myday' ? 'myday' : (views.some((v) => v.key === home) ? home! : firstOther ?? 'workforce');
+  const hasOrganization = views.some((v) => v.key === 'organization');
+  const choose = (next: HomeViewKey) => {
+    if (next === current || pending) return;
+    const nextWork: WorkView = next === 'myday' ? 'myday' : 'workforce';
+    if (next !== 'myday') {
+      setHome(next);
+      document.cookie = `${HOME_VIEW_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
+    }
+    const workChanges = workView !== null && nextWork !== workView;
+    if (workChanges) {
+      onWorkView(nextWork);
+      document.documentElement.dataset.view = nextWork;
+    }
     start(async () => {
-      const r = await saveExperienceAction({ workView: next }, true);
-      if (!r.ok) { setView(value); document.documentElement.dataset.view = value; return; }
-      if (next === 'myday' && !MY_DAY_HREFS.has(window.location.pathname)) router.push('/');
-      router.refresh();
+      if (workChanges) {
+        const r = await saveExperienceAction({ workView: nextWork }, true);
+        if (!r.ok) { onWorkView(savedView ?? 'workforce'); document.documentElement.dataset.view = savedView ?? 'workforce'; return; }
+      }
+      if (next === 'myday') { if (!MY_DAY_HREFS.has(window.location.pathname)) router.push('/'); }
+      // Organization and Workforce are Home's views: open Home with the one chosen.
+      else if (hasOrganization || pathname === '/') router.push(`/?view=${next}`);
+      if (workChanges) router.refresh();
     });
   };
   return (
-    <div role="radiogroup" aria-label="Work view" data-testid="work-view-switch" className="flex rounded-full border border-border bg-bg-subtle p-0.5 text-[0.6875rem] font-medium">
-      {WORK_VIEWS.map((key) => ({ key, label: key === 'myday' ? 'My Day' : 'My Workforce' })).map((v) => (
+    <div role="radiogroup" aria-label="View" data-tour="view" data-testid="work-view-switch" className="mx-1 flex rounded-lg border border-border bg-bg-subtle p-0.5 text-[0.75rem] font-medium">
+      {views.map((v) => (
         <button
           key={v.key}
           type="button"
           role="radio"
-          aria-checked={view === v.key}
+          aria-checked={current === v.key}
           disabled={pending}
           onClick={() => choose(v.key)}
           data-testid={`work-view-${v.key}`}
-          className={cn('rounded-full px-2 py-0.5 leading-4 transition-colors', view === v.key ? 'bg-accent text-accent-fg shadow-card' : 'text-fg-muted hover:text-fg')}
+          className={cn('min-w-0 flex-1 truncate rounded-md px-2 py-1 leading-4 transition-colors', current === v.key ? 'bg-accent text-accent-fg shadow-card' : 'text-fg-muted hover:text-fg')}
         >
           {v.label}
         </button>

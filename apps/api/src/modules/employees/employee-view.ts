@@ -33,6 +33,11 @@ export function displayName(e: { preferred_name?: string | null; first_name: str
   return `${e.preferred_name ?? e.first_name} ${e.last_name ?? ''}`.trim();
 }
 
+/** "First name, last name" as on official records (issue #89: HR lists show the legal name, not the preferred one). */
+export function legalName(e: { first_name: string; last_name?: string | null }): string {
+  return `${e.first_name} ${e.last_name ?? ''}`.trim();
+}
+
 const uniq = (ids: unknown[]) => [...new Set(ids.filter((x): x is string => typeof x === 'string'))];
 
 /** Values of one field of rows in a table, by id, for the given ids. */
@@ -73,6 +78,7 @@ export async function employeeViews(tx: TenantTx, docs: Doc[]): Promise<Employee
     lastName: e.last_name,
     preferredName: e.preferred_name ?? null,
     displayName: displayName(e as never),
+    legalName: legalName(e as never),
     workEmail: e.work_email ?? null,
     personalEmail: e.personal_email ?? null,
     phone: e.phone ?? null,

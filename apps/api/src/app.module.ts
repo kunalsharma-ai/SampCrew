@@ -18,6 +18,9 @@ import { PlatformBillingController } from './modules/billing/platform-billing.co
 import { PlatformBillingService } from './modules/billing/platform-billing.service';
 import { DocumentsController } from './modules/documents/documents.controller';
 import { DocumentCenterController } from './modules/document-center/document-center.controller';
+import { OnboardingDocumentsController } from './modules/document-center/onboarding-documents.controller';
+import { EmployeeFormController, EmployeeFormService } from './modules/employees/employee-form';
+import { OnboardingDocumentsService } from './modules/document-center/onboarding-documents.service';
 import { DocumentCenterService } from './modules/document-center/document-center.service';
 import { DocumentsService } from './modules/documents/documents.service';
 import { DesignationsController, EmployeesController } from './modules/employees/employees.controller';
@@ -39,6 +42,7 @@ import { HierarchyController } from './modules/hierarchy/hierarchy.controller';
 import { WorkspaceLimitsController } from './modules/workspace-limits/workspace-limits.controller';
 import { MailSetupController } from './modules/mail-setup/mail-setup.controller';
 import { MailSetupService } from './modules/mail-setup/mail-setup.service';
+import { EmailTemplatesController, EmailTemplatesService } from './modules/mail-setup/email-templates';
 import { WorkspacePermissionsController } from './modules/workspace-permissions/workspace-permissions.controller';
 import { WorkspacePermissionsService } from './modules/workspace-permissions/workspace-permissions.service';
 import { WorkspaceLimitsService } from './modules/workspace-limits/workspace-limits.service';
@@ -252,6 +256,7 @@ export const CONTROLLERS = [
   HierarchyController,
   WorkspaceLimitsController,
   MailSetupController,
+  EmailTemplatesController,
   WorkspacePermissionsController,
   OnboardingController,
   TasksController,
@@ -263,6 +268,8 @@ export const CONTROLLERS = [
   SignatureAgentController,
   DocumentsController,
   DocumentCenterController,
+  OnboardingDocumentsController,
+  EmployeeFormController,
   LeaveController,
   LeavePenaltiesController,
   ApprovalsController,
@@ -414,6 +421,7 @@ export const CONTROLLERS = [
     HierarchyService,
     WorkspaceLimitsService,
     MailSetupService,
+    EmailTemplatesService,
     WorkspacePermissionsService,
     FeatureLevelsService,
     EmployeeImportService,
@@ -422,6 +430,8 @@ export const CONTROLLERS = [
     MasterDataService,
     DocumentsService,
     DocumentCenterService,
+    OnboardingDocumentsService,
+    EmployeeFormService,
     AttendanceDaysService,
     AttendanceAccessService,
     AttendanceOverviewService,

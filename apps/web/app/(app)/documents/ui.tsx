@@ -348,26 +348,34 @@ export function RequestDocumentButton({ catalogue, preset, targets, label = 'Req
 
 export function UploadBox({ r, onDone }: { r: RequestRow; onDone: () => void }) {
   const input = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const max = Math.max(1, r.maxFiles ?? 1);
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
   const [drag, setDrag] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [remarks, setRemarks] = useState('');
   const [expires, setExpires] = useState('');
   const accept = r.formats.length ? r.formats.map((f) => ({ pdf: '.pdf', image: '.jpg,.jpeg,.png', word: '.doc,.docx', excel: '.xls,.xlsx' })[f]).join(',') : REQUEST_FILE_ACCEPT;
-  const pick = (f: File | null | undefined) => {
+  const pick = (list: FileList | File[] | null | undefined) => {
     setError(null);
-    if (!f) return;
-    if (f.size > r.maxMb * 1024 * 1024) return setError(`This file is ${fmtSize(f.size)}. Files for this request can be up to ${r.maxMb} MB.`);
-    const ext = `.${f.name.split('.').pop()?.toLowerCase()}`;
-    if (!accept.split(',').includes(ext)) return setError(`Upload ${r.formats.map((x) => REQUEST_FILE_LABEL[x]).join(', ')}.`);
-    setFile(f);
+    const given = list ? Array.from(list) : [];
+    if (!given.length) return;
+    for (const f of given) {
+      if (f.size > r.maxMb * 1024 * 1024) return setError(`${f.name} is ${fmtSize(f.size)}. Files for this request can be up to ${r.maxMb} MB.`);
+      const ext = `.${f.name.split('.').pop()?.toLowerCase()}`;
+      if (!accept.split(',').includes(ext)) return setError(`Upload ${r.formats.map((x) => REQUEST_FILE_LABEL[x]).join(', ')}.`);
+    }
+    const next = max === 1 ? given.slice(0, 1) : [...files, ...given];
+    if (next.length > max) return setError(`This document takes up to ${max} files.`);
+    setFiles(next);
   };
   const send = () => {
     if (!file) return;
     if (r.expiryRequired && !expires) return setError('Enter the date the document expires.');
     const fd = new FormData();
-    fd.set('file', file);
+    if (files.length === 1) fd.set('file', file);
+    else for (const f of files) fd.append('files', f);
     if (remarks.trim()) fd.set('remarks', remarks.trim());
     if (expires) fd.set('expiresOn', expires);
     const xhr = new XMLHttpRequest();
@@ -377,7 +385,7 @@ export function UploadBox({ r, onDone }: { r: RequestRow; onDone: () => void }) 
     xhr.onload = () => {
       setProgress(null);
       if (xhr.status >= 200 && xhr.status < 300) {
-        setFile(null);
+        setFiles([]);
         setRemarks('');
         onDone();
         return;
@@ -397,14 +405,24 @@ export function UploadBox({ r, onDone }: { r: RequestRow; onDone: () => void }) 
       <label
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
         onDragLeave={() => setDrag(false)}
-        onDrop={(e) => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files?.[0]); }}
+        onDrop={(e) => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files); }}
         className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed p-6 text-center focus-within:border-accent hover:border-accent ${drag ? 'border-accent bg-accent-subtle' : 'border-border-strong'}`}
       >
         <FileUp className="size-6 text-accent" aria-hidden />
-        <span className="text-sm font-medium">{file ? file.name : 'Drop the file here, or choose one'}</span>
-        <span className="text-xs text-fg-subtle">{r.formats.map((f) => REQUEST_FILE_LABEL[f]).join(', ')}, up to {r.maxMb} MB{file ? ` · ${fmtSize(file.size)}` : ''}</span>
-        <input ref={input} type="file" className="sr-only" accept={accept} onChange={(e) => pick(e.target.files?.[0])} data-testid="request-file" />
+        <span className="text-sm font-medium">{files.length > 1 ? `${files.length} files chosen` : file ? file.name : max > 1 ? `Drop the files here, or choose them (up to ${max})` : 'Drop the file here, or choose one'}</span>
+        <span className="text-xs text-fg-subtle">{r.formats.map((f) => REQUEST_FILE_LABEL[f]).join(', ')}, up to {r.maxMb} MB each{file && files.length === 1 ? ` · ${fmtSize(file.size)}` : ''}</span>
+        <input ref={input} type="file" className="sr-only" accept={accept} multiple={max > 1} onChange={(e) => { pick(e.target.files); e.target.value = ''; }} data-testid="request-file" />
       </label>
+      {files.length > 1 && (
+        <ul className="grid gap-1 text-sm" data-testid="chosen-files">
+          {files.map((f, i) => (
+            <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-1.5">
+              <span className="truncate">{f.name} <span className="text-fg-subtle">· {fmtSize(f.size)}</span></span>
+              <button type="button" className="text-xs text-danger hover:underline" onClick={() => setFiles(files.filter((_, j) => j !== i))}>Remove</button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         {r.expiryRequired && <Field label="Expiry date" required>{(p) => <Input {...p} type="date" value={expires} onChange={(e) => setExpires(e.target.value)} />}</Field>}
         <Field label="Note for the reviewer (optional)" className={r.expiryRequired ? '' : 'sm:col-span-2'}>{(p) => <Textarea {...p} rows={2} maxLength={2000} value={remarks} onChange={(e) => setRemarks(e.target.value)} />}</Field>

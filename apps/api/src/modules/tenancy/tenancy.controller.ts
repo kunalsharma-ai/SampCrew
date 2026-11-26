@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
-import { tenantSettingsInput } from '@crew/contracts';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put } from '@nestjs/common';
+import { idleLabel, SESSION_IDLE_CHOICES, sessionPolicyInput, tenantSettingsInput, type SessionPolicyInput } from '@crew/contracts';
 import type { z } from 'zod';
 import { AuditService, diff } from '../../platform/audit/audit.service';
 import { RequirePermission } from '../../platform/authz/decorators';
@@ -9,6 +9,7 @@ import { Errors } from '../../platform/http/errors';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { Doc } from '../../platform/openapi/openapi';
 import { ConsoleNotifyService } from '../../platform/notify/console-notify.service';
+import { isSuperWorkspace } from '../communication/identity';
 
 /** The workspace's settings as the API shows them. */
 async function settings(tx: TenantTx) {
@@ -60,6 +61,29 @@ export class TenancyController {
       const after = await settings(tx);
       await this.audit.record(tx, { action: 'tenant.settings_updated', resourceType: 'tenant', resourceId: after.id as string, changes: diff(before, after) });
       return after;
+    });
+  }
+
+  @Get('session-policy')
+  @Doc({ summary: 'The automatic sign-out time for everyone in the company, and whether you may change it (Super Workspace only)' })
+  sessionPolicy() {
+    return this.db.tenant(async (tx) => {
+      const t = (await tx.collection('tenants').findOne({}, { projection: { session_idle_minutes: 1 } }))!;
+      const idle = (t.session_idle_minutes as number | null | undefined) ?? 0;
+      return { idleMinutes: idle, label: idleLabel(idle), choices: SESSION_IDLE_CHOICES.map((m) => ({ minutes: m, label: idleLabel(m) })), canChange: await isSuperWorkspace(tx, requestContext.tenantActor().membershipId) };
+    });
+  }
+
+  @Put('session-policy')
+  @Doc({ summary: 'Set the automatic sign-out time for every Super, HR and Employee Workspace user (Super Workspace only)', body: sessionPolicyInput })
+  setSessionPolicy(@Body(new ZodPipe(sessionPolicyInput)) body: SessionPolicyInput) {
+    return this.db.tenant(async (tx) => {
+      if (!(await isSuperWorkspace(tx, requestContext.tenantActor().membershipId))) throw Errors.forbidden('Only the Super Workspace can change the automatic sign-out time');
+      const t = (await tx.collection('tenants').findOne({}, { projection: { session_idle_minutes: 1 } }))!;
+      const from = (t.session_idle_minutes as number | null | undefined) ?? 0;
+      await tx.collection('tenants').updateOne({ id: t.id }, { $set: { session_idle_minutes: body.idleMinutes || null } });
+      await this.audit.record(tx, { action: 'tenant.session_policy_changed', resourceType: 'tenant', resourceId: t.id as string, changes: { idleMinutes: { from, to: body.idleMinutes } } });
+      return { idleMinutes: body.idleMinutes, label: idleLabel(body.idleMinutes) };
     });
   }
 }

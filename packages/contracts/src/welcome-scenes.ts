@@ -35,14 +35,14 @@ export const WELCOME_COPY: Record<WelcomeScene, WelcomeSceneCopy> = {
     title: 'Lead your whole organisation from one place',
     message: 'Set up HR Workspaces, modules and policies, and see the workforce across every company you run.',
     highlights: ['HR Workspaces', 'Modules & policies', 'Company-wide insight'],
-    formTitle: 'Sign in to your Super Workspace',
+    formTitle: 'Sign in to your workspace',
   },
   hr: {
     level: 'HR Workspace',
     title: 'Hire, onboard and care for your people',
     message: 'Recruitment, onboarding, attendance and approvals for everyone you look after, moving fast.',
     highlights: ['Recruitment', 'Onboarding', 'Approvals'],
-    formTitle: 'Sign in to your HR Workspace',
+    formTitle: 'Sign in to your workspace',
   },
   team: {
     level: 'Employee Workspace',
@@ -96,13 +96,18 @@ export function pickWelcomeScene(asked: string | null | undefined, remembered: s
   return 'employee';
 }
 
-/** What the sign-in card says under the workspace name, and whether only SAMPLEDGE staff may use it. */
-export const WELCOME_CARD: Record<WelcomeScene, { kicker: string; staffOnly?: boolean }> = {
-  console: { kicker: 'Platform administration', staffOnly: true },
-  super: { kicker: 'Organisation control' },
-  hr: { kicker: 'People operations' },
-  team: { kicker: 'Your team and your day' },
-  employee: { kicker: 'Your everyday self-service' },
+/**
+ * What the sign-in card says: its name, the line above it, and whether only SAMPLEDGE staff may use it. Super, HR and
+ * Employee Workspaces share one sign-in address, so their card is role-neutral ("Workspace Sign In", issue #89): the
+ * person's level is only known after they sign in. The welcome beside the card keeps the level's look and words.
+ */
+export const WORKSPACE_SIGN_IN_NAME = 'Workspace Sign In';
+export const WELCOME_CARD: Record<WelcomeScene, { kicker: string; name: string; staffOnly?: boolean }> = {
+  console: { kicker: 'Platform administration', name: 'Super Admin Console', staffOnly: true },
+  super: { kicker: 'SampCrew', name: WORKSPACE_SIGN_IN_NAME },
+  hr: { kicker: 'SampCrew', name: WORKSPACE_SIGN_IN_NAME },
+  team: { kicker: 'SampCrew', name: WORKSPACE_SIGN_IN_NAME },
+  employee: { kicker: 'SampCrew', name: WORKSPACE_SIGN_IN_NAME },
 };
 
 /** "Hello" in the languages SampCrew's customers speak, shown in turn beside the greeting. */

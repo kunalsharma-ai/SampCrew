@@ -1,5 +1,5 @@
 'use client';
-import { ADULT_AGE, addYears, ageOn, DOCUMENT_CATEGORIES, dateOfBirthError, dateOfBirthRange, designationLibrary, earliestJoining, isMinorOn, MIN_WORKING_AGE, PAGE_ACCESS_CHOICES, DEFAULT_PAGE_ACCESS, phoneError } from '@crew/contracts';
+import { ADULT_AGE, addYears, ageOn, DOCUMENT_CATEGORIES, dateOfBirthError, dateOfBirthRange, designationLibrary, earliestJoining, isMinorOn, MIN_WORKING_AGE, PAGE_ACCESS_CHOICES, DEFAULT_PAGE_ACCESS, phoneError, missingEmployeeFields, resolveEmployeeForm, workEmailDomainError, type EmployeeFormFieldKey, type EmployeeFormSettings } from '@crew/contracts';
 import { Alert, Button, Checkbox, DatePicker, Dialog, Field, Input, Select, cn } from '@crew/ui';
 import { AlertTriangle, Camera, Check, FileUp, Plus, X } from 'lucide-react';
 import Link from 'next/link';
@@ -8,6 +8,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Department, Designation, Employee, LegalEntity, Location, OnboardingTemplate } from '@/lib/types';
 import type { SetAccessRequest } from '@crew/contracts';
 import { AccessEditor, accessBody, LEVEL_OPTIONS } from '@/components/access-editor';
+import { DocumentPicker, pickFromTemplate, suggestTemplate, type PickedDocuments } from '../onboarding-documents/document-picker';
+import type { AssignOptions } from '../onboarding-documents/types';
 import type { Structure } from '../payroll/types';
 import { type DeviceOption, EnrolmentRows, LoginModeChoice, OwnPassword, type ShiftOption } from './[id]/profile-extras';
 import { completeHireAction, createDepartmentAction, createLocationAction, createShiftAction, type DraftData, duplicateCheckAction, nextEmployeeCodeAction, saveHireDraftAction } from './actions';
@@ -94,6 +96,12 @@ interface Props {
   accessChoice?: { canGiveSuper: boolean; hrWorkspaces: { id: string; name: string }[] } | null;
   /** Set when the plan's Employee Workspaces are all in use: why a login cannot be made now. */
   loginsFull?: string | null;
+  /** How the Super Workspace set up this form: work email domains and each field's rule; null uses the defaults. */
+  employeeForm?: EmployeeFormSettings | null;
+  /** The onboarding document library and templates to assign from; null hides the choice. */
+  onboardingOptions?: AssignOptions | null;
+  /** Whether this person may import employees from a spreadsheet (Data import). */
+  canImport?: boolean;
 }
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
@@ -176,6 +184,12 @@ export function HireWizard(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.open, p.draft]);
 
+  // The Super Workspace's rules for this form: which fields show, which are required, and their labels.
+  const rules = useMemo(() => new Map((p.employeeForm?.resolved ?? resolveEmployeeForm({ fields: {} })).map((r) => [r.key, r])), [p.employeeForm]);
+  const show = (k: EmployeeFormFieldKey) => rules.get(k)?.visible ?? true;
+  const req = (k: EmployeeFormFieldKey) => rules.get(k)?.required ?? false;
+  const lab = (k: EmployeeFormFieldKey, builtIn: string) => { const r = rules.get(k); return r && r.label !== r.builtInLabel ? r.label : builtIn; };
+  const ruleHint = (k: EmployeeFormFieldKey) => rules.get(k)?.hint ?? undefined;
   const set = (k: string, val: string | number | boolean | null) => {
     setV((cur) => {
       const next = { ...cur, [k]: val };
@@ -211,13 +225,14 @@ export function HireWizard(p: Props) {
   }, [designations]);
   // The company's email domain, from the work emails already in SampCrew, to suggest one for this person.
   const companyDomain = useMemo(() => {
+    if (p.employeeForm?.workEmailDomains[0]) return p.employeeForm.workEmailDomains[0];
     const counts = new Map<string, number>();
     for (const m of p.managers) {
       const dom = m.workEmail?.split('@')[1]?.toLowerCase();
       if (dom && !PUBLIC_MAIL.has(dom)) counts.set(dom, (counts.get(dom) ?? 0) + 1);
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-  }, [p.managers]);
+  }, [p.managers, p.employeeForm]);
   const slugName = (x: unknown) => str(x).normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const suggestedWorkEmail = companyDomain && slugName(v.firstName) ? `${[slugName(v.firstName), slugName(v.lastName)].filter(Boolean).join('.')}@${companyDomain}` : null;
   // Leave types with a balance in this person's legal entity: an entity's own policy wins over the workspace-wide one.
@@ -238,6 +253,13 @@ export function HireWizard(p: Props) {
   const loginMode = (str(v.loginMode) || 'none') as LoginMode;
   const enrolments: Enrolment[] = (() => { try { return JSON.parse(str(v.enrolments) || '[]') as Enrolment[]; } catch { return []; } })();
   const setEnrolments = (rows: Enrolment[]) => set('enrolments', JSON.stringify(rows));
+  // Onboarding documents: the template that fits the employment type and department, until HR changes the choice.
+  const docsPicked: PickedDocuments = (() => {
+    try { if (str(v.onboardingDocs)) return JSON.parse(str(v.onboardingDocs)) as PickedDocuments; } catch { /* a draft from before: start again */ }
+    const o = p.onboardingOptions;
+    return !o || existing ? { templateId: null, itemIds: [] } : pickFromTemplate(o, suggestTemplate(o, str(v.employmentType), str(v.departmentId)));
+  })();
+  const setDocsPicked = (x: PickedDocuments) => set('onboardingDocs', JSON.stringify(x));
   const name = [str(v.firstName), str(v.lastName)].filter(Boolean).join(' ');
   const dupKey = JSON.stringify([v.firstName, v.lastName, v.workEmail, v.personalEmail, v.phone, v.dateOfBirth].map((x) => str(x).trim().toLowerCase()));
   const docBytes = docs.reduce((n, d) => n + d.file.size, 0);
@@ -260,6 +282,11 @@ export function HireWizard(p: Props) {
 
   function validate(s: number): Record<string, string> {
     const e: Record<string, string> = {};
+    if (p.employeeForm) {
+      for (const [k, m] of Object.entries(missingEmployeeFields({ ...v, designationId: designationText || str(v.designationId) }, p.employeeForm))) if ((FIELD_STEP[k] ?? -1) === s && !(k in e)) e[k] = m;
+      const dom = s === 0 ? workEmailDomainError(str(v.workEmail).trim(), p.employeeForm) : null;
+      if (dom) e.workEmail = dom;
+    }
     if (s === 0) {
       if (!str(v.firstName).trim()) e.firstName = 'Enter a first name';
       for (const k of ['workEmail', 'personalEmail']) if (str(v[k]) && !EMAIL.test(str(v[k]))) e[k] = 'Enter a valid email address';
@@ -283,7 +310,7 @@ export function HireWizard(p: Props) {
         if (str(v.confirmationDate) < joining) e.confirmationDate = 'The confirmation date cannot be before the joining date';
         else if (str(v.confirmationDate) > today) e.confirmationDate = 'Use a date up to today. A future confirmation is done from the profile on that day';
       }
-      if (openingRows.some((t) => !DAYS.test(str(opening[t.leaveTypeId]).trim()))) e.openingLeaveBalances = 'Enter days as a number, such as 12 or 7.5';
+      if (existing && openingRows.some((t) => !DAYS.test(str(opening[t.leaveTypeId]).trim()))) e.openingLeaveBalances = 'Enter days as a number, such as 12 or 7.5';
     }
     if (s === 3 && str(v.structureId)) {
       if (!MONEY.test(str(v.annualCtc).replace(/,/g, ''))) e.annualCtc = 'Enter the annual CTC, such as 600000';
@@ -356,12 +383,14 @@ export function HireWizard(p: Props) {
     if (minor) employee.minorConfirmed = true;
     employee.joinedAs = existing ? 'existing' : 'new_joiner';
     // Any hire may get the employee ID HR types; left empty, the next ID in the series is used.
-    if (openingRows.length) employee.openingLeaveBalances = openingRows.map((t) => ({ leaveTypeId: t.leaveTypeId, days: str(opening[t.leaveTypeId]).trim() }));
+    // Leave for a new joiner comes from the leave rules (none on probation, credited on confirmation), never typed here.
+    if (existing && openingRows.length) employee.openingLeaveBalances = openingRows.map((t) => ({ leaveTypeId: t.leaveTypeId, days: str(opening[t.leaveTypeId]).trim() }));
     if (str(v.employeeCode).trim()) employee.employeeCode = str(v.employeeCode).trim();
     if (existing) {
       if (str(v.confirmationDate)) employee.confirmationDate = str(v.confirmationDate);
       if (p.availableAssets && handOver.length) employee.assetIds = handOver;
     }
+    if (p.onboardingOptions && docsPicked.itemIds.length) employee.onboardingDocuments = { templateId: docsPicked.templateId, itemIds: docsPicked.itemIds };
     const tpl = str(v.onboardingTemplateId);
     employee.onboardingTemplateId = tpl === 'none' ? null : tpl || undefined;
     const salary = p.canPay && str(v.structureId)
@@ -512,6 +541,10 @@ export function HireWizard(p: Props) {
                 <p className="mt-2">Check before going on. If this is someone new, continue.</p>
               </Alert>
             )}
+            {p.canImport && <p className="text-xs text-fg-muted sm:col-span-2" data-testid="hire-import-link">
+              Adding many people at once?{' '}
+              <Link href="/imports/new?type=employees" className="font-medium text-accent hover:underline">Import employees from a spreadsheet</Link>
+            </p>}
             <fieldset className="sm:col-span-2">
               <legend className="mb-1.5 text-[0.8125rem] font-medium">Who are you adding?</legend>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -524,10 +557,11 @@ export function HireWizard(p: Props) {
               </div>
             </fieldset>
             <Field label="First name" required error={errors.firstName}>{(f) => <Input {...f} name="firstName" value={str(v.firstName)} onChange={(e) => set('firstName', e.target.value)} maxLength={80} autoFocus />}</Field>
-            <Field label="Last name" error={errors.lastName}>{(f) => <Input {...f} name="lastName" value={str(v.lastName)} onChange={(e) => set('lastName', e.target.value)} maxLength={80} />}</Field>
-            <Field label="Preferred name" hint="Shown across SampCrew instead of the first name">{(f) => <Input {...f} name="preferredName" value={str(v.preferredName)} onChange={(e) => set('preferredName', e.target.value)} maxLength={80} />}</Field>
-            <Field
-              label="Date of birth"
+            {show('lastName') && <Field label={lab('lastName', 'Last name')} required={req('lastName')} hint={ruleHint('lastName')} error={errors.lastName}>{(f) => <Input {...f} name="lastName" value={str(v.lastName)} onChange={(e) => set('lastName', e.target.value)} maxLength={80} />}</Field>}
+            {show('preferredName') && <Field label={lab('preferredName', 'Preferred name')} required={req('preferredName')} error={errors.preferredName} hint={ruleHint('preferredName') ?? 'Shown across SampCrew instead of the first name'}>{(f) => <Input {...f} name="preferredName" value={str(v.preferredName)} onChange={(e) => set('preferredName', e.target.value)} maxLength={80} />}</Field>}
+            {show('dateOfBirth') && <Field
+              label={lab('dateOfBirth', 'Date of birth')}
+              required={req('dateOfBirth')}
               error={errors.dateOfBirth}
               hint={dobRange ? `With joining on ${joining}: born ${dobRange.min.slice(0, 4)} to ${dobRange.max} (at least ${MIN_WORKING_AGE} on joining)` : undefined}
             >
@@ -544,10 +578,10 @@ export function HireWizard(p: Props) {
                   autoComplete="off"
                 />
               )}
-            </Field>
-            <Field label="Phone" error={errors.phone} hint={errors.phone ? undefined : country === 'IN' || !country ? 'With the country code, such as +91 98201 23456' : `With the country code, or a local ${country} number`}>
+            </Field>}
+            {show('phone') && <Field label={lab('phone', 'Phone')} required={req('phone')} error={errors.phone} hint={errors.phone ? undefined : ruleHint('phone') ?? (country === 'IN' || !country ? 'With the country code, such as +91 98201 23456' : `With the country code, or a local ${country} number`)}>
               {(f) => <Input {...f} name="phone" type="tel" inputMode="tel" autoComplete="off" maxLength={40} value={str(v.phone)} onChange={(e) => set('phone', e.target.value)} onBlur={() => { const m = phoneError(str(v.phone), country); if (m) setErrors((er) => ({ ...er, phone: m })); }} />}
-            </Field>
+            </Field>}
             {minor && (
               <div className="sm:col-span-2">
                 <Alert tone="warning" title={`Under ${ADULT_AGE} on the joining date (age ${ageOn(dob, joining)})`}>
@@ -563,31 +597,32 @@ export function HireWizard(p: Props) {
               </div>
             )}
             <Field
-              label="Work email"
+              label={lab('workEmail', 'Work email')}
+              required={req('workEmail')}
               error={errors.workEmail}
-              hint={errors.workEmail ? undefined : 'Their company address, used to sign in to SampCrew. Not their personal email.'}
+              hint={errors.workEmail ? undefined : ruleHint('workEmail') ?? (p.employeeForm?.enforceWorkEmailDomain && p.employeeForm.workEmailDomains.length ? `A company address ending in ${p.employeeForm.workEmailDomains.map((d) => `@${d}`).join(' or ')}. It is their SampCrew sign-in.` : 'Their company address, used to sign in to SampCrew. Not their personal email.')}
             >
               {(f) => (
                 <Input {...f} name="workEmail" type="email" inputMode="email" autoComplete="off" data-1p-ignore data-lpignore="true" spellCheck={false}
                   placeholder={companyDomain ? `name@${companyDomain}` : 'name@yourcompany.com'} value={str(v.workEmail)} onChange={(e) => set('workEmail', e.target.value)} />
               )}
             </Field>
-            <Field label="Personal email" error={errors.personalEmail} hint="Their own address, for contact outside work">
+            {show('personalEmail') && <Field label={lab('personalEmail', 'Personal email')} required={req('personalEmail')} error={errors.personalEmail} hint={ruleHint('personalEmail') ?? 'Their own address, for contact outside work'}>
               {(f) => <Input {...f} name="personalEmail" type="email" inputMode="email" autoComplete="off" data-1p-ignore data-lpignore="true" spellCheck={false} value={str(v.personalEmail)} onChange={(e) => set('personalEmail', e.target.value)} />}
-            </Field>
+            </Field>}
             {!str(v.workEmail) && suggestedWorkEmail && (
               <p className="-mt-2 text-xs text-fg-muted sm:col-span-2">
                 Work email like your colleagues&apos;?{' '}
                 <button type="button" className="font-medium text-accent hover:underline" onClick={() => set('workEmail', suggestedWorkEmail)}>Use {suggestedWorkEmail}</button>
               </p>
             )}
-            <Field label="Gender" error={errors.gender}>
+            {show('gender') && <Field label={lab('gender', 'Gender')} required={req('gender')} hint={ruleHint('gender')} error={errors.gender}>
               {(f) => (
                 <Select {...f} name="gender" value={str(v.gender)} onChange={(e) => set('gender', e.target.value)}>
                   <option value="">Not recorded</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="undisclosed">Prefer not to say</option>
                 </Select>
               )}
-            </Field>
+            </Field>}
             <div className="flex items-center gap-3 sm:col-span-2">
               {photoPreview
                 // eslint-disable-next-line @next/next/no-img-element
@@ -651,7 +686,7 @@ export function HireWizard(p: Props) {
               </Field>
             )}
             <Field
-              label="Designation"
+              label={lab('designationId', 'Designation')}
               error={errors.designationName || errors.designationId}
               hint={designationIsNew ? `"${designationText}" is new: it is added to your designations with this hire` : designationMatch ? undefined : 'Pick from the list or type any title'}
             >
@@ -668,7 +703,7 @@ export function HireWizard(p: Props) {
             <Field label="Employment type">
               {(f) => <Select {...f} name="employmentType" value={str(v.employmentType)} onChange={(e) => set('employmentType', e.target.value)}>{Object.entries(TYPE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>}
             </Field>
-            <Field label="Grade" error={errors.grade}>{(f) => <Input {...f} name="grade" value={str(v.grade)} onChange={(e) => set('grade', e.target.value)} maxLength={20} />}</Field>
+            {show('grade') && <Field label={lab('grade', 'Grade')} required={req('grade')} hint={ruleHint('grade')} error={errors.grade}>{(f) => <Input {...f} name="grade" value={str(v.grade)} onChange={(e) => set('grade', e.target.value)} maxLength={20} />}</Field>}
             <Field label="Probation (months)" error={errors.probationMonths} hint="0 confirms them straight away">{(f) => <Input {...f} name="probationMonths" type="number" min={0} max={24} value={str(v.probationMonths)} onChange={(e) => set('probationMonths', e.target.value === '' ? '' : Number(e.target.value))} />}</Field>
             <Field
               label="Employee ID"
@@ -677,7 +712,13 @@ export function HireWizard(p: Props) {
             >
               {(f) => <Input {...f} name="employeeCode" autoComplete="off" maxLength={40} placeholder={nextCode ?? 'e.g. EMP-0042'} value={str(v.employeeCode)} onChange={(e) => set('employeeCode', e.target.value)} />}
             </Field>
-            {p.leavePolicies && (
+            {p.leavePolicies && !existing && (
+              <p className="text-xs text-fg-subtle sm:col-span-2" data-testid="hire-leave-rules">
+                Leave is not entered for a new joiner. It follows the leave rules: none while on probation where a type says so, and the year&apos;s days credited when they are confirmed.{' '}
+                <Link href="/leave/manage?tab=rules" target="_blank" className="font-medium text-accent hover:underline">Leave rules</Link>
+              </p>
+            )}
+            {p.leavePolicies && existing && (
               <fieldset className="sm:col-span-2" data-testid="hire-leave">
                 <legend className="text-[0.8125rem] font-medium">{existing ? 'Leave balance available today' : 'Leave for this year'}</legend>
                 {balanceTypes.length === 0 ? (
@@ -757,17 +798,17 @@ export function HireWizard(p: Props) {
 
         {step === 2 && (
           <>
-            <Field label="Department" error={errors.departmentId}>
+            {show('departmentId') && <Field label={lab('departmentId', 'Department')} required={req('departmentId')} hint={ruleHint('departmentId')} error={errors.departmentId}>
               {(f) => <Select {...f} name="departmentId" value={str(v.departmentId)} onChange={(e) => set('departmentId', e.target.value)}><option value="">None</option>{deptOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}
-            </Field>
-            {addInline('department')}
-            <Field label="Location" error={errors.locationId}>
+            </Field>}
+            {show('departmentId') && addInline('department')}
+            {show('locationId') && <Field label={lab('locationId', 'Location')} required={req('locationId')} hint={ruleHint('locationId')} error={errors.locationId}>
               {(f) => <Select {...f} name="locationId" value={str(v.locationId)} onChange={(e) => set('locationId', e.target.value)}><option value="">None</option>{locOptions.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>}
-            </Field>
-            {addInline('location')}
-            <Field label="Reports to" error={errors.managerEmployeeId} className="sm:col-span-2">
+            </Field>}
+            {show('locationId') && addInline('location')}
+            {show('managerEmployeeId') && <Field label={lab('managerEmployeeId', 'Reports to')} required={req('managerEmployeeId')} hint={ruleHint('managerEmployeeId')} error={errors.managerEmployeeId} className="sm:col-span-2">
               {(f) => <Select {...f} name="managerEmployeeId" value={str(v.managerEmployeeId)} onChange={(e) => set('managerEmployeeId', e.target.value)}><option value="">No manager</option>{p.managers.map((m) => <option key={m.id} value={m.id}>{m.displayName} ({m.employeeCode})</option>)}</Select>}
-            </Field>
+            </Field>}
             {manager && <p className="text-[0.8125rem] text-fg-muted sm:col-span-2">{manager.displayName} will see this person on their team and approve their leave and attendance.</p>}
           </>
         )}
@@ -795,6 +836,15 @@ export function HireWizard(p: Props) {
           <p className="text-[0.8125rem] text-fg-muted sm:col-span-2">The payroll team sets pay after the hire. You don&apos;t have access to salaries.</p>
         ))}
 
+        {step === 4 && p.onboardingOptions && (
+          <div className="space-y-2 sm:col-span-2" data-testid="hire-onboarding-documents">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Onboarding documents to ask for</h4>
+            <p className="text-xs text-fg-subtle">Each one becomes a task for {str(v.firstName).trim() || 'them'} with a notification. Their uploads come back to HR to approve or reject. Choose no documents to skip this.</p>
+            <DocumentPicker options={p.onboardingOptions} value={docsPicked} onChange={setDocsPicked} />
+            {docsPicked.itemIds.length > 0 && <button type="button" className="text-xs text-fg-subtle hover:text-danger" onClick={() => setDocsPicked({ templateId: null, itemIds: [] })}>Ask for no onboarding documents</button>}
+            <h4 className="pt-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Files you already have</h4>
+          </div>
+        )}
         {step === 4 && (p.canDocs ? (
           <div className="space-y-3 sm:col-span-2">
             <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-[0.8125rem] text-fg-muted hover:bg-bg-subtle">
@@ -908,6 +958,7 @@ export function HireWizard(p: Props) {
             <Summary label="Reports to" value={manager?.displayName ?? 'No manager'} onEdit={() => setStep(2)} />
             <Summary label="Pay" value={structure ? `${structure.name}, ${Number(str(v.annualCtc).replace(/,/g, '')).toLocaleString()} a year` : 'Set later'} onEdit={() => setStep(3)} />
             <Summary label="Documents" value={docs.length ? docs.map((d) => d.title || d.file.name).join(', ') : 'None'} onEdit={() => setStep(4)} />
+            {p.onboardingOptions && <Summary label="Onboarding documents" value={docsPicked.itemIds.length ? `${docsPicked.itemIds.length} documents${docsPicked.templateId ? ` from ${p.onboardingOptions.templates.find((t) => t.id === docsPicked.templateId)?.name ?? 'the template'}` : ''}` : 'None asked for'} onEdit={() => setStep(4)} />}
             <Summary label="Photo" value={photo ? photo.name : 'None'} onEdit={() => setStep(0)} />
             {p.canAttendance && <Summary label="Attendance" value={`${shift ? shift.name : 'Location default shift'} · ${enrolments.filter((x) => x.deviceUserId.trim()).map((x) => x.deviceUserId.trim()).join(', ') || 'no machine enrolment'}`} onEdit={() => setStep(5)} />}
             <Summary label="Onboarding" value={template} onEdit={() => setStep(5)} />
