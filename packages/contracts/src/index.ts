@@ -102,5 +102,6 @@ export * from './employee-record';
 export * from './page-access';
 export * from './feedback-89';
 export * from './forms';
+export * from './attendance-reports';
 export * from './onboarding-documents';
 export * from './email-templates';

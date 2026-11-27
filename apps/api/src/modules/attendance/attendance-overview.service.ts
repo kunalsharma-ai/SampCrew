@@ -25,6 +25,7 @@ import {
   type AttendanceViewerLevel,
   type Paged,
   type StatusCounts,
+  buildAttendanceReport, type AttendanceReportKind, type BuiltReport, type ReportDay, type ReportLeave, type ReportPerson, type ReportPunch,
 } from '@crew/contracts';
 import { AuditService } from '../../platform/audit/audit.service';
 import { MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
@@ -437,6 +438,63 @@ export class AttendanceOverviewService {
     });
   }
 
+  /**
+   * The classic monthly attendance reports (27 Nov feedback): attendance days, approved leave and punches of the
+   * people the viewer may see, laid out by buildAttendanceReport (contracts), the same counting as the screens.
+   */
+  private async templateReport(tx: TenantTx, kind: Exclude<AttendanceReportKind, 'standard'>, from: string, to: string, people: ReportPerson[]): Promise<BuiltReport> {
+    const ids = people.map((p) => p.employeeId);
+    const tenant = await tx.collection('tenants').findOne({});
+    const company = (tenant?.name as string | undefined) ?? 'Company';
+    const days = ids.length ? await tx.collection('attendance_days').find({ employee_id: { $in: ids }, work_date: { $gte: from, $lte: to } }, { sort: { work_date: 1 }, limit: 200_000 }) : [];
+    const shifts = new Map((await tx.collection('shift_templates').find({ id: { $in: [...new Set(days.map((d) => d.shift_template_id).filter(Boolean))] } })).map((t) => [t.id as string, t]));
+    const tzRows = ids.length ? await tx.collection('employees').find({ id: { $in: ids } }, { projection: { current_location_id: 1 } }) : [];
+    const locTz = new Map((await tx.collection('locations').find({ id: { $in: tzRows.map((e) => e.current_location_id).filter(Boolean) } }, { projection: { timezone: 1 } })).map((l) => [l.id as string, l.timezone as string]));
+    const tzOf = new Map(tzRows.map((e) => [e.id as string, locTz.get(e.current_location_id) ?? (tenant?.timezone as string | undefined) ?? 'UTC']));
+    const minutesOf = (t: Doc | undefined) => {
+      if (!t) return null;
+      const [sh, sm] = String(t.start_time).split(':').map(Number) as [number, number];
+      const [eh, em] = String(t.end_time).split(':').map(Number) as [number, number];
+      return (((eh * 60 + em) - (sh * 60 + sm) + 1440) % 1440 || 1440) - Number(t.break_minutes ?? 0);
+    };
+    const reportDays: ReportDay[] = days.map((d) => {
+      const sh = d.shift_template_id ? shifts.get(d.shift_template_id as string) : undefined;
+      return {
+        employeeId: d.employee_id as string, date: d.work_date as string, status: d.status as string, dayType: (d.day_type as string | null) ?? 'working',
+        firstIn: d.first_in ? new Date(d.first_in).toISOString() : null, lastOut: d.last_out ? new Date(d.last_out).toISOString() : null,
+        workedMinutes: Number(d.worked_minutes ?? 0), lateMinutes: Number(d.late_minutes ?? 0), earlyLeaveMinutes: Number(d.early_leave_minutes ?? 0), overtimeMinutes: Number(d.overtime_minutes ?? 0),
+        shiftCode: (sh?.code as string | undefined) ?? null, shiftMinutes: minutesOf(sh), timeZone: tzOf.get(d.employee_id as string) ?? 'UTC',
+      };
+    });
+    const requests = ids.length ? await tx.collection('leave_requests').find({ employee_id: { $in: ids }, status: 'approved', start_date: { $lte: to }, end_date: { $gte: from } }, { limit: 50_000 }) : [];
+    const types = new Map((await tx.collection('leave_types').find({})).map((t) => [t.id as string, t]));
+    const leaves: ReportLeave[] = requests.map((r) => {
+      const t = types.get(r.leave_type_id as string);
+      return {
+        employeeId: r.employee_id as string, typeCode: (t?.code as string | undefined) ?? 'L', typeName: (t?.name as string | undefined) ?? 'Leave', paid: t?.paid !== false,
+        startDate: r.start_date as string, endDate: r.end_date as string, halfDay: r.start_half !== 'full' || r.end_half !== 'full', reason: (r.reason as string | null) ?? null,
+      };
+    });
+    const leaveCodes = [...new Set([...types.values()].filter((t) => !t.archived_at).map((t) => t.code as string))].sort();
+    let punches: ReportPunch[] = [];
+    if (kind === 'in_out' && ids.length) {
+      const events = await tx.collection('attendance_events').find(
+        { employee_id: { $in: ids }, captured_at: { $gte: new Date(`${addDays(from, -1)}T00:00:00Z`), $lt: new Date(`${addDays(to, 2)}T00:00:00Z`) } },
+        { sort: { captured_at: 1 }, limit: 100_000, projection: { employee_id: 1, captured_at: 1, direction: 1 } },
+      );
+      punches = events.map((e) => {
+        const at = new Date(e.captured_at).toISOString();
+        const date = new Intl.DateTimeFormat('en-CA', { timeZone: tzOf.get(e.employee_id as string) ?? 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(at));
+        return { employeeId: e.employee_id as string, date, at, direction: e.direction === 'out' ? 'out' : 'in' } as ReportPunch;
+      }).filter((p) => p.date >= from && p.date <= to);
+    }
+    // The card number: the person's enrolment number on the attendance machines, when they have one.
+    const enrol = new Map<string, string>();
+    if (kind === 'datewise_performance' && ids.length) for (const m of await tx.collection('device_user_mappings').find({ employee_id: { $in: ids } }, { projection: { employee_id: 1, device_user_id: 1 } })) if (!enrol.has(m.employee_id)) enrol.set(m.employee_id as string, m.device_user_id as string);
+    const printedAt = new Intl.DateTimeFormat('en-GB', { timeZone: (tenant?.timezone as string | undefined) ?? 'UTC', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date());
+    return buildAttendanceReport(kind, { company, from, to, printedAt, people: people.map((p) => ({ ...p, cardNo: enrol.get(p.employeeId) ?? '' })), days: reportDays, leaves, punches, leaveCodes });
+  }
+
   // ---------------------------------------------------------------------------------------------- Excel export
 
   /**
@@ -464,6 +522,25 @@ export class AttendanceOverviewService {
       }]));
       const departmentOf = new Map(people.map((r) => [r.employeeId, r.department ?? '']));
       const who = (id: string) => detail.get(id) ?? { designation: '', location: '', email: '', joined: '' };
+      if (q.report !== 'standard') {
+        const built = await this.templateReport(tx, q.report, q.from, q.to, people.map((r) => ({ employeeId: r.employeeId, code: r.code, name: r.name, department: departmentOf.get(r.employeeId) ?? '', designation: who(r.employeeId).designation, joined: who(r.employeeId).joined })));
+        await this.audit.record(tx, {
+          action: 'attendance.exported', resourceType: 'attendance', resourceId: own ? v.employeeId! : 'overview',
+          metadata: { from: q.from, to: q.to, report: q.report, format: q.format, hrWorkspaceId: f.hrWorkspaceId ?? null, employeeId: f.employeeId ?? null, employeeIds: f.employeeIds?.length ?? 0, people: people.length, level: v.level },
+        });
+        const base = `${q.report.replace(/_/g, '-')}-${q.from}-to-${q.to}`;
+        const rows = built.tables.reduce((n, t) => n + t.rows.length, 0);
+        if (q.format === 'csv') return { fileName: `${base}.csv`, content: '\uFEFF' + csv(built.tables.flatMap((t, i) => (i ? [[''], [t.name], ...t.rows] : [[t.name], ...t.rows]))), rows, contentType: 'text/csv; charset=utf-8' };
+        if (q.format === 'docx') return { fileName: `${base}.docx`, content: renderTableDocx(built.title, built.subtitle, built.tables), rows, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+        if (q.format === 'pdf') {
+          // One PDF table: the people one after another, each under a line with their name.
+          const width = Math.max(...built.tables.flatMap((t) => t.rows.map((r) => r.length)));
+          const pad = (r: Cell[]) => [...r, ...Array(Math.max(0, width - r.length)).fill('')];
+          const all = built.tables.length === 1 ? built.tables[0]!.rows.map(pad) : [pad([built.tables[0]?.name ?? '']), ...built.tables.flatMap((t, i) => [...(i ? [pad([t.name])] : []), ...t.rows.map(pad)])];
+          return { fileName: `${base}.pdf`, content: await renderTablePdf(built.title, built.subtitle, all), rows, contentType: 'application/pdf' };
+        }
+        return { fileName: `${base}.xlsx`, content: toXlsxBook(built.tables.map((t, i) => ({ name: `${i + 1} ${t.name}`.slice(0, 31), rows: t.rows }))), rows, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+      }
       const pct = (n: number | null) => (n === null ? '' : n);
       const names = await this.groupNames(tx);
       const about: Cell[][] = [

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { apiDownload } from '@/lib/api';
 
-const PASS = ['from', 'to', 'hrWorkspaceId', 'employeeId', 'status', 'level', 'q', 'include', 'format', 'employeeIds'];
+const PASS = ['from', 'to', 'hrWorkspaceId', 'employeeId', 'status', 'level', 'q', 'include', 'format', 'employeeIds', 'report'];
 
 /**
  * Downloads attendance as Excel, CSV, Word or PDF from the API, with the filters on screen. The API decides what the

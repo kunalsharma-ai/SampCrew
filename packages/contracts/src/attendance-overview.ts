@@ -1,3 +1,4 @@
+import { ATTENDANCE_REPORT_KINDS } from './attendance-reports';
 import { z } from 'zod';
 import { DAY_STATUSES, type DayStatus } from './attendance-engine';
 
@@ -207,6 +208,8 @@ export const attendanceExportQuery = z.object({
   from: day, to: day, ...filters,
   /** What goes in the workbook: everything visible, or one part. */
   include: z.enum(['all', 'people', 'records', 'hr_workspaces']).default('all'),
+  /** A report template (27 Nov feedback): the standard export, or one of the classic monthly attendance reports. */
+  report: z.enum(ATTENDANCE_REPORT_KINDS).default('standard'),
   /** Excel (every sheet), CSV (one table), Word or PDF (a printable report). */
   format: z.enum(ATTENDANCE_EXPORT_FORMATS).default('xlsx'),
   /** Only these people (comma-separated ids in the query); everyone visible when left out. */
