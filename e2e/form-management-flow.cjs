@@ -253,7 +253,8 @@ async function addField(p, label) {
     await asOwner('PUT', '/forms/add_employee', { workEmailDomains: [], enforceWorkEmailDomain: false, fields: {} }).catch(() => {});
     for (const label of [cover, blood]) {
       const f = await db.collection('custom_fields').findOne({ label });
-      if (f) await asOwner('POST', `/custom-fields/${f._id}/archive`, { archived: true }).catch(() => {});
+      // Archiving counts as a delete: confirmed with the password first, like the person would.
+      if (f) await asOwner('POST', '/me/delete-confirmation', { password: PASSWORD }).then(() => asOwner('POST', `/custom-fields/${f._id}/archive`, { archived: true })).catch((e) => console.log(`cleanup: ${e.message}`));
     }
     await b.close();
     await mongo.close();
