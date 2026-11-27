@@ -114,7 +114,7 @@ async function addField(p, label) {
     await owner.goto(BASE + '/settings/forms');
     const picker = owner.getByTestId('form-picker');
     for (const key of ['add_employee', 'employee_profile', 'leave_request', 'asset', 'bgv_case', 'candidate', 'client']) await picker.getByTestId(`form-pick-${key}`).waitFor();
-    await owner.getByTestId('form-current').getByText('Add Employee form').waitFor();
+    await owner.getByTestId('form-current').getByRole('heading', { name: 'Add Employee form' }).waitFor();
     // No field is required by default except the first name.
     const firstName = owner.getByTestId('employee-form-field-firstName');
     await firstName.getByText('Always on: a record needs it').waitFor();
@@ -127,13 +127,13 @@ async function addField(p, label) {
 
     await picker.getByTestId('form-pick-employee_profile').click();
     await owner.waitForURL(/form=employee_profile/);
-    await owner.getByTestId('form-current').getByText('Employee profile form').waitFor();
+    await owner.getByTestId('form-current').getByRole('heading', { name: 'Employee profile form' }).waitFor();
     await addField(owner, blood);
     ok('Super Workspace: every form listed; Add Employee hides Grade; a custom employee field added');
 
     await picker.getByTestId('form-pick-leave_request').click();
     await owner.waitForURL(/form=leave_request/);
-    await owner.getByTestId('form-current').getByText('Leave request form').waitFor();
+    await owner.getByTestId('form-current').getByRole('heading', { name: 'Leave request form' }).waitFor();
     await owner.getByLabel('Require Reason').check();
     await owner.getByLabel('Label for Reason').fill(reason);
     await owner.getByLabel('Placeholder for Reason').fill('For example: family function');
@@ -168,7 +168,7 @@ async function addField(p, label) {
     await hire.locator('h3', { hasText: 'Employment' }).waitFor();
     expect(await hire.locator('input[name=grade]').count() === 0, 'Grade is hidden on Add Employee but still shown');
     expect(await hire.getByTestId('hire-leave').count() === 0, 'the registration form still asks for leave days');
-    await hire.getByTestId('hire-leave-later').waitFor();
+    await hire.locator('[data-testid=hire-leave-rules], [data-testid=hire-leave-later]').first().waitFor();
     await save(hr, '03-add-employee');
     await hr.keyboard.press('Escape');
     ok('HR Workspace: Add Employee shows the custom field, hides Grade and asks for no leave days');

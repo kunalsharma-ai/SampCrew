@@ -28,12 +28,26 @@ function expiresSoon(token: string | undefined): boolean {
   }
 }
 
+const CUSTOM_FIELD_FORM: Record<string, string> = { employee: 'employee_profile', asset: 'asset', bgv_case: 'bgv_case', candidate: 'candidate', leave_request: 'leave_request', client: 'client' };
+
+/** Where an old address lives now (issue #91: custom fields and the Add Employee form are in Form management). */
+function movedTo(pathname: string, q: URLSearchParams): string | null {
+  if (pathname === '/settings/employee-form') return '/settings/forms?form=add_employee';
+  if (pathname === '/settings/custom-fields') return `/settings/forms?form=${CUSTOM_FIELD_FORM[q.get('entity') ?? ''] ?? 'employee_profile'}`;
+  if (pathname === '/employees/import') return '/imports/new?type=employees';
+  return null;
+}
+
 /**
  * Gate authenticated routes and refresh the access token shortly before it expires. Refreshing here (not in
  * server components) is what lets the new httpOnly cookies be written on the response.
  */
 async function gate(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  // Pages that moved: answered here with a plain redirect, because a redirect from inside a page under the app shell
+  // starts rendering first and React reports an error in the browser.
+  const moved = movedTo(pathname, req.nextUrl.searchParams);
+  if (moved) return NextResponse.redirect(new URL(moved, req.url));
   if (PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return NextResponse.next({ request: { headers: req.headers } });
 
   const access = req.cookies.get(ACCESS)?.value;

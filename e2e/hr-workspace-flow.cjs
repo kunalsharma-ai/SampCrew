@@ -272,7 +272,7 @@ async function run(b) {
 
   // 4. A custom field on employees: the Super Workspace adds it in Form management (issue #91), HR fills it in on Neha's profile.
   await owner.goto(BASE + '/settings/forms?form=employee_profile');
-  await owner.getByTestId('form-current').getByText('Employee profile form').waitFor({ timeout: 15000 }).catch((e) => fail(owner, e));
+  await owner.getByTestId('form-current').getByRole('heading', { name: 'Employee profile form' }).waitFor({ timeout: 15000 }).catch((e) => fail(owner, e));
   await owner.getByRole('button', { name: 'Add field' }).click();
   const fd = owner.getByRole('dialog');
   const label = `T-shirt size ${stamp}`;
