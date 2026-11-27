@@ -3,8 +3,8 @@ import { Alert, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { load, loadOptional } from '@/lib/api';
 import type { Role } from '@/lib/types';
-import { FieldsView } from '../custom-fields/fields-view';
-import type { FieldHistory } from '../custom-fields/page';
+import { FieldsView } from './fields-view';
+import type { FieldHistory } from './types';
 import { FormPicker, FormRulesEditor } from './form-rules';
 
 export const metadata: Metadata = { title: 'Form management' };

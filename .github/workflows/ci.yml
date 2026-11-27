@@ -164,6 +164,14 @@ jobs:
           node apps/api/dist/main.js > api.log 2>&1 &
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:work-mode
+      - name: Form management, Leave page order, attendance report templates and server clock end-to-end flow (issue #91)
+        # On a fresh demo workspace: the flow changes the Leave request and Add Employee forms and adds custom fields.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:form-management
       - name: HR Workspace Admin, background verification, assets, custom fields and import end-to-end flow
         # On a fresh demo workspace: the flow adds employees, assets and a custom field that other flows do not expect.
         run: |

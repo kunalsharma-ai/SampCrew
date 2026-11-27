@@ -382,7 +382,7 @@ export function JobTab({ e, history, reports, departments, entities, locations, 
 export function BalanceCards({ balances }: { balances: LeaveBalance[] }) {
   if (!balances.length) return <EmptyState title="No leave types apply yet" description="A leave type reaches people as soon as it is visible to their workspace." />;
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4" data-testid="leave-balances">
       {balances.map((b) => (
         <Card key={b.leaveTypeId} className="p-4">
           <div className="flex items-center gap-2 text-[0.8125rem] font-medium"><span className="size-2.5 rounded-full" style={{ background: b.color }} />{b.name}</div>

@@ -20,7 +20,7 @@ import { hasPermission } from '../../platform/authz/policy';
 import { requestContext } from '../../platform/context/request-context';
 import { countBy, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
-import { uniqueAs } from '../employees/employees.service';
+import { uniqueAs } from '../employees/unique';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Doc = Record<string, any>;

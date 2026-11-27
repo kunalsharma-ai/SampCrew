@@ -1,8 +1,6 @@
-import { CUSTOM_FIELD_ENTITIES, FORM_OF_ENTITY, type CustomFieldDefinition, type CustomFieldEntity } from '@crew/contracts';
+import { CUSTOM_FIELD_ENTITIES, FORM_OF_ENTITY, type CustomFieldEntity } from '@crew/contracts';
 import { redirect } from 'next/navigation';
 
-export type FieldRow = CustomFieldDefinition & { valueCount?: number };
-export interface FieldHistory { id: string; action: string; fieldId: string | null; by: string | null; at: string; changes: unknown }
 
 /**
  * Custom fields moved into Settings > Form management (issue #91): one place for every form, its built-in fields and

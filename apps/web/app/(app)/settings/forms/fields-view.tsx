@@ -4,8 +4,8 @@ import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, Emp
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { archiveFieldAction, deleteFieldAction, reorderFieldsAction, saveFieldAction } from './actions';
-import type { FieldHistory, FieldRow } from './page';
+import { archiveFieldAction, deleteFieldAction, reorderFieldsAction, saveFieldAction } from './field-actions';
+import type { FieldHistory, FieldRow } from './types';
 
 type RoleOpt = { key: string; name: string };
 

@@ -1,7 +1,8 @@
 import { WorkspaceLimitsService } from '../workspace-limits/workspace-limits.service';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { checkFormRules } from './forms';
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { uniqueAs } from './unique';
+import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
 import { ADULT_AGE, ageOn, catalogueDesignation, dateOfBirthError, fieldValueText, isMinorOn, PHOTO_MAX_BYTES, PHOTO_TYPES, phoneError, type SetAccessRequest } from '@crew/contracts';
 import type {
@@ -129,7 +130,7 @@ export class EmployeesService {
     private readonly devices: DevicesService,
     private readonly limits: WorkspaceLimitsService,
     private readonly onboardingDocs: OnboardingDocumentsService,
-    @Inject(forwardRef(() => CustomFieldsService)) private readonly customFields: CustomFieldsService,
+    private readonly customFields: CustomFieldsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -1534,11 +1535,7 @@ function draftView(d: Record<string, unknown>) {
 }
 
 /** Turns a unique-constraint violation into a readable 409. */
-export function uniqueAs(code: string, message: string) {
-  return (err: unknown): never => {
-    if ((err as { code?: string }).code === '23505') throw Errors.conflict(code, message);
-    throw err;
-  };
-}
+// Kept in its own file so master data (and custom fields through it) can use it without importing this service.
+export { uniqueAs };
 
 export { temporaryPasswordValue };

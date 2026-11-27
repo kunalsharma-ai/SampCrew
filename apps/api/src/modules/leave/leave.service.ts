@@ -1,4 +1,4 @@
-import { forwardRef, Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { checkFormRules } from '../employees/forms';
 import type { z } from 'zod';
@@ -89,7 +89,7 @@ export class LeaveService implements OnModuleInit {
     private readonly discipline: DisciplineService,
     private readonly files: CommFilesService,
     private readonly storage: StorageService,
-    @Inject(forwardRef(() => CustomFieldsService)) private readonly customFields: CustomFieldsService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   onModuleInit() {
